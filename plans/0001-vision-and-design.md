@@ -3,7 +3,7 @@
 > **Strop** — a modal text editor in Rust. Neovim's hands, Helix's spine, rootle's eyes, GitLens' memory.
 > Tagline: *see the cut before you make it.*
 >
-> Naming (checked 2026-08-31): a strop is the leather strap where a blade gets its final edge — the last pass of sharpening. `strop.dev` is unregistered (Porkbun); crates.io `strop` is taken, publish as `strop-editor`; GitHub org `stropdev` (mirrors the domain; repo: `stropdev/strop`).
+> Naming (checked 2026-08-31): a strop is the leather strap where a blade gets its final edge — the last pass of sharpening. `strop.dev` is secured (Porkbun, 2026-08-31; no routes yet — eye-candy site à la rootle.dev/gripsack.dev comes later, GitHub Pages); crates.io `strop` is taken, publish as `strop-editor`; GitHub org `stropdev` (mirrors the domain; repo: `stropdev/strop`).
 
 Status: pre-prototype. No code yet. This document is the design contract for the prototype phase.
 
