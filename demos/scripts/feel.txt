@@ -1,0 +1,18 @@
+# prototype feel-check: f-labels, ci[ change, live search-motion preview
+frame
+keys 0f
+frame
+keys [
+keys ci
+frame
+keys [
+frame
+keys Cut<esc>
+frame
+keys 0d/
+frame
+keys Mirror
+frame
+keys <cr>
+frame
+state

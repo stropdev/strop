@@ -1,0 +1,47 @@
+# strop build/test/release services (plan 0002 §4).
+#   docker compose run --build --rm test      # fmt + clippy -D warnings + cargo test
+#   docker compose run --build --rm build     # debug binary
+#   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    # The gate runs at image-build time (RUN steps); if the image
+    # exists, the gate passed. The command is just a confirmation.
+    command: 'echo "gate passed: fmt + clippy -D warnings + cargo test"'
+
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bin
+    command: cargo build --locked
+
+  # Exports a versioned tarball + checksum to ./dist/ (VERSION required).
+  # Tarball layout is the install.sh contract:
+  #   strop-<VERSION>-<TARGET>.tar.gz containing <dir>/strop
+  release:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: release
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        VERSION="$${VERSION:?set VERSION to the release version, e.g. -e VERSION=0.1.0}"
+        TARGET="$${TARGET:-x86_64-unknown-linux-musl}"
+        PKG="strop-$$VERSION-$$TARGET"
+        staging="$$(mktemp -d)" \
+        && mkdir -p "$$staging/$$PKG" \
+        && install -m755 target/release/strop "$$staging/$$PKG/strop" \
+        && tar -czf "/dist/$$PKG.tar.gz" -C "$$staging" "$$PKG" \
+        && cd /dist \
+        && sha256sum "$$PKG.tar.gz" > "$$PKG.tar.gz.sha256" \
+        && echo "released: /dist/$$PKG.tar.gz"
+    volumes:
+      - ./dist:/dist

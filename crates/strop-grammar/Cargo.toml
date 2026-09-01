@@ -1,0 +1,9 @@
+[package]
+name = "strop-grammar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+strop-core = { path = "../strop-core" }
+ropey = "1"

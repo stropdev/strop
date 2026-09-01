@@ -57,10 +57,12 @@ agent or human working in this repo.
 - Hot paths (input→render, per-keystroke preview): no avoidable allocation, no
   `String` materialization of rope content, no per-keystroke process spawn (0001 §3:
   libgit2 for git hot paths, not shell-outs).
-
-## Workflow
-
 - Plans before code for anything architectural: add/amend a numbered doc in `plans/`.
+- **Docker compose is the default build/test path.** `docker compose run --build --rm test`
+  is how changes get validated — layer caching keeps it fast, and the source tree is
+  never clobbered with build assets (no host `target/`, no stray tool installs). Host
+  `cargo` is acceptable for rapid iteration mid-change, but "done" means the compose
+  gate passed; never commit build artifacts.
 - Release: tags `v*`; the workflow (0002 §5) owns crates.io, tarballs, homebrew tap,
   site redeploy. Never hand-publish.
 - The demo must never lie (0004 §4): tapes drive the real binary; a demo-only code path
