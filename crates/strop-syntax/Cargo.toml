@@ -1,0 +1,11 @@
+[package]
+name = "strop-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tree-sitter = "0.24"
+tree-sitter-rust = "0.24"
+ropey = "1"
+streaming-iterator = "0.1"

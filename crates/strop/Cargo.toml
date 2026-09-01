@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+strop-syntax = { path = "../strop-syntax" }
 strop-core = { path = "../strop-core" }
 strop-grammar = { path = "../strop-grammar" }
 ropey = "1"

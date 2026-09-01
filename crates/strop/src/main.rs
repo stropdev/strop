@@ -1,14 +1,14 @@
 //! strop — prototype binary. TUI by default; `--headless` for the
 //! scripted, deterministic driver (0006 tier 2).
 
-mod app;
+mod editor;
 mod headless;
 mod render;
 
 use std::io::{self, Write};
 use std::time::Duration;
 
-use app::{Editor, Key};
+use editor::{Editor, Key};
 use strop_core::Buffer;
 
 fn main() {

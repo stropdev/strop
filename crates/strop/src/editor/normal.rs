@@ -1,0 +1,367 @@
+//! Normal mode: the grammar's home. Operators, motions, counts,
+//! registers, dot-repeat, the ex-line — and the live preview query.
+
+use strop_core::Range;
+use strop_grammar::{self as grammar, Command, Op, Parse, Resolved};
+
+use super::{Editor, Key, Mode};
+
+impl Editor {
+    pub(crate) fn feed_normal(&mut self, key: Key) {
+        if !self.pending.is_empty() {
+            return self.feed_pending(key);
+        }
+        let Key::Char(c) = key else { return };
+        match c {
+            '1'..='9' => self.pending.push(c),
+            '0' => self.run_motion("0"),
+            'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' => {
+                self.run_motion(&c.to_string())
+            }
+            'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | ':' | '"' | 'r' | '>' | '<' => {
+                self.pending.push(c)
+            }
+            // aliases — dot-repeat replays the alias key itself
+            'D' => self.alias("D", "d$"),
+            'C' => self.alias("C", "c$"),
+            'Y' => self.alias("Y", "yy"),
+            's' => self.alias("s", "cl"),
+            'X' => self.alias("X", "dh"),
+            'i' => self.enter_insert_from("i"),
+            'a' => {
+                self.cursor =
+                    (self.cursor + 1).min(self.buf().line_end(self.buf().line_of(self.cursor)));
+                self.enter_insert_from("a");
+            }
+            'A' => {
+                self.cursor = self.buf().line_end(self.buf().line_of(self.cursor));
+                self.enter_insert_from("A");
+            }
+            'o' => {
+                let end = self.buf().line_end(self.buf().line_of(self.cursor));
+                self.buf_mut().insert(end, "\n");
+                self.cursor = end + 1;
+                self.enter_insert_from("o");
+            }
+            'O' => {
+                let start = self.buf().line_start(self.buf().line_of(self.cursor));
+                self.buf_mut().insert(start, "\n");
+                self.cursor = start;
+                self.enter_insert_from("O");
+            }
+            'x' => {
+                let end =
+                    (self.cursor + 1).min(self.buf().line_end(self.buf().line_of(self.cursor)));
+                if end > self.cursor {
+                    let range = Range::charwise(self.cursor, end);
+                    let text = self.buf_mut().delete(range);
+                    self.set_register(None, text, false);
+                    self.flash(range);
+                    self.last_cmd_keys = "x".into();
+                    self.last_insert = None;
+                }
+            }
+            'p' => {
+                self.paste(None, false);
+                self.last_cmd_keys = "p".into();
+                self.last_insert = None;
+            }
+            'P' => {
+                self.paste(None, true);
+                self.last_cmd_keys = "P".into();
+                self.last_insert = None;
+            }
+            'v' => {
+                self.mode = Mode::Visual;
+                self.anchor = self.cursor;
+            }
+            'V' => {
+                self.mode = Mode::VisualLine;
+                self.anchor = self.cursor;
+            }
+            'J' => self.join_lines(),
+            '.' => self.dot_repeat(),
+            'u' => self.message = "undo arrives with the undo tree (M4)".into(),
+            _ => {}
+        }
+    }
+
+    /// Alias keys (D → d$, …): execute the expansion, remember the alias
+    /// so dot-repeat replays through the same path.
+    fn alias(&mut self, alias_key: &str, expansion: &str) {
+        self.feed_text(expansion);
+        self.last_cmd_keys = alias_key.into();
+    }
+
+    fn feed_pending(&mut self, key: Key) {
+        let is_ex = self.pending.starts_with(':');
+        let is_search = !is_ex && self.pending.contains('/');
+        match key {
+            Key::Esc => self.pending.clear(),
+            Key::Backspace => {
+                self.pending.pop();
+            }
+            Key::Enter if is_ex => self.run_ex(),
+            Key::Enter if is_search => {
+                self.pending.push('\r');
+                self.resolve_pending();
+            }
+            Key::Enter => self.pending.clear(),
+            Key::Char(c) => {
+                // r<char>: replace the char under the cursor, stay normal
+                if self.pending == "r" {
+                    self.pending.clear();
+                    return self.replace_char(c);
+                }
+                // "xp / "xP: paste from a named register
+                if self.pending.len() == 2
+                    && self.pending.starts_with('"')
+                    && (c == 'p' || c == 'P')
+                {
+                    let reg = self.pending.chars().nth(1);
+                    self.pending.clear();
+                    self.paste(reg, c == 'P');
+                    return;
+                }
+                self.pending.push(c);
+                if !is_ex {
+                    self.resolve_pending();
+                }
+            }
+        }
+    }
+
+    fn resolve_pending(&mut self) {
+        match grammar::parse(&self.pending) {
+            Parse::Incomplete => {}
+            Parse::Invalid => {
+                self.message = format!("not an editor command: {}", self.pending);
+                self.pending.clear();
+            }
+            Parse::Complete(cmd) => {
+                self.pending.clear();
+                match cmd.op {
+                    None => self.move_cursor(&cmd),
+                    Some(_) => self.execute(&cmd),
+                }
+            }
+        }
+    }
+
+    fn run_motion(&mut self, keys: &str) {
+        if let Parse::Complete(cmd) = grammar::parse(keys) {
+            self.move_cursor(&cmd);
+        }
+    }
+
+    pub(crate) fn move_cursor(&mut self, cmd: &Command) {
+        if let Some(r) = grammar::resolve(self.buf(), self.cursor, cmd) {
+            self.cursor = grammar::cursor_after(self.buf(), self.cursor, cmd, &r);
+            self.clamp_cursor();
+        }
+    }
+
+    /// The live preview: what would the pending keys do right now?
+    /// Same resolver the executor uses — the preview cannot lie.
+    pub fn preview(&self) -> Option<Resolved> {
+        if self.pending.is_empty() {
+            return None;
+        }
+        match grammar::parse(&self.pending) {
+            Parse::Complete(cmd) if cmd.op.is_some() => {
+                grammar::resolve(self.buf(), self.cursor, &cmd)
+            }
+            _ => {
+                // partial search: d/foo mid-typing previews cursor→first match
+                if let Some(idx) = self.pending.find('/') {
+                    let pat = &self.pending[idx + 1..];
+                    if !pat.is_empty() {
+                        if let Some(hit) = grammar::search_forward(self.buf(), self.cursor + 1, pat)
+                        {
+                            return Some(Resolved {
+                                range: Range::charwise(self.cursor, hit),
+                                inclusive: false,
+                                spec: format!("search /{pat}"),
+                            });
+                        }
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    /// Pending f/F/t/T awaiting its char: the leap-style candidates.
+    pub fn find_candidates(&self) -> Option<(u8, bool)> {
+        let b = self.pending.as_bytes();
+        let (&pfx, _) = b.split_last()?;
+        let backward = matches!(pfx, b'F' | b'T');
+        if !matches!(pfx, b'f' | b'F' | b't' | b'T') {
+            return None;
+        }
+        Some((pfx, backward))
+    }
+
+    /// Pending search pattern (incsearch highlight), if any.
+    pub fn search_pattern(&self) -> Option<&str> {
+        self.pending
+            .find('/')
+            .map(|i| &self.pending[i + 1..])
+            .filter(|p| !p.is_empty())
+    }
+
+    fn execute(&mut self, cmd: &Command) {
+        let Some(r) = grammar::resolve(self.buf(), self.cursor, cmd) else {
+            self.message = "no target".into();
+            return;
+        };
+        match cmd.op.unwrap() {
+            Op::Yank => {
+                let text = self.buf().slice_string(r.range);
+                self.set_register(cmd.register, text, r.range.linewise);
+                self.flash(r.range);
+            }
+            Op::Indent | Op::Dedent => {
+                self.apply_indent(r.range, cmd.op.unwrap() == Op::Indent);
+                self.flash(Range::charwise(self.cursor, self.cursor));
+            }
+            Op::Delete | Op::Change => {
+                let text = self.buf_mut().delete(r.range);
+                self.set_register(cmd.register, text, r.range.linewise);
+                self.cursor = r.range.start;
+                self.clamp_cursor();
+                self.flash(Range::charwise(self.cursor, self.cursor));
+                if cmd.op.unwrap() == Op::Change {
+                    self.enter_insert_from(&cmd.keys);
+                }
+            }
+        }
+        self.last_cmd_keys = cmd.keys.clone();
+        self.last_insert = None;
+    }
+
+    fn dot_repeat(&mut self) {
+        if self.last_cmd_keys.is_empty() && self.last_insert.is_none() {
+            return;
+        }
+        let keys = self.last_cmd_keys.clone();
+        let insert = self.last_insert.clone();
+        if !keys.is_empty() {
+            self.feed_text(&keys);
+        }
+        if let Some(text) = insert {
+            let was_insert = self.mode == Mode::Insert;
+            if !was_insert {
+                self.enter_insert_from("i");
+            }
+            for c in text.chars() {
+                self.feed(Key::Char(c));
+            }
+            self.feed(Key::Esc);
+            self.message = "repeated".into();
+        }
+    }
+
+    fn replace_char(&mut self, c: char) {
+        let end = (self.cursor + 1).min(self.buf().line_end(self.buf().line_of(self.cursor)));
+        if end <= self.cursor || c == '\n' {
+            return;
+        }
+        let cursor = self.cursor;
+        self.buf_mut().delete(Range::charwise(cursor, end));
+        let mut tmp = [0u8; 4];
+        self.buf_mut().insert(cursor, c.encode_utf8(&mut tmp));
+        self.flash(Range::charwise(self.cursor, self.cursor + 1));
+        self.last_cmd_keys = format!("r{c}");
+        self.last_insert = None;
+    }
+
+    fn join_lines(&mut self) {
+        let line = self.buf().line_of(self.cursor);
+        if line + 1 >= self.buf().len_lines() {
+            return;
+        }
+        let eol = self.buf().line_end(line);
+        let next_start = self.buf().line_start(line + 1);
+        let next_end = self.buf().line_end(line + 1);
+        // delete newline + leading whitespace of the next line, add one space
+        let mut join_at = next_start;
+        while join_at < next_end
+            && self.buf().byte(join_at).is_ascii_whitespace()
+            && self.buf().byte(join_at) != b'\n'
+        {
+            join_at += 1;
+        }
+        self.buf_mut().delete(Range::charwise(eol, join_at));
+        if join_at < next_end {
+            self.buf_mut().insert(eol, " ");
+        }
+        self.cursor = eol;
+        self.clamp_cursor();
+        self.flash(Range::charwise(eol, (eol + 1).min(self.buf().len_bytes())));
+        self.last_cmd_keys = "J".into();
+        self.last_insert = None;
+    }
+
+    /// > / < applied to every line a resolved range covers.
+    fn apply_indent(&mut self, range: Range, right: bool) {
+        let line = self.buf().line_of(range.start);
+        let last = self.buf().line_of(range.end.saturating_sub(1)) + 1;
+        for l in line..last {
+            let start = self.buf().line_start(l);
+            if right {
+                self.buf_mut().insert(start, "    ");
+            } else {
+                let end = self.buf().line_end(l);
+                let mut strip = 0;
+                while strip < 4 && start + strip < end && self.buf().byte(start + strip) == b' ' {
+                    strip += 1;
+                }
+                if strip == 0 && self.buf().byte_at(start) == Some(b'\t') {
+                    strip = 1;
+                }
+                if strip > 0 {
+                    self.buf_mut().delete(Range::charwise(start, start + strip));
+                }
+            }
+        }
+        self.cursor = self.buf().line_start(line);
+        self.clamp_cursor();
+    }
+
+    fn run_ex(&mut self) {
+        let cmdline = self
+            .pending
+            .trim_start_matches(':')
+            .trim_end_matches('\r')
+            .to_string();
+        self.pending.clear();
+        let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline.as_str(), ""));
+        match cmd {
+            "w" => match self.buf_mut().save() {
+                Ok(()) => self.message = "written".into(),
+                Err(e) => self.message = format!("write failed: {e}"),
+            },
+            "q" => {
+                self.close_buffer(false);
+            }
+            "q!" => {
+                self.close_buffer(true);
+            }
+            "wq" => {
+                let _ = self.buf_mut().save();
+                self.close_buffer(true);
+            }
+            "e" | "e!" => {
+                if arg.is_empty() {
+                    self.message = ":e needs a path".into();
+                } else if self.buf().dirty && cmd == "e" {
+                    self.message = "unsaved changes — :e! to force".into();
+                } else if let Err(e) = self.open_buffer(arg) {
+                    self.message = format!("open {arg}: {e}");
+                }
+            }
+            other => self.message = format!("unknown ex: :{other}"),
+        }
+    }
+}

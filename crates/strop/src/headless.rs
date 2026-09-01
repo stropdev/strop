@@ -6,7 +6,7 @@ use std::io::Write;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
-use crate::app::Editor;
+use crate::editor::Editor;
 
 pub fn frame_string(editor: &mut Editor, cols: u16, rows: u16) -> String {
     let backend = TestBackend::new(cols, rows);
@@ -29,11 +29,11 @@ pub fn state_json(editor: &Editor) -> String {
     serde_json::json!({
         "mode": editor.mode.chip(),
         "cursor": editor.cursor,
-        "line": editor.buf.line_of(editor.cursor) + 1,
-        "col": editor.buf.col_of(editor.cursor) + 1,
+        "line": editor.buf().line_of(editor.cursor) + 1,
+        "col": editor.buf().col_of(editor.cursor) + 1,
         "pending": editor.pending,
-        "register": editor.register,
-        "dirty": editor.buf.dirty,
+        "register": editor.register(None).0,
+        "dirty": editor.buf().dirty,
     })
     .to_string()
 }
