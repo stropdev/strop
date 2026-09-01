@@ -5,9 +5,13 @@
 
 mod insert;
 mod normal;
+mod picker;
 mod visual;
 
+pub use picker::{PickerGlue, PreviewEntry, PreviewSource, Previews};
+
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use strop_core::{Buffer, Range};
@@ -38,6 +42,10 @@ pub enum Key {
     Esc,
     Enter,
     Backspace,
+    Up,
+    Down,
+    Tab,
+    Backtab,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -59,6 +67,12 @@ pub struct Editor {
     pub message: String,
     pub should_quit: bool,
     pub view_top: usize,
+    pub picker: Option<PickerGlue>,
+    pub cwd: PathBuf,
+    /// MRU buffer order (most recent first); drives `Space b`.
+    pub mru: Vec<usize>,
+    /// Picker preview file cache.
+    pub previews: Previews,
     pub(crate) last_cmd_keys: String,
     pub(crate) last_insert: Option<String>,
     pub(crate) recording_insert: Option<String>,
@@ -67,6 +81,19 @@ pub struct Editor {
 impl Editor {
     pub fn new(buf: Buffer) -> Self {
         let highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
+        // cwd is always absolute: relative buffer paths resolve against
+        // the process cwd, or the picker walks "" and finds nothing.
+        let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let cwd = buf
+            .path
+            .as_deref()
+            .map(|p| {
+                let full = base.join(p);
+                full.parent()
+                    .map(|x| x.to_path_buf())
+                    .unwrap_or_else(|| base.clone())
+            })
+            .unwrap_or(base);
         Self {
             buffers: vec![buf],
             highlighter,
@@ -83,7 +110,17 @@ impl Editor {
             last_cmd_keys: String::new(),
             last_insert: None,
             recording_insert: None,
+            picker: None,
+            cwd,
+            mru: vec![0],
+            previews: HashMap::new(),
         }
+    }
+
+    /// Mark a buffer most-recently-used.
+    pub fn touch_mru(&mut self, i: usize) {
+        self.mru.retain(|&x| x != i);
+        self.mru.insert(0, i);
     }
 
     pub fn buf(&self) -> &Buffer {
@@ -100,6 +137,7 @@ impl Editor {
         self.highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
         self.buffers.push(buf);
         self.current = self.buffers.len() - 1;
+        self.touch_mru(self.current);
         self.cursor = 0;
         self.view_top = 0;
         Ok(())
@@ -113,10 +151,18 @@ impl Editor {
             return false;
         }
         self.buffers.remove(self.current);
+        let closed = self.current;
         if self.buffers.is_empty() {
             self.should_quit = true;
         } else {
+            self.mru.retain(|&x| x != closed);
+            for m in &mut self.mru {
+                if *m > closed {
+                    *m -= 1;
+                }
+            }
             self.current = self.current.min(self.buffers.len() - 1);
+            self.touch_mru(self.current);
             self.highlighter = self.buf().path.as_deref().and_then(Highlighter::for_path);
             self.cursor = 0;
             self.view_top = 0;
@@ -138,6 +184,11 @@ impl Editor {
                         "esc" => Key::Esc,
                         "cr" | "enter" => Key::Enter,
                         "bs" => Key::Backspace,
+                        "space" => Key::Char(' '),
+                        "up" => Key::Up,
+                        "down" => Key::Down,
+                        "tab" => Key::Tab,
+                        "s-tab" => Key::Backtab,
                         _ => {
                             self.feed(Key::Char('<'));
                             for c in rest.chars().chain(std::iter::once('>')) {
@@ -155,6 +206,9 @@ impl Editor {
 
     pub fn feed(&mut self, key: Key) {
         self.message.clear();
+        if self.picker_open() {
+            return self.feed_picker(key);
+        }
         match self.mode {
             Mode::Insert => self.feed_insert(key),
             Mode::Visual | Mode::VisualLine => self.feed_visual(key),

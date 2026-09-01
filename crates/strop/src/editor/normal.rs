@@ -11,16 +11,17 @@ impl Editor {
         if !self.pending.is_empty() {
             return self.feed_pending(key);
         }
-        let Key::Char(c) = key else { return };
+        let Key::Char(c) = key else {
+            return;
+        };
         match c {
             '1'..='9' => self.pending.push(c),
             '0' => self.run_motion("0"),
             'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' => {
                 self.run_motion(&c.to_string())
             }
-            'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | ':' | '"' | 'r' | '>' | '<' => {
-                self.pending.push(c)
-            }
+            'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | ':' | '"' | 'r' | '>' | '<'
+            | ' ' => self.pending.push(c),
             // aliases — dot-repeat replays the alias key itself
             'D' => self.alias("D", "d$"),
             'C' => self.alias("C", "c$"),
@@ -107,7 +108,21 @@ impl Editor {
                 self.resolve_pending();
             }
             Key::Enter => self.pending.clear(),
+            Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
+                // Space leader (0003 §2): one namespace, which-key overlay
+                if self.pending == " " {
+                    self.pending.clear();
+                    return match c {
+                        'f' => self.open_picker(strop_picker::Kind::Files),
+                        'b' => self.open_picker(strop_picker::Kind::Buffers),
+                        '/' => self.open_picker(strop_picker::Kind::Grep),
+                        _ => {
+                            self.message =
+                                "Space: f files · b buffers · / grep (g, u land M2/M4)".into()
+                        }
+                    };
+                }
                 // r<char>: replace the char under the cursor, stay normal
                 if self.pending == "r" {
                     self.pending.clear();

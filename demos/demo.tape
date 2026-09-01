@@ -8,7 +8,9 @@ Set Width 1400
 Set Height 760
 Set Theme "Catppuccin Mocha"
 
-Type "strop /tmp/demo.rs"
+Type "cd /tmp"
+Enter
+Type "strop proj/demo.rs"
 Enter
 Sleep 1.2s
 
@@ -35,6 +37,30 @@ Sleep 1.4s
 Enter
 Sleep 1.2s
 
-Type ":q"
+Type ":q!"
+Enter
+Sleep 500ms
+
+# picker: which-key card, file finder, live grep with preview
+Type "strop proj/demo.rs"
+Enter
+Sleep 1s
+Space
+Sleep 900ms
+Type "f"
+Sleep 1.4s
+Type "demo"
+Sleep 1s
+Enter
+Sleep 900ms
+Space
+Type "/"
+Sleep 700ms
+Type@250ms "deburr"
+Sleep 1.6s
+Enter
+Sleep 1s
+
+Type ":q!"
 Enter
 Sleep 400ms

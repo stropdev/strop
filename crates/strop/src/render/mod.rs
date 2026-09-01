@@ -13,6 +13,9 @@ use strop_grammar as grammar;
 
 use crate::editor::{Editor, Mode};
 
+mod picker_card;
+mod which_key;
+
 // strop default palette (plan 0004 site, --accent amber)
 pub const BASE: Color = Color::Rgb(0x16, 0x16, 0x1e);
 pub const TEXT: Color = Color::Rgb(0xe8, 0xe4, 0xda);
@@ -25,7 +28,7 @@ pub const SELECT_BG: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
 const GUTTER: u16 = 5; // 4-digit numbers + one empty column (0001 §4)
 
 /// Syntax class → color (strop palette; theme engine swaps these later).
-fn class_color(class: strop_syntax::Class) -> Color {
+pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
     use strop_syntax::Class as C;
     match class {
         C::Keyword => Color::Rgb(0xc5, 0x8a, 0xe8),
@@ -50,6 +53,22 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     render_text(editor, frame, area, text_rows);
     render_statusline(editor, frame, area);
     place_cursor(editor, frame, area);
+    picker_card::render_picker(editor, frame);
+    which_key::render_which_key(editor, frame);
+}
+
+/// Pull a color toward the base for the picker's dimmed backdrop.
+pub(crate) fn dim_color(c: Color) -> Color {
+    fn mix(c: (u8, u8, u8), base: (u8, u8, u8), t: u8) -> Color {
+        let m =
+            |a: u8, b: u8| (a as u16 * (100 - t) as u16 / 100 + b as u16 * t as u16 / 100) as u8;
+        Color::Rgb(m(c.0, base.0), m(c.1, base.1), m(c.2, base.2))
+    }
+    const BASE_RGB: (u8, u8, u8) = (0x16, 0x16, 0x1e);
+    match c {
+        Color::Rgb(r, g, b) => mix((r, g, b), BASE_RGB, 55),
+        other => other,
+    }
 }
 
 fn in_range(r: Range, pos: usize) -> bool {

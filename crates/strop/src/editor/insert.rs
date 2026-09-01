@@ -50,6 +50,7 @@ impl Editor {
                     rec.push('\n');
                 }
             }
+            Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
                 let mut tmp = [0u8; 4];
                 let cur = self.cursor;

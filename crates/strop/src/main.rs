@@ -36,7 +36,7 @@ fn main() {
         let mut editor = Editor::new(buf);
         let mut out = io::stdout().lock();
         headless::run_script(&mut editor, &script, 100, 30, &mut out);
-        out.flush().unwrap();
+        let _ = out.flush();
         return;
     }
 
@@ -64,10 +64,12 @@ fn tui(mut editor: Editor) {
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
 
     loop {
-        terminal.draw(|f| render::render(&mut editor, f)).unwrap();
+        // quit check before draw: the last :q leaves zero buffers and
+        // rendering needs one (caught by the demo tape)
         if editor.should_quit {
             break;
         }
+        terminal.draw(|f| render::render(&mut editor, f)).unwrap();
         // 16ms cap so the flash overlay expires on time; input-to-echo
         // stays under one frame (0001 §4).
         let timeout = if editor.flash_range().is_some() {
@@ -76,6 +78,7 @@ fn tui(mut editor: Editor) {
             Duration::from_millis(500)
         };
         if !event::poll(timeout).unwrap() {
+            editor.drain_picker();
             continue;
         }
         let Event::Key(ev) = event::read().unwrap() else {
@@ -88,10 +91,17 @@ fn tui(mut editor: Editor) {
             KeyCode::Esc => Key::Esc,
             KeyCode::Enter => Key::Enter,
             KeyCode::Backspace => Key::Backspace,
+            KeyCode::Up => Key::Up,
+            KeyCode::Down => Key::Down,
+            KeyCode::Tab => Key::Tab,
+            KeyCode::BackTab => Key::Backtab,
+            KeyCode::Char('n') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Down,
+            KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
             KeyCode::Char(c) => Key::Char(c),
             _ => continue,
         };
         editor.feed(key);
+        editor.drain_picker();
     }
 
     disable_raw_mode().unwrap();
