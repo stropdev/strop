@@ -16,6 +16,10 @@ impl Editor {
         if key == Key::CtrlR {
             return self.redo();
         }
+        if key == Key::CtrlW {
+            self.pending = "\x17".into(); // ctrl-w prefix
+            return;
+        }
         if !self.pending.is_empty() {
             return self.feed_pending(key);
         }
@@ -178,9 +182,20 @@ impl Editor {
                 self.resolve_pending();
             }
             Key::Enter => self.pending.clear(),
-            Key::CtrlR => {} // vim: pending + ctrl-r isn't a thing; no-op while keys accumulate
+            Key::CtrlR | Key::CtrlW => {} // pending + window/undo keys: no-op
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
+                // window commands (C-w): h l j k w move, v s split
+                if self.pending == "\x17" {
+                    self.pending.clear();
+                    return match c {
+                        'h' | 'l' | 'j' | 'k' | 'w' => self.pane_move(c),
+                        'v' => self.split(true, None),
+                        's' => self.split(false, None),
+                        'q' => self.close_pane_or_buffer(false),
+                        _ => self.message = "C-w: h l j k w move · v s split · q close".into(),
+                    };
+                }
                 // Space leader (0003 §2): one namespace, which-key overlay
                 if self.pending == " " {
                     self.pending.clear();
@@ -462,15 +477,17 @@ impl Editor {
                 Err(e) => self.message = format!("write failed: {e}"),
             },
             "q" => {
-                self.close_buffer(false);
+                self.close_pane_or_buffer(false);
             }
             "q!" => {
-                self.close_buffer(true);
+                self.close_pane_or_buffer(true);
             }
             "wq" => {
                 let _ = self.buf_mut().save();
                 self.close_buffer(true);
             }
+            "vs" | "vsplit" => self.split(true, if arg.is_empty() { None } else { Some(arg) }),
+            "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "e" | "e!" => {
                 if arg.is_empty() {
                     self.message = ":e needs a path".into();

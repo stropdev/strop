@@ -94,6 +94,13 @@ Borrowed from gripsack's demo.yml, simplified:
 
 ### Palette variants: show strop's own themes, not VHS's
 
+**The contract for when themes land (recorded 2026-09-02):** the demo re-renders per
+theme (`STROP_THEME=<name>` in the tape — the real theme engine, never VHS terminal
+colors), one GIF per palette the site picker offers, and the site's palette picker
+swaps the demo image to match (the rootle/gripsack pattern). A demo that shows a theme
+the editor can't produce is a lie; a palette picker that doesn't re-theme the demo is
+half-done. Both sides ship together.
+
 Gripsack renders one GIF per VHS terminal theme (`Set Theme "Catppuccin Mocha"` etc.)
 so the site's palette picker can swap the demo. That colors the *terminal*, and for a
 CLI whose theme is the terminal's theme, it is honest. Strop is an editor with its own

@@ -7,10 +7,12 @@ mod git;
 mod git_memory;
 mod insert;
 mod normal;
+mod panes;
 mod picker;
 mod visual;
 
 pub use git_memory::{git_channel, GitJob, Surface};
+pub use panes::{LayoutDir, Pane};
 pub use picker::{PickerGlue, PreviewEntry, PreviewSource, Previews};
 
 use std::collections::HashMap;
@@ -50,6 +52,7 @@ pub enum Key {
     Tab,
     Backtab,
     CtrlR,
+    CtrlW,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -91,6 +94,10 @@ pub struct Editor {
     pub git_tx: std::sync::mpsc::Sender<GitJob>,
     pub git_rx: std::sync::mpsc::Receiver<GitJob>,
     pub osc52: Option<String>,
+    /// Splits: flat row/column of panes (v1; tree layout later).
+    pub panes: Vec<Pane>,
+    pub active_pane: usize,
+    pub layout: LayoutDir,
     /// User config (0005-lite: TOML, embedded defaults, never bricks).
     pub config: crate::config::Config,
     pub(crate) last_cmd_keys: String,
@@ -143,6 +150,13 @@ impl Editor {
             git_tx,
             git_rx,
             osc52: None,
+            panes: vec![Pane {
+                buffer: 0,
+                cursor: 0,
+                view_top: 0,
+            }],
+            active_pane: 0,
+            layout: LayoutDir::Row,
             config: crate::config::Config::default(),
         };
         e.discover_git();
@@ -249,6 +263,7 @@ impl Editor {
                         "tab" => Key::Tab,
                         "s-tab" => Key::Backtab,
                         "c-r" => Key::CtrlR,
+                        "c-w" => Key::CtrlW,
                         _ => {
                             self.feed(Key::Char('<'));
                             for c in rest.chars().chain(std::iter::once('>')) {

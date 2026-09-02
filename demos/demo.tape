@@ -128,6 +128,20 @@ Type "g"
 Type "y"
 Sleep 1.2s
 
+# splits: :vs shares the buffer; C-w moves between panes
+Type ":vs"
+Enter
+Sleep 1.6s
+Type "jjj"
+Sleep 500ms
+Ctrl+w
+Sleep 1
+Ctrl+w
+Sleep 1.2s
+Type ":q"
+Enter
+Sleep 600ms
+
 Type ":q!"
 Enter
 Sleep 400ms

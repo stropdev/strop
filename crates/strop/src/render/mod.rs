@@ -11,7 +11,7 @@ use ratatui::Frame;
 use strop_core::Range;
 use strop_grammar as grammar;
 
-use crate::editor::{Editor, Mode};
+use crate::editor::{Editor, LayoutDir, Mode};
 
 mod blame_card;
 mod cmd_card;
@@ -54,7 +54,11 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     editor.scroll_to_cursor(text_rows);
     editor.refresh_hunks();
 
-    render_text(editor, frame, area, text_rows);
+    if editor.panes.len() == 1 {
+        render_text(editor, frame, area, text_rows);
+    } else {
+        render_panes(editor, frame, area, text_rows);
+    }
     render_statusline(editor, frame, area);
     cmd_card::render_cmd_card(editor, frame);
     if !cmd_card_active(editor) {
@@ -92,6 +96,135 @@ pub(crate) fn dim_color(c: Color) -> Color {
 
 fn in_range(r: Range, pos: usize) -> bool {
     pos >= r.start && pos < r.end
+}
+
+/// Smallest span covering pos (syntax spans are nested).
+fn spans_for(pos: usize, spans: &[strop_syntax::Span]) -> Option<strop_syntax::Class> {
+    spans
+        .iter()
+        .filter(|s| s.start <= pos && pos < s.end)
+        .min_by_key(|s| s.end - s.start)
+        .map(|s| s.class)
+}
+
+/// All panes, with a muted │ divider column between them. Only the
+/// active pane carries overlays (preview/search/selection/flash) and the
+/// caret — inactive panes render their own cursor position statically.
+fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect, _text_rows: usize) {
+    let n = editor.panes.len();
+    let is_row = editor.layout == LayoutDir::Row;
+    let total_w = area.width as usize;
+    let total_h = area.height as usize - 1;
+    let dividers = n - 1;
+    let (mut x, mut y) = (area.x, area.y);
+    for i in 0..n {
+        let (w, h): (u16, u16) = if is_row {
+            let w = ((total_w - dividers) / n) as u16;
+            let w = if i == n - 1 {
+                (total_w - dividers) as u16 - w * (n as u16 - 1)
+            } else {
+                w
+            };
+            (w, total_h as u16)
+        } else {
+            let h = ((total_h - dividers) / n) as u16;
+            let h = if i == n - 1 {
+                (total_h - dividers) as u16 - h * (n as u16 - 1)
+            } else {
+                h
+            };
+            (total_w as u16, h)
+        };
+        let rect = Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        };
+        render_text_for_pane(editor, frame, rect, i);
+        if i < n - 1 {
+            // divider column/row
+            if is_row {
+                let dx = x + w;
+                for dy in y..y + h {
+                    let cell = &mut frame.buffer_mut()[(dx, dy)];
+                    cell.set_symbol("│");
+                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                }
+                x = dx + 1;
+            } else {
+                let dy = y + h;
+                for dx in x..x + w {
+                    let cell = &mut frame.buffer_mut()[(dx, dy)];
+                    cell.set_symbol("─");
+                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                }
+                y = dy + 1;
+            }
+        }
+    }
+}
+
+/// Render one pane: active panes read live editor state; inactive panes
+/// read their saved cursor/view (overlays suppressed).
+fn render_text_for_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, pane_idx: usize) {
+    if pane_idx == editor.active_pane {
+        render_text(editor, frame, area, area.height as usize);
+        return;
+    }
+    let pane = editor.panes[pane_idx].clone();
+    let buf_idx = pane.buffer.min(editor.buffers.len() - 1);
+    // syntax is per-buffer, not per-active-pane (inactive panes keep
+    // their colors; only overlays are active-only)
+    let rope = editor.buffers[buf_idx].rope.clone();
+    let syn_spans = editor
+        .highlighters
+        .get_mut(buf_idx)
+        .and_then(|h| h.as_mut())
+        .map(|h| h.highlight(&rope, 0, rope.len_bytes()))
+        .unwrap_or_default();
+    let total_lines = editor.buffers[buf_idx].last_content_line() + 1;
+    let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
+    for row in 0..area.height as usize {
+        let line_idx = pane.view_top + row;
+        if line_idx >= total_lines {
+            lines.push(Line::from(Span::styled("~", Style::default().fg(MUTED))));
+            continue;
+        }
+        let line_num_style = if line_idx == editor.buffers[buf_idx].line_of(pane.cursor) {
+            Style::default().fg(ACCENT)
+        } else {
+            Style::default().fg(MUTED)
+        };
+        let text = editor.buffers[buf_idx].line_text(line_idx);
+        let mut spans = vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(format!("{:>3} ", line_idx + 1), line_num_style),
+        ];
+        let start = editor.buffers[buf_idx].line_start(line_idx);
+        for (i, ch) in text.chars().enumerate() {
+            let pos = start + i;
+            let mut style = Style::default().fg(TEXT);
+            if let Some(sp) = spans_for(pos, &syn_spans) {
+                style = style.fg(class_color(sp));
+                if sp == strop_syntax::Class::Comment {
+                    style = style.add_modifier(Modifier::ITALIC);
+                }
+            }
+            spans.push(Span::styled(ch.to_string(), style));
+        }
+        lines.push(Line::from(spans));
+    }
+    let block = Paragraph::new(lines).style(Style::default().bg(BASE));
+    frame.render_widget(block, area);
+    // static caret: the inactive pane's position, unfocused (muted block)
+    let line = editor.buffers[buf_idx].line_of(pane.cursor);
+    let row = line.saturating_sub(pane.view_top) as u16;
+    let col = 5 + editor.buffers[buf_idx].col_of(pane.cursor) as u16;
+    if row < area.height && col < area.width {
+        let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
+        cell.set_bg(Color::Rgb(0x3a, 0x3d, 0x4d));
+    }
 }
 
 fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: usize) {

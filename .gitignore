@@ -1,2 +1,6 @@
 target/
 dist/
+demos/tail_*
+demos/g_*
+demos/frame_*
+demos/f_*
