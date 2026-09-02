@@ -95,6 +95,7 @@ jobs:
           SITE_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
         run: |
           git clone --depth 1 "https://x-access-token:${SITE_TOKEN}@github.com/stropdev/stropdev.github.io.git" /tmp/site
+          mkdir -p /tmp/site/img
           cp /tmp/gif/demo.gif /tmp/site/img/
           git -C /tmp/site config user.name "github-actions[bot]"
           git -C /tmp/site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
