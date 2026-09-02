@@ -255,7 +255,6 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
     if row < area.height - 1 && col < area.width {
         frame.set_cursor_position((col, row));
     }
-    let _ = Mode::Normal; // cursor shape per mode lands with config (0005)
 }
 
 /// First-launch card: brand + the three keys that matter. Only on an
