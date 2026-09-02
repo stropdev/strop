@@ -6,11 +6,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.1.2" }
-strop-grammar = { path = "../strop-grammar", version = "0.1.2" }
-strop-picker = { path = "../strop-picker", version = "0.1.2" }
-strop-git = { path = "../strop-git", version = "0.1.2" }
-strop-syntax = { path = "../strop-syntax", version = "0.1.2" }
+strop-core = { path = "../strop-core", version = "0.1.3" }
+strop-grammar = { path = "../strop-grammar", version = "0.1.3" }
+strop-picker = { path = "../strop-picker", version = "0.1.3" }
+strop-git = { path = "../strop-git", version = "0.1.3" }
+strop-syntax = { path = "../strop-syntax", version = "0.1.3" }
 crossterm = "0.28"
 ratatui = "0.29"
 ropey = "1"
