@@ -92,3 +92,15 @@ stack in the binary).
 - Project-config trust prompt (`.strop.toml` in a cloned repo): data-only config is
   inert, so no trust gate needed v1; revisit if any future key gains path/exec power.
 - Config schema export for editor tooling (JSON schema from the serde types).
+- **Indent-guide fidelity (researched 2026-09-02, helix-term `ui/document.rs`):** Helix
+  draws guides as an *overlay pass after* the line renders, positioned from the line's
+  computed indent level — not from raw space positions. Our v1 (dim `│` at tab-size
+  multiples within leading whitespace) matches on well-formed code but diverges on
+  mixed/odd indents and blank lines inside blocks. When guides get their second pass:
+  - compute per-line indent *level* (indent width from config/tab detection), draw the
+    guide overlay from level 1..line_level — this is what makes Helix feel "smart" about
+    not drawing spurious guides;
+  - blank lines inside an indented block inherit the block's level (continuation);
+  - knobs: `indent_guides.render` (bool, landed), `indent_guides.character`,
+    `indent_guides.skip_levels` (skip shallow levels — Helix defaults 0, users who hate
+    clutter set 1).

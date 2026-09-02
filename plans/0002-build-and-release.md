@@ -131,3 +131,14 @@ Trigger: `push` on tags `v*`. `concurrency.group: release`, `cancel-in-progress:
 - **cargo-zigbuild / pinned-glibc artifacts**: §3.
 - **dist/ crates.io binary publishing (cargo-binstall metadata)**: nice-to-have for
   faster `cargo install`; not part of v1.
+
+
+## 7. Upstream watch (decided 2026-09-02)
+
+All curated highlight queries are Helix-vendored (`crates/strop-syntax/queries/`). They
+must not silently rot: a weekly `upstream-watch.yml` (the gripsack pattern — Monday cron,
+`issues: write`, idempotent-by-title) diffs our vendored queries against
+`helix-editor/helix` master and the grammar crates' latest releases (rust, c, cpp,
+python, go, javascript, typescript, json, bash), opening one issue per divergence.
+Queries are data (0001 §5.11): updating a vendored file is a content change, not a
+release — the watch keeps the debt visible instead of fossilized.

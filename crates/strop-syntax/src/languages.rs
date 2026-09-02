@@ -1,4 +1,6 @@
 //! The curated language registry (0002 §2.2: statically linked, always).
+//! All highlight queries are Helix-vendored (queries/ per language, MPL-2.0) —
+//! one upstream, one review surface, divergence watched weekly (0002 §7).
 //! Extension → (grammar, highlights query). Adding a language is one
 //! row here plus one crate in Cargo.toml — never a download, never a
 //! dlopen. C++ included specifically: its scanner is C++, the musl
@@ -61,7 +63,7 @@ pub fn for_extension(ext: &str) -> Option<LanguageSpec> {
             tree_sitter_go::LANGUAGE,
             include_str!("../queries/go/highlights.scm")
         ),
-        ".c" | ".h" => lang_fn!("c", tree_sitter_c::LANGUAGE, tree_sitter_c::HIGHLIGHT_QUERY),
+        ".c" | ".h" => lang_fn!("c", tree_sitter_c::LANGUAGE, include_str!("../queries/c/highlights.scm")),
         ".cpp" | ".cc" | ".cxx" | ".hpp" | ".hh" => {
             lang_fn!(
                 "cpp",

@@ -1,0 +1,60 @@
+<svg viewBox="0 0 480 310" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SF Mono, Menlo, Consolas, monospace">
+      <rect width="480" height="310" rx="18" fill="#101018"/>
+      <!-- editor card -->
+      <rect x="24" y="52" width="432" height="196" rx="14" fill="#1c1c26" stroke="#2a2c3a" stroke-width="2"/>
+      <!-- window chrome (fixed traffic lights, like rootle's) -->
+      <circle cx="44" cy="70" r="4" fill="#f38ba8" opacity="0.9"/>
+      <circle cx="60" cy="70" r="4" fill="#f9e2af" opacity="0.9"/>
+      <circle cx="76" cy="70" r="4" fill="#a6e3a1" opacity="0.9"/>
+      <!-- line-number gutter -->
+      <rect x="46" y="97"  width="12" height="6" rx="2" fill="#6b6f7e" opacity="0.45"/>
+      <rect x="46" y="117" width="12" height="6" rx="2" fill="#6b6f7e" opacity="0.45"/>
+      <rect x="46" y="137" width="12" height="6" rx="2" fill="#f0a35e" opacity="0.9"/>
+      <rect x="46" y="157" width="12" height="6" rx="2" fill="#6b6f7e" opacity="0.45"/>
+      <rect x="46" y="177" width="12" height="6" rx="2" fill="#6b6f7e" opacity="0.45"/>
+      <rect x="46" y="197" width="12" height="6" rx="2" fill="#6b6f7e" opacity="0.45"/>
+      <!-- code lines -->
+      <rect x="84"  y="96"  width="26" height="8" rx="3" fill="#c58ae8"/>
+      <rect x="114" y="96"  width="40" height="8" rx="3" fill="#7fb4ca"/>
+      <rect x="158" y="96"  width="60" height="8" rx="3" fill="#8a8fa3"/>
+      <rect x="222" y="96"  width="34" height="8" rx="3" fill="#a9c47c"/>
+      <rect x="84"  y="116" width="18" height="8" rx="3" fill="#8a8fa3" opacity="0.6"/>
+      <rect x="106" y="116" width="52" height="8" rx="3" fill="#7fb4ca"/>
+      <rect x="162" y="116" width="80" height="8" rx="3" fill="#8a8fa3"/>
+      <!-- the cut line: fn token, then the pending range in accent -->
+      <rect x="84"  y="136" width="18" height="8" rx="3" fill="#8a8fa3" opacity="0.6"/>
+      <rect x="106" y="136" width="36" height="8" rx="3" fill="#7fb4ca"/>
+      <rect x="146" y="132" width="86" height="16" rx="4" fill="#f0a35e" opacity="0.16"/>
+      <rect x="146" y="146" width="86" height="2" rx="1" fill="#f0a35e"/>
+      <rect x="150" y="137" width="10" height="7" rx="2" fill="#f0a35e" opacity="0.85"/>
+      <rect x="222" y="137" width="8"  height="7" rx="2" fill="#f0a35e" opacity="0.85"/>
+      <rect x="164" y="137" width="52" height="7" rx="2" fill="#8a8fa3"/>
+      <rect x="238" y="136" width="44" height="8" rx="3" fill="#8a8fa3"/>
+      <!-- block caret at the cut start -->
+      <rect class="" x="140" y="131" width="5" height="18" fill="#f0a35e"/>
+      <rect x="106" y="156" width="66" height="8" rx="3" fill="#8a8fa3"/>
+      <rect x="176" y="156" width="30" height="8" rx="3" fill="#a9c47c"/>
+      <rect x="84"  y="176" width="30" height="8" rx="3" fill="#c58ae8"/>
+      <rect x="118" y="176" width="58" height="8" rx="3" fill="#8a8fa3"/>
+      <rect x="84"  y="196" width="90" height="8" rx="3" fill="#8a8fa3" opacity="0.7"/>
+      <!-- scrollbar in the border column, accent thumb -->
+      <rect x="450" y="88"  width="3" height="126" rx="1.5" fill="#2a2c3a"/>
+      <rect x="450" y="118" width="3" height="34"  rx="1.5" fill="#f0a35e"/>
+      <!-- modeline: chip reads the pending keys -->
+      <rect x="26" y="228" width="428" height="18" rx="9" fill="#12121a"/>
+      <rect x="34" y="231" width="56" height="12" rx="4" fill="#f0a35e"/>
+      <rect x="150" y="234" width="180" height="6" rx="3" fill="#6b6f7e" opacity="0.5"/>
+      <rect x="398" y="236" width="40" height="4" rx="2" fill="#6b6f7e" opacity="0.35"/>
+      <!-- the razor: fixed steel (rootle's mole precedent — mascots don't
+           re-theme), but the edge glint is the accent: the final edge. -->
+      <g transform="translate(352,6) rotate(-14)">
+        <rect x="58" y="-6" width="52" height="17" rx="8.5" fill="#2b2e3a" stroke="#585e6e" stroke-width="1.2"/>
+        <circle cx="62" cy="2.5" r="4" fill="#585e6e"/>
+        <polygon points="0,0 58,-5 64,13 6,20" fill="#b9bec9"/>
+        <polygon points="0,0 58,-5 60,3 2,8" fill="#7d828f"/>
+        <line x1="8" y1="17.5" x2="62" y2="11" stroke="#f0a35e" stroke-width="2" stroke-linecap="round"/>
+      </g>
+      <!-- wordmark -->
+      <text x="228" y="293" text-anchor="middle" font-size="54" font-weight="bold" letter-spacing="-2" fill="#e8e4da">strop</text>
+      <rect class="" x="330" y="266" width="14" height="32" rx="2" fill="#f0a35e"/>
+    </svg>
