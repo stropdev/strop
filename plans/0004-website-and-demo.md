@@ -4,8 +4,10 @@
 > and simplified where strop's nature allows. The demos are the product's first
 > impression — they must show the operator-pending preview, the thing nobody else has.
 
-Status: accepted-in-principle. Site scaffolded at placeholder stage; demo pipeline lands
-with M0 (there is nothing to tape until the prototype exists).
+Status: live foundation. Placeholder site deployed (logo, palettes, demo GIF, HTTPS
+enforced); demo pipeline green end-to-end (push → musl build → VHS render → artifacts
+PR → site publish → redeploy dispatch). What follows is the road from placeholder to
+the real thing.
 
 ---
 
@@ -25,28 +27,52 @@ Same shape as rootle/gripsack: app repo owns tapes and rendering; site repo owns
 presentation; `repository_dispatch: rebuild` + `SITE_REPO_TOKEN` is the coupling;
 release.yml pings the site so the version chip stays current.
 
-## 2. Site repo (simplified vs. rootle/gripsack)
+## 2. Site repo — the stages
 
-Both predecessors carry a `build.py` that converts `doc/*.md` into doc pages with a
-shared rail. Strop has no docs to mirror yet — **the site starts as pure static files**
-(`index.html`, `assets/site.css`, `img/`), deployed as-is. No build step, no Python, no
-uv. When real docs exist (M1-era), adopt the rootle build.py pattern verbatim — it is
-proven; do not reinvent it then either.
+**Stage 1 (done): pure static.** `index.html`, `assets/site.css`, `img/` — no build
+step. Palette picker is client-side CSS vars; the inline logo SVG is painted from the
+same vars, so it re-themes live with zero rebuilds (simpler than rootle's build-time
+swap — keep it).
 
-Placeholder-stage content: brand, tagline (*see the cut before you make it*), the
-one-line lineage (Neovim's hands, Helix's spine, rootle's eyes, GitLens' memory), an
-"in the forge" status chip, GitHub link. Demo slot and install instructions exist in
-markup but stay hidden until the first release/GIF lands. The version chip is stamped
-client-side from the releases API until build.py exists (then build-time, rootle
-pattern).
+**Stage 2 (lands with real docs): adopt gripsack's `build.py`.** The moment we have
+user docs worth reading — keymap reference, motions guide, config reference,
+regex-divergences table (0001 §2.5) — the site grows a docs section, and we adopt the
+proven machinery rather than inventing:
 
-House style applies to the site too (plan 0003 §5): one accent color, desaturated dark
-base, clean Unicode, zero animation theater (a blinking caret is allowed; it is the
-editor's heartbeat, not decoration).
+- `website/build.py` (`uv run --with markdown python website/build.py` → `public/`):
+  `doc/*.md` → `docs/<slug>.html` with the shared chrome — left rail (brand, nav,
+  on-this-page TOC), content column.
+- **Changelog page fetched from the app repo at build time** (with committed fallback) —
+  the changelog lives with the code, the site never drifts.
+- **Doc-local SVG diagrams inlined and re-themed** with the palette picker (an `<img>`
+  can't inherit page CSS; inline and map palette hexes to CSS vars).
+- The version chip flips from client-side fetch to build-time stamp (deterministic).
 
-DNS (manual, one-time, Porkbun): apex `strop.dev` → GitHub Pages A records
-(185.199.108-111.153), `www` → CNAME `stropdev.github.io`; repo carries the `CNAME`
-file. HTTPS enforced once the cert provisions.
+**Stage 3 (post-M5): marketing pages beyond the landing**, as needed.
+
+### The polish bar (gripsack.dev, landed 2026-09-02 — steal all of it)
+
+- **Logo dissolves into the hero glow**: feathered tile edge (blurred-rect mask applied
+  in `build.py`; README keeps the static bake). No hard-edged backdrop tiles.
+- **Demo slider, not a wall of GIFs**: the demo set (§4) becomes one window with tabs —
+  `the cut` / `picker` / `git` / `jumplist` — each tab a tape. First tab eager, the rest
+  lazy with true dimensions (zero CLS).
+- **De-cram rules**: spacing rhythm `clamp(56px, 8vw, 96px)` between sections; hairline
+  section fades; quiet metadata chips; window shadows + hover states.
+- **Motion discipline**: one-shot scroll-in reveal, fully disabled under
+  `prefers-reduced-motion` and no-JS. The site's one allowed loop is the caret blink —
+  the editor's heartbeat.
+- **A11y is part of pretty**: global `:focus-visible` ring, real alt text, keyboard-
+  operable tabs.
+- **Subtle scrollbars everywhere** (thin, transparent-track) — the chunky default
+  scrollbar next to a nav rail is the first thing the eye lands on.
+
+House style (0003 §5) governs as before: one accent, desaturated dark base, clean
+Unicode, no latency theater.
+
+DNS (done 2026-09-02): Porkbun API records landed, apex + www → GitHub Pages, cert
+issued, HTTPS enforced. Cert-issuance lesson: if GitHub stalls on a correct domain,
+remove and re-add the custom domain (PUT pages cname) — that kicks provisioning.
 
 ## 3. Demo pipeline (strop repo)
 
@@ -92,11 +118,13 @@ Ordered by persuasion; the first tape is the whole pitch:
    `Tab`-cycling with the backdrop preview.
 
 Each tape is a real session against fixture files in `demos/fixtures/` — no mocking the
-editor; a demo that lies is a bug (same doctrine as the preview resolver).
+editor; a demo that lies is a bug (same doctrine as the preview resolver). On the site,
+the set ships as the tabbed slider (§2 polish bar): `the cut` / `picker` / `git` /
+`jumplist`, first tab eager, rest lazy.
 
 ## 5. Deferred
 
-- build.py + docs mirroring (when docs exist, §2).
+- Stage 2 machinery: build.py, docs section, changelog fetch, tabbed demo slider (§2).
 - Palette-variant renders + site palette picker (theme engine prerequisite, §3).
 - install.sh served from the site (lands with the first real release; rootle/gripsack
   pattern: curl | sh resolving the right tarball per platform).
