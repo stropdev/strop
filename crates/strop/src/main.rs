@@ -13,6 +13,38 @@ use std::time::Duration;
 use editor::{Editor, Key};
 use strop_core::Buffer;
 
+fn print_help() {
+    println!(
+        "strop {} — see the cut before you make it\n\
+         \n\
+         USAGE:\n\
+         \x20   strop [file…]            open files (missing files are new buffers)\n\
+         \x20   strop update [--check]   self-update (tarball installs)\n\
+         \x20   strop config             print the config knobs with live values\n\
+         \x20   strop --version          print version\n\
+         \x20   strop --headless S [F]   scripted driver (tests, demos)\n\
+         \n\
+         KEYS (the vim grammar, live preview):\n\
+         \x20   h j k l w b e 0 $ gg G %   motions      i a A o O          insert\n\
+         \x20   d y c > < + motion/object  operators    dd yy cc D C Y s x  shortcuts\n\
+         \x20   iw i\" i' i( i[ i{{        text objects  f t /              find & search\n\
+         \x20   v V                       visual        u ctrl-r .          undo, redo, repeat\n\
+         \x20   \"a …                      registers     :w :q :e            ex line\n\
+         \n\
+         SPACE (leader):\n\
+         \x20   f files · b buffers · / grep · j jumplist (soon)\n\
+         \x20   g git: l log · h file history · b blame · y/o permalink · u/s/p hunk\n\
+         \x20   ? keybindings (soon)\n\
+         \n\
+         CONFIG: {}\n\
+         \x20   tab_size = 4 · indent_guides = true\n\
+         \n\
+         https://strop.dev · https://github.com/stropdev/strop",
+        env!("CARGO_PKG_VERSION"),
+        config_path_display()
+    );
+}
+
 fn config_path_display() -> String {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
@@ -38,6 +70,10 @@ fn main() {
             eprintln!("strop update: {e}");
             std::process::exit(1);
         }
+        return;
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_help();
         return;
     }
     if args.iter().any(|a| a == "--version" || a == "-V") {

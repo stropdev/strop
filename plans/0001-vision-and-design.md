@@ -110,7 +110,8 @@ Implementation: `git2`/libgit2 for gutter + hunks (no process spawn per keystrok
 - Multiple cursors, opt-in power not paradigm: select-next-match, split selection by regex (visual `s`).
 - Daily no-plugin verbs: `gc` comment toggle, `gq` format operator (internal hard-wrap until LSP format arrives at M5).
 - Clipboard: `+`/`*` registers over OSC52 — the ssh-into-a-server test has no clipboard daemon.
-- Sessions: buffers, cursor positions, jump lists, undo history serialize per project (serde on editor state), undo history capped by depth or compressed — full trees per project bloat fast. Cheap early, brutal to retrofit.
+- Sessions (per-project, on by default): buffers, cursor positions, jump list, undo history serialize per project directory, restored on next open; undo history depth-capped (full trees per project bloat fast). Named sessions (`strop --session NAME`) are a thin layer on top — deferred until the per-project loop proves itself.
+- **Splits are core** (`:vs`/`:sp`, `C-w` navigation — vim grammar, M4). **Tabs are deferred**: vim tabs are layout containers, not buffer groups; Helix skips them; terminal multiplexers (herdr/tmux) cover the use honestly. Revisit only if daily driving begs for them.
 - Jump list + change list with a subtle breadcrumb trail in the statusline — invisible state made felt.
 - Command palette + which-key hybrid: `:` ex-line with real completion; `Space` opens a key-hint overlay that expands as you type (Helix's one undeniably better idea).
 
