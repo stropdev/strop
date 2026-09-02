@@ -28,7 +28,7 @@ FROM builder AS release
 RUN cargo build --release --locked -p strop-editor \
     && strip target/release/strop \
     && ! readelf -d target/release/strop | grep -q NEEDED \
-    && file target/release/strop | grep -q "static-pie linked" \
+    && file target/release/strop | grep -qE "static-pie linked|statically linked" \
     && echo "static: ok"
 
 # Shipping image: just the binary.

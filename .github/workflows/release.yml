@@ -63,7 +63,7 @@ jobs:
           tar -xzf strop-*-${{ matrix.target }}.tar.gz -C "$tmp"
           bin="$(find "$tmp" -type f -name strop | head -1)"
           file "$bin"
-          file "$bin" | grep -q "static-pie linked"
+          file "$bin" | grep -qE "static-pie linked|statically linked"
           ! readelf -d "$bin" | grep -q NEEDED
           "$bin" --version
           printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"

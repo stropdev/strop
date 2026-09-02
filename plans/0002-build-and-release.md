@@ -70,7 +70,8 @@ Static-verify lesson, learned on first contact (2026-09-01): a musl static-pie b
 still prints a `/lib/ld-musl-…` line in `ldd`, so "grep for 'not a dynamic executable'"
 fails on a *good* binary, and `! ldd | grep "=>"` passes vacuously on a *bad* one (a
 dynamically-linked musl binary has no `=>` lines). The honest gate is
-`! readelf -d <bin> | grep NEEDED` + `file <bin>` says "static-pie linked". The
+`! readelf -d <bin> | grep NEEDED` + `file <bin>` says "static-pie linked" (x86_64)
+or "statically linked" (aarch64 musl is non-PIE — first v0.1.0 run caught this). The
 rootle/gripsack release workflows use the vacuous form — worth re-gating there too.
 
 ```dockerfile
