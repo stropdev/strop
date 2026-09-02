@@ -18,14 +18,14 @@ RUN cargo fmt --check \
     && cargo test --locked
 
 FROM builder AS bin
-RUN cargo build --locked -p strop
+RUN cargo build --locked -p strop-editor
 
 # Stripped static release binary (0002 §4). The gate: no NEEDED shared
 # libraries. (`ldd | grep "not a dynamic"` is wrong on current
 # rust:alpine — a static-pie musl binary still prints the ld-musl line;
 # and `! ldd | grep "=>"` passes vacuously. readelf NEEDED is the truth.)
 FROM builder AS release
-RUN cargo build --release --locked -p strop \
+RUN cargo build --release --locked -p strop-editor \
     && strip target/release/strop \
     && ! readelf -d target/release/strop | grep -q NEEDED \
     && file target/release/strop | grep -q "static-pie linked" \

@@ -1,0 +1,219 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+# Two tags cut at once race the homebrew-tap push — serialize; the
+# newer tag waits (the gripsack lesson).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Per plan 0002 §1: musl-static linux via docker (rust:alpine is
+  # multi-arch — no cross config), native macOS on the arm runner.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, runner: ubuntu-latest, docker: true }
+          - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm, docker: true }
+          - { target: x86_64-apple-darwin, runner: macos-14, cross: true }
+          - { target: aarch64-apple-darwin, runner: macos-14 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build (linux musl, docker)
+        if: matrix.docker
+        run: |
+          docker compose run --build --rm \
+            -e "VERSION=${GITHUB_REF_NAME#v}" \
+            -e "TARGET=${{ matrix.target }}" release
+
+      - name: Build (macOS, native)
+        if: "!matrix.docker"
+        run: |
+          rustup target add ${{ matrix.target }}
+          cargo build --release --locked --target ${{ matrix.target }} -p strop-editor
+          VERSION="${GITHUB_REF_NAME#v}"
+          PKG="strop-$VERSION-${{ matrix.target }}"
+          staging="$(mktemp -d)"
+          mkdir -p "$staging/$PKG"
+          install -m755 "target/${{ matrix.target }}/release/strop" "$staging/$PKG/strop"
+          mkdir -p dist
+          tar -czf "dist/$PKG.tar.gz" -C "$staging" "$PKG"
+          (cd dist && shasum -a 256 "$PKG.tar.gz" > "$PKG.tar.gz.sha256")
+
+      # Static-verify the honest way (0002 §4): a static-pie musl binary
+      # still prints an ld-musl line in ldd, so `ldd | grep` gates lie in
+      # both directions. No NEEDED entries is the truth. Plus a headless
+      # smoke that actually exercises tree-sitter (a .rs frame render).
+      - name: "Verify (linux: fully static + headless parse)"
+        if: matrix.docker
+        run: |
+          cd dist
+          sha256sum -c strop-*.tar.gz.sha256
+          tmp="$(mktemp -d)"
+          tar -xzf strop-*-${{ matrix.target }}.tar.gz -C "$tmp"
+          bin="$(find "$tmp" -type f -name strop | head -1)"
+          file "$bin"
+          file "$bin" | grep -q "static-pie linked"
+          ! readelf -d "$bin" | grep -q NEEDED
+          "$bin" --version
+          printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"
+          printf 'frame\n' > "$tmp/smoke.txt"
+          "$bin" --headless "$tmp/smoke.txt" "$tmp/smoke.rs" | grep -q "fn main"
+
+      - name: "Verify (macOS: system libs only + headless parse)"
+        if: "!matrix.docker"
+        run: |
+          cd dist
+          shasum -a 256 -c strop-*.tar.gz.sha256
+          tmp="$(mktemp -d)"
+          tar -xzf strop-*-${{ matrix.target }}.tar.gz -C "$tmp"
+          bin="$(find "$tmp" -type f -name strop | head -1)"
+          file "$bin"
+          otool -L "$bin"
+          ! otool -L "$bin" | grep -qvE "libSystem|libiconv|CoreFoundation|Security|SystemConfiguration"
+          "$bin" --version
+          printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"
+          printf 'frame\n' > "$tmp/smoke.txt"
+          "$bin" --headless "$tmp/smoke.txt" "$tmp/smoke.rs" | grep -q "fn main"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify all four platform tarballs are present
+        run: |
+          ls -la dist/
+          count="$(ls dist/strop-*.tar.gz | wc -l)"
+          test "$count" -eq 4 || {
+            echo "::error::expected 4 platform tarballs, got $count"; exit 1; }
+
+      # crates.io before the GitHub release: it is the irreversible
+      # artifact. The guard fails a mistagged release instead of
+      # publishing the wrong version. crates.io `strop` is taken; the
+      # package publishes as `strop-editor` (0001 §naming).
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io (dependency order)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          pkg="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "strop-editor") | .version')"
+          test "v$pkg" = "$GITHUB_REF_NAME" || {
+            echo "::error::tag $GITHUB_REF_NAME != crate version v$pkg"; exit 1; }
+          failed=""
+          for crate in strop-core strop-grammar strop-syntax strop-picker strop-editor; do
+            ok=""
+            for attempt in 1 2 3 4 5 6 7 8; do
+              if out="$(cargo publish -p "$crate" 2>&1)"; then
+                ok=1; break
+              fi
+              echo "$out" | tail -5
+              if echo "$out" | grep -q "already exists"; then
+                echo "$crate already published — skipping"; ok=1; break
+              fi
+              echo "::warning::publish of $crate failed (attempt $attempt); backing off"
+              sleep 90
+            done
+            [ -n "$ok" ] || failed="$failed $crate"
+          done
+          [ -z "$failed" ] || { echo "::error::failed to publish:$failed"; exit 1; }
+
+      # Tap bump: formula builds from the crate, cask ships the prebuilt
+      # darwin binaries. Needs HOMEBREW_TAP_TOKEN (fine-grained PAT,
+      # contents:write on stropdev/homebrew-tap) — skipped while unset.
+      - name: Bump homebrew formula + cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        if: env.HAS_TAP_TOKEN != ''
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          sha="$(curl -fsSL "https://static.crates.io/crates/strop-editor/strop-editor-$ver.crate" | sha256sum | cut -d' ' -f1)"
+          gh repo clone stropdev/homebrew-tap /tmp/tap -- --depth 1
+          mkdir -p /tmp/tap/Formula /tmp/tap/Casks
+          cat > /tmp/tap/Formula/strop.rb <<EOF
+          class Strop < Formula
+            desc "Modal text editor — see the cut before you make it"
+            homepage "https://strop.dev/"
+            url "https://static.crates.io/crates/strop-editor/strop-editor-$ver.crate"
+            sha256 "$sha"
+            license "MIT"
+
+            depends_on "rust" => :build
+
+            def install
+              system "cargo", "install", *std_cargo_args
+            end
+
+            test do
+              assert_match "strop #{version}", shell_output("#{bin}/strop --version")
+            end
+          end
+          EOF
+          sha_arm="$(cut -d' ' -f1 "dist/strop-$ver-aarch64-apple-darwin.tar.gz.sha256")"
+          sha_x64="$(cut -d' ' -f1 "dist/strop-$ver-x86_64-apple-darwin.tar.gz.sha256")"
+          cat > /tmp/tap/Casks/strop.rb <<EOF
+          cask "strop" do
+            arch arm: "aarch64", intel: "x86_64"
+
+            version "$ver"
+            sha256 arm:   "$sha_arm",
+                   intel: "$sha_x64"
+
+            url "https://github.com/stropdev/strop/releases/download/v#{version}/strop-#{version}-#{arch}-apple-darwin.tar.gz"
+            name "strop"
+            desc "Modal text editor — see the cut before you make it"
+            homepage "https://strop.dev/"
+
+            binary "strop-#{version}-#{arch}-apple-darwin/strop"
+          end
+          EOF
+          cd /tmp/tap
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/stropdev/homebrew-tap.git"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/strop.rb Casks/strop.rb
+          git commit -m "strop $ver"
+          git push
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "strop $GITHUB_REF_NAME" \
+            --generate-notes
+
+      # Redeploy the site so the version chip and demo stay current.
+      # Best-effort: a site hiccup must not fail a release.
+      - name: Ping the site to redeploy
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
+        run: |
+          gh api repos/stropdev/stropdev.github.io/dispatches \
+            -f event_type=rebuild

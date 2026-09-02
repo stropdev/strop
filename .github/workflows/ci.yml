@@ -1,0 +1,17 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The gate is the docker compose test service (AGENTS.md): fmt +
+      # clippy -D warnings + cargo test, at image-build time. One command,
+      # no host toolchain, layer-cached.
+      - name: Gate
+        run: docker compose run --build --rm test

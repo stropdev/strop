@@ -1,0 +1,115 @@
+name: demo
+
+# Re-render the demo GIF when the editor or the demo tooling changes
+# (plan 0004 §3). Tapes drive the real release binary — a demo that
+# lies is a bug.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "demos/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build binary for the tape
+        run: docker compose run --build --rm -e VERSION=0.0.0-demo release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-tarball
+          path: dist/*.tar.gz
+
+  render:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-tarball
+          path: dist
+      - name: Render demo GIF
+        run: |
+          docker run --rm -v "$PWD:/vhs" -w /vhs --entrypoint sh ghcr.io/charmbracelet/vhs -c '
+            apt-get update -qq && apt-get install -y -qq ripgrep >/dev/null \
+            && mkdir -p /tmp/proj \
+            && tar -xzf /vhs/dist/strop-*.tar.gz -C /tmp \
+            && install -m755 /tmp/strop-*/strop /usr/local/bin/strop \
+            && cp /vhs/demos/fixtures/demo.rs /tmp/proj/demo.rs \
+            && vhs /vhs/demos/demo.tape'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: demo-gif
+          path: demos/demo.gif
+          if-no-files-found: error
+
+  publish:
+    needs: render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: demo-gif
+          path: /tmp/gif
+
+      # Idempotent: an unchanged render commits nothing. main is
+      # protected → artifacts land as a PR on a fixed force-pushed
+      # branch (the gripsack pattern).
+      - name: Open artifacts PR if the render changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp /tmp/gif/demo.gif demos/demo.gif
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add demos/demo.gif
+          git diff --cached --quiet && exit 0
+          git checkout -B demo/artifacts
+          git commit -m "docs: refresh demo GIF"
+          git push -f origin demo/artifacts
+          title="chore(demo): refresh demo GIF [bot]"
+          body="Re-rendered from main@${GITHUB_SHA:0:8} by the demo workflow."
+          if gh pr view demo/artifacts --json state -q .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit demo/artifacts --title "$title" --body "$body"
+          else
+            gh pr create --base main --head demo/artifacts --title "$title" --body "$body"
+          fi
+
+      # Ship the GIF to the site and redeploy it. Needs SITE_REPO_TOKEN
+      # (fine-grained PAT, contents:write on the site repo) — non-fatal
+      # while unset.
+      - name: Publish GIF to the site repo
+        continue-on-error: true
+        env:
+          SITE_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${SITE_TOKEN}@github.com/stropdev/stropdev.github.io.git" /tmp/site
+          cp /tmp/gif/demo.gif /tmp/site/img/
+          git -C /tmp/site config user.name "github-actions[bot]"
+          git -C /tmp/site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/site add img/demo.gif
+          if git -C /tmp/site diff --cached --quiet; then
+            echo "site GIF unchanged"
+          else
+            git -C /tmp/site commit -m "img: refresh demo.gif (strop@${GITHUB_SHA:0:8})"
+            git -C /tmp/site push
+          fi
+
+      - name: Ping the site to redeploy
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
+        run: |
+          gh api repos/stropdev/stropdev.github.io/dispatches \
+            -f event_type=rebuild

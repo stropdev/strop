@@ -1,15 +1,19 @@
 [package]
-name = "strop"
+name = "strop-editor"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-strop-syntax = { path = "../strop-syntax" }
-strop-picker = { path = "../strop-picker" }
 strop-core = { path = "../strop-core" }
 strop-grammar = { path = "../strop-grammar" }
-ropey = "1"
-ratatui = "0.29"
+strop-picker = { path = "../strop-picker" }
+strop-syntax = { path = "../strop-syntax" }
 crossterm = "0.28"
+ratatui = "0.29"
+ropey = "1"
 serde_json = "1"
+
+[[bin]]
+name = "strop"
+path = "src/main.rs"

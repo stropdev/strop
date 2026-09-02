@@ -599,7 +599,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
-name = "strop"
+name = "strop-core"
+version = "0.0.0"
+dependencies = [
+ "ropey",
+]
+
+[[package]]
+name = "strop-editor"
 version = "0.0.0"
 dependencies = [
  "crossterm",
@@ -610,13 +617,6 @@ dependencies = [
  "strop-grammar",
  "strop-picker",
  "strop-syntax",
-]
-
-[[package]]
-name = "strop-core"
-version = "0.0.0"
-dependencies = [
- "ropey",
 ]
 
 [[package]]
