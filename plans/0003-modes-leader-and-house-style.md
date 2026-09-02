@@ -137,7 +137,10 @@ Applies to every pane, popup, and picker strop ever ships:
    title. **The popup is generated from the same binding tables as dispatch** — rootle
    tests this property ("coverage is the contract"); strop adopts the test: every
    dispatchable binding renders in `?`, no hand-maintained help text.
-8. Plan 0001 §4 invariants still govern everything above: one accent color, matches get
+8. **The command/search line is a floating card** (noice.nvim lineage — yes, it's a
+   plugin there; it's house style here): `:` and `/` render top-center with an accented
+   prompt, live match count on search, and own the caret. The statusline stays clean.
+9. Plan 0001 §4 invariants still govern everything above: one accent color, matches get
    accent+bold (never background blocks), no spinners before 100ms, Nerd Font optional.
 
 ## 6. Deferred

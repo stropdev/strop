@@ -881,14 +881,14 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ropey",
 ]
 
 [[package]]
 name = "strop-editor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -906,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "git2",
  "tempfile",
@@ -914,7 +914,7 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ropey",
  "strop-core",
@@ -922,14 +922,14 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ignore",
 ]
 
 [[package]]
 name = "strop-syntax"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ropey",
  "streaming-iterator",

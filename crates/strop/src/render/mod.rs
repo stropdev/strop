@@ -14,6 +14,7 @@ use strop_grammar as grammar;
 use crate::editor::{Editor, Mode};
 
 mod blame_card;
+mod cmd_card;
 mod hunk_card;
 mod picker_card;
 mod which_key;
@@ -55,7 +56,10 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
 
     render_text(editor, frame, area, text_rows);
     render_statusline(editor, frame, area);
-    place_cursor(editor, frame, area);
+    cmd_card::render_cmd_card(editor, frame);
+    if !cmd_card_active(editor) {
+        place_cursor(editor, frame, area);
+    }
     render_welcome(editor, frame);
     picker_card::render_picker(editor, frame);
     hunk_card::render_hunk_card(editor, frame);
@@ -239,7 +243,7 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
 
     let spec = if let Some(p) = editor.preview() {
         format!("{}  ", p.spec)
-    } else if !editor.pending.is_empty() {
+    } else if !editor.pending.is_empty() && !cmd_card_active(editor) {
         format!("{}  ", editor.pending.trim_end_matches('\r'))
     } else if !editor.message.is_empty() {
         format!("{}  ", editor.message)
@@ -355,4 +359,11 @@ fn render_welcome(editor: &Editor, frame: &mut Frame) {
         )),
     ];
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// True when the floating command/search card owns the caret.
+pub(crate) fn cmd_card_active(editor: &Editor) -> bool {
+    !editor.picker_open()
+        && (editor.pending.starts_with(':') || editor.pending.contains('/'))
+        && !editor.pending.is_empty()
 }
