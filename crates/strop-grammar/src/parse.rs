@@ -67,6 +67,90 @@ pub fn parse(keys: &str) -> Parse {
         return Parse::Incomplete;
     }
 
+    // Surround (sandwich lineage): ds<x> / cs<x><y> / ys<motion><x>.
+    // Aliases: b→( ) B→{ } r→[ ] a→< >.
+    if let (Some(o), rest0 @ [b's', ..]) = (op, rest) {
+        let tail = &rest0[1..];
+        let map = |c: u8| match c {
+            b'b' | b'(' | b')' => Some((b'(', b')')),
+            b'B' | b'{' | b'}' => Some((b'{', b'}')),
+            b'r' | b'[' | b']' => Some((b'[', b']')),
+            b'a' | b'<' | b'>' => Some((b'<', b'>')),
+            q @ (b'"' | b'\'' | b'`') => Some((q, q)),
+            _ => None,
+        };
+        match o {
+            Op::Delete => {
+                if tail.is_empty() {
+                    return Parse::Incomplete;
+                }
+                let Some(_) = map(tail[0]) else {
+                    return Parse::Invalid;
+                };
+                if tail.len() > 1 {
+                    return Parse::Invalid;
+                }
+                return Parse::Complete(Command {
+                    op,
+                    register,
+                    count,
+                    target: Target::SurroundDelete(tail[0]),
+                    keys: keys.into(),
+                });
+            }
+            Op::Change => {
+                if tail.len() < 2 {
+                    return Parse::Incomplete;
+                }
+                let (Some(_), Some(_)) = (map(tail[0]), map(tail[1])) else {
+                    return Parse::Invalid;
+                };
+                if tail.len() > 2 {
+                    return Parse::Invalid;
+                }
+                return Parse::Complete(Command {
+                    op,
+                    register,
+                    count,
+                    target: Target::SurroundChange {
+                        from: tail[0],
+                        to: tail[1],
+                    },
+                    keys: keys.into(),
+                });
+            }
+            Op::Yank => {
+                // ys<motion><char>: the trailing char is the surround;
+                // everything before it must parse as a complete motion/object
+                if tail.len() < 2 {
+                    return Parse::Incomplete;
+                }
+                let (motion_keys, ch) = tail.split_at(tail.len() - 1);
+                let Some(_) = map(ch[0]) else {
+                    return Parse::Incomplete;
+                };
+                let motion_str = format!("y{}", String::from_utf8_lossy(motion_keys));
+                match parse(&motion_str) {
+                    Parse::Complete(sub) => {
+                        return Parse::Complete(Command {
+                            op,
+                            register,
+                            count,
+                            target: Target::SurroundAdd {
+                                ch: ch[0],
+                                inner: Box::new(sub.target),
+                            },
+                            keys: keys.into(),
+                        });
+                    }
+                    Parse::Incomplete => return Parse::Incomplete,
+                    Parse::Invalid => return Parse::Invalid,
+                }
+            }
+            _ => {}
+        }
+    }
+
     // Doubled operator: dd / yy / cc (linewise).
     if let (Some(o), &[b]) = (op, rest) {
         let matches = matches!(

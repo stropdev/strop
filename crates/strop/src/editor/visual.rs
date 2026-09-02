@@ -47,6 +47,28 @@ impl Editor {
                 }
             }
             Key::Char(c) => {
+                if self.pending == "S" {
+                    // visual S<char>: wrap the selection (sandwich)
+                    self.pending.clear();
+                    if let Some(range) = self.visual_range() {
+                        let pair = match c {
+                            'b' | '(' | ')' => ('(', ')'),
+                            'B' | '{' | '}' => ('{', '}'),
+                            'r' | '[' | ']' => ('[', ']'),
+                            'a' | '<' | '>' => ('<', '>'),
+                            q => (q, q),
+                        };
+                        self.tx_begin();
+                        self.buf_mut().insert(range.end, &pair.1.to_string());
+                        self.buf_mut().insert(range.start, &pair.0.to_string());
+                        self.tx_commit();
+                        self.mode = Mode::Normal;
+                        self.flash(Range::charwise(range.start, range.end + 2));
+                        self.last_cmd_keys = format!("vS{c}"); // replay is visual-mode replay; approximated
+                        self.last_insert = None;
+                    }
+                    return;
+                }
                 self.pending.push(c);
                 if let Parse::Complete(cmd) = grammar::parse(&self.pending) {
                     if cmd.op.is_none() {

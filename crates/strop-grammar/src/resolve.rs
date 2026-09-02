@@ -190,6 +190,18 @@ fn inner_word(buf: &Buffer, pos: usize) -> Option<(usize, usize)> {
 
 /// Search forward for `pat` (prototype: plain substring; 0001 §2.5's
 /// transpiled regex lands with the real search layer).
+/// Map a surround char to its pair (sandwich aliases b/B/r/a).
+fn surround_pair(ch: u8) -> Option<(u8, u8)> {
+    Some(match ch {
+        b'b' | b'(' | b')' => (b'(', b')'),
+        b'B' | b'{' | b'}' => (b'{', b'}'),
+        b'r' | b'[' | b']' => (b'[', b']'),
+        b'a' | b'<' | b'>' => (b'<', b'>'),
+        q @ (b'"' | b'\'' | b'`') => (q, q),
+        _ => return None,
+    })
+}
+
 pub fn search_forward(buf: &Buffer, from: usize, pat: &str) -> Option<usize> {
     let text = buf.rope.byte_slice(from.min(buf.len_bytes())..).to_string();
     text.find(pat).map(|i| from + i)
@@ -264,6 +276,35 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 }
             };
             (Range::charwise(s, e), true, spec)
+        }
+        Target::SurroundDelete(ch) | Target::SurroundChange { from: ch, .. } => {
+            let (open, close) = surround_pair(*ch)?;
+            let (o, c) = if open == close {
+                quote_pair(buf, cursor, open)?
+            } else {
+                bracket_pair(buf, cursor, open, close)?
+            };
+            (
+                Range::charwise(o, c + 1),
+                true,
+                format!("surround {}", *ch as char),
+            )
+        }
+        Target::SurroundAdd { ch, inner } => {
+            // resolve the inner motion as if yanked, then wrap its range
+            let sub = Command {
+                op: Some(Op::Yank),
+                register: None,
+                count: 1,
+                target: (**inner).clone(),
+                keys: String::new(),
+            };
+            let r = resolve(buf, cursor, &sub)?;
+            (
+                r.range,
+                r.inclusive,
+                format!("surround with {}", *ch as char),
+            )
         }
         Target::Motion(m) => match m {
             Motion::Left | Motion::Right => {

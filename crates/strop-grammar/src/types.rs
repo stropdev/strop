@@ -71,6 +71,18 @@ pub enum Target {
     },
     /// dd / yy / cc, or operator + j/k: whole lines.
     Linewise,
+    /// ds" — delete the surrounding pair.
+    SurroundDelete(u8),
+    /// cs"' — change surrounding pair from → to.
+    SurroundChange {
+        from: u8,
+        to: u8,
+    },
+    /// ys<motion><char> — wrap the motion's target. Visual S<char>.
+    SurroundAdd {
+        ch: u8,
+        inner: Box<Target>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

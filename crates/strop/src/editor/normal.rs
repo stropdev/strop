@@ -104,6 +104,59 @@ impl Editor {
         }
     }
 
+    /// ds" / cs"' / ysiw" (sandwich lineage). Returns Some when the
+    /// command was a surround op and got handled.
+    fn execute_surround(&mut self, cmd: &Command) -> Option<()> {
+        let r = grammar::resolve(self.buf(), self.cursor, cmd)?;
+        let pair = |ch: u8| match ch {
+            b'b' | b'(' | b')' => (b'(', b')'),
+            b'B' | b'{' | b'}' => (b'{', b'}'),
+            b'r' | b'[' | b']' => (b'[', b']'),
+            b'a' | b'<' | b'>' => (b'<', b'>'),
+            q => (q, q),
+        };
+        self.tx_begin();
+        match &cmd.target {
+            grammar::Target::SurroundDelete(_) => {
+                // close first so the open's offset stays valid
+                self.buf_mut()
+                    .delete(Range::charwise(r.range.end - 1, r.range.end));
+                self.buf_mut()
+                    .delete(Range::charwise(r.range.start, r.range.start + 1));
+                self.cursor = r.range.start;
+            }
+            grammar::Target::SurroundChange { to, .. } => {
+                let (o, c) = pair(*to);
+                self.buf_mut()
+                    .delete(Range::charwise(r.range.end - 1, r.range.end));
+                self.buf_mut()
+                    .insert(r.range.end - 1, &(c as char).to_string());
+                self.buf_mut()
+                    .delete(Range::charwise(r.range.start, r.range.start + 1));
+                self.buf_mut()
+                    .insert(r.range.start, &(o as char).to_string());
+                self.cursor = r.range.start;
+            }
+            grammar::Target::SurroundAdd { ch, .. } => {
+                let (o, c) = pair(*ch);
+                self.buf_mut().insert(r.range.end, &(c as char).to_string());
+                self.buf_mut()
+                    .insert(r.range.start, &(o as char).to_string());
+                self.cursor = r.range.start + 1;
+            }
+            _ => {
+                self.tx_commit();
+                return None;
+            }
+        }
+        self.tx_commit();
+        self.clamp_cursor();
+        self.flash(Range::charwise(self.cursor, self.cursor));
+        self.last_cmd_keys = cmd.keys.clone();
+        self.last_insert = None;
+        Some(())
+    }
+
     /// Alias keys (D → d$, …): execute the expansion, remember the alias
     /// so dot-repeat replays through the same path.
     fn alias(&mut self, alias_key: &str, expansion: &str) {
@@ -258,6 +311,10 @@ impl Editor {
     }
 
     fn execute(&mut self, cmd: &Command) {
+        // surround targets execute as pair edits, not operator ranges
+        if let Some(()) = self.execute_surround(cmd) {
+            return;
+        }
         let Some(r) = grammar::resolve(self.buf(), self.cursor, cmd) else {
             self.message = "no target".into();
             return;
@@ -398,7 +455,10 @@ impl Editor {
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline.as_str(), ""));
         match cmd {
             "w" => match self.buf_mut().save() {
-                Ok(()) => self.message = "written".into(),
+                Ok(()) => {
+                    crate::session::save(self);
+                    self.message = "written".into();
+                }
                 Err(e) => self.message = format!("write failed: {e}"),
             },
             "q" => {

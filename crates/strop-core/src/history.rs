@@ -7,7 +7,7 @@
 
 /// One buffer mutation as seen by history. Both directions are stored so
 /// redo replays exactly what undo undid — no re-derivation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Edit {
     pub at: usize,
     /// Text inserted (for Insert) or removed (for Delete) by this edit.
@@ -15,13 +15,13 @@ pub struct Edit {
     pub kind: EditKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EditKind {
     Insert,
     Delete,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Revision {
     parent: usize,
     last_child: Option<usize>,
@@ -31,8 +31,9 @@ struct Revision {
     redo: Vec<Edit>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct History {
+    /// Depth cap (0001 §3: full trees per project bloat fast).
     revisions: Vec<Revision>,
     current: usize,
     /// Open transaction: (undo ops, redo ops), recorded in apply order.
@@ -128,6 +129,40 @@ impl History {
 
     pub fn depth(&self) -> usize {
         self.revisions.len()
+    }
+
+    /// Cap the tree at `cap` revisions: keep the ancestor chain of
+    /// `current` (branches past it fall off — in-memory trees keep
+    /// branches; the cap is about bounded state).
+    pub fn cap(&mut self, cap: usize) {
+        if self.revisions.len() <= cap {
+            return;
+        }
+        // collect the ancestor chain from current to root
+        let mut chain = Vec::new();
+        let mut at = self.current;
+        loop {
+            chain.push(at);
+            if at == 0 {
+                break;
+            }
+            at = self.revisions[at].parent;
+        }
+        chain.reverse();
+        if chain.len() > cap {
+            chain = chain[chain.len() - cap..].to_vec();
+        }
+        let mut remap = std::collections::HashMap::new();
+        let mut new_revisions = Vec::with_capacity(chain.len());
+        for (new_idx, &old_idx) in chain.iter().enumerate() {
+            remap.insert(old_idx, new_idx);
+            let mut rev = self.revisions[old_idx].clone();
+            rev.parent = if new_idx == 0 { 0 } else { new_idx - 1 };
+            rev.last_child = rev.last_child.and_then(|c| remap.get(&c).copied());
+            new_revisions.push(rev);
+        }
+        self.revisions = new_revisions;
+        self.current = *remap.get(&self.current).unwrap_or(&0);
     }
 }
 

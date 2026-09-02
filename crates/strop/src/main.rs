@@ -5,6 +5,7 @@ mod config;
 mod editor;
 mod headless;
 mod render;
+mod session;
 mod update;
 
 use std::io::{self, Write};
@@ -118,6 +119,11 @@ fn main() {
     editor.config = cfg;
     if let Some(e) = config_err {
         editor.message = e;
+    }
+    // per-project session: restore where we left off (0001 pillar 4) —
+    // explicit file args beat the session
+    if path.is_none() {
+        session::restore(&mut editor);
     }
     tui(editor);
 }
