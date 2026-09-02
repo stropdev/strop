@@ -55,9 +55,19 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     render_text(editor, frame, area, text_rows);
     render_statusline(editor, frame, area);
     place_cursor(editor, frame, area);
+    render_welcome(editor, frame);
     picker_card::render_picker(editor, frame);
     hunk_card::render_hunk_card(editor, frame);
     which_key::render_which_key(editor, frame);
+}
+
+/// Mode chip colors (0001 §4: mode = accent color change, not bars).
+pub(crate) fn mode_color(mode: Mode) -> Color {
+    match mode {
+        Mode::Normal => ACCENT,
+        Mode::Insert => Color::Rgb(0xa9, 0xc4, 0x7c), // green
+        Mode::Visual | Mode::VisualLine => Color::Rgb(0xc5, 0x8a, 0xe8), // violet
+    }
 }
 
 /// Pull a color toward the base for the picker's dimmed backdrop.
@@ -115,17 +125,20 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
         } else {
             Style::default().fg(MUTED)
         };
-        let sign = editor.sign_at(line_idx + 1);
-        let (sign_ch, sign_color) = match sign {
-            Some('+') => ("+", Color::Rgb(0xa9, 0xc4, 0x7c)),
-            Some('~') => ("~", ACCENT),
-            Some('-') => ("-", Color::Rgb(0xe8, 0x67, 0x7a)),
+        // Helix-grade gutter: a colored ▎ bar in the leftmost column —
+        // green add, amber change, red delete (0001 pillar 3.1)
+        let (bar, bar_color) = match editor.sign_at(line_idx + 1) {
+            Some('+') => ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
+            Some('~') => ("▎", ACCENT),
+            Some('-') => ("▎", Color::Rgb(0xe8, 0x67, 0x7a)),
             _ => (" ", MUTED),
         };
         let mut spans = vec![
-            Span::styled(format!("{:>3}", line_idx + 1), num_style),
-            Span::styled(sign_ch, Style::default().fg(sign_color)),
-            Span::raw(" "),
+            Span::styled(
+                bar,
+                Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!("{:>3} ", line_idx + 1), num_style),
         ];
 
         let mut syn_idx = syn_spans.partition_point(|s| s.end <= start);
@@ -211,14 +224,15 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     // other's cells (the mode chip went base-on-base and vanished).
     let chip = format!(" {mode} ");
     let name = format!(" {file}{dirty}");
-    let used = chip.len() + name.len() + spec.len() + pos.len();
+    let used = 1 + chip.len() + name.len() + spec.len() + pos.len();
     let pad = (area.width as usize).saturating_sub(used);
     let row = Line::from(vec![
+        Span::styled("▌", Style::default().fg(mode_color(editor.mode))),
         Span::styled(
             chip,
             Style::default()
                 .fg(BASE)
-                .bg(ACCENT)
+                .bg(mode_color(editor.mode))
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(name, Style::default().fg(MUTED)),
@@ -242,4 +256,76 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
         frame.set_cursor_position((col, row));
     }
     let _ = Mode::Normal; // cursor shape per mode lands with config (0005)
+}
+
+/// First-launch card: brand + the three keys that matter. Only on an
+/// empty scratch buffer — once you're editing, it never intrudes.
+fn render_welcome(editor: &Editor, frame: &mut Frame) {
+    if editor.buf().path.is_some() || editor.buf().len_bytes() > 0 || editor.picker_open() {
+        return;
+    }
+    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+    let area = frame.area();
+    let (w, h) = (58u16, 9u16);
+    if area.width < w + 4 || area.height < h + 4 {
+        return;
+    }
+    let card = Rect {
+        x: (area.width - w) / 2,
+        y: (area.height - h) / 3,
+        width: w,
+        height: h,
+    };
+    frame.render_widget(Clear, card);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(MUTED))
+        .style(Style::default().bg(BASE));
+    let inner = block.inner(card);
+    frame.render_widget(block, card);
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            " strop",
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " see the cut before you make it.",
+            Style::default().fg(ACCENT),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                " space ",
+                Style::default()
+                    .fg(ACCENT)
+                    .bg(SELECT_BG)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" everything · ", Style::default().fg(MUTED)),
+            Span::styled(
+                " ? ",
+                Style::default()
+                    .fg(ACCENT)
+                    .bg(SELECT_BG)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" keybindings · ", Style::default().fg(MUTED)),
+            Span::styled(
+                " :w ",
+                Style::default()
+                    .fg(ACCENT)
+                    .bg(SELECT_BG)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" save", Style::default().fg(MUTED)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  git signs paint the gutter · ci[ previews the cut",
+            Style::default().fg(MUTED),
+        )),
+    ];
+    frame.render_widget(Paragraph::new(lines), inner);
 }

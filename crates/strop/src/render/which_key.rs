@@ -20,7 +20,7 @@ const SPACE_HINTS: &[(&str, &str, bool)] = &[
     ("j", "jumplist", false),
     ("s", "symbols", false),
     ("u", "undo tree", false),
-    ("g", "git…", false),
+    ("g", "git…", true),
 ];
 
 const GIT_HINTS: &[(&str, &str, bool)] = &[
@@ -84,8 +84,9 @@ fn render_hints(frame: &mut Frame, title: &str, hints: &[(&str, &str, bool)]) {
             };
             let suffix = if *available { "" } else { "  (soon)" };
             Line::from(vec![
-                Span::styled(format!("  {key}  "), key_style),
-                Span::styled(format!("{desc}{suffix}"), desc_style),
+                Span::raw(" "),
+                Span::styled(format!(" {key} "), key_style.bg(super::SELECT_BG)),
+                Span::styled(format!("  {desc}{suffix}"), desc_style),
             ])
         })
         .collect();

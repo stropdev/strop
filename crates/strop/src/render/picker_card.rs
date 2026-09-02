@@ -59,7 +59,11 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     };
 
     let hint = " enter open · esc close · ↑↓/tab move ";
-    let count = format!(" {} ", total);
+    let count = if streaming {
+        format!(" {total}… ")
+    } else {
+        format!(" {total} ")
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -71,8 +75,16 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         ))
         .title_bottom(Span::styled(hint, Style::default().fg(MUTED)))
         .title_top(Line::from(Span::styled(count, Style::default().fg(MUTED))).right_aligned());
+    // 1-cell inner padding (0001 §4: floating panes breathe)
     let inner = block.inner(card);
-    frame.render_widget(block, card);
+    let inner = Rect {
+        x: inner.x + 1,
+        y: inner.y,
+        width: inner.width.saturating_sub(2),
+        height: inner.height,
+    };
+    frame.render_widget(&block, card);
+    frame.render_widget(&block, card);
 
     // input row + content split
     let rows = Layout::default()
@@ -85,6 +97,19 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         Span::styled("▏", Style::default().fg(ACCENT)),
     ]);
     frame.render_widget(Paragraph::new(prompt), rows[0]);
+    // section definition: a rule separates where you type from results
+    let rule_y = rows[0].y + 1;
+    if rule_y < rows[1].y {
+        let rule: String = "─".repeat(rows[0].width as usize);
+        frame.render_widget(
+            Paragraph::new(rule).style(Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d))),
+            Rect {
+                y: rule_y,
+                height: 1,
+                ..rows[0]
+            },
+        );
+    }
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)
@@ -92,6 +117,23 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         .split(rows[1]);
 
     render_results(frame, cols[0], &rows_data, selected);
+    // border-column scrollbar for the results list (0003 §5.5)
+    if rows_data.len() > cols[0].height as usize && !rows_data.is_empty() {
+        let track_x = cols[0].x + cols[0].width - 1;
+        let track_h = cols[0].height as usize;
+        let frac = selected as f32 / rows_data.len().max(1) as f32;
+        let thumb = ((track_h - 1) as f32 * frac) as usize;
+        for y in 0..track_h {
+            let cell = &mut frame.buffer_mut()[(track_x, cols[0].y + y as u16)];
+            if y == thumb {
+                cell.set_symbol("▮");
+                cell.set_fg(ACCENT);
+            } else {
+                cell.set_symbol("│");
+                cell.set_fg(Color::Rgb(0x2a, 0x2c, 0x3a));
+            }
+        }
+    }
     render_preview(editor, frame, cols[1]);
     let _ = streaming; // spinner lands with the 100ms rule (0001 §4)
 
@@ -163,7 +205,7 @@ fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::LEFT)
-        .border_style(Style::default().fg(Color::Rgb(0x2a, 0x2c, 0x3a)))
+        .border_style(Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d)))
         .style(Style::default().bg(BASE))
         .title(Span::styled(
             format!(" {title} "),

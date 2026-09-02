@@ -69,6 +69,15 @@ fn tui(mut editor: Editor) {
         if editor.should_quit {
             break;
         }
+        use crossterm::cursor::SetCursorStyle;
+        use crossterm::ExecutableCommand;
+        let mut out = io::stdout();
+        let shape = match editor.mode {
+            editor::Mode::Insert => SetCursorStyle::SteadyBar,
+            editor::Mode::Visual | editor::Mode::VisualLine => SetCursorStyle::SteadyUnderScore,
+            editor::Mode::Normal => SetCursorStyle::SteadyBlock,
+        };
+        let _ = out.execute(shape);
         terminal.draw(|f| render::render(&mut editor, f)).unwrap();
         // 16ms cap so the flash overlay expires on time; input-to-echo
         // stays under one frame (0001 §4).

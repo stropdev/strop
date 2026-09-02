@@ -46,7 +46,13 @@ pub fn render_hunk_card(editor: &Editor, frame: &mut Frame) {
             Style::default().fg(MUTED),
         ));
     let inner = block.inner(card);
-    frame.render_widget(block, card);
+    let inner = Rect {
+        x: inner.x + 1,
+        y: inner.y,
+        width: inner.width.saturating_sub(2),
+        height: inner.height,
+    };
+    frame.render_widget(&block, card);
 
     let lines: Vec<Line> = hunk
         .lines
