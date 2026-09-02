@@ -125,7 +125,7 @@ jobs:
           test "v$pkg" = "$GITHUB_REF_NAME" || {
             echo "::error::tag $GITHUB_REF_NAME != crate version v$pkg"; exit 1; }
           failed=""
-          for crate in strop-core strop-grammar strop-syntax strop-picker strop-editor; do
+          for crate in strop-core strop-grammar strop-syntax strop-picker strop-git strop-editor; do
             ok=""
             for attempt in 1 2 3 4 5 6 7 8; do
               if out="$(cargo publish -p "$crate" 2>&1)"; then
