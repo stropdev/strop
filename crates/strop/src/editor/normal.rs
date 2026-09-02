@@ -21,7 +21,7 @@ impl Editor {
                 self.run_motion(&c.to_string())
             }
             'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | ':' | '"' | 'r' | '>' | '<'
-            | ' ' => self.pending.push(c),
+            | ' ' | '[' | ']' => self.pending.push(c),
             // aliases — dot-repeat replays the alias key itself
             'D' => self.alias("D", "d$"),
             'C' => self.alias("C", "c$"),
@@ -117,11 +117,25 @@ impl Editor {
                         'f' => self.open_picker(strop_picker::Kind::Files),
                         'b' => self.open_picker(strop_picker::Kind::Buffers),
                         '/' => self.open_picker(strop_picker::Kind::Grep),
+                        'g' => {
+                            self.pending = " g".into();
+                        }
                         _ => {
                             self.message =
-                                "Space: f files · b buffers · / grep (g, u land M2/M4)".into()
+                                "Space: f files · b buffers · / grep · g git (j, s, u land M4)"
+                                    .into()
                         }
                     };
+                }
+                // git namespace (0003 §4): working-surface verbs (M2)
+                if self.pending == " g" {
+                    return self.feed_git_pending(c);
+                }
+                // hunk motions (0001 pillar 3.1)
+                if (self.pending == "]" || self.pending == "[") && c == 'c' {
+                    let forward = self.pending == "]";
+                    self.pending.clear();
+                    return self.jump_hunk(forward);
                 }
                 // r<char>: replace the char under the cursor, stay normal
                 if self.pending == "r" {

@@ -23,13 +23,33 @@ const SPACE_HINTS: &[(&str, &str, bool)] = &[
     ("g", "git…", false),
 ];
 
+const GIT_HINTS: &[(&str, &str, bool)] = &[
+    ("u", "undo hunk (reset to HEAD)", true),
+    ("s", "stage hunk", true),
+    ("p", "preview hunk", true),
+    ("l", "commit browser", false),
+    ("h", "file history", false),
+    ("b", "blame", false),
+    ("y", "copy permalink", false),
+];
+
 pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
-    if editor.pending != " " || editor.picker_open() {
+    if editor.picker_open() {
         return;
     }
+    if editor.pending == " g" {
+        return render_hints(frame, " space g ", GIT_HINTS);
+    }
+    if editor.pending != " " {
+        return;
+    }
+    render_hints(frame, " space ", SPACE_HINTS);
+}
+
+fn render_hints(frame: &mut Frame, title: &str, hints: &[(&str, &str, bool)]) {
     let area = frame.area();
     let width = 40u16.min(area.width.saturating_sub(4));
-    let height = (SPACE_HINTS.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let height = (hints.len() as u16 + 2).min(area.height.saturating_sub(2));
     let card = Rect {
         x: area.width.saturating_sub(width + 2),
         y: area.height.saturating_sub(height + 2),
@@ -43,13 +63,13 @@ pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
         .border_style(Style::default().fg(MUTED))
         .style(Style::default().bg(BASE))
         .title(Span::styled(
-            " space ",
+            title,
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(card);
     frame.render_widget(block, card);
 
-    let lines: Vec<Line> = SPACE_HINTS
+    let lines: Vec<Line> = hints
         .iter()
         .map(|(key, desc, available)| {
             let key_style = if *available {

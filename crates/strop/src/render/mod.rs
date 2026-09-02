@@ -13,6 +13,7 @@ use strop_grammar as grammar;
 
 use crate::editor::{Editor, Mode};
 
+mod hunk_card;
 mod picker_card;
 mod which_key;
 
@@ -49,11 +50,13 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     let area = frame.area();
     let text_rows = area.height.saturating_sub(1) as usize;
     editor.scroll_to_cursor(text_rows);
+    editor.refresh_hunks();
 
     render_text(editor, frame, area, text_rows);
     render_statusline(editor, frame, area);
     place_cursor(editor, frame, area);
     picker_card::render_picker(editor, frame);
+    hunk_card::render_hunk_card(editor, frame);
     which_key::render_which_key(editor, frame);
 }
 
@@ -99,7 +102,7 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
 
     for row in 0..text_rows {
         let line_idx = editor.view_top + row;
-        if line_idx >= editor.buf().len_lines() {
+        if line_idx > editor.buf().last_content_line() {
             lines.push(Line::from(Span::styled("~", Style::default().fg(MUTED))));
             continue;
         }
@@ -112,7 +115,18 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
         } else {
             Style::default().fg(MUTED)
         };
-        let mut spans = vec![Span::styled(format!("{:>4} ", line_idx + 1), num_style)];
+        let sign = editor.sign_at(line_idx + 1);
+        let (sign_ch, sign_color) = match sign {
+            Some('+') => ("+", Color::Rgb(0xa9, 0xc4, 0x7c)),
+            Some('~') => ("~", ACCENT),
+            Some('-') => ("-", Color::Rgb(0xe8, 0x67, 0x7a)),
+            _ => (" ", MUTED),
+        };
+        let mut spans = vec![
+            Span::styled(format!("{:>3}", line_idx + 1), num_style),
+            Span::styled(sign_ch, Style::default().fg(sign_color)),
+            Span::raw(" "),
+        ];
 
         let mut syn_idx = syn_spans.partition_point(|s| s.end <= start);
         for (i, ch) in text.chars().enumerate() {

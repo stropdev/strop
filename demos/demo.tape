@@ -64,3 +64,36 @@ Sleep 1s
 Type ":q!"
 Enter
 Sleep 400ms
+
+# git working surface: gutter signs, hunk nav, hunk card, undo
+Type "cd /tmp/proj && git init -q && git add . && git -c user.email=t@t.t -c user.name=t commit -qm init"
+Enter
+Sleep 1.2s
+Type "strop demo.rs"
+Enter
+Sleep 1.2s
+Type "Go"
+Sleep 300ms
+Type "fn strop() {}"
+Escape
+Sleep 1.2s
+Type "gg"
+Sleep 400ms
+Type "]c"
+Sleep 1s
+Space
+Sleep 300ms
+Type "g"
+Sleep 300ms
+Type "p"
+Sleep 1.6s
+Type "x"
+Sleep 400ms
+Space
+Type "g"
+Type "u"
+Sleep 1.2s
+
+Type ":q!"
+Enter
+Sleep 400ms

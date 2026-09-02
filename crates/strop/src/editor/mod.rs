@@ -3,6 +3,7 @@
 //!
 //! Mode handlers live beside this file: `normal`, `visual`, `insert`.
 
+mod git;
 mod insert;
 mod normal;
 mod picker;
@@ -73,6 +74,12 @@ pub struct Editor {
     pub mru: Vec<usize>,
     /// Picker preview file cache.
     pub previews: Previews,
+    /// Git working surface state (M2).
+    pub git: Option<strop_git::Repo>,
+    pub hunks: Vec<strop_git::Hunk>,
+    pub hunks_epoch: u64,
+    /// Hunk preview card (`Space g p`).
+    pub hunk_preview: Option<strop_git::Hunk>,
     pub(crate) last_cmd_keys: String,
     pub(crate) last_insert: Option<String>,
     pub(crate) recording_insert: Option<String>,
@@ -94,7 +101,7 @@ impl Editor {
                     .unwrap_or_else(|| base.clone())
             })
             .unwrap_or(base);
-        Self {
+        let mut e = Self {
             buffers: vec![buf],
             highlighter,
             current: 0,
@@ -114,7 +121,13 @@ impl Editor {
             cwd,
             mru: vec![0],
             previews: HashMap::new(),
-        }
+            git: None,
+            hunks: Vec::new(),
+            hunks_epoch: u64::MAX,
+            hunk_preview: None,
+        };
+        e.discover_git();
+        e
     }
 
     /// Mark a buffer most-recently-used.
@@ -133,6 +146,20 @@ impl Editor {
 
     /// Open a file into a new buffer and switch to it (`:e`).
     pub fn open_buffer(&mut self, path: &str) -> std::io::Result<()> {
+        // vim semantics: :e on an open file switches to its buffer
+        let canon = std::path::Path::new(path)
+            .canonicalize()
+            .unwrap_or_else(|_| self.cwd.join(path));
+        if let Some(i) = self.buffers.iter().position(|b| {
+            b.path
+                .as_deref()
+                .and_then(|p| std::path::Path::new(p).canonicalize().ok())
+                == Some(canon.clone())
+        }) {
+            self.current = i;
+            self.touch_mru(i);
+            return Ok(());
+        }
         let buf = Buffer::open(path)?;
         self.highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
         self.buffers.push(buf);
@@ -140,6 +167,7 @@ impl Editor {
         self.touch_mru(self.current);
         self.cursor = 0;
         self.view_top = 0;
+        self.discover_git();
         Ok(())
     }
 
@@ -166,6 +194,7 @@ impl Editor {
             self.highlighter = self.buf().path.as_deref().and_then(Highlighter::for_path);
             self.cursor = 0;
             self.view_top = 0;
+            self.discover_git();
         }
         true
     }
@@ -206,6 +235,10 @@ impl Editor {
 
     pub fn feed(&mut self, key: Key) {
         self.message.clear();
+        if self.hunk_preview.is_some() {
+            self.hunk_preview = None;
+            return; // first key dismisses the card
+        }
         if self.picker_open() {
             return self.feed_picker(key);
         }

@@ -8,6 +8,7 @@ license.workspace = true
 strop-core = { path = "../strop-core" }
 strop-grammar = { path = "../strop-grammar" }
 strop-picker = { path = "../strop-picker" }
+strop-git = { path = "../strop-git" }
 strop-syntax = { path = "../strop-syntax" }
 crossterm = "0.28"
 ratatui = "0.29"
@@ -17,3 +18,6 @@ serde_json = "1"
 [[bin]]
 name = "strop"
 path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3"

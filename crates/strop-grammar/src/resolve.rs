@@ -521,7 +521,7 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
             let line = if matches!(cmd.target, Target::Motion(Motion::FirstLine)) {
                 cmd.count - 1
             } else {
-                buf.len_lines() - 1
+                buf.last_content_line()
             };
             buf.line_start(line.min(buf.len_lines() - 1))
         }

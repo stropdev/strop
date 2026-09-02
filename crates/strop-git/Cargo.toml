@@ -1,0 +1,13 @@
+[package]
+name = "strop-git"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# default-features = false: no openssl/ssh/https (0002 §2.3) — libgit2
+# does local repo work only; network git is shell `git`'s job.
+git2 = { version = "0.20", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"

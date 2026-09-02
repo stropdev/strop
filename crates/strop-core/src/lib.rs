@@ -8,6 +8,8 @@ pub struct Buffer {
     pub rope: Rope,
     pub path: Option<String>,
     pub dirty: bool,
+    /// Monotonic edit counter; async readers (git gutter) diff lazily.
+    pub epoch: u64,
 }
 
 /// A half-open byte range `[start, end)` plus how vim thinks about it.
@@ -51,6 +53,7 @@ impl Buffer {
             rope: Rope::from_str(text),
             path: None,
             dirty: false,
+            epoch: 0,
         }
     }
 
@@ -60,6 +63,7 @@ impl Buffer {
             rope: Rope::from_str(&text),
             path: Some(path.to_string()),
             dirty: false,
+            epoch: 0,
         })
     }
 
@@ -76,6 +80,16 @@ impl Buffer {
     }
     pub fn len_lines(&self) -> usize {
         self.rope.len_lines()
+    }
+
+    /// Last *content* line index — a trailing newline's phantom empty
+    /// line doesn't count (vim's G lands on real text).
+    pub fn last_content_line(&self) -> usize {
+        let mut l = self.len_lines().saturating_sub(1);
+        if self.len_bytes() > 0 && self.byte(self.len_bytes() - 1) == b'\n' && l > 0 {
+            l -= 1;
+        }
+        l
     }
 
     /// Byte offset of the first char of `line` (0-indexed).
@@ -140,12 +154,14 @@ impl Buffer {
         let text = self.slice_string(range);
         self.rope.remove(range.start..range.end);
         self.dirty = true;
+        self.epoch += 1;
         text
     }
 
     pub fn insert(&mut self, at: usize, text: &str) {
         self.rope.insert(self.clamp_boundary(at), text);
         self.dirty = true;
+        self.epoch += 1;
     }
 
     pub fn line_text(&self, line: usize) -> String {
