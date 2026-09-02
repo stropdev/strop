@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 
 use streaming_iterator::StreamingIterator;
+pub mod languages;
+
 use tree_sitter::{Parser, Query, QueryCursor};
 
 /// Semantic classes the renderer maps to palette colors. Kept small and
@@ -66,18 +68,13 @@ pub struct Highlighter {
 
 impl Highlighter {
     pub fn for_path(path: &str) -> Option<Self> {
-        if !path.ends_with(".rs") {
-            return None;
-        }
+        let ext = std::path::Path::new(path)
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))?;
+        let spec = languages::for_extension(&ext)?;
         let mut parser = Parser::new();
-        parser
-            .set_language(&tree_sitter_rust::LANGUAGE.into())
-            .ok()?;
-        let query = Query::new(
-            &tree_sitter_rust::LANGUAGE.into(),
-            tree_sitter_rust::HIGHLIGHTS_QUERY,
-        )
-        .ok()?;
+        parser.set_language(&spec.language).ok()?;
+        let query = Query::new(&spec.language, spec.highlights).ok()?;
         let classes = query
             .capture_names()
             .iter()
@@ -147,5 +144,46 @@ impl Highlighter {
         let lo = self.spans.partition_point(|s| s.end <= first_byte);
         let hi = self.spans.partition_point(|s| s.start < last_byte);
         self.spans[lo..hi.max(lo)].to_vec()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn classes_for(path: &str, src: &str) -> Vec<Class> {
+        let mut hl = Highlighter::for_path(path).expect("language");
+        let rope = ropey::Rope::from_str(src);
+        hl.highlight(&rope, 0, src.len())
+            .iter()
+            .map(|s| s.class)
+            .collect()
+    }
+
+    #[test]
+    fn rust_keywords_and_strings() {
+        let classes = classes_for("x.rs", "fn main() { let s = \"hi\"; }\n");
+        assert!(classes.contains(&Class::Keyword), "{classes:?}");
+        assert!(classes.contains(&Class::String), "{classes:?}");
+    }
+
+    #[test]
+    fn cpp_highlights_with_cxx_scanner() {
+        // the 0002 §5 gate: C++ grammar's scanner is C++ — a broken
+        // static-libstdc++ link fails here, per-PR, not at a user's file.
+        // NB: the bundled cpp query is sparse (13 captures); richer
+        // queries are runtime-override data (0001 §5.11).
+        let classes = classes_for("x.cpp", "auto edge = hone(blade);\n");
+        assert!(!classes.is_empty(), "cpp grammar produced no spans");
+        assert!(classes.contains(&Class::Type), "{classes:?}"); // auto → @type
+    }
+
+    #[test]
+    fn python_and_go_and_ts() {
+        assert!(classes_for("x.py", "def f(x):\n    return x\n").contains(&Class::Keyword));
+        assert!(classes_for("x.go", "package main\nfunc main() {}\n").contains(&Class::Keyword));
+        assert!(!classes_for("x.ts", "const x: number = 1;\n").is_empty());
+        assert!(!classes_for("x.json", "{\"a\": 1}\n").is_empty());
+        assert!(!classes_for("x.sh", "#!/bin/sh\necho hi\n").is_empty());
     }
 }
