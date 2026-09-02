@@ -88,6 +88,7 @@ fn tui(mut editor: Editor) {
         };
         if !event::poll(timeout).unwrap() {
             editor.drain_picker();
+            editor.drain_git_jobs();
             continue;
         }
         let Event::Key(ev) = event::read().unwrap() else {
@@ -111,8 +112,44 @@ fn tui(mut editor: Editor) {
         };
         editor.feed(key);
         editor.drain_picker();
+        editor.drain_git_jobs();
+        if let Some(payload) = editor.osc52.take() {
+            // OSC52: system clipboard over the escape sequence — the
+            // ssh-into-a-server answer (0001 pillar 4)
+            let b64 = base64_encode(payload.as_bytes());
+            let mut out = io::stdout();
+            let _ = write!(out, "\x1b]52;c;{b64}\x07");
+            let _ = out.flush();
+        }
     }
 
     disable_raw_mode().unwrap();
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen).unwrap();
+}
+
+/// Minimal base64 for OSC52 (no dep for a twenty-line function).
+fn base64_encode(data: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 {
+            T[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
 }

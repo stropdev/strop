@@ -10,6 +10,11 @@ pub struct Buffer {
     pub dirty: bool,
     /// Monotonic edit counter; async readers (git gutter) diff lazily.
     pub epoch: u64,
+    /// Read-only views (git surfaces): motions/yank work, edits refuse.
+    pub readonly: bool,
+    /// Display name for virtual buffers (statusline shows "[scratch]"
+    /// otherwise): "git log", "commit 1a2b3c", …
+    pub name: Option<String>,
 }
 
 /// A half-open byte range `[start, end)` plus how vim thinks about it.
@@ -54,6 +59,8 @@ impl Buffer {
             path: None,
             dirty: false,
             epoch: 0,
+            readonly: false,
+            name: None,
         }
     }
 
@@ -64,6 +71,8 @@ impl Buffer {
             path: Some(path.to_string()),
             dirty: false,
             epoch: 0,
+            readonly: false,
+            name: None,
         })
     }
 
@@ -147,6 +156,12 @@ impl Buffer {
     /// Slice as String — for register/paste paths, never for per-frame render.
     pub fn slice_string(&self, range: Range) -> String {
         self.rope.byte_slice(range.start..range.end).to_string()
+    }
+
+    /// Replace the whole contents (virtual buffers filling from jobs).
+    pub fn replace_all(&mut self, text: &str) {
+        self.rope = Rope::from_str(text);
+        self.epoch += 1;
     }
 
     /// Returns the deleted text (register payoff).

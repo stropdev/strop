@@ -13,6 +13,7 @@ use strop_grammar as grammar;
 
 use crate::editor::{Editor, Mode};
 
+mod blame_card;
 mod hunk_card;
 mod picker_card;
 mod which_key;
@@ -58,6 +59,7 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     render_welcome(editor, frame);
     picker_card::render_picker(editor, frame);
     hunk_card::render_hunk_card(editor, frame);
+    blame_card::render_blame_card(editor, frame);
     which_key::render_which_key(editor, frame);
 }
 
@@ -141,13 +143,24 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
             Span::styled(format!("{:>3} ", line_idx + 1), num_style),
         ];
 
+        let is_delta = matches!(editor.surface(), Some(crate::editor::Surface::DeltaView));
+        let diff_line_style = if is_delta {
+            match text.as_bytes().first() {
+                Some(b'+') => Some(Color::Rgb(0xa9, 0xc4, 0x7c)),
+                Some(b'-') => Some(Color::Rgb(0xe8, 0x67, 0x7a)),
+                Some(b'@') => Some(ACCENT),
+                _ => None,
+            }
+        } else {
+            None
+        };
         let mut syn_idx = syn_spans.partition_point(|s| s.end <= start);
         for (i, ch) in text.chars().enumerate() {
             let pos = start + i; // prototype is ASCII-honest (0001 §5.9 later)
             while syn_idx < syn_spans.len() && syn_spans[syn_idx].end <= pos {
                 syn_idx += 1;
             }
-            let mut style = Style::default().fg(TEXT);
+            let mut style = Style::default().fg(diff_line_style.unwrap_or(TEXT));
             if syn_idx < syn_spans.len() && syn_spans[syn_idx].start <= pos {
                 let class = syn_spans[syn_idx].class;
                 style = style.fg(class_color(class));
@@ -204,7 +217,12 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
 fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     let y = area.height - 1;
     let mode = editor.mode.chip();
-    let file = editor.buf().path.as_deref().unwrap_or("[scratch]");
+    let file = editor
+        .buf()
+        .path
+        .as_deref()
+        .or(editor.buf().name.as_deref())
+        .unwrap_or("[scratch]");
     let dirty = if editor.buf().dirty { " ●" } else { "" };
     let line = editor.buf().line_of(editor.cursor) + 1;
     let col = editor.buf().col_of(editor.cursor) + 1;

@@ -4,11 +4,13 @@
 //! Mode handlers live beside this file: `normal`, `visual`, `insert`.
 
 mod git;
+mod git_memory;
 mod insert;
 mod normal;
 mod picker;
 mod visual;
 
+pub use git_memory::{git_channel, GitJob, Surface};
 pub use picker::{PickerGlue, PreviewEntry, PreviewSource, Previews};
 
 use std::collections::HashMap;
@@ -80,6 +82,13 @@ pub struct Editor {
     pub hunks_epoch: u64,
     /// Hunk preview card (`Space g p`).
     pub hunk_preview: Option<strop_git::Hunk>,
+    /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
+    /// OSC52 clipboard payload drained by the TUI.
+    pub surfaces: Vec<Option<Surface>>,
+    pub blame_card: Option<strop_git::memory::BlameCard>,
+    pub git_tx: std::sync::mpsc::Sender<GitJob>,
+    pub git_rx: std::sync::mpsc::Receiver<GitJob>,
+    pub osc52: Option<String>,
     pub(crate) last_cmd_keys: String,
     pub(crate) last_insert: Option<String>,
     pub(crate) recording_insert: Option<String>,
@@ -101,6 +110,7 @@ impl Editor {
                     .unwrap_or_else(|| base.clone())
             })
             .unwrap_or(base);
+        let (git_tx, git_rx) = git_channel();
         let mut e = Self {
             buffers: vec![buf],
             highlighter,
@@ -125,6 +135,11 @@ impl Editor {
             hunks: Vec::new(),
             hunks_epoch: u64::MAX,
             hunk_preview: None,
+            surfaces: vec![None],
+            blame_card: None,
+            git_tx,
+            git_rx,
+            osc52: None,
         };
         e.discover_git();
         e
@@ -163,6 +178,7 @@ impl Editor {
         let buf = Buffer::open(path)?;
         self.highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
         self.buffers.push(buf);
+        self.surfaces.push(None);
         self.current = self.buffers.len() - 1;
         self.touch_mru(self.current);
         self.cursor = 0;
@@ -179,6 +195,7 @@ impl Editor {
             return false;
         }
         self.buffers.remove(self.current);
+        self.surfaces.remove(self.current);
         let closed = self.current;
         if self.buffers.is_empty() {
             self.should_quit = true;
@@ -235,6 +252,16 @@ impl Editor {
 
     pub fn feed(&mut self, key: Key) {
         self.message.clear();
+        if self.blame_card.is_some() {
+            match key {
+                Key::Enter => {
+                    self.blame_card = None;
+                    self.open_log(false); // dive into the commit browser
+                }
+                _ => self.blame_card = None,
+            }
+            return;
+        }
         if self.hunk_preview.is_some() {
             self.hunk_preview = None;
             return; // first key dismisses the card

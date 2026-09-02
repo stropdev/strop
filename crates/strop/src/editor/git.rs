@@ -204,7 +204,15 @@ impl Editor {
             'u' => self.undo_hunk(),
             's' => self.stage_hunk(),
             'p' => self.preview_hunk(),
-            _ => self.message = "Space g: u undo hunk · s stage · p preview (l/h/b land M3)".into(),
+            'l' => self.open_log(false),
+            'h' => self.open_log(true),
+            'b' => self.blame_line(),
+            'y' => self.yank_permalink(),
+            'o' => self.open_permalink(),
+            _ => {
+                self.message =
+                    "Space g: l log · h file history · b blame · y/o permalink · u/s/p hunk".into()
+            }
         }
     }
 }

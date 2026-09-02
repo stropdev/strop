@@ -66,9 +66,12 @@ Enter
 Sleep 400ms
 
 # git working surface: gutter signs, hunk nav, hunk card, undo
-Type "cd /tmp/proj && git init -q && git add . && git -c user.email=t@t.t -c user.name=t commit -qm init"
+Type "cd /tmp/proj && git init -q && git remote add origin git@github.com:stropdev/strop.git && git add . && git -c user.email=t@t.t -c user.name=t commit -qm init"
 Enter
-Sleep 1.2s
+Sleep 1.6s
+Type "sed -i 's/Mirror/MirrorPolish/' demo.rs && git -c user.email=t@t.t -c user.name=t commit -qam 'mirror polish finish'"
+Enter
+Sleep 1.6s
 Type "strop demo.rs"
 Enter
 Sleep 1.2s
@@ -92,6 +95,37 @@ Sleep 400ms
 Space
 Type "g"
 Type "u"
+Sleep 1.2s
+
+Space
+Type "g"
+Type "l"
+Sleep 2s
+Type "j"
+Sleep 600ms
+Enter
+Sleep 1.4s
+Type "jj"
+Sleep 400ms
+Enter
+Sleep 1.6s
+Type "q"
+Sleep 400ms
+Type "q"
+Sleep 300ms
+Type "q"
+Sleep 500ms
+Space
+Type "g"
+Type "b"
+Sleep 2s
+Type "x"
+Sleep 400ms
+Type "jjj"
+Sleep 300ms
+Space
+Type "g"
+Type "y"
 Sleep 1.2s
 
 Type ":q!"

@@ -2,6 +2,8 @@
 //! paths — no process spawn per keystroke. HEAD vs the *live buffer*
 //! (not the disk file), so gutter signs track unsaved edits.
 
+pub mod memory;
+
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +111,36 @@ impl Repo {
 
     pub fn workdir(&self) -> &Path {
         &self.workdir
+    }
+
+    /// Remotes as (name, url) pairs — libgit2 config, no spawn.
+    pub fn remotes(&self) -> Vec<(String, String)> {
+        let Ok(remotes) = self.inner.remotes() else {
+            return vec![];
+        };
+        remotes
+            .iter()
+            .flatten()
+            .filter_map(|name| {
+                self.inner
+                    .find_remote(name)
+                    .ok()
+                    .and_then(|r| r.url().map(|u| (name.to_string(), u.to_string())))
+            })
+            .collect()
+    }
+
+    /// HEAD's full SHA (permalink base — branch always resolves to SHA).
+    pub fn head_sha(&self) -> Option<String> {
+        Some(
+            self.inner
+                .head()
+                .ok()?
+                .peel_to_commit()
+                .ok()?
+                .id()
+                .to_string(),
+        )
     }
 
     /// Repo-relative path for a buffer path (diff keys are relative).

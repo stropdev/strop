@@ -8,6 +8,11 @@ use super::{Editor, Key, Mode};
 
 impl Editor {
     pub(crate) fn feed_normal(&mut self, key: Key) {
+        // readonly surfaces (git browser/blame/etc.): q closes, Enter
+        // dives, motions and yank fall through, edits refuse (0001 §3)
+        if self.buf().readonly {
+            return self.feed_readonly(key);
+        }
         if !self.pending.is_empty() {
             return self.feed_pending(key);
         }
@@ -358,7 +363,7 @@ impl Editor {
         self.clamp_cursor();
     }
 
-    fn run_ex(&mut self) {
+    pub(crate) fn run_ex(&mut self) {
         let cmdline = self
             .pending
             .trim_start_matches(':')

@@ -21,6 +21,11 @@ impl Editor {
                     Key::Char('y') => Op::Yank,
                     _ => Op::Change,
                 };
+                if self.buf().readonly && op != Op::Yank {
+                    self.message = "readonly buffer".into();
+                    self.mode = Mode::Normal;
+                    return;
+                }
                 let Some(range) = self.visual_range() else {
                     return;
                 };
