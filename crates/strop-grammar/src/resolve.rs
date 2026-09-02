@@ -267,12 +267,16 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
         }
         Target::Motion(m) => match m {
             Motion::Left | Motion::Right => {
+                // h/l never leave the line (vim)
+                let line = buf.line_of(cursor);
+                let lo = buf.line_start(line);
+                let hi = buf.line_end(line).saturating_sub(1).max(lo);
                 let mut pos = cursor;
                 for _ in 0..count {
                     pos = if *m == Motion::Left {
-                        pos.saturating_sub(1)
+                        pos.saturating_sub(1).max(lo)
                     } else {
-                        (pos + 1).min(buf.len_bytes())
+                        (pos + 1).min(hi)
                     };
                 }
                 let (s, e) = if pos <= cursor {
@@ -541,6 +545,7 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
             }
         }
         Target::Motion(Motion::Search(_)) => r.range.end,
+        Target::Motion(Motion::Right) => r.range.end,
         _ => r.range.start,
     }
 }

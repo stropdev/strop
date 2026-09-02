@@ -154,6 +154,11 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
         } else {
             None
         };
+        // indent guides: dim │ at each indent level within leading
+        // whitespace (v1: spaces only, no empty-line continuation;
+        // scope tracking + config toggle land with 0005)
+        let lead_ws = text.chars().take_while(|c| *c == ' ').count();
+        let tab = editor.config.tab_size.max(1);
         let mut syn_idx = syn_spans.partition_point(|s| s.end <= start);
         for (i, ch) in text.chars().enumerate() {
             let pos = start + i; // prototype is ASCII-honest (0001 §5.9 later)
@@ -161,6 +166,7 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
                 syn_idx += 1;
             }
             let mut style = Style::default().fg(diff_line_style.unwrap_or(TEXT));
+            let is_guide = i < lead_ws && (i + 1) % tab == 0;
             if syn_idx < syn_spans.len() && syn_spans[syn_idx].start <= pos {
                 let class = syn_spans[syn_idx].class;
                 style = style.fg(class_color(class));
@@ -199,7 +205,11 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
                     style = style.bg(FLASH_BG);
                 }
             }
-            spans.push(Span::styled(ch.to_string(), style));
+            if is_guide {
+                spans.push(Span::styled("│", style.fg(Color::Rgb(0x2e, 0x30, 0x42))));
+            } else {
+                spans.push(Span::styled(ch.to_string(), style));
+            }
         }
         lines.push(Line::from(spans));
     }

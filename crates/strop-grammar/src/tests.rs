@@ -165,3 +165,30 @@ mod extended {
         assert_eq!(buf.slice_string(r.range), "edge");
     }
 }
+
+mod cursor_moves {
+    use super::contract;
+    use crate::*;
+    use strop_core::Buffer;
+
+    #[test]
+    fn l_moves_right_and_stops_at_line_end() {
+        let buf = Buffer::from_text("ab\ncd\n");
+        let c = contract::cmd("l");
+        let r = resolve(&buf, 0, &c).unwrap();
+        assert_eq!(cursor_after(&buf, 0, &c, &r), 1);
+        // at line end (col 1 = 'b'), l is a no-op — never crosses to line 2
+        let r = resolve(&buf, 1, &c).unwrap();
+        assert_eq!(cursor_after(&buf, 1, &c, &r), 1);
+    }
+
+    #[test]
+    fn h_stops_at_line_start() {
+        let buf = Buffer::from_text("ab\ncd\n");
+        let c = contract::cmd("h");
+        let r = resolve(&buf, 1, &c).unwrap();
+        assert_eq!(cursor_after(&buf, 1, &c, &r), 0);
+        let r = resolve(&buf, 0, &c).unwrap();
+        assert_eq!(cursor_after(&buf, 0, &c, &r), 0);
+    }
+}

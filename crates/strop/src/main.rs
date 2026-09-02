@@ -1,6 +1,7 @@
 //! strop — prototype binary. TUI by default; `--headless` for the
 //! scripted, deterministic driver (0006 tier 2).
 
+mod config;
 mod editor;
 mod headless;
 mod render;
@@ -33,13 +34,16 @@ fn main() {
             || Buffer::from_text(""),
             |p| Buffer::open(p).unwrap_or_else(|e| panic!("open {p}: {e}")),
         );
+        let (cfg, _) = config::Config::load();
         let mut editor = Editor::new(buf);
+        editor.config = cfg;
         let mut out = io::stdout().lock();
         headless::run_script(&mut editor, &script, 100, 30, &mut out);
         let _ = out.flush();
         return;
     }
 
+    let (cfg, config_err) = config::Config::load();
     let path = args.iter().find(|a| !a.starts_with('-'));
     let buf = match path {
         Some(p) => Buffer::open(p).unwrap_or_else(|e| {
@@ -48,7 +52,12 @@ fn main() {
         }),
         None => Buffer::from_text(""),
     };
-    tui(Editor::new(buf));
+    let mut editor = Editor::new(buf);
+    editor.config = cfg;
+    if let Some(e) = config_err {
+        editor.message = e;
+    }
+    tui(editor);
 }
 
 fn tui(mut editor: Editor) {

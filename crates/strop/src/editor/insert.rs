@@ -4,6 +4,50 @@
 use super::{Editor, Key, Mode};
 
 impl Editor {
+    /// Indent for a new line at the cursor (0001 daily-driver): copy the
+    /// current line's leading whitespace, plus one level after an opener
+    /// (`{[`(` c-like, `:` python-ish). Configurable width (config.toml).
+    pub(crate) fn auto_indent(&self) -> String {
+        let line = self.buf().line_of(self.cursor);
+        let text = self.buf().line_text(line);
+        let before_cursor = &text[..self.buf().col_of(self.cursor).min(text.len())];
+        let base: String = before_cursor
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect();
+        let trimmed = before_cursor.trim_end();
+        let deeper = trimmed.ends_with('{')
+            || trimmed.ends_with('[')
+            || trimmed.ends_with('(')
+            || trimmed.ends_with(':');
+        let mut indent = base;
+        if deeper {
+            indent.push_str(&self.config.indent());
+        }
+        indent
+    }
+
+    /// Indent for o/O: the current line's full leading whitespace,
+    /// deepened after an opener even mid-line.
+    pub(crate) fn auto_indent_full_line(&self) -> String {
+        let line = self.buf().line_of(self.cursor);
+        let text = self.buf().line_text(line);
+        let base: String = text
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect();
+        let trimmed = text.trim_end();
+        let deeper = trimmed.ends_with('{')
+            || trimmed.ends_with('[')
+            || trimmed.ends_with('(')
+            || trimmed.ends_with(':');
+        let mut indent = base;
+        if deeper {
+            indent.push_str(&self.config.indent());
+        }
+        indent
+    }
+
     /// Enter insert mode and start recording (dot-repeat, 0001 §2.1).
     /// `keys` is what got us here (`i`, `o`, `ci[`, …).
     pub(crate) fn enter_insert_from(&mut self, keys: &str) {
@@ -43,11 +87,14 @@ impl Editor {
                 }
             }
             Key::Enter => {
+                let indent = self.auto_indent();
+                let text = format!("\n{indent}");
                 let cur = self.cursor;
-                self.buf_mut().insert(cur, "\n");
-                self.cursor += 1;
+                self.buf_mut().insert(cur, &text);
+                self.cursor += text.len();
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push('\n');
+                    rec.push_str(&indent);
                 }
             }
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}

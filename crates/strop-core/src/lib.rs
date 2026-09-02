@@ -64,8 +64,14 @@ impl Buffer {
         }
     }
 
+    /// Open a file; a missing file is a new empty buffer with that path
+    /// (vim semantics — `:w` creates it). Real I/O errors still error.
     pub fn open(path: &str) -> std::io::Result<Self> {
-        let text = std::fs::read_to_string(path)?;
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e),
+        };
         Ok(Self {
             rope: Rope::from_str(&text),
             path: Some(path.to_string()),

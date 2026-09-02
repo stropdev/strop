@@ -44,16 +44,23 @@ impl Editor {
                 self.enter_insert_from("A");
             }
             'o' => {
+                let indent = self.auto_indent_full_line();
                 let end = self.buf().line_end(self.buf().line_of(self.cursor));
-                self.buf_mut().insert(end, "\n");
-                self.cursor = end + 1;
+                let text = format!("\n{indent}");
+                self.buf_mut().insert(end, &text);
+                self.cursor = end + text.len();
                 self.enter_insert_from("o");
+                // dot-repeat replays 'o', which re-derives the indent —
+                // recording it too would double it
             }
             'O' => {
+                let indent = self.auto_indent_full_line();
                 let start = self.buf().line_start(self.buf().line_of(self.cursor));
-                self.buf_mut().insert(start, "\n");
-                self.cursor = start;
+                let text = format!("{indent}\n");
+                self.buf_mut().insert(start, &text);
+                self.cursor = start + indent.len();
                 self.enter_insert_from("O");
+                // same as 'o': indent is derived, not recorded
             }
             'x' => {
                 let end =
@@ -344,11 +351,14 @@ impl Editor {
         for l in line..last {
             let start = self.buf().line_start(l);
             if right {
-                self.buf_mut().insert(start, "    ");
+                let indent = self.config.indent();
+                self.buf_mut().insert(start, &indent);
             } else {
                 let end = self.buf().line_end(l);
+                let width = self.config.tab_size;
                 let mut strip = 0;
-                while strip < 4 && start + strip < end && self.buf().byte(start + strip) == b' ' {
+                while strip < width && start + strip < end && self.buf().byte(start + strip) == b' '
+                {
                     strip += 1;
                 }
                 if strip == 0 && self.buf().byte_at(start) == Some(b'\t') {
