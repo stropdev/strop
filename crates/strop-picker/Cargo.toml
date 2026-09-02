@@ -1,5 +1,6 @@
 [package]
 name = "strop-picker"
+description = "strop picker: fzf-style scoring, streaming file/grep sources"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

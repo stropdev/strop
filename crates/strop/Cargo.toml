@@ -1,5 +1,6 @@
 [package]
 name = "strop-editor"
+description = "strop — a modal text editor in Rust: see the cut before you make it"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

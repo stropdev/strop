@@ -1,5 +1,6 @@
 [package]
 name = "strop-core"
+description = "strop editor core: rope buffer, byte-offset positions, edit ops"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "strop-syntax"
+description = "strop syntax: statically-linked tree-sitter highlighting, curated language registry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

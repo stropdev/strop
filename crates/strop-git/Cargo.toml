@@ -1,5 +1,6 @@
 [package]
 name = "strop-git"
+description = "strop git: libgit2 hunks vs live buffers, log/blame/permalinks"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

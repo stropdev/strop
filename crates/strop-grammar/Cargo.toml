@@ -1,5 +1,6 @@
 [package]
 name = "strop-grammar"
+description = "strop grammar: pure vim operator-pending resolver (motions, text objects, counts)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
