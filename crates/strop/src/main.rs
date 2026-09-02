@@ -4,6 +4,7 @@
 mod config;
 mod editor;
 mod headless;
+mod keymap;
 mod render;
 mod session;
 mod update;

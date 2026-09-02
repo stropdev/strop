@@ -71,6 +71,8 @@ pub struct Editor {
     pub pending: String,
     pub anchor: usize,
     pub registers: Registers,
+    /// Marks: char → (buffer index, byte offset). `m{a}` sets, `'{a}` jumps.
+    pub marks: HashMap<char, (usize, usize)>,
     pub flash: Option<(Range, Instant)>,
     pub message: String,
     pub should_quit: bool,
@@ -94,6 +96,10 @@ pub struct Editor {
     pub git_tx: std::sync::mpsc::Sender<GitJob>,
     pub git_rx: std::sync::mpsc::Receiver<GitJob>,
     pub osc52: Option<String>,
+    /// The keybinds popup (`Space ?`): table-driven (keymap.rs).
+    pub keybinds_open: bool,
+    pub keybinds_section: usize,
+    pub keybinds_scroll: usize,
     /// Splits: flat row/column of panes (v1; tree layout later).
     pub panes: Vec<Pane>,
     pub active_pane: usize,
@@ -130,6 +136,7 @@ impl Editor {
             pending: String::new(),
             anchor: 0,
             registers: HashMap::new(),
+            marks: HashMap::new(),
             flash: None,
             message: String::new(),
             should_quit: false,
@@ -150,6 +157,9 @@ impl Editor {
             git_tx,
             git_rx,
             osc52: None,
+            keybinds_open: false,
+            keybinds_section: 0,
+            keybinds_scroll: 0,
             panes: vec![Pane {
                 buffer: 0,
                 cursor: 0,
@@ -281,6 +291,9 @@ impl Editor {
 
     pub fn feed(&mut self, key: Key) {
         self.message.clear();
+        if self.keybinds_open {
+            return self.feed_keybinds(key);
+        }
         if self.blame_card.is_some() {
             match key {
                 Key::Enter => {
@@ -337,6 +350,54 @@ impl Editor {
             self.view_top = line;
         } else if line >= self.view_top + rows {
             self.view_top = line + 1 - rows;
+        }
+    }
+
+    /// Keybinds popup keys: j/k scroll, tab/h/l section, esc/q close.
+    pub(crate) fn feed_keybinds(&mut self, key: Key) {
+        match key {
+            Key::Esc => self.keybinds_open = false,
+            Key::Char('q') => self.keybinds_open = false,
+            Key::Char('j') | Key::Down => self.keybinds_scroll += 1,
+            Key::Char('k') | Key::Up => {
+                self.keybinds_scroll = self.keybinds_scroll.saturating_sub(1)
+            }
+            Key::Tab | Key::Char('l') => {
+                self.keybinds_section = (self.keybinds_section + 1) % crate::keymap::SECTIONS.len();
+                self.keybinds_scroll = 0;
+            }
+            Key::Backtab | Key::Char('h') => {
+                let n = crate::keymap::SECTIONS.len();
+                self.keybinds_section = (self.keybinds_section + n - 1) % n;
+                self.keybinds_scroll = 0;
+            }
+            _ => {}
+        }
+    }
+
+    /// `m{a}`: set mark a at the cursor.
+    pub(crate) fn set_mark(&mut self, mark: char) {
+        self.marks.insert(mark, (self.current, self.cursor));
+        self.message = format!("mark {mark} set");
+    }
+
+    /// `'{a}`: jump to mark a (switches buffer if the mark lives there).
+    pub(crate) fn jump_mark(&mut self, mark: char) {
+        match self.marks.get(&mark).copied() {
+            Some((buf, offset)) => {
+                if buf < self.buffers.len() {
+                    if buf != self.current {
+                        self.current = buf;
+                        self.touch_mru(buf);
+                        self.discover_git();
+                    }
+                    self.cursor = self
+                        .buf()
+                        .clamp_boundary(offset.min(self.buf().len_bytes()));
+                    self.clamp_cursor();
+                }
+            }
+            None => self.message = format!("mark {mark} not set"),
         }
     }
 
@@ -733,5 +794,96 @@ mod surround_tests {
         e.feed_text("ve"); // select "wrap"
         e.feed_text("S(");
         assert_eq!(e.buf().rope.to_string(), "(wrap) me up\n");
+    }
+}
+
+#[cfg(test)]
+mod visual_object_tests {
+    use super::*;
+
+    #[test]
+    fn vi_paren_selects_inner() {
+        let mut e = Editor::new(Buffer::from_text("call(a, b)\n"));
+        e.feed_text("f("); // onto the open paren
+        e.feed_text("vi(");
+        let r = e.visual_range().expect("visual range");
+        assert_eq!(e.buf().slice_string(r), "a, b");
+        // and operators consume it
+        e.feed_text("d");
+        assert_eq!(e.buf().rope.to_string(), "call()\n");
+    }
+
+    #[test]
+    fn va_quote_includes_quotes() {
+        let mut e = Editor::new(Buffer::from_text("say \"hi\" now\n"));
+        e.feed_text("w"); // onto "hi"
+        e.feed_text("va\"");
+        let r = e.visual_range().expect("visual range");
+        assert_eq!(e.buf().slice_string(r), "\"hi\"");
+    }
+}
+
+#[cfg(test)]
+mod hardening_tests {
+    use super::*;
+
+    #[test]
+    fn undo_after_visual_delete() {
+        let mut e = Editor::new(Buffer::from_text("say \"hi\" now\n"));
+        e.feed_text("ved"); // vim: deletes "say", the space stays
+        assert_eq!(e.buf().rope.to_string(), " \"hi\" now\n");
+        e.feed_text("u");
+        assert_eq!(e.buf().rope.to_string(), "say \"hi\" now\n");
+    }
+
+    #[test]
+    fn quote_object_scans_forward_on_the_line() {
+        // vim i" special case: cursor before the string uses the next pair
+        let mut e = Editor::new(Buffer::from_text("say \"hi\" now\n"));
+        e.feed_text("vi\"");
+        let r = e.visual_range().expect("selection");
+        assert_eq!(e.buf().slice_string(r), "hi");
+    }
+}
+
+#[cfg(test)]
+mod keybinds_tests {
+    use super::*;
+
+    #[test]
+    fn space_question_opens_popup() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(" ?");
+        assert!(e.keybinds_open);
+        e.feed(crate::editor::Key::Esc);
+        assert!(!e.keybinds_open);
+    }
+
+    #[test]
+    fn marks_set_and_jump() {
+        std::fs::write("/tmp/strop-mark-a.rs", "one\ntwo\nthree\n").unwrap();
+        std::fs::write("/tmp/strop-mark-b.rs", "alpha\nbeta\n").unwrap();
+        let mut e = Editor::new(Buffer::open("/tmp/strop-mark-a.rs").unwrap());
+        e.feed_text("jj"); // line 3
+        e.feed_text("mb"); // mark b here
+        e.feed_text(":e /tmp/strop-mark-b.rs<cr>");
+        e.feed_text("'b"); // jump back to mark
+        assert_eq!(e.buf().path.as_deref(), Some("/tmp/strop-mark-a.rs"));
+        assert_eq!(e.buf().line_of(e.cursor), 2);
+        std::fs::remove_file("/tmp/strop-mark-a.rs").ok();
+        std::fs::remove_file("/tmp/strop-mark-b.rs").ok();
+    }
+
+    #[test]
+    fn question_mark_is_search_backward() {
+        // vim fidelity: ? is search-backward, never the keybinds popup
+        let mut e = Editor::new(Buffer::from_text("one two one two\n"));
+        e.feed_text("$"); // end
+        e.feed_text("?one\r");
+        assert_eq!(
+            e.buf().col_of(e.cursor),
+            8,
+            "backward search lands on the second 'one'"
+        );
     }
 }

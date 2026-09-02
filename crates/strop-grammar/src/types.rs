@@ -47,6 +47,8 @@ pub enum Motion {
     },
     /// `/pat⏎` — the pattern without the terminator.
     Search(String),
+    /// `?pat⏎` — backward search.
+    SearchBackward(String),
     /// W / B / E — WORD motions (whitespace-delimited).
     BigWordForward,
     BigWordBackward,

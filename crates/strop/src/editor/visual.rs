@@ -35,7 +35,9 @@ impl Editor {
                     self.set_register(None, text, linewise);
                     self.flash(range);
                 } else {
+                    self.tx_begin();
                     let text = self.buf_mut().delete(range);
+                    self.tx_commit();
                     self.set_register(None, text, linewise);
                     self.cursor = range.start;
                     self.flash(Range::charwise(self.cursor, self.cursor));
@@ -73,7 +75,17 @@ impl Editor {
                 if let Parse::Complete(cmd) = grammar::parse(&self.pending) {
                     if cmd.op.is_none() {
                         self.pending.clear();
-                        self.move_cursor(&cmd);
+                        // objects in visual mode select the object (vi[, va"):
+                        // the anchor jumps to the range start, the cursor to
+                        // its end — inclusive, vim semantics (0001 §5.5)
+                        if let grammar::Target::Object { .. } = cmd.target {
+                            if let Some(r) = grammar::resolve(self.buf(), self.cursor, &cmd) {
+                                self.anchor = r.range.start;
+                                self.cursor = r.range.end.saturating_sub(1);
+                            }
+                        } else {
+                            self.move_cursor(&cmd);
+                        }
                     }
                 }
             }

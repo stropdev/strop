@@ -211,8 +211,9 @@ pub fn parse(keys: &str) -> Parse {
         });
     }
 
-    // Search motion: /pat⏎
-    if rest[0] == b'/' {
+    // Search motions: /pat⏎ forward, ?pat⏎ backward
+    if rest[0] == b'/' || rest[0] == b'?' {
+        let backward = rest[0] == b'?';
         let tail = &rest[1..];
         return match tail.iter().position(|&b| b == b'\r') {
             None => Parse::Incomplete,
@@ -225,7 +226,11 @@ pub fn parse(keys: &str) -> Parse {
                         op,
                         register,
                         count,
-                        target: Target::Motion(Motion::Search(pat)),
+                        target: Target::Motion(if backward {
+                            Motion::SearchBackward(pat)
+                        } else {
+                            Motion::Search(pat)
+                        }),
                         keys: keys.into(),
                     })
                 }

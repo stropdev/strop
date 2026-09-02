@@ -160,12 +160,19 @@ fn bracket_pair(buf: &Buffer, pos: usize, open: u8, close: u8) -> Option<(usize,
     }
 }
 
-/// Quote pair on the current line (vim scans the line).
+/// Quote pair on the current line. Vim's quote objects scan the whole
+/// line: enclosing pair when inside or on a quote; the *next* pair when
+/// the cursor sits before any quote on the line; nothing when past the
+/// last pair.
 fn quote_pair(buf: &Buffer, pos: usize, q: u8) -> Option<(usize, usize)> {
     let line = buf.line_of(pos);
     let start = buf.line_start(line);
     let end = buf.line_end(line);
-    let open = (start..=pos.min(end)).rev().find(|&i| buf.byte(i) == q)?;
+    let open = (start..=pos.min(end)).rev().find(|&i| buf.byte(i) == q);
+    let open = match open {
+        Some(o) => o,
+        None => (pos..end).find(|&i| buf.byte(i) == q)?, // forward-scan fallback
+    };
     let close = (open + 1..end).find(|&i| buf.byte(i) == q)?;
     if pos > close {
         return None;
@@ -200,6 +207,15 @@ fn surround_pair(ch: u8) -> Option<(u8, u8)> {
         q @ (b'"' | b'\'' | b'`') => (q, q),
         _ => return None,
     })
+}
+
+/// Search backward for `pat` before `from` (prototype: plain substring).
+pub fn search_backward(buf: &Buffer, from: usize, pat: &str) -> Option<usize> {
+    if from == 0 {
+        return None;
+    }
+    let text = buf.rope.byte_slice(..from).to_string();
+    text.rfind(pat)
 }
 
 pub fn search_forward(buf: &Buffer, from: usize, pat: &str) -> Option<usize> {
@@ -529,6 +545,16 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     format!("search /{pat}"),
                 )
             }
+            Motion::SearchBackward(pat) => {
+                let target = search_backward(buf, cursor, pat)?;
+                // exclusive backward: covers (match, cursor) — vim d?pat
+                // is exclusive of the target's first char
+                (
+                    Range::charwise(target + pat.len().min(1), cursor),
+                    false,
+                    format!("search ?{pat}"),
+                )
+            }
         },
     };
     if range.is_empty() && cmd.op.is_some() {
@@ -586,6 +612,10 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
             }
         }
         Target::Motion(Motion::Search(_)) => r.range.end,
+        Target::Motion(Motion::SearchBackward(pat)) => {
+            // land on the match start: range is (target+1, cursor) exclusive
+            r.range.start.saturating_sub(pat.len().min(1))
+        }
         Target::Motion(Motion::Right) => r.range.end,
         _ => r.range.start,
     }

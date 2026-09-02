@@ -142,6 +142,17 @@ Type ":q"
 Enter
 Sleep 600ms
 
+# keybinds popup (Space ?)
+Space
+Type "?"
+Sleep 1.6s
+Type "l"
+Sleep 800ms
+Type "l"
+Sleep 800ms
+Escape
+Sleep 400ms
+
 Type ":q!"
 Enter
 Sleep 400ms

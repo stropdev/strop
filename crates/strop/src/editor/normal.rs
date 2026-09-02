@@ -32,8 +32,8 @@ impl Editor {
             'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' => {
                 self.run_motion(&c.to_string())
             }
-            'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | ':' | '"' | 'r' | '>' | '<'
-            | ' ' | '[' | ']' => self.pending.push(c),
+            'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | '?' | ':' | '"' | 'r' | '>'
+            | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' => self.pending.push(c),
             // aliases — dot-repeat replays the alias key itself
             'D' => self.alias("D", "d$"),
             'C' => self.alias("C", "c$"),
@@ -170,7 +170,7 @@ impl Editor {
 
     fn feed_pending(&mut self, key: Key) {
         let is_ex = self.pending.starts_with(':');
-        let is_search = !is_ex && self.pending.contains('/');
+        let is_search = !is_ex && (self.pending.contains('/') || self.pending.contains('?'));
         match key {
             Key::Esc => self.pending.clear(),
             Key::Backspace => {
@@ -206,6 +206,9 @@ impl Editor {
                         'g' => {
                             self.pending = " g".into();
                         }
+                        '?' => {
+                            self.keybinds_open = true;
+                        }
                         _ => {
                             self.message =
                                 "Space: f files · b buffers · / grep · g git (j, s, u land M4)"
@@ -222,6 +225,15 @@ impl Editor {
                     let forward = self.pending == "]";
                     self.pending.clear();
                     return self.jump_hunk(forward);
+                }
+                // marks: m<a> sets, '<a> jumps
+                if self.pending == "m" && c.is_ascii_lowercase() {
+                    self.pending.clear();
+                    return self.set_mark(c);
+                }
+                if (self.pending == "'" || self.pending == "`") && c.is_ascii_lowercase() {
+                    self.pending.clear();
+                    return self.jump_mark(c);
                 }
                 // r<char>: replace the char under the cursor, stay normal
                 if self.pending == "r" {
@@ -287,6 +299,19 @@ impl Editor {
                 grammar::resolve(self.buf(), self.cursor, &cmd)
             }
             _ => {
+                // partial backward search: d?foo mid-typing previews match→cursor
+                if let Some(idx) = self.pending.find('?') {
+                    let pat = &self.pending[idx + 1..];
+                    if !pat.is_empty() && !pat.contains('\r') {
+                        if let Some(hit) = grammar::search_backward(self.buf(), self.cursor, pat) {
+                            return Some(Resolved {
+                                range: Range::charwise(hit, self.cursor),
+                                inclusive: false,
+                                spec: format!("search ?{pat}"),
+                            });
+                        }
+                    }
+                }
                 // partial search: d/foo mid-typing previews cursor→first match
                 if let Some(idx) = self.pending.find('/') {
                     let pat = &self.pending[idx + 1..];

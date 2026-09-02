@@ -9,7 +9,7 @@ mod resolve;
 mod tests;
 
 pub use parse::parse;
-pub use resolve::{cursor_after, resolve, search_all, search_forward};
+pub use resolve::{cursor_after, resolve, search_all, search_backward, search_forward};
 
 pub use types::*;
 mod types;

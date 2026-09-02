@@ -16,6 +16,7 @@ use crate::editor::{Editor, LayoutDir, Mode};
 mod blame_card;
 mod cmd_card;
 mod hunk_card;
+mod keybinds;
 mod picker_card;
 mod which_key;
 
@@ -68,6 +69,7 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     picker_card::render_picker(editor, frame);
     hunk_card::render_hunk_card(editor, frame);
     blame_card::render_blame_card(editor, frame);
+    keybinds::render_keybinds(editor, frame);
     which_key::render_which_key(editor, frame);
 }
 

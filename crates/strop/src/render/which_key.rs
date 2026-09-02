@@ -21,29 +21,43 @@ const SPACE_HINTS: &[(&str, &str, bool)] = &[
     ("s", "symbols", false),
     ("u", "undo tree", false),
     ("g", "git…", true),
+    ("?", "keybindings", true),
 ];
 
 const GIT_HINTS: &[(&str, &str, bool)] = &[
     ("u", "undo hunk (reset to HEAD)", true),
     ("s", "stage hunk", true),
     ("p", "preview hunk", true),
-    ("l", "commit browser", false),
-    ("h", "file history", false),
-    ("b", "blame", false),
-    ("y", "copy permalink", false),
+    ("l", "commit browser", true),
+    ("h", "file history", true),
+    ("b", "blame", true),
+    ("y", "copy permalink", true),
+    ("o", "open permalink", true),
 ];
 
+const MARK_HINTS: &[(&str, &str, bool)] = &[
+    ("a–z", "set mark at cursor", true),
+    ("'a", "jump to mark", true),
+];
+
+const G_HINTS: &[(&str, &str, bool)] = &[("g", "top of file", true)];
+
+const BRACKET_HINTS: &[(&str, &str, bool)] = &[("c", "hunk", true)];
+
 pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
-    if editor.picker_open() {
+    if editor.picker_open() || editor.keybinds_open {
         return;
     }
-    if editor.pending == " g" {
-        return render_hints(frame, " space g ", GIT_HINTS);
+    match editor.pending.as_str() {
+        " g" => render_hints(frame, " space g ", GIT_HINTS),
+        "m" => render_hints(frame, " mark ", MARK_HINTS),
+        "'" | "`" => render_hints(frame, " mark jump ", &MARK_HINTS[1..]),
+        "g" => render_hints(frame, " g ", G_HINTS),
+        "]" => render_hints(frame, " ] ", BRACKET_HINTS),
+        "[" => render_hints(frame, " [ ", BRACKET_HINTS),
+        " " => render_hints(frame, " space ", SPACE_HINTS),
+        _ => {}
     }
-    if editor.pending != " " {
-        return;
-    }
-    render_hints(frame, " space ", SPACE_HINTS);
 }
 
 fn render_hints(frame: &mut Frame, title: &str, hints: &[(&str, &str, bool)]) {
