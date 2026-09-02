@@ -19,6 +19,8 @@ const SPACE_HINTS: &[(&str, &str, bool)] = &[
     ("/", "live grep", true),
     ("j", "jumplist", false),
     ("s", "symbols", false),
+    ("d", "diagnostics", true),
+    ("k", "hover", true),
     ("u", "undo tree", false),
     ("g", "git…", true),
     ("?", "keybindings", true),
@@ -40,7 +42,8 @@ const MARK_HINTS: &[(&str, &str, bool)] = &[
     ("'a", "jump to mark", true),
 ];
 
-const G_HINTS: &[(&str, &str, bool)] = &[("g", "top of file", true)];
+const G_HINTS: &[(&str, &str, bool)] =
+    &[("g", "top of file", true), ("d", "goto definition", true)];
 
 const BRACKET_HINTS: &[(&str, &str, bool)] = &[("c", "hunk", true)];
 

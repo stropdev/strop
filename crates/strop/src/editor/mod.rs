@@ -6,6 +6,7 @@
 mod git;
 mod git_memory;
 mod insert;
+mod lsp;
 mod normal;
 mod panes;
 mod picker;
@@ -17,6 +18,7 @@ pub use picker::{PickerGlue, PreviewEntry, PreviewSource, Previews};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use strop_core::{Buffer, Range};
@@ -100,6 +102,15 @@ pub struct Editor {
     pub keybinds_open: bool,
     pub keybinds_section: usize,
     pub keybinds_scroll: usize,
+    /// LSP: one client per workspace root, diagnostics by path,
+    /// hover card text, open/sync bookkeeping.
+    pub lsp: Option<strop_lsp::Client>,
+    pub lsp_rx: Option<Receiver<strop_lsp::LspEvent>>,
+    pub diags: std::collections::HashMap<PathBuf, Vec<strop_lsp::Diag>>,
+    pub hover_card: Option<String>,
+    pub lsp_opened: std::collections::HashSet<PathBuf>,
+    pub lsp_sent_epochs: std::collections::HashMap<PathBuf, u64>,
+    pub lsp_hints_shown: std::collections::HashSet<&'static str>,
     /// Splits: flat row/column of panes (v1; tree layout later).
     pub panes: Vec<Pane>,
     pub active_pane: usize,
@@ -113,19 +124,9 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(buf: Buffer) -> Self {
-        // cwd is always absolute: relative buffer paths resolve against
-        // the process cwd, or the picker walks "" and finds nothing.
-        let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let cwd = buf
-            .path
-            .as_deref()
-            .map(|p| {
-                let full = base.join(p);
-                full.parent()
-                    .map(|x| x.to_path_buf())
-                    .unwrap_or_else(|| base.clone())
-            })
-            .unwrap_or(base);
+        // cwd is the process directory (project-wide): pickers walk it,
+        // LSP/git resolve against it; a file's own dir is not the project.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let (git_tx, git_rx) = git_channel();
         let mut e = Self {
             highlighters: vec![buf.path.as_deref().and_then(Highlighter::for_path)],
@@ -160,6 +161,13 @@ impl Editor {
             keybinds_open: false,
             keybinds_section: 0,
             keybinds_scroll: 0,
+            lsp: None,
+            lsp_rx: None,
+            diags: HashMap::new(),
+            hover_card: None,
+            lsp_opened: std::collections::HashSet::new(),
+            lsp_sent_epochs: HashMap::new(),
+            lsp_hints_shown: std::collections::HashSet::new(),
             panes: vec![Pane {
                 buffer: 0,
                 cursor: 0,
@@ -220,6 +228,7 @@ impl Editor {
         self.cursor = 0;
         self.view_top = 0;
         self.discover_git();
+        self.lsp_maybe_attach();
         Ok(())
     }
 
@@ -293,6 +302,10 @@ impl Editor {
         self.message.clear();
         if self.keybinds_open {
             return self.feed_keybinds(key);
+        }
+        if self.hover_card.is_some() {
+            self.hover_card = None;
+            return;
         }
         if self.blame_card.is_some() {
             match key {
@@ -373,6 +386,30 @@ impl Editor {
             }
             _ => {}
         }
+    }
+
+    /// Diagnostic severity letter for a 1-based line on the current
+    /// buffer, if any (0001 pillar 4: merges with the git gutter).
+    pub fn diag_at(&self, line_1based: usize) -> Option<&'static str> {
+        let path = self.buf().path.as_deref()?;
+        let abs = if std::path::Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.cwd.join(path)
+        };
+        let diags = self.diags.get(&abs)?;
+        let mut best: Option<u8> = None;
+        for d in diags {
+            if d.line + 1 == line_1based {
+                best = Some(best.map_or(d.severity, |b| b.min(d.severity)));
+            }
+        }
+        best.map(|s| match s {
+            1 => "E",
+            2 => "W",
+            3 => "I",
+            _ => "H",
+        })
     }
 
     /// `m{a}`: set mark a at the cursor.

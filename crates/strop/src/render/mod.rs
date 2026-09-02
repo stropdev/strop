@@ -15,6 +15,7 @@ use crate::editor::{Editor, LayoutDir, Mode};
 
 mod blame_card;
 mod cmd_card;
+mod hover_card;
 mod hunk_card;
 mod keybinds;
 mod picker_card;
@@ -69,6 +70,7 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     picker_card::render_picker(editor, frame);
     hunk_card::render_hunk_card(editor, frame);
     blame_card::render_blame_card(editor, frame);
+    hover_card::render_hover_card(editor, frame);
     keybinds::render_keybinds(editor, frame);
     which_key::render_which_key(editor, frame);
 }
@@ -269,10 +271,17 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
         };
         // Helix-grade gutter: a colored ▎ bar in the leftmost column —
         // green add, amber change, red delete (0001 pillar 3.1)
-        let (bar, bar_color) = match editor.sign_at(line_idx + 1) {
-            Some('+') => ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
-            Some('~') => ("▎", ACCENT),
-            Some('-') => ("▎", Color::Rgb(0xe8, 0x67, 0x7a)),
+        let (bar, bar_color) = match editor.diag_at(line_idx + 1).or(editor
+            .sign_at(line_idx + 1)
+            .map(|c| c.to_string())
+            .as_deref())
+        {
+            Some("E") => ("E", Color::Rgb(0xe8, 0x67, 0x7a)),
+            Some("W") => ("W", Color::Rgb(0xf0, 0xa3, 0x5e)),
+            Some("I") | Some("H") => ("▎", Color::Rgb(0x7f, 0xb4, 0xca)),
+            Some("+") => ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
+            Some("~") => ("▎", ACCENT),
+            Some("-") => ("▎", Color::Rgb(0xe8, 0x67, 0x7a)),
             _ => (" ", MUTED),
         };
         let mut spans = vec![

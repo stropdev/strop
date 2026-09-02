@@ -101,6 +101,7 @@ fn main() {
         let (cfg, _) = config::Config::load();
         let mut editor = Editor::new(buf);
         editor.config = cfg;
+        editor.lsp_maybe_attach();
         let mut out = io::stdout().lock();
         headless::run_script(&mut editor, &script, 100, 30, &mut out);
         let _ = out.flush();
@@ -118,6 +119,7 @@ fn main() {
     };
     let mut editor = Editor::new(buf);
     editor.config = cfg;
+    editor.lsp_maybe_attach();
     if let Some(e) = config_err {
         editor.message = e;
     }
@@ -167,6 +169,8 @@ fn tui(mut editor: Editor) {
         if !event::poll(timeout).unwrap() {
             editor.drain_picker();
             editor.drain_git_jobs();
+            editor.drain_lsp();
+            editor.lsp_sync_changed();
             continue;
         }
         let Event::Key(ev) = event::read().unwrap() else {
@@ -193,6 +197,8 @@ fn tui(mut editor: Editor) {
         editor.feed(key);
         editor.drain_picker();
         editor.drain_git_jobs();
+        editor.drain_lsp();
+        editor.lsp_sync_changed();
         if let Some(payload) = editor.osc52.take() {
             // OSC52: system clipboard over the escape sequence — the
             // ssh-into-a-server answer (0001 pillar 4)

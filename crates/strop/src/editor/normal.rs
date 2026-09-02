@@ -209,6 +209,8 @@ impl Editor {
                         '?' => {
                             self.keybinds_open = true;
                         }
+                        'd' => self.open_diagnostics_picker(),
+                        'k' => self.lsp_hover(),
                         _ => {
                             self.message =
                                 "Space: f files · b buffers · / grep · g git (j, s, u land M4)"
@@ -219,6 +221,11 @@ impl Editor {
                 // git namespace (0003 §4): working-surface verbs (M2)
                 if self.pending == " g" {
                     return self.feed_git_pending(c);
+                }
+                // gd: goto definition (LSP)
+                if self.pending == "g" && c == 'd' {
+                    self.pending.clear();
+                    return self.lsp_goto_definition();
                 }
                 // hunk motions (0001 pillar 3.1)
                 if (self.pending == "]" || self.pending == "[") && c == 'c' {

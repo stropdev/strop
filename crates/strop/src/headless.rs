@@ -58,12 +58,23 @@ pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: 
             editor.feed_text(keys);
             editor.drain_picker();
             editor.drain_git_jobs();
+        } else if let Some(ms) = line.strip_prefix("wait ") {
+            // drain events for N ms (LSP servers index on their own clock)
+            let n: u64 = ms.trim().parse().unwrap_or(500);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(n);
+            while std::time::Instant::now() < deadline {
+                editor.drain_picker();
+                editor.drain_git_jobs();
+                editor.drain_lsp();
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
         } else if line == "settle" {
             // let streaming sources deliver: drain until Done (bounded)
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
             loop {
                 editor.drain_picker();
                 editor.drain_git_jobs();
+                editor.drain_lsp();
                 let streaming = editor.picker.as_ref().is_some_and(|g| g.picker.streaming);
                 if !streaming || std::time::Instant::now() > deadline {
                     break;

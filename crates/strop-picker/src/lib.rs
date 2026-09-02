@@ -37,6 +37,8 @@ pub enum Kind {
     Files,
     Buffers,
     Grep,
+    /// Editor-computed items (LSP diagnostics, 0009 §3).
+    Diagnostics,
 }
 
 impl Kind {
@@ -45,6 +47,7 @@ impl Kind {
             Kind::Files => " files ",
             Kind::Buffers => " buffers ",
             Kind::Grep => " grep ",
+            Kind::Diagnostics => " diagnostics ",
         }
     }
 }

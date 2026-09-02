@@ -1,0 +1,12 @@
+[package]
+name = "strop-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "strop lsp: async-lsp client, server registry, diagnostics store"
+
+[dependencies]
+async-lsp = "0.2"
+tokio = { version = "1", features = ["rt", "process", "io-util", "time"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+serde_json = "1"

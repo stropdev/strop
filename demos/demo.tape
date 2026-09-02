@@ -153,6 +153,28 @@ Sleep 800ms
 Escape
 Sleep 400ms
 
+# lsp: rust-analyzer diagnostics, picker, hover
+Escape
+Ctrl+C
+Sleep 600ms
+Type "cd /tmp/lsp-proj"
+Enter
+Type "strop src/main.rs"
+Enter
+Sleep 14s
+Space
+Type "d"
+Sleep 2s
+Escape
+Sleep 500ms
+Type "jfx"
+Sleep 300ms
+Space
+Type "k"
+Sleep 3s
+Escape
+Sleep 500ms
+
 Type ":q!"
 Enter
 Sleep 400ms

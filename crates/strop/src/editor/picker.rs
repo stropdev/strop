@@ -10,6 +10,18 @@ use strop_syntax::Highlighter;
 
 use super::{Editor, Key};
 
+impl PickerGlue {
+    /// A picker over editor-computed items (diagnostics; 0009 §3 Space d).
+    pub fn diagnostics(picker: Picker) -> Self {
+        Self {
+            picker,
+            tx: None,
+            rx: None,
+            grep_worker: None,
+        }
+    }
+}
+
 pub struct PickerGlue {
     pub picker: Picker,
     /// Sender stays alive for grep respawns (kill + respawn per keystroke).
@@ -47,6 +59,7 @@ impl Editor {
                 (vec![], true, Some(rx))
             }
             Kind::Grep => (vec![], false, Some(rx)),
+            Kind::Diagnostics => unreachable!("diagnostics use PickerGlue::diagnostics"),
         };
         let picker = Picker::new(kind, items, streaming);
         self.picker = Some(PickerGlue {

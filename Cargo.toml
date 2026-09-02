@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/strop-core", "crates/strop-grammar", "crates/strop-syntax", "crates/strop-git", "crates/strop"]
+members = ["crates/strop-core", "crates/strop-grammar", "crates/strop-syntax", "crates/strop-git", "crates/strop-lsp", "crates/strop"]
 resolver = "2"
 
 [workspace.package]

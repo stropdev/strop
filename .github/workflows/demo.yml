@@ -41,11 +41,16 @@ jobs:
       - name: Render demo GIF
         run: |
           docker run --rm -v "$PWD:/vhs" -w /vhs --entrypoint sh ghcr.io/charmbracelet/vhs -c '
-            apt-get update -qq && apt-get install -y -qq ripgrep git >/dev/null \
+            apt-get update -qq && apt-get install -y -qq ripgrep git gzip curl >/dev/null \
+            && curl -fsSL https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz | gunzip > /usr/local/bin/rust-analyzer \
+            && chmod +x /usr/local/bin/rust-analyzer \
             && mkdir -p /tmp/proj \
             && tar -xzf /vhs/dist/strop-*.tar.gz -C /tmp \
             && install -m755 /tmp/strop-*/strop /usr/local/bin/strop \
             && cp /vhs/demos/fixtures/demo.rs /tmp/proj/demo.rs \
+            && cp -r /vhs/demos/fixtures/lsp-proj /tmp/lsp-proj \
+            && apt-get install -y -qq cargo >/dev/null 2>&1 \
+            && (cd /tmp/lsp-proj && cargo metadata --format-version 1 >/dev/null 2>&1 || true) \
             && vhs /vhs/demos/demo.tape'
       - uses: actions/upload-artifact@v7
         with:
