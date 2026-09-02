@@ -49,7 +49,7 @@ the settings popup or editing the TOML — one write path, no two-sources-of-tru
 (rebind/unbind — not new operators), tab/indent width, line numbers on/off/relative,
 signcolumn, scroll context lines, OSC52 clipboard on/off, file-ignore globs, grep
 command line, git remote priority order (plan 0001 pillar 3), session persistence
-on/off, which-key delay, cursor shape per mode.
+on/off, which-key delay, cursor shape per mode, indent guides on/off.
 
 **Not configurable, ever** (written down so "make it an option" has an answer):
 
@@ -68,7 +68,26 @@ the TOML (comments and unknown keys preserved — round-trip editing is the cont
 a popup that eats your comments is a bug). Hand-edits while the popup is open hot-reload
 underneath it.
 
-## 6. Deferred
+## 6. How knobs are represented (decided 2026-09-02 — for the settings popup + hot-reload, the rootle lesson applied)
+
+One typed struct (`Config`, serde-Deserialize with `#[serde(default)]`) is the single
+source of truth for values; a sibling `KNOBS` table (key, TOML path, kind, one-line
+description) is the settings popup's future data source — the popup renders FROM it,
+never duplicating descriptions in popup code (the rootle `sections.rs` shape).
+Hot-reload: a file-watcher thread posts config-change events onto the event loop like
+every other data source — the async invariant (0001 §5.6) means the watcher is a job
+posting onto the event loop, never a blocking read in the input path. Writes go through
+`toml_edit` for comment-preserving round-trips.
+
+## 7. `strop update` (decided 2026-09-02)
+
+Self-update for tarball installs: `strop update` / `strop update --check`. Channel
+detection by exe path (cargo/brew/mise/tarball/other), mandatory sha256 sidecar
+verification, staged write + atomic rename over self, curl for the network (no HTTP
+stack in the binary).
+
+
+## 8. Deferred
 
 - Project-config trust prompt (`.strop.toml` in a cloned repo): data-only config is
   inert, so no trust gate needed v1; revisit if any future key gains path/exec power.

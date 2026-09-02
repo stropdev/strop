@@ -59,8 +59,9 @@ pub type Registers = HashMap<char, (String, bool)>;
 pub struct Editor {
     pub buffers: Vec<Buffer>,
     pub current: usize,
-    /// Syntax highlighter for the current buffer (None: unsupported ext).
-    pub highlighter: Option<Highlighter>,
+    /// Syntax highlighter per buffer (None: unsupported ext), aligned
+    /// with `buffers` — previews and switches keep their highlighting.
+    pub highlighters: Vec<Option<Highlighter>>,
     pub mode: Mode,
     pub cursor: usize,
     pub pending: String,
@@ -98,7 +99,6 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(buf: Buffer) -> Self {
-        let highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
         // cwd is always absolute: relative buffer paths resolve against
         // the process cwd, or the picker walks "" and finds nothing.
         let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -114,8 +114,8 @@ impl Editor {
             .unwrap_or(base);
         let (git_tx, git_rx) = git_channel();
         let mut e = Self {
+            highlighters: vec![buf.path.as_deref().and_then(Highlighter::for_path)],
             buffers: vec![buf],
-            highlighter,
             current: 0,
             mode: Mode::Normal,
             cursor: 0,
@@ -158,6 +158,13 @@ impl Editor {
         &self.buffers[self.current]
     }
 
+    /// Current buffer's highlighter.
+    pub fn highlighter(&mut self) -> Option<&mut Highlighter> {
+        self.highlighters
+            .get_mut(self.current)
+            .and_then(|h| h.as_mut())
+    }
+
     pub fn buf_mut(&mut self) -> &mut Buffer {
         &mut self.buffers[self.current]
     }
@@ -179,9 +186,10 @@ impl Editor {
             return Ok(());
         }
         let buf = Buffer::open(path)?;
-        self.highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
+        let hl = buf.path.as_deref().and_then(Highlighter::for_path);
         self.buffers.push(buf);
         self.surfaces.push(None);
+        self.highlighters.push(hl);
         self.current = self.buffers.len() - 1;
         self.touch_mru(self.current);
         self.cursor = 0;
@@ -209,9 +217,9 @@ impl Editor {
                     *m -= 1;
                 }
             }
+            self.highlighters.remove(closed);
             self.current = self.current.min(self.buffers.len() - 1);
             self.touch_mru(self.current);
-            self.highlighter = self.buf().path.as_deref().and_then(Highlighter::for_path);
             self.cursor = 0;
             self.view_top = 0;
             self.discover_git();
@@ -487,7 +495,10 @@ mod indent_tests {
     #[test]
     fn tab_size_from_config() {
         let mut e = Editor::new(Buffer::from_text("a\nb\n"));
-        e.config = crate::config::Config { tab_size: 2 };
+        e.config = crate::config::Config {
+            tab_size: 2,
+            ..Default::default()
+        };
         e.feed_text(">>");
         assert_eq!(e.buf().rope.to_string(), "  a\nb\n");
         e.feed_text("<<");
@@ -505,5 +516,36 @@ mod indent_tests {
         e.feed_text(":w<cr>");
         assert_eq!(std::fs::read_to_string(path).unwrap(), "fresh");
         std::fs::remove_file(path).ok();
+    }
+}
+
+#[cfg(test)]
+mod alignment_tests {
+    use super::*;
+
+    /// buffers / highlighters / surfaces stay index-aligned through every
+    /// open/close path (bitten twice; the contract now lives here).
+    #[test]
+    fn parallel_vecs_stay_aligned() {
+        std::fs::write("/tmp/strop-align-a.rs", "a\n").unwrap();
+        std::fs::write("/tmp/strop-align-b.rs", "b\n").unwrap();
+        let mut e = Editor::new(Buffer::open("/tmp/strop-align-a.rs").unwrap());
+        let check = |e: &Editor| {
+            assert_eq!(e.buffers.len(), e.highlighters.len());
+            assert_eq!(e.buffers.len(), e.surfaces.len());
+        };
+        check(&e);
+        e.open_buffer("/tmp/strop-align-b.rs").unwrap();
+        check(&e);
+        // a surface (readonly virtual buffer)
+        e.surfaces.pop();
+        e.surfaces.push(None);
+        check(&e);
+        e.close_buffer(true);
+        check(&e);
+        e.close_buffer(true);
+        assert!(e.should_quit);
+        std::fs::remove_file("/tmp/strop-align-a.rs").ok();
+        std::fs::remove_file("/tmp/strop-align-b.rs").ok();
     }
 }

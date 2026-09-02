@@ -111,8 +111,9 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
     let first_byte = editor.buf().line_start(editor.view_top);
     let last_line = (editor.view_top + text_rows).min(editor.buf().len_lines());
     let last_byte = editor.buf().line_end(last_line.saturating_sub(1));
-    let syn_spans: Vec<strop_syntax::Span> = match &mut editor.highlighter {
-        Some(h) => h.highlight(&editor.buffers[editor.current].rope, first_byte, last_byte),
+    let rope = editor.buffers[editor.current].rope.clone();
+    let syn_spans: Vec<strop_syntax::Span> = match editor.highlighter() {
+        Some(h) => h.highlight(&rope, first_byte, last_byte),
         None => Vec::new(),
     };
 
@@ -161,7 +162,11 @@ fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: us
         // indent guides: dim │ at each indent level within leading
         // whitespace (v1: spaces only, no empty-line continuation;
         // scope tracking + config toggle land with 0005)
-        let lead_ws = text.chars().take_while(|c| *c == ' ').count();
+        let lead_ws = if editor.config.indent_guides {
+            text.chars().take_while(|c| *c == ' ').count()
+        } else {
+            0
+        };
         let tab = editor.config.tab_size.max(1);
         let mut syn_idx = syn_spans.partition_point(|s| s.end <= start);
         for (i, ch) in text.chars().enumerate() {

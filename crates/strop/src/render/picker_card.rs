@@ -192,7 +192,15 @@ fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
     let visible = area.height as usize;
 
     let lines: Vec<Line> = match source {
-        PreviewSource::Live(rope) => highlight_lines_owned(rope, None, focus_line, visible),
+        PreviewSource::Buffer(i) => {
+            let rope = editor.buffers[i].rope.clone();
+            let spans = editor
+                .highlighters
+                .get_mut(i)
+                .and_then(|h| h.as_mut())
+                .map(|hl| hl.highlight(&rope, 0, rope.len_bytes()));
+            highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible)
+        }
         PreviewSource::Cached(entry) => {
             let rope = entry.rope.clone();
             let spans = entry

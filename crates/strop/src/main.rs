@@ -5,6 +5,7 @@ mod config;
 mod editor;
 mod headless;
 mod render;
+mod update;
 
 use std::io::{self, Write};
 use std::time::Duration;
@@ -12,8 +13,33 @@ use std::time::Duration;
 use editor::{Editor, Key};
 use strop_core::Buffer;
 
+fn config_path_display() -> String {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+        .map(|b| b.join("strop").join("config.toml").display().to_string())
+        .unwrap_or_else(|| "no config dir".into())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "config") {
+        let (cfg, err) = config::Config::load();
+        if let Some(e) = err {
+            eprintln!("warning: {e}");
+        }
+        println!("strop config ({}):", config_path_display());
+        cfg.print_knobs();
+        return;
+    }
+    if args.first().is_some_and(|a| a == "update") {
+        let check_only = args.iter().any(|a| a == "--check");
+        if let Err(e) = update::update(check_only) {
+            eprintln!("strop update: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("strop {}", env!("CARGO_PKG_VERSION"));
         return;

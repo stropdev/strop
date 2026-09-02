@@ -41,6 +41,7 @@ impl Editor {
         buf.name = name.map(|n| n.to_string());
         self.buffers.push(buf);
         self.surfaces.push(Some(surface));
+        self.highlighters.push(None); // surfaces render via delta/plain rules
         self.current = self.buffers.len() - 1;
         self.touch_mru(self.current);
         self.cursor = 0;

@@ -149,11 +149,6 @@ impl Editor {
                 if i < self.buffers.len() {
                     self.current = i;
                     self.touch_mru(i);
-                    self.highlighter = self
-                        .buf()
-                        .path
-                        .as_deref()
-                        .and_then(strop_syntax::Highlighter::for_path);
                     self.cursor = 0;
                     self.view_top = 0;
                 }
@@ -186,7 +181,8 @@ impl Editor {
                     .path
                     .clone()
                     .unwrap_or_else(|| "[scratch]".into());
-                Some((name, None, PreviewSource::Live(&self.buffers.get(i)?.rope)))
+                let _ = i;
+                Some((name, None, PreviewSource::Buffer(i)))
             }
             Payload::File(rel) => {
                 let full = self.cwd.join(&rel);
@@ -230,7 +226,8 @@ pub struct PreviewEntry {
 }
 
 pub enum PreviewSource<'a> {
-    Live(&'a ropey::Rope),
+    /// Live buffer, highlighted with its own per-buffer highlighter.
+    Buffer(usize),
     Cached(&'a mut PreviewEntry),
 }
 
