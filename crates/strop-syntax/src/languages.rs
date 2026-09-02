@@ -36,30 +36,30 @@ pub fn for_extension(ext: &str) -> Option<LanguageSpec> {
             lang_fn!(
                 "python",
                 tree_sitter_python::LANGUAGE,
-                tree_sitter_python::HIGHLIGHTS_QUERY
+                include_str!("../queries/python/highlights.scm")
             )
         }
         ".js" | ".jsx" | ".mjs" | ".cjs" => {
             lang_fn!(
                 "javascript",
                 tree_sitter_javascript::LANGUAGE,
-                tree_sitter_javascript::HIGHLIGHT_QUERY
+                include_str!("../queries/javascript/highlights.scm")
             )
         }
         ".ts" => lang_fn!(
             "typescript",
             tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
-            tree_sitter_typescript::HIGHLIGHTS_QUERY
+            include_str!("../queries/typescript/highlights.scm")
         ),
         ".tsx" => lang_fn!(
             "tsx",
             tree_sitter_typescript::LANGUAGE_TSX,
-            tree_sitter_typescript::HIGHLIGHTS_QUERY
+            include_str!("../queries/tsx/highlights.scm")
         ),
         ".go" => lang_fn!(
             "go",
             tree_sitter_go::LANGUAGE,
-            tree_sitter_go::HIGHLIGHTS_QUERY
+            include_str!("../queries/go/highlights.scm")
         ),
         ".c" | ".h" => lang_fn!("c", tree_sitter_c::LANGUAGE, tree_sitter_c::HIGHLIGHT_QUERY),
         ".cpp" | ".cc" | ".cxx" | ".hpp" | ".hh" => {
@@ -72,12 +72,12 @@ pub fn for_extension(ext: &str) -> Option<LanguageSpec> {
         ".json" => lang_fn!(
             "json",
             tree_sitter_json::LANGUAGE,
-            tree_sitter_json::HIGHLIGHTS_QUERY
+            include_str!("../queries/json/highlights.scm")
         ),
         ".sh" | ".bash" => lang_fn!(
             "bash",
             tree_sitter_bash::LANGUAGE,
-            tree_sitter_bash::HIGHLIGHT_QUERY
+            include_str!("../queries/bash/highlights.scm")
         ),
         _ => return None,
     })

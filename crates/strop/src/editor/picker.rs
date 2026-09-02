@@ -82,6 +82,7 @@ impl Editor {
                 glue.picker.pop_char();
                 self.picker_input_changed();
             }
+            Key::CtrlR => {}
             Key::Up => glue.picker.move_by(-1),
             Key::Down => glue.picker.move_by(1),
             Key::Tab => glue.picker.move_by(1),

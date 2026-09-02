@@ -1,6 +1,9 @@
 //! strop-core: the buffer. A rope, byte-offset positions, edit ops.
 //! No UI, no modes, no grammar — the thing everything else edits.
 
+pub mod history;
+
+use history::{Edit, EditKind, History};
 use ropey::Rope;
 
 /// A text buffer. Positions are UTF-8 byte offsets, everywhere (0001 §5.1).
@@ -15,6 +18,11 @@ pub struct Buffer {
     /// Display name for virtual buffers (statusline shows "[scratch]"
     /// otherwise): "git log", "commit 1a2b3c", …
     pub name: Option<String>,
+    /// Undo history (helix-style revision tree). Readonly buffers never
+    /// record (their content is owned by jobs, not the user).
+    pub history: History,
+    /// Suppresses recording while applying undo/redo ops.
+    pub replaying: bool,
 }
 
 /// A half-open byte range `[start, end)` plus how vim thinks about it.
@@ -61,6 +69,8 @@ impl Buffer {
             epoch: 0,
             readonly: false,
             name: None,
+            history: History::default(),
+            replaying: false,
         }
     }
 
@@ -79,6 +89,8 @@ impl Buffer {
             epoch: 0,
             readonly: false,
             name: None,
+            history: History::default(),
+            replaying: false,
         })
     }
 
@@ -164,6 +176,26 @@ impl Buffer {
         self.rope.byte_slice(range.start..range.end).to_string()
     }
 
+    /// Apply history edits (undo/redo replay — never recorded).
+    pub fn apply_history(&mut self, ops: Vec<Edit>) {
+        self.replaying = true;
+        for op in ops {
+            match op.kind {
+                EditKind::Insert => {
+                    let at = self.clamp_boundary(op.at.min(self.len_bytes()));
+                    self.rope.insert(at, &op.text);
+                }
+                EditKind::Delete => {
+                    let end = (op.at + op.text.len()).min(self.len_bytes());
+                    self.rope.remove(op.at.min(end)..end);
+                }
+            }
+        }
+        self.replaying = false;
+        self.dirty = true;
+        self.epoch += 1;
+    }
+
     /// Replace the whole contents (virtual buffers filling from jobs).
     pub fn replace_all(&mut self, text: &str) {
         self.rope = Rope::from_str(text);
@@ -176,13 +208,42 @@ impl Buffer {
         self.rope.remove(range.start..range.end);
         self.dirty = true;
         self.epoch += 1;
+        if !self.replaying && !self.readonly {
+            self.history.record(
+                Edit {
+                    at: range.start,
+                    text: text.clone(),
+                    kind: EditKind::Insert,
+                },
+                Edit {
+                    at: range.start,
+                    text: text.clone(),
+                    kind: EditKind::Delete,
+                },
+            );
+        }
         text
     }
 
     pub fn insert(&mut self, at: usize, text: &str) {
-        self.rope.insert(self.clamp_boundary(at), text);
+        let at = self.clamp_boundary(at);
+        self.rope.insert(at, text);
         self.dirty = true;
         self.epoch += 1;
+        if !self.replaying && !self.readonly {
+            self.history.record(
+                Edit {
+                    at,
+                    text: text.into(),
+                    kind: EditKind::Delete,
+                },
+                Edit {
+                    at,
+                    text: text.into(),
+                    kind: EditKind::Insert,
+                },
+            );
+        }
     }
 
     pub fn line_text(&self, line: usize) -> String {

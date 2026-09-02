@@ -142,6 +142,7 @@ fn tui(mut editor: Editor) {
             KeyCode::BackTab => Key::Backtab,
             KeyCode::Char('n') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Down,
             KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
+            KeyCode::Char('r') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlR,
             KeyCode::Char(c) => Key::Char(c),
             _ => continue,
         };

@@ -49,6 +49,7 @@ pub enum Key {
     Down,
     Tab,
     Backtab,
+    CtrlR,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -246,6 +247,7 @@ impl Editor {
                         "down" => Key::Down,
                         "tab" => Key::Tab,
                         "s-tab" => Key::Backtab,
+                        "c-r" => Key::CtrlR,
                         _ => {
                             self.feed(Key::Char('<'));
                             for c in rest.chars().chain(std::iter::once('>')) {
@@ -329,6 +331,52 @@ impl Editor {
 
     pub(crate) fn set_register(&mut self, name: Option<char>, text: String, linewise: bool) {
         self.registers.insert(name.unwrap_or('"'), (text, linewise));
+    }
+
+    /// One undo unit per command (change ops hold the transaction open
+    /// through the insert session — vim groups `ci[foo<esc>` as one `u`).
+    pub(crate) fn tx_begin(&mut self) {
+        self.buf_mut().history.begin();
+    }
+
+    pub(crate) fn tx_commit(&mut self) {
+        self.buf_mut().history.commit();
+    }
+
+    /// `u`: undo one revision. Readonly buffers never record.
+    pub(crate) fn undo(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        match self.buf_mut().history.undo_ops() {
+            Some(ops) => {
+                let start = ops.first().map(|e| e.at).unwrap_or(0);
+                self.buf_mut().apply_history(ops);
+                self.cursor = start;
+                self.clamp_cursor();
+                self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
+            }
+            None => self.message = "already at oldest change".into(),
+        }
+    }
+
+    /// `ctrl-r`: redo along the last-visited branch.
+    pub(crate) fn redo(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        match self.buf_mut().history.redo_ops() {
+            Some(ops) => {
+                let end = ops.last().map(|e| e.at + e.text.len()).unwrap_or(0);
+                self.buf_mut().apply_history(ops);
+                self.cursor = end;
+                self.clamp_cursor();
+                self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
+            }
+            None => self.message = "nothing to redo".into(),
+        }
     }
 
     pub(crate) fn paste(&mut self, name: Option<char>, before: bool) {
@@ -547,5 +595,82 @@ mod alignment_tests {
         assert!(e.should_quit);
         std::fs::remove_file("/tmp/strop-align-a.rs").ok();
         std::fs::remove_file("/tmp/strop-align-b.rs").ok();
+    }
+}
+
+#[cfg(test)]
+mod smartindent_tests {
+    use super::*;
+
+    #[test]
+    fn closer_dedents_on_indent_only_line() {
+        // open a line inside fn f() { } — auto-indented, then '}' dedents
+        let mut e = Editor::new(Buffer::from_text("fn f() {\n}\n"));
+        e.feed_text("o"); // indented to one level
+        assert_eq!(e.buf().line_text(1), "    ");
+        e.feed_text("}"); // closer on the indent-only line → dedent first
+                          // the new line sits at col 0; the file's own closing brace is untouched
+        assert_eq!(e.buf().rope.to_string(), "fn f() {\n}\n}\n");
+    }
+
+    #[test]
+    fn closer_noop_with_real_text_before() {
+        let mut e = Editor::new(Buffer::from_text("fn f() {\n}\n"));
+        e.feed_text("o"); // indented one level
+        e.feed_text("let x = 1;"); // real text on the line
+        e.feed_text("}"); // closer after text: no dedent
+        assert_eq!(e.buf().line_text(1), "    let x = 1;}");
+    }
+}
+
+#[cfg(test)]
+mod undo_tests {
+    use super::*;
+
+    #[test]
+    fn insert_session_undoes_as_one_unit() {
+        let mut e = Editor::new(Buffer::from_text("hello\n"));
+        e.feed_text("A world"); // append " world" at EOL
+        e.feed(crate::editor::Key::Esc);
+        assert_eq!(e.buf().rope.to_string(), "hello world\n");
+        e.feed_text("u");
+        assert_eq!(e.buf().rope.to_string(), "hello\n");
+        e.feed(crate::editor::Key::CtrlR);
+        assert_eq!(e.buf().rope.to_string(), "hello world\n");
+    }
+
+    #[test]
+    fn change_op_holds_one_undo_unit() {
+        let mut e = Editor::new(Buffer::from_text("say [old] now\n"));
+        e.feed_text("w"); // onto [old]
+        e.feed_text("ci["); // change inside brackets
+        e.feed_text("new");
+        e.feed(crate::editor::Key::Esc);
+        assert_eq!(e.buf().rope.to_string(), "say [new] now\n");
+        e.feed_text("u"); // ONE undo restores the whole change
+        assert_eq!(e.buf().rope.to_string(), "say [old] now\n");
+    }
+
+    #[test]
+    fn edit_after_undo_forks_and_ctrlr_redoes_last_branch() {
+        let mut e = Editor::new(Buffer::from_text("ab\n"));
+        e.feed_text("rx"); // replace a with x
+        e.feed_text("u");
+        e.feed_text("ry"); // fork: replace a with y
+        e.feed_text("u"); // back to ab
+        e.feed(crate::editor::Key::CtrlR); // redo the last-visited branch
+        assert_eq!(e.buf().rope.to_string(), "yb\n");
+        // redo once more: nothing (the fork tip is current)
+        e.feed(crate::editor::Key::CtrlR);
+        assert_eq!(e.buf().rope.to_string(), "yb\n");
+    }
+
+    #[test]
+    fn readonly_buffers_refuse_undo() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.buf_mut().readonly = true;
+        e.feed_text("u");
+        assert!(e.message.contains("readonly"));
+        assert_eq!(e.buf().rope.to_string(), "x\n");
     }
 }

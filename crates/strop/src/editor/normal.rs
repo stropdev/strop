@@ -13,6 +13,9 @@ impl Editor {
         if self.buf().readonly {
             return self.feed_readonly(key);
         }
+        if key == Key::CtrlR {
+            return self.redo();
+        }
         if !self.pending.is_empty() {
             return self.feed_pending(key);
         }
@@ -66,8 +69,10 @@ impl Editor {
                 let end =
                     (self.cursor + 1).min(self.buf().line_end(self.buf().line_of(self.cursor)));
                 if end > self.cursor {
+                    self.tx_begin();
                     let range = Range::charwise(self.cursor, end);
                     let text = self.buf_mut().delete(range);
+                    self.tx_commit();
                     self.set_register(None, text, false);
                     self.flash(range);
                     self.last_cmd_keys = "x".into();
@@ -94,7 +99,7 @@ impl Editor {
             }
             'J' => self.join_lines(),
             '.' => self.dot_repeat(),
-            'u' => self.message = "undo arrives with the undo tree (M4)".into(),
+            'u' => self.undo(),
             _ => {}
         }
     }
@@ -120,6 +125,7 @@ impl Editor {
                 self.resolve_pending();
             }
             Key::Enter => self.pending.clear(),
+            Key::CtrlR => {} // vim: pending + ctrl-r isn't a thing; no-op while keys accumulate
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
                 // Space leader (0003 §2): one namespace, which-key overlay
@@ -267,13 +273,17 @@ impl Editor {
                 self.flash(Range::charwise(self.cursor, self.cursor));
             }
             Op::Delete | Op::Change => {
+                self.tx_begin();
                 let text = self.buf_mut().delete(r.range);
                 self.set_register(cmd.register, text, r.range.linewise);
                 self.cursor = r.range.start;
                 self.clamp_cursor();
                 self.flash(Range::charwise(self.cursor, self.cursor));
                 if cmd.op.unwrap() == Op::Change {
+                    // no commit: the insert session closes the undo unit
                     self.enter_insert_from(&cmd.keys);
+                } else {
+                    self.tx_commit();
                 }
             }
         }
@@ -309,17 +319,21 @@ impl Editor {
             return;
         }
         let cursor = self.cursor;
+        self.tx_begin();
         self.buf_mut().delete(Range::charwise(cursor, end));
         let mut tmp = [0u8; 4];
         self.buf_mut().insert(cursor, c.encode_utf8(&mut tmp));
+        self.tx_commit();
         self.flash(Range::charwise(self.cursor, self.cursor + 1));
         self.last_cmd_keys = format!("r{c}");
         self.last_insert = None;
     }
 
     fn join_lines(&mut self) {
+        self.tx_begin();
         let line = self.buf().line_of(self.cursor);
         if line + 1 >= self.buf().len_lines() {
+            self.tx_commit();
             return;
         }
         let eol = self.buf().line_end(line);
@@ -338,6 +352,7 @@ impl Editor {
             self.buf_mut().insert(eol, " ");
         }
         self.cursor = eol;
+        self.tx_commit();
         self.clamp_cursor();
         self.flash(Range::charwise(eol, (eol + 1).min(self.buf().len_bytes())));
         self.last_cmd_keys = "J".into();
