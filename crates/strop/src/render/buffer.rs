@@ -77,7 +77,7 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
         } else {
             let pane = &editor.panes[i];
             PaneView {
-                buffer: pane.buffer.min(editor.buffers.len() - 1),
+                buffer: pane.buffer.min(editor.buffers.len().saturating_sub(1)),
                 cursor: pane.cursor,
                 view_top: pane.view_top,
                 overlays: false,
@@ -119,8 +119,7 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
     let buf = &editor.buffers[view.buffer];
     let line = buf.line_of(view.cursor);
     let row = line.saturating_sub(view.view_top) as u16;
-    let surface = editor.surfaces.get(view.buffer).and_then(|s| s.as_ref());
-    let gutter = diff::gutter_width(surface) as u16;
+    let gutter = diff::left_inset(editor, view.buffer) as u16;
     let col = gutter + buf.col_of(view.cursor) as u16;
     if row < area.height && col < area.width {
         let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
@@ -174,10 +173,37 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
 
     let mut lines: Vec<Line> = Vec::with_capacity(text_rows);
     let diff_digits = diff_digits(surface);
+    // 0011 left-margin columns: the commit file sidebar (Diff surfaces
+    // from the dive chain) and the blame gutter (file buffers) prepend
+    // to every row; content width shrinks by what they take
+    let sidebar = match surface {
+        Some(crate::editor::Surface::Diff {
+            commit: Some(cf),
+            label,
+            ..
+        }) => Some((cf.files.as_slice(), label.as_str())),
+        _ => None,
+    };
+    let sidebar_w = sidebar.map_or(0, |_| diff::SIDEBAR_W + 1);
+    let blame = editor.blame_gutter_for(view.buffer);
+    let blame_w = if blame.is_some() { diff::BLAME_W } else { 0 };
+    let content_width = area.width.saturating_sub((sidebar_w + blame_w) as u16);
     for row in 0..text_rows {
         let line_idx = view.view_top + row;
+        // the margin columns: sidebar cell (or blank), then the blame
+        // cell (or blank past the buffer's lines)
+        let mut left: Vec<Span> = sidebar
+            .map(|(files, label)| diff::sidebar_spans(files, label, line_idx))
+            .unwrap_or_default();
+        if let Some(gutter) = blame {
+            left.push(match gutter.lines.get(line_idx) {
+                Some(bl) => diff::blame_spans(bl),
+                None => diff::blame_blank(),
+            });
+        }
         if line_idx > buf.last_content_line() {
-            lines.push(Line::from(Span::styled("~", Style::default().fg(MUTED))));
+            left.push(Span::styled("~", Style::default().fg(MUTED)));
+            lines.push(Line::from(left));
             continue;
         }
         let start = buf.line_start(line_idx);
@@ -187,16 +213,24 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         // (0010 §4/§5): diff rows re-gutter, log/files rows re-color
         match diff::diff_row(surface, line_idx) {
             Some(diff::DiffRow::Stats | diff::DiffRow::HunkHeader) => {
-                lines.push(diff::structural_row(surface.unwrap(), line_idx, area.width));
+                let mut line = diff::structural_row(surface.unwrap(), line_idx, content_width);
+                line.spans.splice(0..0, left);
+                lines.push(line);
                 continue;
             }
             Some(diff::DiffRow::Line(dl)) => {
                 let mut spans = diff::diff_gutter(dl, line_idx == cur_line, diff_digits);
                 row_style.diff_line = Some(dl);
                 spans.extend(content_spans(
-                    editor, view, start, &text, &row_style, area.width,
+                    editor,
+                    view,
+                    start,
+                    &text,
+                    &row_style,
+                    content_width,
                 ));
-                lines.push(Line::from(spans));
+                left.extend(spans);
+                lines.push(Line::from(left));
                 continue;
             }
             None => {}
@@ -210,22 +244,25 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         // Helix-grade gutter: a colored ▎ bar in the leftmost column —
         // diagnostics first, then git signs (green/amber/red)
         let (bar, bar_color) = gutter_mark(editor, view, line_idx);
-        let mut spans = vec![
-            Span::styled(
-                bar,
-                Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!("{:>3} ", line_idx + 1), num_style),
-        ];
+        left.push(Span::styled(
+            bar,
+            Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
+        ));
+        left.push(Span::styled(format!("{:>3} ", line_idx + 1), num_style));
         row_style.diff_line = None;
-        if let Some(content) = diff::surface_content_spans(surface, line_idx, area.width) {
-            spans.extend(content);
+        if let Some(content) = diff::surface_content_spans(surface, line_idx, content_width) {
+            left.extend(content);
         } else {
-            spans.extend(content_spans(
-                editor, view, start, &text, &row_style, area.width,
+            left.extend(content_spans(
+                editor,
+                view,
+                start,
+                &text,
+                &row_style,
+                content_width,
             ));
         }
-        lines.push(Line::from(spans));
+        lines.push(Line::from(left));
     }
     frame.render_widget(
         Paragraph::new(lines).style(Style::default().bg(BASE)),

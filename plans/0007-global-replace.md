@@ -5,9 +5,15 @@
 > the VSCode-style surface first-class, the vim-native quickfix path
 > composed from the same machinery.
 
-Status: planned. Priority: after the M4 wave, before M5 (LSP) — rename
+Status: implemented (0.2.2). Priority: after the M4 wave, before M5 (LSP) — rename
 and replace compose later: rename is semantic (LSP), replace is textual
 (this plan); `Space r` stays reserved for rename, `Space R` is replace.
+
+Implementation notes (0.2.2): exclusion toggles on `ctrl-x` (the input
+fields own plain `x`); grep/replace render full-frame rather than as a
+floating card — power searches want the space (rootle lesson); written
+files are not auto-opened (a 50-hit apply should not flood the buffer
+list); the rg worker speaks `--json` so rows carry true match spans.
 
 ---
 

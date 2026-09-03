@@ -16,11 +16,13 @@ pub enum Payload {
     File(PathBuf),
     /// An open buffer (index into the editor's buffer list).
     Buffer(usize),
-    /// A grep hit: path, 1-based line, 1-based col, the matched line.
+    /// A grep hit: path, 1-based line, 1-based col, matched-span length
+    /// in bytes, the matched line.
     Grep {
         path: PathBuf,
         line: usize,
         col: usize,
+        match_len: usize,
         line_text: String,
     },
 }
@@ -37,6 +39,8 @@ pub enum Kind {
     Files,
     Buffers,
     Grep,
+    /// Two-field global search & replace (0007).
+    Replace,
     /// Editor-computed items (LSP diagnostics, 0009 §3).
     Diagnostics,
 }
@@ -47,9 +51,17 @@ impl Kind {
             Kind::Files => " files ",
             Kind::Buffers => " buffers ",
             Kind::Grep => " grep ",
+            Kind::Replace => " replace ",
             Kind::Diagnostics => " diagnostics ",
         }
     }
+}
+
+/// Which input field has focus in Kind::Replace (0007 §2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Field {
+    Search,
+    Replace,
 }
 
 /// A scored, filtered row: index into `items` + matched char columns.
@@ -68,6 +80,11 @@ pub struct Row {
 pub struct Picker {
     pub kind: Kind,
     pub input: String,
+    /// Replace mode (0007 §2): the second field, its focus, and the
+    /// per-item exclusion set (item indices).
+    pub replace_input: String,
+    pub field: Field,
+    pub excluded: std::collections::HashSet<usize>,
     pub items: Vec<Item>,
     pub rows: Vec<Row>,
     pub selected: usize,
@@ -80,6 +97,9 @@ impl Picker {
         let mut p = Self {
             kind,
             input: String::new(),
+            replace_input: String::new(),
+            field: Field::Search,
+            excluded: std::collections::HashSet::new(),
             items,
             rows: Vec::new(),
             selected: 0,
@@ -95,6 +115,42 @@ impl Picker {
 
     pub fn pop_char(&mut self) {
         self.input.pop();
+    }
+
+    /// Replace-mode second field input.
+    pub fn push_replace_char(&mut self, c: char) {
+        self.replace_input.push(c);
+    }
+
+    pub fn pop_replace_char(&mut self) {
+        self.replace_input.pop();
+    }
+
+    /// Tab swaps the focused field in Kind::Replace.
+    pub fn toggle_field(&mut self) {
+        self.field = match self.field {
+            Field::Search => Field::Replace,
+            Field::Replace => Field::Search,
+        };
+    }
+
+    /// Exclude/include the selected row from the apply set (0007 §2).
+    pub fn toggle_excluded(&mut self) {
+        if let Some(row) = self.rows.get(self.selected) {
+            let item = row.item;
+            if !self.excluded.remove(&item) {
+                self.excluded.insert(item);
+            }
+        }
+    }
+
+    /// Items in the apply set (replace mode): everything not excluded.
+    pub fn accepted(&self) -> impl Iterator<Item = &Item> {
+        self.items
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !self.excluded.contains(i))
+            .map(|(_, it)| it)
     }
 
     /// Recompute rows from items + input. Grep rows arrive pre-filtered
@@ -141,6 +197,32 @@ impl Picker {
     pub fn current(&self) -> Option<&Item> {
         self.rows.get(self.selected).map(|r| &self.items[r.item])
     }
+}
+
+/// The clamped, char-boundary-safe byte span of a match on its line.
+/// Row rendering and apply share this (0007 §4: preview cannot lie).
+pub fn replace_span(line_text: &str, col: usize, match_len: usize) -> (usize, usize) {
+    let mut start = col.saturating_sub(1).min(line_text.len());
+    while start > 0 && !line_text.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = (start + match_len).min(line_text.len());
+    while end > start && !line_text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (start, end)
+}
+
+/// The one replacement computation: `line_text` with the matched span
+/// swapped for `replacement`.
+pub fn replaced_line(line_text: &str, col: usize, match_len: usize, replacement: &str) -> String {
+    let (start, end) = replace_span(line_text, col, match_len);
+    format!(
+        "{}{}{}",
+        &line_text[..start],
+        replacement,
+        &line_text[end..]
+    )
 }
 
 #[cfg(test)]

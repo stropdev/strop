@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use strop_core::Buffer;
-use strop_git::memory::{self, BlameCard, ChangedFile, LogRow};
+use strop_git::memory::{self, BlameCard, BlameLine, ChangedFile, LogRow};
 use strop_git::{Hunk, LineOrigin};
 
 use super::{Editor, Key, Mode};
@@ -17,6 +17,9 @@ use super::{Editor, Key, Mode};
 pub enum Surface {
     CommitLog {
         rows: Vec<LogRow>,
+        /// Sha to land the cursor on once rows arrive (the blame dive
+        /// opens the browser *at* a commit, 0011 §3).
+        focus: Option<String>,
         return_to: Option<ReturnPoint>,
     },
     ChangedFiles {
@@ -29,7 +32,9 @@ pub enum Surface {
     /// the rendered layout — a stats row, then per hunk a `@@` header
     /// row and unprefixed content rows — so motions, `/` and yank see
     /// exactly what's on screen. `origin` names the working buffer a
-    /// hunk preview belongs to, so `Space g u`/`g s` act on the file.
+    /// hunk preview belongs to, so `Space g u`/`g s` act on the file;
+    /// `commit` carries the commit's other files when this delta came
+    /// from the dive chain (the sidebar + `]f`/`[f`, 0011 §4).
     Diff {
         /// Stats-row label: the file path (delta view) or "hunk".
         label: String,
@@ -37,8 +42,18 @@ pub enum Surface {
         added: usize,
         deleted: usize,
         origin: Option<HunkOrigin>,
+        commit: Option<CommitFiles>,
         return_to: Option<ReturnPoint>,
     },
+}
+
+/// The commit a Diff surface's file belongs to, with the commit's full
+/// changed-file list — the sidebar's data (typed numstat rows, the same
+/// ones the changed-files surface renders from; 0011 §4).
+#[derive(Debug, Clone)]
+pub struct CommitFiles {
+    pub sha: String,
+    pub files: Vec<ChangedFile>,
 }
 
 /// Where a surface was opened from: closing it hands the cursor and
@@ -82,10 +97,37 @@ pub struct HunkOrigin {
     pub epoch: u64,
 }
 
+/// Per-buffer blame gutter state (0011 §3), keyed by canonical path —
+/// no parallel vector to keep aligned, and index churn can never pair
+/// one buffer with another's blame. Valid only while the buffer's edit
+/// epoch and line count still match the capture.
+#[derive(Debug, Clone)]
+pub struct BlameGutter {
+    pub lines: Vec<BlameLine>,
+    /// Buffer edit epoch when the blame was captured; any edit since
+    /// invalidates the line↔buffer-line pairing.
+    pub epoch: u64,
+}
+
 /// Jobs post results here; the event loop drains (never blocks input).
+/// Index-carrying jobs carry the buffer-list `generation` they were
+/// spawned under — a dead surface cannot be resurrected by index reuse
+/// (0011 §2).
 pub enum GitJob {
-    Log { buffer: usize, rows: Vec<LogRow> },
-    Blame(Box<BlameCard>),
+    Log {
+        buffer: usize,
+        generation: u64,
+        rows: Vec<LogRow>,
+    },
+    Card {
+        generation: u64,
+        card: Box<BlameCard>,
+    },
+    Gutter {
+        path: PathBuf,
+        generation: u64,
+        lines: Vec<BlameLine>,
+    },
     Error(String),
 }
 
@@ -94,7 +136,6 @@ impl Editor {
         self.surfaces.get(self.current).and_then(|s| s.as_ref())
     }
     // ---- surface lifecycle --------------------------------------------
-
     fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
         // surfaces stack: only the first one opened from a plain buffer
         // carries a return point (closing the deepest unwinds the chain)
@@ -111,6 +152,7 @@ impl Editor {
         self.buffers.push(buf);
         self.surfaces.push(Some(surface));
         self.highlighters.push(None); // surfaces render via delta/plain rules
+        self.generation += 1; // buffer indices moved: old jobs are stale (0011 §2)
         self.current = self.buffers.len() - 1;
         self.touch_mru(self.current);
         self.cursor = 0;
@@ -126,16 +168,21 @@ impl Editor {
         hunks: Vec<Hunk>,
         origin: Option<HunkOrigin>,
     ) {
+        self.open_delta(name, label, hunks, origin, None);
+    }
+
+    /// The diff-surface builder: `commit` rides along when the delta
+    /// came from the dive chain (sidebar + `]f`/`[f`, 0011 §4).
+    fn open_delta(
+        &mut self,
+        name: &str,
+        label: &str,
+        hunks: Vec<Hunk>,
+        origin: Option<HunkOrigin>,
+        commit: Option<CommitFiles>,
+    ) {
         let (added, deleted) = hunk_stats(&hunks);
-        let mut text = format!("{label} +{added} -{deleted}\n");
-        for hunk in &hunks {
-            text.push_str(&hunk.header());
-            text.push('\n');
-            for line in &hunk.lines {
-                text.push_str(&line.text);
-                text.push('\n');
-            }
-        }
+        let text = diff_surface_text(label, &hunks);
         self.push_surface(
             Some(name),
             &text,
@@ -145,6 +192,7 @@ impl Editor {
                 added,
                 deleted,
                 origin,
+                commit,
                 return_to: None,
             },
         );
@@ -152,6 +200,16 @@ impl Editor {
 
     /// `Space g l`: commit browser. `Space g h`: log scoped to the file.
     pub(crate) fn open_log(&mut self, file_scoped: bool) {
+        self.open_log_inner(file_scoped, None);
+    }
+
+    /// Open the commit browser *at* a commit — the blame dive lands on
+    /// the row it was asked about (0011 §3), not the newest entry.
+    pub(crate) fn open_log_at(&mut self, sha: &str) {
+        self.open_log_inner(false, Some(sha.to_string()));
+    }
+
+    fn open_log_inner(&mut self, file_scoped: bool, focus: Option<String>) {
         let Some(repo) = &self.git else {
             self.message = "not a git repo".into();
             return;
@@ -178,21 +236,130 @@ impl Editor {
             "loading log…",
             Surface::CommitLog {
                 rows: vec![],
+                focus,
                 return_to: None,
             },
         );
         let idx = self.current;
+        let generation = self.generation;
         let tx = self.git_tx.clone();
         std::thread::spawn(move || {
             let msg = match memory::log_graph(&workdir, 200, file.as_deref()) {
-                Ok(rows) => GitJob::Log { buffer: idx, rows },
+                Ok(rows) => GitJob::Log {
+                    buffer: idx,
+                    generation,
+                    rows,
+                },
                 Err(e) => GitJob::Error(e),
             };
             let _ = tx.send(msg);
         });
     }
 
-    /// `Space g b`: blame card for the cursor line.
+    /// `Space g b`: on a file buffer, toggle the blame gutter; anywhere
+    /// else (or as feedback while the gutter loads) the single-line
+    /// card (0011 §3).
+    pub(crate) fn toggle_blame_gutter(&mut self) {
+        if self.buf().readonly || self.buf().path.is_none() {
+            return self.blame_line();
+        }
+        let key = self.blame_key();
+        if self.blame_gutters.remove(&key).is_some() {
+            return; // toggle off
+        }
+        self.blame_gutters.insert(
+            key.clone(),
+            BlameGutter {
+                lines: Vec::new(),
+                epoch: self.buf().epoch,
+            },
+        );
+        self.spawn_blame_file(&key);
+        self.blame_line(); // the card covers the line until data lands
+    }
+
+    /// Canonical path key for the current buffer's gutter entry — the
+    /// same normalization every lookup uses, so `f.rs` and an absolute
+    /// path for one file share one entry.
+    fn blame_key(&self) -> PathBuf {
+        self.blame_key_of(self.buf().path.as_deref().unwrap_or(""))
+    }
+
+    fn blame_key_of(&self, path: &str) -> PathBuf {
+        Path::new(path)
+            .canonicalize()
+            .unwrap_or_else(|_| self.cwd.join(path))
+    }
+
+    fn spawn_blame_file(&mut self, key: &Path) {
+        let Some(repo) = &self.git else {
+            self.message = "not a git repo".into();
+            return;
+        };
+        let workdir = repo.workdir().to_path_buf();
+        let key = key.to_path_buf(); // owned: the job outlives the caller
+        let Ok(rel) = key.strip_prefix(&workdir).map(|r| r.to_path_buf()) else {
+            self.message = "buffer not under workdir".into();
+            return;
+        };
+        let generation = self.generation;
+        let tx = self.git_tx.clone();
+        std::thread::spawn(move || {
+            let msg = match memory::blame_file(&workdir, &rel) {
+                Ok(lines) => GitJob::Gutter {
+                    path: key.to_path_buf(),
+                    generation,
+                    lines,
+                },
+                Err(e) => GitJob::Error(e),
+            };
+            let _ = tx.send(msg);
+        });
+    }
+
+    /// The buffer's blame gutter, if its data is still trustworthy:
+    /// same edit epoch, same line count. Any edit since the capture
+    pub fn blame_gutter_for(&self, buffer: usize) -> Option<&BlameGutter> {
+        let buf = self.buffers.get(buffer)?;
+        let path = buf.path.as_deref()?;
+        let key = Path::new(path)
+            .canonicalize()
+            .unwrap_or_else(|_| self.cwd.join(path));
+        let gutter = self.blame_gutters.get(&key)?;
+        // len_lines counts the trailing newline's phantom line — the
+        // content count is what blame rows pair with
+        let content_lines = buf.last_content_line() + 1;
+        (gutter.epoch == buf.epoch && gutter.lines.len() == content_lines).then_some(gutter)
+    }
+
+    /// Enter with the blame gutter on: dive into the cursor line's
+    /// commit, positioned at its sha (0011 §3). An unloaded or edited-
+    /// stale gutter falls back to the single-line card; with the gutter
+    /// off, Enter stays inert in normal mode.
+    pub(crate) fn dive_from_blame(&mut self) {
+        if self.buf().readonly || self.buf().path.is_none() {
+            return;
+        }
+        let key = self.blame_key();
+        match self.blame_gutters.get(&key) {
+            None => {}
+            Some(_) if self.blame_gutter_for(self.current).is_some() => {
+                let line = self.buf().line_of(self.cursor);
+                match self.blame_gutters.get(&key).and_then(|g| g.lines.get(line)) {
+                    Some(bl) if bl.is_uncommitted() => self.message = "uncommitted line".into(),
+                    Some(bl) => {
+                        let sha = bl.sha.clone();
+                        self.open_log_at(&sha);
+                    }
+                    None => {}
+                }
+            }
+            Some(_) => self.blame_line(), // still loading (or stale): card
+        }
+    }
+
+    /// `Space g b` fallback / surface blame: the card for the cursor
+    /// line.
     pub(crate) fn blame_line(&mut self) {
         let Some(repo) = &self.git else {
             self.message = "not a git repo".into();
@@ -204,6 +371,7 @@ impl Editor {
         };
         let workdir = repo.workdir().to_path_buf();
         let line = self.buf().line_of(self.cursor) + 1;
+        let generation = self.generation;
         let tx = self.git_tx.clone();
         std::thread::spawn(move || {
             let abs = if Path::new(&path).is_absolute() {
@@ -219,7 +387,10 @@ impl Editor {
                 }
             };
             let msg = match memory::blame_line(&workdir, &rel, line) {
-                Ok(card) => GitJob::Blame(Box::new(card)),
+                Ok(card) => GitJob::Card {
+                    generation,
+                    card: Box::new(card),
+                },
                 Err(e) => GitJob::Error(e),
             };
             let _ = tx.send(msg);
@@ -294,8 +465,10 @@ impl Editor {
         }
         match key {
             Key::Char('q') => {
-                self.close_buffer(true);
+                self.close_surface();
             }
+            // C-w works from surfaces too: splits are core grammar
+            Key::CtrlW => self.pending = "\x17".into(),
             Key::Enter => self.dive(),
             Key::Char('v') => {
                 self.mode = Mode::Visual;
@@ -335,13 +508,29 @@ impl Editor {
                     }
                     return;
                 }
+                // window commands (C-w): h l j k w move, v s split,
+                // q closes the pane-or-surface (0011 §1)
+                if self.pending == "\x17" {
+                    self.pending.clear();
+                    return match c {
+                        'h' | 'l' | 'j' | 'k' | 'w' => self.pane_move(c),
+                        'v' => self.split(true, None),
+                        's' => self.split(false, None),
+                        'q' => self.close_surface(),
+                        _ => self.message = "C-w: h l j k w move · v s split · q close".into(),
+                    };
+                }
                 if self.pending == " g" {
                     return self.feed_git_pending(c);
                 }
-                if (self.pending == "]" || self.pending == "[") && c == 'c' {
+                if (self.pending == "]" || self.pending == "[") && (c == 'c' || c == 'f') {
                     let forward = self.pending == "]";
                     self.pending.clear();
-                    return self.jump_hunk(forward);
+                    return if c == 'c' {
+                        self.jump_hunk(forward)
+                    } else {
+                        self.commit_file_step(forward)
+                    };
                 }
                 self.pending.push(c);
                 self.resolve_pending_readonly();
@@ -413,12 +602,21 @@ impl Editor {
                 };
                 let Some(repo) = &self.git else { return };
                 match repo.commit_file_diff(&sha, &file.path) {
-                    Ok(diff) => self.open_diff_surface(
-                        "delta",
-                        &file.path.display().to_string(),
-                        diff.hunks,
-                        None,
-                    ),
+                    Ok(diff) => {
+                        // the delta carries its commit + siblings: the
+                        // sidebar and `]f`/`[f` navigate them (0011 §4)
+                        let commit = CommitFiles {
+                            sha: sha.clone(),
+                            files: files.clone(),
+                        };
+                        self.open_delta(
+                            "delta",
+                            &file.path.display().to_string(),
+                            diff.hunks,
+                            None,
+                            Some(commit),
+                        );
+                    }
                     Err(e) => self.message = e,
                 }
             }
@@ -426,28 +624,158 @@ impl Editor {
         }
     }
 
+    /// `q`: pop one surface (0011 §1). In a split the *pane* closes —
+    /// the buffer stays, vim `:q` semantics — and only the last pane's
+    /// close closes the buffer, running the guaranteed return-point
+    /// restore.
+    fn close_surface(&mut self) {
+        self.close_pane_or_buffer(true);
+        if let Some(pane) = self.panes.get_mut(self.active_pane) {
+            pane.buffer = self.current; // the pane follows the successor
+        }
+    }
+
+    /// `]f` / `[f`: next/previous file of the same commit (0011 §4).
+    /// Rewrites the diff surface in place — the surface keeps its
+    /// return point; only the file it shows changes.
+    pub(crate) fn commit_file_step(&mut self, forward: bool) {
+        let Some(Surface::Diff {
+            commit: Some(cf),
+            label,
+            ..
+        }) = self.surface().cloned()
+        else {
+            self.message = "]f/[f: file navigation needs a commit diff".into();
+            return;
+        };
+        if cf.files.len() < 2 {
+            self.message = "single-file commit".into();
+            return;
+        }
+        let Some(cur) = cf
+            .files
+            .iter()
+            .position(|f| f.path.display().to_string() == label)
+        else {
+            self.message = "current file not in commit".into();
+            return;
+        };
+        let n = cf.files.len();
+        let next = if forward {
+            (cur + 1) % n
+        } else {
+            (cur + n - 1) % n
+        };
+        let file = cf.files[next].clone();
+        let Some(repo) = &self.git else { return };
+        match repo.commit_file_diff(&cf.sha, &file.path) {
+            Ok(diff) => self.load_commit_delta(&cf, &file.path, diff.hunks),
+            Err(e) => self.message = e,
+        }
+    }
+
+    /// Swap the current diff surface to another file of the same
+    /// commit: surface data and buffer text in place, cursor to top.
+    fn load_commit_delta(&mut self, cf: &CommitFiles, path: &Path, hunks: Vec<Hunk>) {
+        let (added, deleted) = hunk_stats(&hunks);
+        let label = path.display().to_string();
+        let text = diff_surface_text(&label, &hunks);
+        let idx = self.current;
+        self.buffers[idx].replace_all(&text);
+        if let Some(Some(Surface::Diff {
+            label: slot,
+            hunks: hunk_slot,
+            added: add_slot,
+            deleted: del_slot,
+            ..
+        })) = self.surfaces.get_mut(idx)
+        {
+            *slot = label.clone();
+            *hunk_slot = hunks;
+            *add_slot = added;
+            *del_slot = deleted;
+        }
+        self.cursor = 0;
+        self.view_top = 0;
+        let pos = cf
+            .files
+            .iter()
+            .position(|f| f.path == path)
+            .map_or(0, |i| i + 1);
+        self.message = format!("{label} · {pos}/{}", cf.files.len());
+    }
+
     // ---- job drain ------------------------------------------------------
 
     pub fn drain_git_jobs(&mut self) {
         while let Ok(job) = self.git_rx.try_recv() {
             match job {
-                GitJob::Log { buffer, rows } => {
-                    if buffer < self.buffers.len() {
-                        let text = rows
-                            .iter()
-                            .map(|r| r.text.as_str())
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                            + "\n";
-                        self.buffers[buffer].replace_all(&text);
-                        if let Some(Some(Surface::CommitLog { rows: slot, .. })) =
-                            self.surfaces.get_mut(buffer)
-                        {
-                            *slot = rows;
+                GitJob::Log {
+                    buffer,
+                    generation,
+                    rows,
+                } => {
+                    // a closed surface's index may be recycled by the
+                    // next buffer: only same-generation results land
+                    // (0011 §2)
+                    if generation != self.generation || buffer >= self.buffers.len() {
+                        continue;
+                    }
+                    let text = rows
+                        .iter()
+                        .map(|r| r.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                        + "\n";
+                    self.buffers[buffer].replace_all(&text);
+                    let mut focus_row = None;
+                    if let Some(Some(Surface::CommitLog {
+                        rows: slot, focus, ..
+                    })) = self.surfaces.get_mut(buffer)
+                    {
+                        focus_row = focus.take().and_then(|sha| {
+                            rows.iter().position(|r| r.sha.as_deref() == Some(&sha))
+                        });
+                        *slot = rows;
+                    }
+                    if let Some(row) = focus_row {
+                        // the blame dive asked for this commit: land on
+                        // it (only when the browser is still what's
+                        // being driven)
+                        if self.current == buffer {
+                            self.cursor = self.buffers[buffer].line_start(row);
+                            self.view_top = row;
                         }
                     }
                 }
-                GitJob::Blame(card) => self.blame_card = Some(*card),
+                GitJob::Card { generation, card } => {
+                    if generation == self.generation {
+                        self.blame_card = Some(*card);
+                    }
+                }
+                GitJob::Gutter {
+                    path,
+                    generation,
+                    lines,
+                } => {
+                    // toggled off meanwhile → the entry is gone → drop
+                    if generation != self.generation {
+                        continue;
+                    }
+                    if let Some(gutter) = self.blame_gutters.get_mut(&path) {
+                        gutter.lines = lines;
+                        // the gutter supersedes the card that covered
+                        // the load for this buffer
+                        if self
+                            .buf()
+                            .path
+                            .as_deref()
+                            .is_some_and(|p| self.blame_key_of(p) == path)
+                        {
+                            self.blame_card = None;
+                        }
+                    }
+                }
                 GitJob::Error(e) => self.message = e,
             }
         }
@@ -471,6 +799,23 @@ fn hunk_stats(hunks: &[Hunk]) -> (usize, usize) {
     })
 }
 
+/// The buffer text a diff surface shows: stats row, then per hunk a
+/// header row and unprefixed content rows — exactly the rendered
+/// layout (0010 §2).
+fn diff_surface_text(label: &str, hunks: &[Hunk]) -> String {
+    let (added, deleted) = hunk_stats(hunks);
+    let mut text = format!("{label} +{added} -{deleted}\n");
+    for hunk in hunks {
+        text.push_str(&hunk.header());
+        text.push('\n');
+        for line in &hunk.lines {
+            text.push_str(&line.text);
+            text.push('\n');
+        }
+    }
+    text
+}
+
 /// The git job channel ends (created once in `Editor::new`).
 pub fn git_channel() -> (Sender<GitJob>, Receiver<GitJob>) {
     channel()
@@ -480,9 +825,9 @@ pub fn git_channel() -> (Sender<GitJob>, Receiver<GitJob>) {
 mod tests {
     use std::process::Command;
 
-    use crate::editor::{Editor, Key, Surface};
+    use crate::editor::{Editor, GitJob, Key, Surface};
     use strop_core::Buffer;
-
+    use strop_git::memory::LogRow;
     use strop_git::LineOrigin;
 
     /// Repo with two commits; second adds a line to f.rs.
@@ -638,5 +983,323 @@ mod tests {
         e.yank_permalink();
         assert_eq!(e.register(None).0, url);
         assert!(e.osc52.is_some(), "OSC52 payload staged for the TUI");
+    }
+
+    fn git_out(root: &std::path::Path, args: &[&str]) -> String {
+        String::from_utf8_lossy(
+            &Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .trim()
+        .to_string()
+    }
+
+    fn pump_ready(e: &mut Editor, ready: impl Fn(&Editor) -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !ready(e) && std::time::Instant::now() < deadline {
+            e.drain_git_jobs();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    /// `Space g b` toggles a per-buffer gutter; Enter dives into the
+    /// cursor line's commit, positioned at its sha (0011 §3).
+    #[test]
+    fn blame_gutter_toggles_and_dives() {
+        let (dir, mut e) = fixture();
+        let root = dir.path().to_path_buf();
+        e.feed_text(" gb");
+        assert_eq!(e.blame_gutters.len(), 1, "gutter on for the buffer");
+        pump_ready(&mut e, |e| e.blame_gutter_for(0).is_some());
+        let gutter = e.blame_gutter_for(0).expect("gutter data loaded");
+        assert_eq!(gutter.lines.len(), 2, "one blame per file line");
+        assert_eq!(
+            gutter.lines[0].sha,
+            git_out(&root, &["rev-parse", "HEAD~1"])
+        );
+        assert_eq!(gutter.lines[1].sha, git_out(&root, &["rev-parse", "HEAD"]));
+
+        // cursor on line 1 → Enter dives into "first", landing on its row
+        e.feed(Key::Enter);
+        pump_ready(&mut e, |e| {
+            e.surface().is_some_and(
+                |s| matches!(s, crate::editor::Surface::CommitLog { rows, .. } if !rows.is_empty()),
+            )
+        });
+        assert!(
+            matches!(e.surface(), Some(Surface::CommitLog { .. })),
+            "dive opened the browser"
+        );
+        assert_eq!(
+            e.buf().line_of(e.cursor),
+            1,
+            "cursor on the first-commit row"
+        );
+        assert_eq!(e.view_top, 1, "view positioned at the focused sha");
+        let text = e.buf().rope.to_string();
+        assert!(text.contains("first"), "{text}");
+
+        // q returns; the gutter survives; toggle off removes it
+        e.feed_text("q");
+        assert_eq!(e.blame_gutters.len(), 1, "gutter is per-buffer view state");
+        e.feed_text(" gb");
+        assert!(e.blame_gutters.is_empty(), "second toggle turns it off");
+        e.feed(Key::Enter);
+        assert!(
+            !matches!(e.surface(), Some(Surface::CommitLog { .. })),
+            "Enter without a gutter stays inert"
+        );
+    }
+
+    /// The gutter refuses to dive after edits (stale pairing) and falls
+    /// back to the single-line card (0011 §3).
+    #[test]
+    fn stale_gutter_falls_back_to_card() {
+        let (_d, mut e) = fixture();
+        e.feed_text(" gb");
+        // settle both spawned jobs (gutter + interim card): a sentinel
+        // through the same FIFO channel proves everything before it
+        // was delivered
+        e.git_tx.send(GitJob::Error("\u{0}settled".into())).unwrap();
+        pump_ready(&mut e, |e| e.message.contains('\u{0}'));
+        e.message.clear();
+        e.blame_card = None;
+        // edit the buffer: line count changes, epoch bumps. Save so
+        // the disk-blame card can speak about the new line at all
+        e.feed_text("o");
+        e.feed_text("fn c() {}");
+        e.feed(Key::Esc);
+        e.feed_text(":w<cr>");
+        assert!(
+            e.blame_gutter_for(0).is_none(),
+            "edits void the line↔blame pairing"
+        );
+        e.blame_card = None;
+        e.feed(Key::Enter);
+        assert!(
+            !matches!(e.surface(), Some(Surface::CommitLog { .. })),
+            "no dive from stale data"
+        );
+        // the card is the fallback: it blames the cursor's own line
+        // (wait for the *new* card — the toggle's line-1 card may
+        // still be in flight)
+        pump_ready(&mut e, |e| {
+            e.blame_card.as_ref().is_some_and(|c| c.line == 3)
+        });
+    }
+
+    /// The return point restores even when the origin buffer is not
+    /// the one the close would land on next (0011 §1).
+    #[test]
+    fn return_point_restores_when_origin_not_current() {
+        let (dir, mut e) = fixture();
+        let root = dir.path();
+        e.feed_text("j$"); // line 2, end
+        let want = e.cursor;
+        e.open_log(false);
+        pump(&mut e);
+        std::fs::write(root.join("g.rs"), "other\n").unwrap();
+        e.open_buffer(root.join("g.rs").to_str().unwrap()).unwrap();
+        assert_eq!(e.current, 2, "switched away from the log's origin");
+        e.current = 1; // back onto the log surface
+        e.cursor = 0;
+        e.feed_text("q");
+        assert_eq!(e.current, 0, "closing switches back to the origin");
+        assert_eq!(e.cursor, want, "cursor restored, not line 1");
+        assert_eq!(e.buf().line_of(e.cursor), 1);
+    }
+
+    /// A log result for a dead surface cannot land in the buffer that
+    /// recycled its index (0011 §2).
+    #[test]
+    fn stale_log_results_are_dropped() {
+        let (_d, mut e) = fixture();
+        e.open_log(false);
+        pump(&mut e);
+        let stale = e.generation;
+        e.feed_text("q"); // closes the surface; generation moves on
+        assert_ne!(stale, e.generation);
+        e.git_tx
+            .send(GitJob::Log {
+                buffer: 1,
+                generation: stale,
+                rows: vec![LogRow {
+                    text: "POISON ROW".into(),
+                    sha: None,
+                }],
+            })
+            .unwrap();
+        e.drain_git_jobs();
+        for (i, b) in e.buffers.iter().enumerate() {
+            let text = b.rope.to_string();
+            assert!(!text.contains("POISON"), "buffer {i} clobbered: {text}");
+        }
+        // the live path still delivers
+        e.open_log(false);
+        pump(&mut e);
+        assert!(e.buf().rope.to_string().contains("add b"));
+    }
+
+    /// A late gutter result for a toggled-off buffer is dropped: the
+    /// entry is the toggle, not the job (0011 §2).
+    #[test]
+    fn gutter_result_dropped_after_toggle_off() {
+        let (dir, mut e) = fixture();
+        let key = dir.path().join("f.rs").canonicalize().unwrap();
+        e.feed_text(" gb"); // on (job in flight)
+        e.feed_text(" gb"); // off
+        assert!(e.blame_gutters.is_empty());
+        e.git_tx
+            .send(GitJob::Gutter {
+                path: key,
+                generation: e.generation, // even a current generation
+                lines: vec![strop_git::memory::BlameLine {
+                    sha: "deadbeef".into(),
+                    author: "nobody".into(),
+                    age: "1m".into(),
+                    ts: 0,
+                }],
+            })
+            .unwrap();
+        e.drain_git_jobs();
+        assert!(
+            e.blame_gutters.is_empty(),
+            "a late job must not re-open a closed gutter"
+        );
+    }
+
+    /// Two files in one fixture repo; the second commit touches both.
+    fn multi_file_fixture() -> (tempfile::TempDir, Editor) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.t"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(root.join("a.rs"), "one\n").unwrap();
+        std::fs::write(root.join("b.rs"), "uno\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "base"]);
+        std::fs::write(root.join("a.rs"), "one\ntwo\n").unwrap();
+        std::fs::write(root.join("b.rs"), "uno\ndos\n").unwrap();
+        git(&["commit", "-qam", "touch both"]);
+        let mut e = Editor::new(Buffer::open(root.join("a.rs").to_str().unwrap()).unwrap());
+        e.cwd = root.to_path_buf();
+        e.discover_git();
+        (dir, e)
+    }
+
+    /// Dive to a file delta: the surface carries the commit's files,
+    /// and `]f`/`[f` walk them, wrapping (0011 §4).
+    #[test]
+    fn commit_file_nav_walks_files() {
+        let (_d, mut e) = multi_file_fixture();
+        e.open_log(false);
+        pump(&mut e);
+        e.feed(Key::Enter); // newest commit → changed files
+        e.feed_text("jj");
+        e.feed(Key::Enter); // a.rs → delta
+        let (label, files) = match e.surface() {
+            Some(Surface::Diff {
+                label,
+                commit: Some(cf),
+                ..
+            }) => (label.clone(), cf.files.len()),
+            other => panic!("not a commit diff: {other:?}"),
+        };
+        assert_eq!(label, "a.rs");
+        assert_eq!(files, 2, "the sidebar's data rides the surface");
+
+        e.feed_text("]f");
+        match e.surface() {
+            Some(Surface::Diff { label, .. }) => assert_eq!(label, "b.rs"),
+            other => panic!("surface lost: {other:?}"),
+        }
+        let text = e.buf().rope.to_string();
+        assert!(text.starts_with("b.rs +1 -0\n"), "{text}");
+        assert!(text.contains("dos"), "{text}");
+        assert!(e.message.contains("b.rs · 2/2"), "{}", e.message);
+
+        e.feed_text("[f");
+        assert!(
+            matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "a.rs"),
+            "back to the first file"
+        );
+        e.feed_text("[f"); // wraparound
+        assert!(
+            matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+            "wraparound to the last file"
+        );
+        assert_eq!(
+            e.buffers.len(),
+            4,
+            "]f rewrites the surface in place (no new buffers)"
+        );
+    }
+
+    /// `q` in a split closes the pane (buffer stays); the last pane's
+    /// `q` closes the buffer and restores the origin (0011 §1).
+    #[test]
+    fn q_in_split_closes_pane_then_buffer() {
+        let (_d, mut e) = fixture();
+        e.open_log(false);
+        pump(&mut e);
+        e.feed(Key::CtrlW);
+        e.feed_text("v"); // split: both panes show the log
+        assert_eq!(e.panes.len(), 2);
+        e.feed_text("q");
+        assert_eq!(e.panes.len(), 1, "q closes the pane in a split");
+        assert_eq!(e.buffers.len(), 2, "the surface buffer survives");
+        assert!(
+            matches!(e.surface(), Some(Surface::CommitLog { .. })),
+            "still on the log"
+        );
+        e.feed_text("q");
+        assert_eq!(e.buffers.len(), 1, "the last pane's q closes the buffer");
+        assert_eq!(e.current, 0, "back on the origin buffer");
+        assert!(e.surface().is_none());
+    }
+
+    /// Golden shape: the blame column renders per line; the commit
+    /// sidebar renders beside the delta with the current file marked.
+    #[test]
+    fn gutters_and_sidebar_render() {
+        let (dir, mut e) = fixture();
+        let root = dir.path().to_path_buf();
+        e.feed_text(" gb");
+        pump_ready(&mut e, |e| e.blame_gutter_for(0).is_some());
+        let frame = crate::headless::frame_string(&mut e, 100, 10);
+        let first_sha = git_out(&root, &["rev-parse", "HEAD~1"]);
+        assert!(
+            frame.contains(&format!("{} t ", &first_sha[..7])),
+            "blame cell: {frame}"
+        );
+        assert!(
+            frame.contains("fn a() {}"),
+            "content still renders right of the gutter: {frame}"
+        );
+
+        let (_d, mut e) = multi_file_fixture();
+        e.open_log(false);
+        pump(&mut e);
+        e.feed(Key::Enter);
+        e.feed_text("jj");
+        e.feed(Key::Enter); // a.rs delta
+        let frame = crate::headless::frame_string(&mut e, 100, 12);
+        assert!(frame.contains("▌a.rs"), "current file marked: {frame}");
+        assert!(frame.contains(" b.rs"), "sibling files listed: {frame}");
+        e.feed_text("]f");
+        let frame = crate::headless::frame_string(&mut e, 100, 12);
+        assert!(frame.contains("▌b.rs"), "marker follows ]f: {frame}");
     }
 }

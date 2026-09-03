@@ -110,6 +110,89 @@ pub fn blame_line(workdir: &Path, rel: &Path, line: usize) -> Result<BlameCard, 
     })
 }
 
+/// One line of a whole-file blame (0001 pillar 3.3, the toggleable
+/// column). `age` is rendered at parse time; `ts` keeps "recent"
+/// honest for the caller's coloring.
+#[derive(Debug, Clone)]
+pub struct BlameLine {
+    pub sha: String,
+    pub author: String,
+    /// Human short form ("3h", "2d", "5mo"); "now" when uncommitted.
+    pub age: String,
+    /// Author time, unix seconds (0 = uncommitted).
+    pub ts: i64,
+}
+
+impl BlameLine {
+    /// Worktree lines git blame attributes to nobody (all-zero sha).
+    pub fn is_uncommitted(&self) -> bool {
+        !self.sha.is_empty() && self.sha.chars().all(|c| c == '0')
+    }
+}
+
+/// Blame every line of a file (`--line-porcelain`; the gutter's data,
+/// 0011 §3). Shells out on a job thread — never the input path.
+pub fn blame_file(workdir: &Path, rel: &Path) -> Result<Vec<BlameLine>, String> {
+    let out = std::process::Command::new("git")
+        .args([
+            "-C",
+            &workdir.display().to_string(),
+            "blame",
+            "--line-porcelain",
+            "--",
+            &rel.display().to_string(),
+        ])
+        .output()
+        .map_err(|e| format!("spawn git blame: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let mut lines = Vec::new();
+    let mut sha = String::new();
+    let mut author = String::new();
+    let mut ts = 0i64;
+    for l in String::from_utf8_lossy(&out.stdout).lines() {
+        if let Some(content) = l.strip_prefix('\t') {
+            // the record's content row closes it — porcelain repeats
+            // the full header per line, so every tab row emits one
+            let _ = content;
+            if !sha.is_empty() {
+                let uncommitted = sha.chars().all(|c| c == '0');
+                lines.push(BlameLine {
+                    sha: sha.clone(),
+                    age: if uncommitted {
+                        "now".into()
+                    } else {
+                        rel_age(ts)
+                    },
+                    author: if uncommitted {
+                        "you".into()
+                    } else {
+                        author.clone()
+                    },
+                    ts: if uncommitted { 0 } else { ts },
+                });
+            }
+            sha.clear();
+            author.clear();
+            ts = 0;
+        } else if sha.is_empty()
+            && !l.is_empty()
+            && l.chars().take(40).all(|c| c.is_ascii_hexdigit())
+        {
+            sha = l.split_whitespace().next().unwrap_or("").to_string();
+        } else if let Some(a) = l.strip_prefix("author ") {
+            author = a.to_string();
+        } else if let Some(t) = l.strip_prefix("author-time ") {
+            ts = t.parse().unwrap_or(0);
+        }
+    }
+    if lines.is_empty() {
+        return Err("no blame for file".into());
+    }
+    Ok(lines)
+}
+
 /// Files changed by a commit: `path | +N -M` rows for the dive view.
 #[derive(Debug, Clone)]
 pub struct ChangedFile {
@@ -268,5 +351,50 @@ mod tests {
         let r = normalize_remote("ssh://git@bitbucket.org/team/repo.git").unwrap();
         assert_eq!(r.host, Host::Bitbucket);
         assert!(normalize_remote("not a url").is_none());
+    }
+
+    /// Repo with two commits (f.rs grows a line), then a dirty edit —
+    /// blame_file must attribute committed lines and flag dirty ones.
+    #[test]
+    fn blame_file_attributes_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.t"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(root.join("f.rs"), "one\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "first"]);
+        std::fs::write(root.join("f.rs"), "one\ntwo\n").unwrap();
+        git(&["commit", "-qam", "second"]);
+
+        let clean = blame_file(root, Path::new("f.rs")).unwrap();
+        assert_eq!(clean.len(), 2, "one BlameLine per file line");
+        assert_eq!(clean[0].author, "t");
+        assert_eq!(clean[1].author, "t");
+        assert_ne!(clean[0].sha, clean[1].sha, "two commits, two shas");
+        assert!(!clean[0].is_uncommitted());
+
+        // dirty worktree: the new line belongs to nobody
+        std::fs::write(root.join("f.rs"), "one\ntwo\nthree\n").unwrap();
+        let dirty = blame_file(root, Path::new("f.rs")).unwrap();
+        assert_eq!(dirty.len(), 3);
+        assert!(dirty[2].is_uncommitted(), "last line is uncommitted");
+        assert_eq!(dirty[2].age, "now");
+        assert_eq!(dirty[2].author, "you");
+        assert_eq!(dirty[2].ts, 0);
+    }
+
+    #[test]
+    fn blame_file_rejects_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(blame_file(dir.path(), Path::new("nope.rs")).is_err());
     }
 }

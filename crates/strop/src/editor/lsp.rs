@@ -2,17 +2,20 @@
 //! the input path. Diagnostics merge into the git gutter (severity wins),
 //! Space d is the diagnostics picker, Space k hover, gd goto-definition.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
+use std::sync::OnceLock;
 
+use strop_lsp::languages::Languages;
 use strop_lsp::registry::{self, ServerSpec};
 use strop_lsp::{Client, LspEvent};
 
 use super::Editor;
 
 impl Editor {
-    /// Spawn a server for the current buffer if the registry has one and
-    /// it's on PATH. One client per workspace root; buffers did_open on it.
+    /// Spawn a server for the current buffer if the merged languages
+    /// config (0012: project > XDG > embedded) resolves one. One client
+    /// per workspace root; buffers did_open on it.
     pub(crate) fn lsp_maybe_attach(&mut self) {
         if cfg!(test) {
             return; // hermetic test builds never spawn servers
@@ -20,11 +23,21 @@ impl Editor {
         let Some(path) = self.buf().path.clone() else {
             return;
         };
-        let ext = std::path::Path::new(&path)
+        let ext = Path::new(&path)
             .extension()
             .map(|e| format!(".{}", e.to_string_lossy()));
         let Some(ext) = ext else { return };
-        let Some(spec) = registry::for_extension(&ext) else {
+        let abs = if Path::new(&path).is_absolute() {
+            PathBuf::from(&path)
+        } else {
+            self.cwd.join(&path)
+        };
+        let languages: &'static Languages = merged_languages(&abs);
+        let warn = languages.warnings();
+        let Some(spec) = registry::for_extension(&ext, languages) else {
+            if !warn.is_empty() {
+                self.message = format!("languages.toml: {}", warn.join("; "));
+            }
             return;
         };
         if self.lsp.is_some() {
@@ -32,37 +45,55 @@ impl Editor {
             self.lsp_did_open_current();
             return;
         }
-        if std::process::Command::new(spec.command)
-            .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .is_err()
+        // PATH probe only for bare command names — a config-provided
+        // absolute path is its own existence check (0012 §5)
+        if !spec.absolute_command()
+            && std::process::Command::new(spec.command)
+                .arg("--version")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_err()
         {
             self.lsp_hint_once(spec);
             return;
         }
-        let root = self
-            .git
-            .as_ref()
-            .map(|g| g.workdir().to_path_buf())
-            .unwrap_or_else(|| self.cwd.clone());
-        let root = registry::workspace_root(PathBuf::from(&path).as_path(), &root);
+        // workspace root: the project layer's dir, else the git walk
+        // from the buffer, else the editor's cwd (0012 §6)
+        let root = languages
+            .project_root
+            .as_deref()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| {
+                let fallback = self
+                    .git
+                    .as_ref()
+                    .map(|g| g.workdir().to_path_buf())
+                    .unwrap_or_else(|| self.cwd.clone());
+                registry::workspace_root(&abs, &fallback)
+            });
         let (tx, rx) = channel();
         match Client::spawn(&spec, &root, tx) {
             Some(client) => {
                 self.lsp = Some(client);
                 self.lsp_rx = Some(rx);
                 self.message = format!("lsp: {} starting", spec.name);
+                if !warn.is_empty() {
+                    self.message
+                        .push_str(&format!(" — languages.toml: {}", warn.join("; ")));
+                }
                 self.lsp_did_open_current();
             }
             None => self.lsp_hint_once(spec),
         }
     }
 
-    fn lsp_hint_once(&mut self, spec: ServerSpec) {
+    fn lsp_hint_once(&mut self, spec: ServerSpec<'static>) {
         if self.lsp_hints_shown.insert(spec.name) {
-            self.message = format!("lsp: {} not on PATH — {}", spec.name, spec.install_hint);
+            let hint = spec
+                .install_hint
+                .unwrap_or("install it or fix the command in languages.toml");
+            self.message = format!("lsp: {} not available — {}", spec.name, hint);
         }
     }
 
@@ -87,7 +118,12 @@ impl Editor {
     /// full sync per edit burst; incremental sync is the perf follow-up).
     pub fn lsp_sync_changed(&mut self) {
         let Some(client) = &self.lsp else { return };
-        let Some(path) = self.buf().path.clone() else {
+        // buffers can be empty post-quit (the TUI breaks first, but
+        // scripted/headless callers may drain past the last :q)
+        let Some(buf) = self.buffers.get(self.current) else {
+            return;
+        };
+        let Some(path) = buf.path.clone() else {
             return;
         };
         let abs = if std::path::Path::new(&path).is_absolute() {
@@ -95,12 +131,12 @@ impl Editor {
         } else {
             self.cwd.join(&path)
         };
-        let epoch = self.buf().epoch;
+        let epoch = buf.epoch;
         if self.lsp_sent_epochs.get(&abs) == Some(&epoch) {
             return;
         }
         self.lsp_sent_epochs.insert(abs.clone(), epoch);
-        client.did_change(&abs, &self.buf().rope.to_string());
+        client.did_change(&abs, &buf.rope.to_string());
     }
 
     /// Drain server events (event loop tick + headless settle).
@@ -158,6 +194,7 @@ impl Editor {
                         path: path.clone(),
                         line: d.line + 1,
                         col: d.col + 1,
+                        match_len: 1,
                         line_text: d.message.clone(),
                     },
                 })
@@ -212,6 +249,20 @@ impl Editor {
             self.buf().col_of(self.cursor),
         );
     }
+}
+
+/// The merged languages.toml layers (0012: project > XDG > embedded),
+/// loaded once per process at first attach — never on the input path.
+/// One project layer per session matches the one-server-per-workspace
+/// model; the buffer anchors the project-file walk. OnceLock (not
+/// LazyLock) because the initializer needs that runtime buffer path.
+fn merged_languages(buffer: &Path) -> &'static Languages {
+    static MERGED: OnceLock<Languages> = OnceLock::new();
+    MERGED.get_or_init(|| {
+        let xdg = strop_lsp::languages::xdg_path();
+        let project = strop_lsp::languages::project_path(buffer);
+        Languages::load(xdg.as_deref(), project.as_deref())
+    })
 }
 
 /// LSP language id for a path (the registry's languages, lsp-named).

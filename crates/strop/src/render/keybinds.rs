@@ -89,14 +89,14 @@ pub fn render_keybinds(editor: &Editor, frame: &mut Frame) {
     }
     frame.render_widget(Paragraph::new(side), cols[0]);
 
-    // rows: keycap chips + descriptions, scrolled
+    // rows: keycap chips + descriptions, scrolled. Planned slots
+    // (live:false) render in their own muted subsection at the bottom —
+    // never styled as live bindings (0003 §5.7).
     let section = SECTIONS[editor.keybinds_section];
-    let rows: Vec<Line> = BINDINGS
-        .iter()
-        .filter(|b| b.section == section)
-        .skip(editor.keybinds_scroll)
-        .take(cols[1].height as usize)
-        .map(|b| {
+    let mut rows: Vec<Line> = Vec::new();
+    let mut planned: Vec<Line> = Vec::new();
+    for b in BINDINGS.iter().filter(|b| b.section == section) {
+        let line = if b.live {
             Line::from(vec![
                 Span::styled(
                     format!(" {:<18}", b.keys),
@@ -107,7 +107,60 @@ pub fn render_keybinds(editor: &Editor, frame: &mut Frame) {
                 ),
                 Span::styled(format!("  {}", b.desc), Style::default().fg(TEXT)),
             ])
-        })
+        } else {
+            Line::from(vec![
+                Span::styled(
+                    format!(" {:<18}", b.keys),
+                    Style::default().fg(MUTED).bg(BASE),
+                ),
+                Span::styled(format!("  {}  (soon)", b.desc), Style::default().fg(MUTED)),
+            ])
+        };
+        if b.live {
+            rows.push(line);
+        } else {
+            planned.push(line);
+        }
+    }
+    if !planned.is_empty() {
+        rows.push(Line::from(Span::styled(
+            " planned",
+            Style::default().fg(MUTED),
+        )));
+        rows.extend(planned);
+    }
+    let rows: Vec<Line> = rows
+        .into_iter()
+        .skip(editor.keybinds_scroll)
+        .take(cols[1].height as usize)
         .collect();
     frame.render_widget(Paragraph::new(rows), cols[1]);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::editor::Editor;
+    use strop_core::Buffer;
+
+    /// The popup renders table rows; planned slots land in their own
+    /// muted subsection with the (soon) suffix — never styled live.
+    /// Normal is the default section (it owns the n/N soon row); tab
+    /// walks to leader for its pair.
+    #[test]
+    fn popup_sections_and_planned_slots() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(" ?");
+        let frame = crate::headless::frame_string(&mut e, 120, 30);
+        assert!(frame.contains("keybindings"));
+        assert!(frame.contains("word / WORD motions"));
+
+        e.feed(crate::editor::Key::Tab);
+        e.feed(crate::editor::Key::Tab);
+        e.feed(crate::editor::Key::Tab); // normal → visual → insert → leader
+        let frame = crate::headless::frame_string(&mut e, 120, 30);
+        assert!(frame.contains("file finder"));
+        assert!(frame.contains("planned"));
+        assert!(frame.contains("jumplist picker  (soon)"));
+        assert!(frame.contains("undo-tree browser"));
+    }
 }

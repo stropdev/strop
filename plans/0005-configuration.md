@@ -21,6 +21,10 @@ Embedded defaults mean the binary is complete with zero files — the zero-confi
 from 0001 §1 is structural, not aspirational. Project-local config is per-directory and
 never executes anything (data only — the no-plugin doctrine applies to config too).
 
+LSP server config is the exception with its own file and layering —
+helix-style `languages.toml`, project `.strop/` dir over XDG over the
+embedded registry (0012); the chain above is editor knobs only.
+
 ## 2. Failure behavior (the part everyone gets wrong)
 
 - **Invalid config never bricks the editor.** Parse errors, unknown keys, bad types:

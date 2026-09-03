@@ -34,32 +34,59 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     let area = frame.area();
     dim_backdrop(frame, area);
 
-    // centered card, clamped to the viewport (0003 §5.2)
-    let width = (area.width * 84 / 100).clamp(50, area.width.saturating_sub(2));
-    let height = (area.height * 70 / 100).clamp(12, area.height.saturating_sub(2));
-    let card = Rect {
-        x: (area.width - width) / 2,
-        y: (area.height - height) / 2,
-        width,
-        height,
+    // power searches breathe: grep/replace take the full frame (one
+    // cell margin), lookups stay a centered card (0003 §5.2)
+    let card = {
+        let glue = editor.picker.as_ref().expect("picker open");
+        let p = &glue.picker;
+        if matches!(
+            p.kind,
+            strop_picker::Kind::Grep | strop_picker::Kind::Replace
+        ) {
+            Rect {
+                x: area.x + 1,
+                y: area.y,
+                width: area.width.saturating_sub(2),
+                height: area.height.saturating_sub(1),
+            }
+        } else {
+            let width = (area.width * 84 / 100).clamp(50, area.width.saturating_sub(2));
+            let height = (area.height * 70 / 100).clamp(12, area.height.saturating_sub(2));
+            Rect {
+                x: (area.width - width) / 2,
+                y: (area.height - height) / 2,
+                width,
+                height,
+            }
+        }
     };
     frame.render_widget(Clear, card);
 
-    let (title, input, rows_data, selected, streaming, total) = {
+    let (kind, input, replace_input, field, rows_data, selected, streaming, total, excluded) = {
         let glue = editor.picker.as_ref().expect("picker open");
         let p = &glue.picker;
         (
-            p.kind.title(),
+            p.kind,
             p.input.clone(),
+            p.replace_input.clone(),
+            p.field,
             p.rows.clone(),
             p.selected,
             p.streaming,
             p.items.len(),
+            p.excluded.clone(),
         )
     };
+    let replace_mode = kind == strop_picker::Kind::Replace;
 
-    let hint = " enter open · esc close · ↑↓/tab move ";
-    let count = if streaming {
+    let hint = if replace_mode {
+        " enter apply · tab switch field · ctrl-x exclude · esc close "
+    } else {
+        " enter open · esc close · ↑↓/tab move "
+    };
+    let count = if replace_mode {
+        format!(" {}/{total} excluded ", excluded.len())
+    } else if streaming {
         format!(" {total}… ")
     } else {
         format!(" {total} ")
@@ -70,7 +97,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         .border_style(Style::default().fg(ACCENT))
         .style(Style::default().bg(BASE))
         .title(Span::styled(
-            title,
+            kind.title(),
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         ))
         .title_bottom(Span::styled(hint, Style::default().fg(MUTED)))
@@ -84,21 +111,36 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         height: inner.height,
     };
     frame.render_widget(&block, card);
-    frame.render_widget(&block, card);
 
-    // input row + content split
+    // input row(s) + content split; replace mode adds a second field
+    let input_h = if replace_mode { 3 } else { 2 };
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .constraints([Constraint::Length(input_h), Constraint::Min(1)])
         .split(inner);
-    let prompt = Line::from(vec![
-        Span::styled("❯ ", Style::default().fg(ACCENT)),
-        Span::styled(input.clone(), Style::default().fg(TEXT)),
-        Span::styled("▏", Style::default().fg(ACCENT)),
-    ]);
-    frame.render_widget(Paragraph::new(prompt), rows[0]);
+    let field_prompt = |label: &str, value: &str, active: bool| {
+        let fg = if active { ACCENT } else { MUTED };
+        let caret = if active { "▏" } else { " " };
+        Line::from(vec![
+            Span::styled(format!("{label} "), Style::default().fg(fg)),
+            Span::styled(value.to_string(), Style::default().fg(TEXT)),
+            Span::styled(caret, Style::default().fg(fg)),
+        ])
+    };
+    if replace_mode {
+        let search = field_prompt("❯ find   ", &input, field == strop_picker::Field::Search);
+        let replace = field_prompt(
+            "❯ replace",
+            &replace_input,
+            field == strop_picker::Field::Replace,
+        );
+        frame.render_widget(Paragraph::new(vec![search, replace]), rows[0]);
+    } else {
+        let prompt = field_prompt("❯", &input, true);
+        frame.render_widget(Paragraph::new(vec![prompt]), rows[0]);
+    }
     // section definition: a rule separates where you type from results
-    let rule_y = rows[0].y + 1;
+    let rule_y = rows[0].y + input_h - 1;
     if rule_y < rows[1].y {
         let rule: String = "─".repeat(rows[0].width as usize);
         frame.render_widget(
@@ -116,7 +158,12 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
         .split(rows[1]);
 
-    render_results(frame, cols[0], &rows_data, selected);
+    if replace_mode {
+        let p = &editor.picker.as_ref().expect("picker open").picker;
+        render_replace_results(frame, cols[0], p);
+    } else {
+        render_results(frame, cols[0], &rows_data, selected);
+    }
     // border-column scrollbar for the results list (0003 §5.5)
     if rows_data.len() > cols[0].height as usize && !rows_data.is_empty() {
         let track_x = cols[0].x + cols[0].width - 1;
@@ -137,10 +184,17 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     render_preview(editor, frame, cols[1]);
     let _ = streaming; // spinner lands with the 100ms rule (0001 §4)
 
-    // input caret
-    let caret_x = rows[0].x + 2 + input.chars().count() as u16;
+    // input caret on the focused field
+    let (caret_len, caret_row) = if replace_mode && field == strop_picker::Field::Replace {
+        (10 + replace_input.chars().count(), 1u16)
+    } else if replace_mode {
+        (10 + input.chars().count(), 0u16)
+    } else {
+        (2 + input.chars().count(), 0u16)
+    };
+    let caret_x = rows[0].x + caret_len as u16;
     if caret_x < rows[0].x + rows[0].width {
-        frame.set_cursor_position((caret_x, rows[0].y));
+        frame.set_cursor_position((caret_x, rows[0].y + caret_row));
     }
 }
 
@@ -158,6 +212,7 @@ fn render_results(frame: &mut Frame, area: Rect, rows: &[strop_picker::Row], sel
         let style = Style::default().fg(if active { ACCENT } else { MUTED });
         let mut spans = vec![Span::styled(marker, style)];
         // matched chars accent+bold, never background blocks (0001 §4)
+
         let text = row_text(row);
         let match_cols: Vec<u32> = row.match_cols.clone();
         let base_fg = if active {
@@ -174,6 +229,87 @@ fn render_results(frame: &mut Frame, area: Rect, rows: &[strop_picker::Row], sel
                 st = st.bg(SELECT_BG);
             }
             spans.push(Span::styled(ch.to_string(), st));
+        }
+        lines.push(Line::from(spans));
+    }
+    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
+}
+
+/// Replace-mode rows (0007 §2): the replacement previews inline — the
+/// matched span strikethrough-dimmed, the replacement in accent — built
+/// from the same `replace_span` the apply path uses. Excluded rows dim
+/// and wear a ✗.
+fn render_replace_results(frame: &mut Frame, area: Rect, p: &strop_picker::Picker) {
+    let visible = area.height as usize;
+    let start = if p.selected >= visible {
+        p.selected + 1 - visible
+    } else {
+        0
+    };
+    let mut lines: Vec<Line> = Vec::with_capacity(visible);
+    for (vi, row) in p.rows.iter().enumerate().skip(start).take(visible) {
+        let active = vi == p.selected;
+        let excluded = p.excluded.contains(&row.item);
+        let marker = if excluded {
+            "✗"
+        } else if active {
+            "▌"
+        } else {
+            " "
+        };
+        let marker_fg = if excluded || !active { MUTED } else { ACCENT };
+        let mut spans = vec![Span::styled(marker, Style::default().fg(marker_fg))];
+        let text_fg = if excluded {
+            dim_color(TEXT)
+        } else if active {
+            TEXT
+        } else {
+            Color::Rgb(0xb8, 0xb4, 0xa9)
+        };
+        if let strop_picker::Payload::Grep {
+            path,
+            line,
+            col,
+            match_len,
+            line_text,
+        } = &p.items[row.item].payload
+        {
+            spans.push(Span::styled(
+                format!(" {}:{line} · ", path.display()),
+                Style::default().fg(MUTED),
+            ));
+            let (s, e) = strop_picker::replace_span(line_text, *col, *match_len);
+            spans.push(Span::styled(
+                line_text[..s].to_string(),
+                Style::default().fg(text_fg),
+            ));
+            spans.push(Span::styled(
+                line_text[s..e].to_string(),
+                Style::default()
+                    .fg(dim_color(TEXT))
+                    .add_modifier(Modifier::CROSSED_OUT),
+            ));
+            if !p.replace_input.is_empty() {
+                spans.push(Span::styled(
+                    p.replace_input.clone(),
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ));
+            }
+            spans.push(Span::styled(
+                line_text[e..].to_string(),
+                Style::default().fg(text_fg),
+            ));
+        } else {
+            spans.push(Span::styled(
+                p.items[row.item].text.clone(),
+                Style::default().fg(text_fg),
+            ));
+        }
+        if active {
+            spans = spans
+                .into_iter()
+                .map(|sp| sp.patch_style(Style::default().bg(SELECT_BG)))
+                .collect();
         }
         lines.push(Line::from(spans));
     }
@@ -209,6 +345,10 @@ fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
                 .map(|hl| hl.highlight(&entry.rope, 0, entry.rope.len_bytes()));
             highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible)
         }
+        PreviewSource::Loading => vec![Line::from(Span::styled(
+            " loading…",
+            Style::default().fg(MUTED),
+        ))],
     };
 
     let block = Block::default()

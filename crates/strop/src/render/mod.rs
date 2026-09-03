@@ -12,8 +12,6 @@ use ratatui::Frame;
 
 use strop_core::Range;
 
-use buffer::GUTTER;
-
 use crate::editor::{Editor, Mode};
 
 mod blame_card;
@@ -154,7 +152,10 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
 fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
     let line = editor.buf().line_of(editor.cursor);
     let row = line.saturating_sub(editor.view_top) as u16;
-    let col = GUTTER + editor.buf().col_of(editor.cursor) as u16;
+    // composed once: sidebar + blame column + the surface's number
+    // gutter (0011) — diff-wide gutters used to drift the caret
+    let col =
+        diff::left_inset(editor, editor.current) as u16 + editor.buf().col_of(editor.cursor) as u16;
     if row < area.height - 1 && col < area.width {
         frame.set_cursor_position((col, row));
     }

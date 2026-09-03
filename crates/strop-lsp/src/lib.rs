@@ -1,12 +1,14 @@
 //! strop-lsp: the LSP client. async-lsp transport (0009 §2.1), tokio on
 //! a worker thread, the editor sees a channel of typed events — never an
 //! async type, never an await in the input path (0001 §5.6).
-
+pub mod languages;
 pub mod registry;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
+
 use tokio::process::Command;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
@@ -72,6 +74,45 @@ struct ClientState {
     tx: Sender<LspEvent>,
 }
 
+/// Server capabilities from the Initialize result (0009 §2.5): requests
+/// are gated on them — servers lie about what they do, and unsupported
+/// requests are quiet no-ops, never error spam. Cloned between the
+/// `Client` handle and the init task that fills it in.
+#[derive(Clone, Default)]
+pub struct ServerCaps(Arc<Mutex<Option<async_lsp::lsp_types::ServerCapabilities>>>);
+
+impl ServerCaps {
+    fn set(&self, caps: async_lsp::lsp_types::ServerCapabilities) {
+        let Ok(mut guard) = self.0.lock() else { return };
+        *guard = Some(caps);
+    }
+
+    /// Hover supported? Capabilities not yet arrived (or a poisoned
+    /// lock) count as no — requests never race server startup.
+    pub fn hover(&self) -> bool {
+        use async_lsp::lsp_types::HoverProviderCapability;
+        let Ok(guard) = self.0.lock() else {
+            return false;
+        };
+        matches!(
+            guard.as_ref().and_then(|c| c.hover_provider.as_ref()),
+            Some(HoverProviderCapability::Simple(true)) | Some(HoverProviderCapability::Options(_))
+        )
+    }
+
+    /// Goto-definition supported? (same unknown-is-no rule as hover)
+    pub fn goto_definition(&self) -> bool {
+        use async_lsp::lsp_types::OneOf;
+        let Ok(guard) = self.0.lock() else {
+            return false;
+        };
+        matches!(
+            guard.as_ref().and_then(|c| c.definition_provider.as_ref()),
+            Some(OneOf::Left(true)) | Some(OneOf::Right(_))
+        )
+    }
+}
+
 /// A live server connection: send from any thread, the runtime thread
 /// owns the socket drain.
 pub struct Client {
@@ -79,12 +120,19 @@ pub struct Client {
     handle: tokio::runtime::Handle,
     tx: Sender<LspEvent>,
     root: PathBuf,
+    caps: ServerCaps,
 }
 
 impl Client {
-    /// Spawn the server for `ext` at `root`. None when the registry has
-    /// no server or the command isn't on PATH.
-    pub fn spawn(spec: &registry::ServerSpec, root: &Path, tx: Sender<LspEvent>) -> Option<Self> {
+    /// Spawn the server described by `spec` at `root`. None when the
+    /// command can't be probed (config layers borrow from process-
+    /// lifetime tables, hence 'static). The spec's `init_options` (helix
+    /// `[language-server.NAME.config]`, 0012) ride on initialize.
+    pub fn spawn(
+        spec: &registry::ServerSpec<'static>,
+        root: &Path,
+        tx: Sender<LspEvent>,
+    ) -> Option<Self> {
         // probe first with std (no reactor): the server must exist at all
         std::process::Command::new(spec.command)
             .arg("--version")
@@ -110,14 +158,19 @@ impl Client {
             .build()
             .ok()?;
         let handle = rt.handle().clone();
+        // filled by the init task below; gates hover/goto requests
+        let self_caps = ServerCaps::default();
 
         // all tokio work (child spawn included) lives on the runtime thread
         let cmd = spec.command.to_string();
-        let args: Vec<String> = spec.args.iter().map(|a| a.to_string()).collect();
+        let args = spec.args.to_vec();
         let root_owned = root.to_path_buf();
         let tx_fail = tx.clone();
         let name = spec.name;
-        let hint = spec.install_hint;
+        let hint = spec
+            .install_hint
+            .unwrap_or("install it or fix languages.toml");
+
         std::thread::spawn(move || {
             rt.block_on(async move {
                 let child = Command::new(&cmd)
@@ -149,9 +202,11 @@ impl Client {
 
         let tx2 = tx.clone();
         let sock = socket.clone();
+        let caps = self_caps.clone();
         let params = InitializeParams {
             #[allow(deprecated)] // root_uri is what every server still honors
             root_uri: Some(root_uri),
+            initialization_options: spec.init_options.cloned(),
             capabilities: async_lsp::lsp_types::ClientCapabilities {
                 text_document: Some(async_lsp::lsp_types::TextDocumentClientCapabilities {
                     synchronization: Some(Default::default()),
@@ -172,7 +227,8 @@ impl Client {
                 eprintln!("strop-lsp: init = {:?}", init.as_ref().map(|_| "ok"));
             }
             match init {
-                Ok(_) => {
+                Ok(resp) => {
+                    caps.set(resp.capabilities);
                     let _ = sock.notify::<async_lsp::lsp_types::notification::Initialized>(
                         InitializedParams {},
                     );
@@ -189,6 +245,7 @@ impl Client {
             handle,
             tx,
             root: root.to_path_buf(),
+            caps: self_caps,
         })
     }
 
@@ -236,7 +293,11 @@ impl Client {
 
     /// Hover at (line, col) — UTF-8 converted at the boundary. The
     /// response posts onto the channel as HoverText (or nothing).
+    /// Quiet no-op when the server doesn't advertise hover (0009 §2.5).
     pub fn hover(&self, path: &Path, line: usize, col: usize) {
+        if !self.caps.hover() {
+            return;
+        }
         let Some(uri) = self.uri(path) else { return };
         let sock = self.socket.clone();
         let tx = self.tx.clone();
@@ -274,8 +335,12 @@ impl Client {
         });
     }
 
-    /// Goto-definition; response posts as GotoLocation.
+    /// Goto-definition; response posts as GotoLocation. Quiet no-op when
+    /// the server doesn't advertise definitions (0009 §2.5).
     pub fn goto_definition(&self, path: &Path, line: usize, col: usize) {
+        if !self.caps.goto_definition() {
+            return;
+        }
         let Some(uri) = self.uri(path) else { return };
         let sock = self.socket.clone();
         let tx = self.tx.clone();
@@ -382,5 +447,58 @@ pub(crate) fn log_line(line: String) {
         {
             let _ = writeln!(f, "strop-lsp: {line}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ServerCaps;
+    use async_lsp::lsp_types::{
+        DefinitionOptions, HoverProviderCapability, OneOf, ServerCapabilities,
+    };
+
+    #[test]
+    fn capabilities_gate_hover_and_goto() {
+        let caps = ServerCaps::default();
+        // pre-initialize: capabilities unknown → requests must not race
+        // server startup
+        assert!(!caps.hover());
+        assert!(!caps.goto_definition());
+
+        // initialized, nothing advertised → both gated
+        caps.set(ServerCapabilities::default());
+        assert!(!caps.hover());
+        assert!(!caps.goto_definition());
+
+        // definition only → hover stays dropped
+        caps.set(ServerCapabilities {
+            definition_provider: Some(OneOf::Left(true)),
+            ..Default::default()
+        });
+        assert!(!caps.hover());
+        assert!(caps.goto_definition());
+
+        // hover on, definition explicitly off
+        caps.set(ServerCapabilities {
+            hover_provider: Some(HoverProviderCapability::Simple(true)),
+            definition_provider: Some(OneOf::Left(false)),
+            ..Default::default()
+        });
+        assert!(caps.hover());
+        assert!(!caps.goto_definition());
+    }
+
+    #[test]
+    fn option_shaped_providers_count_as_enabled() {
+        let caps = ServerCaps::default();
+        caps.set(ServerCapabilities {
+            hover_provider: Some(HoverProviderCapability::Options(Default::default())),
+            definition_provider: Some(OneOf::Right(DefinitionOptions {
+                work_done_progress_options: Default::default(),
+            })),
+            ..Default::default()
+        });
+        assert!(caps.hover());
+        assert!(caps.goto_definition());
     }
 }

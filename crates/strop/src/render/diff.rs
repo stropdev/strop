@@ -1,16 +1,18 @@
 //! Diff surface rendering (0010 §4/§5): gutters, row backgrounds,
-//! structural rows. All decoration comes from typed hunk data — never
-//! from sniffing `+`/`-` in the text. Anatomy borrowed from tuicr
-//! (`[sign][old][new][content]`, quiet bands for structural rows),
-//! tuned to the strop palette.
+//! structural rows — plus the 0011 left-margin columns (blame gutter,
+//! commit file sidebar). All decoration comes from typed hunk data —
+//! never from sniffing `+`/`-` in the text. Anatomy borrowed from
+//! tuicr (`[sign][old][new][content]`, quiet bands for structural
+//! rows), tuned to the strop palette.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::editor::Surface;
+use crate::editor::{Editor, Surface};
+use strop_git::memory::ChangedFile;
 use strop_git::{DiffLine, LineOrigin};
 
-use super::{ACCENT, MUTED, TEXT};
+use super::{ACCENT, MUTED, SELECT_BG, TEXT};
 
 pub(crate) const ADD_FG: Color = Color::Rgb(0xa9, 0xc4, 0x7c);
 pub(crate) const DEL_FG: Color = Color::Rgb(0xe8, 0x67, 0x7a);
@@ -226,12 +228,12 @@ pub(crate) fn surface_content_spans(
     }
 }
 
-/// `* 51b63a8 t · 35 seconds ago · subject` → graph dim, sha accent
-/// bold, `·` separators dim, the rest text.
+/// `* 51b63a8 t · 35 seconds ago · subject` → lane-colored graph runes,
+/// sha accent bold, `·` separators dim, the rest text.
 fn log_row_spans(text: &str) -> Vec<Span<'static>> {
     let graph_len = text
         .chars()
-        .take_while(|c| "*|/\\<>- ".contains(*c))
+        .take_while(|c| "*|/\\<>-_ ".contains(*c))
         .count();
     let rest = &text[graph_len..];
     let sha_len = rest
@@ -239,10 +241,8 @@ fn log_row_spans(text: &str) -> Vec<Span<'static>> {
         .take_while(|c| c.is_ascii_hexdigit())
         .map(|c| c.len_utf8())
         .sum::<usize>();
-    let mut spans = vec![Span::styled(
-        text[..graph_len].to_string(),
-        Style::default().fg(MUTED),
-    )];
+    let mut spans = graph_spans(&text[..graph_len]);
+
     if sha_len > 0 {
         spans.push(Span::styled(
             rest[..sha_len].to_string(),
@@ -260,6 +260,35 @@ fn log_row_spans(text: &str) -> Vec<Span<'static>> {
     spans
 }
 
+/// Lane-colored graph art: each two-column lane cycles the palette, the
+/// commit node `*` is bold in its lane's color (gitui/lazygit lesson —
+/// lane color is how the eye tracks a branch through merges).
+fn graph_spans(prefix: &str) -> Vec<Span<'static>> {
+    const LANES: [Color; 6] = [
+        ACCENT,                       // amber
+        Color::Rgb(0x9e, 0xce, 0x6a), // green
+        Color::Rgb(0x7a, 0xa2, 0xf7), // blue
+        Color::Rgb(0xbb, 0x9a, 0xf7), // purple
+        Color::Rgb(0x7d, 0xcf, 0xff), // cyan
+        Color::Rgb(0xe0, 0xaf, 0x68), // yellow
+    ];
+    prefix
+        .chars()
+        .enumerate()
+        .map(|(i, c)| {
+            if c == ' ' {
+                return Span::styled(" ", Style::default());
+            }
+            let color = LANES[(i / 2) % LANES.len()];
+            let style = if c == '*' {
+                Style::default().fg(color).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(color)
+            };
+            Span::styled(c.to_string(), style)
+        })
+        .collect()
+}
 /// path left, ` +N -M` right-aligned to the row width.
 fn file_row_spans(path: &str, added: usize, deleted: usize, width: u16) -> Vec<Span<'static>> {
     let stats_len = added.to_string().len() + deleted.to_string().len() + 4;
@@ -279,4 +308,134 @@ fn file_row_spans(path: &str, added: usize, deleted: usize, width: u16) -> Vec<S
             Style::default().fg(DEL_FG).add_modifier(Modifier::BOLD),
         ),
     ]
+}
+
+// ---- left-margin columns (0011) -----------------------------------------
+
+/// Blame gutter width: `sha˟7 author˟9 age˟3` + separators.
+pub(crate) const BLAME_W: usize = 22;
+/// Commit file sidebar width (paths ellipsized inside).
+pub(crate) const SIDEBAR_W: usize = 28;
+/// Pane-divider color — the sidebar's rule matches it.
+const RULE: Color = Color::Rgb(0x3a, 0x3d, 0x4d);
+/// Younger than this counts as "recent" → accent (0011 §3).
+const RECENT_SECS: i64 = 30 * 86400;
+
+/// The blame cell for one buffer line: `sha7 author9 age3`, muted for
+/// old commits, accent for recent ones and uncommitted lines
+/// (`0000000 you now`).
+pub(crate) fn blame_spans(line: &strop_git::memory::BlameLine) -> Span<'static> {
+    let uncommitted = line.is_uncommitted();
+    let recent = line.ts > 0 && unix_now() - line.ts < RECENT_SECS;
+    let fg = if uncommitted || recent { ACCENT } else { MUTED };
+    let sha: String = if uncommitted {
+        "0".repeat(7)
+    } else {
+        line.sha.chars().take(7).collect()
+    };
+    let author = ellipsize(&line.author, 9);
+    let age: String = line.age.chars().take(3).collect();
+    Span::styled(
+        format!("{sha} {author:<9} {age:>3} "),
+        Style::default().fg(fg),
+    )
+}
+
+/// A blank blame cell (filler rows past the buffer end).
+pub(crate) fn blame_blank() -> Span<'static> {
+    Span::styled(" ".repeat(BLAME_W), Style::default())
+}
+/// One sidebar row: the commit's changed files, current one marked `▌`
+/// on the selection background (house style 0003 §5.3), plus the dim
+/// rule that divides sidebar from content. Rows past the file list
+/// stay blank so the column reads as one surface.
+pub(crate) fn sidebar_spans(
+    files: &[ChangedFile],
+    current: &str,
+    row: usize,
+) -> Vec<Span<'static>> {
+    let cell = match files.get(row) {
+        Some(f) => {
+            let path = f.path.display().to_string();
+            if path == current {
+                let shown = ellipsize(&path, SIDEBAR_W - 2);
+                let pad = SIDEBAR_W - 1 - shown.chars().count();
+                vec![
+                    Span::styled(
+                        format!("▌{shown}"),
+                        Style::default().fg(ACCENT).bg(SELECT_BG),
+                    ),
+                    Span::styled(" ".repeat(pad), Style::default().bg(SELECT_BG)),
+                ]
+            } else {
+                let shown = ellipsize(&path, SIDEBAR_W - 1);
+                let pad = SIDEBAR_W - shown.chars().count();
+                vec![
+                    Span::styled(format!(" {shown}"), Style::default().fg(TEXT)),
+                    Span::styled(" ".repeat(pad), Style::default()),
+                ]
+            }
+        }
+        None => vec![Span::styled(" ".repeat(SIDEBAR_W), Style::default())],
+    };
+    let mut spans = cell;
+    spans.push(Span::styled("│", Style::default().fg(RULE)));
+    spans
+}
+
+/// Total left inset before a pane's content: file sidebar + blame
+/// column + the surface's number gutter. Cursor placement and the
+/// inactive-pane caret both derive from here — one composition, no
+/// per-surface drift (0011 §3/§4).
+pub(crate) fn left_inset(editor: &Editor, buffer: usize) -> usize {
+    let surface = editor.surfaces.get(buffer).and_then(|s| s.as_ref());
+    let mut inset = gutter_width(surface);
+    if editor.blame_gutter_for(buffer).is_some() {
+        inset += BLAME_W;
+    }
+    if matches!(
+        surface,
+        Some(Surface::Diff {
+            commit: Some(_),
+            ..
+        })
+    ) {
+        inset += SIDEBAR_W + 1;
+    }
+    inset
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// `s` clipped to `n` chars with a trailing `…` when it had more.
+fn ellipsize(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        let cut: String = s.chars().take(n - 1).collect();
+        format!("{cut}…")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graph_lanes_get_distinct_colors() {
+        // a two-lane merge row: `*` in lane 0, `|` in lane 1
+        let spans = log_row_spans("* | 3a9eeec t · 1s ago · merge");
+        let star = spans.iter().find(|s| s.content == "*").unwrap();
+        let bar = spans.iter().find(|s| s.content == "|").unwrap();
+        assert_ne!(star.style.fg, bar.style.fg, "lanes must differ");
+        assert_eq!(star.style.fg, Some(ACCENT));
+        assert!(spans
+            .iter()
+            .any(|s| s.content == "3a9eeec" && s.style.add_modifier.contains(Modifier::BOLD)));
+    }
 }

@@ -10,11 +10,12 @@ mod lsp;
 mod normal;
 mod panes;
 mod picker;
+mod undo;
 mod visual;
 
-pub use git_memory::{git_channel, GitJob, Surface};
+pub use git_memory::{git_channel, BlameGutter, GitJob, Surface};
 pub use panes::{LayoutDir, Pane};
-pub use picker::{PickerGlue, PreviewEntry, PreviewSource, Previews};
+pub use picker::{PickerGlue, PreviewSource, Previews};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -55,6 +56,8 @@ pub enum Key {
     Backtab,
     CtrlR,
     CtrlW,
+    /// Replace picker: exclude/include the selected match (0007 §2).
+    CtrlX,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -71,6 +74,10 @@ pub struct Editor {
     pub mode: Mode,
     pub cursor: usize,
     pub pending: String,
+    /// `Space u` browser state (editor/undo.rs); None when closed.
+    pub undo_browser: Option<undo::UndoBrowser>,
+    /// Armed by `/`/`?` searches: (pattern, backward). `n`/`N` replay it.
+    pub last_search: Option<(String, bool)>,
     pub anchor: usize,
     pub registers: Registers,
     /// Marks: char → (buffer index, byte offset). `m{a}` sets, `'{a}` jumps.
@@ -87,15 +94,32 @@ pub struct Editor {
     pub previews: Previews,
     /// Git working surface state (M2).
     pub git: Option<strop_git::Repo>,
+    /// Preview file reads run on worker threads (0001 §3); results and
+    /// the in-flight set are drained in drain_picker.
+    pub preview_tx: std::sync::mpsc::Sender<(PathBuf, Option<String>)>,
+    pub preview_rx: std::sync::mpsc::Receiver<(PathBuf, Option<String>)>,
+    pub preview_inflight: std::collections::HashSet<PathBuf>,
     pub hunks: Vec<strop_git::Hunk>,
     pub hunks_epoch: u64,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
     pub surfaces: Vec<Option<Surface>>,
     pub blame_card: Option<strop_git::memory::BlameCard>,
+    /// Blame gutters by canonical path (0011 §3): per-buffer view
+    /// state that outlives index churn and never persists to sessions.
+    pub blame_gutters: HashMap<PathBuf, BlameGutter>,
+    /// Bumped on every buffer-list mutation; git jobs carry the
+    /// generation they were spawned under so results for dead
+    /// surfaces are dropped (0011 §2).
+    pub generation: u64,
     pub git_tx: std::sync::mpsc::Sender<GitJob>,
     pub git_rx: std::sync::mpsc::Receiver<GitJob>,
     pub osc52: Option<String>,
+    /// System-clipboard reads (paste from `+`) run on a worker thread;
+    /// `clip_paste_pending` remembers before/after until the read lands.
+    pub clip_tx: std::sync::mpsc::Sender<Option<String>>,
+    pub clip_rx: std::sync::mpsc::Receiver<Option<String>>,
+    pub clip_paste_pending: Option<bool>,
     /// The keybinds popup (`Space ?`): table-driven (keymap.rs).
     pub keybinds_open: bool,
     pub keybinds_section: usize,
@@ -125,6 +149,8 @@ impl Editor {
         // cwd is the process directory (project-wide): pickers walk it,
         // LSP/git resolve against it; a file's own dir is not the project.
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let (preview_tx, preview_rx) = std::sync::mpsc::channel();
+        let (clip_tx, clip_rx) = std::sync::mpsc::channel();
         let (git_tx, git_rx) = git_channel();
         let mut e = Self {
             highlighters: vec![buf.path.as_deref().and_then(Highlighter::for_path)],
@@ -133,6 +159,8 @@ impl Editor {
             mode: Mode::Normal,
             cursor: 0,
             pending: String::new(),
+            last_search: None,
+            undo_browser: None,
             anchor: 0,
             registers: HashMap::new(),
             marks: HashMap::new(),
@@ -145,6 +173,8 @@ impl Editor {
             recording_insert: None,
             picker: None,
             cwd,
+            blame_gutters: HashMap::new(),
+            generation: 0,
             mru: vec![0],
             previews: HashMap::new(),
             git: None,
@@ -157,8 +187,14 @@ impl Editor {
             osc52: None,
             keybinds_open: false,
             keybinds_section: 0,
+            preview_tx,
+            preview_rx,
+            preview_inflight: std::collections::HashSet::new(),
             keybinds_scroll: 0,
             lsp: None,
+            clip_tx,
+            clip_rx,
+            clip_paste_pending: None,
             lsp_rx: None,
             diags: HashMap::new(),
             hover_card: None,
@@ -213,6 +249,7 @@ impl Editor {
         self.buffers.push(buf);
         self.surfaces.push(None);
         self.highlighters.push(hl);
+        self.generation += 1; // buffer indices moved: old jobs are stale (0011 §2)
         self.current = self.buffers.len() - 1;
         self.touch_mru(self.current);
         self.cursor = 0;
@@ -244,12 +281,15 @@ impl Editor {
                 }
             }
             self.highlighters.remove(closed);
+            self.generation += 1; // buffer indices moved: old jobs are stale (0011 §2)
             self.current = self.current.min(self.buffers.len() - 1);
             self.touch_mru(self.current);
             self.cursor = 0;
             self.view_top = 0;
-            // a closing surface hands the cursor back to the plain
-            // buffer it opened from (its index shifts down past `closed`)
+            // a closing surface hands the cursor and view back to the
+            // buffer it opened from — unconditionally (0011 §1): when
+            // the origin isn't what we'd land on next, we switch to it
+            // (its index shifts down past `closed`)
             if let Some(surface) = closed_surface {
                 if let Some(ret) = surface.return_point() {
                     let buffer = if ret.buffer > closed {
@@ -257,10 +297,12 @@ impl Editor {
                     } else {
                         ret.buffer
                     };
-                    if buffer == self.current {
-                        self.cursor = ret.cursor.min(self.buf().len_bytes());
-                        self.view_top = ret.view_top;
+                    if buffer != self.current {
+                        self.current = buffer;
+                        self.touch_mru(buffer);
                     }
+                    self.cursor = ret.cursor.min(self.buf().len_bytes());
+                    self.view_top = ret.view_top;
                 }
             }
             self.discover_git();
@@ -288,6 +330,7 @@ impl Editor {
                         "tab" => Key::Tab,
                         "s-tab" => Key::Backtab,
                         "c-r" => Key::CtrlR,
+                        "c-x" => Key::CtrlX,
                         "c-w" => Key::CtrlW,
                         _ => {
                             self.feed(Key::Char('<'));
@@ -316,8 +359,14 @@ impl Editor {
         if self.blame_card.is_some() {
             match key {
                 Key::Enter => {
+                    // dive into the browser *at* the card's commit,
+                    // not the newest row (0011 §3)
+                    let sha = self.blame_card.as_ref().map(|c| c.sha.clone());
                     self.blame_card = None;
-                    self.open_log(false); // dive into the commit browser
+                    match sha {
+                        Some(sha) => self.open_log_at(&sha),
+                        None => self.open_log(false),
+                    }
                 }
                 _ => self.blame_card = None,
             }
@@ -325,6 +374,9 @@ impl Editor {
         }
         if self.picker_open() {
             return self.feed_picker(key);
+        }
+        if self.feed_undo_browser(key) {
+            return;
         }
         match self.mode {
             Mode::Insert => self.feed_insert(key),
@@ -442,6 +494,11 @@ impl Editor {
     }
 
     pub(crate) fn set_register(&mut self, name: Option<char>, text: String, linewise: bool) {
+        // the `+` register is the system clipboard: yank/delete into it
+        // stages an OSC52 payload for the TUI to emit
+        if name == Some('+') {
+            self.osc52 = Some(text.clone());
+        }
         self.registers.insert(name.unwrap_or('"'), (text, linewise));
     }
 
@@ -463,7 +520,10 @@ impl Editor {
         }
         match self.buf_mut().history.undo_ops() {
             Some(ops) => {
-                let start = ops.first().map(|e| e.at).unwrap_or(0);
+                // vim lands the cursor at the *start* of the undone
+                // change; undo ops replay in reverse record order, so
+                // first() is the tail of the change — take the minimum
+                let start = ops.iter().map(|e| e.at).min().unwrap_or(0);
                 self.buf_mut().apply_history(ops);
                 self.cursor = start;
                 self.clamp_cursor();
@@ -481,9 +541,17 @@ impl Editor {
         }
         match self.buf_mut().history.redo_ops() {
             Some(ops) => {
-                let end = ops.last().map(|e| e.at + e.text.len()).unwrap_or(0);
+                // cursor after the redone text for inserts, at the start
+                // of the redone deletion for deletes
+                let at = ops
+                    .last()
+                    .map(|e| match e.kind {
+                        strop_core::history::EditKind::Insert => e.at + e.text.len(),
+                        strop_core::history::EditKind::Delete => e.at,
+                    })
+                    .unwrap_or(0);
                 self.buf_mut().apply_history(ops);
-                self.cursor = end;
+                self.cursor = at;
                 self.clamp_cursor();
                 self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
             }
@@ -492,10 +560,59 @@ impl Editor {
     }
 
     pub(crate) fn paste(&mut self, name: Option<char>, before: bool) {
+        // `"+p`: the system clipboard is read by a provider job — never
+        // a subprocess on the input path (0001 §3)
+        if name == Some('+') {
+            self.clipboard_paste(before);
+            return;
+        }
         let (text, linewise) = self.register(name).clone();
         if text.is_empty() {
             return;
         }
+        self.paste_text(text, linewise, before);
+    }
+
+    /// `Space p` / `"+p`: spawn a clipboard read; the result lands in
+    /// drain_clipboard on a later tick.
+    pub(crate) fn clipboard_paste(&mut self, before: bool) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        if self.clip_paste_pending.is_some() {
+            return; // one read in flight
+        }
+        self.clip_paste_pending = Some(before);
+        let tx = self.clip_tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(read_system_clipboard());
+        });
+    }
+
+    /// Collect clipboard reads (event-loop tick + headless settle).
+    pub fn drain_clipboard(&mut self) {
+        if self.buffers.is_empty() {
+            return;
+        }
+        while let Ok(result) = self.clip_rx.try_recv() {
+            let Some(before) = self.clip_paste_pending.take() else {
+                continue;
+            };
+            match result {
+                Some(text) if !text.is_empty() => {
+                    let linewise = text.len() > 1 && text.ends_with('\n');
+                    self.paste_text(text, linewise, before);
+                }
+                _ => {
+                    self.message =
+                        "clipboard: empty or no provider (wl-paste/xclip/xsel/pbpaste)".into()
+                }
+            }
+        }
+    }
+
+    fn paste_text(&mut self, text: String, linewise: bool, before: bool) {
         if linewise {
             let line = self.buf().line_of(self.cursor);
             let at = if before {
@@ -523,6 +640,26 @@ impl Editor {
     }
 }
 
+/// Read the system clipboard via the first working provider (helix's
+/// playbook: wl-paste, xclip, xsel, pbpaste). Runs on a worker thread.
+fn read_system_clipboard() -> Option<String> {
+    let providers: [(&str, &[&str]); 4] = [
+        ("wl-paste", &[]),
+        ("xclip", &["-selection", "clipboard", "-o"]),
+        ("xsel", &["--clipboard", "--output"]),
+        ("pbpaste", &[]),
+    ];
+    for (cmd, args) in providers {
+        let Ok(out) = std::process::Command::new(cmd).args(args).output() else {
+            continue; // not installed
+        };
+        if out.status.success() {
+            return String::from_utf8(out.stdout).ok();
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,6 +675,7 @@ mod tests {
     #[test]
     fn named_registers_yank_and_paste() {
         let mut e = editor_with("alpha\nbeta\ngamma\n");
+
         e.feed_text("\"ayy"); // yank line into register a
         assert_eq!(e.register(Some('a')).0, "alpha\n");
         e.feed_text("j");
@@ -545,6 +683,41 @@ mod tests {
         assert_eq!(text(&e), "alpha\nbeta\nalpha\ngamma\n");
         // unnamed register untouched
         assert!(e.register(None).0.is_empty());
+    }
+
+    #[test]
+    fn space_y_yanks_motion_to_system_register() {
+        let mut e = Editor::new(Buffer::from_text("hello world\n"));
+        e.feed_text(" yw");
+        assert_eq!(e.register(Some('+')).0, "hello ");
+        assert!(e.osc52.is_some(), "OSC52 payload staged for the TUI");
+    }
+
+    #[test]
+    fn visual_space_y_yanks_selection_to_system_register() {
+        let mut e = Editor::new(Buffer::from_text("hello world\n"));
+        e.feed_text("vl y");
+        assert_eq!(e.register(Some('+')).0, "he");
+        assert!(e.osc52.is_some());
+    }
+
+    #[test]
+    fn clipboard_paste_inserts_read_result() {
+        let mut e = Editor::new(Buffer::from_text("ab\n"));
+        e.clip_paste_pending = Some(false);
+        e.clip_tx.send(Some("XY".into())).unwrap();
+        e.drain_clipboard();
+        assert_eq!(e.buf().rope.to_string(), "aXYb\n");
+    }
+
+    #[test]
+    fn clipboard_paste_reports_missing_provider() {
+        let mut e = Editor::new(Buffer::from_text("ab\n"));
+        e.clip_paste_pending = Some(false);
+        e.clip_tx.send(None).unwrap();
+        e.drain_clipboard();
+        assert!(e.message.contains("clipboard"));
+        assert_eq!(e.buf().rope.to_string(), "ab\n");
     }
 
     #[test]
@@ -764,6 +937,17 @@ mod undo_tests {
     }
 
     #[test]
+    fn n_repeats_search_and_wraps() {
+        let mut e = Editor::new(Buffer::from_text("foo bar\nfoo baz\n"));
+        e.feed_text("/foo\r"); // lands on the *next* match (vim)
+        assert_eq!(e.cursor, 8);
+        e.feed_text("n"); // wraps to the first
+        assert_eq!(e.cursor, 0);
+        e.feed_text("N"); // backward, wraps from top
+        assert_eq!(e.cursor, 8);
+    }
+
+    #[test]
     fn edit_after_undo_forks_and_ctrlr_redoes_last_branch() {
         let mut e = Editor::new(Buffer::from_text("ab\n"));
         e.feed_text("rx"); // replace a with x
@@ -878,6 +1062,35 @@ mod hardening_tests {
         e.feed_text("vi\"");
         let r = e.visual_range().expect("selection");
         assert_eq!(e.buf().slice_string(r), "hi");
+    }
+
+    #[test]
+    fn quit_leaves_editor_drain_safe() {
+        // regression: the last :q! emptied the buffer list and the
+        // post-feed drain tick panicked indexing buffers[current]
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(":q!\r");
+        assert!(e.should_quit);
+        assert!(e.buffers.is_empty());
+        e.drain_picker();
+        e.drain_git_jobs();
+        e.drain_lsp();
+        e.lsp_sync_changed();
+    }
+
+    #[test]
+    fn undo_lands_cursor_at_change_start() {
+        // regression: undo took the first replayed op (the tail of the
+        // change) — vim lands at the start of the undone region
+        let mut e = Editor::new(Buffer::from_text("hello\n"));
+        e.feed_text("A world");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("0"); // move away from the change
+        e.feed_text("u");
+        assert_eq!(e.buf().rope.to_string(), "hello\n");
+        // the change started at byte 5 (" world"); normal-mode clamp
+        // pulls 5 onto the last char of the line
+        assert_eq!(e.cursor, 4);
     }
 }
 

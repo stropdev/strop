@@ -68,10 +68,16 @@ pub struct Highlighter {
 
 impl Highlighter {
     pub fn for_path(path: &str) -> Option<Self> {
-        let ext = std::path::Path::new(path)
-            .extension()
-            .map(|e| format!(".{}", e.to_string_lossy()))?;
-        let spec = languages::for_extension(&ext)?;
+        let spec = languages::detect(path, None).or_else(|| {
+            // basename/extension both missed: one bounded read of the
+            // first line, and the shebang decides (languages::detect)
+            let line = first_line(path)?;
+            languages::detect(path, Some(&line))
+        })?;
+        Self::from_spec(spec)
+    }
+
+    fn from_spec(spec: languages::LanguageSpec) -> Option<Self> {
         let mut parser = Parser::new();
         parser.set_language(&spec.language).ok()?;
         let query = Query::new(&spec.language, spec.highlights).ok()?;
@@ -147,6 +153,19 @@ impl Highlighter {
     }
 }
 
+/// First line of a file, capped at 256 bytes so a minified no-newline
+/// blob can't turn a probe into a full read. `None` on any IO/decoding
+/// hiccup — shebang detection is a best-effort fallback, never an error.
+fn first_line(path: &str) -> Option<String> {
+    use std::io::{BufRead, BufReader, Read};
+    let mut line = String::new();
+    BufReader::new(std::fs::File::open(path).ok()?)
+        .take(256)
+        .read_line(&mut line)
+        .ok()?;
+    Some(line)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,11 +190,9 @@ mod tests {
     fn cpp_highlights_with_cxx_scanner() {
         // the 0002 §5 gate: C++ grammar's scanner is C++ — a broken
         // static-libstdc++ link fails here, per-PR, not at a user's file.
-        // NB: the bundled cpp query is sparse (13 captures); richer
-        // queries are runtime-override data (0001 §5.11).
         let classes = classes_for("x.cpp", "auto edge = hone(blade);\n");
         assert!(!classes.is_empty(), "cpp grammar produced no spans");
-        assert!(classes.contains(&Class::Type), "{classes:?}"); // auto → @type
+        assert!(classes.contains(&Class::Type), "{classes:?}"); // auto → @type.builtin
     }
 
     #[test]
@@ -185,5 +202,28 @@ mod tests {
         assert!(!classes_for("x.ts", "const x: number = 1;\n").is_empty());
         assert!(!classes_for("x.json", "{\"a\": 1}\n").is_empty());
         assert!(!classes_for("x.sh", "#!/bin/sh\necho hi\n").is_empty());
+    }
+
+    #[test]
+    fn fish_lua_and_sql() {
+        // for_path compiles each vendored Helix query against its
+        // grammar — node drift upstream surfaces here as a None.
+        assert!(!classes_for("x.fish", "set -l name rust\n").is_empty());
+        assert!(classes_for("x.lua", "local x = 1\n").contains(&Class::Keyword));
+        assert!(classes_for("x.sql", "SELECT * FROM users;\n").contains(&Class::Keyword));
+    }
+
+    #[test]
+    fn shebang_script_file_resolves() {
+        // extensionless file on disk: for_path must read its first
+        // line once and hand it to the shebang fallback
+        let path =
+            std::env::temp_dir().join(format!("strop-syntax-shebang-{}", std::process::id()));
+        std::fs::write(&path, "#!/usr/bin/env bash\necho hi\n").unwrap();
+        let resolved = Highlighter::for_path(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        let mut hl = resolved.expect("bash via shebang");
+        let rope = ropey::Rope::from_str("#!/usr/bin/env bash\necho hi\n");
+        assert!(!hl.highlight(&rope, 0, rope.len_bytes()).is_empty());
     }
 }

@@ -98,7 +98,7 @@ impl Editor {
 
     pub(crate) fn feed_insert(&mut self, key: Key) {
         match key {
-            Key::CtrlW => {}
+            Key::CtrlW | Key::CtrlX => {}
             Key::Esc => {
                 self.tx_commit(); // the insert session is one undo unit
                 self.mode = Mode::Normal;

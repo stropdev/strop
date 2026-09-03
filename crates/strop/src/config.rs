@@ -6,6 +6,10 @@
 //! ```toml
 //! tab_size = 4
 //! ```
+//!
+//! LSP server config is a separate file with its own layering —
+//! `languages.toml`, helix-shaped, owned by strop-lsp (0012): project
+//! `.strop/languages.toml` > XDG > the embedded registry.
 
 use serde::Deserialize;
 

@@ -186,8 +186,13 @@ impl Buffer {
                     self.rope.insert(at, &op.text);
                 }
                 EditKind::Delete => {
-                    let end = (op.at + op.text.len()).min(self.len_bytes());
-                    self.rope.remove(op.at.min(end)..end);
+                    // both bounds must land on char boundaries — a stale
+                    // replay against drifted text panics ropey otherwise
+                    let end = self.clamp_boundary((op.at + op.text.len()).min(self.len_bytes()));
+                    let start = self.clamp_boundary(op.at.min(end));
+                    if start < end {
+                        self.rope.remove(start..end);
+                    }
                 }
             }
         }

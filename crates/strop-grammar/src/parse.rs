@@ -14,7 +14,8 @@ pub fn parse(keys: &str) -> Parse {
     if bytes.first() == Some(&b'"') {
         match bytes.get(1) {
             None => return Parse::Incomplete,
-            Some(&r) if r.is_ascii_alphanumeric() => {
+            // `+` is vim's system-clipboard register
+            Some(&r) if r.is_ascii_alphanumeric() || r == b'+' => {
                 register = Some(r as char);
                 i = 2;
             }

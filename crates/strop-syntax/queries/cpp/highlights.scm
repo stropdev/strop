@@ -1,5 +1,7 @@
 ; Vendored from Helix (runtime/queries/{c,cpp}/highlights.scm, MPL-2.0).
 ; cpp inherits c — concatenated here, inherit marker stripped.
+; Trim vs Helix: C++26 reflection (`^^`, splice_specifier) — the
+; tree-sitter-cpp 0.23.4 crate has no such nodes; restore on 0.24+.
 (identifier) @variable
 
 ((identifier) @constant
@@ -326,11 +328,8 @@
   "<=>"
   "[]"
   "()"
-  "^^" ; C++26 reflection operator (reflect_expression)
 ] @operator
 
-; C++26 splice brackets `[: reflection :]` (splice_specifier / splice_type_specifier).
-(splice_specifier ["[:" ":]"] @punctuation.bracket)
 
 
 ; These casts are parsed as function calls, but are not.

@@ -23,6 +23,11 @@ impl Editor {
         if !self.pending.is_empty() {
             return self.feed_pending(key);
         }
+        // Enter with the blame gutter on dives into the line's commit
+        // (0011 §3); with it off, Enter stays inert in normal mode
+        if key == Key::Enter {
+            return self.dive_from_blame();
+        }
         let Key::Char(c) = key else {
             return;
         };
@@ -34,6 +39,9 @@ impl Editor {
             }
             'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | '?' | ':' | '"' | 'r' | '>'
             | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' => self.pending.push(c),
+            // n/N replay the last search (vim; N inverts direction)
+            'n' => self.repeat_search(false),
+            'N' => self.repeat_search(true),
             // aliases — dot-repeat replays the alias key itself
             'D' => self.alias("D", "d$"),
             'C' => self.alias("C", "c$"),
@@ -182,7 +190,7 @@ impl Editor {
                 self.resolve_pending();
             }
             Key::Enter => self.pending.clear(),
-            Key::CtrlR | Key::CtrlW => {} // pending + window/undo keys: no-op
+            Key::CtrlR | Key::CtrlW | Key::CtrlX => {} // pending + window/undo keys: no-op
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
                 // window commands (C-w): h l j k w move, v s split
@@ -203,18 +211,26 @@ impl Editor {
                         'f' => self.open_picker(strop_picker::Kind::Files),
                         'b' => self.open_picker(strop_picker::Kind::Buffers),
                         '/' => self.open_picker(strop_picker::Kind::Grep),
+                        'R' => self.open_picker(strop_picker::Kind::Replace),
                         'g' => {
                             self.pending = " g".into();
                         }
                         '?' => {
                             self.keybinds_open = true;
                         }
+                        'u' => self.open_undo_tree(),
                         'd' => self.open_diagnostics_picker(),
                         'k' => self.lsp_hover(),
+                        // system clipboard via the `+` register (helix's
+                        // space y/p, vim's "+ machinery underneath)
+                        'y' => {
+                            self.pending = "\"+y".into();
+                        }
+                        'p' => self.clipboard_paste(false),
+                        'P' => self.clipboard_paste(true),
                         _ => {
                             self.message =
-                                "Space: f files · b buffers · / grep · g git (j, s, u land M4)"
-                                    .into()
+                                "Space: f files · b buffers · / grep · y/p clipboard · g git".into()
                         }
                     };
                 }
@@ -288,10 +304,54 @@ impl Editor {
         }
     }
 
+    /// `/pat⏎` arms `n`/`N` (vim search repeat).
+    fn note_search(&mut self, cmd: &Command) {
+        match &cmd.target {
+            strop_grammar::Target::Motion(strop_grammar::Motion::Search(p)) => {
+                self.last_search = Some((p.clone(), false));
+            }
+            strop_grammar::Target::Motion(strop_grammar::Motion::SearchBackward(p)) => {
+                self.last_search = Some((p.clone(), true));
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn move_cursor(&mut self, cmd: &Command) {
+        self.note_search(cmd);
         if let Some(r) = grammar::resolve(self.buf(), self.cursor, cmd) {
             self.cursor = grammar::cursor_after(self.buf(), self.cursor, cmd, &r);
             self.clamp_cursor();
+        }
+    }
+
+    /// `n` / `N`: repeat the armed search, wrapping at the file edges.
+    pub(crate) fn repeat_search(&mut self, invert: bool) {
+        let Some((pat, backward)) = self.last_search.clone() else {
+            self.message = "no previous search".into();
+            return;
+        };
+        let backward = backward ^ invert;
+        let hit = if backward {
+            grammar::search_backward(self.buf(), self.cursor, &pat)
+        } else {
+            grammar::search_forward(self.buf(), self.cursor + 1, &pat)
+        };
+        // vim wraps around the file ends
+        let hit = hit.or_else(|| {
+            if backward {
+                grammar::search_backward(self.buf(), self.buf().len_bytes(), &pat)
+            } else {
+                grammar::search_forward(self.buf(), 0, &pat)
+            }
+        });
+        match hit {
+            Some(h) => {
+                self.cursor = self.buf().clamp_boundary(h);
+                self.clamp_cursor();
+                self.flash(Range::charwise(self.cursor, self.cursor));
+            }
+            None => self.message = format!("pattern not found: {pat}"),
         }
     }
 
@@ -358,6 +418,7 @@ impl Editor {
     }
 
     fn execute(&mut self, cmd: &Command) {
+        self.note_search(cmd);
         // surround targets execute as pair edits, not operator ranges
         if let Some(()) = self.execute_surround(cmd) {
             return;

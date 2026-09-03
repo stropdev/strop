@@ -66,6 +66,7 @@ pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: 
                 editor.drain_picker();
                 editor.drain_git_jobs();
                 editor.drain_lsp();
+                editor.drain_clipboard();
                 std::thread::sleep(std::time::Duration::from_millis(25));
             }
         } else if line == "settle" {
@@ -75,6 +76,7 @@ pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: 
                 editor.drain_picker();
                 editor.drain_git_jobs();
                 editor.drain_lsp();
+                editor.drain_clipboard();
                 let streaming = editor.picker.as_ref().is_some_and(|g| g.picker.streaming);
                 if !streaming || std::time::Instant::now() > deadline {
                     break;

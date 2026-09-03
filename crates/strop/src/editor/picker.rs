@@ -58,7 +58,7 @@ impl Editor {
                 spawn_files(self.cwd.clone(), tx.take().expect("fresh channel"));
                 (vec![], true, Some(rx))
             }
-            Kind::Grep => (vec![], false, Some(rx)),
+            Kind::Grep | Kind::Replace => (vec![], false, Some(rx)),
             Kind::Diagnostics => unreachable!("diagnostics use PickerGlue::diagnostics"),
         };
         let picker = Picker::new(kind, items, streaming);
@@ -82,8 +82,10 @@ impl Editor {
     /// semantics (0003 §1); nav is arrows / ctrl-n,p / tab.
     pub(crate) fn feed_picker(&mut self, key: Key) {
         let Some(glue) = &mut self.picker else { return };
+        let replace = glue.picker.kind == Kind::Replace;
         match key {
             Key::Esc => self.close_picker(),
+            Key::Enter if replace => self.apply_replace(),
             Key::Enter => {
                 let payload = glue.picker.current().map(|i| i.payload.clone());
                 self.picker = None;
@@ -91,9 +93,18 @@ impl Editor {
                     self.accept_picker(p);
                 }
             }
+            // 0007 §2: Tab cycles the two fields; results nav is
+            // arrows / ctrl-n,p while a field has focus
+            Key::Tab | Key::Backtab if replace => glue.picker.toggle_field(),
+            Key::CtrlX if replace => glue.picker.toggle_excluded(),
+            Key::CtrlX => {}
             Key::Backspace => {
-                glue.picker.pop_char();
-                self.picker_input_changed();
+                if replace && glue.picker.field == strop_picker::Field::Replace {
+                    glue.picker.pop_replace_char();
+                } else {
+                    glue.picker.pop_char();
+                    self.picker_input_changed();
+                }
             }
             Key::CtrlR | Key::CtrlW => {}
             Key::Up => glue.picker.move_by(-1),
@@ -101,15 +112,19 @@ impl Editor {
             Key::Tab => glue.picker.move_by(1),
             Key::Backtab => glue.picker.move_by(-1),
             Key::Char(c) => {
-                glue.picker.push_char(c);
-                self.picker_input_changed();
+                if replace && glue.picker.field == strop_picker::Field::Replace {
+                    glue.picker.push_replace_char(c);
+                } else {
+                    glue.picker.push_char(c);
+                    self.picker_input_changed();
+                }
             }
         }
     }
 
     fn picker_input_changed(&mut self) {
         let Some(glue) = &mut self.picker else { return };
-        if glue.picker.kind == Kind::Grep {
+        if matches!(glue.picker.kind, Kind::Grep | Kind::Replace) {
             // rg filters; kill + respawn per keystroke (worker is cheap).
             // A fresh channel per respawn: the old worker's messages (incl.
             // its trailing Done) fail to send on the dropped receiver, so
@@ -118,6 +133,7 @@ impl Editor {
             let cwd = self.cwd.clone();
             glue.grep_worker = None; // drop kills the old rg
             glue.picker.items.clear();
+            glue.picker.excluded.clear(); // item indices die with the respawn
             let (tx, rx) = channel();
             glue.tx = Some(tx.clone());
             glue.rx = Some(rx);
@@ -146,6 +162,29 @@ impl Editor {
             }
             if done {
                 glue.picker.streaming = false;
+            }
+        }
+        self.drain_previews();
+    }
+
+    /// Drain preview worker results (file reads happen off the render
+    /// path — 0001 §3).
+    fn drain_previews(&mut self) {
+        while let Ok((path, text)) = self.preview_rx.try_recv() {
+            self.preview_inflight.remove(&path);
+            if let Some(text) = text {
+                let rope = ropey::Rope::from_str(&text);
+                let hl = Highlighter::for_path(&path.display().to_string());
+                self.previews.insert(path, PreviewEntry { rope, hl });
+            } else {
+                // unreadable: cache the miss so we don't respawn per frame
+                self.previews.insert(
+                    path,
+                    PreviewEntry {
+                        rope: ropey::Rope::from_str(""),
+                        hl: None,
+                    },
+                );
             }
         }
     }
@@ -182,6 +221,175 @@ impl Editor {
         }
     }
 
+    /// Replace mode Enter: apply every accepted hit. One undo revision
+    /// per touched buffer (0007 §4); lines that drifted since the search
+    /// are skipped and counted, never silently rewritten.
+    fn apply_replace(&mut self) {
+        let Some(glue) = self.picker.take() else {
+            return;
+        };
+        let replacement = glue.picker.replace_input.clone();
+        let mut by_path: HashMap<PathBuf, Vec<(usize, usize, usize, String)>> = HashMap::new();
+        for it in glue.picker.accepted() {
+            if let Payload::Grep {
+                path,
+                line,
+                col,
+                match_len,
+                line_text,
+            } = &it.payload
+            {
+                by_path.entry(path.clone()).or_default().push((
+                    *line,
+                    *col,
+                    *match_len,
+                    line_text.clone(),
+                ));
+            }
+        }
+        if by_path.is_empty() {
+            self.message = "replace: no matches".into();
+            return;
+        }
+        let mut files = 0usize;
+        let mut applied = 0usize;
+        let mut stale = 0usize;
+        for (rel, mut hits) in by_path {
+            // bottom-up: earlier hits' offsets stay valid while applying
+            hits.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+            let full = self.cwd.join(&rel);
+            let (f, a, s) = if let Some(bi) = self.buffer_index_of(&full) {
+                self.replace_in_buffer(bi, &hits, &replacement)
+            } else {
+                Self::replace_in_file(&full, &hits, &replacement)
+            };
+            files += f;
+            applied += a;
+            stale += s;
+        }
+        let stale_msg = if stale > 0 {
+            format!(" · {stale} stale skipped")
+        } else {
+            String::new()
+        };
+        self.message =
+            format!("replaced {applied} in {files} files (u per buffer to undo){stale_msg}");
+    }
+
+    /// Open-buffer index for an absolute path, if loaded.
+    fn buffer_index_of(&self, abs: &std::path::Path) -> Option<usize> {
+        self.buffers.iter().position(|b| {
+            b.path
+                .as_deref()
+                .map(|p| {
+                    let p = std::path::Path::new(p);
+                    let buf_abs = if p.is_absolute() {
+                        p.to_path_buf()
+                    } else {
+                        self.cwd.join(p)
+                    };
+                    buf_abs == abs
+                        || buf_abs.canonicalize().ok().as_ref() == Some(&abs.to_path_buf())
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    /// Verified, bottom-up replacement in an open buffer: one history
+    /// transaction → one `u` reverts this buffer's replacements.
+    fn replace_in_buffer(
+        &mut self,
+        bi: usize,
+        hits: &[(usize, usize, usize, String)],
+        replacement: &str,
+    ) -> (usize, usize, usize) {
+        let mut applied = 0;
+        let mut stale = 0;
+        let buf = &mut self.buffers[bi];
+        if buf.readonly {
+            return (0, 0, hits.len());
+        }
+        buf.history.begin();
+        for (line, col, match_len, expected) in hits {
+            if *line == 0 || *line > buf.len_lines() {
+                stale += 1;
+                continue;
+            }
+            // verify the matched *span*, not the whole line: same-line
+            // hits stay verifiable as earlier (rightward) ones apply
+            let (s, e) = strop_picker::replace_span(expected, *col, *match_len);
+            let ls = buf.line_start(line - 1);
+            let abs_s = ls + s;
+            let abs_e = (ls + e).min(buf.len_bytes());
+            if abs_s > abs_e || buf.rope.slice(abs_s..abs_e) != expected[s..e] {
+                stale += 1;
+                continue;
+            }
+            buf.delete(strop_core::Range::charwise(abs_s, abs_e));
+            buf.insert(abs_s, replacement);
+            applied += 1;
+        }
+        buf.history.commit();
+        ((applied > 0) as usize, applied, stale)
+    }
+
+    /// Replace hits in a file that isn't open: verified line-by-line,
+    /// mtime-guarded, written atomically (temp + rename) — never a silent
+    /// partial write (0007 §4). Returns (touched, applied, stale).
+    fn replace_in_file(
+        path: &std::path::Path,
+        hits: &[(usize, usize, usize, String)],
+        replacement: &str,
+    ) -> (usize, usize, usize) {
+        let Ok(meta) = std::fs::metadata(path) else {
+            return (0, 0, hits.len());
+        };
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return (0, 0, hits.len());
+        };
+        let line_offsets: Vec<usize> = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        let mut content = text.clone();
+        let mut applied = 0;
+        let mut stale = 0;
+        for (line, col, match_len, expected) in hits {
+            let Some(&ls) = line_offsets.get(line.saturating_sub(1)) else {
+                stale += 1;
+                continue;
+            };
+            // verify the matched *span* (same-line hits stay verifiable
+            // as rightward ones apply), in content: bottom-up order keeps
+            // smaller offsets valid
+            let (s, e) = strop_picker::replace_span(expected, *col, *match_len);
+            let abs_s = ls + s;
+            let abs_e = ls + e;
+            if content.get(abs_s..abs_e) != expected.get(s..e) {
+                stale += 1;
+                continue;
+            }
+            content.replace_range(abs_s..abs_e, replacement);
+            applied += 1;
+        }
+        if applied == 0 {
+            return (0, 0, stale);
+        }
+        // mtime guard: somebody rewrote the file under the search — skip
+        let moved =
+            std::fs::metadata(path).ok().and_then(|m| m.modified().ok()) != meta.modified().ok();
+        if moved {
+            return (0, 0, applied + stale);
+        }
+        let tmp = path.with_file_name(format!(
+            "{}.strop-tmp",
+            path.file_name().and_then(|n| n.to_str()).unwrap_or("strop")
+        ));
+        if std::fs::write(&tmp, &content).is_err() || std::fs::rename(&tmp, path).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+            return (0, 0, applied + stale);
+        }
+        (1, applied, stale)
+    }
     /// Preview payload for the render layer: (title, focus line, rope).
     /// Files are read once and cached with a highlighter; buffers render
     /// from the live rope.
@@ -200,7 +408,9 @@ impl Editor {
             }
             Payload::File(rel) => {
                 let full = self.cwd.join(&rel);
-                self.preview_cache(&full)?;
+                if !self.preview_ready(&full) {
+                    return Some((rel.display().to_string(), None, PreviewSource::Loading));
+                }
                 let entry = self.previews.get_mut(&full)?;
                 Some((
                     rel.display().to_string(),
@@ -210,7 +420,9 @@ impl Editor {
             }
             Payload::Grep { path, line, .. } => {
                 let full = self.cwd.join(&path);
-                self.preview_cache(&full)?;
+                if !self.preview_ready(&full) {
+                    return Some((path.display().to_string(), None, PreviewSource::Loading));
+                }
                 let entry = self.previews.get_mut(&full)?;
                 Some((
                     path.display().to_string(),
@@ -221,16 +433,24 @@ impl Editor {
         }
     }
 
-    fn preview_cache(&mut self, path: &PathBuf) -> Option<String> {
+    /// True when the preview is cached; otherwise kicks a worker thread
+    /// (size-capped read) and reports false — the next tick picks it up.
+    fn preview_ready(&mut self, path: &PathBuf) -> bool {
         if self.previews.contains_key(path) {
-            return Some(String::new()); // entry exists; render reads the rope
+            return true;
         }
-        let text = std::fs::read_to_string(path).ok()?;
-        let rope = ropey::Rope::from_str(&text);
-        let hl = Highlighter::for_path(&path.display().to_string());
-        self.previews
-            .insert(path.clone(), crate::editor::PreviewEntry { rope, hl });
-        Some(String::new())
+        if self.preview_inflight.insert(path.clone()) {
+            let tx = self.preview_tx.clone();
+            let p = path.clone();
+            std::thread::spawn(move || {
+                let text = std::fs::metadata(&p)
+                    .ok()
+                    .filter(|m| m.len() <= 512 * 1024)
+                    .and_then(|_| std::fs::read_to_string(&p).ok());
+                let _ = tx.send((p, text));
+            });
+        }
+        false
     }
 }
 
@@ -243,6 +463,110 @@ pub enum PreviewSource<'a> {
     /// Live buffer, highlighted with its own per-buffer highlighter.
     Buffer(usize),
     Cached(&'a mut PreviewEntry),
+    /// Worker read still in flight (or unreadable); render shows a
+    /// placeholder, never blocks.
+    Loading,
 }
 
 pub type Previews = HashMap<PathBuf, PreviewEntry>;
+
+#[cfg(test)]
+mod replace_tests {
+    use super::*;
+    use strop_core::Buffer;
+
+    /// One hit tuple: (line, col, match_len, expected line text).
+    fn hit(line: usize, col: usize, len: usize, text: &str) -> (usize, usize, usize, String) {
+        (line, col, len, text.to_string())
+    }
+
+    #[test]
+    fn buffer_replace_applies_bottom_up_and_verifies() {
+        let mut e = Editor::new(Buffer::from_text("foo bar foo\n"));
+        let hits = vec![
+            hit(1, 9, 3, "foo bar foo"),
+            hit(1, 1, 3, "foo bar foo"),
+            hit(1, 5, 3, "WRONG — stale line"),
+        ];
+        let (touched, applied, stale) = e.replace_in_buffer(0, &hits, "baz");
+        assert_eq!((touched, applied, stale), (1, 2, 1));
+        assert_eq!(e.buf().rope.to_string(), "baz bar baz\n");
+        // one undo revision for the whole apply (0007 §4)
+        e.undo();
+        assert_eq!(e.buf().rope.to_string(), "foo bar foo\n");
+    }
+
+    #[test]
+    fn file_replace_writes_atomically_and_verifies() {
+        let dir = std::env::temp_dir().join(format!("strop-replace-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "alpha foo\nbeta foo\ngamma\n").unwrap();
+        let hits = vec![
+            hit(2, 6, 3, "beta foo"),
+            hit(1, 7, 3, "alpha foo"),
+            hit(3, 1, 5, "drifted"),
+        ];
+        let (touched, applied, stale) = Editor::replace_in_file(&file, &hits, "bar");
+        assert_eq!((touched, applied, stale), (1, 2, 1));
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "alpha bar\nbeta bar\ngamma\n"
+        );
+        assert!(
+            !dir.join("a.txt.strop-tmp").exists(),
+            "temp file renamed away"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn excluded_rows_stay_out_of_the_apply_set() {
+        let mut p = Picker::new(
+            Kind::Replace,
+            vec![
+                Item {
+                    text: "a".into(),
+                    payload: Payload::Grep {
+                        path: PathBuf::from("a"),
+                        line: 1,
+                        col: 1,
+                        match_len: 1,
+                        line_text: "x".into(),
+                    },
+                },
+                Item {
+                    text: "b".into(),
+                    payload: Payload::Grep {
+                        path: PathBuf::from("b"),
+                        line: 1,
+                        col: 1,
+                        match_len: 1,
+                        line_text: "y".into(),
+                    },
+                },
+            ],
+            false,
+        );
+        p.toggle_excluded(); // excludes row 0
+        assert_eq!(p.accepted().count(), 1);
+        assert_eq!(p.accepted().next().unwrap().text, "b");
+        p.toggle_excluded(); // toggles back
+        assert_eq!(p.accepted().count(), 2);
+    }
+
+    #[test]
+    fn space_r_replace_field_flow() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(" Rfoo");
+        assert_eq!(e.picker.as_ref().unwrap().picker.kind, Kind::Replace);
+        e.feed(crate::editor::Key::Tab);
+        assert_eq!(
+            e.picker.as_ref().unwrap().picker.field,
+            strop_picker::Field::Replace
+        );
+        e.feed_text("bar");
+        assert_eq!(e.picker.as_ref().unwrap().picker.replace_input, "bar");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input, "foo");
+    }
+}

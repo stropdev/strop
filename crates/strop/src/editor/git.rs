@@ -126,11 +126,15 @@ impl Editor {
         };
         let head_lines: Vec<&str> = head.lines().collect();
         let (new_first, new_count, old_first, old_count) = hunk.changed_region();
-        // only computed when restoring (change/delete); pure adds need none
-        let old: String = {
+        // only computed when restoring (change/delete); pure adds need
+        // none — and a top-of-file add has old_first == 0, so the `- 1`
+        // math must stay saturating
+        let old: String = if old_count == 0 {
+            String::new()
+        } else {
             let lo = old_first.saturating_sub(1).min(head_lines.len());
-            let hi = (old_first - 1 + old_count).min(head_lines.len());
-            head_lines[lo..hi].join("\n")
+            let hi = (lo + old_count).min(head_lines.len());
+            head_lines[lo..hi.max(lo)].join("\n")
         };
 
         let saved_current = self.current;
@@ -142,7 +146,7 @@ impl Editor {
                 let end = self.buf().len_bytes();
                 self.buf_mut().insert(end, &format!("\n{old}"));
             } else {
-                let at = self.buf().line_start(new_first - 1);
+                let at = self.buf().line_start(new_first.saturating_sub(1));
                 self.buf_mut().insert(at, &format!("{old}\n"));
             }
             self.cursor = self.buf().line_start(new_first.saturating_sub(1));
@@ -290,7 +294,7 @@ impl Editor {
             'p' => self.preview_hunk(),
             'l' => self.open_log(false),
             'h' => self.open_log(true),
-            'b' => self.blame_line(),
+            'b' => self.toggle_blame_gutter(),
             'y' => self.yank_permalink(),
             'o' => self.open_permalink(),
             _ => {

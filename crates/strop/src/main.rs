@@ -20,7 +20,7 @@ fn print_help() {
         "strop {} — see the cut before you make it\n\
          \n\
          USAGE:\n\
-         \x20   strop [file…]            open files (missing files are new buffers)\n\
+         \x20   strop [file|dir]         open file, or land on the file picker in dir\n\
          \x20   strop update [--check]   self-update (tarball installs)\n\
          \x20   strop config             print the config knobs with live values\n\
          \x20   strop --version          print version\n\
@@ -29,14 +29,15 @@ fn print_help() {
          KEYS (the vim grammar, live preview):\n\
          \x20   h j k l w b e 0 $ gg G %   motions      i a A o O          insert\n\
          \x20   d y c > < + motion/object  operators    dd yy cc D C Y s x  shortcuts\n\
-         \x20   iw i\" i' i( i[ i{{        text objects  f t /              find & search\n\
+         \x20   iw i\" i' i( i[ i{{        text objects  f t / ? n N        find & search\n\
          \x20   v V                       visual        u ctrl-r .          undo, redo, repeat\n\
-         \x20   \"a …                      registers     :w :q :e            ex line\n\
+         \x20   \"a … \"+                   registers     :w :q :e            ex line\n\
          \n\
          SPACE (leader):\n\
-         \x20   f files · b buffers · / grep · j jumplist (soon)\n\
-         \x20   g git: l log · h file history · b blame · y/o permalink · u/s/p hunk\n\
-         \x20   ? keybindings (soon)\n\
+         \x20   f files · b buffers · / grep · R replace · d diagnostics · k hover\n\
+         \x20   y/p/P system clipboard · j jumplist (soon) · u undo tree (soon)\n\
+         \x20   g git: l log · h file history · b blame gutter · y/o permalink · u/s/p hunk\n\
+         \x20   ? keybindings\n\
          \n\
          CONFIG: {}\n\
          \x20   tab_size = 4 · indent_guides = true\n\
@@ -110,14 +111,26 @@ fn main() {
 
     let (cfg, config_err) = config::Config::load();
     let path = args.iter().find(|a| !a.starts_with('-'));
-    let buf = match path {
-        Some(p) => Buffer::open(p).unwrap_or_else(|e| {
+    // a directory arg means "project here": cd into it and land on the
+    // file picker (helix's `hx .`), instead of erroring on EISDIR
+    let dir_arg = path.filter(|p| std::path::Path::new(p).is_dir()).cloned();
+    let buf = match &path {
+        Some(p) if dir_arg.is_none() => Buffer::open(p).unwrap_or_else(|e| {
             eprintln!("strop: open {p}: {e}");
             std::process::exit(1);
         }),
-        None => Buffer::from_text(""),
+        _ => Buffer::from_text(""),
     };
     let mut editor = Editor::new(buf);
+    if let Some(d) = &dir_arg {
+        let dir = std::path::Path::new(d)
+            .canonicalize()
+            .unwrap_or_else(|_| std::path::PathBuf::from(d));
+        if std::env::set_current_dir(&dir).is_ok() {
+            editor.cwd = dir;
+            editor.open_picker(strop_picker::Kind::Files);
+        }
+    }
     editor.config = cfg;
     editor.lsp_maybe_attach();
     if let Some(e) = config_err {
@@ -137,6 +150,14 @@ fn tui(mut editor: Editor) {
         disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
     };
 
+    // a panic must hand the terminal back — raw mode + the alt screen
+    // otherwise swallow the user's shell along with the crash
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = crossterm::execute!(io::stdout(), LeaveAlternateScreen);
+        default_hook(info);
+    }));
     enable_raw_mode().unwrap();
     let mut out = io::stdout();
     crossterm::execute!(out, EnterAlternateScreen).unwrap();
@@ -159,8 +180,6 @@ fn tui(mut editor: Editor) {
         };
         let _ = out.execute(shape);
         terminal.draw(|f| render::render(&mut editor, f)).unwrap();
-        // 16ms cap so the flash overlay expires on time; input-to-echo
-        // stays under one frame (0001 §4).
         let timeout = if editor.flash_range().is_some() {
             Duration::from_millis(16)
         } else {
@@ -170,6 +189,7 @@ fn tui(mut editor: Editor) {
             editor.drain_picker();
             editor.drain_git_jobs();
             editor.drain_lsp();
+            editor.drain_clipboard();
             editor.lsp_sync_changed();
             continue;
         }
@@ -183,20 +203,25 @@ fn tui(mut editor: Editor) {
             KeyCode::Esc => Key::Esc,
             KeyCode::Enter => Key::Enter,
             KeyCode::Backspace => Key::Backspace,
-            KeyCode::Up => Key::Up,
-            KeyCode::Down => Key::Down,
             KeyCode::Tab => Key::Tab,
             KeyCode::BackTab => Key::Backtab,
             KeyCode::Char('n') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Down,
             KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
             KeyCode::Char('r') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlR,
+            KeyCode::Char('x') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlX,
             KeyCode::Char('w') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlW,
             KeyCode::Char(c) => Key::Char(c),
             _ => continue,
         };
         editor.feed(key);
+        // the last :q empties the buffer list — the drains below assume
+        // one exists (quit used to panic in lsp_sync_changed)
+        if editor.should_quit {
+            break;
+        }
         editor.drain_picker();
         editor.drain_git_jobs();
+        editor.drain_clipboard();
         editor.drain_lsp();
         editor.lsp_sync_changed();
         if let Some(payload) = editor.osc52.take() {

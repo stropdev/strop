@@ -48,6 +48,18 @@ impl Editor {
                     self.enter_insert_from(if linewise { "V..." } else { "v..." });
                 }
             }
+            Key::Char('y') if self.pending == " " => {
+                // Space y: yank the selection to the system clipboard
+                self.pending.clear();
+                if let Some(range) = self.visual_range() {
+                    let linewise = self.mode == Mode::VisualLine;
+                    let text = self.buf().slice_string(range);
+                    self.set_register(Some('+'), text, linewise);
+                    self.flash(range);
+                }
+                self.mode = Mode::Normal;
+                self.clamp_cursor();
+            }
             Key::Char(c) => {
                 if self.pending == "S" {
                     // visual S<char>: wrap the selection (sandwich)

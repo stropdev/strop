@@ -57,6 +57,125 @@ impl Default for History {
     }
 }
 
+/// One row of the undo-tree browser (`Space u`).
+#[derive(Debug, Clone)]
+pub struct RevisionRow {
+    pub index: usize,
+    pub parent: usize,
+    /// Depth in the tree (root = 0) — the browser indents by it.
+    pub depth: usize,
+    /// Short description of the change, e.g. `+ "foo"` / `- "bar"`.
+    pub summary: String,
+    pub is_current: bool,
+    /// True when the revision's parent isn't depth-1 above it in display
+    /// order — the browser draws a branch marker.
+    pub branches: bool,
+}
+
+impl History {
+    /// The revision tree, newest-first, for the undo-tree browser.
+    pub fn tree_rows(&self) -> Vec<RevisionRow> {
+        let mut depths = vec![0usize; self.revisions.len()];
+        for i in 1..self.revisions.len() {
+            depths[i] = depths[self.revisions[i].parent] + 1;
+        }
+        let mut out: Vec<RevisionRow> = (1..self.revisions.len())
+            .rev()
+            .map(|i| {
+                let rev = &self.revisions[i];
+                let first = rev.redo.first();
+                let summary = match first {
+                    Some(e) => {
+                        let sign = match e.kind {
+                            EditKind::Insert => "+",
+                            EditKind::Delete => "-",
+                        };
+                        let text: String = e
+                            .text
+                            .chars()
+                            .take(24)
+                            .map(|c| if c == '\n' { '↵' } else { c })
+                            .collect();
+                        let more = if e.text.chars().count() > 24 {
+                            "…"
+                        } else {
+                            ""
+                        };
+                        format!("{sign} \"{text}{more}\"")
+                    }
+                    None => "(empty)".into(),
+                };
+                RevisionRow {
+                    index: i,
+                    parent: rev.parent,
+                    depth: depths[i],
+                    summary,
+                    is_current: i == self.current,
+                    // a sibling with the same parent already exists →
+                    // this revision forked off a branch
+                    branches: self.revisions[..i].iter().any(|r| r.parent == rev.parent),
+                }
+            })
+            .collect();
+        out.sort_by_key(|r| std::cmp::Reverse(r.index));
+        out
+    }
+
+    /// Edits that move the buffer from `current` to `target`: undo up to
+    /// the fork, redo down the target's branch. None when target is
+    /// unknown. `current` is updated; the caller applies the ops.
+    pub fn ops_to(&mut self, target: usize) -> Option<Vec<Edit>> {
+        if target >= self.revisions.len() {
+            return None;
+        }
+        // ancestors of current (inclusive), root-last
+        let mut anc_cur = Vec::new();
+        let mut at = self.current;
+        loop {
+            anc_cur.push(at);
+            if at == 0 {
+                break;
+            }
+            at = self.revisions[at].parent;
+        }
+        // walk target up to the fork
+        let mut up_path = Vec::new(); // target..fork, target-first
+        let mut t = target;
+        while !anc_cur.contains(&t) {
+            up_path.push(t);
+            t = self.revisions[t].parent;
+        }
+        let fork = t;
+        let mut ops = Vec::new();
+        // undo: current up to (not incl.) the fork
+        let mut c = self.current;
+        while c != fork {
+            let mut rev_undo = self.revisions[c].undo.clone();
+            rev_undo.reverse();
+            ops.extend(rev_undo);
+            c = self.revisions[c].parent;
+        }
+        // redo: fork down to target (reverse of the up-walk)
+        for &r in up_path.iter().rev() {
+            ops.extend(self.revisions[r].redo.clone());
+        }
+        // keep last_child pointers honest along both legs
+        let mut c = self.current;
+        while c != fork {
+            let p = self.revisions[c].parent;
+            self.revisions[p].last_child = Some(c);
+            c = p;
+        }
+        let mut p = fork;
+        for &r in up_path.iter().rev() {
+            self.revisions[p].last_child = Some(r);
+            p = r;
+        }
+        self.current = target;
+        Some(ops)
+    }
+}
+
 impl History {
     pub fn begin(&mut self) {
         if self.pending.is_none() {
