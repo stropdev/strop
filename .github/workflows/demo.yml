@@ -81,7 +81,7 @@ jobs:
           git add demos/demo.gif
           git diff --cached --quiet && exit 0
           git checkout -B demo/artifacts
-          git commit -m "docs: refresh demo GIF"
+          git commit -m "docs: refresh demo GIF [skip ci]"
           git push -f origin demo/artifacts
           title="chore(demo): refresh demo GIF [bot]"
           body="Re-rendered from main@${GITHUB_SHA:0:8} by the demo workflow."
