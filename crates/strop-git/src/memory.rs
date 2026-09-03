@@ -148,27 +148,6 @@ pub fn show_stat(workdir: &Path, sha: &str) -> Result<Vec<ChangedFile>, String> 
         .collect())
 }
 
-/// Unified diff for one file at a commit (the delta view).
-pub fn show_file_delta(workdir: &Path, sha: &str, file: &Path) -> Result<String, String> {
-    let out = std::process::Command::new("git")
-        .args([
-            "-C",
-            &workdir.display().to_string(),
-            "show",
-            "--format=",
-            "--patch",
-            sha,
-            "--",
-            &file.display().to_string(),
-        ])
-        .output()
-        .map_err(|e| format!("spawn git show: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
 // ---- permalinks ----------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]

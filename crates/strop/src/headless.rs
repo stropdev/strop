@@ -92,13 +92,90 @@ pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: 
 }
 
 #[cfg(test)]
-mod tests {
+mod diff_surface_tests {
+    use strop_git::{DiffLine, Hunk, LineOrigin};
+
+    fn hunk() -> Hunk {
+        Hunk::build(
+            1,
+            2,
+            1,
+            3,
+            vec![
+                DiffLine {
+                    origin: LineOrigin::Context,
+                    old_lineno: Some(1),
+                    new_lineno: Some(1),
+                    text: "fn a() {}".into(),
+                },
+                DiffLine {
+                    origin: LineOrigin::Deletion,
+                    old_lineno: Some(2),
+                    new_lineno: None,
+                    text: "fn old() {}".into(),
+                },
+                DiffLine {
+                    origin: LineOrigin::Addition,
+                    old_lineno: None,
+                    new_lineno: Some(2),
+                    text: "fn new() {}".into(),
+                },
+                DiffLine {
+                    origin: LineOrigin::Addition,
+                    old_lineno: None,
+                    new_lineno: Some(3),
+                    text: "fn extra() {}".into(),
+                },
+            ],
+        )
+    }
+
+    /// Golden shape of a diff surface frame (0010 §4): stats row, hunk
+    /// header, both sides' numbers, no raw-patch noise, no prefixes.
     #[test]
-    fn picker_card_renders() {
-        let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("fn main() {}\n"));
-        e.open_picker(strop_picker::Kind::Buffers);
+    fn diff_surface_frame_shape() {
+        let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("x\n"));
+        e.open_diff_surface("delta", "f.rs", vec![hunk()], None);
         let frame = crate::headless::frame_string(&mut e, 80, 20);
-        assert!(frame.contains("buffers"), "{frame}");
+        assert!(frame.contains(" f.rs +2 -1"), "stats row: {frame}");
+        assert!(frame.contains(" @@ -1,2 +1,3 @@"), "hunk header: {frame}");
+        // both numbers on context, one side blank on add/del rows
+        assert!(
+            frame.contains("  1   1 fn a() {}"),
+            "context gutter: {frame}"
+        );
+        assert!(
+            frame.contains("▎      2 fn new() {}"),
+            "addition gutter: {frame}"
+        );
+        assert!(
+            frame.contains("▎  2     fn old() {}"),
+            "deletion gutter: {frame}"
+        );
+        assert!(
+            !frame.contains("+fn new"),
+            "no + prefix in content: {frame}"
+        );
+        assert!(
+            !frame.contains("diff --git"),
+            "no raw patch header: {frame}"
+        );
+    }
+
+    /// `q` hands the cursor back to the buffer the surface opened from.
+    #[test]
+    fn surface_close_restores_cursor() {
+        let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("a\nb\nc\n"));
+        e.feed_text("jj"); // line 3
+        e.open_diff_surface("hunk", "hunk", vec![hunk()], None);
+        assert_eq!(
+            e.buf().line_of(e.cursor),
+            0,
+            "surface starts at its own top"
+        );
+        e.feed_text("q");
+        assert_eq!(e.current, 0);
+        assert_eq!(e.buf().line_of(e.cursor), 2, "cursor returned to line 3");
     }
 }
 

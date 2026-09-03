@@ -1,4 +1,6 @@
-//! Rendering: gutter, buffer text, overlay layers, statusline.
+//! Rendering: the render tree's root. Panes and diff decoration live
+//! in `buffer`/`diff` (0010 §3); this module owns the palette, the
+//! statusline, the welcome card, and the cursor.
 //! Overlay precedence (0001 §5.8 subset): search/incsearch < operator
 //! preview < cursor. One accent color (0001 §4).
 
@@ -9,14 +11,16 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use strop_core::Range;
-use strop_grammar as grammar;
 
-use crate::editor::{Editor, LayoutDir, Mode};
+use buffer::GUTTER;
+
+use crate::editor::{Editor, Mode};
 
 mod blame_card;
+mod buffer;
 mod cmd_card;
+mod diff;
 mod hover_card;
-mod hunk_card;
 mod keybinds;
 mod picker_card;
 mod which_key;
@@ -29,8 +33,6 @@ pub const ACCENT: Color = Color::Rgb(0xf0, 0xa3, 0x5e);
 pub const PREVIEW_BG: Color = Color::Rgb(0x4a, 0x33, 0x1c); // accent, dimmed
 pub const FLASH_BG: Color = Color::Rgb(0x6b, 0x47, 0x22); // accent, stronger
 pub const SELECT_BG: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
-
-const GUTTER: u16 = 5; // 4-digit numbers + one empty column (0001 §4)
 
 /// Syntax class → color (strop palette; theme engine swaps these later).
 pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
@@ -56,19 +58,14 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     editor.scroll_to_cursor(text_rows);
     editor.refresh_hunks();
 
-    if editor.panes.len() == 1 {
-        render_text(editor, frame, area, text_rows);
-    } else {
-        render_panes(editor, frame, area, text_rows);
-    }
+    let pane_area = buffer::render_panes(editor, frame, area);
     render_statusline(editor, frame, area);
     cmd_card::render_cmd_card(editor, frame);
     if !cmd_card_active(editor) {
-        place_cursor(editor, frame, area);
+        place_cursor(editor, frame, pane_area);
     }
     render_welcome(editor, frame);
     picker_card::render_picker(editor, frame);
-    hunk_card::render_hunk_card(editor, frame);
     blame_card::render_blame_card(editor, frame);
     hover_card::render_hover_card(editor, frame);
     keybinds::render_keybinds(editor, frame);
@@ -100,281 +97,6 @@ pub(crate) fn dim_color(c: Color) -> Color {
 
 fn in_range(r: Range, pos: usize) -> bool {
     pos >= r.start && pos < r.end
-}
-
-/// Smallest span covering pos (syntax spans are nested).
-fn spans_for(pos: usize, spans: &[strop_syntax::Span]) -> Option<strop_syntax::Class> {
-    spans
-        .iter()
-        .filter(|s| s.start <= pos && pos < s.end)
-        .min_by_key(|s| s.end - s.start)
-        .map(|s| s.class)
-}
-
-/// All panes, with a muted │ divider column between them. Only the
-/// active pane carries overlays (preview/search/selection/flash) and the
-/// caret — inactive panes render their own cursor position statically.
-fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect, _text_rows: usize) {
-    let n = editor.panes.len();
-    let is_row = editor.layout == LayoutDir::Row;
-    let total_w = area.width as usize;
-    let total_h = area.height as usize - 1;
-    let dividers = n - 1;
-    let (mut x, mut y) = (area.x, area.y);
-    for i in 0..n {
-        let (w, h): (u16, u16) = if is_row {
-            let w = ((total_w - dividers) / n) as u16;
-            let w = if i == n - 1 {
-                (total_w - dividers) as u16 - w * (n as u16 - 1)
-            } else {
-                w
-            };
-            (w, total_h as u16)
-        } else {
-            let h = ((total_h - dividers) / n) as u16;
-            let h = if i == n - 1 {
-                (total_h - dividers) as u16 - h * (n as u16 - 1)
-            } else {
-                h
-            };
-            (total_w as u16, h)
-        };
-        let rect = Rect {
-            x,
-            y,
-            width: w,
-            height: h,
-        };
-        render_text_for_pane(editor, frame, rect, i);
-        if i < n - 1 {
-            // divider column/row
-            if is_row {
-                let dx = x + w;
-                for dy in y..y + h {
-                    let cell = &mut frame.buffer_mut()[(dx, dy)];
-                    cell.set_symbol("│");
-                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
-                }
-                x = dx + 1;
-            } else {
-                let dy = y + h;
-                for dx in x..x + w {
-                    let cell = &mut frame.buffer_mut()[(dx, dy)];
-                    cell.set_symbol("─");
-                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
-                }
-                y = dy + 1;
-            }
-        }
-    }
-}
-
-/// Render one pane: active panes read live editor state; inactive panes
-/// read their saved cursor/view (overlays suppressed).
-fn render_text_for_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, pane_idx: usize) {
-    if pane_idx == editor.active_pane {
-        render_text(editor, frame, area, area.height as usize);
-        return;
-    }
-    let pane = editor.panes[pane_idx].clone();
-    let buf_idx = pane.buffer.min(editor.buffers.len() - 1);
-    // syntax is per-buffer, not per-active-pane (inactive panes keep
-    // their colors; only overlays are active-only)
-    let rope = editor.buffers[buf_idx].rope.clone();
-    let syn_spans = editor
-        .highlighters
-        .get_mut(buf_idx)
-        .and_then(|h| h.as_mut())
-        .map(|h| h.highlight(&rope, 0, rope.len_bytes()))
-        .unwrap_or_default();
-    let total_lines = editor.buffers[buf_idx].last_content_line() + 1;
-    let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
-    for row in 0..area.height as usize {
-        let line_idx = pane.view_top + row;
-        if line_idx >= total_lines {
-            lines.push(Line::from(Span::styled("~", Style::default().fg(MUTED))));
-            continue;
-        }
-        let line_num_style = if line_idx == editor.buffers[buf_idx].line_of(pane.cursor) {
-            Style::default().fg(ACCENT)
-        } else {
-            Style::default().fg(MUTED)
-        };
-        let text = editor.buffers[buf_idx].line_text(line_idx);
-        let mut spans = vec![
-            Span::styled(" ", Style::default()),
-            Span::styled(format!("{:>3} ", line_idx + 1), line_num_style),
-        ];
-        let start = editor.buffers[buf_idx].line_start(line_idx);
-        for (i, ch) in text.chars().enumerate() {
-            let pos = start + i;
-            let mut style = Style::default().fg(TEXT);
-            if let Some(sp) = spans_for(pos, &syn_spans) {
-                style = style.fg(class_color(sp));
-                if sp == strop_syntax::Class::Comment {
-                    style = style.add_modifier(Modifier::ITALIC);
-                }
-            }
-            spans.push(Span::styled(ch.to_string(), style));
-        }
-        lines.push(Line::from(spans));
-    }
-    let block = Paragraph::new(lines).style(Style::default().bg(BASE));
-    frame.render_widget(block, area);
-    // static caret: the inactive pane's position, unfocused (muted block)
-    let line = editor.buffers[buf_idx].line_of(pane.cursor);
-    let row = line.saturating_sub(pane.view_top) as u16;
-    let col = 5 + editor.buffers[buf_idx].col_of(pane.cursor) as u16;
-    if row < area.height && col < area.width {
-        let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
-        cell.set_bg(Color::Rgb(0x3a, 0x3d, 0x4d));
-    }
-}
-
-fn render_text(editor: &mut Editor, frame: &mut Frame, area: Rect, text_rows: usize) {
-    let preview = editor.preview().map(|r| r.range);
-    let flash = editor.flash_range();
-    let selection = editor.visual_range();
-    let search_hits: Vec<usize> = editor
-        .search_pattern()
-        .map(|p| grammar::search_all(editor.buf(), p))
-        .unwrap_or_default();
-    let find = editor.find_candidates();
-
-    let cur_line = editor.buf().line_of(editor.cursor);
-    let mut lines: Vec<Line> = Vec::with_capacity(text_rows);
-
-    // tree-sitter spans for the visible window (base layer, 0001 §5.8)
-    let first_byte = editor.buf().line_start(editor.view_top);
-    let last_line = (editor.view_top + text_rows).min(editor.buf().len_lines());
-    let last_byte = editor.buf().line_end(last_line.saturating_sub(1));
-    let rope = editor.buffers[editor.current].rope.clone();
-    let syn_spans: Vec<strop_syntax::Span> = match editor.highlighter() {
-        Some(h) => h.highlight(&rope, first_byte, last_byte),
-        None => Vec::new(),
-    };
-
-    for row in 0..text_rows {
-        let line_idx = editor.view_top + row;
-        if line_idx > editor.buf().last_content_line() {
-            lines.push(Line::from(Span::styled("~", Style::default().fg(MUTED))));
-            continue;
-        }
-        let start = editor.buf().line_start(line_idx);
-        let text = editor.buf().line_text(line_idx);
-
-        // gutter: muted numbers, current line in accent (0001 §4)
-        let num_style = if line_idx == cur_line {
-            Style::default().fg(ACCENT)
-        } else {
-            Style::default().fg(MUTED)
-        };
-        // Helix-grade gutter: a colored ▎ bar in the leftmost column —
-        // green add, amber change, red delete (0001 pillar 3.1)
-        let (bar, bar_color) = match editor.diag_at(line_idx + 1).or(editor
-            .sign_at(line_idx + 1)
-            .map(|c| c.to_string())
-            .as_deref())
-        {
-            Some("E") => ("E", Color::Rgb(0xe8, 0x67, 0x7a)),
-            Some("W") => ("W", Color::Rgb(0xf0, 0xa3, 0x5e)),
-            Some("I") | Some("H") => ("▎", Color::Rgb(0x7f, 0xb4, 0xca)),
-            Some("+") => ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
-            Some("~") => ("▎", ACCENT),
-            Some("-") => ("▎", Color::Rgb(0xe8, 0x67, 0x7a)),
-            _ => (" ", MUTED),
-        };
-        let mut spans = vec![
-            Span::styled(
-                bar,
-                Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!("{:>3} ", line_idx + 1), num_style),
-        ];
-
-        let is_delta = matches!(editor.surface(), Some(crate::editor::Surface::DeltaView));
-        let diff_line_style = if is_delta {
-            match text.as_bytes().first() {
-                Some(b'+') => Some(Color::Rgb(0xa9, 0xc4, 0x7c)),
-                Some(b'-') => Some(Color::Rgb(0xe8, 0x67, 0x7a)),
-                Some(b'@') => Some(ACCENT),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        // indent guides: dim │ at each indent level within leading
-        // whitespace (v1: spaces only, no empty-line continuation;
-        // scope tracking + config toggle land with 0005)
-        let lead_ws = if editor.config.indent_guides {
-            text.chars().take_while(|c| *c == ' ').count()
-        } else {
-            0
-        };
-        let tab = editor.config.tab_size.max(1);
-        let mut syn_idx = syn_spans.partition_point(|s| s.end <= start);
-        for (i, ch) in text.chars().enumerate() {
-            let pos = start + i; // prototype is ASCII-honest (0001 §5.9 later)
-            while syn_idx < syn_spans.len() && syn_spans[syn_idx].end <= pos {
-                syn_idx += 1;
-            }
-            let mut style = Style::default().fg(diff_line_style.unwrap_or(TEXT));
-            let is_guide = i < lead_ws && (i + 1) % tab == 0;
-            if syn_idx < syn_spans.len() && syn_spans[syn_idx].start <= pos {
-                let class = syn_spans[syn_idx].class;
-                style = style.fg(class_color(class));
-                if class == strop_syntax::Class::Comment {
-                    style = style.add_modifier(Modifier::ITALIC);
-                }
-            }
-            if selection.is_some_and(|r| in_range(r, pos)) {
-                style = style.bg(SELECT_BG);
-            }
-            if search_hits
-                .iter()
-                .any(|&h| pos >= h && pos < h + editor.search_pattern().map_or(0, str::len))
-            {
-                style = style.fg(ACCENT).add_modifier(Modifier::BOLD);
-            }
-            if let Some((_, backward)) = find {
-                // leap-style: candidates bold-accent on the pending side
-                let on_line = editor.buf().line_of(pos) == cur_line;
-                let ahead = if backward {
-                    pos < editor.cursor
-                } else {
-                    pos > editor.cursor
-                };
-                if on_line && ahead && !ch.is_whitespace() {
-                    style = style.fg(ACCENT).add_modifier(Modifier::BOLD);
-                }
-            }
-            if let Some(r) = preview {
-                if in_range(r, pos) {
-                    style = style.fg(ACCENT).bg(PREVIEW_BG);
-                }
-            }
-            if let Some(r) = flash {
-                if in_range(r, pos) {
-                    style = style.bg(FLASH_BG);
-                }
-            }
-            if is_guide {
-                spans.push(Span::styled("│", style.fg(Color::Rgb(0x2e, 0x30, 0x42))));
-            } else {
-                spans.push(Span::styled(ch.to_string(), style));
-            }
-        }
-        lines.push(Line::from(spans));
-    }
-
-    let block = Paragraph::new(lines).style(Style::default().bg(BASE));
-    frame.render_widget(
-        block,
-        Rect {
-            height: text_rows as u16,
-            ..area
-        },
-    );
 }
 
 fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {

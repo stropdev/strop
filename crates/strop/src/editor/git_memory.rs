@@ -1,28 +1,85 @@
-//! Git memory surfaces (M3): commit browser, changed-files dive, delta
-//! view, blame card, permalinks. Every surface is a real readonly buffer
-//! (0001 §3: motions, /, yank work); jobs post onto the event loop
-//! (0001 §5.6: no blocking the input path on shell git).
+//! Git memory surfaces (M3, reworked 0010): commit browser, changed-files
+//! dive, diff view, blame card, permalinks. Every surface is a real
+//! readonly buffer (0001 §3: motions, /, yank work); jobs post onto the
+//! event loop (0001 §5.6: no blocking the input path on shell git).
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use strop_core::Buffer;
 use strop_git::memory::{self, BlameCard, ChangedFile, LogRow};
+use strop_git::{Hunk, LineOrigin};
 
 use super::{Editor, Key, Mode};
 
-/// What a readonly buffer is — drives Enter/q and line parsing.
+/// What a readonly buffer is — drives Enter/q and per-row rendering.
 #[derive(Debug, Clone)]
 pub enum Surface {
     CommitLog {
         rows: Vec<LogRow>,
+        return_to: Option<ReturnPoint>,
     },
     ChangedFiles {
         sha: String,
         files: Vec<ChangedFile>,
+        return_to: Option<ReturnPoint>,
     },
-    /// Unified diff text for one file at one commit.
-    DeltaView,
+    /// A diff as a readonly buffer (0010 §2): the file's delta at a
+    /// commit, or the `Space g p` hunk preview. The buffer's rows mirror
+    /// the rendered layout — a stats row, then per hunk a `@@` header
+    /// row and unprefixed content rows — so motions, `/` and yank see
+    /// exactly what's on screen. `origin` names the working buffer a
+    /// hunk preview belongs to, so `Space g u`/`g s` act on the file.
+    Diff {
+        /// Stats-row label: the file path (delta view) or "hunk".
+        label: String,
+        hunks: Vec<Hunk>,
+        added: usize,
+        deleted: usize,
+        origin: Option<HunkOrigin>,
+        return_to: Option<ReturnPoint>,
+    },
+}
+
+/// Where a surface was opened from: closing it hands the cursor and
+/// view back to that buffer (vim's window-close behavior — without
+/// this, `q` dumps you on line 1).
+#[derive(Debug, Clone)]
+pub struct ReturnPoint {
+    pub buffer: usize,
+    pub cursor: usize,
+    pub view_top: usize,
+}
+
+impl Surface {
+    fn set_return_point(&mut self, ret: ReturnPoint) {
+        *self.return_slot() = Some(ret);
+    }
+
+    pub(crate) fn return_point(&self) -> Option<&ReturnPoint> {
+        match self {
+            Surface::CommitLog { return_to, .. }
+            | Surface::ChangedFiles { return_to, .. }
+            | Surface::Diff { return_to, .. } => return_to.as_ref(),
+        }
+    }
+
+    fn return_slot(&mut self) -> &mut Option<ReturnPoint> {
+        match self {
+            Surface::CommitLog { return_to, .. }
+            | Surface::ChangedFiles { return_to, .. }
+            | Surface::Diff { return_to, .. } => return_to,
+        }
+    }
+}
+
+/// Where a hunk preview came from: the buffer it undoes/stages in, at
+/// the edit epoch it was captured. Edits since then invalidate it —
+/// applying a stale region would cut the wrong lines.
+#[derive(Debug, Clone)]
+pub struct HunkOrigin {
+    pub buffer: usize,
+    pub epoch: u64,
 }
 
 /// Jobs post results here; the event loop drains (never blocks input).
@@ -33,9 +90,21 @@ pub enum GitJob {
 }
 
 impl Editor {
+    pub fn surface(&self) -> Option<&Surface> {
+        self.surfaces.get(self.current).and_then(|s| s.as_ref())
+    }
     // ---- surface lifecycle --------------------------------------------
 
-    fn push_surface(&mut self, name: Option<&str>, text: &str, surface: Surface) {
+    fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
+        // surfaces stack: only the first one opened from a plain buffer
+        // carries a return point (closing the deepest unwinds the chain)
+        if self.surface().is_none() {
+            surface.set_return_point(ReturnPoint {
+                buffer: self.current,
+                cursor: self.cursor,
+                view_top: self.view_top,
+            });
+        }
         let mut buf = Buffer::from_text(text);
         buf.readonly = true;
         buf.name = name.map(|n| n.to_string());
@@ -48,8 +117,37 @@ impl Editor {
         self.view_top = 0;
     }
 
-    pub fn surface(&self) -> Option<&Surface> {
-        self.surfaces.get(self.current).and_then(|s| s.as_ref())
+    /// A diff surface from structured hunks (0010 §2). `label` heads the
+    /// stats row; `origin` is set only for working-tree hunk previews.
+    pub(crate) fn open_diff_surface(
+        &mut self,
+        name: &str,
+        label: &str,
+        hunks: Vec<Hunk>,
+        origin: Option<HunkOrigin>,
+    ) {
+        let (added, deleted) = hunk_stats(&hunks);
+        let mut text = format!("{label} +{added} -{deleted}\n");
+        for hunk in &hunks {
+            text.push_str(&hunk.header());
+            text.push('\n');
+            for line in &hunk.lines {
+                text.push_str(&line.text);
+                text.push('\n');
+            }
+        }
+        self.push_surface(
+            Some(name),
+            &text,
+            Surface::Diff {
+                label: label.to_string(),
+                hunks,
+                added,
+                deleted,
+                origin,
+                return_to: None,
+            },
+        );
     }
 
     /// `Space g l`: commit browser. `Space g h`: log scoped to the file.
@@ -78,7 +176,10 @@ impl Editor {
                 "git log"
             }),
             "loading log…",
-            Surface::CommitLog { rows: vec![] },
+            Surface::CommitLog {
+                rows: vec![],
+                return_to: None,
+            },
         );
         let idx = self.current;
         let tx = self.git_tx.clone();
@@ -182,8 +283,11 @@ impl Editor {
 
     // ---- surface interaction -------------------------------------------
 
-    /// Keys for readonly surface buffers (0001 §3): motions, /, yank, and
-    /// the leader fall through; q closes, Enter dives, edits refuse.
+    /// Keys for readonly surface buffers (0001 §3): q closes, Enter
+    /// dives, and everything else goes through the shared grammar
+    /// resolver — motions and yank resolve, mutations refuse. The
+    /// resolver is the source of truth, not a hand-maintained motion
+    /// whitelist (0010 §6).
     pub(crate) fn feed_readonly(&mut self, key: Key) {
         if !self.pending.is_empty() {
             return self.feed_pending_readonly(key);
@@ -193,18 +297,18 @@ impl Editor {
                 self.close_buffer(true);
             }
             Key::Enter => self.dive(),
-            Key::Char(c) if "hjklwbeWEB0$G%/fFtT[]".contains(c) || c.is_ascii_digit() => {
-                self.pending.push(c);
-                self.resolve_pending_readonly();
-            }
-            Key::Char(c @ ('g' | 'y' | ' ' | ':')) => {
-                self.pending.push(c);
-            }
             Key::Char('v') => {
                 self.mode = Mode::Visual;
                 self.anchor = self.cursor;
             }
-            Key::Char(_) => self.message = "readonly — q closes, enter dives".into(),
+            Key::Char(c) => {
+                // multi-char heads wait for their second key; the rest
+                // parse immediately (Invalid clears, Incomplete waits)
+                self.pending.push(c);
+                if !matches!(c, ' ' | ':' | 'g' | 'y' | ']' | '[') {
+                    self.resolve_pending_readonly();
+                }
+            }
             _ => {}
         }
     }
@@ -252,6 +356,7 @@ impl Editor {
             strop_grammar::Parse::Incomplete => {}
             strop_grammar::Parse::Invalid => {
                 self.pending.clear();
+                self.message = "readonly — q closes, enter dives".into();
             }
             strop_grammar::Parse::Complete(cmd) => {
                 self.pending.clear();
@@ -276,40 +381,44 @@ impl Editor {
     fn dive(&mut self) {
         let line = self.buf().line_of(self.cursor);
         match self.surface().cloned() {
-            Some(Surface::CommitLog { rows }) => {
+            Some(Surface::CommitLog { rows, .. }) => {
                 let Some(sha) = rows.get(line).and_then(|r| r.sha.clone()) else {
                     return;
                 };
                 let Some(repo) = &self.git else { return };
                 match memory::show_stat(repo.workdir(), &sha) {
                     Ok(files) => {
-                        let mut text =
-                            format!("commit {}\n\n", sha.chars().take(10).collect::<String>());
+                        let mut text = format!("commit {}\n\n", &sha[..10.min(sha.len())]);
                         for f in &files {
-                            text.push_str(&format!(
-                                "{:<48} +{} -{}\n",
-                                f.path.display(),
-                                f.added,
-                                f.deleted
-                            ));
+                            text.push_str(&f.path.display().to_string());
+                            text.push('\n');
                         }
                         self.push_surface(
                             Some("commit files"),
                             &text,
-                            Surface::ChangedFiles { sha, files },
+                            Surface::ChangedFiles {
+                                sha,
+                                files,
+                                return_to: None,
+                            },
                         );
                     }
                     Err(e) => self.message = e,
                 }
             }
-            Some(Surface::ChangedFiles { sha, files }) => {
+            Some(Surface::ChangedFiles { sha, files, .. }) => {
                 // row 0/1 are the header
                 let Some(file) = line.checked_sub(2).and_then(|i| files.get(i)) else {
                     return;
                 };
                 let Some(repo) = &self.git else { return };
-                match memory::show_file_delta(repo.workdir(), &sha, &file.path) {
-                    Ok(text) => self.push_surface(Some("delta"), &text, Surface::DeltaView),
+                match repo.commit_file_diff(&sha, &file.path) {
+                    Ok(diff) => self.open_diff_surface(
+                        "delta",
+                        &file.path.display().to_string(),
+                        diff.hunks,
+                        None,
+                    ),
                     Err(e) => self.message = e,
                 }
             }
@@ -331,7 +440,7 @@ impl Editor {
                             .join("\n")
                             + "\n";
                         self.buffers[buffer].replace_all(&text);
-                        if let Some(Some(Surface::CommitLog { rows: slot })) =
+                        if let Some(Some(Surface::CommitLog { rows: slot, .. })) =
                             self.surfaces.get_mut(buffer)
                         {
                             *slot = rows;
@@ -345,6 +454,23 @@ impl Editor {
     }
 }
 
+/// Added/deleted counts across hunks.
+fn hunk_stats(hunks: &[Hunk]) -> (usize, usize) {
+    hunks.iter().fold((0, 0), |(a, d), h| {
+        let adds = h
+            .lines
+            .iter()
+            .filter(|l| l.origin == LineOrigin::Addition)
+            .count();
+        let dels = h
+            .lines
+            .iter()
+            .filter(|l| l.origin == LineOrigin::Deletion)
+            .count();
+        (a + adds, d + dels)
+    })
+}
+
 /// The git job channel ends (created once in `Editor::new`).
 pub fn git_channel() -> (Sender<GitJob>, Receiver<GitJob>) {
     channel()
@@ -354,10 +480,12 @@ pub fn git_channel() -> (Sender<GitJob>, Receiver<GitJob>) {
 mod tests {
     use std::process::Command;
 
-    use crate::editor::{Editor, Key};
+    use crate::editor::{Editor, Key, Surface};
     use strop_core::Buffer;
 
-    /// Repo with two commits; second changes f.rs.
+    use strop_git::LineOrigin;
+
+    /// Repo with two commits; second adds a line to f.rs.
     fn fixture() -> (tempfile::TempDir, Editor) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -388,7 +516,7 @@ mod tests {
         loop {
             e.drain_git_jobs();
             let loaded = e.surface().is_some_and(
-                |s| matches!(s, crate::editor::Surface::CommitLog { rows } if !rows.is_empty()),
+                |s| matches!(s, crate::editor::Surface::CommitLog { rows, .. } if !rows.is_empty()),
             );
             if loaded || std::time::Instant::now() > deadline {
                 break;
@@ -415,23 +543,50 @@ mod tests {
         let text = e.buf().rope.to_string();
         assert!(text.contains("commit"), "{text}");
         assert!(text.contains("f.rs"), "{text}");
-        assert!(text.contains("+1 -0"), "{text}");
+        assert!(matches!(e.surface(), Some(Surface::ChangedFiles { .. })));
 
-        // Enter on the file row → delta view
+        // Enter on the file row → the diff surface
         e.feed_text("j");
         e.feed_text("j");
         e.feed(Key::Enter);
         let text = e.buf().rope.to_string();
-        assert!(text.contains("+fn b() {}"), "{text}");
+        assert!(text.contains("fn b() {}"), "{text}");
+        assert!(text.starts_with("f.rs +1 -0\n"), "{text}");
+        assert!(!text.contains("diff --git"), "no raw patch noise: {text}");
+        assert!(text.contains("@@ -1,1 +1,2 @@"), "hunk header row: {text}");
 
         // edits refuse, q climbs out
         e.feed_text("x");
         assert!(e.message.contains("readonly"));
         e.feed_text("q");
-        assert!(matches!(
-            e.surface(),
-            Some(crate::editor::Surface::ChangedFiles { .. })
-        ));
+        assert!(matches!(e.surface(), Some(Surface::ChangedFiles { .. })));
+    }
+
+    #[test]
+    fn diff_surface_rows_carry_line_numbers() {
+        let (_d, mut e) = fixture();
+        e.open_log(false);
+        pump(&mut e);
+        e.feed_text("k"); // newest commit is row 0? feed j then k lands on 0
+        e.feed(Key::Enter);
+        e.feed_text("jj");
+        e.feed(Key::Enter);
+        let Some(Surface::Diff { hunks, .. }) = e.surface() else {
+            panic!("not a diff surface");
+        };
+        let h = &hunks[0];
+        let ctx = h
+            .lines
+            .iter()
+            .find(|l| l.origin == LineOrigin::Context)
+            .expect("context line");
+        assert_eq!((ctx.old_lineno, ctx.new_lineno), (Some(1), Some(1)));
+        let add = h
+            .lines
+            .iter()
+            .find(|l| l.origin == LineOrigin::Addition)
+            .expect("addition");
+        assert_eq!(add.new_lineno, Some(2));
     }
 
     #[test]

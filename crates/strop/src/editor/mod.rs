@@ -89,8 +89,6 @@ pub struct Editor {
     pub git: Option<strop_git::Repo>,
     pub hunks: Vec<strop_git::Hunk>,
     pub hunks_epoch: u64,
-    /// Hunk preview card (`Space g p`).
-    pub hunk_preview: Option<strop_git::Hunk>,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
     pub surfaces: Vec<Option<Surface>>,
@@ -152,7 +150,6 @@ impl Editor {
             git: None,
             hunks: Vec::new(),
             hunks_epoch: u64::MAX,
-            hunk_preview: None,
             surfaces: vec![None],
             blame_card: None,
             git_tx,
@@ -189,13 +186,6 @@ impl Editor {
 
     pub fn buf(&self) -> &Buffer {
         &self.buffers[self.current]
-    }
-
-    /// Current buffer's highlighter.
-    pub fn highlighter(&mut self) -> Option<&mut Highlighter> {
-        self.highlighters
-            .get_mut(self.current)
-            .and_then(|h| h.as_mut())
     }
 
     pub fn buf_mut(&mut self) -> &mut Buffer {
@@ -239,6 +229,7 @@ impl Editor {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }
+        let closed_surface = self.surfaces[self.current].take();
         self.buffers.remove(self.current);
         self.surfaces.remove(self.current);
         let closed = self.current;
@@ -257,6 +248,21 @@ impl Editor {
             self.touch_mru(self.current);
             self.cursor = 0;
             self.view_top = 0;
+            // a closing surface hands the cursor back to the plain
+            // buffer it opened from (its index shifts down past `closed`)
+            if let Some(surface) = closed_surface {
+                if let Some(ret) = surface.return_point() {
+                    let buffer = if ret.buffer > closed {
+                        ret.buffer - 1
+                    } else {
+                        ret.buffer
+                    };
+                    if buffer == self.current {
+                        self.cursor = ret.cursor.min(self.buf().len_bytes());
+                        self.view_top = ret.view_top;
+                    }
+                }
+            }
             self.discover_git();
         }
         true
@@ -316,10 +322,6 @@ impl Editor {
                 _ => self.blame_card = None,
             }
             return;
-        }
-        if self.hunk_preview.is_some() {
-            self.hunk_preview = None;
-            return; // first key dismisses the card
         }
         if self.picker_open() {
             return self.feed_picker(key);
@@ -388,10 +390,11 @@ impl Editor {
         }
     }
 
-    /// Diagnostic severity letter for a 1-based line on the current
-    /// buffer, if any (0001 pillar 4: merges with the git gutter).
-    pub fn diag_at(&self, line_1based: usize) -> Option<&'static str> {
-        let path = self.buf().path.as_deref()?;
+    /// Worst diagnostic severity (1=error … 4=hint) for a 1-based line
+    /// of buffer `idx`, if any (0001 pillar 4: merges with the git
+    /// gutter). Per-buffer, so panes show their own diagnostics.
+    pub fn diag_severity_at(&self, idx: usize, line_1based: usize) -> Option<u8> {
+        let path = self.buffers.get(idx)?.path.as_deref()?;
         let abs = if std::path::Path::new(path).is_absolute() {
             PathBuf::from(path)
         } else {
@@ -401,15 +404,10 @@ impl Editor {
         let mut best: Option<u8> = None;
         for d in diags {
             if d.line + 1 == line_1based {
-                best = Some(best.map_or(d.severity, |b| b.min(d.severity)));
+                best = Some(best.map_or(d.severity, |b: u8| b.min(d.severity)));
             }
         }
-        best.map(|s| match s {
-            1 => "E",
-            2 => "W",
-            3 => "I",
-            _ => "H",
-        })
+        best
     }
 
     /// `m{a}`: set mark a at the cursor.

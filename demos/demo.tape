@@ -90,13 +90,14 @@ Type "g"
 Sleep 300ms
 Type "p"
 Sleep 1.6s
-Type "x"
+Type "q"
 Sleep 400ms
 Space
 Type "g"
 Type "u"
 Sleep 1.2s
 
+# commit browser: dive commit → files → delta view (0010 diff surfaces)
 Space
 Type "g"
 Type "l"
@@ -128,15 +129,18 @@ Type "g"
 Type "y"
 Sleep 1.2s
 
-# splits: :vs shares the buffer; C-w moves between panes
+# splits: :vs shares the buffer; C-w w cycles panes
 Type ":vs"
 Enter
 Sleep 1.6s
 Type "jjj"
 Sleep 500ms
+# C-w w cycles panes (C-w is a prefix, like vim)
 Ctrl+w
+Type "w"
 Sleep 1
 Ctrl+w
+Type "w"
 Sleep 1.2s
 Type ":q"
 Enter

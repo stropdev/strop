@@ -209,19 +209,24 @@ pub fn update(check_only: bool) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[test]
+fn version_ordering() {
+    let (major, minor, patch) =
+        parse_version(env!("CARGO_PKG_VERSION")).expect("crate version parses");
+    // newer/older/same relative to whatever we currently are —
+    // the test must not rot on every release
+    assert!(is_newer(&format!("v{}.{}.{}", major, minor, patch + 1)));
+    assert!(!is_newer(&format!("v{major}.{minor}.{patch}")));
+    assert!(!is_newer(&format!(
+        "v{}.{}.{}",
+        major,
+        minor.saturating_sub(1),
+        patch
+    )));
+    assert!(!is_newer("garbage"));
+}
 
-    #[test]
-    fn version_ordering() {
-        assert!(is_newer("v0.2.0"));
-        assert!(is_newer("0.1.2") || !is_newer("0.1.2")); // depends on current; no panic
-        assert!(!is_newer("v0.0.9"));
-        assert!(!is_newer("garbage"));
-    }
-
-    #[test]
-    fn triples_cover_the_matrix() {
-        assert!(target_triple().is_ok());
-    }
+#[test]
+fn triples_cover_the_matrix() {
+    assert!(target_triple().is_ok());
 }
