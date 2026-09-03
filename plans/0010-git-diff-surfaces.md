@@ -84,7 +84,20 @@ colors, no search hits — and diff coloring was stringly-typed
   simplified readonly dispatch.
 - `crates/strop/src/editor/git.rs` — `Space g p` pushes a surface;
   undo/stage accept an explicit buffer+hunk target.
+
 - `crates/strop/src/render/{mod,buffer,diff}.rs` — renderer split by concern;
   `render/hunk_card.rs` deleted.
 - `demos/demo.tape` — `C-w` is a prefix: the chord is `C-w w`; hunk preview
   closes with `q` now.
+- `.github/workflows/demo.yml` — bot artifact commits carry the skip
+  marker (a gif refresh needs no gate).
+
+## Follow-up recorded
+
+The demo pipeline's "unchanged render commits nothing" idempotence is
+unreachable while the tape has a live LSP wait: rust-analyzer startup
+jitter changes GIF frame timings every render, so each merge of an
+artifacts PR spawns another. Bot commits now carry GitHub's skip marker
+(no gate on a gif refresh), and true convergence needs either a
+deterministic tape (stubbed server, no 14s live wait) or a
+content-aware diff in `demo.yml`. Not in this release.
