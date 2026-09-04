@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.1 — 2026-09-04
+
+Polish round: the demo is clean again, help wears color, and the E now
+tells you what it is.
+
+### Added
+
+- **Diagnostics UX**: the cursor line shows its worst diagnostic as an
+  end-of-line note (severity-colored, italic, scoped to one line — no
+  inline-hints machinery); severity colors unified across the gutter
+  and the note.
+- **`:help` decoration**: section headers and key columns in accent,
+  planned `(soon)` rows muted.
+- Seeded key-soup fuzz test (12k keystrokes across buffer shapes + a
+  frame render per shape) — it pays rent immediately (see fixes).
+
+### Fixed
+
+- **async-lsp panic in the demo** ("Sender is alive"): quitting dropped
+  the client socket while the server mainloop was still running. The
+  runtime thread is now joined on quit (with a leak-not-panic timeout
+  fallback).
+- **Byte/char units in rope mutations** (found by the fuzz): `insert`,
+  `delete`, and history replay passed byte offsets to ropey's char-index
+  APIs — any multibyte content (our own undo-tree buffer uses ↵/←/⑂)
+  could panic. `delete` also clamps stale ranges instead of panicking.
+- **Paste mutated readonly buffers** (found by the fuzz): `p` on a
+  git surface or the undo tree now refuses like every other edit.
+- Multiline diagnostic messages join with ` · ` in the EOL note.
+
 ## 0.3.0 — 2026-09-04
 
 Multicursor lands, help becomes a buffer, the demo's LSP section is

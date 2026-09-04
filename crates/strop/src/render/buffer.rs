@@ -13,7 +13,8 @@ use ratatui::Frame;
 use crate::editor::{Editor, LayoutDir};
 
 use super::diff;
-use super::{class_color, in_range, ACCENT, BASE, FLASH_BG, MUTED, PREVIEW_BG, SELECT_BG, TEXT};
+use super::{class_color, dim_color, in_range, severity_color};
+use super::{ACCENT, BASE, FLASH_BG, MUTED, PREVIEW_BG, SELECT_BG, TEXT};
 
 /// Width of the standard gutter: sign column + 3-digit number + space.
 pub(crate) const GUTTER: u16 = 5;
@@ -276,6 +277,9 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         row_style.diff_line = None;
         if let Some(content) = diff::surface_content_spans(surface, line_idx, content_width) {
             left.extend(content);
+        } else if buf.name.as_deref() == Some("help") {
+            // the :help buffer gets house-style color (render/help.rs)
+            left.extend(super::help::row_spans(&text));
         } else {
             left.extend(content_spans(
                 editor,
@@ -285,6 +289,19 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                 &row_style,
                 content_width,
             ));
+        }
+        // cursor-line end-of-line diagnostic (scoped to the one line —
+        // you see what the E is without leaving the buffer)
+        if view.overlays && line_idx == cur_line {
+            if let Some((sev, msg)) = editor.diag_message_at(view.buffer, line_idx + 1) {
+                let shown: String = msg.replace('\n', " · ").chars().take(80).collect();
+                left.push(Span::styled(
+                    format!("  ▍ {shown}"),
+                    Style::default()
+                        .fg(dim_color(severity_color(sev)))
+                        .add_modifier(Modifier::ITALIC),
+                ));
+            }
         }
         lines.push(Line::from(left));
     }
@@ -306,16 +323,17 @@ fn diff_digits(surface: Option<&crate::editor::Surface>) -> usize {
         (width - 3) / 2
     }
 }
-
 /// The sign column: diagnostics win over git signs (merged gutter,
 /// 0009), and only the pane's own buffer shows them.
 fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static str, Color) {
     if let Some(sev) = editor.diag_severity_at(view.buffer, line_idx + 1) {
-        return match sev {
-            1 => ("E", Color::Rgb(0xe8, 0x67, 0x7a)),
-            2 => ("W", ACCENT),
-            _ => ("▎", Color::Rgb(0x7f, 0xb4, 0xca)),
+        let glyph = match sev {
+            1 => "E",
+            2 => "W",
+            3 => "I",
+            _ => "H",
         };
+        return (glyph, severity_color(sev));
     }
     // git signs: + add, ~ change, - deletion below (only for the
     // working buffer — surfaces have no path, so no leak)
@@ -440,4 +458,32 @@ fn content_spans(
         }
     }
     spans
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::editor::Editor;
+    use strop_core::Buffer;
+
+    #[test]
+    fn cursor_line_shows_eol_diagnostic() {
+        let mut e = Editor::new(Buffer::from_text("let x = 1;\n"));
+        let rel = "strop-eol-diag-test.rs";
+        e.buf_mut().path = Some(rel.into());
+        let abs = e.cwd.join(rel);
+        e.diags.insert(
+            abs,
+            vec![strop_lsp::Diag {
+                line: 0,
+                col: 4,
+                severity: 1,
+                end_line: 0,
+                end_col: 8,
+                message: "mismatched types".into(),
+            }],
+        );
+        let frame = crate::headless::frame_string(&mut e, 60, 10);
+        assert!(frame.contains("E"), "gutter sign: {frame}");
+        assert!(frame.contains("▍ mismatched types"), "eol note: {frame}");
+    }
 }

@@ -106,4 +106,37 @@ mod tests {
         let frame = crate::headless::frame_string(&mut e, 40, 10);
         assert!(frame.contains("one") && frame.contains("two"));
     }
+
+    #[test]
+    fn key_soup_never_panics() {
+        // seeded LCG drives thousands of keystrokes across buffer shapes:
+        // cursors, pickers, surfaces, undo — every path must stay total
+        let keys = "hjklwbe0$GwWbBeEdyc><iIoOaAvVspPxXuQq ?%fFtT/\",.:;[]{}()m'rcnNZSL=+-_!@#^&*|~123456789 ";
+        let shapes = ["", "x\n", "fn main() {\n    let x = 1;\n}\n", "a\nb\nc\n"];
+        let mut state = 0x9e3779b97f4a7c15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for (round, shape) in shapes.iter().enumerate() {
+            let mut e = Editor::new(Buffer::from_text(shape));
+            for _ in 0..3000 {
+                let c = keys.as_bytes()[(next() as usize) % keys.len()] as char;
+                e.feed(crate::editor::Key::Char(c));
+                if round % 3 == 0 && next() % 7 == 0 {
+                    e.feed(crate::editor::Key::Esc);
+                }
+                if next() % 11 == 0 {
+                    e.drain_picker();
+                    e.drain_git_jobs();
+                    e.drain_lsp();
+                    e.drain_clipboard();
+                }
+            }
+            // a frame render must never panic either (cursor invariants)
+            let _ = crate::headless::frame_string(&mut e, 80, 24);
+        }
+    }
 }

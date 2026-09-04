@@ -105,9 +105,9 @@ fn main() {
         editor.lsp_maybe_attach();
         let mut out = io::stdout().lock();
         headless::run_script(&mut editor, &script, 100, 30, &mut out);
-        if let Some(lsp) = &editor.lsp {
+        if let Some(lsp) = editor.lsp.take() {
             lsp.shutdown();
-            std::thread::sleep(Duration::from_millis(100));
+            lsp.wait(Duration::from_millis(500));
         }
         let _ = out.flush();
         return;
@@ -238,10 +238,12 @@ fn tui(mut editor: Editor) {
         }
     }
 
-    // the LSP exit sequence must land before the pipes close with us
-    if let Some(lsp) = &editor.lsp {
+    // the LSP exit sequence must land before the pipes close with us —
+    // and the runtime thread must be joined: dropping the socket under a
+    // live mainloop panics inside async-lsp ("Sender is alive")
+    if let Some(lsp) = editor.lsp.take() {
         lsp.shutdown();
-        std::thread::sleep(Duration::from_millis(100));
+        lsp.wait(Duration::from_millis(500));
     }
     disable_raw_mode().unwrap();
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen).unwrap();

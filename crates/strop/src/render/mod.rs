@@ -18,6 +18,7 @@ mod blame_card;
 mod buffer;
 mod cmd_card;
 mod diff;
+mod help;
 mod hover_card;
 mod picker_card;
 mod which_key;
@@ -30,6 +31,17 @@ pub const ACCENT: Color = Color::Rgb(0xf0, 0xa3, 0x5e);
 pub const PREVIEW_BG: Color = Color::Rgb(0x4a, 0x33, 0x1c); // accent, dimmed
 pub const FLASH_BG: Color = Color::Rgb(0x6b, 0x47, 0x22); // accent, stronger
 pub const SELECT_BG: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
+
+/// Diagnostic severity → color (LSP 1=error … 4=hint; one source for
+/// the gutter sign and the cursor-line end-of-line note).
+pub(crate) fn severity_color(sev: u8) -> Color {
+    match sev {
+        1 => Color::Rgb(0xe8, 0x67, 0x7a), // error red
+        2 => ACCENT,                       // warning amber
+        3 => Color::Rgb(0x7f, 0xb4, 0xca), // info blue
+        _ => MUTED,                        // hint
+    }
+}
 
 /// Syntax class → color (strop palette; theme engine swaps these later).
 pub(crate) fn class_color(class: strop_syntax::Class) -> Color {

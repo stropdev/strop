@@ -125,6 +125,10 @@ pub struct Client {
     /// protocol exit, not a crash — no Failed event (the demo tape's
     /// `:q!` used to end every LSP session in a fake failure).
     quitting: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The runtime thread running the server mainloop. Joined on
+    /// shutdown — dropping the socket while it lives panics inside
+    /// async-lsp ("Sender is alive", seen in the demo tape).
+    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl Client {
@@ -177,7 +181,7 @@ impl Client {
         let quitting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let quitting_mainloop = quitting.clone();
 
-        std::thread::spawn(move || {
+        let thread = std::thread::spawn(move || {
             rt.block_on(async move {
                 let child = Command::new(&cmd)
                     .args(&args)
@@ -253,6 +257,7 @@ impl Client {
             socket,
             handle,
             tx,
+            thread: std::sync::Mutex::new(Some(thread)),
             root: root.to_path_buf(),
             caps: self_caps,
             quitting,
@@ -273,6 +278,23 @@ impl Client {
                 .await;
             let _ = sock.notify::<async_lsp::lsp_types::notification::Exit>(());
         });
+    }
+
+    /// Join the runtime thread after `shutdown()`, with a timeout. A
+    /// clean exit drops the client normally; on timeout we leak it on
+    /// purpose — a detached thread that outlives the process is cheap,
+    /// a dropped-socket panic in the user's terminal is not.
+    pub fn wait(self, timeout: std::time::Duration) {
+        let handle = self.thread.lock().ok().and_then(|mut t| t.take());
+        let Some(handle) = handle else { return };
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = handle.join();
+            let _ = tx.send(());
+        });
+        if rx.recv_timeout(timeout).is_err() {
+            std::mem::forget(self);
+        }
     }
 
     fn uri(&self, path: &Path) -> Option<Url> {

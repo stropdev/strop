@@ -519,6 +519,28 @@ impl Editor {
         }
     }
 
+    /// Diagnostics of buffer `idx`, resolved against cwd like
+    /// diag_severity_at.
+    fn diags_for(&self, idx: usize) -> Option<&Vec<strop_lsp::Diag>> {
+        let path = self.buffers.get(idx)?.path.as_deref()?;
+        let abs = if std::path::Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.cwd.join(path)
+        };
+        self.diags.get(&abs)
+    }
+
+    /// The worst diagnostic's (severity, message) on a 1-based line —
+    /// the cursor line's end-of-line note (0009 UX).
+    pub fn diag_message_at(&self, idx: usize, line_1based: usize) -> Option<(u8, &str)> {
+        self.diags_for(idx)?
+            .iter()
+            .filter(|d| d.line + 1 == line_1based)
+            .min_by_key(|d| d.severity)
+            .map(|d| (d.severity, d.message.as_str()))
+    }
+
     /// Worst diagnostic severity (1=error … 4=hint) for a 1-based line
     /// of buffer `idx`, if any (0001 pillar 4: merges with the git
     /// gutter). Per-buffer, so panes show their own diagnostics.
@@ -637,6 +659,10 @@ impl Editor {
     }
 
     pub(crate) fn paste(&mut self, name: Option<char>, before: bool) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
         // `"+p`: the system clipboard is read by a provider job — never
         // a subprocess on the input path (0001 §3)
         if name == Some('+') {

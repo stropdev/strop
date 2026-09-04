@@ -183,7 +183,7 @@ impl Buffer {
             match op.kind {
                 EditKind::Insert => {
                     let at = self.clamp_boundary(op.at.min(self.len_bytes()));
-                    self.rope.insert(at, &op.text);
+                    self.rope.insert(self.rope.byte_to_char(at), &op.text);
                 }
                 EditKind::Delete => {
                     // both bounds must land on char boundaries — a stale
@@ -191,7 +191,8 @@ impl Buffer {
                     let end = self.clamp_boundary((op.at + op.text.len()).min(self.len_bytes()));
                     let start = self.clamp_boundary(op.at.min(end));
                     if start < end {
-                        self.rope.remove(start..end);
+                        self.rope
+                            .remove(self.rope.byte_to_char(start)..self.rope.byte_to_char(end));
                     }
                 }
             }
@@ -209,8 +210,17 @@ impl Buffer {
 
     /// Returns the deleted text (register payoff).
     pub fn delete(&mut self, range: Range) -> String {
-        let text = self.slice_string(range);
-        self.rope.remove(range.start..range.end);
+        // stale ranges (fuzz-driven cascades, replay drift) clamp, not panic
+        let start = self.clamp_boundary(range.start.min(self.len_bytes()));
+        let end = self.clamp_boundary(range.end.min(self.len_bytes()));
+        if start >= end {
+            return String::new();
+        }
+        let text = self.rope.byte_slice(start..end).to_string();
+        // ropey mutates by CHAR index; our offsets are bytes
+        let cstart = self.rope.byte_to_char(start);
+        let cend = self.rope.byte_to_char(end);
+        self.rope.remove(cstart..cend);
         self.dirty = true;
         self.epoch += 1;
         if !self.replaying && !self.readonly {
@@ -232,7 +242,7 @@ impl Buffer {
 
     pub fn insert(&mut self, at: usize, text: &str) {
         let at = self.clamp_boundary(at);
-        self.rope.insert(at, text);
+        self.rope.insert(self.rope.byte_to_char(at), text);
         self.dirty = true;
         self.epoch += 1;
         if !self.replaying && !self.readonly {
