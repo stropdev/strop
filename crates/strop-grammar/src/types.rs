@@ -39,6 +39,9 @@ pub enum Motion {
     FirstNonBlank,
     LineStart,
     LineEnd,
+    /// `|` — screen column (count, default 1). Restored to vim semantics
+    /// in 0014; pipe lives under the leader now.
+    Column,
     FirstLine,
     LastLine,
     /// f/F (till=false) and t/T (till=true).

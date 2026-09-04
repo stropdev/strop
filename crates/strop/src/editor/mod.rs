@@ -408,6 +408,8 @@ impl Editor {
                         "down" => Key::Down,
                         "tab" => Key::Tab,
                         "s-tab" => Key::Backtab,
+                        "left" => Key::Left,
+                        "right" => Key::Right,
                         "c-r" => Key::CtrlR,
                         "c-x" => Key::CtrlX,
                         "c-d" => Key::CtrlD,
@@ -1241,6 +1243,27 @@ mod tests {
         assert_eq!(e.buf().line_of(e.cursor), 0, "Up is k");
         e.feed(crate::editor::Key::Left);
         assert_eq!(e.cursor, 0, "Left is h");
+    }
+
+    #[test]
+    fn wq_never_closes_a_failed_save() {
+        // 0014 P0: a disk error or external change must keep the buffer
+        // open and dirty — closing would be silent data loss
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("wq.txt");
+        std::fs::write(&f, "one\n").unwrap();
+        let mut e = Editor::new(Buffer::open(f.to_str().unwrap()).unwrap());
+        e.feed_text("ix");
+        e.feed(crate::editor::Key::Esc);
+        std::fs::write(&f, "external\n").unwrap(); // someone else writes
+        e.feed_text(":wq\r");
+        assert!(!e.should_quit, "failed save must not close");
+        assert!(e.buf().dirty, "still dirty");
+        assert!(e.message.contains("changed on disk"));
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "external\n");
+        e.feed_text(":wq!\r");
+        assert!(e.should_quit, "forced write quits");
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "xone\n");
     }
     #[test]
     fn ex_open_and_close_buffers() {

@@ -775,7 +775,7 @@ impl Editor {
         let label = path.display().to_string();
         let text = diff_surface_text(&label, &hunks);
         let idx = self.current;
-        self.buffers[idx].replace_all(&text);
+        self.buffers[idx].replace_all_system(&text);
         if let Some(Some(Surface::Diff {
             label: slot,
             hunks: hunk_slot,
@@ -823,7 +823,7 @@ impl Editor {
                         .collect::<Vec<_>>()
                         .join("\n")
                         + "\n";
-                    self.buffers[buffer].replace_all(&text);
+                    self.buffers[buffer].replace_all_system(&text);
                     let mut focus_row = None;
                     if let Some(Some(Surface::CommitLog {
                         rows: slot, focus, ..

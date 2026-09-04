@@ -236,3 +236,21 @@ jobs:
         run: |
           gh api repos/stropdev/stropdev.github.io/dispatches \
             -f event_type=rebuild
+
+      # Ship the changelog with the release: vendor CHANGELOG.md into the
+      # site repo, rebuild changelog.html (the checked-in script), push.
+      # Best-effort like the redeploy ping.
+      - name: Publish changelog to the site repo
+        continue-on-error: true
+        env:
+          SITE_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
+        run: |
+          set -e
+          git clone --depth 1 "https://x-access-token:${SITE_TOKEN}@github.com/stropdev/stropdev.github.io.git" /tmp/site
+          cp CHANGELOG.md /tmp/site/CHANGELOG.md
+          (cd /tmp/site && python3 build_changelog.py)
+          git -C /tmp/site config user.name "github-actions[bot]"
+          git -C /tmp/site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/site add CHANGELOG.md changelog.html
+          git -C /tmp/site commit -m "changelog: strop ${GITHUB_REF_NAME}" || echo "no changelog change"
+          git -C /tmp/site push

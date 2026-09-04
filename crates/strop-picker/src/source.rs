@@ -12,6 +12,9 @@ use crate::{Item, Payload};
 /// Messages workers post to the event loop.
 pub enum PickerMsg {
     Items(Vec<Item>),
+    /// rg failed (bad flags, no binary): the message lands in the
+    /// picker instead of a silent empty list.
+    Error(String),
     Done,
 }
 
@@ -73,11 +76,21 @@ impl GrepWorker {
             .arg(&pattern)
             .current_dir(cwd)
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .stdin(Stdio::null());
         let mut child = cmd.spawn().ok()?;
         let stdout = child.stdout.take()?;
+        let stderr = child.stderr.take();
         std::thread::spawn(move || {
+            // stderr drains on its own thread — a chatty failure must
+            // never block the pipe
+            let err_thread = stderr.map(|mut e| {
+                std::thread::spawn(move || {
+                    let mut s = String::new();
+                    let _ = std::io::Read::read_to_string(&mut e, &mut s);
+                    s.trim().to_string()
+                })
+            });
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 let items = parse_json_match(&line);
                 if items.is_empty() {
@@ -85,6 +98,16 @@ impl GrepWorker {
                 }
                 if tx.send(PickerMsg::Items(items)).is_err() {
                     return; // picker closed
+                }
+            }
+            // a failed rg (unknown -t alias, bad glob) posts its stderr
+            // instead of looking like "no matches"
+            if let Some(et) = err_thread {
+                if let Ok(msg) = et.join() {
+                    let msg = msg.strip_prefix("rg: ").map(str::to_string).unwrap_or(msg);
+                    if !msg.is_empty() {
+                        let _ = tx.send(PickerMsg::Error(format!("rg: {msg}")));
+                    }
                 }
             }
             let _ = tx.send(PickerMsg::Done);
@@ -240,6 +263,7 @@ mod worker_tests {
         while !done && std::time::Instant::now() < deadline {
             match rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(PickerMsg::Items(batch)) => items += batch.len(),
+                Ok(PickerMsg::Error(_)) => {}
                 Ok(PickerMsg::Done) => done = true,
                 Err(_) => break,
             }
@@ -265,11 +289,36 @@ mod worker_tests {
                         found = true;
                     }
                 }
+                Ok(PickerMsg::Error(_)) => {}
                 Ok(PickerMsg::Done) => break,
                 Err(_) => break,
             }
         }
         std::fs::remove_dir_all(&dir).ok();
         assert!(found);
+    }
+
+    #[test]
+    fn rg_failure_posts_an_error() {
+        // a bad -t alias used to look like "no matches" (stderr nulled)
+        let dir = std::env::temp_dir().join("strop-picker-err");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = channel();
+        let _w = GrepWorker::spawn("x -t nosuchtype", &dir, tx).expect("rg available");
+        let mut err = None;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            match rx.recv_timeout(Duration::from_millis(500)) {
+                Ok(PickerMsg::Error(e)) => {
+                    err = Some(e);
+                    break;
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        std::fs::remove_dir_all(&dir).ok();
+        let err = err.expect("rg error posted");
+        assert!(err.contains("unrecognized file type"), "{err}");
     }
 }

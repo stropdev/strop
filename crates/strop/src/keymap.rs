@@ -115,8 +115,14 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "|",
-        desc: "pipe line/selection through shell (:! runs)",
+        desc: "column motion (vim); pipe moved to space |",
         section: "normal",
+        live: true,
+    },
+    Binding {
+        keys: "space |",
+        desc: "pipe line/selection through shell (:! runs)",
+        section: "leader",
         live: true,
     },
     Binding {
@@ -730,7 +736,7 @@ mod tests {
         "S",
         "I",
         ":view",
-        "|",
+        "space |",
         // prefixes with their own which-key cards
         "gg",
         "gd",

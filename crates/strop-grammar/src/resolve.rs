@@ -544,6 +544,17 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     "line end".to_string(),
                 )
             }
+            Motion::Column => {
+                // vim `|`: count names the 1-based column (bare `|` = 1)
+                let line = buf.line_of(cursor);
+                let start = buf.line_start(line);
+                let pos = start + (count - 1).min(buf.line_end(line) - start);
+                (
+                    Range::charwise(cursor.min(pos), cursor.max(pos)),
+                    false,
+                    "column".to_string(),
+                )
+            }
             Motion::FirstLine | Motion::LastLine => {
                 let target = if *m == Motion::FirstLine {
                     count - 1
@@ -677,7 +688,7 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
     match &cmd.target {
         Target::Motion(Motion::Down | Motion::Up) => r.range.start,
         Target::Motion(Motion::WordBackward | Motion::LineStart) => r.range.start,
-        Target::Motion(Motion::FirstNonBlank) => {
+        Target::Motion(Motion::FirstNonBlank | Motion::Column) => {
             // ^ lands on the non-blank — whichever side of the cursor
             // that is (the range is (min, max) of cursor and target)
             if _cursor <= r.range.start {

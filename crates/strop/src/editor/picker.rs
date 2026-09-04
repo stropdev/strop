@@ -180,6 +180,7 @@ impl Editor {
                 while let Ok(msg) = rx.try_recv() {
                     match msg {
                         PickerMsg::Items(batch) => items.extend(batch),
+                        PickerMsg::Error(e) => self.message = e,
                         PickerMsg::Done => done = true,
                     }
                 }

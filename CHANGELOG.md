@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.0 — 2026-09-04
+
+The safety release. An external architecture review (now `plans/0014`)
+audited the mutation and protocol boundaries; every confirmed P0 is
+fixed and pinned by a failing-first test.
+
+### Fixed — safety
+
+- **`:wq` could close after a failed save** — disk error, full
+  filesystem, or an externally modified file meant silent data loss.
+  A failed save now keeps the buffer open and dirty; `:w!`/`:wq!`
+  force past an external change.
+- **Saves are atomic** (temp file + rename in the same directory,
+  permissions preserved) and refuse to overwrite a file that changed
+  on disk since load.
+- **Readonly is enforced at the mutation boundary**, not by caller
+  discipline: `Buffer::insert`/`delete` refuse on readonly buffers;
+  job-owned surfaces refresh through an explicit `replace_all_system`.
+- **Staging a hunk no longer silently saves the buffer** (writing every
+  unrelated unsaved edit to the worktree): dirty buffer →
+  "unsaved changes — :w first".
+- **Sessions persist on exit**, not only on `:w`.
+- **rg failures surface**: a bad `-t`/`--glob` filter posts rg's stderr
+  to the picker instead of looking like "no matches".
+
+### Fixed — protocol
+
+- **LSP document versions** strictly increase per document (was: `2`
+  forever — pyright rejects stale versions).
+- **LSP position encoding** is negotiated (utf-8 offered, utf-16
+  honored, the spec default) with one tested conversion module —
+  hover/goto/diagnostics land on the right column with emoji,
+  combining marks, and astral-plane chars before the point.
+
+### Changed (breaking)
+
+- **`|` is vim's column motion again**; pipe-through-shell moved to
+  `Space |` (normal and visual). Restored before the deviation became
+  muscle memory — see `plans/0014` §"compatibility policy".
+
 ## 0.3.9 — 2026-09-04
 
 Headless QA sweep (the harness now drives the real binary across

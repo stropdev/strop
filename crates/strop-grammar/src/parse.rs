@@ -276,6 +276,7 @@ pub fn parse(keys: &str) -> Parse {
         b"0" => Motion::LineStart,
         b"^" => Motion::FirstNonBlank,
         b"$" => Motion::LineEnd,
+        b"|" => Motion::Column,
         b"gg" => Motion::FirstLine,
         b"G" => Motion::LastLine,
         b"g" => return Parse::Incomplete,

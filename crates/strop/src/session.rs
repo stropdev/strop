@@ -155,11 +155,16 @@ mod tests {
     use super::*;
     use std::process::Command;
 
+    /// XDG_STATE_HOME is process-global — parallel tests mutating it
+    /// race (the flake class of 0.3.9). Serialize the module.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn roundtrip_restores_buffers_and_position() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::write(root.join("a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+        let _guard = ENV_LOCK.lock().unwrap();
         // no HOME pollution: point XDG_STATE_HOME at the tempdir
         std::env::set_var("XDG_STATE_HOME", root.join("state"));
         let mut e = Editor::new(Buffer::open(root.join("a.rs").to_str().unwrap()).unwrap());
@@ -187,6 +192,7 @@ mod tests {
     #[test]
     fn empty_or_readonly_never_persist() {
         let dir = tempfile::tempdir().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("XDG_STATE_HOME", dir.path().join("state"));
         let mut e = Editor::new(Buffer::from_text(""));
         e.cwd = dir.path().to_path_buf();

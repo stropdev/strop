@@ -312,7 +312,9 @@ mod tests {
         assert!(h.can_redo());
         let ops = h.redo_ops().unwrap();
         assert_eq!(ops, vec![edit(0, "x", EditKind::Insert)]);
-        assert!(!h.can_undo() || h.can_undo());
+        // at the tip after redo: undo is available, redo is not
+        assert!(h.can_undo());
+        assert!(!h.can_redo());
     }
 
     #[test]

@@ -10,6 +10,8 @@ use super::{Editor, Key, Mode};
 /// list — one table, no drift).
 pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("w", "write"),
+    ("w!", "write, force (file changed on disk)"),
+    ("wq!", "write forced + quit"),
     ("q", "quit"),
     ("q!", "quit, force"),
     ("wq", "write + quit"),
@@ -80,11 +82,13 @@ impl Editor {
             // bare 0 is the line-start motion (vim); only a digit after
             // a count continues the count
             '0' => self.run_motion("0"),
-            'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' | '^' => {
+            'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' | '^'
+            // vim's column motion — pipe moved under the leader (0014)
+            | '|' => {
                 self.run_motion(&c.to_string())
             }
             'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | '?' | ':' | '"' | 'r' | '>'
-            | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' | '|' => self.pending.push(c),
+            | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' => self.pending.push(c),
             // n/N replay the last search (vim; N inverts direction)
             'n' => self.repeat_search(false),
             'N' => self.repeat_search(true),
@@ -363,6 +367,11 @@ impl Editor {
                         }
                         'p' => self.clipboard_paste(false),
                         'P' => self.clipboard_paste(true),
+                        // pipe the line through a shell command (was
+                        // bare `|`, which is vim's column motion)
+                        '|' => {
+                            self.pending = "|".into();
+                        }
                         _ => {
                             self.message =
                                 "Space: f files · b buffers · / grep · y/p clipboard · g git".into()
@@ -1116,13 +1125,24 @@ impl Editor {
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline.as_str(), ""));
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
-            "w" => match self.buf_mut().save() {
+            "w" | "w!" => match self.buf_mut().save(cmd == "w!") {
                 Ok(()) => {
                     crate::session::save(self);
                     self.message = "written".into();
                 }
                 Err(e) => self.message = format!("write failed: {e}"),
             },
+            "wq" | "wq!" => {
+                // a failed save keeps the buffer open and dirty — never
+                // close into data loss (0014 wave 1)
+                match self.buf_mut().save(cmd == "wq!") {
+                    Ok(()) => {
+                        crate::session::save(self);
+                        self.close_buffer(true);
+                    }
+                    Err(e) => self.message = format!("write failed: {e}"),
+                }
+            }
             "view" => {
                 // vim view: edit readonly — no arg marks the current
                 // buffer readonly
@@ -1140,10 +1160,6 @@ impl Editor {
             }
             "q!" => {
                 self.close_pane_or_buffer(true);
-            }
-            "wq" => {
-                let _ = self.buf_mut().save();
-                self.close_buffer(true);
             }
             "noh" => {
                 // nohlsearch: the persistent highlight drops (0001 §5.8)

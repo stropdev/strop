@@ -228,9 +228,12 @@ impl Editor {
         let Some(path) = self.buffers[idx].path.clone() else {
             return;
         };
-        // staging reads the *disk* file's hunk; save first so the two agree
+        // staging reads the *disk* file's hunk: a dirty buffer means the
+        // two disagree, and auto-saving would silently write every
+        // unrelated unsaved edit to the worktree (0014). Refuse loudly.
         if self.buffers[idx].dirty {
-            let _ = self.buffers[idx].save();
+            self.message = "unsaved changes — :w first, then stage".into();
+            return;
         }
         let Some(repo) = &self.git else { return };
         let Ok(rel) = std::path::Path::new(&path)
@@ -410,6 +413,36 @@ mod tests {
         assert_eq!(text, "fn a() {}\nfn b() {}\n", "hunk restored: {text}");
         e.feed_text("q");
         assert_eq!(e.current, 0);
+    }
+
+    /// 0014 P0: staging must never silently write unrelated unsaved
+    /// edits — a dirty buffer refuses with a pointer to :w.
+    #[test]
+    fn stage_refuses_a_dirty_buffer() {
+        let (d, mut e) = fixture();
+        e.feed_text("Go");
+        e.feed_text("fn c() {}");
+        e.feed_text("<esc>gg]c");
+        e.feed_text(" gs");
+        assert!(
+            e.message.contains(":w first"),
+            "dirty stage refuses: {}",
+            e.message
+        );
+        let staged = Command::new("git")
+            .args(["diff", "--cached", "--stat"])
+            .current_dir(d.path())
+            .output()
+            .unwrap();
+        assert!(
+            staged.stdout.is_empty(),
+            "nothing reached the index: {}",
+            String::from_utf8_lossy(&staged.stdout)
+        );
+        // after an explicit save, staging works
+        e.feed_text(":w\r");
+        e.feed_text(" gs");
+        assert!(e.message.contains("staged"), "{}", e.message);
     }
 
     /// A stale preview refuses honestly: edits after opening it change

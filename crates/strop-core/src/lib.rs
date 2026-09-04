@@ -23,6 +23,8 @@ pub struct Buffer {
     pub history: History,
     /// Suppresses recording while applying undo/redo ops.
     pub replaying: bool,
+    /// Disk mtime at load/last save — overwrite protection for `:w`.
+    disk_stamp: Option<std::time::SystemTime>,
 }
 
 /// A half-open byte range `[start, end)` plus how vim thinks about it.
@@ -71,6 +73,7 @@ impl Buffer {
             name: None,
             history: History::default(),
             replaying: false,
+            disk_stamp: None,
         }
     }
 
@@ -82,6 +85,7 @@ impl Buffer {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(e),
         };
+        let disk_stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         Ok(Self {
             rope: Rope::from_str(&text),
             path: Some(path.to_string()),
@@ -91,17 +95,40 @@ impl Buffer {
             name: None,
             history: History::default(),
             replaying: false,
+            disk_stamp,
         })
     }
 
-    pub fn save(&mut self) -> std::io::Result<()> {
-        if let Some(path) = &self.path {
-            std::fs::write(path, self.rope.to_string())?;
-            self.dirty = false;
+    /// `:w` — atomic (temp + rename in the same dir), refuses to
+    /// overwrite a file another process touched since we loaded it.
+    /// `force` is `:w!`.
+    pub fn save(&mut self, force: bool) -> std::io::Result<()> {
+        let Some(path) = self.path.clone() else {
+            return Ok(());
+        };
+        let current = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+        if !force && current.is_some() && current != self.disk_stamp {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "file changed on disk — :w! to force",
+            ));
         }
+        let target = std::path::Path::new(&path);
+        let tmp = target.with_file_name(format!(
+            ".strop-tmp-{}-{}",
+            std::process::id(),
+            target.file_name().and_then(|n| n.to_str()).unwrap_or("x")
+        ));
+        std::fs::write(&tmp, self.rope.to_string())?;
+        if let Ok(meta) = std::fs::metadata(target) {
+            // keep the file's permissions across the atomic swap
+            let _ = std::fs::set_permissions(&tmp, meta.permissions());
+        }
+        std::fs::rename(&tmp, target)?;
+        self.disk_stamp = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+        self.dirty = false;
         Ok(())
     }
-
     pub fn len_bytes(&self) -> usize {
         self.rope.len_bytes()
     }
@@ -234,14 +261,31 @@ impl Buffer {
         self.epoch += 1;
     }
 
-    /// Replace the whole contents (virtual buffers filling from jobs).
+    /// Replace the whole contents (user-facing path). Refuses on
+    /// readonly buffers — the owning subsystem uses
+    /// `replace_all_system`.
     pub fn replace_all(&mut self, text: &str) {
+        if self.readonly {
+            return;
+        }
+        self.replace_all_system(text);
+    }
+
+    /// The privileged replace for generated surfaces: their content is
+    /// owned by jobs (git/LSP/shell), refreshed under the user's feet —
+    /// the readonly guard is about *user* edits, not the owner.
+    pub fn replace_all_system(&mut self, text: &str) {
         self.rope = Rope::from_str(text);
         self.epoch += 1;
     }
 
-    /// Returns the deleted text (register payoff).
+    /// Returns the deleted text (register payoff). Refuses on readonly
+    /// buffers: the input layer checks first, but the mutation boundary
+    /// enforces — no caller-remembered guard (0014).
     pub fn delete(&mut self, range: Range) -> String {
+        if self.readonly && !self.replaying {
+            return String::new();
+        }
         // stale ranges (fuzz-driven cascades, replay drift) clamp, not panic
         let start = self.clamp_boundary(range.start.min(self.len_bytes()));
         let end = self.clamp_boundary(range.end.min(self.len_bytes()));
@@ -273,7 +317,9 @@ impl Buffer {
     }
 
     pub fn insert(&mut self, at: usize, text: &str) {
-        let at = self.clamp_boundary(at);
+        if self.readonly && !self.replaying {
+            return;
+        }
         self.rope.insert(self.rope.byte_to_char(at), text);
         self.dirty = true;
         self.epoch += 1;
@@ -297,5 +343,59 @@ impl Buffer {
         let start = self.line_start(line);
         let end = self.line_end(line);
         self.rope.byte_slice(start..end).to_string()
+    }
+}
+
+#[cfg(test)]
+mod safety_tests {
+    use super::*;
+
+    #[test]
+    fn save_refuses_external_change_unless_forced() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("f.txt");
+        std::fs::write(&f, "original\n").unwrap();
+        let mut b = Buffer::open(f.to_str().unwrap()).unwrap();
+        b.insert(0, "mine ");
+        // another process touches the file
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        std::fs::write(&f, "theirs\n").unwrap();
+        let err = b.save(false).unwrap_err();
+        assert!(err.to_string().contains("changed on disk"));
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "theirs\n");
+        b.save(true).unwrap(); // :w!
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "mine original\n");
+        assert!(!b.dirty);
+    }
+
+    #[test]
+    fn save_is_atomic_and_keeps_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("x.sh");
+        std::fs::write(&f, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o750)).unwrap();
+        let mut b = Buffer::open(f.to_str().unwrap()).unwrap();
+        b.insert(b.len_bytes(), "echo hi\n");
+        b.save(false).unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "#!/bin/sh\necho hi\n");
+        let mode = std::fs::metadata(&f).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o750, "permissions survive the swap");
+        // no temp litter
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn readonly_refuses_mutation_at_the_boundary() {
+        // 0014: the guard lives in Buffer, not in every caller's memory
+        let mut b = Buffer::from_text("abc\n");
+        b.readonly = true;
+        b.insert(0, "nope");
+        let gone = b.delete(Range::charwise(0, 2));
+        assert_eq!(gone, "");
+        assert_eq!(b.rope.to_string(), "abc\n", "untouched");
+        // the owner path still works (job-generated surfaces)
+        b.replace_all_system("gen\n");
+        assert_eq!(b.rope.to_string(), "gen\n");
     }
 }

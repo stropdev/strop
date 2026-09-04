@@ -186,7 +186,7 @@ mod tests {
     fn visual_pipe_replaces_selection() {
         let mut e = Editor::new(Buffer::from_text("beta\nalpha\n"));
         e.feed_text("Vj"); // select both lines
-        e.feed_text("|sort");
+        e.feed_text(" |sort"); // Space | pipes the selection (0014)
         e.feed(crate::editor::Key::Enter);
         for _ in 0..100 {
             e.drain_shell();

@@ -47,8 +47,10 @@ pub fn state_json(editor: &Editor) -> String {
 }
 
 /// Script format: one step per line. `keys <text>` feeds keys (token
-/// forms: <esc> <cr> <bs>); `frame` dumps the screen; `state` dumps JSON.
-/// `#` comments. Blank lines ignored.
+/// forms: <esc> <cr> <bs> <space> <tab> <s-tab> <up> <down> <left>
+/// <right> <c-r> <c-x> <c-d> <c-w> <c-o>); `wait N` ms drains jobs;
+/// `settle` waits out streaming pickers; `frame` dumps the screen;
+/// `state` dumps JSON. `#` comments. Blank lines ignored.
 pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: &mut dyn Write) {
     for line in script.lines() {
         let line = line.trim_end();

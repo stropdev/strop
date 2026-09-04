@@ -47,6 +47,45 @@ impl Diag {
 }
 
 /// Events the editor drains from the channel.
+/// Position encoding negotiated with the server (LSP 3.17): strop is
+/// byte-native and offers `utf-8` first; a server that only speaks
+/// UTF-16 (the spec default) gets converted columns both ways.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PositionEncoding {
+    Utf8,
+    Utf16,
+}
+
+/// Byte column → server column for one line's text.
+pub fn to_server_col(line: &str, byte_col: usize, enc: PositionEncoding) -> usize {
+    match enc {
+        PositionEncoding::Utf8 => byte_col,
+        PositionEncoding::Utf16 => line
+            .get(..byte_col)
+            .unwrap_or(line)
+            .chars()
+            .map(|c| c.len_utf16())
+            .sum(),
+    }
+}
+
+/// Server column → byte column for one line's text.
+pub fn to_byte_col(line: &str, server_col: usize, enc: PositionEncoding) -> usize {
+    match enc {
+        PositionEncoding::Utf8 => server_col,
+        PositionEncoding::Utf16 => {
+            let mut units = 0;
+            for (i, c) in line.char_indices() {
+                if units >= server_col {
+                    return i;
+                }
+                units += c.len_utf16();
+            }
+            line.len()
+        }
+    }
+}
+
 pub enum LspEvent {
     Diagnostics {
         path: PathBuf,
@@ -116,8 +155,21 @@ impl ServerCaps {
             Some(OneOf::Left(true)) | Some(OneOf::Right(_))
         )
     }
-}
 
+    /// The negotiated column encoding (spec default UTF-16 until the
+    /// initialize result says otherwise).
+    pub fn encoding(&self) -> PositionEncoding {
+        let Ok(guard) = self.0.lock() else {
+            return PositionEncoding::Utf16;
+        };
+        match guard.as_ref().and_then(|c| c.position_encoding.as_ref()) {
+            Some(k) if *k == async_lsp::lsp_types::PositionEncodingKind::UTF8 => {
+                PositionEncoding::Utf8
+            }
+            _ => PositionEncoding::Utf16,
+        }
+    }
+}
 /// A live server connection: send from any thread, the runtime thread
 /// owns the socket drain.
 pub struct Client {
@@ -138,8 +190,10 @@ pub struct Client {
     /// Initialized (strict servers like pyright drop pre-init opens).
     pending_opens: std::sync::Arc<parking_lot::Mutex<Vec<(PathBuf, String, String)>>>,
     initialized: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Per-document didChange versions — the spec requires strictly
+    /// increasing, and pyright-family servers enforce it (0014).
+    versions: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<PathBuf, i32>>>,
 }
-
 /// clangd's proprietary `textDocument/switchSourceHeader` — not part of
 /// the LSP spec, so lsp-types doesn't model it.
 enum SwitchSourceHeader {}
@@ -251,6 +305,15 @@ impl Client {
                     definition: Some(Default::default()),
                     ..Default::default()
                 }),
+                // offer utf-8 (we are byte-native), accept utf-16 (spec
+                // default) — the answer drives every column conversion
+                general: Some(async_lsp::lsp_types::GeneralClientCapabilities {
+                    position_encodings: Some(vec![
+                        async_lsp::lsp_types::PositionEncodingKind::UTF8,
+                        async_lsp::lsp_types::PositionEncodingKind::UTF16,
+                    ]),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             ..Default::default()
@@ -302,6 +365,9 @@ impl Client {
             quitting,
             pending_opens: pending,
             initialized,
+            versions: std::sync::Arc::new(
+                parking_lot::Mutex::new(std::collections::HashMap::new()),
+            ),
         })
     }
 
@@ -360,12 +426,12 @@ impl Client {
             return;
         }
         let Some(uri) = self.uri(path) else { return };
-        let version = 1;
+        self.versions.lock().insert(path.to_path_buf(), 1);
         let socket = self.socket.clone();
         let item = TextDocumentItem {
             uri,
             language_id: language_id.to_string(),
-            version,
+            version: 1,
             text: text.to_string(),
         };
         let _ = socket.notify::<DidOpenTextDocument>(DidOpenTextDocumentParams {
@@ -373,11 +439,23 @@ impl Client {
         });
     }
 
+    /// The negotiated column encoding — callers convert at the boundary.
+    pub fn encoding(&self) -> PositionEncoding {
+        self.caps.encoding()
+    }
+
     /// didChange — full document replacement (TextDocumentSyncKind::Full).
     pub fn did_change(&self, path: &Path, text: &str) {
         let Some(uri) = self.uri(path) else { return };
         let socket = self.socket.clone();
-        let version = 2; // version strictly increases; full sync doesn't care
+        // strictly increasing per the spec — "full sync doesn't care"
+        // was wrong: pyright rejects stale versions (0014)
+        let version = {
+            let mut m = self.versions.lock();
+            let v = m.entry(path.to_path_buf()).or_insert(1);
+            *v += 1;
+            *v
+        };
         let params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier { uri, version },
             content_changes: vec![async_lsp::lsp_types::TextDocumentContentChangeEvent {
@@ -586,7 +664,7 @@ pub(crate) fn log_line(line: String) {
 
 #[cfg(test)]
 mod tests {
-    use super::ServerCaps;
+    use super::{to_byte_col, to_server_col, PositionEncoding, ServerCaps};
     use async_lsp::lsp_types::{
         DefinitionOptions, HoverProviderCapability, OneOf, ServerCapabilities,
     };
@@ -634,5 +712,26 @@ mod tests {
         });
         assert!(caps.hover());
         assert!(caps.goto_definition());
+    }
+
+    #[test]
+    fn column_encoding_roundtrips_unicode() {
+        // the LSP wire is UTF-16 unless negotiated; strop is byte-native
+        let line = "aé🦀b"; // bytes: 1+2+4+1, utf16: 1+1+2+1
+                            // byte col of 'b' = 7; utf-16 col = 4
+        assert_eq!(to_server_col(line, 7, PositionEncoding::Utf16), 4);
+        assert_eq!(to_byte_col(line, 4, PositionEncoding::Utf16), 7);
+        assert_eq!(to_server_col(line, 7, PositionEncoding::Utf8), 7);
+        assert_eq!(to_byte_col(line, 7, PositionEncoding::Utf8), 7);
+        // inside the emoji (byte 3..7): utf16 col 2..4
+        assert_eq!(to_server_col(line, 3, PositionEncoding::Utf16), 2);
+        assert_eq!(to_server_col(line, 7, PositionEncoding::Utf16), 4);
+        assert_eq!(to_byte_col(line, 2, PositionEncoding::Utf16), 3);
+        // past-the-end clamps
+        assert_eq!(to_byte_col(line, 99, PositionEncoding::Utf16), line.len());
+        // combining marks: e + U+0301 is 3 bytes, 2 utf-16 units
+        let comb = "e\u{0301}x";
+        assert_eq!(to_server_col(comb, 3, PositionEncoding::Utf16), 2);
+        assert_eq!(to_byte_col(comb, 2, PositionEncoding::Utf16), 3);
     }
 }

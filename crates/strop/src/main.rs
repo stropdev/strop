@@ -278,6 +278,10 @@ fn tui(mut editor: Editor) {
         }
     }
 
+    // sessions persist on exit, not only on :w — quitting without a
+    // write still restores where you were (0005 session layer)
+    crate::session::save(&editor);
+
     // the LSP exit sequence must land before the pipes close with us —
     // and the runtime thread must be joined: dropping the socket under a
     // live mainloop panics inside async-lsp ("Sender is alive")

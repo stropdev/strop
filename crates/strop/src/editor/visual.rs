@@ -111,7 +111,9 @@ impl Editor {
                 self.clamp_cursor();
             }
             Key::Char(c) => {
-                if c == '|' && self.pending.is_empty() {
+                // pipe a selection through a shell command: Space |
+                // (bare | is vim's column motion, restored in 0014)
+                if c == '|' && self.pending == " " {
                     self.pending = "|".into();
                     return;
                 }

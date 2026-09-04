@@ -146,7 +146,19 @@ impl Editor {
         if let Some(rx) = &rx {
             while let Ok(event) = rx.try_recv() {
                 match event {
-                    LspEvent::Diagnostics { path, diags } => {
+                    LspEvent::Diagnostics { path, mut diags } => {
+                        // server columns → byte columns against the open
+                        // buffer's text (unopened files keep wire values)
+                        if let Some(enc) = self.lsp.as_ref().map(|c| c.encoding()) {
+                            if let Some(buf) = self.buffer_for_path(&path) {
+                                for d in &mut diags {
+                                    let line = buf.line_text(d.line);
+                                    d.col = strop_lsp::to_byte_col(&line, d.col, enc);
+                                    let end_line = buf.line_text(d.end_line);
+                                    d.end_col = strop_lsp::to_byte_col(&end_line, d.end_col, enc);
+                                }
+                            }
+                        }
                         self.diags.insert(path, diags);
                     }
                     LspEvent::Ready { server } => {
@@ -165,6 +177,16 @@ impl Editor {
                         if let Err(e) = self.open_buffer(&path_s) {
                             self.message = format!("open {path_s}: {e}");
                         } else {
+                            // server col → byte col against the target line
+                            let col = match self.lsp.as_ref().map(|c| c.encoding()) {
+                                Some(enc) => {
+                                    let line_idx =
+                                        line.min(self.buf().len_lines().saturating_sub(1));
+                                    let text = self.buf().line_text(line_idx);
+                                    strop_lsp::to_byte_col(&text, col, enc)
+                                }
+                                None => col,
+                            };
                             let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
                             self.cursor = self.buf().clamp_boundary(start + col);
                             self.clamp_cursor();
@@ -223,11 +245,32 @@ impl Editor {
         } else {
             self.cwd.join(&path)
         };
-        client.hover(
-            &abs,
-            self.buf().line_of(self.cursor),
-            self.buf().col_of(self.cursor),
-        );
+        let line = self.buf().line_of(self.cursor);
+        let col = self.buf().col_of(self.cursor);
+        let col = self.server_col(client, col);
+        client.hover(&abs, line, col);
+    }
+
+    /// The open buffer backing an absolute path, if any.
+    fn buffer_for_path(&self, abs: &std::path::Path) -> Option<&strop_core::Buffer> {
+        self.buffers.iter().find(|b| {
+            b.path.as_deref().is_some_and(|p| {
+                let p = std::path::Path::new(p);
+                let buf_abs = if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    self.cwd.join(p)
+                };
+                buf_abs == abs || buf_abs.canonicalize().ok().as_deref() == Some(abs)
+            })
+        })
+    }
+
+    /// byte col → the server's negotiated column for the current line.
+    fn server_col(&self, client: &strop_lsp::Client, byte_col: usize) -> usize {
+        let line = self.buf().line_of(self.cursor);
+        let text = self.buf().line_text(line);
+        strop_lsp::to_server_col(&text, byte_col, client.encoding())
     }
 
     /// `gd`: goto definition at the cursor.
@@ -244,11 +287,10 @@ impl Editor {
         } else {
             self.cwd.join(&path)
         };
-        client.goto_definition(
-            &abs,
-            self.buf().line_of(self.cursor),
-            self.buf().col_of(self.cursor),
-        );
+        let line = self.buf().line_of(self.cursor);
+        let col = self.buf().col_of(self.cursor);
+        let col = self.server_col(client, col);
+        client.goto_definition(&abs, line, col);
     }
 
     /// `gs`: switch between source and header (clangd's extension).
