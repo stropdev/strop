@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.7 — 2026-09-04
+
+### Added
+
+- **Jumplist** (vim's ctrl-o / ctrl-i — and ctrl-i is Tab in a
+  terminal, same as vim): jumps record on `gg`/`G`/`%`, searches, `n`/`N`,
+  marks, buffer switches, `:N`, and every surface dive; ctrl-o walks
+  back across buffers, ctrl-i/Tab forward; a new jump truncates the
+  forward path. On commit-diff surfaces Tab keeps its sidebar-focus job.
+
+### Website
+
+- `what's new` links removed (the changelog page serves it);
+  docs/changelog content no longer hides under the fixed topbar;
+  footers unified with the homepage's.
+
 ## 0.3.6 — 2026-09-04
 
 Input boxes get modal, replace gets vscode-grade exclusion, and the LSP

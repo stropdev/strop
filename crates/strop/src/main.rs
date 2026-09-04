@@ -228,6 +228,8 @@ fn tui(mut editor: Editor) {
             KeyCode::Enter => Key::Enter,
             KeyCode::Char('d') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlD,
             KeyCode::Char('\x04') => Key::CtrlD,
+            KeyCode::Char('o') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlO,
+            KeyCode::Char('\x0f') => Key::CtrlO,
             KeyCode::Backspace => Key::Backspace,
             KeyCode::Tab => Key::Tab,
             // terminals that deliver the raw control byte instead of

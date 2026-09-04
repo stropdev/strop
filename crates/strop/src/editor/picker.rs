@@ -107,7 +107,7 @@ impl Editor {
             Key::CtrlX if replace => glue.picker.toggle_excluded(),
             Key::CtrlD if replace => glue.picker.toggle_file_excluded(),
             Key::CtrlD => {}
-            Key::CtrlX => {}
+            Key::CtrlX | Key::CtrlO => {}
             Key::Backspace => {
                 if glue.picker.input_normal() {
                     glue.picker.normal_key('h'); // vim: bs in normal = h

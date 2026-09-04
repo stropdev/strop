@@ -45,6 +45,7 @@ impl Editor {
             }
         }
         let mut buf = Buffer::from_text(&text);
+        self.push_jump(); // opening help is a jumplist entry
         buf.readonly = true;
         buf.name = Some("help".into());
         self.buffers.push(buf);

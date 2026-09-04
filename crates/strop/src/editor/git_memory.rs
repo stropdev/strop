@@ -153,6 +153,7 @@ impl Editor {
         buf.readonly = true;
         buf.name = name.map(|n| n.to_string());
         self.buffers.push(buf);
+        self.push_jump(); // opening a surface is a jumplist entry
         self.surfaces.push(Some(surface));
         self.highlighters.push(None); // surfaces render via delta/plain rules
         self.generation += 1; // buffer indices moved: old jobs are stale (0011 §2)
@@ -496,9 +497,23 @@ impl Editor {
             }
             // C-w works from surfaces too: splits are core grammar
             Key::CtrlW => self.pending = "\x17".into(),
+            Key::CtrlO => self.jump_back(),
             // tuicr's tab: focus hops between the file sidebar and the
-            // diff content; focused j/k steps files, Enter hops back
-            Key::Tab | Key::Backtab => self.toggle_sidebar_focus(),
+            // diff content; everywhere else Tab walks the jumplist
+            Key::Tab | Key::Backtab => {
+                let has_sidebar = matches!(
+                    self.surface(),
+                    Some(Surface::Diff {
+                        commit: Some(_),
+                        ..
+                    })
+                );
+                if has_sidebar {
+                    self.toggle_sidebar_focus();
+                } else {
+                    self.jump_forward();
+                }
+            }
             Key::Char('j') if self.sidebar_focused() => self.commit_file_step(true),
             Key::Char('k') if self.sidebar_focused() => self.commit_file_step(false),
             Key::Enter if self.sidebar_focused() => self.toggle_sidebar_focus(),

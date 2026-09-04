@@ -426,6 +426,12 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
     },
     Binding {
+        keys: "ctrl-o / ctrl-i (tab)",
+        desc: "jump back / forward (jumplist)",
+        section: "ex+panes",
+        live: true,
+    },
+    Binding {
         keys: "ctrl-w v / s",
         desc: "pane split (vs / sp)",
         section: "ex+panes",

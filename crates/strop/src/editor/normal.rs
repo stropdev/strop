@@ -46,6 +46,14 @@ impl Editor {
         if key == Key::Enter {
             return self.dive_from_blame();
         }
+        // ctrl-o / ctrl-i (Tab) walk the jumplist (vim; terminal ctrl-i
+        // *is* Tab)
+        if key == Key::CtrlO {
+            return self.jump_back();
+        }
+        if key == Key::Tab {
+            return self.jump_forward();
+        }
         // Esc in normal mode: collapse to the primary cursor (0013 §3)
         if key == Key::Esc {
             self.collapse_cursors();
@@ -249,7 +257,7 @@ impl Editor {
             Key::Enter if is_pipe => self.pipe_current_line(),
             Key::Tab if is_ex => self.ex_tab_complete(),
             Key::Enter => self.pending.clear(),
-            Key::CtrlR | Key::CtrlW | Key::CtrlX | Key::CtrlD => {} // pending + window/undo keys: no-op
+            Key::CtrlR | Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO => {} // pending + window/undo keys: no-op
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
                 // modal editing on the input line (0003 §1)
@@ -459,10 +467,24 @@ impl Editor {
 
     pub(crate) fn move_cursor(&mut self, cmd: &Command) {
         self.note_search(cmd);
+        // jump-class motions record jumplist entries (vim: gg G % / ?)
+        if matches!(
+            cmd.target,
+            strop_grammar::Target::Motion(
+                strop_grammar::Motion::FirstLine
+                    | strop_grammar::Motion::LastLine
+                    | strop_grammar::Motion::MatchPair
+                    | strop_grammar::Motion::Search(_)
+                    | strop_grammar::Motion::SearchBackward(_)
+            )
+        ) {
+            self.push_jump();
+        }
         // the cascade (0013 §3): one scalar resolver, mapped over every
         // cursor — secondary cursors run the exact same motion
-        if let Some(r) = grammar::resolve(self.buf(), self.cursor, cmd) {
-            self.cursor = grammar::cursor_after(self.buf(), self.cursor, cmd, &r);
+        let primary_hit = grammar::resolve(self.buf(), self.cursor, cmd);
+        if let Some(r) = &primary_hit {
+            self.cursor = grammar::cursor_after(self.buf(), self.cursor, cmd, r);
         }
         // take/compute/put-back: the resolver borrows self immutably
         let mut extras = std::mem::take(&mut self.extra_cursors);
@@ -475,6 +497,16 @@ impl Editor {
         self.extra_cursors = extras;
         self.clamp_cursor();
         self.normalize_cursors();
+        // vim says so when a search finds nothing
+        if matches!(
+            cmd.target,
+            strop_grammar::Target::Motion(
+                strop_grammar::Motion::Search(_) | strop_grammar::Motion::SearchBackward(_)
+            )
+        ) && primary_hit.is_none()
+        {
+            self.message = "pattern not found".into();
+        }
     }
 
     /// `;` / `,`: replay the last f/F/t/T (vim: `,` inverts direction),
@@ -542,8 +574,9 @@ impl Editor {
             return;
         };
         let backward = ls.backward ^ invert;
-        // a whole-word match has non-word bytes (or the edge) on both
-        // flanks — vim's \< \> without the regex layer
+        self.push_jump(); // n/N are jumplist entries
+                          // a whole-word match has non-word bytes (or the edge) on both
+                          // flanks — vim's \< \> without the regex layer
         let word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
         let boundary_ok = |buf: &strop_core::Buffer, at: usize, len: usize| {
             let before_ok = at == 0 || !word_char(buf.byte(at - 1));
@@ -1078,6 +1111,7 @@ impl Editor {
                 if self.buf().line_start(last) >= self.buf().len_bytes() {
                     last = last.saturating_sub(1);
                 }
+                self.push_jump(); // :N is a jump — record before moving
                 self.cursor = self.buf().line_start(n.saturating_sub(1).min(last));
                 self.clamp_cursor();
             }

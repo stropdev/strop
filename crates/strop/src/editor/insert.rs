@@ -101,7 +101,7 @@ impl Editor {
 
     pub(crate) fn feed_insert(&mut self, key: Key) {
         match key {
-            Key::CtrlW | Key::CtrlX | Key::CtrlD => {}
+            Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO => {}
             Key::Esc => {
                 self.mode = Mode::Normal;
                 self.cursor = self.cursor.saturating_sub(1);

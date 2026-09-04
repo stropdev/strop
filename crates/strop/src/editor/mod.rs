@@ -7,6 +7,7 @@ mod git;
 mod git_memory;
 mod help;
 mod insert;
+mod jumps;
 mod lsp;
 #[cfg(test)]
 mod multicursor_tests;
@@ -61,6 +62,8 @@ pub enum Key {
     /// Replace picker: exclude the row's whole file (vscode's toggle).
     CtrlD,
     CtrlR,
+    /// vim's jump-back (ctrl-i forward is Tab in a terminal).
+    CtrlO,
     CtrlW,
     /// Replace picker: exclude/include the selected match (0007 §2).
     CtrlX,
@@ -78,6 +81,9 @@ pub struct Editor {
     pub pending_normal: bool,
     pub pending_cursor: usize,
     pub current: usize,
+    /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks (jumps.rs).
+    pub jumplist_past: Vec<(usize, usize)>,
+    pub jumplist_future: Vec<(usize, usize)>,
     /// Syntax highlighter per buffer (None: unsupported ext), aligned
     /// with `buffers` — previews and switches keep their highlighting.
     pub highlighters: Vec<Option<Highlighter>>,
@@ -243,6 +249,8 @@ impl Editor {
             preview_inflight: std::collections::HashSet::new(),
             pending_normal: false,
             pending_cursor: 0,
+            jumplist_past: Vec::new(),
+            jumplist_future: Vec::new(),
             lsp: None,
             clip_tx,
             clip_rx,
@@ -282,7 +290,8 @@ impl Editor {
 
     /// Open a file into a new buffer and switch to it (`:e`).
     pub fn open_buffer(&mut self, path: &str) -> std::io::Result<()> {
-        // vim semantics: :e on an open file switches to its buffer
+        self.push_jump(); // leaving a buffer is a jumplist entry (vim)
+                          // vim semantics: :e on an open file switches to its buffer
         let canon = std::path::Path::new(path)
             .canonicalize()
             .unwrap_or_else(|_| self.cwd.join(path));
@@ -385,6 +394,7 @@ impl Editor {
                         "c-x" => Key::CtrlX,
                         "c-d" => Key::CtrlD,
                         "c-w" => Key::CtrlW,
+                        "c-o" => Key::CtrlO,
                         _ => {
                             self.feed(Key::Char('<'));
                             for c in rest.chars().chain(std::iter::once('>')) {
@@ -646,6 +656,7 @@ impl Editor {
 
     /// `'{a}`: jump to mark a (switches buffer if the mark lives there).
     pub(crate) fn jump_mark(&mut self, mark: char) {
+        self.push_jump(); // mark jumps are jumplist entries
         match self.marks.get(&mark).copied() {
             Some((buf, offset)) => {
                 if buf < self.buffers.len() {
