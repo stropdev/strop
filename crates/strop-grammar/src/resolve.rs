@@ -701,13 +701,16 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
                 r.range.start
             }
         }
-        Target::Motion(Motion::WordForward) => r.range.end.min(buf.len_bytes().saturating_sub(1)),
-        Target::Motion(Motion::WordEnd | Motion::LineEnd) => r.range.end.saturating_sub(1),
+        Target::Motion(Motion::WordForward | Motion::BigWordForward) => {
+            r.range.end.min(buf.len_bytes().saturating_sub(1))
+        }
+        Target::Motion(Motion::WordEnd | Motion::BigWordEnd | Motion::LineEnd) => {
+            r.range.end.saturating_sub(1)
+        }
         Target::Motion(Motion::FirstLine | Motion::LastLine) => {
             let line = if matches!(cmd.target, Target::Motion(Motion::FirstLine)) {
                 cmd.count - 1
             } else {
-                // same rule as resolve: explicit count names the line
                 let digits = &cmd.keys[..cmd.keys.len().saturating_sub(1)];
                 if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
                     digits.parse::<usize>().unwrap_or(1).saturating_sub(1)
@@ -763,7 +766,12 @@ pub struct PlannedTarget {
 pub fn plan(buf: &Buffer, cursors: &[usize], cmd: &Command) -> Option<ActionPlan> {
     let mut targets: Vec<PlannedTarget> = cursors
         .iter()
-        .filter_map(|&c| resolve(buf, c, cmd).map(|r| PlannedTarget { cursor: c, range: r.range }))
+        .filter_map(|&c| {
+            resolve(buf, c, cmd).map(|r| PlannedTarget {
+                cursor: c,
+                range: r.range,
+            })
+        })
         .collect();
     if targets.is_empty() {
         return None;

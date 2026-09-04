@@ -200,7 +200,10 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     let mut row_style = RowStyle {
         syn_spans: &syn_spans,
         preview: if view.overlays {
-            editor.preview().map(|(ranges, _)| ranges).unwrap_or_default()
+            editor
+                .preview()
+                .map(|(ranges, _)| ranges)
+                .unwrap_or_default()
         } else {
             Vec::new()
         },

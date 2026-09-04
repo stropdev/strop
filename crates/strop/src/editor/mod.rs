@@ -18,6 +18,7 @@ mod normal;
 mod panes;
 mod picker;
 mod registers;
+pub(crate) mod registry;
 mod shell;
 mod undo;
 mod visual;

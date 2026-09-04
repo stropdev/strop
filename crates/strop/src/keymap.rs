@@ -808,9 +808,38 @@ mod tests {
                 .map(|(_, c)| *c)
                 .unwrap_or(*entry);
             let want: Vec<&str> = canonical.split(' ').collect();
+
             assert!(
                 BINDINGS.iter().any(|b| expand(b.keys).contains(&want)),
                 "{entry} dispatches but has no BINDINGS row (0003 §5.7)"
+            );
+        }
+    }
+
+    /// 0008 stage 1 structural pin: every registry leaf dispatches to a
+    /// real change AND has a BINDINGS row — dispatch and docs are one
+    /// table now.
+    #[test]
+    fn registry_leaves_dispatch_and_document() {
+        for leaf in crate::editor::registry::LEAVES {
+            let key = leaf.key.to_string();
+            assert!(
+                BINDINGS
+                    .iter()
+                    .any(|b| expand(b.keys).contains(&vec![key.as_str()])),
+                "registry leaf '{}' has no BINDINGS row",
+                leaf.key
+            );
+            // recognized ≠ unknown-key error; legal no-op states (e at a
+            // word's own end, % on a bracketless line) are vim's too
+            let mut e = Editor::new(Buffer::from_text("fn f(x) {\n    let y = f(x);\n}\n"));
+            e.set_head(18);
+            (leaf.run)(&mut e);
+            assert!(
+                !e.message.starts_with("not an editor command"),
+                "leaf '{}' failed to dispatch: {}",
+                leaf.key,
+                e.message
             );
         }
     }

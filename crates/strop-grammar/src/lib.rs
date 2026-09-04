@@ -9,7 +9,10 @@ mod resolve;
 mod tests;
 
 pub use parse::parse;
-pub use resolve::{cursor_after, plan, resolve, search_all, search_backward, search_forward, ActionPlan, PlannedTarget};
+pub use resolve::{
+    cursor_after, plan, resolve, search_all, search_backward, search_forward, ActionPlan,
+    PlannedTarget,
+};
 
 pub use types::*;
 mod types;

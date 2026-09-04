@@ -82,110 +82,106 @@ impl Editor {
             // bare 0 is the line-start motion (vim); only a digit after
             // a count continues the count
             '0' => self.run_motion("0"),
-            'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' | '^'
-            // vim's column motion — pipe moved under the leader (0014)
-            | '|' => {
-                self.run_motion(&c.to_string())
-            }
             'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | '?' | ':' | '"' | 'r' | '>'
             | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' => self.pending.push(c),
-            // n/N replay the last search (vim; N inverts direction)
-            'n' => self.repeat_search(false),
-            'N' => self.repeat_search(true),
-            // aliases — dot-repeat replays the alias key itself
-            'D' => self.alias("D", "d$"),
-            'C' => self.alias("C", "c$"),
-            'Y' => self.alias("Y", "yy"),
-            's' => self.alias("s", "cl"),
-            'X' => self.alias("X", "dh"),
-            'i' => self.enter_insert_from("i"),
-            'a' => {
-                // append after the char under the cursor — its end, not
-                // one raw byte in (multibyte)
-                self.set_head(self
-                    .buf()
-                    .ceil_boundary(self.head() + 1)
-                    .min(self.buf().line_end(self.buf().line_of(self.head()))));
-                self.enter_insert_from("a");
-            }
-            'A' => {
-                self.set_head(self.buf().line_end(self.buf().line_of(self.head())));
-                self.enter_insert_from("A");
-            }
-            'o' => {
-                let indent = self.auto_indent_full_line();
-                let end = self.buf().line_end(self.buf().line_of(self.head()));
-                let text = format!("\n{indent}");
-                self.insert_open = Some(text.clone());
-                self.buf_mut().insert(end, &text);
-                self.set_head(end + text.len());
-                self.enter_insert_from("o");
-                // dot-repeat replays 'o', which re-derives the indent —
-                // recording it too would double it
-            }
-            'O' => {
-                let indent = self.auto_indent_full_line();
-                let start = self.buf().line_start(self.buf().line_of(self.head()));
-                let text = format!("{indent}\n");
-                self.insert_open = Some(text.clone());
-                self.buf_mut().insert(start, &text);
-                self.set_head(start + indent.len());
-                self.enter_insert_from("O");
-                // same as 'o': indent is derived, not recorded
-            }
-            'x' => {
-                // the whole char under the cursor — a bare +1 splits
-                // multibyte chars and panics ropey's byte_slice
-                let end = self
-                    .buf()
-                    .ceil_boundary(self.head() + 1)
-                    .min(self.buf().line_end(self.buf().line_of(self.head())));
-                if end > self.head() {
-                    self.tx_begin();
-                    let range = Range::charwise(self.head(), end);
-                    let text = self.buf_mut().delete(range);
-                    self.tx_commit();
-                    self.set_register(None, text, false);
-                    self.flash(range);
-                    self.last_cmd_keys = "x".into();
-                    self.last_insert = None;
-                }
-            }
-            'p' => {
-                self.paste(None, false);
-                self.last_cmd_keys = "p".into();
-                self.last_insert = None;
-            }
-            'P' => {
-                self.paste(None, true);
-                self.last_cmd_keys = "P".into();
-                self.last_insert = None;
-            }
-            'v' => {
-                // v1: visual mode is primary-only — extras collapse (0013)
-                self.sels.collapse_extras();
-                self.mode = Mode::Visual;
-                self.sels.stretch_primary(self.head(), self.head());
-            }
-            'V' => {
-                self.sels.collapse_extras();
-                self.mode = Mode::VisualLine;
-                self.sels.stretch_primary(self.head(), self.head());
-            }
-            'Q' => self.toggle_cursor(),
-            'J' => self.join_lines(),
-            '.' => self.dot_repeat(),
-            'u' => self.undo(),
-            ';' => self.repeat_find(false),
-            ',' => self.repeat_find(true),
-            '*' => self.search_word_under_cursor(false),
-            '#' => self.search_word_under_cursor(true),
-            '~' => self.toggle_case(),
-            'S' => self.alias("S", "cc"),
-            'I' => self.alias("I", "^i"),
-            // unknown keys say so (the `gI` path) — never silent
-            _ => self.message = format!("not an editor command: {c}"),
+            // leaf commands are DATA (0008 stage 1): the registry table
+            // dispatches, `?`/which-key document, the same row
+            _ => match super::registry::leaf_for(c) {
+                Some(leaf) => (leaf.run)(self),
+                None => self.message = format!("not an editor command: {c}"),
+            },
         }
+    }
+
+    /// `x`: delete the whole char under the cursor — a bare +1 splits
+    /// multibyte chars and panics ropey's byte_slice.
+    pub(crate) fn delete_char(&mut self) {
+        let end = self
+            .buf()
+            .ceil_boundary(self.head() + 1)
+            .min(self.buf().line_end(self.buf().line_of(self.head())));
+        if end > self.head() {
+            self.tx_begin();
+            let range = Range::charwise(self.head(), end);
+            let text = self.buf_mut().delete(range);
+            self.tx_commit();
+            self.set_register(None, text, false);
+            self.flash(range);
+            self.last_cmd_keys = "x".into();
+            self.last_insert = None;
+        }
+    }
+
+    /// `p` / `P`: paste the register after/before (dot-repeatable).
+    pub(crate) fn paste_named(&mut self, name: Option<char>, before: bool) {
+        self.paste(name, before);
+        self.last_cmd_keys = if before { "P".into() } else { "p".into() };
+        self.last_insert = None;
+    }
+
+    /// `a`: append after the char under the cursor (multibyte-honest).
+    pub(crate) fn append(&mut self) {
+        self.set_head(
+            self.buf()
+                .ceil_boundary(self.head() + 1)
+                .min(self.buf().line_end(self.buf().line_of(self.head()))),
+        );
+        self.enter_insert_from("a");
+    }
+
+    /// `A`: append at line end.
+    pub(crate) fn append_eol(&mut self) {
+        self.set_head(self.buf().line_end(self.buf().line_of(self.head())));
+        self.enter_insert_from("A");
+    }
+
+    /// `o`: open a line below, auto-indented. Dot-repeat replays `o`
+    /// itself, which re-derives the indent — recording it would double it.
+    pub(crate) fn open_below(&mut self) {
+        let indent = self.auto_indent_full_line();
+        let end = self.buf().line_end(self.buf().line_of(self.head()));
+        let text = format!("\n{indent}");
+        self.insert_open = Some(text.clone());
+        self.buf_mut().insert(end, &text);
+        self.set_head(end + text.len());
+        self.enter_insert_from("o");
+    }
+
+    /// `O`: open above — same indent derivation as `o`.
+    pub(crate) fn open_above(&mut self) {
+        let indent = self.auto_indent_full_line();
+        let start = self.buf().line_start(self.buf().line_of(self.head()));
+        let text = format!("{indent}\n");
+        self.insert_open = Some(text.clone());
+        self.buf_mut().insert(start, &text);
+        self.set_head(start + indent.len());
+        self.enter_insert_from("O");
+    }
+
+    /// `v` / `V`: visual mode is primary-only — extras collapse (0013).
+    pub(crate) fn enter_visual(&mut self, linewise: bool) {
+        self.sels.collapse_extras();
+        self.mode = if linewise {
+            Mode::VisualLine
+        } else {
+            Mode::Visual
+        };
+        self.sels.stretch_primary(self.head(), self.head());
+    }
+
+    /// `.` — see dot_repeat (semantic; 0014).
+    pub(crate) fn dot_repeat_pub(&mut self) {
+        self.dot_repeat();
+    }
+
+    /// `~` — see toggle_case.
+    pub(crate) fn toggle_case_pub(&mut self) {
+        self.toggle_case();
+    }
+
+    /// `J` — see join_lines.
+    pub(crate) fn join_lines_pub(&mut self) {
+        self.join_lines();
     }
 
     /// ds" / cs"' / ysiw" (sandwich lineage). Returns Some when the
@@ -240,7 +236,7 @@ impl Editor {
 
     /// Alias keys (D → d$, …): execute the expansion, remember the alias
     /// so dot-repeat replays through the same path.
-    fn alias(&mut self, alias_key: &str, expansion: &str) {
+    pub(crate) fn alias(&mut self, alias_key: &str, expansion: &str) {
         self.feed_text(expansion);
         self.last_cmd_keys = alias_key.into();
     }
