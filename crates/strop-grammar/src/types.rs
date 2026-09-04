@@ -35,6 +35,8 @@ pub enum Motion {
     WordForward,
     WordBackward,
     WordEnd,
+    /// `^` — first non-blank char of the line.
+    FirstNonBlank,
     LineStart,
     LineEnd,
     FirstLine,

@@ -145,7 +145,7 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
     },
     Binding {
-        keys: "i a A o O",
+        keys: "i a A o O I",
         desc: "insert (auto-indent)",
         section: "normal",
         live: true,
@@ -159,6 +159,12 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "r<c> J .",
         desc: "replace char / join / repeat",
+        section: "normal",
+        live: true,
+    },
+    Binding {
+        keys: "^ ~ S",
+        desc: "first non-blank / toggle case / change line",
         section: "normal",
         live: true,
     },
@@ -701,6 +707,10 @@ mod tests {
         "#",
         ";",
         ",",
+        "^",
+        "~",
+        "S",
+        "I",
         "|",
         // prefixes with their own which-key cards
         "gg",

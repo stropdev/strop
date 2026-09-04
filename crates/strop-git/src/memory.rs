@@ -268,6 +268,14 @@ pub fn normalize_remote(url: &str) -> Option<Remote> {
             .or_else(|| url.strip_prefix("http://"))?;
         let (host, path) = stripped.split_once('/')?;
         (format!("https://{host}"), path.to_string())
+    } else if let Some((host, path)) = url.split_once(':') {
+        // scp syntax without user@: bare hostname or an ssh host alias
+        // (`bbgithub:org/repo` — ~/.ssh/config supplies the real host)
+        if host.contains('@') || host.contains('/') {
+            return None;
+        }
+        let host = resolve_ssh_alias(host).unwrap_or_else(|| host.to_string());
+        (format!("https://{host}"), path.to_string())
     } else {
         return None;
     };
@@ -283,6 +291,32 @@ pub fn normalize_remote(url: &str) -> Option<Remote> {
         owner_repo: path,
         base,
     })
+}
+
+/// Resolve an ssh host alias via `~/.ssh/config` Host blocks (exact
+/// matches; wildcard blocks skipped). Enterprise GitHub setups live on
+/// these — the alias exists so the hostname isn't repeated per clone.
+fn resolve_ssh_alias(alias: &str) -> Option<String> {
+    let home = std::env::var_os("HOME")?;
+    let config = std::fs::read_to_string(PathBuf::from(home).join(".ssh").join("config")).ok()?;
+    parse_ssh_alias(&config, alias)
+}
+
+fn parse_ssh_alias(config: &str, alias: &str) -> Option<String> {
+    let mut in_block = false;
+    for line in config.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        match parts.next().map(|k| k.to_ascii_lowercase()).as_deref() {
+            Some("host") => in_block = parts.any(|h| h == alias),
+            Some("hostname") if in_block => return parts.next().map(|h| h.to_string()),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Pick the permalink remote: upstream > origin > first remaining.
@@ -336,6 +370,44 @@ fn rel_age(ts: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ssh_alias_resolves_via_config() {
+        let config = "# comment\nHost bbgithub\n  HostName bbgithub.dev.bloomberg.com\n  User git\nHost *\n  ServerAliveInterval 30\n";
+        assert_eq!(
+            parse_ssh_alias(config, "bbgithub").as_deref(),
+            Some("bbgithub.dev.bloomberg.com")
+        );
+        assert_eq!(parse_ssh_alias(config, "other"), None);
+        // wildcard-only blocks don't claim aliases
+        assert_eq!(parse_ssh_alias("Host *\n  HostName x", "bbgithub"), None);
+    }
+
+    #[test]
+    fn scp_without_user_parses_as_bare_host() {
+        // unresolved alias falls back to the bare name (matches what git
+        // itself would attempt) — but with a config entry it resolves
+        let r = normalize_remote("bbgithub:acme/demo.git");
+        assert!(r.is_some(), "alias form parses");
+    }
+
+    #[test]
+    fn reviewer_table() {
+        // the first-week report's remote table, verbatim
+        for url in [
+            "https://github.com/acme/demo.git",
+            "ssh://git@github.com/acme/demo.git",
+            "git@github.com:acme/demo",
+            "git@bbgithub.dev.bloomberg.com:acme/demo.git",
+            "https://bbgithub.dev.bloomberg.com/acme/demo.git",
+        ] {
+            let r = normalize_remote(url);
+            assert!(r.is_some(), "should parse: {url}");
+        }
+        // the ssh host-alias form parses (bare-host fallback; resolves
+        // via ~/.ssh/config when an entry exists)
+        assert!(normalize_remote("bbgithub:acme/demo.git").is_some());
+    }
 
     #[test]
     fn normalizes_ssh_and_https() {

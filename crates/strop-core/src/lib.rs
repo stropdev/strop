@@ -172,8 +172,11 @@ impl Buffer {
     }
 
     /// Slice as String — for register/paste paths, never for per-frame render.
+    /// Stale ranges clamp (fuzz-driven cascades hand these around).
     pub fn slice_string(&self, range: Range) -> String {
-        self.rope.byte_slice(range.start..range.end).to_string()
+        let start = range.start.min(self.len_bytes());
+        let end = range.end.min(self.len_bytes());
+        self.rope.byte_slice(start..end.max(start)).to_string()
     }
 
     /// Apply history edits (undo/redo replay — never recorded).

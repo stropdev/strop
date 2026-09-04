@@ -412,20 +412,23 @@ impl Editor {
     /// SHA-resolved, remote-prioritized (0001 pillar 3.3).
     pub(crate) fn yank_permalink(&mut self) {
         match self.build_permalink() {
-            Some(url) => {
+            Ok(url) => {
                 self.set_register(None, url.clone(), false);
                 self.osc52 = Some(url);
                 self.message = "permalink copied".into();
             }
-            None => self.message = "no remote / not a repo".into(),
+            Err(e) => self.message = e,
         }
     }
 
     /// `Space g o`: open the permalink in the browser.
     pub(crate) fn open_permalink(&mut self) {
-        let Some(url) = self.build_permalink() else {
-            self.message = "no remote / not a repo".into();
-            return;
+        let url = match self.build_permalink() {
+            Ok(url) => url,
+            Err(e) => {
+                self.message = e;
+                return;
+            }
         };
         for opener in ["wslview", "xdg-open", "open"] {
             if std::process::Command::new(opener)
@@ -442,15 +445,21 @@ impl Editor {
         self.message = format!("no opener found — {url}");
     }
 
-    fn build_permalink(&self) -> Option<String> {
-        let repo = self.git.as_ref()?;
-        let path = self.buf().path.as_deref()?;
+    fn build_permalink(&self) -> Result<String, String> {
+        let Some(repo) = self.git.as_ref() else {
+            return Err("not a git repository".into());
+        };
+        let Some(path) = self.buf().path.as_deref() else {
+            return Err("no file for this buffer".into());
+        };
         let abs = if Path::new(path).is_absolute() {
             PathBuf::from(path)
         } else {
             repo.workdir().join(path)
         };
-        let rel = abs.strip_prefix(repo.workdir()).ok()?;
+        let Ok(rel) = abs.strip_prefix(repo.workdir()) else {
+            return Err(format!("{} is outside the repo", abs.display()));
+        };
         let (a, b) = if self.mode == Mode::Visual || self.mode == Mode::VisualLine {
             (
                 self.buf().line_of(self.anchor) + 1,
@@ -460,7 +469,14 @@ impl Editor {
             let l = self.buf().line_of(self.cursor) + 1;
             (l, l)
         };
-        memory::permalink(repo, rel, a.min(b), a.max(b))
+        let remotes = repo.remotes();
+        if remotes.is_empty() {
+            return Err("no remote configured".into());
+        }
+        if memory::pick_remote(repo).is_none() {
+            return Err(format!("unsupported remote URL: {}", remotes[0].1));
+        }
+        memory::permalink(repo, rel, a.min(b), a.max(b)).ok_or_else(|| "no HEAD commit".into())
     }
 
     // ---- surface interaction -------------------------------------------
@@ -1000,7 +1016,7 @@ mod tests {
     fn permalink_needs_remote() {
         let (_d, e) = fixture();
         // no remote configured → honest refusal
-        assert!(e.build_permalink().is_none());
+        assert_eq!(e.build_permalink().unwrap_err(), "no remote configured");
     }
 
     #[test]

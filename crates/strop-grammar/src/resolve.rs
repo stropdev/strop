@@ -231,6 +231,8 @@ fn surround_pair(ch: u8) -> Option<(u8, u8)> {
 
 /// Search backward for `pat` before `from` (prototype: plain substring).
 pub fn search_backward(buf: &Buffer, from: usize, pat: &str) -> Option<usize> {
+    // stale cascade positions clamp, not panic
+    let from = from.min(buf.len_bytes());
     if from == 0 {
         return None;
     }
@@ -490,6 +492,20 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     "line start".to_string(),
                 )
             }
+            Motion::FirstNonBlank => {
+                // ^ — past the line's leading blanks (stays on the line)
+                let line = buf.line_of(cursor);
+                let (lo, hi) = (buf.line_start(line), buf.line_end(line));
+                let mut s = lo;
+                while s < hi && buf.byte(s).is_ascii_whitespace() {
+                    s += 1;
+                }
+                (
+                    Range::charwise(s.min(cursor), s.max(cursor)),
+                    false,
+                    "first non-blank".to_string(),
+                )
+            }
             Motion::LineEnd => {
                 let e = buf.line_end(buf.line_of(cursor));
                 let e = e.saturating_sub(1).max(buf.line_start(buf.line_of(cursor)));
@@ -503,7 +519,15 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 let target = if *m == Motion::FirstLine {
                     count - 1
                 } else {
-                    buf.len_lines() - 1
+                    // G with an explicit count is that line (vim); bare G
+                    // is the last content line. keys carry the digits:
+                    // "3G" vs "G" — count alone can't tell (default 1)
+                    let digits = &cmd.keys[..cmd.keys.len().saturating_sub(1)];
+                    if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+                        digits.parse::<usize>().unwrap_or(1).saturating_sub(1)
+                    } else {
+                        buf.last_content_line()
+                    }
                 };
                 let target = target.min(buf.len_lines() - 1);
                 let (a, b) = if buf.line_of(cursor) <= target {
@@ -619,20 +643,35 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
     })
 }
 
-/// Where the cursor lands when `cmd` is a bare motion (no operator).
+/// Where the cursor lands after a resolved motion command.
 pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -> usize {
     match &cmd.target {
         Target::Motion(Motion::Down | Motion::Up) => r.range.start,
         Target::Motion(Motion::WordBackward | Motion::LineStart) => r.range.start,
+        Target::Motion(Motion::FirstNonBlank) => {
+            // ^ lands on the non-blank — whichever side of the cursor
+            // that is (the range is (min, max) of cursor and target)
+            if _cursor <= r.range.start {
+                r.range.end
+            } else {
+                r.range.start
+            }
+        }
         Target::Motion(Motion::WordForward) => r.range.end.min(buf.len_bytes().saturating_sub(1)),
         Target::Motion(Motion::WordEnd | Motion::LineEnd) => r.range.end.saturating_sub(1),
         Target::Motion(Motion::FirstLine | Motion::LastLine) => {
             let line = if matches!(cmd.target, Target::Motion(Motion::FirstLine)) {
                 cmd.count - 1
             } else {
-                buf.last_content_line()
+                // same rule as resolve: explicit count names the line
+                let digits = &cmd.keys[..cmd.keys.len().saturating_sub(1)];
+                if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+                    digits.parse::<usize>().unwrap_or(1).saturating_sub(1)
+                } else {
+                    buf.last_content_line()
+                }
             };
-            buf.line_start(line.min(buf.len_lines() - 1))
+            buf.line_start(line.min(buf.len_lines().saturating_sub(1)))
         }
         Target::Motion(Motion::FindChar { backward, .. }) => {
             if *backward {

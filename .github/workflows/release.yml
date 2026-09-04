@@ -6,6 +6,10 @@ on:
 
 permissions:
   contents: write
+  # artifact attestations: every release tarball gets a signed
+  # provenance statement — `gh attestation verify <file> -R stropdev/strop`
+  id-token: write
+  attestations: write
 
 # Two tags cut at once race the homebrew-tap push — serialize; the
 # newer tag waits (the gripsack lesson).
@@ -109,6 +113,13 @@ jobs:
           count="$(ls dist/strop-*.tar.gz | wc -l)"
           test "$count" -eq 4 || {
             echo "::error::expected 4 platform tarballs, got $count"; exit 1; }
+      # signed build provenance for every tarball (the gripsack lesson,
+      # plan/0020 §5.8 there): verify with
+      # `gh attestation verify <file> -R stropdev/strop`
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/strop-*.tar.gz
+
 
       # crates.io before the GitHub release: it is the irreversible
       # artifact. The guard fails a mistagged release instead of

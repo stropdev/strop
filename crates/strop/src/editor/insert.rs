@@ -83,6 +83,9 @@ impl Editor {
         // an insert session is one undo unit (with the change op, if any, that
         // opened it); plain entries open a fresh transaction
         self.tx_begin();
+        if !matches!(keys, "o" | "O") {
+            self.insert_open = None;
+        }
         self.mode = Mode::Insert;
         self.recording_insert = Some(String::new());
         if self.last_cmd_keys.is_empty()
@@ -100,17 +103,38 @@ impl Editor {
         match key {
             Key::CtrlW | Key::CtrlX => {}
             Key::Esc => {
-                self.tx_commit(); // the insert session is one undo unit
                 self.mode = Mode::Normal;
                 self.cursor = self.cursor.saturating_sub(1);
                 for c in &mut self.extra_cursors {
                     *c = c.saturating_sub(1);
                 }
+                // vim insert counts: `3iX` types X three times — the
+                // replay joins the session's undo unit (commit after)
+                let count = std::mem::replace(&mut self.insert_count, 1);
+                if let Some(rec) = self.recording_insert.take() {
+                    if count > 1 {
+                        let open = self.insert_open.take();
+                        for _ in 1..count {
+                            if let Some(o) = &open {
+                                // o/O: the opened line repeats too
+                                let at = (self.cursor + 1).min(self.buf().len_bytes());
+                                self.buf_mut().insert(at, o);
+                                self.cursor = at + o.len().saturating_sub(1);
+                            }
+                            for ch in rec.chars() {
+                                let at = (self.cursor + 1).min(self.buf().len_bytes());
+                                self.buf_mut().insert(at, &ch.to_string());
+                                self.cursor = at + ch.len_utf8().saturating_sub(1);
+                            }
+                        }
+                    }
+                    self.last_insert = Some(rec);
+                } else {
+                    self.insert_open = None;
+                }
                 self.clamp_cursor();
                 self.normalize_cursors();
-                if let Some(rec) = self.recording_insert.take() {
-                    self.last_insert = Some(rec);
-                }
+                self.tx_commit(); // the insert session is one undo unit
             }
             Key::Backspace => {
                 // cascade: every cursor deletes one char back, bottom-up

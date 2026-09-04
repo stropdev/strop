@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.3.5 — 2026-09-04
+
+The first-external-review release: a week of real use, seven confirmed
+bugs, all fixed.
+
+### Fixed
+
+- **Counts on non-operator commands** never abort anymore: `2x`, `3p`,
+  `2u`, `4.`, `3rx`, counted inserts (`3iX` types X three times, `2o`
+  repeats the opened line) — vim's multiply rule. (Highest-ranked by
+  the reviewer: silent keystroke loss is the worst kind.)
+- **`{count}G`** jumps to that line instead of the end of file; bare
+  `G` still goes to the end. The two used to disagree silently.
+- **`cc`/`S`** clear the line's content and keep the newline + indent
+  — no more merging with the next line; counted `2cc` collapses N
+  lines into one fresh line (vim semantics).
+- **`C`** enters insert at the deletion start, not one column early
+  (typed text used to land before the last surviving char).
+- **Permalinks with ssh host aliases** (`bbgithub:org/repo.git`)
+  resolve via `~/.ssh/config` Host blocks, with a bare-host fallback.
+- **Permalink errors say what happened**: not a repo / no remote
+  configured / `unsupported remote URL: <it>` — the old
+  `no remote / not a repo` conflated all three.
+- **`--headless` with a missing script** prints a clean error (exit 2)
+  instead of panicking.
+
+### Added
+
+- **`^`** (first non-blank, works with operators: `d^`, `y^`), **`I`**
+  (insert there), **`~`** (toggle case, advances), **`S`** (= `cc`).
+- **Unknown bare keys are loud**: `not an editor command: <key>` —
+  silent swallowing made absent features indistinguishable from broken
+  ones.
+- **Release attestation**: every release tarball now gets signed
+  build provenance (`gh attestation verify <file> -R stropdev/strop`),
+  ported from gripsack's pipeline.
+
+### Notes
+
+- The reviewer's https-enterprise permalink failure (their row 5) does
+  not reproduce on 0.3.4 — verified with the exact release artifact and
+  their exact URL shape. If it still fails for them, the actual remote
+  string is the next datum needed.
+
 ## 0.3.4 — 2026-09-04
 
 Crash fix and a vim-gap sweep.

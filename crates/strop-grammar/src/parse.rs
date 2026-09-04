@@ -274,6 +274,7 @@ pub fn parse(keys: &str) -> Parse {
         b"E" => Motion::BigWordEnd,
         b"%" => Motion::MatchPair,
         b"0" => Motion::LineStart,
+        b"^" => Motion::FirstNonBlank,
         b"$" => Motion::LineEnd,
         b"gg" => Motion::FirstLine,
         b"G" => Motion::LastLine,

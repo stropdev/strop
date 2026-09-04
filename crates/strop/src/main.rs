@@ -89,7 +89,12 @@ fn main() {
             .as_deref()
             .map(std::fs::read_to_string)
             .transpose()
-            .unwrap_or_else(|e| panic!("read script: {e}"))
+            .unwrap_or_else(|e| {
+                // a user-supplied path — a typo deserves an error, not a
+                // backtrace
+                eprintln!("strop: read script: {e}");
+                std::process::exit(2);
+            })
             .or_else(|| args.get(i + 2).cloned())
             .unwrap_or_default();
         let path = args

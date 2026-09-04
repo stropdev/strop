@@ -211,7 +211,7 @@ impl Editor {
     /// `Space k`: hover at the cursor.
     pub(crate) fn lsp_hover(&mut self) {
         let Some(client) = &self.lsp else {
-            self.message = "no language server".into();
+            self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
         let Some(path) = self.buf().path.clone() else {
@@ -232,7 +232,7 @@ impl Editor {
     /// `gd`: goto definition at the cursor.
     pub(crate) fn lsp_goto_definition(&mut self) {
         let Some(client) = &self.lsp else {
-            self.message = "no language server".into();
+            self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
         let Some(path) = self.buf().path.clone() else {

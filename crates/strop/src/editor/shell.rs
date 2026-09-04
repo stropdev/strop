@@ -38,11 +38,9 @@ impl Editor {
             return;
         }
         let buffer = self.current;
-        let original = self
-            .buf()
-            .rope
-            .byte_slice(start.min(end)..end.max(start))
-            .to_string();
+        let s = start.min(end).min(self.buf().len_bytes());
+        let e = end.max(start).min(self.buf().len_bytes());
+        let original = self.buf().rope.byte_slice(s..e).to_string();
         let tx = self.shell_tx.clone();
         let cwd = self.cwd.clone();
         let job_cmd = cmd.clone();
@@ -96,6 +94,8 @@ impl Editor {
                     }
                     // never clobber: the range must still hold what we piped
                     let (s, e) = (start.min(end), end.max(start));
+                    let s = s.min(buf.len_bytes());
+                    let e = e.min(buf.len_bytes()).max(s);
                     if buf.rope.byte_slice(s..e) != original {
                         self.message = "pipe: text changed under the job — skipped".into();
                         continue;

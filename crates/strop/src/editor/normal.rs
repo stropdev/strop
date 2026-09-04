@@ -88,6 +88,7 @@ impl Editor {
                 let indent = self.auto_indent_full_line();
                 let end = self.buf().line_end(self.buf().line_of(self.cursor));
                 let text = format!("\n{indent}");
+                self.insert_open = Some(text.clone());
                 self.buf_mut().insert(end, &text);
                 self.cursor = end + text.len();
                 self.enter_insert_from("o");
@@ -98,6 +99,7 @@ impl Editor {
                 let indent = self.auto_indent_full_line();
                 let start = self.buf().line_start(self.buf().line_of(self.cursor));
                 let text = format!("{indent}\n");
+                self.insert_open = Some(text.clone());
                 self.buf_mut().insert(start, &text);
                 self.cursor = start + indent.len();
                 self.enter_insert_from("O");
@@ -146,7 +148,12 @@ impl Editor {
             ',' => self.repeat_find(true),
             '*' => self.search_word_under_cursor(false),
             '#' => self.search_word_under_cursor(true),
-            _ => {}
+            '^' => self.run_motion("^"),
+            '~' => self.toggle_case(),
+            'S' => self.alias("S", "cc"),
+            'I' => self.alias("I", "^i"),
+            // unknown keys say so (the `gI` path) — never silent
+            _ => self.message = format!("not an editor command: {c}"),
         }
     }
 
@@ -230,6 +237,43 @@ impl Editor {
             Key::CtrlR | Key::CtrlW | Key::CtrlX => {} // pending + window/undo keys: no-op
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
+                // count + non-operator command: vim multiplies (2x, 3p,
+                // 2u, 4.…). The count never aborts the command.
+                if self.pending.bytes().all(|b| b.is_ascii_digit()) {
+                    let count: usize = self.pending.parse().unwrap_or(1);
+                    match c {
+                        'p' | 'P' => {
+                            // vim 2p: the register lands twice at one
+                            // spot, not paste-advance-paste
+                            self.pending.clear();
+                            return self.paste_n(count, c == 'P');
+                        }
+                        'x' | 'X' | 'J' | 's' | '~' | '^' | 'u' | '.' | 'n' | 'N' => {
+                            self.pending.clear();
+                            for _ in 0..count {
+                                self.feed_normal(Key::Char(c));
+                            }
+                            return;
+                        }
+                        'i' | 'a' | 'A' | 'o' | 'O' | 'I' => {
+                            // vim: the inserted text repeats <count> times
+                            self.pending.clear();
+                            self.insert_count = count;
+                            return self.feed_normal(Key::Char(c));
+                        }
+                        'r' => {
+                            self.pending.push('r'); // count rides to the char
+                            return;
+                        }
+                        'D' | 'C' | 'Y' => {
+                            // the alias once — count on these is rare and
+                            // d$/c$/yy re-runs are inert at line end
+                            self.pending.clear();
+                            return self.feed_normal(Key::Char(c));
+                        }
+                        _ => {} // operators/motions: grammar resolves counts
+                    }
+                }
                 // window commands (C-w): h l j k w move, v s split
                 if self.pending == "\x17" {
                     self.pending.clear();
@@ -295,9 +339,13 @@ impl Editor {
                     return self.jump_mark(c);
                 }
                 // r<char>: replace the char under the cursor, stay normal
-                if self.pending == "r" {
+                let r_prefix = self.pending.strip_suffix('r').unwrap_or("");
+                if (self.pending == "r" || r_prefix.bytes().all(|b| b.is_ascii_digit()))
+                    && self.pending.ends_with('r')
+                {
+                    let count: usize = r_prefix.parse().unwrap_or(1);
                     self.pending.clear();
-                    return self.replace_char(c);
+                    return self.replace_char_n(c, count);
                 }
                 // "xp / "xP: paste from a named register
                 if self.pending.len() == 2
@@ -700,6 +748,14 @@ impl Editor {
                 self.flash(Range::charwise(self.cursor, self.cursor));
             }
             Op::Delete | Op::Change => {
+                if cmd.op.unwrap() == Op::Change && kept.first().is_some_and(|t| t.2) {
+                    // vim cc/S: clear content, keep the line — never
+                    // merge with the next one
+                    self.change_lines(cmd, &kept);
+                    self.last_cmd_keys = cmd.keys.clone();
+                    self.last_insert = None;
+                    return;
+                }
                 // yank text reads top-down before any delete lands
                 let texts: Vec<String> = kept
                     .iter()
@@ -728,18 +784,96 @@ impl Editor {
                 starts.sort_unstable();
                 self.extra_cursors = starts.into_iter().filter(|&s| s != self.cursor).collect();
                 self.normalize_cursors();
-                self.clamp_cursor();
-                self.flash(Range::charwise(self.cursor, self.cursor));
                 if cmd.op.unwrap() == Op::Change {
                     // no commit: the insert session closes the undo unit
                     self.enter_insert_from(&cmd.keys);
+                    // clamp AFTER the mode switch — insert mode allows
+                    // the end-of-line cursor C just earned (0001 §5.5)
+                    self.clamp_cursor();
                 } else {
+                    self.clamp_cursor();
                     self.tx_commit();
                 }
+                self.flash(Range::charwise(self.cursor, self.cursor));
             }
         }
         self.last_cmd_keys = cmd.keys.clone();
         self.last_insert = None;
+    }
+
+    /// vim `cc` / `S` (and counted `2cc`): clear each line's content,
+    /// keep the line and its indent, open insert at the indent. The
+    /// register gets the full lines (with newlines), linewise.
+    fn change_lines(&mut self, cmd: &Command, kept: &[(usize, strop_core::Range, bool)]) {
+        // texts + indents read top-down before any edit lands
+        let texts: Vec<String> = kept
+            .iter()
+            .map(|(_, r, _)| {
+                let first = self.buf().line_of(r.start);
+                let last = self.buf().line_of(r.end.saturating_sub(1));
+                let s = self.buf().line_start(first);
+                let e = self.buf().line_start(last + 1).min(self.buf().len_bytes());
+                self.buf().rope.byte_slice(s..e).to_string()
+            })
+            .collect();
+        let indents: Vec<String> = kept
+            .iter()
+            .map(|(_, r, _)| {
+                let line = self.buf().line_of(r.start);
+                self.buf()
+                    .line_text(line)
+                    .chars()
+                    .take_while(|c| *c == ' ' || *c == '\t')
+                    .collect()
+            })
+            .collect();
+        self.tx_begin();
+        // apply bottom-up: each entry's range is still valid when it
+        // applies; record (primary?, landing, net byte delta) per entry
+        // and shift higher landings by the nets of the lower ones
+        let mut entries: Vec<(bool, usize, isize)> = Vec::with_capacity(kept.len());
+        for ((c, r, _), indent) in kept.iter().zip(indents.iter()).rev() {
+            let first = self.buf().line_of(r.start);
+            let last = self.buf().line_of(r.end.saturating_sub(1));
+            let start = self.buf().line_start(first);
+            let before = self.buf().len_bytes() as isize;
+            if first == last {
+                // one line: clear content, keep the newline
+                let end = self.buf().line_end(first);
+                self.buf_mut().delete(Range::charwise(start, end));
+                self.buf_mut().insert(start, indent);
+            } else {
+                // N lines collapse into one fresh line
+                let end = self.buf().line_start(last + 1).min(self.buf().len_bytes());
+                self.buf_mut().delete(Range::charwise(start, end));
+                self.buf_mut().insert(start, &format!("{indent}\n"));
+            }
+            let net = self.buf().len_bytes() as isize - before;
+            entries.push((*c == self.cursor, start + indent.len(), net));
+        }
+        let landings: Vec<(bool, usize)> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, (p, at, _))| {
+                // entries after i applied at lower positions → they
+                // shift this landing
+                let shift: isize = entries[i + 1..].iter().map(|(_, _, n)| n).sum();
+                (*p, (*at as isize + shift).max(0) as usize)
+            })
+            .collect();
+        self.set_register(cmd.register, texts.join(""), true);
+        self.cursor = landings
+            .iter()
+            .find(|(p, _)| *p)
+            .map(|(_, s)| *s)
+            .unwrap_or(self.cursor);
+        let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
+        starts.sort_unstable();
+        self.extra_cursors = starts.into_iter().filter(|&s| s != self.cursor).collect();
+        self.normalize_cursors();
+        self.enter_insert_from(&cmd.keys);
+        self.clamp_cursor();
+        self.flash(Range::charwise(self.cursor, self.cursor));
     }
 
     fn dot_repeat(&mut self) {
@@ -764,18 +898,21 @@ impl Editor {
         }
     }
 
-    fn replace_char(&mut self, c: char) {
-        let end = (self.cursor + 1).min(self.buf().line_end(self.buf().line_of(self.cursor)));
+    /// vim `3rx` replaces three chars (clamped to the line end).
+    fn replace_char_n(&mut self, c: char, count: usize) {
+        let line_end = self.buf().line_end(self.buf().line_of(self.cursor));
+        let end = (self.cursor + count).min(line_end);
         if end <= self.cursor || c == '\n' {
             return;
         }
         let cursor = self.cursor;
         self.tx_begin();
         self.buf_mut().delete(Range::charwise(cursor, end));
-        let mut tmp = [0u8; 4];
-        self.buf_mut().insert(cursor, c.encode_utf8(&mut tmp));
+        let text: String = std::iter::repeat_n(c, end - cursor).collect();
+        self.buf_mut().insert(cursor, &text);
         self.tx_commit();
-        self.flash(Range::charwise(self.cursor, self.cursor + 1));
+        self.cursor = cursor + text.len() - 1; // last replaced char
+        self.flash(Range::charwise(self.cursor, self.cursor));
         self.last_cmd_keys = format!("r{c}");
         self.last_insert = None;
     }
@@ -807,6 +944,37 @@ impl Editor {
         self.clamp_cursor();
         self.flash(Range::charwise(eol, (eol + 1).min(self.buf().len_bytes())));
         self.last_cmd_keys = "J".into();
+        self.last_insert = None;
+    }
+
+    /// `~`: toggle the case of the char under the cursor and advance
+    /// (non-letters just advance; EOL stays put).
+    fn toggle_case(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        let line_end = self.buf().line_end(self.buf().line_of(self.cursor));
+        if self.cursor >= line_end {
+            return;
+        }
+        let b = self.buf().byte(self.cursor);
+        let c = b as char;
+        if c.is_ascii_alphabetic() {
+            let flipped = if c.is_ascii_lowercase() {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            };
+            let cursor = self.cursor;
+            self.tx_begin();
+            self.buf_mut().delete(Range::charwise(cursor, cursor + 1));
+            self.buf_mut().insert(cursor, &flipped.to_string());
+            self.tx_commit();
+        }
+        self.cursor += 1;
+        self.clamp_cursor();
+        self.last_cmd_keys = "~".into();
         self.last_insert = None;
     }
 
