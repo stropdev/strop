@@ -184,7 +184,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         }) => Some((cf.files.as_slice(), label.as_str())),
         _ => None,
     };
-    let sidebar_w = sidebar.map_or(0, |_| diff::SIDEBAR_W + 1);
+    let sidebar_w = sidebar.map_or(0, |(files, _)| diff::sidebar_width(files) + 1);
     let blame = editor.blame_gutter_for(view.buffer);
     let blame_w = if blame.is_some() { diff::BLAME_W } else { 0 };
     let content_width = area.width.saturating_sub((sidebar_w + blame_w) as u16);

@@ -215,9 +215,7 @@ impl Editor {
                         'g' => {
                             self.pending = " g".into();
                         }
-                        '?' => {
-                            self.keybinds_open = true;
-                        }
+                        '?' => self.open_help(),
                         'u' => self.open_undo_tree(),
                         'd' => self.open_diagnostics_picker(),
                         'k' => self.lsp_hover(),
@@ -581,6 +579,7 @@ impl Editor {
             }
             "vs" | "vsplit" => self.split(true, if arg.is_empty() { None } else { Some(arg) }),
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
+            "help" | "h" => self.open_help(),
             "e" | "e!" => {
                 if arg.is_empty() {
                     self.message = ":e needs a path".into();

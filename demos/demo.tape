@@ -146,16 +146,16 @@ Type ":q"
 Enter
 Sleep 600ms
 
-# keybinds popup (Space ?)
+# :help — keybindings as a real buffer; / searches it
 Space
 Type "?"
-Sleep 1.6s
-Type "l"
-Sleep 800ms
-Type "l"
-Sleep 800ms
-Escape
+Sleep 1.4s
+Type "/undo-tree"
 Sleep 400ms
+Enter
+Sleep 1.2s
+Type "q"
+Sleep 500ms
 
 # lsp: rust-analyzer diagnostics, picker, hover
 Escape

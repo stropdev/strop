@@ -1,0 +1,88 @@
+//! `:help` (also `Space ?`): the keybinding table as a real readonly
+//! buffer (0001 §4) — `/` searches it, motions walk it, `q` closes it.
+//! Replaces the floating keybinds popup: a buffer you can search beats
+//! a card you can only scroll.
+
+use strop_core::Buffer;
+
+use super::Editor;
+
+impl Editor {
+    /// Open the generated help buffer (`:help` / `Space ?`).
+    pub(crate) fn open_help(&mut self) {
+        // already open → switch, don't stack copies
+        if let Some(i) = self
+            .buffers
+            .iter()
+            .position(|b| b.name.as_deref() == Some("help"))
+        {
+            self.current = i;
+            self.touch_mru(i);
+            self.cursor = 0;
+            self.view_top = 0;
+            return;
+        }
+        let mut text = String::from("strop help — / searches · q closes\n");
+        for section in crate::keymap::SECTIONS {
+            text.push_str(&format!("\n[{section}]\n"));
+            let rows: Vec<_> = crate::keymap::BINDINGS
+                .iter()
+                .filter(|b| b.section == *section)
+                .collect();
+            let width = rows
+                .iter()
+                .map(|b| b.keys.chars().count())
+                .max()
+                .unwrap_or(0);
+            for b in rows {
+                let planned = if b.live { "" } else { "  (soon)" };
+                text.push_str(&format!(
+                    "  {:<width$}  {}{planned}\n",
+                    b.keys,
+                    b.desc,
+                    width = width
+                ));
+            }
+        }
+        let mut buf = Buffer::from_text(&text);
+        buf.readonly = true;
+        buf.name = Some("help".into());
+        self.buffers.push(buf);
+        self.surfaces.push(None);
+        self.highlighters.push(None);
+        self.current = self.buffers.len() - 1;
+        self.touch_mru(self.current);
+        self.cursor = 0;
+        self.view_top = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn help_buffer_lists_every_section_and_searches() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(":help\r");
+        assert_eq!(e.buf().name.as_deref(), Some("help"));
+        assert!(e.buf().readonly);
+        let text = e.buf().rope.to_string();
+        for section in crate::keymap::SECTIONS {
+            assert!(text.contains(&format!("[{section}]")), "missing {section}");
+        }
+        // it's a real buffer: / searches it
+        e.feed_text("/undo-tree\r");
+        assert!(e.cursor > 0, "search moved into the help text");
+        // q closes back to the file
+        e.feed_text("q");
+        assert_eq!(e.buf().name.as_deref(), None);
+    }
+
+    #[test]
+    fn space_question_opens_help() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(" ?");
+        assert_eq!(e.buf().name.as_deref(), Some("help"));
+    }
+}

@@ -5,6 +5,7 @@
 
 mod git;
 mod git_memory;
+mod help;
 mod insert;
 mod lsp;
 mod normal;
@@ -120,10 +121,6 @@ pub struct Editor {
     pub clip_tx: std::sync::mpsc::Sender<Option<String>>,
     pub clip_rx: std::sync::mpsc::Receiver<Option<String>>,
     pub clip_paste_pending: Option<bool>,
-    /// The keybinds popup (`Space ?`): table-driven (keymap.rs).
-    pub keybinds_open: bool,
-    pub keybinds_section: usize,
-    pub keybinds_scroll: usize,
     /// LSP: one client per workspace root, diagnostics by path,
     /// hover card text, open/sync bookkeeping.
     pub lsp: Option<strop_lsp::Client>,
@@ -185,12 +182,9 @@ impl Editor {
             git_tx,
             git_rx,
             osc52: None,
-            keybinds_open: false,
-            keybinds_section: 0,
             preview_tx,
             preview_rx,
             preview_inflight: std::collections::HashSet::new(),
-            keybinds_scroll: 0,
             lsp: None,
             clip_tx,
             clip_rx,
@@ -349,9 +343,6 @@ impl Editor {
 
     pub fn feed(&mut self, key: Key) {
         self.message.clear();
-        if self.keybinds_open {
-            return self.feed_keybinds(key);
-        }
         if self.hover_card.is_some() {
             self.hover_card = None;
             return;
@@ -417,28 +408,6 @@ impl Editor {
             self.view_top = line;
         } else if line >= self.view_top + rows {
             self.view_top = line + 1 - rows;
-        }
-    }
-
-    /// Keybinds popup keys: j/k scroll, tab/h/l section, esc/q close.
-    pub(crate) fn feed_keybinds(&mut self, key: Key) {
-        match key {
-            Key::Esc => self.keybinds_open = false,
-            Key::Char('q') => self.keybinds_open = false,
-            Key::Char('j') | Key::Down => self.keybinds_scroll += 1,
-            Key::Char('k') | Key::Up => {
-                self.keybinds_scroll = self.keybinds_scroll.saturating_sub(1)
-            }
-            Key::Tab | Key::Char('l') => {
-                self.keybinds_section = (self.keybinds_section + 1) % crate::keymap::SECTIONS.len();
-                self.keybinds_scroll = 0;
-            }
-            Key::Backtab | Key::Char('h') => {
-                let n = crate::keymap::SECTIONS.len();
-                self.keybinds_section = (self.keybinds_section + n - 1) % n;
-                self.keybinds_scroll = 0;
-            }
-            _ => {}
         }
     }
 
@@ -1097,15 +1066,6 @@ mod hardening_tests {
 #[cfg(test)]
 mod keybinds_tests {
     use super::*;
-
-    #[test]
-    fn space_question_opens_popup() {
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.feed_text(" ?");
-        assert!(e.keybinds_open);
-        e.feed(crate::editor::Key::Esc);
-        assert!(!e.keybinds_open);
-    }
 
     #[test]
     fn marks_set_and_jump() {

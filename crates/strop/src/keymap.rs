@@ -378,6 +378,12 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
     },
     Binding {
+        keys: ":help",
+        desc: "help buffer (this text — / searches it)",
+        section: "ex+panes",
+        live: true,
+    },
+    Binding {
         keys: ":vs :sp",
         desc: "split vertical / horizontal",
         section: "ex+panes",
@@ -687,6 +693,7 @@ mod tests {
         ":q!",
         ":wq",
         ":e",
+        ":help",
         ":e!",
         ":vs",
         ":vsplit",
@@ -775,7 +782,6 @@ mod tests {
     fn dispatched_something(e: &Editor) -> bool {
         !e.message.is_empty()
             || e.picker_open()
-            || e.keybinds_open
             || !e.pending.is_empty()
             || e.clip_paste_pending.is_some()
             || e.osc52.is_some()

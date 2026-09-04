@@ -121,6 +121,10 @@ pub struct Client {
     tx: Sender<LspEvent>,
     root: PathBuf,
     caps: ServerCaps,
+    /// Set once `shutdown()` runs: a server exit afterwards is the clean
+    /// protocol exit, not a crash — no Failed event (the demo tape's
+    /// `:q!` used to end every LSP session in a fake failure).
+    quitting: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Client {
@@ -170,6 +174,8 @@ impl Client {
         let hint = spec
             .install_hint
             .unwrap_or("install it or fix languages.toml");
+        let quitting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let quitting_mainloop = quitting.clone();
 
         std::thread::spawn(move || {
             rt.block_on(async move {
@@ -189,9 +195,12 @@ impl Client {
                     Ok(mut c) => {
                         let (so, si) = (c.stdout.take().unwrap(), c.stdin.take().unwrap());
                         // mainloop returns when the server dies — the
-                        // editor must hear about it (silent death is a bug)
+                        // editor must hear about it (silent death is a bug),
+                        // unless we asked it to exit ourselves
                         let _ = mainloop.run_buffered(so.compat(), si.compat_write()).await;
-                        let _ = tx_fail.send(LspEvent::Failed { server: name, hint });
+                        if !quitting_mainloop.load(std::sync::atomic::Ordering::Relaxed) {
+                            let _ = tx_fail.send(LspEvent::Failed { server: name, hint });
+                        }
                     }
                     Err(_) => {
                         let _ = tx_fail.send(LspEvent::Failed { server: name, hint });
@@ -246,7 +255,24 @@ impl Client {
             tx,
             root: root.to_path_buf(),
             caps: self_caps,
+            quitting,
         })
+    }
+
+    /// The LSP exit sequence: shutdown request, then the exit
+    /// notification. Called on editor quit — exiting without it makes
+    /// servers die with "client exited without proper shutdown" and
+    /// paints a fake failure on the statusline.
+    pub fn shutdown(&self) {
+        self.quitting
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let sock = self.socket.clone();
+        self.handle.spawn(async move {
+            let _ = sock
+                .request::<async_lsp::lsp_types::request::Shutdown>(())
+                .await;
+            let _ = sock.notify::<async_lsp::lsp_types::notification::Exit>(());
+        });
     }
 
     fn uri(&self, path: &Path) -> Option<Url> {

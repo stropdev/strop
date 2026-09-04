@@ -314,8 +314,6 @@ fn file_row_spans(path: &str, added: usize, deleted: usize, width: u16) -> Vec<S
 
 /// Blame gutter width: `sha˟7 author˟9 age˟3` + separators.
 pub(crate) const BLAME_W: usize = 22;
-/// Commit file sidebar width (paths ellipsized inside).
-pub(crate) const SIDEBAR_W: usize = 28;
 /// Pane-divider color — the sidebar's rule matches it.
 const RULE: Color = Color::Rgb(0x3a, 0x3d, 0x4d);
 /// Younger than this counts as "recent" → accent (0011 §3).
@@ -345,6 +343,17 @@ pub(crate) fn blame_spans(line: &strop_git::memory::BlameLine) -> Span<'static> 
 pub(crate) fn blame_blank() -> Span<'static> {
     Span::styled(" ".repeat(BLAME_W), Style::default())
 }
+/// Sidebar width fits the commit's longest path (clamped 12–24) — a
+/// two-file commit shouldn't pay a 28-column pane.
+pub(crate) fn sidebar_width(files: &[ChangedFile]) -> usize {
+    let longest = files
+        .iter()
+        .map(|f| f.path.display().to_string().chars().count())
+        .max()
+        .unwrap_or(0);
+    (longest + 2).clamp(12, 24)
+}
+
 /// One sidebar row: the commit's changed files, current one marked `▌`
 /// on the selection background (house style 0003 §5.3), plus the dim
 /// rule that divides sidebar from content. Rows past the file list
@@ -354,12 +363,13 @@ pub(crate) fn sidebar_spans(
     current: &str,
     row: usize,
 ) -> Vec<Span<'static>> {
+    let w = sidebar_width(files);
     let cell = match files.get(row) {
         Some(f) => {
             let path = f.path.display().to_string();
             if path == current {
-                let shown = ellipsize(&path, SIDEBAR_W - 2);
-                let pad = SIDEBAR_W - 1 - shown.chars().count();
+                let shown = ellipsize(&path, w - 2);
+                let pad = w - 1 - shown.chars().count();
                 vec![
                     Span::styled(
                         format!("▌{shown}"),
@@ -368,15 +378,15 @@ pub(crate) fn sidebar_spans(
                     Span::styled(" ".repeat(pad), Style::default().bg(SELECT_BG)),
                 ]
             } else {
-                let shown = ellipsize(&path, SIDEBAR_W - 1);
-                let pad = SIDEBAR_W - shown.chars().count();
+                let shown = ellipsize(&path, w - 1);
+                let pad = w - shown.chars().count();
                 vec![
                     Span::styled(format!(" {shown}"), Style::default().fg(TEXT)),
                     Span::styled(" ".repeat(pad), Style::default()),
                 ]
             }
         }
-        None => vec![Span::styled(" ".repeat(SIDEBAR_W), Style::default())],
+        None => vec![Span::styled(" ".repeat(w), Style::default())],
     };
     let mut spans = cell;
     spans.push(Span::styled("│", Style::default().fg(RULE)));
@@ -393,14 +403,11 @@ pub(crate) fn left_inset(editor: &Editor, buffer: usize) -> usize {
     if editor.blame_gutter_for(buffer).is_some() {
         inset += BLAME_W;
     }
-    if matches!(
-        surface,
-        Some(Surface::Diff {
-            commit: Some(_),
-            ..
-        })
-    ) {
-        inset += SIDEBAR_W + 1;
+    if let Some(Surface::Diff {
+        commit: Some(cf), ..
+    }) = surface
+    {
+        inset += sidebar_width(&cf.files) + 1;
     }
     inset
 }

@@ -26,7 +26,7 @@ const PREFIXES: &[(&str, &str)] = &[
 ];
 
 pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
-    if editor.picker_open() || editor.keybinds_open {
+    if editor.picker_open() {
         return;
     }
     let Some(&(_, title)) = PREFIXES.iter().find(|(p, _)| *p == editor.pending) else {

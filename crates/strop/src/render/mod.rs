@@ -19,7 +19,6 @@ mod buffer;
 mod cmd_card;
 mod diff;
 mod hover_card;
-mod keybinds;
 mod picker_card;
 mod which_key;
 
@@ -66,7 +65,6 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     picker_card::render_picker(editor, frame);
     blame_card::render_blame_card(editor, frame);
     hover_card::render_hover_card(editor, frame);
-    keybinds::render_keybinds(editor, frame);
     which_key::render_which_key(editor, frame);
 }
 
