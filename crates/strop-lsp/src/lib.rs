@@ -129,6 +129,10 @@ pub struct Client {
     /// shutdown — dropping the socket while it lives panics inside
     /// async-lsp ("Sender is alive", seen in the demo tape).
     thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// Documents opened before initialize completes — flushed on
+    /// Initialized (strict servers like pyright drop pre-init opens).
+    pending_opens: std::sync::Arc<parking_lot::Mutex<Vec<(PathBuf, String, String)>>>,
+    initialized: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Client {
@@ -216,6 +220,10 @@ impl Client {
         let tx2 = tx.clone();
         let sock = socket.clone();
         let caps = self_caps.clone();
+        let initialized = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let init_flag = initialized.clone();
+        let pending = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let pending_init = pending.clone();
         let params = InitializeParams {
             #[allow(deprecated)] // root_uri is what every server still honors
             root_uri: Some(root_uri),
@@ -245,6 +253,22 @@ impl Client {
                     let _ = sock.notify::<async_lsp::lsp_types::notification::Initialized>(
                         InitializedParams {},
                     );
+                    // queued opens flush now — after Initialized, always
+                    init_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                    let queued: Vec<_> = std::mem::take(&mut *pending_init.lock());
+                    for (path, lang, text) in queued {
+                        if let Ok(uri) = Url::from_file_path(&path) {
+                            let item = TextDocumentItem {
+                                uri,
+                                language_id: lang,
+                                version: 1,
+                                text,
+                            };
+                            let _ = sock.notify::<DidOpenTextDocument>(DidOpenTextDocumentParams {
+                                text_document: item,
+                            });
+                        }
+                    }
                     let _ = tx2.send(LspEvent::Ready { server: name });
                 }
                 Err(_) => {
@@ -261,6 +285,8 @@ impl Client {
             root: root.to_path_buf(),
             caps: self_caps,
             quitting,
+            pending_opens: pending,
+            initialized,
         })
     }
 
@@ -309,6 +335,15 @@ impl Client {
     /// didOpen — full text, full sync (simplest correct; incremental sync
     /// is the perf follow-up, noted in 0009 §3).
     pub fn did_open(&self, path: &Path, language_id: &str, text: &str) {
+        // initialize must hit the wire first — queue until it has
+        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
+            self.pending_opens.lock().push((
+                path.to_path_buf(),
+                language_id.to_string(),
+                text.to_string(),
+            ));
+            return;
+        }
         let Some(uri) = self.uri(path) else { return };
         let version = 1;
         let socket = self.socket.clone();
