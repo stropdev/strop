@@ -58,6 +58,8 @@ pub enum Key {
     Down,
     Tab,
     Backtab,
+    /// Replace picker: exclude the row's whole file (vscode's toggle).
+    CtrlD,
     CtrlR,
     CtrlW,
     /// Replace picker: exclude/include the selected match (0007 §2).
@@ -71,6 +73,10 @@ pub type Registers = HashMap<char, (String, bool)>;
 
 pub struct Editor {
     pub buffers: Vec<Buffer>,
+    /// Modal input on the `:`/`/`/`|` line (rootle's boxes): Esc once
+    /// enters normal mode on the line, twice clears it.
+    pub pending_normal: bool,
+    pub pending_cursor: usize,
     pub current: usize,
     /// Syntax highlighter per buffer (None: unsupported ext), aligned
     /// with `buffers` — previews and switches keep their highlighting.
@@ -235,6 +241,8 @@ impl Editor {
             preview_tx,
             preview_rx,
             preview_inflight: std::collections::HashSet::new(),
+            pending_normal: false,
+            pending_cursor: 0,
             lsp: None,
             clip_tx,
             clip_rx,
@@ -375,6 +383,7 @@ impl Editor {
                         "s-tab" => Key::Backtab,
                         "c-r" => Key::CtrlR,
                         "c-x" => Key::CtrlX,
+                        "c-d" => Key::CtrlD,
                         "c-w" => Key::CtrlW,
                         _ => {
                             self.feed(Key::Char('<'));
@@ -392,6 +401,10 @@ impl Editor {
     }
 
     pub fn feed(&mut self, key: Key) {
+        // the modal input line dies with the pending text (0003 §1)
+        if self.pending.is_empty() {
+            self.pending_normal = false;
+        }
         self.message.clear();
         if self.hover_card.is_some() {
             self.hover_card = None;
@@ -424,6 +437,16 @@ impl Editor {
             Mode::Visual | Mode::VisualLine => self.feed_visual(key),
             Mode::Normal => self.feed_normal(key),
         }
+    }
+
+    /// True when a modal input field sits in normal mode (picker field
+    /// or pending line) — the TUI draws the block cursor for it.
+    pub fn input_normal(&self) -> bool {
+        self.pending_normal
+            || self
+                .picker
+                .as_ref()
+                .is_some_and(|g| g.picker.input_normal())
     }
 
     // ---- shared helpers -------------------------------------------------

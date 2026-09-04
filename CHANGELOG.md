@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.6 — 2026-09-04
+
+Input boxes get modal, replace gets vscode-grade exclusion, and the LSP
+wire learns its manners.
+
+### Fixed
+
+- **didOpen raced initialize** (found while verifying a pyright
+  override): the first document opened could hit the wire before
+  initialize completed — rust-analyzer tolerates it, strict servers
+  (pyright) drop the document. Opens now queue until Initialized; the
+  wire reads initialize → initialized → didOpen, textbook.
+
+### Changed
+
+- **Grep is a popup card again**; global **replace keeps the full
+  frame** — the quick-lookup and the power-tool get different shapes.
+
+### Added
+
+- **Modal input boxes** (rootle's): picker fields and the `:` `/` `|`
+  line land in insert mode; Esc enters vim normal mode *on the field*
+  (h/l/0/$/w/b move, x/X delete, i/a/A return), the cursor changes
+  shape, Esc again closes. One shared `LineEdit`, no forks.
+- **Replace exclusion per file**: ctrl-x excludes a match, ctrl-d
+  toggles the row's whole file (vscode's file toggle); the count chip
+  counts both; the hint line documents the `-t rs` / `--glob` filters.
+- **strop.dev/docs + strop.dev/changelog**: how to configure
+  `languages.toml` (project `.strop/` over XDG, helix-shaped, the
+  pyright venv+extraPaths recipe) and `config.toml`, plus the full
+  per-release changelog.
+
 ## 0.3.5 — 2026-09-04
 
 The first-external-review release: a week of real use, seven confirmed

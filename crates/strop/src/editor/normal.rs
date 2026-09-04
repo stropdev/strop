@@ -222,9 +222,24 @@ impl Editor {
         let is_pipe = self.pending.starts_with('|');
         let is_search = !is_ex && (self.pending.contains('/') || self.pending.contains('?'));
         match key {
-            Key::Esc => self.pending.clear(),
+            Key::Esc => {
+                // rootle's boxes: Esc enters normal mode on the line,
+                // Esc again clears it
+                if self.pending_normal {
+                    self.pending.clear();
+                    self.pending_normal = false;
+                } else {
+                    self.pending_normal = true;
+                    self.pending_cursor = self.pending.len();
+                }
+            }
             Key::Backspace => {
-                self.pending.pop();
+                if self.pending_normal {
+                    self.pending_normal_key('h'); // vim: bs in normal = h
+                } else {
+                    self.pending.pop();
+                    self.pending_cursor = self.pending.len();
+                }
             }
             Key::Enter if is_ex => self.run_ex(),
             Key::Enter if is_search => {
@@ -234,9 +249,14 @@ impl Editor {
             Key::Enter if is_pipe => self.pipe_current_line(),
             Key::Tab if is_ex => self.ex_tab_complete(),
             Key::Enter => self.pending.clear(),
-            Key::CtrlR | Key::CtrlW | Key::CtrlX => {} // pending + window/undo keys: no-op
+            Key::CtrlR | Key::CtrlW | Key::CtrlX | Key::CtrlD => {} // pending + window/undo keys: no-op
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
+                // modal editing on the input line (0003 §1)
+                if self.pending_normal {
+                    self.pending_normal_key(c);
+                    return;
+                }
                 // count + non-operator command: vim multiplies (2x, 3p,
                 // 2u, 4.…). The count never aborts the command.
                 if self.pending.bytes().all(|b| b.is_ascii_digit()) {
@@ -363,6 +383,18 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// One normal-mode key on the pending input line — the picker and
+    /// the ex line share strop_picker::LineEdit for this (0003 §1).
+    fn pending_normal_key(&mut self, c: char) {
+        let mut le = strop_picker::LineEdit::new(std::mem::take(&mut self.pending));
+        le.cursor = self.pending_cursor;
+        le.normal = true;
+        le.normal_key(c);
+        self.pending_normal = le.normal;
+        self.pending_cursor = le.cursor;
+        self.pending = le.text;
     }
 
     fn resolve_pending(&mut self) {

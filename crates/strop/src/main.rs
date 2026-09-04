@@ -183,8 +183,20 @@ fn tui(mut editor: Editor) {
         use crossterm::ExecutableCommand;
         let mut out = io::stdout();
         let shape = match editor.mode {
+            editor::Mode::Insert if editor.input_normal() => SetCursorStyle::SteadyBlock,
             editor::Mode::Insert => SetCursorStyle::SteadyBar,
             editor::Mode::Visual | editor::Mode::VisualLine => SetCursorStyle::SteadyUnderScore,
+            // insert-mode input fields (picker fields, the : line) want
+            // the bar even when the editor's mode is Normal
+            _ if editor.input_normal() => SetCursorStyle::SteadyBlock,
+            _ if editor.picker_open()
+                || (editor.pending.starts_with([':', '/', '|']) && !editor.pending_normal) =>
+            {
+                SetCursorStyle::SteadyBar
+            }
+            // modal input boxes sit in normal-mode semantics on the
+            // editor's normal mode too — block says so (rootle's boxes)
+            _ if editor.input_normal() => SetCursorStyle::SteadyBlock,
             editor::Mode::Normal => SetCursorStyle::SteadyBlock,
         };
         let _ = out.execute(shape);
@@ -214,6 +226,8 @@ fn tui(mut editor: Editor) {
         let key = match ev.code {
             KeyCode::Esc => Key::Esc,
             KeyCode::Enter => Key::Enter,
+            KeyCode::Char('d') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlD,
+            KeyCode::Char('\x04') => Key::CtrlD,
             KeyCode::Backspace => Key::Backspace,
             KeyCode::Tab => Key::Tab,
             // terminals that deliver the raw control byte instead of

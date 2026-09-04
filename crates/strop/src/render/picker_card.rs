@@ -39,10 +39,10 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     let card = {
         let glue = editor.picker.as_ref().expect("picker open");
         let p = &glue.picker;
-        if matches!(
-            p.kind,
-            strop_picker::Kind::Grep | strop_picker::Kind::Replace
-        ) {
+        // 0.3.6 form factor: replace keeps the full frame (its two
+        // fields + exclusion set need the room); grep is a quick-lookup
+        // card again (0003 §5.2)
+        if matches!(p.kind, strop_picker::Kind::Replace) {
             Rect {
                 x: area.x + 1,
                 y: area.y,
@@ -62,30 +62,45 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     };
     frame.render_widget(Clear, card);
 
-    let (kind, input, replace_input, field, rows_data, selected, streaming, total, excluded) = {
+    let (
+        kind,
+        input,
+        replace_input,
+        input_cursor,
+        replace_cursor,
+        field,
+        rows_data,
+        selected,
+        streaming,
+        total,
+        excluded,
+    ) = {
         let glue = editor.picker.as_ref().expect("picker open");
         let p = &glue.picker;
         (
             p.kind,
-            p.input.clone(),
-            p.replace_input.clone(),
+            p.input.text.clone(),
+            p.replace_input.text.clone(),
+            p.input.cursor,
+            p.replace_input.cursor,
             p.field,
             p.rows.clone(),
             p.selected,
             p.streaming,
             p.items.len(),
-            p.excluded.clone(),
+            // row + file exclusions both count (0007)
+            p.rows.iter().filter(|r| p.is_excluded(r.item)).count(),
         )
     };
     let replace_mode = kind == strop_picker::Kind::Replace;
 
     let hint = if replace_mode {
-        " enter apply · tab switch field · ctrl-x exclude · esc close "
+        " enter apply · tab field · ctrl-x row · ctrl-d file · esc  —  -t rs / --glob filters "
     } else {
         " enter open · esc close · ↑↓/tab move "
     };
     let count = if replace_mode {
-        format!(" {}/{total} excluded ", excluded.len())
+        format!(" {excluded}/{total} excluded ")
     } else if streaming {
         format!(" {total}… ")
     } else {
@@ -183,14 +198,12 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     }
     render_preview(editor, frame, cols[1]);
     let _ = streaming; // spinner lands with the 100ms rule (0001 §4)
-
-    // input caret on the focused field
     let (caret_len, caret_row) = if replace_mode && field == strop_picker::Field::Replace {
-        (10 + replace_input.chars().count(), 1u16)
+        (10 + replace_input[..replace_cursor].chars().count(), 1u16)
     } else if replace_mode {
-        (10 + input.chars().count(), 0u16)
+        (10 + input[..input_cursor].chars().count(), 0u16)
     } else {
-        (2 + input.chars().count(), 0u16)
+        (2 + input[..input_cursor].chars().count(), 0u16)
     };
     let caret_x = rows[0].x + caret_len as u16;
     if caret_x < rows[0].x + rows[0].width {
@@ -249,7 +262,7 @@ fn render_replace_results(frame: &mut Frame, area: Rect, p: &strop_picker::Picke
     let mut lines: Vec<Line> = Vec::with_capacity(visible);
     for (vi, row) in p.rows.iter().enumerate().skip(start).take(visible) {
         let active = vi == p.selected;
-        let excluded = p.excluded.contains(&row.item);
+        let excluded = p.is_excluded(row.item);
         let marker = if excluded {
             "✗"
         } else if active {
@@ -293,9 +306,9 @@ fn render_replace_results(frame: &mut Frame, area: Rect, p: &strop_picker::Picke
                     .fg(dim_color(TEXT))
                     .add_modifier(Modifier::CROSSED_OUT),
             ));
-            if !p.replace_input.is_empty() {
+            if !p.replace_input.text.is_empty() {
                 spans.push(Span::styled(
-                    p.replace_input.clone(),
+                    p.replace_input.text.clone(),
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 ));
             }

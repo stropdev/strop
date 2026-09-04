@@ -37,7 +37,7 @@ pub fn state_json(editor: &Editor) -> String {
         "panes": editor.panes.len(),
         "active_pane": editor.active_pane,
         "picker": editor.picker_open(),
-        "picker_input": editor.picker.as_ref().map(|g| g.picker.input.clone()),
+        "picker_input": editor.picker.as_ref().map(|g| g.picker.input.text.clone()),
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
         "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
         "register": editor.register(None).0,

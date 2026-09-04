@@ -84,7 +84,15 @@ impl Editor {
         let Some(glue) = &mut self.picker else { return };
         let replace = glue.picker.kind == Kind::Replace;
         match key {
-            Key::Esc => self.close_picker(),
+            Key::Esc => {
+                // rootle's input boxes: Esc enters vim normal mode on the
+                // field; Esc again closes the picker
+                if glue.picker.input_normal() {
+                    self.close_picker();
+                } else {
+                    glue.picker.enter_normal();
+                }
+            }
             Key::Enter if replace => self.apply_replace(),
             Key::Enter => {
                 let payload = glue.picker.current().map(|i| i.payload.clone());
@@ -97,9 +105,13 @@ impl Editor {
             // arrows / ctrl-n,p while a field has focus
             Key::Tab | Key::Backtab if replace => glue.picker.toggle_field(),
             Key::CtrlX if replace => glue.picker.toggle_excluded(),
+            Key::CtrlD if replace => glue.picker.toggle_file_excluded(),
+            Key::CtrlD => {}
             Key::CtrlX => {}
             Key::Backspace => {
-                if replace && glue.picker.field == strop_picker::Field::Replace {
+                if glue.picker.input_normal() {
+                    glue.picker.normal_key('h'); // vim: bs in normal = h
+                } else if replace && glue.picker.field == strop_picker::Field::Replace {
                     glue.picker.pop_replace_char();
                 } else {
                     glue.picker.pop_char();
@@ -112,7 +124,13 @@ impl Editor {
             Key::Tab => glue.picker.move_by(1),
             Key::Backtab => glue.picker.move_by(-1),
             Key::Char(c) => {
-                if replace && glue.picker.field == strop_picker::Field::Replace {
+                if glue.picker.input_normal() {
+                    // modal editing on the field (0003 §1); x/X change
+                    // the text → respawn
+                    if glue.picker.normal_key(c) {
+                        self.picker_input_changed();
+                    }
+                } else if replace && glue.picker.field == strop_picker::Field::Replace {
                     glue.picker.push_replace_char(c);
                 } else {
                     glue.picker.push_char(c);
@@ -129,7 +147,7 @@ impl Editor {
             // A fresh channel per respawn: the old worker's messages (incl.
             // its trailing Done) fail to send on the dropped receiver, so
             // stale generations can't race the new one.
-            let pattern = glue.picker.input.clone();
+            let pattern = glue.picker.input.text.clone();
             let cwd = self.cwd.clone();
             glue.grep_worker = None; // drop kills the old rg
             glue.picker.items.clear();
@@ -229,7 +247,7 @@ impl Editor {
         let Some(glue) = self.picker.take() else {
             return;
         };
-        let replacement = glue.picker.replace_input.clone();
+        let replacement = glue.picker.replace_input.text.clone();
         let mut by_path: HashMap<PathBuf, Vec<(usize, usize, usize, String)>> = HashMap::new();
         for it in glue.picker.accepted() {
             if let Payload::Grep {
@@ -568,8 +586,8 @@ mod replace_tests {
             strop_picker::Field::Replace
         );
         e.feed_text("bar");
-        assert_eq!(e.picker.as_ref().unwrap().picker.replace_input, "bar");
-        assert_eq!(e.picker.as_ref().unwrap().picker.input, "foo");
+        assert_eq!(e.picker.as_ref().unwrap().picker.replace_input.text, "bar");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "foo");
     }
 
     #[test]
@@ -583,6 +601,7 @@ mod replace_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.cwd = dir.path().to_path_buf();
         e.open_picker(Kind::Replace);
+
         e.feed_text("alpha");
         for _ in 0..300 {
             e.drain_picker();
@@ -598,5 +617,20 @@ mod replace_tests {
         e.feed_text("b"); // respawn: items + rows both clear
         let frame = crate::headless::frame_string(&mut e, 80, 20);
         assert!(frame.contains("replace"), "{frame}");
+    }
+
+    #[test]
+    fn picker_field_is_modal() {
+        // rootle's input boxes: Esc enters normal mode on the field,
+        // keys edit the query, i returns to insert, Esc closes
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::Files);
+        e.feed_text("main");
+        e.feed(crate::editor::Key::Esc);
+        assert!(e.picker_open(), "esc once: picker stays open");
+        e.feed_text("0x"); // to 0, delete 'm'
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "ain");
+        e.feed(crate::editor::Key::Esc);
+        assert!(!e.picker_open(), "esc twice closes");
     }
 }
