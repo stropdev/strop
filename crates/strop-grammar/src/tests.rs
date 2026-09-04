@@ -65,6 +65,26 @@ pub mod contract {
     }
 
     #[test]
+    fn word_motions_are_multibyte_honest() {
+        // regression: byte-wise classes split héllo at the é boundary,
+        // parked the cursor mid-char, and the next x panicked ropey
+        let buf = Buffer::from_text("héllo wörld 🦀 em\n");
+        assert_eq!(resolve_str(&buf, 0, "dw"), "héllo ", "é is a word char");
+        let r = resolve(&buf, 0, &cmd("w")).unwrap();
+        let pos = r.range.end; // forward motions carry [cursor, target)
+        assert!(buf.is_boundary(pos), "w lands on a boundary: {pos}");
+        assert_eq!(buf.byte(pos), b'w');
+        // emoji is not a word char: w from wörld lands on 🦀's start
+        let r = resolve(&buf, "héllo ".len(), &cmd("w")).unwrap();
+        assert_eq!(buf.byte(r.range.end), 0xF0, "on the emoji lead byte");
+        let r = resolve(&buf, "héllo ".len(), &cmd("e")).unwrap();
+        assert!(buf.is_boundary(buf.clamp_boundary(r.range.end)));
+        // backward across the multibyte word
+        let r = resolve(&buf, "héllo wörld ".len(), &cmd("b")).unwrap();
+        assert_eq!(buf.byte(r.range.start), b'w');
+    }
+
+    #[test]
     fn doubled_operator_is_linewise() {
         let buf = Buffer::from_text(SRC);
         let r = resolve(&buf, 3, &cmd("dd")).unwrap();

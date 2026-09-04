@@ -60,6 +60,14 @@ impl Editor {
             self.collapse_cursors();
             return;
         }
+        // arrows speak hjkl (never dropped at the translation layer)
+        match key {
+            Key::Up => return self.run_motion("k"),
+            Key::Down => return self.run_motion("j"),
+            Key::Left => return self.run_motion("h"),
+            Key::Right => return self.run_motion("l"),
+            _ => {}
+        }
         let Key::Char(c) = key else {
             return;
         };
@@ -69,7 +77,10 @@ impl Editor {
             '0' if self.pending.chars().all(|c| c.is_ascii_digit()) && !self.pending.is_empty() => {
                 self.pending.push('0')
             }
-            'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' => {
+            // bare 0 is the line-start motion (vim); only a digit after
+            // a count continues the count
+            '0' => self.run_motion("0"),
+            'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' | '^' => {
                 self.run_motion(&c.to_string())
             }
             'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | '?' | ':' | '"' | 'r' | '>'
@@ -85,8 +96,12 @@ impl Editor {
             'X' => self.alias("X", "dh"),
             'i' => self.enter_insert_from("i"),
             'a' => {
-                self.cursor =
-                    (self.cursor + 1).min(self.buf().line_end(self.buf().line_of(self.cursor)));
+                // append after the char under the cursor — its end, not
+                // one raw byte in (multibyte)
+                self.cursor = self
+                    .buf()
+                    .ceil_boundary(self.cursor + 1)
+                    .min(self.buf().line_end(self.buf().line_of(self.cursor)));
                 self.enter_insert_from("a");
             }
             'A' => {
@@ -115,8 +130,12 @@ impl Editor {
                 // same as 'o': indent is derived, not recorded
             }
             'x' => {
-                let end =
-                    (self.cursor + 1).min(self.buf().line_end(self.buf().line_of(self.cursor)));
+                // the whole char under the cursor — a bare +1 splits
+                // multibyte chars and panics ropey's byte_slice
+                let end = self
+                    .buf()
+                    .ceil_boundary(self.cursor + 1)
+                    .min(self.buf().line_end(self.buf().line_of(self.cursor)));
                 if end > self.cursor {
                     self.tx_begin();
                     let range = Range::charwise(self.cursor, end);
@@ -157,7 +176,6 @@ impl Editor {
             ',' => self.repeat_find(true),
             '*' => self.search_word_under_cursor(false),
             '#' => self.search_word_under_cursor(true),
-            '^' => self.run_motion("^"),
             '~' => self.toggle_case(),
             'S' => self.alias("S", "cc"),
             'I' => self.alias("I", "^i"),
@@ -252,6 +270,14 @@ impl Editor {
             }
             Key::Enter if is_ex => self.run_ex(),
             Key::Enter if is_search => {
+                // vim: an empty / repeats the last search in its
+                // direction; an empty ? reverses it
+                let pat = &self.pending[1..];
+                if pat.is_empty() {
+                    let reversed = self.pending.starts_with('?');
+                    self.pending.clear();
+                    return self.repeat_search(reversed);
+                }
                 self.pending.push('\r');
                 self.resolve_pending();
             }
@@ -259,7 +285,7 @@ impl Editor {
             Key::Tab if is_ex => self.ex_tab_complete(),
             Key::Enter => self.pending.clear(),
             Key::CtrlR | Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO => {} // pending + window/undo keys: no-op
-            Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
+            Key::Up | Key::Down | Key::Left | Key::Right | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
                 // modal editing on the input line (0003 §1)
                 if self.pending_normal {
@@ -352,6 +378,11 @@ impl Editor {
                     self.pending.clear();
                     return self.lsp_goto_definition();
                 }
+                // gs: switch source ↔ header (clangd extension)
+                if self.pending == "g" && c == 's' {
+                    self.pending.clear();
+                    return self.lsp_switch_source_header();
+                }
                 // hunk motions (0001 pillar 3.1)
                 if (self.pending == "]" || self.pending == "[") && c == 'c' {
                     let forward = self.pending == "]";
@@ -423,7 +454,7 @@ impl Editor {
         }
     }
 
-    fn run_motion(&mut self, keys: &str) {
+    pub(crate) fn run_motion(&mut self, keys: &str) {
         if let Parse::Complete(cmd) = grammar::parse(keys) {
             self.move_cursor(&cmd);
         }
@@ -1038,7 +1069,9 @@ impl Editor {
             self.buf_mut().insert(cursor, &flipped.to_string());
             self.tx_commit();
         }
-        self.cursor += 1;
+        // advance one char, not one byte — a multibyte char would
+        // otherwise park the cursor mid-char for the next edit
+        self.cursor = self.buf().ceil_boundary(self.cursor + 1);
         self.clamp_cursor();
         self.last_cmd_keys = "~".into();
         self.last_insert = None;

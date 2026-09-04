@@ -67,6 +67,11 @@ pub enum LspEvent {
         line: usize,
         col: usize,
     },
+    /// A user-facing note that is neither ready nor failure (e.g.
+    /// "no header counterpart").
+    Note {
+        text: String,
+    },
 }
 
 /// Client-side state for the router.
@@ -133,6 +138,16 @@ pub struct Client {
     /// Initialized (strict servers like pyright drop pre-init opens).
     pending_opens: std::sync::Arc<parking_lot::Mutex<Vec<(PathBuf, String, String)>>>,
     initialized: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// clangd's proprietary `textDocument/switchSourceHeader` — not part of
+/// the LSP spec, so lsp-types doesn't model it.
+enum SwitchSourceHeader {}
+
+impl async_lsp::lsp_types::request::Request for SwitchSourceHeader {
+    type Params = async_lsp::lsp_types::TextDocumentIdentifier;
+    type Result = Option<async_lsp::lsp_types::Url>;
+    const METHOD: &'static str = "textDocument/switchSourceHeader";
 }
 
 impl Client {
@@ -466,6 +481,42 @@ impl Client {
                             col: l.range.start.character as usize,
                         });
                     }
+                }
+            }
+        });
+    }
+
+    /// clangd's `textDocument/switchSourceHeader` (a clangd extension,
+    /// absent from lsp-types' request set): the .cpp ↔ .h jump. The
+    /// counterpart posts as GotoLocation at its top; "no counterpart"
+    /// and unsupported servers surface as a Note, never an error.
+    pub fn switch_source_header(&self, path: &Path) {
+        let Some(uri) = self.uri(path) else { return };
+        let sock = self.socket.clone();
+        let tx = self.tx.clone();
+        self.handle.spawn(async move {
+            match sock
+                .request::<SwitchSourceHeader>(TextDocumentIdentifier { uri })
+                .await
+            {
+                Ok(Some(target)) => {
+                    if let Ok(path) = target.to_file_path() {
+                        let _ = tx.send(LspEvent::GotoLocation {
+                            path,
+                            line: 0,
+                            col: 0,
+                        });
+                    }
+                }
+                Ok(None) => {
+                    let _ = tx.send(LspEvent::Note {
+                        text: "no header/source counterpart".into(),
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(LspEvent::Note {
+                        text: format!("switch source/header unsupported: {e}"),
+                    });
                 }
             }
         });

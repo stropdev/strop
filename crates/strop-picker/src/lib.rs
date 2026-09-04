@@ -168,6 +168,15 @@ impl Picker {
         self.active().cursor = text_len;
     }
 
+    /// Arrow-key caret moves work in both modes, on the focused field.
+    pub fn caret_left(&mut self) {
+        self.active().move_left();
+    }
+
+    pub fn caret_right(&mut self) {
+        self.active().move_right();
+    }
+
     /// Tab swaps the focused field in Kind::Replace.
     pub fn toggle_field(&mut self) {
         self.field = match self.field {

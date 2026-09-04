@@ -519,6 +519,23 @@ impl Editor {
             Key::Char('k') if self.sidebar_focused() => self.commit_file_step(false),
             Key::Enter if self.sidebar_focused() => self.toggle_sidebar_focus(),
             Key::Enter => self.dive(),
+            // arrows speak hjkl on surfaces too (sidebar-aware)
+            Key::Up => {
+                if self.sidebar_focused() {
+                    self.commit_file_step(false);
+                } else {
+                    self.run_motion("k");
+                }
+            }
+            Key::Down => {
+                if self.sidebar_focused() {
+                    self.commit_file_step(true);
+                } else {
+                    self.run_motion("j");
+                }
+            }
+            Key::Left => self.run_motion("h"),
+            Key::Right => self.run_motion("l"),
             // searches repeat on surfaces too (diff preview power tools)
             Key::Char('n') => self.repeat_search(false),
             Key::Char('N') => self.repeat_search(true),

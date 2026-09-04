@@ -105,8 +105,11 @@ mod tests {
 
     #[test]
     fn vsplit_shares_buffer_and_navigates() {
-        std::fs::write("/tmp/strop-split-a.rs", "fn a() {}\nfn b() {}\n").unwrap();
-        let mut e = Editor::new(Buffer::open("/tmp/strop-split-a.rs").unwrap());
+        // unique path: parallel tests sharing a fixture file race
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("vsplit-a.rs");
+        std::fs::write(&a, "fn a() {}\nfn b() {}\n").unwrap();
+        let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
         e.feed_text("j"); // line 2
         e.feed_text(":vs<cr>");
         assert_eq!(e.panes.len(), 2);
@@ -126,14 +129,17 @@ mod tests {
 
     #[test]
     fn split_with_path_opens_other_file() {
-        std::fs::write("/tmp/strop-split-a.rs", "fn a() {}\n").unwrap();
-        std::fs::write("/tmp/strop-split-b.rs", "fn b() {}\n").unwrap();
-        let mut e = Editor::new(Buffer::open("/tmp/strop-split-a.rs").unwrap());
-        e.feed_text(":vs /tmp/strop-split-b.rs<cr>");
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("split-a.rs");
+        let b = dir.path().join("split-b.rs");
+        std::fs::write(&a, "fn a() {}\n").unwrap();
+        std::fs::write(&b, "fn b() {}\n").unwrap();
+        let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
+        e.feed_text(&format!(":vs {}<cr>", b.display()));
         assert_eq!(e.panes.len(), 2);
-        assert_eq!(e.buf().path.as_deref(), Some("/tmp/strop-split-b.rs"));
+        assert_eq!(e.buf().path.as_deref(), b.to_str());
         e.feed(crate::editor::Key::CtrlW);
         e.feed(crate::editor::Key::Char('h'));
-        assert_eq!(e.buf().path.as_deref(), Some("/tmp/strop-split-a.rs"));
+        assert_eq!(e.buf().path.as_deref(), a.to_str());
     }
 }

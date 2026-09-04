@@ -169,7 +169,35 @@ impl Editor {
                     rec.push_str(&indent);
                 }
             }
-            Key::CtrlR | Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
+            // arrows move in insert too (vim) — char-boundary honest
+            Key::Left => {
+                let start = self.buf().line_start(self.buf().line_of(self.cursor));
+                if self.cursor > start {
+                    self.cursor = self.buf().clamp_boundary(self.cursor - 1);
+                }
+            }
+            Key::Right => {
+                let end = self.buf().line_end(self.buf().line_of(self.cursor));
+                if self.cursor < end {
+                    self.cursor = self.buf().ceil_boundary(self.cursor + 1);
+                }
+            }
+            Key::Up | Key::Down => {
+                let line = self.buf().line_of(self.cursor);
+                let target = if key == Key::Up {
+                    line.saturating_sub(1)
+                } else {
+                    (line + 1).min(self.buf().len_lines().saturating_sub(1))
+                };
+                let col = self
+                    .buf()
+                    .col_of(self.cursor)
+                    .min(self.buf().line_end(target) - self.buf().line_start(target));
+                self.cursor = self
+                    .buf()
+                    .clamp_boundary(self.buf().line_start(target) + col);
+            }
+            Key::CtrlR | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
                 // smartindent (vim/helix behavior): a closer typed on an
                 // indent-only line dedents one level first — typing `}`

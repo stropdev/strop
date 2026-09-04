@@ -161,12 +161,41 @@ impl Buffer {
         }
     }
 
-    /// Clamp a byte offset to a char boundary (prototype is ASCII-honest;
-    /// the grapheme policy in 0001 §5.9 hardens this when text goes wide).
+    /// Is `offset` a UTF-8 char boundary? ropey's `try_byte_to_char`
+    /// maps a mid-char byte to its containing char without complaint —
+    /// only the byte↔char roundtrip actually detects boundaries. (The
+    /// pre-0.3.9 clamp trusted it and never clamped anything.)
+    pub fn is_boundary(&self, offset: usize) -> bool {
+        if offset == 0 || offset == self.len_bytes() {
+            return true;
+        }
+        if offset > self.len_bytes() {
+            return false;
+        }
+        match self.rope.try_byte_to_char(offset) {
+            Ok(c) => self.rope.try_char_to_byte(c).is_ok_and(|b| b == offset),
+            Err(_) => false,
+        }
+    }
+
+    /// Clamp a byte offset down to a char boundary (the grapheme policy
+    /// in 0001 §5.9 hardens this further when text goes wide).
     pub fn clamp_boundary(&self, mut offset: usize) -> usize {
         offset = offset.min(self.len_bytes());
-        while offset > 0 && self.rope.try_byte_to_char(offset).is_err() {
+        while offset > 0 && !self.is_boundary(offset) {
             offset -= 1;
+        }
+        offset
+    }
+
+    /// Smallest char boundary >= offset. Byte arithmetic on a cursor
+    /// (`cursor + 1` in x/a/r/~) lands inside a multibyte char; deleting
+    /// or inserting there panics ropey. Round up, never down — a
+    /// deletion that rounds down eats the previous char's tail.
+    pub fn ceil_boundary(&self, mut offset: usize) -> usize {
+        offset = offset.min(self.len_bytes());
+        while offset < self.len_bytes() && !self.is_boundary(offset) {
+            offset += 1;
         }
         offset
     }

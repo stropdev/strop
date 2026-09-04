@@ -155,6 +155,7 @@ impl Editor {
                     LspEvent::Failed { server, hint } => {
                         self.message = format!("lsp: {server} failed — {hint}");
                     }
+                    LspEvent::Note { text } => self.message = text,
                     LspEvent::HoverText { text } => self.hover_card = Some(text),
                     LspEvent::GotoLocation { path, line, col } => {
                         if std::env::var_os("STROP_LSP_LOG").is_some() {
@@ -248,6 +249,23 @@ impl Editor {
             self.buf().line_of(self.cursor),
             self.buf().col_of(self.cursor),
         );
+    }
+
+    /// `gs`: switch between source and header (clangd's extension).
+    pub(crate) fn lsp_switch_source_header(&mut self) {
+        let Some(client) = &self.lsp else {
+            self.message = "no language server — install it or fix languages.toml".into();
+            return;
+        };
+        let Some(path) = self.buf().path.clone() else {
+            return;
+        };
+        let abs = if std::path::Path::new(&path).is_absolute() {
+            PathBuf::from(&path)
+        } else {
+            self.cwd.join(&path)
+        };
+        client.switch_source_header(&abs);
     }
 }
 

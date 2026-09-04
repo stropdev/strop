@@ -37,6 +37,10 @@ impl Editor {
                 self.mode = Mode::Normal;
                 self.pending.clear();
             }
+            Key::Up => self.run_motion("k"),
+            Key::Down => self.run_motion("j"),
+            Key::Left => self.run_motion("h"),
+            Key::Right => self.run_motion("l"),
             Key::Char('>') | Key::Char('<') if self.pending.is_empty() => {
                 // visual indent: apply to every selected line, one undo
                 // unit, back to normal (vim re-selects with gv)

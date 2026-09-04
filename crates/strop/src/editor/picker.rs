@@ -123,6 +123,14 @@ impl Editor {
             Key::Down => glue.picker.move_by(1),
             Key::Tab => glue.picker.move_by(1),
             Key::Backtab => glue.picker.move_by(-1),
+            // arrows: Up/Down walk results, Left/Right move the caret
+            Key::Left => glue.picker.caret_left(),
+            Key::Right => glue.picker.caret_right(),
+            // picker normal mode (Esc): the field is one line, so h/l
+            // own the caret and j/k walk the results — the muscle
+            // memory you bring from the buffer
+            Key::Char('j') if glue.picker.input_normal() => glue.picker.move_by(1),
+            Key::Char('k') if glue.picker.input_normal() => glue.picker.move_by(-1),
             Key::Char(c) => {
                 if glue.picker.input_normal() {
                     // modal editing on the field (0003 §1); x/X change
@@ -632,5 +640,62 @@ mod replace_tests {
         assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "ain");
         e.feed(crate::editor::Key::Esc);
         assert!(!e.picker_open(), "esc twice closes");
+    }
+
+    #[test]
+    fn picker_normal_mode_jk_walk_results() {
+        // Esc into the field's normal mode; j/k move the selection,
+        // not the text caret (user report: only Tab/arrows navigated)
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        for f in ["a.txt", "b.txt", "c.txt", "d.txt"] {
+            std::fs::write(dir.path().join(f), "x\n").unwrap();
+            e.open_buffer(dir.path().join(f).to_str().unwrap()).unwrap();
+        }
+        e.open_picker(Kind::Buffers);
+        let sel = |e: &Editor| e.picker.as_ref().unwrap().picker.selected;
+        assert_eq!(sel(&e), 0);
+        e.feed(crate::editor::Key::Esc); // normal mode on the field
+        e.feed_text("jj");
+        assert_eq!(sel(&e), 2, "j moved the selection down twice");
+        e.feed_text("k");
+        assert_eq!(sel(&e), 1);
+        e.feed_text("i"); // back to insert
+        e.feed_text("j"); // types into the query instead
+        assert_eq!(
+            e.picker.as_ref().unwrap().picker.input.text,
+            "j",
+            "insert mode: j filters"
+        );
+    }
+
+    #[test]
+    fn picker_arrows_navigate_and_move_caret() {
+        // user report: physical arrows did nothing in pickers — the
+        // translation layer dropped KeyCode::Up/Down entirely
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        for f in ["a.txt", "b.txt", "c.txt"] {
+            std::fs::write(dir.path().join(f), "x\n").unwrap();
+            e.open_buffer(dir.path().join(f).to_str().unwrap()).unwrap();
+        }
+        e.open_picker(Kind::Buffers);
+        e.feed_text("a");
+        e.feed(crate::editor::Key::Down);
+        assert_eq!(
+            e.picker.as_ref().unwrap().picker.selected,
+            1,
+            "Down walks results"
+        );
+        e.feed(crate::editor::Key::Up);
+        assert_eq!(e.picker.as_ref().unwrap().picker.selected, 0);
+        e.feed(crate::editor::Key::Left);
+        assert_eq!(
+            e.picker.as_ref().unwrap().picker.input.cursor,
+            0,
+            "Left moves the caret"
+        );
+        e.feed(crate::editor::Key::Right);
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.cursor, 1);
     }
 }

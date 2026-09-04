@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.3.9 — 2026-09-04
+
+Headless QA sweep (the harness now drives the real binary across
+60+ scenarios); every crash class found is fixed and pinned by a test.
+
+### Fixed
+
+- **Unicode crash**: word motions classified *bytes*, not chars — `w`
+  could park the cursor inside a multibyte char and the next `x`
+  panicked ropey. Word classes are char-aware now (é is a word char,
+  🦀 isn't), and `x`/`a`/`~` round to char boundaries. Root cause was
+  deeper: ropey's `try_byte_to_char` maps mid-char bytes silently, so
+  the old `clamp_boundary` never clamped anything — it now verifies via
+  the byte↔char roundtrip.
+- **Arrow keys did nothing anywhere**: the crossterm translation dropped
+  `KeyCode::Up/Down` at the catch-all. Arrows now speak hjkl in normal,
+  visual, insert, and on read-only git surfaces; in pickers Up/Down walk
+  results and Left/Right move the caret.
+- **Picker navigation**: after Esc (normal mode on the field) `j`/`k`
+  walk the results instead of editing the query; the prompt glyph shows
+  the mode (`❯` insert, `▮` normal).
+- **`0` went to line-start nowhere** — the count parser ate the bare
+  zero (vim: leading `0` is a motion, later digits are counts).
+- **Empty `/` / `?`** repeat the last search (vim) instead of erroring
+  with a raw `\r` in the message.
+- **Flaky pane tests**: parallel tests shared `/tmp` fixture files;
+  fixtures are per-test tempdirs now.
+
+### Added
+
+- **`gs` switches source ↔ header** via clangd's
+  `textDocument/switchSourceHeader` — the C/C++ header jump. No server
+  or no counterpart says so in the modeline, never silent.
+
 ## 0.3.8 — 2026-09-04
 
 ### Fixed

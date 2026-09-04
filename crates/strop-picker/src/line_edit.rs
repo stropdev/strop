@@ -50,6 +50,24 @@ impl LineEdit {
         }
     }
 
+    /// Caret one char left/right — arrow keys work in both modes.
+    pub fn move_left(&mut self) {
+        if self.cursor > 0 {
+            let prev = self.text[..self.cursor]
+                .char_indices()
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.cursor = prev;
+        }
+    }
+
+    pub fn move_right(&mut self) {
+        if let Some(c) = self.text[self.cursor..].chars().next() {
+            self.cursor += c.len_utf8();
+        }
+    }
+
     /// One normal-mode key. Returns false for keys LineEdit doesn't know
     /// (the caller routes them).
     pub fn normal_key(&mut self, c: char) -> bool {

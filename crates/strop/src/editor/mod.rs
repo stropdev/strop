@@ -57,6 +57,8 @@ pub enum Key {
     Backspace,
     Up,
     Down,
+    Left,
+    Right,
     Tab,
     Backtab,
     /// Replace picker: exclude the row's whole file (vscode's toggle).
@@ -927,15 +929,17 @@ mod scratch_tests {
     fn first_open_replaces_the_scratch_buffer() {
         // regression: opening over the initial scratch left it behind —
         // :q closed the file, the welcome card showed, you kept quitting
-        std::fs::write("/tmp/strop-scratch-test.rs", "fn a() {}\n").unwrap();
+        // tempdir per test: parallel tests sharing one fixture race
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("scratch-test.rs");
+        std::fs::write(&f, "fn a() {}\n").unwrap();
         let mut e = Editor::new(Buffer::from_text(""));
-        e.open_buffer("/tmp/strop-scratch-test.rs").unwrap();
+        e.open_buffer(f.to_str().unwrap()).unwrap();
         assert_eq!(e.buffers.len(), 1, "scratch replaced, not stacked");
-        assert_eq!(e.buf().path.as_deref(), Some("/tmp/strop-scratch-test.rs"));
+        assert_eq!(e.buf().path.as_deref(), f.to_str());
         e.feed_text(":q\r");
 
         assert!(e.should_quit, "one :q quits");
-        std::fs::remove_file("/tmp/strop-scratch-test.rs").ok();
     }
 
     #[test]
@@ -953,10 +957,11 @@ mod scratch_tests {
         let mut e = Editor::new(Buffer::from_text(""));
         e.feed_text("ix"); // scratch has content now
         e.feed(crate::editor::Key::Esc);
-        std::fs::write("/tmp/strop-scratch-test.rs", "fn a() {}\n").unwrap();
-        e.open_buffer("/tmp/strop-scratch-test.rs").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("scratch-test.rs");
+        std::fs::write(&f, "fn a() {}\n").unwrap();
+        e.open_buffer(f.to_str().unwrap()).unwrap();
         assert_eq!(e.buffers.len(), 2, "edited scratch is real work");
-        std::fs::remove_file("/tmp/strop-scratch-test.rs").ok();
     }
 }
 
@@ -1192,6 +1197,50 @@ mod tests {
         assert_eq!(e.last_search.as_ref().unwrap().pattern, "foo");
         let frame = crate::headless::frame_string(&mut e, 40, 8);
         assert!(frame.contains("foo bar foo"));
+    }
+
+    #[test]
+    fn empty_search_repeats_last() {
+        // vim: bare / repeats the last search in its direction, bare ?
+        // reverses it — never an "editor command" error
+        let mut e = Editor::new(Buffer::from_text("aa line\nbb line\ncc line\n"));
+        e.feed_text("/line\r");
+        assert_eq!(e.buf().line_of(e.cursor), 0);
+        e.feed_text("/\r");
+        assert_eq!(e.buf().line_of(e.cursor), 1, "empty / repeats forward");
+        e.feed_text("/\r");
+        assert_eq!(e.buf().line_of(e.cursor), 2);
+        e.feed_text("?\r");
+        assert_eq!(e.buf().line_of(e.cursor), 1, "empty ? reverses");
+        assert!(e.message.is_empty());
+    }
+
+    #[test]
+    fn x_on_multibyte_char_deletes_the_whole_char() {
+        // regression: x deleted cursor..cursor+1 raw bytes — on é that
+        // split the char and ropey panicked (unicode crash)
+        let mut e = Editor::new(Buffer::from_text("héllo\n"));
+        e.feed_text("lx"); // onto é, delete it whole
+        assert_eq!(e.buf().rope.to_string(), "hllo\n");
+        e.feed_text("u");
+        assert_eq!(e.buf().rope.to_string(), "héllo\n");
+        e.feed_text("a"); // append lands past the char, not mid-char
+        assert!(e.buf().is_boundary(e.cursor));
+    }
+
+    #[test]
+    fn arrows_speak_hjkl() {
+        // the translation layer used to drop KeyCode::Up/Down — arrows
+        // did nothing anywhere (user report: picker nav needed Tab)
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
+        e.feed(crate::editor::Key::Down);
+        assert_eq!(e.buf().line_of(e.cursor), 1, "Down is j");
+        e.feed(crate::editor::Key::Right);
+        assert_eq!(e.cursor, e.buf().line_start(1) + 1, "Right is l");
+        e.feed(crate::editor::Key::Up);
+        assert_eq!(e.buf().line_of(e.cursor), 0, "Up is k");
+        e.feed(crate::editor::Key::Left);
+        assert_eq!(e.cursor, 0, "Left is h");
     }
     #[test]
     fn ex_open_and_close_buffers() {

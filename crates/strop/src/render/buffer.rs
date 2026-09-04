@@ -19,6 +19,20 @@ use super::{ACCENT, BASE, FLASH_BG, MUTED, PREVIEW_BG, SELECT_BG, TEXT};
 /// Width of the standard gutter: sign column + 3-digit number + space.
 pub(crate) const GUTTER: u16 = 5;
 
+/// Invariant guard: every pane row is written out to the pane's full
+/// width. ratatui's Paragraph clears the cells its lines don't touch
+/// today, but a renderer relying on that is one widget swap away from
+/// resurrecting two-frames-old glyphs (the double-buffer keeps frame
+/// N-2's cells) — pad explicitly instead.
+fn pad_row(mut line: Line<'static>, width: u16) -> Line<'static> {
+    let used = line.width() as u16;
+    if used < width {
+        line.spans
+            .push(Span::raw(" ".repeat((width - used) as usize)));
+    }
+    line
+}
+
 /// One pane's view of a buffer. `overlays` is false for inactive panes:
 /// preview/search/selection/flash belong to the pane being driven.
 struct PaneView {
@@ -263,7 +277,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         }
         if line_idx > buf.last_content_line() {
             left.push(Span::styled("~", Style::default().fg(MUTED)));
-            lines.push(Line::from(left));
+            lines.push(pad_row(Line::from(left), area.width));
             continue;
         }
         let start = buf.line_start(line_idx);
@@ -275,7 +289,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
             Some(diff::DiffRow::Stats | diff::DiffRow::HunkHeader) => {
                 let mut line = diff::structural_row(surface.unwrap(), line_idx, content_width);
                 line.spans.splice(0..0, left);
-                lines.push(line);
+                lines.push(pad_row(line, area.width));
                 continue;
             }
             Some(diff::DiffRow::Line(dl)) => {
@@ -291,7 +305,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                     content_width,
                 ));
                 left.extend(spans);
-                lines.push(Line::from(left));
+                lines.push(pad_row(Line::from(left), area.width));
                 continue;
             }
             None => {}
@@ -348,7 +362,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                 ));
             }
         }
-        lines.push(Line::from(left));
+        lines.push(pad_row(Line::from(left), area.width));
     }
     frame.render_widget(
         Paragraph::new(lines).style(Style::default().bg(BASE)),
@@ -564,5 +578,48 @@ mod tests {
         let frame = crate::headless::frame_string(&mut e, 60, 10);
         assert!(frame.contains("●"), "gutter sign: {frame}");
         assert!(frame.contains("▍ mismatched types"), "eol note: {frame}");
+    }
+
+    #[test]
+    fn switching_buffers_leaves_no_stale_cells() {
+        // invariant: every pane row is written full-width, so ratatui's
+        // double-buffer can never resurrect two-frames-old glyphs on a
+        // buffer switch (the user-reported "lingering >" symptom class)
+        let dir = tempfile::tempdir().unwrap();
+        let wide = dir.path().join("wide.txt");
+        let narrow = dir.path().join("narrow.txt");
+        let junk = format!("{}\n", ">".repeat(60)).repeat(30);
+        std::fs::write(&wide, &junk).unwrap();
+        std::fs::write(&narrow, "hi\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text(""));
+        e.open_buffer(wide.to_str().unwrap()).unwrap();
+        e.open_buffer(narrow.to_str().unwrap()).unwrap();
+        // same terminal, two frames: ratatui TestBackend diffing is the
+        // real path, so drive both frames through one terminal
+        let backend = ratatui::backend::TestBackend::new(40, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let draw =
+            |e: &mut Editor, terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>| {
+                terminal.draw(|f| crate::render::render(e, f)).unwrap();
+                let buf = terminal.backend().buffer();
+                (0..12)
+                    .map(|y| {
+                        (0..40)
+                            .map(|x| buf[(x, y)].symbol().to_string())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+            };
+        e.current = 0; // wide
+        let wide_frame = draw(&mut e, &mut terminal);
+        assert!(
+            wide_frame[0].contains(">>>"),
+            "wide buffer rendered: {}",
+            wide_frame[0]
+        );
+        e.current = 1; // narrow
+        let narrow_frame = draw(&mut e, &mut terminal);
+        let leftover = narrow_frame.iter().filter(|row| row.contains('>')).count();
+        assert_eq!(leftover, 0, "stale cells: {}", narrow_frame.join("\n"));
     }
 }

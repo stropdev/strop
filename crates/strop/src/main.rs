@@ -242,6 +242,12 @@ fn tui(mut editor: Editor) {
             KeyCode::Char('\x17') => Key::CtrlW,
             KeyCode::Char('\x18') => Key::CtrlX,
             KeyCode::BackTab => Key::Backtab,
+            // arrows were dropped by the catch-all once — pickers,
+            // cmd line, buffers all speak hjkl through these
+            KeyCode::Up => Key::Up,
+            KeyCode::Down => Key::Down,
+            KeyCode::Left => Key::Left,
+            KeyCode::Right => Key::Right,
             KeyCode::Char('n') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Down,
             KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
             KeyCode::Char('r') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlR,

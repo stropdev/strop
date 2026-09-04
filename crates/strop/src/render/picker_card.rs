@@ -74,6 +74,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         streaming,
         total,
         excluded,
+        normal_mode,
     ) = {
         let glue = editor.picker.as_ref().expect("picker open");
         let p = &glue.picker;
@@ -90,6 +91,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             p.items.len(),
             // row + file exclusions both count (0007)
             p.rows.iter().filter(|r| p.is_excluded(r.item)).count(),
+            p.input_normal(),
         )
     };
     let replace_mode = kind == strop_picker::Kind::Replace;
@@ -97,7 +99,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     let hint = if replace_mode {
         " enter apply · tab field · ctrl-x row · ctrl-d file · esc  —  -t rs / --glob filters "
     } else {
-        " enter open · esc close · ↑↓/tab move "
+        " enter open · esc normal/close · ↑↓/tab move · j/k after esc "
     };
     let count = if replace_mode {
         format!(" {excluded}/{total} excluded ")
@@ -142,16 +144,29 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             Span::styled(caret, Style::default().fg(fg)),
         ])
     };
+    // the prompt glyph is the mode indicator: ❯ types into the field,
+    // ▮ means Esc parked you in normal mode (j/k walk the results)
+    let glyph = if normal_mode { "▮" } else { "❯" };
     if replace_mode {
-        let search = field_prompt("❯ find   ", &input, field == strop_picker::Field::Search);
+        let search_label = if normal_mode {
+            "▮ find   "
+        } else {
+            "❯ find   "
+        };
+        let replace_label = if normal_mode {
+            "▮ replace"
+        } else {
+            "❯ replace"
+        };
+        let search = field_prompt(search_label, &input, field == strop_picker::Field::Search);
         let replace = field_prompt(
-            "❯ replace",
+            replace_label,
             &replace_input,
             field == strop_picker::Field::Replace,
         );
         frame.render_widget(Paragraph::new(vec![search, replace]), rows[0]);
     } else {
-        let prompt = field_prompt("❯", &input, true);
+        let prompt = field_prompt(glyph, &input, true);
         frame.render_widget(Paragraph::new(vec![prompt]), rows[0]);
     }
     // section definition: a rule separates where you type from results

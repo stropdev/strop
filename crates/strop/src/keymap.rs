@@ -66,6 +66,12 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
     },
     Binding {
+        keys: "gs",
+        desc: "switch source/header (clangd)",
+        section: "normal",
+        live: true,
+    },
+    Binding {
         keys: "f<c> F<c> t<c> T<c>",
         desc: "find/till char (candidates light up)",
         section: "normal",
@@ -666,7 +672,7 @@ mod tests {
         assert_eq!(git.len(), 8);
         assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
         assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
-        assert_eq!(children_of("g", Mode::Normal).len(), 2); // gg, gd
+        assert_eq!(children_of("g", Mode::Normal).len(), 3); // gg, gd, gs
                                                              // visual mode: only the visual table feeds the card
         let v = children_of(" ", Mode::Visual);
         assert_eq!(v.len(), 1);
@@ -728,6 +734,7 @@ mod tests {
         // prefixes with their own which-key cards
         "gg",
         "gd",
+        "gs",
         "]c",
         "[c",
         "]f",
@@ -868,6 +875,10 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("one two\n"));
         e.feed_text("gd");
         assert!(!e.message.is_empty(), "gd with no LSP must say so");
+
+        let mut e = Editor::new(Buffer::from_text("int x;\n"));
+        e.feed_text("gs");
+        assert!(!e.message.is_empty(), "gs with no LSP must say so");
 
         let mut e = Editor::new(Buffer::from_text("hello world\n"));
         e.feed_text("\"+yiw");
