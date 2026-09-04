@@ -184,6 +184,8 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         selection: view.overlays.then(|| editor.visual_range()).flatten(),
         search_hits: &[],
         find: view.overlays.then(|| editor.find_candidates()).flatten(),
+        diags: Vec::new(),
+        emphasis: None,
         diff_line: None,
     };
     let search_hits: Vec<usize> = if view.overlays {
@@ -213,6 +215,8 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     let blame = editor.blame_gutter_for(view.buffer);
     let blame_w = if blame.is_some() { diff::BLAME_W } else { 0 };
     let content_width = area.width.saturating_sub((sidebar_w + blame_w) as u16);
+    // :help rows color by the section they sit under (render/help.rs)
+    let mut help_section = String::new();
     for row in 0..text_rows {
         let line_idx = view.view_top + row;
         // the margin columns: sidebar cell (or blank), then the blame
@@ -222,7 +226,20 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
             .unwrap_or_default();
         if let Some(gutter) = blame {
             left.push(match gutter.lines.get(line_idx) {
-                Some(bl) => diff::blame_spans(bl),
+                // rootle rule: a commit's cell prints only on the first
+                // line of its run — the gutter breathes, the run reads
+                Some(bl) => {
+                    let repeats_prev = line_idx > 0
+                        && gutter
+                            .lines
+                            .get(line_idx - 1)
+                            .is_some_and(|p| p.sha == bl.sha && p.author == bl.author);
+                    if repeats_prev {
+                        diff::blame_blank()
+                    } else {
+                        diff::blame_spans(bl)
+                    }
+                }
                 None => diff::blame_blank(),
             });
         }
@@ -246,6 +263,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
             Some(diff::DiffRow::Line(dl)) => {
                 let mut spans = diff::diff_gutter(dl, line_idx == cur_line, diff_digits);
                 row_style.diff_line = Some(dl);
+                row_style.emphasis = diff::emphasis_span(surface, line_idx);
                 spans.extend(content_spans(
                     editor,
                     view,
@@ -275,11 +293,20 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         ));
         left.push(Span::styled(format!("{:>3} ", line_idx + 1), num_style));
         row_style.diff_line = None;
+        row_style.emphasis = None;
+        row_style.diags = if view.overlays {
+            editor.diag_ranges_at(view.buffer, line_idx + 1)
+        } else {
+            Vec::new()
+        };
         if let Some(content) = diff::surface_content_spans(surface, line_idx, content_width) {
             left.extend(content);
         } else if buf.name.as_deref() == Some("help") {
             // the :help buffer gets house-style color (render/help.rs)
-            left.extend(super::help::row_spans(&text));
+            if text.starts_with('[') && text.ends_with(']') {
+                help_section = text.trim_matches(['[', ']']).to_string();
+            }
+            left.extend(super::help::row_spans(&text, &help_section, content_width));
         } else {
             left.extend(content_spans(
                 editor,
@@ -291,7 +318,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
             ));
         }
         // cursor-line end-of-line diagnostic (scoped to the one line —
-        // you see what the E is without leaving the buffer)
+        // you see what the dot means without leaving the buffer)
         if view.overlays && line_idx == cur_line {
             if let Some((sev, msg)) = editor.diag_message_at(view.buffer, line_idx + 1) {
                 let shown: String = msg.replace('\n', " · ").chars().take(80).collect();
@@ -327,13 +354,9 @@ fn diff_digits(surface: Option<&crate::editor::Surface>) -> usize {
 /// 0009), and only the pane's own buffer shows them.
 fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static str, Color) {
     if let Some(sev) = editor.diag_severity_at(view.buffer, line_idx + 1) {
-        let glyph = match sev {
-            1 => "E",
-            2 => "W",
-            3 => "I",
-            _ => "H",
-        };
-        return (glyph, severity_color(sev));
+        // severity dot (VSCode/gitui lesson: color reads faster than
+        // letters) — the cursor line's EOL note carries the words
+        return ("●", severity_color(sev));
     }
     // git signs: + add, ~ change, - deletion below (only for the
     // working buffer — surfaces have no path, so no leak)
@@ -359,8 +382,13 @@ struct RowStyle<'a> {
     selection: Option<strop_core::Range>,
     search_hits: &'a [usize],
     find: Option<(u8, bool)>,
+    /// Diagnostic spans on this row: (col, end_col, severity) — the
+    /// undercurl layer (0009 UX).
+    diags: Vec<(usize, usize, u8)>,
     /// Set on diff-surface rows: typed origin drives colors (0010 §4).
     diff_line: Option<&'a strop_git::DiffLine>,
+    /// Intra-line changed range on a diff row (delta-style emphasis).
+    emphasis: Option<(usize, usize)>,
 }
 
 /// Content spans for one row: syntax or diff decoration, then overlays
@@ -399,12 +427,27 @@ fn content_spans(
             if let Some(bg) = diff::origin_bg(dl.origin) {
                 cell = cell.bg(bg);
             }
+            // intra-line emphasis overrides the row tint (delta two-tier)
+            if let Some((s, e)) = style.emphasis {
+                if s <= i && i < e {
+                    let strong = match dl.origin {
+                        strop_git::LineOrigin::Addition => diff::ADD_STRONG_BG,
+                        _ => diff::DEL_STRONG_BG,
+                    };
+                    cell = cell.bg(strong).add_modifier(Modifier::BOLD);
+                }
+            }
         } else if syn_idx < syn_spans.len() && syn_spans[syn_idx].start <= pos {
             let class = syn_spans[syn_idx].class;
             cell = cell.fg(class_color(class));
             if class == strop_syntax::Class::Comment {
                 cell = cell.add_modifier(Modifier::ITALIC);
             }
+        }
+        if let Some((_, _, sev)) = style.diags.iter().find(|(c, e, _)| *c <= i && i < *e) {
+            cell = cell
+                .add_modifier(Modifier::UNDERLINED)
+                .underline_color(severity_color(*sev));
         }
         if style.selection.is_some_and(|r| in_range(r, pos)) {
             cell = cell.bg(SELECT_BG);
@@ -483,7 +526,7 @@ mod tests {
             }],
         );
         let frame = crate::headless::frame_string(&mut e, 60, 10);
-        assert!(frame.contains("E"), "gutter sign: {frame}");
+        assert!(frame.contains("●"), "gutter sign: {frame}");
         assert!(frame.contains("▍ mismatched types"), "eol note: {frame}");
     }
 }

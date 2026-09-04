@@ -101,3 +101,18 @@ artifacts PR spawns another. Bot commits now carry GitHub's skip marker
 (no gate on a gif refresh), and true convergence needs either a
 deterministic tape (stubbed server, no 14s live wait) or a
 content-aware diff in `demo.yml`. Not in this release.
+
+## Side-by-side research (0.3.2)
+
+JetBrains' side-by-side with "linage" is the best diff UX anywhere, so
+we priced it for the terminal. The blocker is doctrine, not effort:
+every strop surface is a real buffer whose text mirrors its layout —
+cursor, `/` search, yank, and marks all work because row N on screen is
+row N in the rope. Side-by-side pairs two logical rows into one display
+row, breaking that mirror; keeping it would fork the surface contract
+(a "view" that forgets how to be a buffer — 0001 §4). git-delta and
+tuicr made the same call: unified layout + intra-line emphasis. We took
+that path: del/add run pairing (same pairing a side-by-side needs)
+drives two-tier emphasis — quiet row tint, loud changed span. If a
+future split view ever lands, `hunk_emphasis`'s run pairing is the
+alignment engine to reuse.

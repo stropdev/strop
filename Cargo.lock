@@ -1096,7 +1096,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "ropey",
  "serde",
@@ -1104,7 +1104,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "crossterm",
  "indicatif",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "git2",
  "tempfile",
@@ -1132,7 +1132,7 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "ropey",
  "strop-core",
@@ -1140,7 +1140,7 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "async-lsp",
  "serde",
@@ -1152,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "ignore",
  "serde_json",
@@ -1160,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "strop-syntax"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "ropey",
  "streaming-iterator",

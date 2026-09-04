@@ -158,10 +158,9 @@ Type "q"
 Sleep 500ms
 
 # multicursor: Space c stacks cursors, cw edits all mirrors at once
-Type "strop proj/demo.rs"
-Enter
-Sleep 1s
-Type "0"
+# (the editor from the splits/help sections is still open on demo.rs)
+Type "gg"
+Sleep 400ms
 Space
 Type "c"
 Sleep 700ms

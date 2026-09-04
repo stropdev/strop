@@ -1,5 +1,42 @@
 # Changelog
 
+
+## 0.3.2 — 2026-09-04
+
+The finish-line polish round: dots, gaps, hues, and a diff that reads
+like delta's.
+
+### Added
+
+- **Intra-line emphasis in diffs** (delta-style, two-tier): del/add
+  runs pair line-by-line within a hunk, shared prefix/suffix trims, and
+  the changed span gets a brighter background + bold over the row tint.
+  Pure adds/deletes keep the quiet full-row tint.
+- **Blame gaps** (rootle rule): a commit's gutter cell prints only on
+  the first line of its run — the blame column breathes.
+- **Diagnostics**: severity `●` dot in the gutter (color reads faster
+  than letters), colored underline on the offending span
+  (`underline_color`; wavy undercurl lands when ratatui bumps to 0.30),
+  multiline messages join with ` · ` in the EOL note.
+- **`:help` palette**: section-hued key columns (blue normal, purple
+  visual, green insert, amber leader, cyan git, yellow ex), section
+  headers with a trailing rule, bold keys.
+
+### Fixed
+
+- **Demo hiccup**: the multicursor tape section typed `strop
+  proj/demo.rs` into the still-open editor (the splits `:q` closes a
+  pane, not the app) and mangled line 1. The tape continues in the
+  existing buffer now.
+
+### Decided (research)
+
+- Side-by-side diff (JetBrains-style) is rejected for now — it pairs
+  two logical rows into one display row, breaking the surface-as-buffer
+  contract (cursor/search/yank mirror). git-delta and tuicr made the
+  same call; the run pairing built for emphasis is the alignment engine
+  if a split view ever lands (0010 amendment).
+
 ## 0.3.1 — 2026-09-04
 
 Polish round: the demo is clean again, help wears color, and the E now

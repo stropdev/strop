@@ -69,6 +69,101 @@ pub(crate) fn diff_row<'a>(surface: Option<&'a Surface>, row: usize) -> Option<D
     None
 }
 
+/// Brighter backgrounds for the intra-line changed spans (delta's
+/// two-tier emphasis: row tint whispers, changed span speaks).
+pub(crate) const ADD_STRONG_BG: Color = Color::Rgb(0x27, 0x3a, 0x30);
+pub(crate) const DEL_STRONG_BG: Color = Color::Rgb(0x40, 0x2a, 0x2e);
+
+/// Intra-line emphasis (delta-style): the byte range within this row's
+/// text that actually changed, paired against the opposite-side row at
+/// the same index in the hunk's del/add run. None for context rows and
+/// unmatched rows (pure adds/deletes emphasize the whole line).
+pub(crate) fn emphasis_span(surface: Option<&Surface>, row: usize) -> Option<(usize, usize)> {
+    let Some(Surface::Diff { hunks, .. }) = surface else {
+        return None;
+    };
+    if row == 0 {
+        return None;
+    }
+    let mut row = row - 1;
+    for hunk in hunks {
+        if row == 0 {
+            return None;
+        }
+        row -= 1;
+        if row < hunk.lines.len() {
+            return hunk_emphasis(&hunk.lines, row);
+        }
+        row -= hunk.lines.len();
+    }
+    None
+}
+
+/// Pair a row with its opposite-side counterpart in the hunk and return
+/// THIS row's changed byte range.
+fn hunk_emphasis(lines: &[DiffLine], idx: usize) -> Option<(usize, usize)> {
+    let origin = lines[idx].origin;
+    match origin {
+        LineOrigin::Context => None,
+        LineOrigin::Deletion => {
+            // del-run start and the add-run right after it
+            let mut run_start = idx;
+            while run_start > 0 && lines[run_start - 1].origin == LineOrigin::Deletion {
+                run_start -= 1;
+            }
+            let mut add_start = idx;
+            while add_start < lines.len() && lines[add_start].origin == LineOrigin::Deletion {
+                add_start += 1;
+            }
+            let k = idx - run_start;
+            lines
+                .get(add_start + k)
+                .filter(|l| l.origin == LineOrigin::Addition)
+                .map(|p| changed_range(&lines[idx].text, &p.text))
+        }
+        LineOrigin::Addition => {
+            // add-run start and the del-run right before it
+            let mut run_start = idx;
+            while run_start > 0 && lines[run_start - 1].origin == LineOrigin::Addition {
+                run_start -= 1;
+            }
+            let mut del_start = run_start;
+            while del_start > 0 && lines[del_start - 1].origin == LineOrigin::Deletion {
+                del_start -= 1;
+            }
+            if del_start == run_start {
+                return None; // no paired deletions
+            }
+            let k = idx - run_start;
+            lines
+                .get(del_start + k)
+                .filter(|l| l.origin == LineOrigin::Deletion)
+                .map(|p| changed_range(&p.text, &lines[idx].text))
+        }
+    }
+}
+
+/// The changed middle of `a` vs `b` after trimming the common prefix
+/// and suffix (byte offsets into `a`, char-boundary safe by
+/// construction).
+fn changed_range(a: &str, b: &str) -> (usize, usize) {
+    let prefix: usize = a
+        .chars()
+        .zip(b.chars())
+        .take_while(|(x, y)| x == y)
+        .map(|(c, _)| c.len_utf8())
+        .sum();
+    let suffix: usize = a
+        .chars()
+        .rev()
+        .zip(b.chars().rev())
+        .take_while(|(x, y)| x == y)
+        .map(|(c, _)| c.len_utf8())
+        .sum();
+    let end = a.len().saturating_sub(suffix).max(prefix);
+    (prefix.min(end), end)
+}
+
 /// Gutter width for a surface's buffer: the diff gutter widens to fit
 /// both sides' numbers (min 3 digits each); everything else is the
 /// standard sign+number gutter.
@@ -444,5 +539,50 @@ mod tests {
         assert!(spans
             .iter()
             .any(|s| s.content == "3a9eeec" && s.style.add_modifier.contains(Modifier::BOLD)));
+    }
+
+    #[test]
+    fn emphasis_trims_shared_affixes() {
+        // delta-style: only the middle changed
+        assert_eq!(
+            changed_range("let x = hone(a);", "let x = hone(b, c);"),
+            (13, 14) // only "a" vs "b, c" differs
+        );
+        // whole line changed
+        assert_eq!(changed_range("aaa", "bbb"), (0, 3));
+        // identical → empty range
+        assert_eq!(changed_range("same", "same"), (4, 4));
+    }
+
+    #[test]
+    fn hunk_pairs_deletions_with_additions() {
+        use strop_git::{DiffLine, LineOrigin};
+        let line = |origin, old, new, text: &str| DiffLine {
+            origin,
+            old_lineno: old,
+            new_lineno: new,
+            text: text.into(),
+        };
+        let lines = vec![
+            line(LineOrigin::Context, Some(1), Some(1), "fn f() {"),
+            line(LineOrigin::Deletion, Some(2), None, "    hone(a);"),
+            line(LineOrigin::Deletion, Some(3), None, "    gone();"),
+            line(LineOrigin::Addition, None, Some(2), "    hone(b, c);"),
+            line(LineOrigin::Context, Some(4), Some(3), "}"),
+        ];
+        // first deletion pairs with the lone addition
+        assert_eq!(
+            hunk_emphasis(&lines, 1),
+            Some(changed_range("    hone(a);", "    hone(b, c);"))
+        );
+        // second deletion has no pair
+        assert_eq!(hunk_emphasis(&lines, 2), None);
+        // the addition sees the same middle from its own side
+        assert_eq!(
+            hunk_emphasis(&lines, 3),
+            Some(changed_range("    hone(a);", "    hone(b, c);"))
+        );
+        // context never emphasizes
+        assert_eq!(hunk_emphasis(&lines, 0), None);
     }
 }

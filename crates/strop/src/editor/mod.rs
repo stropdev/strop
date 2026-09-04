@@ -541,6 +541,18 @@ impl Editor {
             .map(|d| (d.severity, d.message.as_str()))
     }
 
+    /// Diagnostic spans on a 1-based line as (col, end_col, severity)
+    /// — the undercurl layer (0009 UX). Same-line diags only.
+    pub fn diag_ranges_at(&self, idx: usize, line_1based: usize) -> Vec<(usize, usize, u8)> {
+        self.diags_for(idx)
+            .map(|ds| {
+                ds.iter()
+                    .filter(|d| d.line + 1 == line_1based)
+                    .map(|d| (d.col, d.end_col.max(d.col + 1), d.severity))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
     /// Worst diagnostic severity (1=error … 4=hint) for a 1-based line
     /// of buffer `idx`, if any (0001 pillar 4: merges with the git
     /// gutter). Per-buffer, so panes show their own diagnostics.

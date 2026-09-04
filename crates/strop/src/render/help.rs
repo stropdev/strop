@@ -3,17 +3,32 @@
 //! typed-decoration pattern the git surfaces use (0010 §5), never a
 //! special-purpose renderer fork.
 
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
 use super::{ACCENT, MUTED, TEXT};
 
-/// One help row → styled spans:
+/// Key-column hue per section: the eye learns "amber = leader, blue =
+/// normal" in one page (color is structure).
+fn section_color(section: &str) -> Color {
+    match section {
+        "normal" => Color::Rgb(0x7a, 0xa2, 0xf7),   // blue
+        "visual" => Color::Rgb(0xbb, 0x9a, 0xf7),   // purple
+        "insert" => Color::Rgb(0x9e, 0xce, 0x6a),   // green
+        "leader" => ACCENT,                         // amber
+        "git" => Color::Rgb(0x7d, 0xcf, 0xff),      // cyan
+        "ex+panes" => Color::Rgb(0xe0, 0xaf, 0x68), // yellow
+        _ => ACCENT,
+    }
+}
+
+/// One help row → styled spans (`section` is the enclosing `[x]` header
+/// the render loop last saw):
 /// - the header line wears accent bold
-/// - `[section]` headers are accent bold
-/// - binding rows: keys in accent, description in text
+/// - `[section]` headers are section-hued bold, trailed by a dim rule
+/// - binding rows: keys in the section's hue (bold), description in text
 /// - planned `(soon)` rows are muted end to end
-pub(crate) fn row_spans(text: &str) -> Vec<Span<'static>> {
+pub(crate) fn row_spans(text: &str, section: &str, width: u16) -> Vec<Span<'static>> {
     if text.starts_with("strop help") {
         return vec![Span::styled(
             text.to_string(),
@@ -21,14 +36,28 @@ pub(crate) fn row_spans(text: &str) -> Vec<Span<'static>> {
         )];
     }
     if text.starts_with('[') && text.ends_with(']') {
-        return vec![Span::styled(
-            text.to_string(),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        )];
+        let used = text.chars().count();
+        let pad = (width as usize).saturating_sub(used + 1);
+        return vec![
+            Span::styled(
+                text.to_string(),
+                Style::default()
+                    .fg(section_color(section))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {}", "─".repeat(pad)),
+                Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d)),
+            ),
+        ];
     }
     let planned = text.ends_with("(soon)");
     let fg = if planned { MUTED } else { TEXT };
-    let key_fg = if planned { MUTED } else { ACCENT };
+    let key_fg = if planned {
+        MUTED
+    } else {
+        section_color(section)
+    };
     // rows are `  <keys padded>  <desc>` — the two-space gap after the
     // key column is the split
     match text
@@ -38,7 +67,10 @@ pub(crate) fn row_spans(text: &str) -> Vec<Span<'static>> {
         Some(split) if split < text.len() => {
             let (keys, desc) = text.split_at(split);
             vec![
-                Span::styled(keys.to_string(), Style::default().fg(key_fg)),
+                Span::styled(
+                    keys.to_string(),
+                    Style::default().fg(key_fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(desc.to_string(), Style::default().fg(fg)),
             ]
         }
@@ -51,17 +83,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sections_and_keys_get_accent() {
-        let header = row_spans("[leader]");
+    fn sections_and_keys_get_section_hues() {
+        let header = row_spans("[leader]", "leader", 40);
         assert_eq!(header[0].style.fg, Some(ACCENT));
+        assert!(header[1].content.starts_with(' '), "rule trails");
 
-        let row = row_spans("  space f  file finder");
+        let row = row_spans("  space f  file finder", "leader", 40);
         assert_eq!(row[0].content, "  space f");
         assert_eq!(row[0].style.fg, Some(ACCENT));
         assert_eq!(row[1].content, "  file finder");
         assert_eq!(row[1].style.fg, Some(TEXT));
 
-        let soon = row_spans("  space j  jumplist picker  (soon)");
+        let normal = row_spans("  h j k l  move", "normal", 40);
+        assert_eq!(normal[0].style.fg, Some(Color::Rgb(0x7a, 0xa2, 0xf7)));
+
+        let soon = row_spans("  space j  jumplist picker  (soon)", "leader", 40);
         assert!(soon.iter().all(|s| s.style.fg == Some(MUTED)));
     }
 }
