@@ -110,9 +110,9 @@ fn main() {
         editor.lsp_maybe_attach();
         let mut out = io::stdout().lock();
         headless::run_script(&mut editor, &script, 100, 30, &mut out);
-        if let Some(lsp) = editor.lsp.take() {
-            lsp.shutdown();
-            lsp.wait(Duration::from_millis(500));
+        for srv in std::mem::take(&mut editor.lsp_servers) {
+            srv.client.shutdown();
+            srv.client.wait(Duration::from_millis(500));
         }
         let _ = out.flush();
         return;
@@ -152,6 +152,14 @@ fn main() {
     // per-project session: restore where we left off (0001 pillar 4) —
     // explicit file args beat the session
     if path.is_none() {
+        // XDG state dir resolves once here; the editor carries it so the
+        // write path never reads process-global env mid-run
+        editor.state_dir = std::env::var_os("XDG_STATE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|h| std::path::PathBuf::from(h).join(".local").join("state"))
+            });
         session::restore(&mut editor);
     }
     tui(editor);
@@ -285,9 +293,9 @@ fn tui(mut editor: Editor) {
     // the LSP exit sequence must land before the pipes close with us —
     // and the runtime thread must be joined: dropping the socket under a
     // live mainloop panics inside async-lsp ("Sender is alive")
-    if let Some(lsp) = editor.lsp.take() {
-        lsp.shutdown();
-        lsp.wait(Duration::from_millis(500));
+    for srv in std::mem::take(&mut editor.lsp_servers) {
+        srv.client.shutdown();
+        srv.client.wait(Duration::from_millis(500));
     }
     disable_raw_mode().unwrap();
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen).unwrap();

@@ -3,7 +3,7 @@
 //! Space d is the diagnostics picker, Space k hover, gd goto-definition.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Receiver};
 use std::sync::OnceLock;
 
 use strop_lsp::languages::Languages;
@@ -11,6 +11,15 @@ use strop_lsp::registry::{self, ServerSpec};
 use strop_lsp::{Client, LspEvent};
 
 use super::Editor;
+
+/// One pooled server connection (0014 wave 2): the pool keys on
+/// (workspace root, server name) so a polyglot session runs rust-analyzer
+/// and clangd and pyright side by side.
+pub(crate) struct LspServer {
+    pub key: (PathBuf, String),
+    pub client: strop_lsp::Client,
+    pub rx: Receiver<strop_lsp::LspEvent>,
+}
 
 impl Editor {
     /// Spawn a server for the current buffer if the merged languages
@@ -40,8 +49,11 @@ impl Editor {
             }
             return;
         };
-        if self.lsp.is_some() {
-            // already attached to a server for this root — just did_open
+        // already pooled for this (root, server)? just did_open — the
+        // root resolve repeats the languages/git walk, cheap and rare
+        let root_known = self.lsp_server_root(&abs, languages);
+        let key = (root_known, spec.name.to_string());
+        if self.lsp_servers.iter().any(|s| s.key == key) {
             self.lsp_did_open_current();
             return;
         }
@@ -58,25 +70,10 @@ impl Editor {
             self.lsp_hint_once(spec);
             return;
         }
-        // workspace root: the project layer's dir, else the git walk
-        // from the buffer, else the editor's cwd (0012 §6)
-        let root = languages
-            .project_root
-            .as_deref()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| {
-                let fallback = self
-                    .git
-                    .as_ref()
-                    .map(|g| g.workdir().to_path_buf())
-                    .unwrap_or_else(|| self.cwd.clone());
-                registry::workspace_root(&abs, &fallback)
-            });
         let (tx, rx) = channel();
-        match Client::spawn(&spec, &root, tx) {
+        match Client::spawn(&spec, &key.0.clone(), tx) {
             Some(client) => {
-                self.lsp = Some(client);
-                self.lsp_rx = Some(rx);
+                self.lsp_servers.push(LspServer { key, client, rx });
                 self.message = format!("lsp: {} starting", spec.name);
                 if !warn.is_empty() {
                     self.message
@@ -97,8 +94,40 @@ impl Editor {
         }
     }
 
+    /// The buffer's workspace root (project layer, git walk, cwd).
+    fn lsp_server_root(&self, abs: &Path, languages: &Languages) -> PathBuf {
+        languages
+            .project_root
+            .as_deref()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| {
+                let fallback = self
+                    .git
+                    .as_ref()
+                    .map(|g| g.workdir().to_path_buf())
+                    .unwrap_or_else(|| self.cwd.clone());
+                registry::workspace_root(abs, &fallback)
+            })
+    }
+
+    /// The pooled server for the current buffer, resolved through its
+    /// extension + root (None when nothing serves this file).
+    fn lsp_current(&self) -> Option<&LspServer> {
+        let path = self.buf().path.as_deref()?;
+        let abs = if Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.cwd.join(path)
+        };
+        let ext = format!(".{}", abs.extension()?.to_string_lossy());
+        let languages: &'static Languages = merged_languages(&abs);
+        let spec = registry::for_extension(&ext, languages)?;
+        let root = self.lsp_server_root(&abs, languages);
+        let key = (root, spec.name.to_string());
+        self.lsp_servers.iter().find(|s| s.key == key)
+    }
+
     fn lsp_did_open_current(&mut self) {
-        let Some(client) = &self.lsp else { return };
         let Some(path) = self.buf().path.clone() else {
             return;
         };
@@ -110,6 +139,9 @@ impl Editor {
         if !self.lsp_opened.insert(abs.clone()) {
             return;
         }
+        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+            return;
+        };
         let lang = lang_id(&abs);
         client.did_open(&abs, lang, &self.buf().rope.to_string());
     }
@@ -117,7 +149,6 @@ impl Editor {
     /// didChange when the buffer epoch moved (debounced by epoch — one
     /// full sync per edit burst; incremental sync is the perf follow-up).
     pub fn lsp_sync_changed(&mut self) {
-        let Some(client) = &self.lsp else { return };
         // buffers can be empty post-quit (the TUI breaks first, but
         // scripted/headless callers may drain past the last :q)
         let Some(buf) = self.docs.get(self.current).map(|d| &d.buf) else {
@@ -136,66 +167,69 @@ impl Editor {
             return;
         }
         self.lsp_sent_epochs.insert(abs.clone(), epoch);
-        client.did_change(&abs, &buf.rope.to_string());
+        let text = buf.rope.to_string();
+        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+            return;
+        };
+        client.did_change(&abs, &text);
     }
 
     /// Drain server events (event loop tick + headless settle).
     pub fn drain_lsp(&mut self) {
-        let mut rx = None;
-        std::mem::swap(&mut self.lsp_rx, &mut rx);
-        if let Some(rx) = &rx {
-            while let Ok(event) = rx.try_recv() {
-                match event {
-                    LspEvent::Diagnostics { path, mut diags } => {
-                        // server columns → byte columns against the open
-                        // buffer's text (unopened files keep wire values)
-                        if let Some(enc) = self.lsp.as_ref().map(|c| c.encoding()) {
-                            if let Some(buf) = self.buffer_for_path(&path) {
-                                for d in &mut diags {
-                                    let line = buf.line_text(d.line);
-                                    d.col = strop_lsp::to_byte_col(&line, d.col, enc);
-                                    let end_line = buf.line_text(d.end_line);
-                                    d.end_col = strop_lsp::to_byte_col(&end_line, d.end_col, enc);
-                                }
+        // drain every pooled server, remembering which one each event
+        // came from (its negotiated encoding converts the columns)
+        let mut events: Vec<(strop_lsp::PositionEncoding, LspEvent)> = Vec::new();
+        for srv in &self.lsp_servers {
+            while let Ok(ev) = srv.rx.try_recv() {
+                events.push((srv.client.encoding(), ev));
+            }
+        }
+        for (enc, event) in events {
+            match event {
+                LspEvent::Diagnostics { path, mut diags } => {
+                    // server columns → byte columns against the open
+                    // buffer's text (unopened files keep wire values)
+                    {
+                        if let Some(buf) = self.buffer_for_path(&path) {
+                            for d in &mut diags {
+                                let line = buf.line_text(d.line);
+                                d.col = strop_lsp::to_byte_col(&line, d.col, enc);
+                                let end_line = buf.line_text(d.end_line);
+                                d.end_col = strop_lsp::to_byte_col(&end_line, d.end_col, enc);
                             }
                         }
-                        self.diags.insert(path, diags);
                     }
-                    LspEvent::Ready { server } => {
-                        self.message = format!("lsp: {server} ready");
+                    self.diags.insert(path, diags);
+                }
+                LspEvent::Ready { server } => {
+                    self.message = format!("lsp: {server} ready");
+                }
+                LspEvent::Failed { server, hint } => {
+                    self.message = format!("lsp: {server} failed — {hint}");
+                }
+                LspEvent::Note { text } => self.message = text,
+                LspEvent::HoverText { text } => self.hover_card = Some(text),
+                LspEvent::GotoLocation { path, line, col } => {
+                    if std::env::var_os("STROP_LSP_LOG").is_some() {
+                        eprintln!("strop: goto {}:{}:{}", path.display(), line, col);
                     }
-                    LspEvent::Failed { server, hint } => {
-                        self.message = format!("lsp: {server} failed — {hint}");
-                    }
-                    LspEvent::Note { text } => self.message = text,
-                    LspEvent::HoverText { text } => self.hover_card = Some(text),
-                    LspEvent::GotoLocation { path, line, col } => {
-                        if std::env::var_os("STROP_LSP_LOG").is_some() {
-                            eprintln!("strop: goto {}:{}:{}", path.display(), line, col);
-                        }
-                        let path_s = path.display().to_string();
-                        if let Err(e) = self.open_buffer(&path_s) {
-                            self.message = format!("open {path_s}: {e}");
-                        } else {
-                            // server col → byte col against the target line
-                            let col = match self.lsp.as_ref().map(|c| c.encoding()) {
-                                Some(enc) => {
-                                    let line_idx =
-                                        line.min(self.buf().len_lines().saturating_sub(1));
-                                    let text = self.buf().line_text(line_idx);
-                                    strop_lsp::to_byte_col(&text, col, enc)
-                                }
-                                None => col,
-                            };
-                            let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
-                            self.cursor = self.buf().clamp_boundary(start + col);
-                            self.clamp_cursor();
-                        }
+                    let path_s = path.display().to_string();
+                    if let Err(e) = self.open_buffer(&path_s) {
+                        self.message = format!("open {path_s}: {e}");
+                    } else {
+                        // server col → byte col against the target line
+                        let col = {
+                            let line_idx = line.min(self.buf().len_lines().saturating_sub(1));
+                            let text = self.buf().line_text(line_idx);
+                            strop_lsp::to_byte_col(&text, col, enc)
+                        };
+                        let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
+                        self.cursor = self.buf().clamp_boundary(start + col);
+                        self.clamp_cursor();
                     }
                 }
             }
         }
-        std::mem::swap(&mut self.lsp_rx, &mut rx);
     }
 
     /// `Space d`: diagnostics picker over the current buffer's diags.
@@ -233,7 +267,7 @@ impl Editor {
 
     /// `Space k`: hover at the cursor.
     pub(crate) fn lsp_hover(&mut self) {
-        let Some(client) = &self.lsp else {
+        let Some(client) = self.lsp_current().map(|s| &s.client) else {
             self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
@@ -275,7 +309,7 @@ impl Editor {
 
     /// `gd`: goto definition at the cursor.
     pub(crate) fn lsp_goto_definition(&mut self) {
-        let Some(client) = &self.lsp else {
+        let Some(client) = self.lsp_current().map(|s| &s.client) else {
             self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
@@ -295,7 +329,7 @@ impl Editor {
 
     /// `gs`: switch between source and header (clangd's extension).
     pub(crate) fn lsp_switch_source_header(&mut self) {
-        let Some(client) = &self.lsp else {
+        let Some(client) = self.lsp_current().map(|s| &s.client) else {
             self.message = "no language server — install it or fix languages.toml".into();
             return;
         };

@@ -30,12 +30,11 @@ pub(crate) struct BufferState {
     pub undo: Option<History>,
 }
 
-fn session_path(cwd: &Path) -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("state"))
-        })?;
+/// `base_dir` is the resolved XDG state dir (None → sessions off).
+/// Tests pass their tempdir explicitly — process-global env never
+/// enters the write path (the 0.4.0 flake class).
+fn session_path(base_dir: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
+    let base = base_dir?.to_path_buf();
     // stable per-project identity without leaking the path
     let mut hasher = std::hash::DefaultHasher::new();
     std::hash::Hash::hash(&cwd, &mut hasher);
@@ -95,7 +94,7 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
 
 /// Restore a session into the editor (replaces its initial buffer).
 pub fn restore(editor: &mut Editor) -> bool {
-    let Some(path) = session_path(&editor.cwd) else {
+    let Some(path) = session_path(editor.state_dir.as_deref(), &editor.cwd) else {
         return false;
     };
     let Ok(text) = std::fs::read_to_string(&path) else {
@@ -138,7 +137,7 @@ pub fn restore(editor: &mut Editor) -> bool {
 
 /// Save the editor's session for the project (called on :w/:q paths).
 pub fn save(editor: &Editor) {
-    let Some(path) = session_path(&editor.cwd) else {
+    let Some(path) = session_path(editor.state_dir.as_deref(), &editor.cwd) else {
         return;
     };
     let Some(session) = capture(editor) else {
@@ -155,26 +154,21 @@ mod tests {
     use super::*;
     use std::process::Command;
 
-    /// XDG_STATE_HOME is process-global — parallel tests mutating it
-    /// race (the flake class of 0.3.9). Serialize the module.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn roundtrip_restores_buffers_and_position() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::write(root.join("a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
-        let _guard = ENV_LOCK.lock().unwrap();
-        // no HOME pollution: point XDG_STATE_HOME at the tempdir
-        std::env::set_var("XDG_STATE_HOME", root.join("state"));
         let mut e = Editor::new(Buffer::open(root.join("a.rs").to_str().unwrap()).unwrap());
         e.cwd = root.to_path_buf();
+        e.state_dir = Some(root.join("state"));
         e.feed_text("jl"); // line 2, col 2
         e.feed_text("ix"); // dirty edit (recorded in undo history)
         e.feed(crate::editor::Key::Esc);
         save(&e);
         let mut e2 = Editor::new(Buffer::from_text(""));
         e2.cwd = root.to_path_buf();
+        e2.state_dir = Some(root.join("state"));
         assert!(restore(&mut e2));
         assert_eq!(
             e2.buf().path.as_deref(),
@@ -192,10 +186,9 @@ mod tests {
     #[test]
     fn empty_or_readonly_never_persist() {
         let dir = tempfile::tempdir().unwrap();
-        let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("XDG_STATE_HOME", dir.path().join("state"));
         let mut e = Editor::new(Buffer::from_text(""));
         e.cwd = dir.path().to_path_buf();
+        e.state_dir = Some(dir.path().join("state"));
         save(&e);
         assert!(!dir.path().join("state").exists());
     }

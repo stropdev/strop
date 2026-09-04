@@ -24,7 +24,6 @@ pub use picker::{PickerGlue, PreviewSource, Previews};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use strop_core::{Buffer, Range};
@@ -165,10 +164,10 @@ pub struct Editor {
     pub clip_tx: std::sync::mpsc::Sender<Option<String>>,
     pub clip_rx: std::sync::mpsc::Receiver<Option<String>>,
     pub clip_paste_pending: Option<bool>,
-    /// LSP: one client per workspace root, diagnostics by path,
-    /// hover card text, open/sync bookkeeping.
-    pub lsp: Option<strop_lsp::Client>,
-    pub lsp_rx: Option<Receiver<strop_lsp::LspEvent>>,
+    /// LSP server pool (0014 wave 2): one client per (workspace root,
+    /// server) — a rust file and a python file in one session get their
+    /// own servers. Diagnostics by path, hover card, open bookkeeping.
+    pub lsp_servers: Vec<crate::editor::lsp::LspServer>,
     pub diags: std::collections::HashMap<PathBuf, Vec<strop_lsp::Diag>>,
     pub hover_card: Option<String>,
     pub lsp_opened: std::collections::HashSet<PathBuf>,
@@ -184,6 +183,9 @@ pub struct Editor {
     pub layout: LayoutDir,
     /// User config (0005-lite: TOML, embedded defaults, never bricks).
     pub config: crate::config::Config,
+    /// XDG state dir for sessions, resolved once at startup by main;
+    /// None in tests/headless → session writes no-op (hermetic).
+    pub state_dir: Option<PathBuf>,
     pub(crate) last_cmd_keys: String,
     pub(crate) last_insert: Option<String>,
     pub(crate) recording_insert: Option<String>,
@@ -272,11 +274,10 @@ impl Editor {
             pending_cursor: 0,
             jumplist_past: Vec::new(),
             jumplist_future: Vec::new(),
-            lsp: None,
+            lsp_servers: Vec::new(),
             clip_tx,
             clip_rx,
             clip_paste_pending: None,
-            lsp_rx: None,
             diags: HashMap::new(),
             hover_card: None,
             lsp_opened: std::collections::HashSet::new(),
@@ -290,6 +291,7 @@ impl Editor {
             active_pane: 0,
             layout: LayoutDir::Row,
             config: crate::config::Config::default(),
+            state_dir: None,
         };
         e.discover_git();
         e
