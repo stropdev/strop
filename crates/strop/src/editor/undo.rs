@@ -118,6 +118,65 @@ impl Editor {
     }
 }
 
+impl Editor {
+    /// One undo unit per command (change ops hold the transaction open
+    /// through the insert session — vim groups `ci[foo<esc>` as one `u`).
+    pub(crate) fn tx_begin(&mut self) {
+        self.buf_mut().history.begin();
+    }
+
+    pub(crate) fn tx_commit(&mut self) {
+        self.buf_mut().history.commit();
+    }
+
+    /// `u`: undo one revision. Readonly buffers never record.
+    pub(crate) fn undo(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        match self.buf_mut().history.undo_ops() {
+            Some(ops) => {
+                // vim lands the cursor at the *start* of the undone
+                // change; undo ops replay in reverse record order, so
+                // first() is the tail of the change — take the minimum
+                let start = ops.iter().map(|e| e.at).min().unwrap_or(0);
+                self.buf_mut().apply_history(ops);
+                self.set_head(start);
+                self.clamp_cursor();
+                self.flash(strop_core::Range::charwise(self.head(), self.head()));
+            }
+            None => self.message = "already at oldest change".into(),
+        }
+    }
+
+    /// `ctrl-r`: redo along the last-visited branch.
+    pub(crate) fn redo(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        match self.buf_mut().history.redo_ops() {
+            Some(ops) => {
+                // cursor after the redone text for inserts, at the start
+                // of the redone deletion for deletes
+                let at = ops
+                    .last()
+                    .map(|e| match e.kind {
+                        strop_core::history::EditKind::Insert => e.at + e.text.len(),
+                        strop_core::history::EditKind::Delete => e.at,
+                    })
+                    .unwrap_or(0);
+                self.buf_mut().apply_history(ops);
+                self.set_head(at);
+                self.clamp_cursor();
+                self.flash(strop_core::Range::charwise(self.head(), self.head()));
+            }
+            None => self.message = "nothing to redo".into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
