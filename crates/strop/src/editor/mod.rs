@@ -164,6 +164,9 @@ pub struct Editor {
     /// XDG state dir for sessions, resolved once at startup by main;
     /// None in tests/headless → session writes no-op (hermetic).
     pub state_dir: Option<PathBuf>,
+    /// The last grammar-level change (dot-repeat's semantic form).
+    pub(crate) last_change: Option<strop_grammar::Command>,
+    /// Direct non-grammar commands (x, p, J…) replay their key string.
     pub(crate) last_cmd_keys: String,
     pub(crate) last_insert: Option<String>,
     pub(crate) recording_insert: Option<String>,
@@ -224,6 +227,7 @@ impl Editor {
             message: String::new(),
             should_quit: false,
             view_top: 0,
+            last_change: None,
             last_cmd_keys: String::new(),
             last_insert: None,
             recording_insert: None,
