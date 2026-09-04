@@ -85,7 +85,7 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
         let view = if i == editor.active_pane {
             PaneView {
                 doc: editor.current,
-                cursor: editor.cursor,
+                cursor: editor.head(),
                 view_top: editor.view_top,
                 overlays: true,
             }
@@ -150,12 +150,12 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
 /// Secondary cursors (0013 §4): solid blocks on the active pane, like
 /// the native block cursor but painted.
 fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
-    if view.doc != editor.current || editor.extra_cursors.is_empty() {
+    if view.doc != editor.current || editor.extra_selections().is_empty() {
         return;
     }
     let buf = &editor.doc(view.doc).buf;
     let inset = diff::left_inset(editor, view.doc) as u16;
-    for &c in &editor.extra_cursors {
+    for c in editor.extra_selections().iter().map(|s| s.head) {
         let line = buf.line_of(c);
         if line < view.view_top {
             continue;

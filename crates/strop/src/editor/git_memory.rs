@@ -146,7 +146,7 @@ impl Editor {
         if self.surface().is_none() {
             surface.set_return_point(ReturnPoint {
                 buffer: self.current,
-                cursor: self.cursor,
+                cursor: self.head(),
                 view_top: self.view_top,
             });
         }
@@ -163,7 +163,7 @@ impl Editor {
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
         self.current = id;
         self.touch_mru(id);
-        self.cursor = 0;
+        self.set_head(0);
         self.view_top = 0;
     }
 
@@ -359,7 +359,7 @@ impl Editor {
         match self.blame_gutters.get(&key) {
             None => {}
             Some(_) if self.blame_gutter_for(self.current).is_some() => {
-                let line = self.buf().line_of(self.cursor);
+                let line = self.buf().line_of(self.head());
                 match self.blame_gutters.get(&key).and_then(|g| g.lines.get(line)) {
                     Some(bl) if bl.is_uncommitted() => self.message = "uncommitted line".into(),
                     Some(bl) => {
@@ -385,7 +385,7 @@ impl Editor {
             return;
         };
         let workdir = repo.workdir().to_path_buf();
-        let line = self.buf().line_of(self.cursor) + 1;
+        let line = self.buf().line_of(self.head()) + 1;
         let generation = self.generation;
         let tx = self.git_tx.clone();
         std::thread::spawn(move || {
@@ -466,11 +466,11 @@ impl Editor {
         };
         let (a, b) = if self.mode == Mode::Visual || self.mode == Mode::VisualLine {
             (
-                self.buf().line_of(self.anchor) + 1,
-                self.buf().line_of(self.cursor) + 1,
+                self.buf().line_of(self.anchor()) + 1,
+                self.buf().line_of(self.head()) + 1,
             )
         } else {
-            let l = self.buf().line_of(self.cursor) + 1;
+            let l = self.buf().line_of(self.head()) + 1;
             (l, l)
         };
         let remotes = repo.remotes();
@@ -543,7 +543,7 @@ impl Editor {
             Key::Char('N') => self.repeat_search(true),
             Key::Char('v') => {
                 self.mode = Mode::Visual;
-                self.anchor = self.cursor;
+                self.sels.stretch_primary(self.head(), self.head());
             }
             Key::Char(c) => {
                 // multi-char heads wait for their second key; the rest
@@ -630,7 +630,7 @@ impl Editor {
     }
 
     fn yank_only(&mut self, cmd: &strop_grammar::Command) {
-        if let Some(r) = strop_grammar::resolve(self.buf(), self.cursor, cmd) {
+        if let Some(r) = strop_grammar::resolve(self.buf(), self.head(), cmd) {
             let text = self.buf().slice_string(r.range);
             self.set_register(cmd.register, text, r.range.linewise);
             self.flash(r.range);
@@ -639,7 +639,7 @@ impl Editor {
 
     /// Enter on a surface line dives deeper (0001 pillar 3.2).
     fn dive(&mut self) {
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         match self.surface().cloned() {
             Some(Surface::CommitLog { rows, .. }) => {
                 let Some(sha) = rows.get(line).and_then(|r| r.sha.clone()) else {
@@ -793,7 +793,7 @@ impl Editor {
         }
         // the highlighter follows the file the surface now shows
         self.doc_mut(idx).highlighter = strop_syntax::Highlighter::for_path(&label);
-        self.cursor = 0;
+        self.set_head(0);
         self.view_top = 0;
         let pos = cf
             .files
@@ -841,7 +841,7 @@ impl Editor {
                         // it (only when the browser is still what's
                         // being driven)
                         if self.current == buffer {
-                            self.cursor = self.doc(buffer).buf.line_start(row);
+                            self.set_head(self.doc(buffer).buf.line_start(row));
                             self.view_top = row;
                         }
                     }
@@ -1135,7 +1135,7 @@ mod tests {
             "dive opened the browser"
         );
         assert_eq!(
-            e.buf().line_of(e.cursor),
+            e.buf().line_of(e.head()),
             1,
             "cursor on the first-commit row"
         );
@@ -1199,7 +1199,7 @@ mod tests {
         let (dir, mut e) = fixture();
         let root = dir.path();
         e.feed_text("j$"); // line 2, end
-        let want = e.cursor;
+        let want = e.head();
         e.open_log(false);
         pump(&mut e);
         std::fs::write(root.join("g.rs"), "other\n").unwrap();
@@ -1214,11 +1214,11 @@ mod tests {
                 .is_some_and(|n| n.contains("log"))
         });
         e.current = log_surface.expect("log surface in mru"); // back onto the log surface
-        e.cursor = 0;
+        e.set_head(0);
         e.feed_text("q");
         assert_eq!(e.current, origin, "closing switches back to the origin");
-        assert_eq!(e.cursor, want, "cursor restored, not line 1");
-        assert_eq!(e.buf().line_of(e.cursor), 1);
+        assert_eq!(e.head(), want, "cursor restored, not line 1");
+        assert_eq!(e.buf().line_of(e.head()), 1);
     }
 
     /// A log result for a dead surface cannot land in the buffer that

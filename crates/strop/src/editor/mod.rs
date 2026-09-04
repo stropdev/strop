@@ -109,13 +109,10 @@ pub struct Editor {
     pub jumplist_past: Vec<(strop_core::id::DocumentId, usize)>,
     pub jumplist_future: Vec<(strop_core::id::DocumentId, usize)>,
     pub mode: Mode,
-    pub cursor: usize,
+    /// THE selection state (0014 wave 2): normal = collapsed primary,
+    /// visual = stretched primary, multicursor = extras. One owner.
+    pub sels: strop_core::selection::SelectionSet,
     pub pending: String,
-    /// Extra cursors beyond the primary `cursor` (`Q` toggles, normal
-    /// Esc collapses; 0013). Invariant: sorted, deduped, none equal to
-    /// `cursor`. Point cursors (byte offsets); visual mode is
-    /// primary-only in v1 and collapses them.
-    pub extra_cursors: Vec<usize>,
     /// `Space u` browser state (editor/undo.rs); None when closed.
     pub undo_browser: Option<undo::UndoBrowser>,
     /// Last `f/F/t/T` find: (char, backward, till). `;` and `,` replay it.
@@ -123,7 +120,6 @@ pub struct Editor {
     /// Armed by `/`/`?`/`*`/`#` searches. `n`/`N` replay it; the render
     /// highlights matches persistently (rootle: current match underlined).
     pub last_search: Option<LastSearch>,
-    pub anchor: usize,
     pub registers: Registers,
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
     pub marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
@@ -235,14 +231,12 @@ impl Editor {
             docs,
             mru: vec![current],
             mode: Mode::Normal,
-            cursor: 0,
+            sels: strop_core::selection::SelectionSet::default(),
             pending: String::new(),
             last_search: None,
             undo_browser: None,
-            anchor: 0,
             registers: HashMap::new(),
             marks: HashMap::new(),
-            extra_cursors: Vec::new(),
             last_find: None,
             flash: None,
             message: String::new(),
@@ -325,6 +319,28 @@ impl Editor {
         &mut self.cur_mut().buf
     }
 
+    /// The primary cursor's byte offset (was the `cursor` field).
+    #[inline]
+    pub fn head(&self) -> usize {
+        self.sels.primary().head
+    }
+
+    #[inline]
+    pub fn set_head(&mut self, pos: usize) {
+        self.sels.set_head(pos);
+    }
+
+    /// The visual anchor (== head when not in visual mode).
+    #[inline]
+    pub fn anchor(&self) -> usize {
+        self.sels.primary().anchor
+    }
+
+    /// Extra selections beyond the primary (0013).
+    pub fn extra_selections(&self) -> &[strop_core::selection::Selection] {
+        self.sels.extra_heads()
+    }
+
     /// One document by id — stale ids panic: an id outliving its
     /// document is a bug, and the generation check is what keeps it
     /// from silently resolving to the wrong one (0014 wave 2).
@@ -393,7 +409,7 @@ impl Editor {
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
         self.current = id;
         self.touch_mru(id);
-        self.cursor = 0;
+        self.set_head(0);
         self.view_top = 0;
         self.discover_git();
         self.lsp_maybe_attach();
@@ -425,7 +441,7 @@ impl Editor {
             });
             self.current = next;
             self.touch_mru(next);
-            self.cursor = 0;
+            self.set_head(0);
             self.view_top = 0;
             // a closing surface hands the cursor and view back to the
             // document it opened from — by id, no index math (0011 §1)
@@ -436,7 +452,7 @@ impl Editor {
                             self.current = ret.buffer;
                             self.touch_mru(ret.buffer);
                         }
-                        self.cursor = ret.cursor.min(self.buf().len_bytes());
+                        self.set_head(ret.cursor.min(self.buf().len_bytes()));
                         self.view_top = ret.view_top;
                     }
                 }
@@ -547,7 +563,7 @@ impl Editor {
     }
 
     pub fn clamp_cursor(&mut self) {
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         let start = self.buf().line_start(line);
         let end = self.buf().line_end(line);
         let max = if self.mode == Mode::Insert {
@@ -555,9 +571,10 @@ impl Editor {
         } else {
             end.max(start + 1) - 1
         };
-        self.cursor = self
+        let pos = self
             .buf()
-            .clamp_boundary(self.cursor.clamp(start, max.max(start)));
+            .clamp_boundary(self.head().clamp(start, max.max(start)));
+        self.set_head(pos);
     }
 
     /// Clamp one position the way clamp_cursor clamps the primary.
@@ -575,23 +592,14 @@ impl Editor {
 
     /// Every cursor position, primary first (0013 §3).
     pub(crate) fn all_cursors(&self) -> Vec<usize> {
-        std::iter::once(self.cursor)
-            .chain(self.extra_cursors.iter().copied())
-            .collect()
+        self.sels.heads()
     }
 
     /// Restore the invariant after any cascade: sorted and deduped. An
     /// extra MAY sit on the primary (Q plants there, then you move) —
     /// edit cascades dedupe positions before applying.
     pub(crate) fn normalize_cursors(&mut self) {
-        let mut extras = std::mem::take(&mut self.extra_cursors);
-        let len = self.buf().len_bytes();
-        for c in &mut extras {
-            *c = self.buf().clamp_boundary((*c).min(len));
-        }
-        extras.sort_unstable();
-        extras.dedup();
-        self.extra_cursors = extras;
+        self.sels.normalize();
     }
 
     /// Remap cursors after a mirrored edit of `delta` bytes at each of
@@ -603,9 +611,13 @@ impl Editor {
             let own = usize::from(positions.contains(&old));
             (old as isize + delta * (below + own) as isize).max(0) as usize
         };
-        self.cursor = map(self.cursor);
-        self.extra_cursors = self.extra_cursors.iter().map(|&c| map(c)).collect();
-        self.normalize_cursors();
+        self.set_head(map(self.head()));
+        let extras: Vec<usize> = self
+            .extra_selections()
+            .iter()
+            .map(|s| map(s.head))
+            .collect();
+        self.sels.set_extras(extras);
     }
 
     /// `Q`: drop the cursor under point when one exists, else plant one.
@@ -614,13 +626,8 @@ impl Editor {
             self.message = "readonly buffer".into();
             return;
         }
-        if let Some(i) = self.extra_cursors.iter().position(|&c| c == self.cursor) {
-            self.extra_cursors.remove(i);
-        } else {
-            self.extra_cursors.push(self.cursor);
-            self.normalize_cursors();
-        }
-        let n = self.extra_cursors.len() + 1;
+        self.sels.toggle_extra();
+        let n = self.sels.count();
         self.message = format!("{n} cursor{}", if n > 1 { "s" } else { "" });
     }
 
@@ -647,7 +654,11 @@ impl Editor {
         }
         // stack from the bottom-most cursor (helix C semantics: repeated
         // presses walk down the buffer)
-        let base = self.extra_cursors.last().copied().unwrap_or(self.cursor);
+        let base = self
+            .extra_selections()
+            .last()
+            .map(|s| s.head)
+            .unwrap_or_else(|| self.head());
         let line = self.buf().line_of(base);
         // the phantom line past a trailing newline is not a cursor home
         if line + 1 >= self.buf().len_lines()
@@ -660,23 +671,22 @@ impl Editor {
         let start = self.buf().line_start(line + 1);
         let end = self.buf().line_end(line + 1);
         let pos = (start + col).min(end.saturating_sub(1).max(start));
-        self.extra_cursors.push(pos);
-        self.normalize_cursors();
-        let n = self.extra_cursors.len() + 1;
+        self.sels.plant_extra(pos);
+        let n = self.sels.count();
         self.message = format!("{n} cursors");
     }
 
     /// Normal-mode Esc: collapse to the primary cursor (0013 §3).
     pub(crate) fn collapse_cursors(&mut self) {
-        if !self.extra_cursors.is_empty() {
-            self.extra_cursors.clear();
+        if self.sels.count() > 1 {
+            self.sels.collapse_extras();
             self.message = "1 cursor".into();
         }
     }
 
     /// Keep the cursor on screen; `rows` = text area height.
     pub fn scroll_to_cursor(&mut self, rows: usize) {
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         if line < self.view_top {
             self.view_top = line;
         } else if line >= self.view_top + rows {
@@ -752,7 +762,7 @@ impl Editor {
 
     /// `m{a}`: set mark a at the cursor.
     pub(crate) fn set_mark(&mut self, mark: char) {
-        self.marks.insert(mark, (self.current, self.cursor));
+        self.marks.insert(mark, (self.current, self.head()));
         self.message = format!("mark {mark} set");
     }
 
@@ -767,9 +777,10 @@ impl Editor {
                         self.touch_mru(buf);
                         self.discover_git();
                     }
-                    self.cursor = self
-                        .buf()
-                        .clamp_boundary(offset.min(self.buf().len_bytes()));
+                    self.set_head(
+                        self.buf()
+                            .clamp_boundary(offset.min(self.buf().len_bytes())),
+                    );
                     self.clamp_cursor();
                 }
             }
@@ -814,9 +825,9 @@ impl Editor {
                 // first() is the tail of the change — take the minimum
                 let start = ops.iter().map(|e| e.at).min().unwrap_or(0);
                 self.buf_mut().apply_history(ops);
-                self.cursor = start;
+                self.set_head(start);
                 self.clamp_cursor();
-                self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
+                self.flash(strop_core::Range::charwise(self.head(), self.head()));
             }
             None => self.message = "already at oldest change".into(),
         }
@@ -840,9 +851,9 @@ impl Editor {
                     })
                     .unwrap_or(0);
                 self.buf_mut().apply_history(ops);
-                self.cursor = at;
+                self.set_head(at);
                 self.clamp_cursor();
-                self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
+                self.flash(strop_core::Range::charwise(self.head(), self.head()));
             }
             None => self.message = "nothing to redo".into(),
         }
@@ -955,16 +966,16 @@ impl Editor {
         self.tx_begin();
         let cursors = self.all_cursors();
         if cursors.len() == 1 {
-            let (at, land) = self.paste_points(self.cursor, text.len(), linewise, before);
+            let (at, land) = self.paste_points(self.head(), text.len(), linewise, before);
             self.buf_mut().insert(at, &text);
-            self.cursor = land;
+            self.set_head(land);
             self.clamp_cursor();
             self.tx_commit();
             return;
         }
         // multicursor paste (0013 §3): same text at every cursor,
         // bottom-up so insertion points stay valid mid-batch
-        let primary = self.cursor;
+        let primary = self.head();
         let mut jobs: Vec<(usize, usize, bool)> = cursors
             .into_iter()
             .map(|c| {
@@ -983,8 +994,9 @@ impl Editor {
         for (at, _, _) in jobs.iter().rev() {
             self.buf_mut().insert(*at, &text);
         }
-        self.extra_cursors = jobs.iter().filter(|j| !j.2).map(|j| j.1).collect();
-        self.cursor = jobs.iter().find(|j| j.2).map(|j| j.1).unwrap_or(primary);
+        self.sels
+            .set_extras(jobs.iter().filter(|j| !j.2).map(|j| j.1));
+        self.set_head(jobs.iter().find(|j| j.2).map(|j| j.1).unwrap_or(primary));
         self.normalize_cursors();
         self.clamp_cursor();
         self.tx_commit();
@@ -1183,29 +1195,29 @@ mod tests {
     fn semicolon_and_comma_repeat_find() {
         let mut e = Editor::new(Buffer::from_text("a.b.c.d\n"));
         e.feed_text("f."); // find first '.'
-        assert_eq!(e.cursor, 1);
+        assert_eq!(e.head(), 1);
         e.feed_text(";");
-        assert_eq!(e.cursor, 3);
+        assert_eq!(e.head(), 3);
         e.feed_text(";");
-        assert_eq!(e.cursor, 5);
+        assert_eq!(e.head(), 5);
         e.feed_text(","); // reverse
-        assert_eq!(e.cursor, 3);
+        assert_eq!(e.head(), 3);
     }
 
     #[test]
     fn star_searches_word_under_cursor_whole_word() {
         let mut e = Editor::new(Buffer::from_text("hone honed hone\n"));
         e.feed_text("*"); // on "hone" at 0 → next whole-word match at 11
-        assert_eq!(e.cursor, 11);
+        assert_eq!(e.head(), 11);
         e.feed_text("n"); // wraps to 0
-        assert_eq!(e.cursor, 0);
+        assert_eq!(e.head(), 0);
         e.feed_text("#"); // backward: wraps to 11
-        assert_eq!(e.cursor, 11);
+        assert_eq!(e.head(), 11);
         // whole-word: "honed" is skipped as a match for "hone" — the
         // only other candidate, so the search wraps back to 0
         let mut e = Editor::new(Buffer::from_text("hone honed\n"));
         e.feed_text("*");
-        assert_eq!(e.cursor, 0, "honed is not a whole-word match for hone");
+        assert_eq!(e.head(), 0, "honed is not a whole-word match for hone");
     }
 
     #[test]
@@ -1213,12 +1225,12 @@ mod tests {
         // 30j: the 0 after a count digit is a digit, not line-start
         let mut e = Editor::new(Buffer::from_text("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n"));
         e.feed_text("10j");
-        assert_eq!(e.buf().line_of(e.cursor), 10);
+        assert_eq!(e.buf().line_of(e.head()), 10);
         // :30 jumps (and clamps past EOF)
         e.feed_text(":30\r");
-        assert_eq!(e.buf().line_of(e.cursor), 11);
+        assert_eq!(e.buf().line_of(e.head()), 11);
         e.feed_text(":4\r");
-        assert_eq!(e.buf().line_of(e.cursor), 3);
+        assert_eq!(e.buf().line_of(e.head()), 3);
     }
 
     #[test]
@@ -1275,13 +1287,13 @@ mod tests {
         // reverses it — never an "editor command" error
         let mut e = Editor::new(Buffer::from_text("aa line\nbb line\ncc line\n"));
         e.feed_text("/line\r");
-        assert_eq!(e.buf().line_of(e.cursor), 0);
+        assert_eq!(e.buf().line_of(e.head()), 0);
         e.feed_text("/\r");
-        assert_eq!(e.buf().line_of(e.cursor), 1, "empty / repeats forward");
+        assert_eq!(e.buf().line_of(e.head()), 1, "empty / repeats forward");
         e.feed_text("/\r");
-        assert_eq!(e.buf().line_of(e.cursor), 2);
+        assert_eq!(e.buf().line_of(e.head()), 2);
         e.feed_text("?\r");
-        assert_eq!(e.buf().line_of(e.cursor), 1, "empty ? reverses");
+        assert_eq!(e.buf().line_of(e.head()), 1, "empty ? reverses");
         assert!(e.message.is_empty());
     }
 
@@ -1295,7 +1307,7 @@ mod tests {
         e.feed_text("u");
         assert_eq!(e.buf().rope.to_string(), "héllo\n");
         e.feed_text("a"); // append lands past the char, not mid-char
-        assert!(e.buf().is_boundary(e.cursor));
+        assert!(e.buf().is_boundary(e.head()));
     }
 
     #[test]
@@ -1304,13 +1316,13 @@ mod tests {
         // did nothing anywhere (user report: picker nav needed Tab)
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
         e.feed(crate::editor::Key::Down);
-        assert_eq!(e.buf().line_of(e.cursor), 1, "Down is j");
+        assert_eq!(e.buf().line_of(e.head()), 1, "Down is j");
         e.feed(crate::editor::Key::Right);
-        assert_eq!(e.cursor, e.buf().line_start(1) + 1, "Right is l");
+        assert_eq!(e.head(), e.buf().line_start(1) + 1, "Right is l");
         e.feed(crate::editor::Key::Up);
-        assert_eq!(e.buf().line_of(e.cursor), 0, "Up is k");
+        assert_eq!(e.buf().line_of(e.head()), 0, "Up is k");
         e.feed(crate::editor::Key::Left);
-        assert_eq!(e.cursor, 0, "Left is h");
+        assert_eq!(e.head(), 0, "Left is h");
     }
 
     #[test]
@@ -1500,11 +1512,11 @@ mod undo_tests {
     fn n_repeats_search_and_wraps() {
         let mut e = Editor::new(Buffer::from_text("foo bar\nfoo baz\n"));
         e.feed_text("/foo\r"); // lands on the *next* match (vim)
-        assert_eq!(e.cursor, 8);
+        assert_eq!(e.head(), 8);
         e.feed_text("n"); // wraps to the first
-        assert_eq!(e.cursor, 0);
+        assert_eq!(e.head(), 0);
         e.feed_text("N"); // backward, wraps from top
-        assert_eq!(e.cursor, 8);
+        assert_eq!(e.head(), 8);
     }
 
     #[test]
@@ -1650,7 +1662,7 @@ mod hardening_tests {
         assert_eq!(e.buf().rope.to_string(), "hello\n");
         // the change started at byte 5 (" world"); normal-mode clamp
         // pulls 5 onto the last char of the line
-        assert_eq!(e.cursor, 4);
+        assert_eq!(e.head(), 4);
     }
 }
 
@@ -1668,7 +1680,7 @@ mod keybinds_tests {
         e.feed_text(":e /tmp/strop-mark-b.rs<cr>");
         e.feed_text("'b"); // jump back to mark
         assert_eq!(e.buf().path.as_deref(), Some("/tmp/strop-mark-a.rs"));
-        assert_eq!(e.buf().line_of(e.cursor), 2);
+        assert_eq!(e.buf().line_of(e.head()), 2);
         std::fs::remove_file("/tmp/strop-mark-a.rs").ok();
         std::fs::remove_file("/tmp/strop-mark-b.rs").ok();
     }
@@ -1680,7 +1692,7 @@ mod keybinds_tests {
         e.feed_text("$"); // end
         e.feed_text("?one\r");
         assert_eq!(
-            e.buf().col_of(e.cursor),
+            e.buf().col_of(e.head()),
             8,
             "backward search lands on the second 'one'"
         );
@@ -1704,7 +1716,7 @@ mod w_probe {
         assert_eq!(after, 6, "cursor after w");
         let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("hello world\n"));
         e.feed_text("w");
-        assert_eq!(e.cursor, 6, "w moves to word start");
+        assert_eq!(e.head(), 6, "w moves to word start");
     }
 }
 
@@ -1779,11 +1791,11 @@ mod reviewer_battery {
     fn i_caret_tilde_s_work() {
         let mut e = Editor::new(Buffer::from_text("    let x = 1;\n"));
         e.feed_text("0^"); // ^ → first non-blank (4)
-        assert_eq!(e.cursor, 4);
+        assert_eq!(e.head(), 4);
         let mut e = Editor::new(Buffer::from_text("    let x = 1;\n"));
         e.feed_text("I"); // insert at first non-blank
         assert_eq!(e.mode, crate::editor::Mode::Insert);
-        assert_eq!(e.cursor, 4);
+        assert_eq!(e.head(), 4);
         e.feed(crate::editor::Key::Esc);
         // ~ toggles case and advances
         let mut e = Editor::new(Buffer::from_text("abc\n"));

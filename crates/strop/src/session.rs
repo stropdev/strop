@@ -65,12 +65,12 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
         buffers.push(BufferState {
             path,
             line: if id == editor.current {
-                editor.buf().line_of(editor.cursor)
+                editor.buf().line_of(editor.head())
             } else {
                 0
             },
             col: if id == editor.current {
-                editor.buf().col_of(editor.cursor)
+                editor.buf().col_of(editor.head())
             } else {
                 0
             },
@@ -127,7 +127,7 @@ pub fn restore(editor: &mut Editor) -> bool {
     let line_start = editor
         .buf()
         .line_start(b.line.min(editor.buf().len_lines() - 1));
-    editor.cursor = editor.buf().clamp_boundary(line_start + b.col);
+    editor.set_head(editor.buf().clamp_boundary(line_start + b.col));
     editor.clamp_cursor();
     editor.mru = editor.docs.iter().map(|(id, _)| id).collect();
     editor.touch_mru(editor.current);
@@ -174,8 +174,8 @@ mod tests {
             e2.buf().path.as_deref(),
             Some(root.join("a.rs").to_str().unwrap())
         );
-        assert_eq!(e2.buf().line_of(e2.cursor), 1);
-        assert_eq!(e2.buf().col_of(e2.cursor), 1);
+        assert_eq!(e2.buf().line_of(e2.head()), 1);
+        assert_eq!(e2.buf().col_of(e2.head()), 1);
         assert!(
             e2.buf().history.depth() > 0,
             "undo history crossed the session"

@@ -84,7 +84,7 @@ impl Editor {
     /// `]c` / `[c`: jump to the next/previous changed line.
     pub(crate) fn jump_hunk(&mut self, forward: bool) {
         self.refresh_hunks();
-        let cur = self.buf().line_of(self.cursor) + 1;
+        let cur = self.buf().line_of(self.head()) + 1;
         let total = self.buf().len_lines();
         let mut lines: Vec<usize> = self
             .hunks
@@ -101,7 +101,7 @@ impl Editor {
         };
         match target {
             Some(l) => {
-                self.cursor = self.buf().line_start(l - 1);
+                self.set_head(self.buf().line_start(l - 1));
                 self.clamp_cursor();
             }
             None => self.message = "no more hunks".into(),
@@ -111,7 +111,7 @@ impl Editor {
     /// The hunk under the cursor, if any.
     fn hunk_under_cursor(&mut self) -> Option<Hunk> {
         self.refresh_hunks();
-        let line = self.buf().line_of(self.cursor) + 1;
+        let line = self.buf().line_of(self.head()) + 1;
         let total = self.buf().len_lines();
         self.hunks.iter().find(|h| h.covers(line, total)).cloned()
     }
@@ -152,7 +152,7 @@ impl Editor {
                 let at = self.buf().line_start(new_first.saturating_sub(1));
                 self.buf_mut().insert(at, &format!("{old}\n"));
             }
-            self.cursor = self.buf().line_start(new_first.saturating_sub(1));
+            self.set_head(self.buf().line_start(new_first.saturating_sub(1)));
         } else if old_count == 0 {
             // pure addition: drop the added lines
             let start = self.buf().line_start(new_first - 1);
@@ -164,9 +164,10 @@ impl Editor {
             };
             self.buf_mut()
                 .delete(strop_core::Range::charwise(start, end));
-            self.cursor = self
-                .buf()
-                .line_start((new_first - 1).min(self.buf().len_lines() - 1));
+            self.set_head(
+                self.buf()
+                    .line_start((new_first - 1).min(self.buf().len_lines() - 1)),
+            );
         } else {
             let start = self.buf().line_start(new_first - 1);
             let end = self
@@ -175,14 +176,14 @@ impl Editor {
             self.buf_mut()
                 .delete(strop_core::Range::charwise(start, end));
             self.buf_mut().insert(start, &old);
-            self.cursor = start;
+            self.set_head(start);
         }
         self.current = saved_current;
         // the cursor field belongs to the driven pane; only the origin
         // buffer's own view moves when it is current
         if self.current == idx {
             self.clamp_cursor();
-            self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
+            self.flash(strop_core::Range::charwise(self.head(), self.head()));
         } else {
             let at = {
                 let buf = &self.doc(idx).buf;
@@ -378,7 +379,7 @@ mod tests {
         e.feed_text("<esc>");
         e.feed_text("gg");
         e.jump_hunk(true);
-        assert_eq!(e.buf().line_of(e.cursor) + 1, 3, "]c lands on the hunk");
+        assert_eq!(e.buf().line_of(e.head()) + 1, 3, "]c lands on the hunk");
         e.undo_hunk();
         assert_eq!(e.buf().rope.to_string(), "fn a() {}\nfn b() {}\n");
     }
@@ -415,7 +416,7 @@ mod tests {
         // motions work on the hunk surface
         e.feed_text("j");
         e.feed_text("j");
-        assert_eq!(e.buf().line_of(e.cursor), 2);
+        assert_eq!(e.buf().line_of(e.head()), 2);
         // undo acts on the origin file buffer, not the surface
         e.feed_text(" gu");
         let text = e.doc(e.first_doc()).buf.rope.to_string();

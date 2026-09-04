@@ -8,9 +8,9 @@ impl Editor {
     /// before inserting a closer). No-op when there is real text or no
     /// indent to give back.
     fn dedent_for_closer(&mut self) {
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         let start = self.buf().line_start(line);
-        let col = self.buf().col_of(self.cursor);
+        let col = self.buf().col_of(self.head());
         let text = self.buf().line_text(line);
         let before: String = text.chars().take(col).collect();
         if !before.chars().all(|c| c == ' ' || c == '\t') {
@@ -18,7 +18,7 @@ impl Editor {
         }
         let width = self.config.tab_size;
         let mut strip = 0;
-        while strip < width && start + strip < self.cursor && self.buf().byte(start + strip) == b' '
+        while strip < width && start + strip < self.head() && self.buf().byte(start + strip) == b' '
         {
             strip += 1;
         }
@@ -27,7 +27,7 @@ impl Editor {
         }
         self.buf_mut()
             .delete(strop_core::Range::charwise(start, start + strip));
-        self.cursor = self.cursor.saturating_sub(strip);
+        self.set_head(self.head().saturating_sub(strip));
         // dot-repeat: the dedent belongs to the same change; the recorded
         // insert text keeps literal content, replay re-derives via the
         // same smartindent path
@@ -37,9 +37,9 @@ impl Editor {
     /// current line's leading whitespace, plus one level after an opener
     /// (`{[`(` c-like, `:` python-ish). Configurable width (config.toml).
     pub(crate) fn auto_indent(&self) -> String {
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         let text = self.buf().line_text(line);
-        let before_cursor = &text[..self.buf().col_of(self.cursor).min(text.len())];
+        let before_cursor = &text[..self.buf().col_of(self.head()).min(text.len())];
         let base: String = before_cursor
             .chars()
             .take_while(|c| *c == ' ' || *c == '\t')
@@ -59,7 +59,7 @@ impl Editor {
     /// Indent for o/O: the current line's full leading whitespace,
     /// deepened after an opener even mid-line.
     pub(crate) fn auto_indent_full_line(&self) -> String {
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         let text = self.buf().line_text(line);
         let base: String = text
             .chars()
@@ -104,10 +104,13 @@ impl Editor {
             Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO => {}
             Key::Esc => {
                 self.mode = Mode::Normal;
-                self.cursor = self.cursor.saturating_sub(1);
-                for c in &mut self.extra_cursors {
-                    *c = c.saturating_sub(1);
-                }
+                self.set_head(self.head().saturating_sub(1));
+                let extras: Vec<usize> = self
+                    .extra_selections()
+                    .iter()
+                    .map(|s| s.head.saturating_sub(1))
+                    .collect();
+                self.sels.set_extras(extras);
                 // vim insert counts: `3iX` types X three times — the
                 // replay joins the session's undo unit (commit after)
                 let count = std::mem::replace(&mut self.insert_count, 1);
@@ -117,14 +120,14 @@ impl Editor {
                         for _ in 1..count {
                             if let Some(o) = &open {
                                 // o/O: the opened line repeats too
-                                let at = (self.cursor + 1).min(self.buf().len_bytes());
+                                let at = (self.head() + 1).min(self.buf().len_bytes());
                                 self.buf_mut().insert(at, o);
-                                self.cursor = at + o.len().saturating_sub(1);
+                                self.set_head(at + o.len().saturating_sub(1));
                             }
                             for ch in rec.chars() {
-                                let at = (self.cursor + 1).min(self.buf().len_bytes());
+                                let at = (self.head() + 1).min(self.buf().len_bytes());
                                 self.buf_mut().insert(at, &ch.to_string());
-                                self.cursor = at + ch.len_utf8().saturating_sub(1);
+                                self.set_head(at + ch.len_utf8().saturating_sub(1));
                             }
                         }
                     }
@@ -171,19 +174,19 @@ impl Editor {
             }
             // arrows move in insert too (vim) — char-boundary honest
             Key::Left => {
-                let start = self.buf().line_start(self.buf().line_of(self.cursor));
-                if self.cursor > start {
-                    self.cursor = self.buf().clamp_boundary(self.cursor - 1);
+                let start = self.buf().line_start(self.buf().line_of(self.head()));
+                if self.head() > start {
+                    self.set_head(self.buf().clamp_boundary(self.head() - 1));
                 }
             }
             Key::Right => {
-                let end = self.buf().line_end(self.buf().line_of(self.cursor));
-                if self.cursor < end {
-                    self.cursor = self.buf().ceil_boundary(self.cursor + 1);
+                let end = self.buf().line_end(self.buf().line_of(self.head()));
+                if self.head() < end {
+                    self.set_head(self.buf().ceil_boundary(self.head() + 1));
                 }
             }
             Key::Up | Key::Down => {
-                let line = self.buf().line_of(self.cursor);
+                let line = self.buf().line_of(self.head());
                 let target = if key == Key::Up {
                     line.saturating_sub(1)
                 } else {
@@ -191,11 +194,12 @@ impl Editor {
                 };
                 let col = self
                     .buf()
-                    .col_of(self.cursor)
+                    .col_of(self.head())
                     .min(self.buf().line_end(target) - self.buf().line_start(target));
-                self.cursor = self
-                    .buf()
-                    .clamp_boundary(self.buf().line_start(target) + col);
+                self.set_head(
+                    self.buf()
+                        .clamp_boundary(self.buf().line_start(target) + col),
+                );
             }
             Key::CtrlR | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {

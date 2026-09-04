@@ -117,13 +117,13 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
         .or(editor.buf().name.as_deref())
         .unwrap_or("[scratch]");
     let dirty = if editor.buf().dirty { " ●" } else { "" };
-    let line = editor.buf().line_of(editor.cursor) + 1;
-    let col = editor.buf().col_of(editor.cursor) + 1;
+    let line = editor.buf().line_of(editor.head()) + 1;
+    let col = editor.buf().col_of(editor.head()) + 1;
     let branch = editor.git.as_ref().and_then(|g| g.head_branch());
     let hunks_dirty = !editor.hunks.is_empty();
     let readonly = editor.buf().readonly;
     let (errors, warnings) = editor.diag_counts(editor.current);
-    let cursors = editor.extra_cursors.len() + 1;
+    let cursors = editor.sels.count();
     let total = editor.buf().len_lines().max(1);
     let pct = if total <= 1 { 100 } else { line * 100 / total };
 
@@ -220,12 +220,12 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
 }
 
 fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
-    let line = editor.buf().line_of(editor.cursor);
+    let line = editor.buf().line_of(editor.head());
     let row = line.saturating_sub(editor.view_top) as u16;
     // composed once: sidebar + blame column + the surface's number
     // gutter (0011) — diff-wide gutters used to drift the caret
     let col =
-        diff::left_inset(editor, editor.current) as u16 + editor.buf().col_of(editor.cursor) as u16;
+        diff::left_inset(editor, editor.current) as u16 + editor.buf().col_of(editor.head()) as u16;
     if row < area.height - 1 && col < area.width {
         frame.set_cursor_position((col, row));
     }

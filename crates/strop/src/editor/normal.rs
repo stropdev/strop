@@ -102,34 +102,34 @@ impl Editor {
             'a' => {
                 // append after the char under the cursor — its end, not
                 // one raw byte in (multibyte)
-                self.cursor = self
+                self.set_head(self
                     .buf()
-                    .ceil_boundary(self.cursor + 1)
-                    .min(self.buf().line_end(self.buf().line_of(self.cursor)));
+                    .ceil_boundary(self.head() + 1)
+                    .min(self.buf().line_end(self.buf().line_of(self.head()))));
                 self.enter_insert_from("a");
             }
             'A' => {
-                self.cursor = self.buf().line_end(self.buf().line_of(self.cursor));
+                self.set_head(self.buf().line_end(self.buf().line_of(self.head())));
                 self.enter_insert_from("A");
             }
             'o' => {
                 let indent = self.auto_indent_full_line();
-                let end = self.buf().line_end(self.buf().line_of(self.cursor));
+                let end = self.buf().line_end(self.buf().line_of(self.head()));
                 let text = format!("\n{indent}");
                 self.insert_open = Some(text.clone());
                 self.buf_mut().insert(end, &text);
-                self.cursor = end + text.len();
+                self.set_head(end + text.len());
                 self.enter_insert_from("o");
                 // dot-repeat replays 'o', which re-derives the indent —
                 // recording it too would double it
             }
             'O' => {
                 let indent = self.auto_indent_full_line();
-                let start = self.buf().line_start(self.buf().line_of(self.cursor));
+                let start = self.buf().line_start(self.buf().line_of(self.head()));
                 let text = format!("{indent}\n");
                 self.insert_open = Some(text.clone());
                 self.buf_mut().insert(start, &text);
-                self.cursor = start + indent.len();
+                self.set_head(start + indent.len());
                 self.enter_insert_from("O");
                 // same as 'o': indent is derived, not recorded
             }
@@ -138,11 +138,11 @@ impl Editor {
                 // multibyte chars and panics ropey's byte_slice
                 let end = self
                     .buf()
-                    .ceil_boundary(self.cursor + 1)
-                    .min(self.buf().line_end(self.buf().line_of(self.cursor)));
-                if end > self.cursor {
+                    .ceil_boundary(self.head() + 1)
+                    .min(self.buf().line_end(self.buf().line_of(self.head())));
+                if end > self.head() {
                     self.tx_begin();
-                    let range = Range::charwise(self.cursor, end);
+                    let range = Range::charwise(self.head(), end);
                     let text = self.buf_mut().delete(range);
                     self.tx_commit();
                     self.set_register(None, text, false);
@@ -163,14 +163,14 @@ impl Editor {
             }
             'v' => {
                 // v1: visual mode is primary-only — extras collapse (0013)
-                self.extra_cursors.clear();
+                self.sels.collapse_extras();
                 self.mode = Mode::Visual;
-                self.anchor = self.cursor;
+                self.sels.stretch_primary(self.head(), self.head());
             }
             'V' => {
-                self.extra_cursors.clear();
+                self.sels.collapse_extras();
                 self.mode = Mode::VisualLine;
-                self.anchor = self.cursor;
+                self.sels.stretch_primary(self.head(), self.head());
             }
             'Q' => self.toggle_cursor(),
             'J' => self.join_lines(),
@@ -191,7 +191,7 @@ impl Editor {
     /// ds" / cs"' / ysiw" (sandwich lineage). Returns Some when the
     /// command was a surround op and got handled.
     fn execute_surround(&mut self, cmd: &Command) -> Option<()> {
-        let r = grammar::resolve(self.buf(), self.cursor, cmd)?;
+        let r = grammar::resolve(self.buf(), self.head(), cmd)?;
         let pair = |ch: u8| match ch {
             b'b' | b'(' | b')' => (b'(', b')'),
             b'B' | b'{' | b'}' => (b'{', b'}'),
@@ -207,7 +207,7 @@ impl Editor {
                     .delete(Range::charwise(r.range.end - 1, r.range.end));
                 self.buf_mut()
                     .delete(Range::charwise(r.range.start, r.range.start + 1));
-                self.cursor = r.range.start;
+                self.set_head(r.range.start);
             }
             grammar::Target::SurroundChange { to, .. } => {
                 let (o, c) = pair(*to);
@@ -219,14 +219,14 @@ impl Editor {
                     .delete(Range::charwise(r.range.start, r.range.start + 1));
                 self.buf_mut()
                     .insert(r.range.start, &(o as char).to_string());
-                self.cursor = r.range.start;
+                self.set_head(r.range.start);
             }
             grammar::Target::SurroundAdd { ch, .. } => {
                 let (o, c) = pair(*ch);
                 self.buf_mut().insert(r.range.end, &(c as char).to_string());
                 self.buf_mut()
                     .insert(r.range.start, &(o as char).to_string());
-                self.cursor = r.range.start + 1;
+                self.set_head(r.range.start + 1);
             }
             _ => {
                 self.tx_commit();
@@ -235,7 +235,7 @@ impl Editor {
         }
         self.tx_commit();
         self.clamp_cursor();
-        self.flash(Range::charwise(self.cursor, self.cursor));
+        self.flash(Range::charwise(self.head(), self.head()));
         self.last_cmd_keys = cmd.keys.clone();
         self.last_insert = None;
         Some(())
@@ -474,7 +474,7 @@ impl Editor {
     fn pipe_current_line(&mut self) {
         let cmd = self.pending[1..].to_string();
         self.pending.clear();
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         let start = self.buf().line_start(line);
         let end = self.buf().line_start(line + 1).min(self.buf().len_bytes());
         self.pipe_run(start, end, &cmd);
@@ -523,19 +523,23 @@ impl Editor {
         }
         // the cascade (0013 §3): one scalar resolver, mapped over every
         // cursor — secondary cursors run the exact same motion
-        let primary_hit = grammar::resolve(self.buf(), self.cursor, cmd);
+        let primary_hit = grammar::resolve(self.buf(), self.head(), cmd);
         if let Some(r) = &primary_hit {
-            self.cursor = grammar::cursor_after(self.buf(), self.cursor, cmd, r);
+            self.set_head(grammar::cursor_after(self.buf(), self.head(), cmd, r));
         }
-        // take/compute/put-back: the resolver borrows self immutably
-        let mut extras = std::mem::take(&mut self.extra_cursors);
-        for c in &mut extras {
-            if let Some(r) = grammar::resolve(self.buf(), *c, cmd) {
-                *c = grammar::cursor_after(self.buf(), *c, cmd, &r);
-            }
-            *c = self.clamp_pos(*c);
-        }
-        self.extra_cursors = extras;
+        // take/compute/replant: the resolver borrows self immutably
+        let extras: Vec<usize> = self
+            .extra_selections()
+            .iter()
+            .map(|s| {
+                let c = match grammar::resolve(self.buf(), s.head, cmd) {
+                    Some(r) => grammar::cursor_after(self.buf(), s.head, cmd, &r),
+                    None => s.head,
+                };
+                self.clamp_pos(c)
+            })
+            .collect();
+        self.sels.set_extras(extras);
         self.clamp_cursor();
         self.normalize_cursors();
         // vim says so when a search finds nothing
@@ -590,17 +594,16 @@ impl Editor {
             }
             None
         };
-        let mut extras = std::mem::take(&mut self.extra_cursors);
-        for c in &mut extras {
-            if let Some(h) = seek(self.buf(), *c) {
-                *c = h;
-            }
-        }
-        self.extra_cursors = extras;
-        match seek(self.buf(), self.cursor) {
+        let extras: Vec<usize> = self
+            .extra_selections()
+            .iter()
+            .map(|s| seek(self.buf(), s.head).unwrap_or(s.head))
+            .collect();
+        self.sels.set_extras(extras);
+        match seek(self.buf(), self.head()) {
             Some(h) => {
-                self.cursor = h;
-                self.flash(Range::charwise(self.cursor, self.cursor));
+                self.set_head(h);
+                self.flash(Range::charwise(self.head(), self.head()));
             }
             None => self.message = "find: no more matches".into(),
         }
@@ -662,18 +665,21 @@ impl Editor {
                 h
             })
         };
-        let mut extras = std::mem::take(&mut self.extra_cursors);
-        for c in &mut extras {
-            if let Some(h) = seek(self.buf(), *c) {
-                *c = self.buf().clamp_boundary(h);
-            }
-        }
-        self.extra_cursors = extras;
-        match seek(self.buf(), self.cursor) {
+        let extras: Vec<usize> = self
+            .extra_selections()
+            .iter()
+            .map(|s| {
+                seek(self.buf(), s.head)
+                    .map(|h| self.buf().clamp_boundary(h))
+                    .unwrap_or(s.head)
+            })
+            .collect();
+        self.sels.set_extras(extras);
+        match seek(self.buf(), self.head()) {
             Some(h) => {
-                self.cursor = self.buf().clamp_boundary(h);
+                self.set_head(self.buf().clamp_boundary(h));
                 self.clamp_cursor();
-                self.flash(Range::charwise(self.cursor, self.cursor));
+                self.flash(Range::charwise(self.head(), self.head()));
             }
             None => self.message = format!("pattern not found: {}", ls.pattern),
         }
@@ -685,15 +691,15 @@ impl Editor {
     pub(crate) fn search_word_under_cursor(&mut self, backward: bool) {
         let word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
         let buf_len = self.buf().len_bytes();
-        if self.cursor >= buf_len || !word_char(self.buf().byte(self.cursor)) {
+        if self.head() >= buf_len || !word_char(self.buf().byte(self.head())) {
             self.message = "no word under cursor".into();
             return;
         }
-        let mut start = self.cursor;
+        let mut start = self.head();
         while start > 0 && word_char(self.buf().byte(start - 1)) {
             start -= 1;
         }
-        let mut end = self.cursor;
+        let mut end = self.head();
         while end < buf_len && word_char(self.buf().byte(end)) {
             end += 1;
         }
@@ -706,7 +712,7 @@ impl Editor {
         // `#` seeks from the word's start so the current word isn't its
         // own "previous" match (vim semantics)
         if backward {
-            self.cursor = start;
+            self.set_head(start);
         }
         self.repeat_search(false);
     }
@@ -719,16 +725,16 @@ impl Editor {
         }
         match grammar::parse(&self.pending) {
             Parse::Complete(cmd) if cmd.op.is_some() => {
-                grammar::resolve(self.buf(), self.cursor, &cmd)
+                grammar::resolve(self.buf(), self.head(), &cmd)
             }
             _ => {
                 // partial backward search: d?foo mid-typing previews match→cursor
                 if let Some(idx) = self.pending.find('?') {
                     let pat = &self.pending[idx + 1..];
                     if !pat.is_empty() && !pat.contains('\r') {
-                        if let Some(hit) = grammar::search_backward(self.buf(), self.cursor, pat) {
+                        if let Some(hit) = grammar::search_backward(self.buf(), self.head(), pat) {
                             return Some(Resolved {
-                                range: Range::charwise(hit, self.cursor),
+                                range: Range::charwise(hit, self.head()),
                                 inclusive: false,
                                 spec: format!("search ?{pat}"),
                             });
@@ -740,10 +746,10 @@ impl Editor {
                 if let Some(idx) = self.pending.find('/') {
                     let pat = &self.pending[idx + 1..];
                     if !pat.is_empty() {
-                        if let Some(hit) = grammar::search_forward(self.buf(), self.cursor + 1, pat)
+                        if let Some(hit) = grammar::search_forward(self.buf(), self.head() + 1, pat)
                         {
                             return Some(Resolved {
-                                range: Range::charwise(self.cursor, hit),
+                                range: Range::charwise(self.head(), hit),
                                 inclusive: false,
                                 spec: format!("search /{pat}"),
                             });
@@ -851,7 +857,7 @@ impl Editor {
                 }
                 self.tx_commit();
                 self.normalize_cursors();
-                self.flash(Range::charwise(self.cursor, self.cursor));
+                self.flash(Range::charwise(self.head(), self.head()));
             }
             Op::Delete | Op::Change => {
                 if cmd.op.unwrap() == Op::Change && kept.first().is_some_and(|t| t.2) {
@@ -878,18 +884,19 @@ impl Editor {
                 let mut shift = 0usize;
                 let mut landings: Vec<(bool, usize)> = Vec::with_capacity(kept.len());
                 for (c, r, _) in &kept {
-                    landings.push((*c == self.cursor, r.start - shift));
+                    landings.push((*c == self.head(), r.start - shift));
                     shift += r.end - r.start;
                 }
-                self.cursor = landings
-                    .iter()
-                    .find(|(p, _)| *p)
-                    .map(|(_, s)| *s)
-                    .unwrap_or(self.cursor);
+                self.set_head(
+                    landings
+                        .iter()
+                        .find(|(p, _)| *p)
+                        .map(|(_, s)| *s)
+                        .unwrap_or(self.head()),
+                );
                 let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
                 starts.sort_unstable();
-                self.extra_cursors = starts.into_iter().filter(|&s| s != self.cursor).collect();
-                self.normalize_cursors();
+                self.sels.set_extras(starts);
                 if cmd.op.unwrap() == Op::Change {
                     // no commit: the insert session closes the undo unit
                     self.enter_insert_from(&cmd.keys);
@@ -900,7 +907,7 @@ impl Editor {
                     self.clamp_cursor();
                     self.tx_commit();
                 }
-                self.flash(Range::charwise(self.cursor, self.cursor));
+                self.flash(Range::charwise(self.head(), self.head()));
             }
         }
         self.last_cmd_keys = cmd.keys.clone();
@@ -955,7 +962,7 @@ impl Editor {
                 self.buf_mut().insert(start, &format!("{indent}\n"));
             }
             let net = self.buf().len_bytes() as isize - before;
-            entries.push((*c == self.cursor, start + indent.len(), net));
+            entries.push((*c == self.head(), start + indent.len(), net));
         }
         let landings: Vec<(bool, usize)> = entries
             .iter()
@@ -968,18 +975,19 @@ impl Editor {
             })
             .collect();
         self.set_register(cmd.register, texts.join(""), true);
-        self.cursor = landings
-            .iter()
-            .find(|(p, _)| *p)
-            .map(|(_, s)| *s)
-            .unwrap_or(self.cursor);
+        self.set_head(
+            landings
+                .iter()
+                .find(|(p, _)| *p)
+                .map(|(_, s)| *s)
+                .unwrap_or(self.head()),
+        );
         let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
         starts.sort_unstable();
-        self.extra_cursors = starts.into_iter().filter(|&s| s != self.cursor).collect();
-        self.normalize_cursors();
+        self.sels.set_extras(starts);
         self.enter_insert_from(&cmd.keys);
         self.clamp_cursor();
-        self.flash(Range::charwise(self.cursor, self.cursor));
+        self.flash(Range::charwise(self.head(), self.head()));
     }
 
     fn dot_repeat(&mut self) {
@@ -1006,26 +1014,26 @@ impl Editor {
 
     /// vim `3rx` replaces three chars (clamped to the line end).
     fn replace_char_n(&mut self, c: char, count: usize) {
-        let line_end = self.buf().line_end(self.buf().line_of(self.cursor));
-        let end = (self.cursor + count).min(line_end);
-        if end <= self.cursor || c == '\n' {
+        let line_end = self.buf().line_end(self.buf().line_of(self.head()));
+        let end = (self.head() + count).min(line_end);
+        if end <= self.head() || c == '\n' {
             return;
         }
-        let cursor = self.cursor;
+        let cursor = self.head();
         self.tx_begin();
         self.buf_mut().delete(Range::charwise(cursor, end));
         let text: String = std::iter::repeat_n(c, end - cursor).collect();
         self.buf_mut().insert(cursor, &text);
         self.tx_commit();
-        self.cursor = cursor + text.len() - 1; // last replaced char
-        self.flash(Range::charwise(self.cursor, self.cursor));
+        self.set_head(cursor + text.len() - 1); // last replaced char
+        self.flash(Range::charwise(self.head(), self.head()));
         self.last_cmd_keys = format!("r{c}");
         self.last_insert = None;
     }
 
     fn join_lines(&mut self) {
         self.tx_begin();
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         if line + 1 >= self.buf().len_lines() {
             self.tx_commit();
             return;
@@ -1045,7 +1053,7 @@ impl Editor {
         if join_at < next_end {
             self.buf_mut().insert(eol, " ");
         }
-        self.cursor = eol;
+        self.set_head(eol);
         self.tx_commit();
         self.clamp_cursor();
         self.flash(Range::charwise(eol, (eol + 1).min(self.buf().len_bytes())));
@@ -1060,11 +1068,11 @@ impl Editor {
             self.message = "readonly buffer".into();
             return;
         }
-        let line_end = self.buf().line_end(self.buf().line_of(self.cursor));
-        if self.cursor >= line_end {
+        let line_end = self.buf().line_end(self.buf().line_of(self.head()));
+        if self.head() >= line_end {
             return;
         }
-        let b = self.buf().byte(self.cursor);
+        let b = self.buf().byte(self.head());
         let c = b as char;
         if c.is_ascii_alphabetic() {
             let flipped = if c.is_ascii_lowercase() {
@@ -1072,7 +1080,7 @@ impl Editor {
             } else {
                 c.to_ascii_lowercase()
             };
-            let cursor = self.cursor;
+            let cursor = self.head();
             self.tx_begin();
             self.buf_mut().delete(Range::charwise(cursor, cursor + 1));
             self.buf_mut().insert(cursor, &flipped.to_string());
@@ -1080,7 +1088,7 @@ impl Editor {
         }
         // advance one char, not one byte — a multibyte char would
         // otherwise park the cursor mid-char for the next edit
-        self.cursor = self.buf().ceil_boundary(self.cursor + 1);
+        self.set_head(self.buf().ceil_boundary(self.head() + 1));
         self.clamp_cursor();
         self.last_cmd_keys = "~".into();
         self.last_insert = None;
@@ -1111,7 +1119,7 @@ impl Editor {
                 }
             }
         }
-        self.cursor = self.buf().line_start(line);
+        self.set_head(self.buf().line_start(line));
         self.clamp_cursor();
     }
 
@@ -1174,7 +1182,7 @@ impl Editor {
                     last = last.saturating_sub(1);
                 }
                 self.push_jump(); // :N is a jump — record before moving
-                self.cursor = self.buf().line_start(n.saturating_sub(1).min(last));
+                self.set_head(self.buf().line_start(n.saturating_sub(1).min(last)));
                 self.clamp_cursor();
             }
             "vs" | "vsplit" => self.split(true, if arg.is_empty() { None } else { Some(arg) }),

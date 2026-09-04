@@ -28,12 +28,12 @@ pub fn frame_string(editor: &mut Editor, cols: u16, rows: u16) -> String {
 pub fn state_json(editor: &Editor) -> String {
     serde_json::json!({
         "mode": editor.mode.chip(),
-        "cursor": editor.cursor,
-        "line": editor.buf().line_of(editor.cursor) + 1,
-        "col": editor.buf().col_of(editor.cursor) + 1,
+        "cursor": editor.head(),
+        "line": editor.buf().line_of(editor.head()) + 1,
+        "col": editor.buf().col_of(editor.head()) + 1,
         "pending": editor.pending,
         "message": editor.message,
-        "extra_cursors": editor.extra_cursors,
+        "extra_cursors": editor.extra_selections().iter().map(|s| s.head).collect::<Vec<_>>(),
         "panes": editor.panes.len(),
         "active_pane": editor.active_pane,
         "picker": editor.picker_open(),
@@ -179,13 +179,13 @@ mod diff_surface_tests {
         e.feed_text("jj"); // line 3
         e.open_diff_surface("hunk", "hunk", vec![hunk()], None);
         assert_eq!(
-            e.buf().line_of(e.cursor),
+            e.buf().line_of(e.head()),
             0,
             "surface starts at its own top"
         );
         e.feed_text("q");
         assert_eq!(e.current, e.first_doc());
-        assert_eq!(e.buf().line_of(e.cursor), 2, "cursor returned to line 3");
+        assert_eq!(e.buf().line_of(e.head()), 2, "cursor returned to line 3");
     }
 }
 

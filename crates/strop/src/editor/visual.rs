@@ -57,9 +57,9 @@ impl Editor {
                 self.apply_indent(range, right);
                 self.tx_commit();
                 self.mode = Mode::Normal;
-                self.cursor = range.start;
+                self.set_head(range.start);
                 self.clamp_cursor();
-                self.flash(Range::charwise(self.cursor, self.cursor));
+                self.flash(Range::charwise(self.head(), self.head()));
                 self.last_cmd_keys = if right { "V>" } else { "V<" }.into();
                 self.last_insert = None;
             }
@@ -89,8 +89,8 @@ impl Editor {
                     let text = self.buf_mut().delete(range);
                     self.tx_commit();
                     self.set_register(None, text, linewise);
-                    self.cursor = range.start;
-                    self.flash(Range::charwise(self.cursor, self.cursor));
+                    self.set_head(range.start);
+                    self.flash(Range::charwise(self.head(), self.head()));
                 }
                 self.mode = Mode::Normal;
                 self.clamp_cursor();
@@ -157,9 +157,9 @@ impl Editor {
                         // the anchor jumps to the range start, the cursor to
                         // its end — inclusive, vim semantics (0001 §5.5)
                         if let grammar::Target::Object { .. } = cmd.target {
-                            if let Some(r) = grammar::resolve(self.buf(), self.cursor, &cmd) {
-                                self.anchor = r.range.start;
-                                self.cursor = r.range.end.saturating_sub(1);
+                            if let Some(r) = grammar::resolve(self.buf(), self.head(), &cmd) {
+                                self.sels.stretch_primary(r.range.start, self.head());
+                                self.set_head(r.range.end.saturating_sub(1));
                             }
                         } else {
                             self.move_cursor(&cmd);
@@ -175,15 +175,15 @@ impl Editor {
         match self.mode {
             Mode::Visual => {
                 let (s, e) = (
-                    self.anchor.min(self.cursor),
-                    self.anchor.max(self.cursor) + 1,
+                    self.anchor().min(self.head()),
+                    self.anchor().max(self.head()) + 1,
                 );
                 Some(Range::charwise(s, e.min(self.buf().len_bytes())))
             }
             Mode::VisualLine => {
                 let (a, b) = (
-                    self.buf().line_of(self.anchor),
-                    self.buf().line_of(self.cursor),
+                    self.buf().line_of(self.anchor()),
+                    self.buf().line_of(self.head()),
                 );
                 let (a, b) = (a.min(b), a.max(b));
                 let start = self.buf().line_start(a);

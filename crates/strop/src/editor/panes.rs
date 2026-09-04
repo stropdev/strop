@@ -32,7 +32,7 @@ impl Editor {
                 return;
             }
         }
-        let (cursor, view_top) = (self.cursor, self.view_top);
+        let (cursor, view_top) = (self.head(), self.view_top);
         self.panes.push(Pane {
             doc: self.current,
             cursor,
@@ -79,10 +79,11 @@ impl Editor {
 
     /// Save the active pane's state before switching away.
     fn sync_to_pane(&mut self) {
+        let (doc, cursor, view_top) = (self.current, self.head(), self.view_top);
         let pane = &mut self.panes[self.active_pane];
-        pane.doc = self.current;
-        pane.cursor = self.cursor;
-        pane.view_top = self.view_top;
+        pane.doc = doc;
+        pane.cursor = cursor;
+        pane.view_top = view_top;
     }
 
     fn sync_from_pane(&mut self) {
@@ -90,7 +91,7 @@ impl Editor {
         if self.docs.get(pane.doc).is_some() {
             self.current = pane.doc;
         }
-        self.cursor = pane.cursor.min(self.buf().len_bytes());
+        self.set_head(pane.cursor.min(self.buf().len_bytes()));
         self.view_top = pane.view_top;
         self.clamp_cursor();
         self.discover_git();
@@ -119,7 +120,7 @@ mod tests {
         e.feed(crate::editor::Key::CtrlW);
         e.feed(crate::editor::Key::Char('h'));
         assert_eq!(e.active_pane, 0);
-        assert_eq!(e.buf().line_of(e.cursor), 1, "pane 1 kept its own cursor");
+        assert_eq!(e.buf().line_of(e.head()), 1, "pane 1 kept its own cursor");
         // :q closes the pane, buffer stays
         e.feed_text(":q<cr>");
         assert_eq!(e.panes.len(), 1);

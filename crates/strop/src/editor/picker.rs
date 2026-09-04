@@ -232,7 +232,7 @@ impl Editor {
                 if self.docs.get(i).is_some() {
                     self.current = i;
                     self.touch_mru(i);
-                    self.cursor = 0;
+                    self.set_head(0);
                     self.view_top = 0;
                 }
             }
@@ -245,7 +245,7 @@ impl Editor {
                     return;
                 }
                 let start = self.buf().line_start(line.saturating_sub(1));
-                self.cursor = self.buf().clamp_boundary(start + col.saturating_sub(1));
+                self.set_head(self.buf().clamp_boundary(start + col.saturating_sub(1)));
                 self.clamp_cursor();
             }
         }

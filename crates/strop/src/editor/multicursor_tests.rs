@@ -16,23 +16,40 @@ mod tests {
     fn q_toggles_at_point_and_motions_move_all() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
         e.feed_text("Q");
-        assert_eq!(e.extra_cursors, vec![0]);
+        assert_eq!(e.sels.heads(), vec![0, 0]);
         e.feed_text("j"); // every cursor moves (nvim 0.13)
-        assert_eq!(e.cursor, 4);
-        assert_eq!(e.extra_cursors, vec![4]);
+        assert_eq!(e.head(), 4);
+        assert_eq!(e.sels.heads(), vec![4, 4]);
         e.feed_text("Q"); // the extra sits on the primary → toggles off
-        assert!(e.extra_cursors.is_empty());
+        assert!(e
+            .extra_selections()
+            .iter()
+            .map(|s| s.head)
+            .collect::<Vec<_>>()
+            .is_empty());
     }
 
     #[test]
     fn space_c_stacks_down_a_column() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
         e.feed_text(" c"); // cursor below joins
-        assert_eq!(e.extra_cursors, vec![4]);
+        assert_eq!(e.sels.heads(), vec![0, 4]);
         e.feed_text(" c");
-        assert_eq!(e.extra_cursors, vec![4, 8]); // "three" starts at 8
+        assert_eq!(
+            e.extra_selections()
+                .iter()
+                .map(|s| s.head)
+                .collect::<Vec<_>>(),
+            vec![4, 8]
+        ); // "three" starts at 8
         e.feed_text(" c"); // no fourth line
-        assert_eq!(e.extra_cursors, vec![4, 8]);
+        assert_eq!(
+            e.extra_selections()
+                .iter()
+                .map(|s| s.head)
+                .collect::<Vec<_>>(),
+            vec![4, 8]
+        );
     }
 
     #[test]
@@ -62,9 +79,14 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("a\nb\nc\n"));
         e.feed_text(" c");
         e.feed_text(" c");
-        assert_eq!(e.extra_cursors.len(), 2);
+        assert_eq!((e.sels.count() - 1), 2);
         e.feed(crate::editor::Key::Esc);
-        assert!(e.extra_cursors.is_empty());
+        assert!(e
+            .extra_selections()
+            .iter()
+            .map(|s| s.head)
+            .collect::<Vec<_>>()
+            .is_empty());
     }
 
     #[test]
@@ -95,8 +117,14 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("1 foo\n2 foo\n3 foo\n"));
         e.feed_text(" c"); // extra on line 2
         e.feed_text("/foo\r");
-        assert_eq!(e.cursor, 2);
-        assert_eq!(e.extra_cursors, vec![8]); // foo on line 2 starts at 8
+        assert_eq!(e.head(), 2);
+        assert_eq!(
+            e.extra_selections()
+                .iter()
+                .map(|s| s.head)
+                .collect::<Vec<_>>(),
+            vec![8]
+        ); // foo on line 2 starts at 8
     }
 
     #[test]

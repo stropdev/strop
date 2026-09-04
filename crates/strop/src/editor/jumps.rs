@@ -12,7 +12,7 @@ impl Editor {
         if self.docs.is_empty() {
             return;
         }
-        let pos = (self.current, self.cursor);
+        let pos = (self.current, self.head());
         if self.jumplist_past.last() != Some(&pos) {
             self.jumplist_past.push(pos);
         }
@@ -25,7 +25,7 @@ impl Editor {
             self.message = "no jumps".into();
             return;
         }
-        self.jumplist_future.push((self.current, self.cursor));
+        self.jumplist_future.push((self.current, self.head()));
         let Some(pos) = self.jumplist_past.pop() else {
             self.jumplist_future.pop();
             self.message = "no jumps".into();
@@ -40,7 +40,7 @@ impl Editor {
             self.message = "at newest jump".into();
             return;
         };
-        self.jumplist_past.push((self.current, self.cursor));
+        self.jumplist_past.push((self.current, self.head()));
         self.jump_to(pos);
     }
 
@@ -56,11 +56,12 @@ impl Editor {
             self.touch_mru(buffer);
             self.discover_git();
         }
-        self.cursor = self
-            .buf()
-            .clamp_boundary(offset.min(self.buf().len_bytes()));
+        self.set_head(
+            self.buf()
+                .clamp_boundary(offset.min(self.buf().len_bytes())),
+        );
         self.clamp_cursor();
-        self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
+        self.flash(strop_core::Range::charwise(self.head(), self.head()));
     }
 }
 
@@ -75,11 +76,11 @@ mod tests {
         e.feed_text("j"); // cursor on line 2
         e.push_jump();
         e.feed_text("G"); // last line
-        assert_eq!(e.buf().line_of(e.cursor), 2);
+        assert_eq!(e.buf().line_of(e.head()), 2);
         e.jump_back();
-        assert_eq!(e.buf().line_of(e.cursor), 1, "ctrl-o back to line 2");
+        assert_eq!(e.buf().line_of(e.head()), 1, "ctrl-o back to line 2");
         e.jump_forward();
-        assert_eq!(e.buf().line_of(e.cursor), 2, "ctrl-i forward again");
+        assert_eq!(e.buf().line_of(e.head()), 2, "ctrl-i forward again");
     }
 
     #[test]
@@ -101,18 +102,18 @@ mod tests {
     fn search_then_ctrl_o_ctrl_i() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo hone\nthree\n"));
         e.feed_text("/hone\r");
-        assert_eq!(e.buf().line_of(e.cursor), 1, "landed on the match");
+        assert_eq!(e.buf().line_of(e.head()), 1, "landed on the match");
         e.feed(crate::editor::Key::CtrlO);
-        assert_eq!(e.buf().line_of(e.cursor), 0, "ctrl-o back to the top");
+        assert_eq!(e.buf().line_of(e.head()), 0, "ctrl-o back to the top");
         e.feed(crate::editor::Key::Tab); // ctrl-i in a terminal
-        assert_eq!(e.buf().line_of(e.cursor), 1, "ctrl-i forward again");
+        assert_eq!(e.buf().line_of(e.head()), 1, "ctrl-i forward again");
     }
 
     #[test]
     fn search_lands_with_jump_recorded() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo hone\nthree\n"));
         e.feed_text("/hone\r");
-        assert_eq!(e.buf().line_of(e.cursor), 1, "landed on the match");
+        assert_eq!(e.buf().line_of(e.head()), 1, "landed on the match");
         assert_eq!(e.jumplist_past.len(), 1, "the jump was recorded");
     }
 }

@@ -855,7 +855,7 @@ mod tests {
             || e.osc52.is_some()
             || e.mode != Mode::Normal
             || e.docs.len() != 1
-            || e.cursor != 0
+            || e.head() != 0
             || e.hover_card.is_some()
             || e.blame_card.is_some()
     }
@@ -874,7 +874,7 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("one two\n"));
         e.feed_text("]c");
         assert!(
-            !e.message.is_empty() || e.cursor != 0,
+            !e.message.is_empty() || e.head() != 0,
             "]c must jump or report, never no-op"
         );
 

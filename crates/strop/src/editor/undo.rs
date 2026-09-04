@@ -55,11 +55,11 @@ impl Editor {
         });
         self.current = id;
         self.touch_mru(id);
-        self.cursor = 0;
+        self.set_head(0);
         self.view_top = 0;
         // land on the current revision's row
         if let Some(line) = rows.iter().position(|r| r.is_current) {
-            self.cursor = self.buf().line_start(line + 1);
+            self.set_head(self.buf().line_start(line + 1));
         }
         self.undo_browser = Some(UndoBrowser {
             browser: self.current,
@@ -72,7 +72,7 @@ impl Editor {
     /// buffer, then close back to it.
     fn undo_tree_jump(&mut self) {
         let Some(ub) = &self.undo_browser else { return };
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         let Some(Some(rev)) = ub.row_rev.get(line).copied() else {
             return;
         };
@@ -85,9 +85,9 @@ impl Editor {
         let Some(ops) = ops else { return };
         let at = ops.iter().map(|e| e.at).min().unwrap_or(0);
         self.buf_mut().apply_history(ops);
-        self.cursor = self.buf().clamp_boundary(at.min(self.buf().len_bytes()));
+        self.set_head(self.buf().clamp_boundary(at.min(self.buf().len_bytes())));
         self.clamp_cursor();
-        self.flash(Range::charwise(self.cursor, self.cursor));
+        self.flash(Range::charwise(self.head(), self.head()));
         self.message = format!("restored revision {rev} — u to walk back");
     }
 

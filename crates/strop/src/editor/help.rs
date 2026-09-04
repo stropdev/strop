@@ -19,7 +19,7 @@ impl Editor {
         if let Some(i) = existing {
             self.current = i;
             self.touch_mru(i);
-            self.cursor = 0;
+            self.set_head(0);
             self.view_top = 0;
             return;
         }
@@ -57,7 +57,7 @@ impl Editor {
         });
         self.current = id;
         self.touch_mru(id);
-        self.cursor = 0;
+        self.set_head(0);
         self.view_top = 0;
     }
 }
@@ -78,7 +78,7 @@ mod tests {
         }
         // it's a real buffer: / searches it
         e.feed_text("/undo-tree\r");
-        assert!(e.cursor > 0, "search moved into the help text");
+        assert!(e.head() > 0, "search moved into the help text");
         // q closes back to the file
         e.feed_text("q");
         assert_eq!(e.buf().name.as_deref(), None);

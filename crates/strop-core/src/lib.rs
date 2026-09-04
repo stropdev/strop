@@ -3,6 +3,7 @@
 
 pub mod history;
 pub mod id;
+pub mod selection;
 
 use history::{Edit, EditKind, History};
 use ropey::Rope;

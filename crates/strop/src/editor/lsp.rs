@@ -224,7 +224,7 @@ impl Editor {
                             strop_lsp::to_byte_col(&text, col, enc)
                         };
                         let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
-                        self.cursor = self.buf().clamp_boundary(start + col);
+                        self.set_head(self.buf().clamp_boundary(start + col));
                         self.clamp_cursor();
                     }
                 }
@@ -279,8 +279,8 @@ impl Editor {
         } else {
             self.cwd.join(&path)
         };
-        let line = self.buf().line_of(self.cursor);
-        let col = self.buf().col_of(self.cursor);
+        let line = self.buf().line_of(self.head());
+        let col = self.buf().col_of(self.head());
         let col = self.server_col(client, col);
         client.hover(&abs, line, col);
     }
@@ -302,7 +302,7 @@ impl Editor {
 
     /// byte col → the server's negotiated column for the current line.
     fn server_col(&self, client: &strop_lsp::Client, byte_col: usize) -> usize {
-        let line = self.buf().line_of(self.cursor);
+        let line = self.buf().line_of(self.head());
         let text = self.buf().line_text(line);
         strop_lsp::to_server_col(&text, byte_col, client.encoding())
     }
@@ -321,8 +321,8 @@ impl Editor {
         } else {
             self.cwd.join(&path)
         };
-        let line = self.buf().line_of(self.cursor);
-        let col = self.buf().col_of(self.cursor);
+        let line = self.buf().line_of(self.head());
+        let col = self.buf().col_of(self.head());
         let col = self.server_col(client, col);
         client.goto_definition(&abs, line, col);
     }

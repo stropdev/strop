@@ -75,7 +75,7 @@ impl Editor {
                     });
                     self.current = id;
                     self.touch_mru(id);
-                    self.cursor = 0;
+                    self.set_head(0);
                     self.view_top = 0;
                     self.message = format!("sh: {cmd} — q closes");
                 }
@@ -114,9 +114,9 @@ impl Editor {
                     buf.insert(s, &out);
                     buf.history.commit();
                     if buffer == self.current {
-                        self.cursor = self.buf().clamp_boundary(s);
+                        self.set_head(self.buf().clamp_boundary(s));
                         self.clamp_cursor();
-                        self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
+                        self.flash(strop_core::Range::charwise(self.head(), self.head()));
                     }
                     self.message = "piped".into();
                 }
