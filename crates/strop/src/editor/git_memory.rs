@@ -632,7 +632,7 @@ impl Editor {
     fn yank_only(&mut self, cmd: &strop_grammar::Command) {
         if let Some(r) = strop_grammar::resolve(self.buf(), self.head(), cmd) {
             let text = self.buf().slice_string(r.range);
-            self.set_register(cmd.register, text, r.range.linewise);
+            self.set_register(cmd.register, text, r.range.is_linewise());
             self.flash(r.range);
         }
     }

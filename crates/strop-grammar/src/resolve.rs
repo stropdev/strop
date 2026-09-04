@@ -131,7 +131,7 @@ pub fn match_pair(buf: &Buffer, pos: usize) -> Option<usize> {
         .byte_at(pos)
         .and_then(|b| PAIRS.iter().find(|(o, c)| *o == b || *c == b));
     let (open, close, from) = match on {
-        Some(&(o, c)) => (o, c, pos),
+        Some(&(o, c)) => (o as char, c as char, pos),
         None => {
             let end = buf.line_end(buf.line_of(pos));
             let mut i = pos;
@@ -143,7 +143,7 @@ pub fn match_pair(buf: &Buffer, pos: usize) -> Option<usize> {
                     .iter()
                     .find(|(o, c)| *o == buf.byte(i) || *c == buf.byte(i))
                 {
-                    break (o, c, i);
+                    break (o as char, c as char, i);
                 }
                 i += 1;
             }
@@ -151,7 +151,7 @@ pub fn match_pair(buf: &Buffer, pos: usize) -> Option<usize> {
     };
     let (o, c) = bracket_pair(buf, from, open, close)?;
     let b = buf.byte_at(from)?;
-    if b == open {
+    if b == open as u8 {
         Some(c)
     } else {
         Some(o)
@@ -162,7 +162,11 @@ pub fn match_pair(buf: &Buffer, pos: usize) -> Option<usize> {
 /// Cursor on either delimiter counts as inside the pair (vim semantics):
 /// the backward scan starts just inside a close, the forward scan just
 /// past the open.
-fn bracket_pair(buf: &Buffer, pos: usize, open: u8, close: u8) -> Option<(usize, usize)> {
+fn bracket_pair(buf: &Buffer, pos: usize, open: char, close: char) -> Option<(usize, usize)> {
+    // delimiters are ASCII by construction (the parser's alias map)
+    let (open, close) = (open as u32, close as u32);
+    let open = u8::try_from(open).expect("ascii delimiter");
+    let close = u8::try_from(close).expect("ascii delimiter");
     let n = buf.len_bytes();
     if n == 0 {
         return None;
@@ -213,7 +217,8 @@ fn bracket_pair(buf: &Buffer, pos: usize, open: u8, close: u8) -> Option<(usize,
 /// line: enclosing pair when inside or on a quote; the *next* pair when
 /// the cursor sits before any quote on the line; nothing when past the
 /// last pair.
-fn quote_pair(buf: &Buffer, pos: usize, q: u8) -> Option<(usize, usize)> {
+fn quote_pair(buf: &Buffer, pos: usize, q: char) -> Option<(usize, usize)> {
+    let q = u8::try_from(q as u32).expect("ascii delimiter");
     let line = buf.line_of(pos);
     let start = buf.line_start(line);
     let end = buf.line_end(line);
@@ -247,13 +252,13 @@ fn inner_word(buf: &Buffer, pos: usize) -> Option<(usize, usize)> {
 /// Search forward for `pat` (prototype: plain substring; 0001 §2.5's
 /// transpiled regex lands with the real search layer).
 /// Map a surround char to its pair (sandwich aliases b/B/r/a).
-fn surround_pair(ch: u8) -> Option<(u8, u8)> {
+fn surround_pair(ch: char) -> Option<(char, char)> {
     Some(match ch {
-        b'b' | b'(' | b')' => (b'(', b')'),
-        b'B' | b'{' | b'}' => (b'{', b'}'),
-        b'r' | b'[' | b']' => (b'[', b']'),
-        b'a' | b'<' | b'>' => (b'<', b'>'),
-        q @ (b'"' | b'\'' | b'`') => (q, q),
+        'b' | '(' | ')' => ('(', ')'),
+        'B' | '{' | '}' => ('{', '}'),
+        'r' | '[' | ']' => ('[', ']'),
+        'a' | '<' | '>' => ('<', '>'),
+        q @ ('"' | '\'' | '`') => (q, q),
         _ => return None,
     })
 }
@@ -320,8 +325,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 }
                 Object::Quote(q) => {
                     let (o, c) = quote_pair(buf, cursor, *q)?;
-                    let spec =
-                        format!("{} {}", if *inner { "inner" } else { "around" }, *q as char);
+                    let spec = format!("{} {}", if *inner { "inner" } else { "around" }, *q);
                     if *inner {
                         (o + 1, c, spec)
                     } else {
@@ -330,11 +334,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 }
                 Object::Bracket { open, close } => {
                     let (o, c) = bracket_pair(buf, cursor, *open, *close)?;
-                    let spec = format!(
-                        "{} {}",
-                        if *inner { "inner" } else { "around" },
-                        *open as char
-                    );
+                    let spec = format!("{} {}", if *inner { "inner" } else { "around" }, *open);
                     if *inner {
                         (o + 1, c, spec)
                     } else {
@@ -351,11 +351,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
             } else {
                 bracket_pair(buf, cursor, open, close)?
             };
-            (
-                Range::charwise(o, c + 1),
-                true,
-                format!("surround {}", *ch as char),
-            )
+            (Range::charwise(o, c + 1), true, format!("surround {}", *ch))
         }
         Target::SurroundAdd { ch, inner } => {
             // resolve the inner motion as if yanked, then wrap its range
@@ -369,7 +365,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
             let r = resolve(buf, cursor, &sub)?;
             (
                 r.range,
-                r.inclusive,
+                r.range.inclusive(),
                 format!("surround with {}", *ch as char),
             )
         }
@@ -587,25 +583,34 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
             Motion::FindChar { ch, till, backward } => {
                 let line = buf.line_of(cursor);
                 let (lo, hi) = (buf.line_start(line), buf.line_end(line));
+                // char-honest: f é must find é, never a continuation byte
+                let line_text = buf.line_text(line);
                 let mut found = None;
                 let mut hits = 0;
                 if !backward {
-                    let mut i = cursor + 1;
-                    while i < hi {
-                        if buf.byte(i) == *ch {
+                    for (off, c) in line_text.char_indices() {
+                        let i = lo + off;
+                        if i <= cursor {
+                            continue;
+                        }
+                        if i >= hi {
+                            break;
+                        }
+                        if c == *ch {
                             hits += 1;
                             if hits == count {
                                 found = Some(i);
                                 break;
                             }
                         }
-                        i += 1;
                     }
                 } else {
-                    let mut i = cursor.min(hi);
-                    while i > lo {
-                        i -= 1;
-                        if buf.byte(i) == *ch {
+                    for (off, c) in line_text.char_indices().rev() {
+                        let i = lo + off;
+                        if i >= cursor.min(hi) {
+                            continue;
+                        }
+                        if c == *ch {
                             hits += 1;
                             if hits == count {
                                 found = Some(i);
@@ -677,8 +682,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
         );
     }
     Some(Resolved {
-        range,
-        inclusive,
+        range: range.with_inclusive(inclusive),
         spec,
     })
 }

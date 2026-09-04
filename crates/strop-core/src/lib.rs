@@ -29,14 +29,21 @@ pub struct Buffer {
     disk_stamp: Option<std::time::SystemTime>,
 }
 
-/// A half-open byte range `[start, end)` plus how vim thinks about it.
+/// How vim thinks about a range (0014): charwise ops carry the motion's
+/// inclusivity (dfx vs dtx differ by it); linewise is line-shaped.
+/// Blockwise lands with visual block — the enum is the extension point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MotionShape {
+    Characterwise { inclusive: bool },
+    Linewise,
+}
+
+/// A half-open byte range `[start, end)` plus its vim shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Range {
     pub start: usize,
     pub end: usize,
-    /// Inclusive (charwise) ranges include the char at `end - 1`'s semantic
-    /// target already — the flag exists for the spec footer and linewise ops.
-    pub linewise: bool,
+    pub shape: MotionShape,
 }
 
 impl Range {
@@ -45,7 +52,7 @@ impl Range {
         Self {
             start,
             end,
-            linewise: false,
+            shape: MotionShape::Characterwise { inclusive: false },
         }
     }
     pub fn linewise(start: usize, end: usize) -> Self {
@@ -53,8 +60,21 @@ impl Range {
         Self {
             start,
             end,
-            linewise: true,
+            shape: MotionShape::Linewise,
         }
+    }
+    pub fn is_linewise(&self) -> bool {
+        matches!(self.shape, MotionShape::Linewise)
+    }
+    /// The resolver's inclusive flag folds into the shape (0014).
+    pub fn with_inclusive(mut self, inclusive: bool) -> Self {
+        if let MotionShape::Characterwise { inclusive: i } = &mut self.shape {
+            *i = inclusive;
+        }
+        self
+    }
+    pub fn inclusive(&self) -> bool {
+        matches!(self.shape, MotionShape::Characterwise { inclusive: true })
     }
     pub fn len(&self) -> usize {
         self.end - self.start

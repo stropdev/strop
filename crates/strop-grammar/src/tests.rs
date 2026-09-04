@@ -88,7 +88,7 @@ pub mod contract {
     fn doubled_operator_is_linewise() {
         let buf = Buffer::from_text(SRC);
         let r = resolve(&buf, 3, &cmd("dd")).unwrap();
-        assert!(r.range.linewise);
+        assert!(r.range.is_linewise());
         assert_eq!(buf.slice_string(r.range), "fn f(xs: &[Item]) -> Edge {\n");
     }
 
@@ -108,7 +108,7 @@ pub mod contract {
             buf.slice_string(r.range),
             "fn f(xs: &[Item]) -> Edge {\n    let edge = "
         );
-        assert!(!r.inclusive);
+        assert!(!r.range.inclusive());
     }
 
     #[test]

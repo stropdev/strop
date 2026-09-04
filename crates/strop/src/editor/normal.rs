@@ -192,11 +192,11 @@ impl Editor {
     /// command was a surround op and got handled.
     fn execute_surround(&mut self, cmd: &Command) -> Option<()> {
         let r = grammar::resolve(self.buf(), self.head(), cmd)?;
-        let pair = |ch: u8| match ch {
-            b'b' | b'(' | b')' => (b'(', b')'),
-            b'B' | b'{' | b'}' => (b'{', b'}'),
-            b'r' | b'[' | b']' => (b'[', b']'),
-            b'a' | b'<' | b'>' => (b'<', b'>'),
+        let pair = |ch: char| match ch {
+            'b' | '(' | ')' => ('(', ')'),
+            'B' | '{' | '}' => ('{', '}'),
+            'r' | '[' | ']' => ('[', ']'),
+            'a' | '<' | '>' => ('<', '>'),
             q => (q, q),
         };
         self.tx_begin();
@@ -213,19 +213,16 @@ impl Editor {
                 let (o, c) = pair(*to);
                 self.buf_mut()
                     .delete(Range::charwise(r.range.end - 1, r.range.end));
-                self.buf_mut()
-                    .insert(r.range.end - 1, &(c as char).to_string());
+                self.buf_mut().insert(r.range.end - 1, &c.to_string());
                 self.buf_mut()
                     .delete(Range::charwise(r.range.start, r.range.start + 1));
-                self.buf_mut()
-                    .insert(r.range.start, &(o as char).to_string());
+                self.buf_mut().insert(r.range.start, &o.to_string());
                 self.set_head(r.range.start);
             }
             grammar::Target::SurroundAdd { ch, .. } => {
                 let (o, c) = pair(*ch);
-                self.buf_mut().insert(r.range.end, &(c as char).to_string());
-                self.buf_mut()
-                    .insert(r.range.start, &(o as char).to_string());
+                self.buf_mut().insert(r.range.end, &c.to_string());
+                self.buf_mut().insert(r.range.start, &o.to_string());
                 self.set_head(r.range.start + 1);
             }
             _ => {
@@ -562,35 +559,38 @@ impl Editor {
             return;
         };
         let backward = backward ^ reverse;
+        // char-honest: ; , on f é must land on é (0014)
         let seek = |buf: &strop_core::Buffer, c: usize| -> Option<usize> {
             let line = buf.line_of(c);
             let (ls, le) = (buf.line_start(line), buf.line_end(line));
+            let text = buf.line_text(line);
             if backward {
-                let mut pos = c.min(le);
-                if pos == ls {
-                    return None;
-                }
-                pos -= 1;
-                loop {
-                    if buf.byte(pos) == ch {
+                for (off, t) in text.char_indices().rev() {
+                    let pos = ls + off;
+                    if pos >= c.min(le) {
+                        continue;
+                    }
+                    if t == ch {
                         return Some(if till { (pos + 1).min(le) } else { pos });
                     }
-                    if pos == ls {
-                        return None;
-                    }
-                    pos -= 1;
                 }
+                return None;
             }
-            let mut pos = c + 1;
-            while pos < le {
-                if buf.byte(pos) == ch {
+            for (off, t) in text.char_indices() {
+                let pos = ls + off;
+                if pos <= c {
+                    continue;
+                }
+                if pos >= le {
+                    break;
+                }
+                if t == ch {
                     return Some(if till {
                         pos.saturating_sub(1).max(ls)
                     } else {
                         pos
                     });
                 }
-                pos += 1;
             }
             None
         };
@@ -735,7 +735,6 @@ impl Editor {
                         if let Some(hit) = grammar::search_backward(self.buf(), self.head(), pat) {
                             return Some(Resolved {
                                 range: Range::charwise(hit, self.head()),
-                                inclusive: false,
                                 spec: format!("search ?{pat}"),
                             });
                         }
@@ -750,7 +749,6 @@ impl Editor {
                         {
                             return Some(Resolved {
                                 range: Range::charwise(self.head(), hit),
-                                inclusive: false,
                                 spec: format!("search /{pat}"),
                             });
                         }
@@ -822,7 +820,7 @@ impl Editor {
             .all_cursors()
             .into_iter()
             .filter_map(|c| {
-                grammar::resolve(self.buf(), c, cmd).map(|r| (c, r.range, r.range.linewise))
+                grammar::resolve(self.buf(), c, cmd).map(|r| (c, r.range, r.range.is_linewise()))
             })
             .collect();
         if targets.is_empty() {

@@ -116,7 +116,7 @@ pub struct Editor {
     /// `Space u` browser state (editor/undo.rs); None when closed.
     pub undo_browser: Option<undo::UndoBrowser>,
     /// Last `f/F/t/T` find: (char, backward, till). `;` and `,` replay it.
-    pub last_find: Option<(u8, bool, bool)>,
+    pub last_find: Option<(char, bool, bool)>,
     /// Armed by `/`/`?`/`*`/`#` searches. `n`/`N` replay it; the render
     /// highlights matches persistently (rootle: current match underlined).
     pub last_search: Option<LastSearch>,

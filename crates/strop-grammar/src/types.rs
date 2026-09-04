@@ -46,7 +46,7 @@ pub enum Motion {
     LastLine,
     /// f/F (till=false) and t/T (till=true).
     FindChar {
-        ch: u8,
+        ch: char,
         till: bool,
         backward: bool,
     },
@@ -65,8 +65,12 @@ pub enum Motion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Object {
     Word,
-    Quote(u8),
-    Bracket { open: u8, close: u8 },
+    /// Quote pair — the delimiter is a char (0014: no ASCII-only grammar).
+    Quote(char),
+    Bracket {
+        open: char,
+        close: char,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,15 +83,15 @@ pub enum Target {
     /// dd / yy / cc, or operator + j/k: whole lines.
     Linewise,
     /// ds" — delete the surrounding pair.
-    SurroundDelete(u8),
+    SurroundDelete(char),
     /// cs"' — change surrounding pair from → to.
     SurroundChange {
-        from: u8,
-        to: u8,
+        from: char,
+        to: char,
     },
     /// ys<motion><char> — wrap the motion's target. Visual S<char>.
     SurroundAdd {
-        ch: u8,
+        ch: char,
         inner: Box<Target>,
     },
 }
@@ -114,7 +118,7 @@ pub enum Parse {
 #[derive(Debug, Clone)]
 pub struct Resolved {
     pub range: Range,
-    pub inclusive: bool,
-    /// e.g. "inner [", "word forward", "find ':'", "search /enum", "3 lines".
+    /// Motion metadata (e.g. "inner [", "word forward", "3 lines").
+    /// Inclusivity lives on range.shape (0014).
     pub spec: String,
 }
