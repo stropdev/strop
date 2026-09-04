@@ -438,6 +438,12 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
     },
     Binding {
+        keys: ":view / -R",
+        desc: "readonly browsing",
+        section: "ex+panes",
+        live: true,
+    },
+    Binding {
         keys: "ctrl-w q",
         desc: "close pane (last → buffer)",
         section: "ex+panes",
@@ -717,6 +723,7 @@ mod tests {
         "~",
         "S",
         "I",
+        ":view",
         "|",
         // prefixes with their own which-key cards
         "gg",

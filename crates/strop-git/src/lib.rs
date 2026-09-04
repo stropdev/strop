@@ -226,6 +226,14 @@ impl Repo {
         )
     }
 
+    /// Current branch (short name; detached HEAD gives the sha prefix).
+    pub fn head_branch(&self) -> Option<String> {
+        self.inner
+            .head()
+            .ok()
+            .and_then(|h| h.shorthand().map(String::from))
+    }
+
     /// Repo-relative path for a buffer path (diff keys are relative).
     fn rel_path(&self, path: &Path) -> Option<PathBuf> {
         let abs = if path.is_absolute() {

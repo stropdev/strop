@@ -43,6 +43,7 @@ impl Editor {
             text.push_str(&format!("{}* {}#{}{cur}\n", indent, branch, r.index));
             row_rev.push(Some(r.index));
         }
+        self.drop_stale_scratch();
         self.push_jump(); // opening the browser is a jumplist entry
         let mut buf = Buffer::from_text(&text);
         buf.readonly = true;

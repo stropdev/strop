@@ -22,6 +22,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("help", "help buffer"),
     ("h", "help buffer"),
     ("!", "run shell command"),
+    ("view", "open readonly"),
 ];
 
 impl Editor {
@@ -1089,6 +1090,18 @@ impl Editor {
                 }
                 Err(e) => self.message = format!("write failed: {e}"),
             },
+            "view" => {
+                // vim view: edit readonly — no arg marks the current
+                // buffer readonly
+                if arg.is_empty() {
+                    self.buf_mut().readonly = true;
+                    self.message = "readonly".into();
+                } else if let Err(e) = self.open_buffer(arg) {
+                    self.message = format!("view {arg}: {e}");
+                } else {
+                    self.buf_mut().readonly = true;
+                }
+            }
             "q" => {
                 self.close_pane_or_buffer(false);
             }

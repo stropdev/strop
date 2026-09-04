@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.8 — 2026-09-04
+
+### Fixed
+
+- **The lingering welcome screen**: the untouched initial scratch
+  buffer is replaced by the first real thing you open (vim's
+  `[No Name]` rule) — no more welcome card reappearing mid-quit, no
+  keep-quitting to exit.
+
+### Added
+
+- **Readonly mode** for real: `strop -R file` (vim's `-R`), `:view`
+  marks the current buffer readonly, `:view file` opens readonly.
+  Modeline shows `[RO]`. (Research note: no editor — vim, nvim, helix —
+  opens goto-definition targets readonly by default; editing the
+  destination is intentional. `:view`/`-R` is the standard answer.)
+- **The modeline grows up**: mode chip · git branch (`*` marks a dirty
+  worktree) · file · `[RO]` · cursor count (2×) · error/warning chips ·
+  line:col · percent.
+
 ## 0.3.7 — 2026-09-04
 
 ### Added

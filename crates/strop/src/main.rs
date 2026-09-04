@@ -131,6 +131,10 @@ fn main() {
         _ => Buffer::from_text(""),
     };
     let mut editor = Editor::new(buf);
+    // vim -R / view: readonly browsing
+    if args.iter().any(|a| a == "-R" || a == "--readonly") {
+        editor.buf_mut().readonly = true;
+    }
     if let Some(d) = &dir_arg {
         let dir = std::path::Path::new(d)
             .canonicalize()

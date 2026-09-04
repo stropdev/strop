@@ -119,6 +119,13 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     let dirty = if editor.buf().dirty { " ●" } else { "" };
     let line = editor.buf().line_of(editor.cursor) + 1;
     let col = editor.buf().col_of(editor.cursor) + 1;
+    let branch = editor.git.as_ref().and_then(|g| g.head_branch());
+    let hunks_dirty = !editor.hunks.is_empty();
+    let readonly = editor.buf().readonly;
+    let (errors, warnings) = editor.diag_counts(editor.current);
+    let cursors = editor.extra_cursors.len() + 1;
+    let total = editor.buf().len_lines().max(1);
+    let pct = if total <= 1 { 100 } else { line * 100 / total };
 
     let spec = if let Some(p) = editor.preview() {
         format!("{}  ", p.spec)
@@ -129,28 +136,81 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     } else {
         String::new()
     };
-    let pos = format!("{line}:{col} ");
 
-    // One Line, one Paragraph — two overlapping Paragraphs repaint each
-    // other's cells (the mode chip went base-on-base and vanished).
-    let chip = format!(" {mode} ");
-    let name = format!(" {file}{dirty}");
-    let used = 1 + chip.len() + name.len() + spec.len() + pos.len();
-    let pad = (area.width as usize).saturating_sub(used);
-    let row = Line::from(vec![
+    // left: mode chip · branch (worktree-dirty marks it) · file · flags
+    let mut left: Vec<Span> = vec![
         Span::styled("▌", Style::default().fg(mode_color(editor.mode))),
         Span::styled(
-            chip,
+            format!(" {mode} "),
             Style::default()
                 .fg(BASE)
                 .bg(mode_color(editor.mode))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(name, Style::default().fg(MUTED)),
-        Span::raw(" ".repeat(pad)),
-        Span::styled(spec, Style::default().fg(ACCENT)),
-        Span::styled(pos, Style::default().fg(MUTED)),
-    ]);
+    ];
+    if let Some(b) = branch {
+        let dirty_mark = if hunks_dirty { "*" } else { "" };
+        left.push(Span::styled(
+            format!(" {b}{dirty_mark}"),
+            Style::default().fg(ACCENT),
+        ));
+    }
+    left.push(Span::styled(
+        format!(" {file}{dirty}"),
+        Style::default().fg(MUTED),
+    ));
+    if readonly {
+        left.push(Span::styled(
+            " [RO]",
+            Style::default().fg(Color::Rgb(0xe0, 0xaf, 0x68)),
+        ));
+    }
+    if cursors > 1 {
+        left.push(Span::styled(
+            format!(" {cursors}×"),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    // right: diag chips · position · percent
+    let mut right: Vec<Span> = Vec::new();
+    if errors > 0 {
+        right.push(Span::styled(
+            format!(" ●{errors}"),
+            Style::default().fg(severity_color(1)),
+        ));
+    }
+    if warnings > 0 {
+        right.push(Span::styled(
+            format!(" ●{warnings}"),
+            Style::default().fg(severity_color(2)),
+        ));
+    }
+    right.push(Span::styled(
+        format!(" {line}:{col}"),
+        Style::default().fg(MUTED),
+    ));
+    right.push(Span::styled(
+        format!(" {pct}% "),
+        Style::default().fg(MUTED),
+    ));
+
+    let used: usize = left
+        .iter()
+        .map(|s| s.content.chars().count())
+        .sum::<usize>()
+        + spec.chars().count()
+        + right
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum::<usize>()
+        + 1;
+    let pad = (area.width as usize).saturating_sub(used);
+    let mut spans = left;
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.push(Span::styled(spec, Style::default().fg(ACCENT)));
+    spans.extend(right);
+    let row = Line::from(spans);
     let rect = Rect {
         y,
         height: 1,

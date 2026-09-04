@@ -140,6 +140,7 @@ impl Editor {
     }
     // ---- surface lifecycle --------------------------------------------
     fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
+        self.drop_stale_scratch();
         // surfaces stack: only the first one opened from a plain buffer
         // carries a return point (closing the deepest unwinds the chain)
         if self.surface().is_none() {

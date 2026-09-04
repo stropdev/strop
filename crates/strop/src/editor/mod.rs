@@ -288,8 +288,24 @@ impl Editor {
         &mut self.buffers[self.current]
     }
 
+    /// vim's [No Name] rule: the untouched initial scratch buffer is
+    /// replaced by the first real thing you open — it never lingers as
+    /// an extra :q with the welcome card on it.
+    pub(crate) fn drop_stale_scratch(&mut self) {
+        if self.buffers.len() == 1 {
+            let b = &self.buffers[0];
+            if b.path.is_none() && !b.dirty && b.len_bytes() == 0 && b.name.is_none() {
+                self.buffers.clear();
+                self.surfaces.clear();
+                self.highlighters.clear();
+                self.mru.clear();
+            }
+        }
+    }
+
     /// Open a file into a new buffer and switch to it (`:e`).
     pub fn open_buffer(&mut self, path: &str) -> std::io::Result<()> {
+        self.drop_stale_scratch();
         self.push_jump(); // leaving a buffer is a jumplist entry (vim)
                           // vim semantics: :e on an open file switches to its buffer
         let canon = std::path::Path::new(path)
@@ -546,6 +562,20 @@ impl Editor {
         }
         let n = self.extra_cursors.len() + 1;
         self.message = format!("{n} cursor{}", if n > 1 { "s" } else { "" });
+    }
+
+    /// (errors, warnings) on the buffer — the modeline's diag chips.
+    pub fn diag_counts(&self, idx: usize) -> (usize, usize) {
+        let mut e = 0;
+        let mut w = 0;
+        for d in self.diags_for(idx).into_iter().flatten() {
+            match d.severity {
+                1 => e += 1,
+                2 => w += 1,
+                _ => {}
+            }
+        }
+        (e, w)
     }
 
     /// `Space c` (helix's `C`): copy the primary cursor onto the same
@@ -886,6 +916,47 @@ impl Editor {
         self.normalize_cursors();
         self.clamp_cursor();
         self.tx_commit();
+    }
+}
+
+#[cfg(test)]
+mod scratch_tests {
+    use super::*;
+
+    #[test]
+    fn first_open_replaces_the_scratch_buffer() {
+        // regression: opening over the initial scratch left it behind —
+        // :q closed the file, the welcome card showed, you kept quitting
+        std::fs::write("/tmp/strop-scratch-test.rs", "fn a() {}\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text(""));
+        e.open_buffer("/tmp/strop-scratch-test.rs").unwrap();
+        assert_eq!(e.buffers.len(), 1, "scratch replaced, not stacked");
+        assert_eq!(e.buf().path.as_deref(), Some("/tmp/strop-scratch-test.rs"));
+        e.feed_text(":q\r");
+
+        assert!(e.should_quit, "one :q quits");
+        std::fs::remove_file("/tmp/strop-scratch-test.rs").ok();
+    }
+
+    #[test]
+    fn view_marks_readonly_and_edits_refuse() {
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\n"));
+        e.feed_text(":view\r");
+        assert!(e.buf().readonly);
+        e.feed_text("x");
+        assert_eq!(e.buf().rope.to_string(), "one\ntwo\n", "no edit landed");
+        assert!(e.message.contains("readonly"));
+    }
+
+    #[test]
+    fn edited_scratch_survives() {
+        let mut e = Editor::new(Buffer::from_text(""));
+        e.feed_text("ix"); // scratch has content now
+        e.feed(crate::editor::Key::Esc);
+        std::fs::write("/tmp/strop-scratch-test.rs", "fn a() {}\n").unwrap();
+        e.open_buffer("/tmp/strop-scratch-test.rs").unwrap();
+        assert_eq!(e.buffers.len(), 2, "edited scratch is real work");
+        std::fs::remove_file("/tmp/strop-scratch-test.rs").ok();
     }
 }
 
