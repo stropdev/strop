@@ -5,7 +5,7 @@
 
 use strop_core::Buffer;
 
-use super::{Editor, ShellResult};
+use super::{Document, Editor, ShellResult};
 
 impl Editor {
     /// `:!cmd`: run `sh -c cmd` in a job; the output buffer opens when
@@ -59,7 +59,7 @@ impl Editor {
 
     /// Collect shell results (event-loop tick + headless settle).
     pub fn drain_shell(&mut self) {
-        if self.buffers.is_empty() {
+        if self.docs.is_empty() {
             return;
         }
         while let Ok(result) = self.shell_rx.try_recv() {
@@ -68,11 +68,13 @@ impl Editor {
                     let mut buf = Buffer::from_text(&output);
                     buf.readonly = true;
                     buf.name = Some(format!("sh: {cmd}"));
-                    self.buffers.push(buf);
-                    self.surfaces.push(None);
-                    self.highlighters.push(None);
-                    self.current = self.buffers.len() - 1;
-                    self.touch_mru(self.current);
+                    let id = self.docs.insert(Document {
+                        buf,
+                        highlighter: None,
+                        surface: None,
+                    });
+                    self.current = id;
+                    self.touch_mru(id);
                     self.cursor = 0;
                     self.view_top = 0;
                     self.message = format!("sh: {cmd} — q closes");
@@ -84,7 +86,7 @@ impl Editor {
                     original,
                     output,
                 } => {
-                    let Some(buf) = self.buffers.get_mut(buffer) else {
+                    let Some(buf) = self.docs.get_mut(buffer).map(|d| &mut d.buf) else {
                         self.message = "pipe: buffer is gone".into();
                         continue;
                     };

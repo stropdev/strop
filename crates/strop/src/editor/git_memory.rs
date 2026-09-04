@@ -10,7 +10,7 @@ use strop_core::Buffer;
 use strop_git::memory::{self, BlameCard, BlameLine, ChangedFile, LogRow};
 use strop_git::{Hunk, LineOrigin};
 
-use super::{Editor, Key, Mode};
+use super::{Document, Editor, Key, Mode};
 
 /// What a readonly buffer is — drives Enter/q and per-row rendering.
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ pub struct CommitFiles {
 /// this, `q` dumps you on line 1).
 #[derive(Debug, Clone)]
 pub struct ReturnPoint {
-    pub buffer: usize,
+    pub buffer: strop_core::id::DocumentId,
     pub cursor: usize,
     pub view_top: usize,
 }
@@ -96,7 +96,7 @@ impl Surface {
 /// applying a stale region would cut the wrong lines.
 #[derive(Debug, Clone)]
 pub struct HunkOrigin {
-    pub buffer: usize,
+    pub buffer: strop_core::id::DocumentId,
     pub epoch: u64,
 }
 
@@ -118,7 +118,7 @@ pub struct BlameGutter {
 /// (0011 §2).
 pub enum GitJob {
     Log {
-        buffer: usize,
+        buffer: strop_core::id::DocumentId,
         generation: u64,
         rows: Vec<LogRow>,
     },
@@ -136,7 +136,7 @@ pub enum GitJob {
 
 impl Editor {
     pub fn surface(&self) -> Option<&Surface> {
-        self.surfaces.get(self.current).and_then(|s| s.as_ref())
+        self.cur().surface.as_ref()
     }
     // ---- surface lifecycle --------------------------------------------
     fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
@@ -153,13 +153,16 @@ impl Editor {
         let mut buf = Buffer::from_text(text);
         buf.readonly = true;
         buf.name = name.map(|n| n.to_string());
-        self.buffers.push(buf);
+        // surfaces render via delta/plain rules: no tree-sitter
+        let id = self.docs.insert(Document {
+            buf,
+            highlighter: None,
+            surface: Some(surface),
+        });
         self.push_jump(); // opening a surface is a jumplist entry
-        self.surfaces.push(Some(surface));
-        self.highlighters.push(None); // surfaces render via delta/plain rules
-        self.generation += 1; // buffer indices moved: old jobs are stale (0011 §2)
-        self.current = self.buffers.len() - 1;
-        self.touch_mru(self.current);
+        self.generation += 1; // document set changed: old jobs are stale (0011 §2)
+        self.current = id;
+        self.touch_mru(id);
         self.cursor = 0;
         self.view_top = 0;
     }
@@ -206,8 +209,7 @@ impl Editor {
         // the label is the file path for commit deltas; "hunk" and
         // friends resolve to None and keep origin colors
         if let Some(hl) = strop_syntax::Highlighter::for_path(label) {
-            let last = self.highlighters.len() - 1;
-            self.highlighters[last] = Some(hl);
+            self.cur_mut().highlighter = Some(hl);
         }
     }
 
@@ -332,8 +334,8 @@ impl Editor {
 
     /// The buffer's blame gutter, if its data is still trustworthy:
     /// same edit epoch, same line count. Any edit since the capture
-    pub fn blame_gutter_for(&self, buffer: usize) -> Option<&BlameGutter> {
-        let buf = self.buffers.get(buffer)?;
+    pub fn blame_gutter_for(&self, buffer: strop_core::id::DocumentId) -> Option<&BlameGutter> {
+        let buf = self.docs.get(buffer).map(|d| &d.buf)?;
         let path = buf.path.as_deref()?;
         let key = Path::new(path)
             .canonicalize()
@@ -700,7 +702,7 @@ impl Editor {
             commit: Some(_),
             sidebar_focus,
             ..
-        })) = self.surfaces.get_mut(self.current)
+        })) = self.docs.get_mut(self.current).map(|d| &mut d.surface)
         else {
             self.message = "tab: no file sidebar here".into();
             return;
@@ -725,7 +727,7 @@ impl Editor {
     fn close_surface(&mut self) {
         self.close_pane_or_buffer(true);
         if let Some(pane) = self.panes.get_mut(self.active_pane) {
-            pane.buffer = self.current; // the pane follows the successor
+            pane.doc = self.current; // the pane follows the successor
         }
     }
 
@@ -775,14 +777,14 @@ impl Editor {
         let label = path.display().to_string();
         let text = diff_surface_text(&label, &hunks);
         let idx = self.current;
-        self.buffers[idx].replace_all_system(&text);
+        self.doc_mut(idx).buf.replace_all_system(&text);
         if let Some(Some(Surface::Diff {
             label: slot,
             hunks: hunk_slot,
             added: add_slot,
             deleted: del_slot,
             ..
-        })) = self.surfaces.get_mut(idx)
+        })) = self.docs.get_mut(idx).map(|d| &mut d.surface)
         {
             *slot = label.clone();
             *hunk_slot = hunks;
@@ -790,7 +792,7 @@ impl Editor {
             *del_slot = deleted;
         }
         // the highlighter follows the file the surface now shows
-        self.highlighters[idx] = strop_syntax::Highlighter::for_path(&label);
+        self.doc_mut(idx).highlighter = strop_syntax::Highlighter::for_path(&label);
         self.cursor = 0;
         self.view_top = 0;
         let pos = cf
@@ -814,7 +816,7 @@ impl Editor {
                     // a closed surface's index may be recycled by the
                     // next buffer: only same-generation results land
                     // (0011 §2)
-                    if generation != self.generation || buffer >= self.buffers.len() {
+                    if generation != self.generation || self.docs.get(buffer).is_none() {
                         continue;
                     }
                     let text = rows
@@ -823,11 +825,11 @@ impl Editor {
                         .collect::<Vec<_>>()
                         .join("\n")
                         + "\n";
-                    self.buffers[buffer].replace_all_system(&text);
+                    self.doc_mut(buffer).buf.replace_all_system(&text);
                     let mut focus_row = None;
                     if let Some(Some(Surface::CommitLog {
                         rows: slot, focus, ..
-                    })) = self.surfaces.get_mut(buffer)
+                    })) = self.docs.get_mut(buffer).map(|d| &mut d.surface)
                     {
                         focus_row = focus.take().and_then(|sha| {
                             rows.iter().position(|r| r.sha.as_deref() == Some(&sha))
@@ -839,7 +841,7 @@ impl Editor {
                         // it (only when the browser is still what's
                         // being driven)
                         if self.current == buffer {
-                            self.cursor = self.buffers[buffer].line_start(row);
+                            self.cursor = self.doc(buffer).buf.line_start(row);
                             self.view_top = row;
                         }
                     }
@@ -1110,8 +1112,10 @@ mod tests {
         let root = dir.path().to_path_buf();
         e.feed_text(" gb");
         assert_eq!(e.blame_gutters.len(), 1, "gutter on for the buffer");
-        pump_ready(&mut e, |e| e.blame_gutter_for(0).is_some());
-        let gutter = e.blame_gutter_for(0).expect("gutter data loaded");
+        pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
+        let gutter = e
+            .blame_gutter_for(e.first_doc())
+            .expect("gutter data loaded");
         assert_eq!(gutter.lines.len(), 2, "one blame per file line");
         assert_eq!(
             gutter.lines[0].sha,
@@ -1171,7 +1175,7 @@ mod tests {
         e.feed(Key::Esc);
         e.feed_text(":w<cr>");
         assert!(
-            e.blame_gutter_for(0).is_none(),
+            e.blame_gutter_for(e.first_doc()).is_none(),
             "edits void the line↔blame pairing"
         );
         e.blame_card = None;
@@ -1199,12 +1203,20 @@ mod tests {
         e.open_log(false);
         pump(&mut e);
         std::fs::write(root.join("g.rs"), "other\n").unwrap();
+        let origin = e.first_doc();
         e.open_buffer(root.join("g.rs").to_str().unwrap()).unwrap();
-        assert_eq!(e.current, 2, "switched away from the log's origin");
-        e.current = 1; // back onto the log surface
+        assert_ne!(e.current, origin, "switched away from the log's origin");
+        let log_surface = e.mru.iter().copied().find(|&id| {
+            e.doc(id)
+                .buf
+                .name
+                .as_deref()
+                .is_some_and(|n| n.contains("log"))
+        });
+        e.current = log_surface.expect("log surface in mru"); // back onto the log surface
         e.cursor = 0;
         e.feed_text("q");
-        assert_eq!(e.current, 0, "closing switches back to the origin");
+        assert_eq!(e.current, origin, "closing switches back to the origin");
         assert_eq!(e.cursor, want, "cursor restored, not line 1");
         assert_eq!(e.buf().line_of(e.cursor), 1);
     }
@@ -1217,11 +1229,12 @@ mod tests {
         e.open_log(false);
         pump(&mut e);
         let stale = e.generation;
+        let dead_surface = e.current; // the log surface's id
         e.feed_text("q"); // closes the surface; generation moves on
         assert_ne!(stale, e.generation);
         e.git_tx
             .send(GitJob::Log {
-                buffer: 1,
+                buffer: dead_surface,
                 generation: stale,
                 rows: vec![LogRow {
                     text: "POISON ROW".into(),
@@ -1230,9 +1243,9 @@ mod tests {
             })
             .unwrap();
         e.drain_git_jobs();
-        for (i, b) in e.buffers.iter().enumerate() {
-            let text = b.rope.to_string();
-            assert!(!text.contains("POISON"), "buffer {i} clobbered: {text}");
+        for (i, (_, d)) in e.docs.iter().enumerate() {
+            let text = d.buf.rope.to_string();
+            assert!(!text.contains("POISON"), "document {i} clobbered: {text}");
         }
         // the live path still delivers
         e.open_log(false);
@@ -1337,7 +1350,7 @@ mod tests {
             "wraparound to the last file"
         );
         assert_eq!(
-            e.buffers.len(),
+            e.docs.len(),
             4,
             "]f rewrites the surface in place (no new buffers)"
         );
@@ -1381,14 +1394,14 @@ mod tests {
         assert_eq!(e.panes.len(), 2);
         e.feed_text("q");
         assert_eq!(e.panes.len(), 1, "q closes the pane in a split");
-        assert_eq!(e.buffers.len(), 2, "the surface buffer survives");
+        assert_eq!(e.docs.len(), 2, "the surface buffer survives");
         assert!(
             matches!(e.surface(), Some(Surface::CommitLog { .. })),
             "still on the log"
         );
         e.feed_text("q");
-        assert_eq!(e.buffers.len(), 1, "the last pane's q closes the buffer");
-        assert_eq!(e.current, 0, "back on the origin buffer");
+        assert_eq!(e.docs.len(), 1, "the last pane's q closes the buffer");
+        assert_eq!(e.current, e.first_doc(), "back on the origin buffer");
         assert!(e.surface().is_none());
     }
 
@@ -1399,7 +1412,7 @@ mod tests {
         let (dir, mut e) = fixture();
         let root = dir.path().to_path_buf();
         e.feed_text(" gb");
-        pump_ready(&mut e, |e| e.blame_gutter_for(0).is_some());
+        pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
         let frame = crate::headless::frame_string(&mut e, 100, 10);
         let first_sha = git_out(&root, &["rev-parse", "HEAD~1"]);
         assert!(

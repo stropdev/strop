@@ -13,7 +13,10 @@ enum HunkTarget {
     NotASurface,
     /// A hunk preview whose origin buffer still matches the epoch it
     /// was captured at.
-    Fresh { buffer: usize, hunk: Hunk },
+    Fresh {
+        buffer: strop_core::id::DocumentId,
+        hunk: Hunk,
+    },
     /// The origin buffer changed since the preview opened — applying
     /// the stored region would cut the wrong lines.
     Stale,
@@ -116,8 +119,8 @@ impl Editor {
     /// Apply `hunk`'s reverse to buffer `idx`: pure deletions reinsert,
     /// pure additions drop, changes swap old content back. Returns
     /// false when the buffer has no HEAD content to restore from.
-    fn restore_hunk_in(&mut self, idx: usize, hunk: &Hunk) -> bool {
-        let Some(path) = self.buffers[idx].path.clone() else {
+    fn restore_hunk_in(&mut self, idx: strop_core::id::DocumentId, hunk: &Hunk) -> bool {
+        let Some(path) = self.doc(idx).buf.path.clone() else {
             return false;
         };
         let Some(repo) = &self.git else { return false };
@@ -180,8 +183,14 @@ impl Editor {
         if self.current == idx {
             self.clamp_cursor();
             self.flash(strop_core::Range::charwise(self.cursor, self.cursor));
-        } else if let Some(pane) = self.panes.iter_mut().find(|p| p.buffer == idx) {
-            pane.cursor = self.buffers[idx].line_start(self.buffers[idx].len_lines() - 1);
+        } else {
+            let at = {
+                let buf = &self.doc(idx).buf;
+                buf.line_start(buf.len_lines().saturating_sub(1))
+            };
+            if let Some(pane) = self.panes.iter_mut().find(|p| p.doc == idx) {
+                pane.cursor = at;
+            }
         }
         true
     }
@@ -224,14 +233,14 @@ impl Editor {
         }
     }
 
-    fn stage_hunk_in(&mut self, idx: usize, hunk: &Hunk) {
-        let Some(path) = self.buffers[idx].path.clone() else {
+    fn stage_hunk_in(&mut self, idx: strop_core::id::DocumentId, hunk: &Hunk) {
+        let Some(path) = self.doc(idx).buf.path.clone() else {
             return;
         };
         // staging reads the *disk* file's hunk: a dirty buffer means the
         // two disagree, and auto-saving would silently write every
         // unrelated unsaved edit to the worktree (0014). Refuse loudly.
-        if self.buffers[idx].dirty {
+        if self.doc(idx).buf.dirty {
             self.message = "unsaved changes — :w first, then stage".into();
             return;
         }
@@ -262,7 +271,7 @@ impl Editor {
         };
         let origin = HunkOrigin {
             buffer: self.current,
-            epoch: self.buffers[self.current].epoch,
+            epoch: self.cur().buf.epoch,
         };
         self.open_diff_surface("hunk", "hunk", vec![hunk], Some(origin));
     }
@@ -280,8 +289,8 @@ impl Editor {
         let Some(hunk) = hunks.first() else {
             return HunkTarget::NotASurface;
         };
-        match self.buffers.get(origin.buffer) {
-            Some(b) if b.epoch == origin.epoch => HunkTarget::Fresh {
+        match self.docs.get(origin.buffer) {
+            Some(d) if d.buf.epoch == origin.epoch => HunkTarget::Fresh {
                 buffer: origin.buffer,
                 hunk: hunk.clone(),
             },
@@ -409,10 +418,10 @@ mod tests {
         assert_eq!(e.buf().line_of(e.cursor), 2);
         // undo acts on the origin file buffer, not the surface
         e.feed_text(" gu");
-        let text = e.buffers[0].rope.to_string();
+        let text = e.doc(e.first_doc()).buf.rope.to_string();
         assert_eq!(text, "fn a() {}\nfn b() {}\n", "hunk restored: {text}");
         e.feed_text("q");
-        assert_eq!(e.current, 0);
+        assert_eq!(e.current, e.first_doc());
     }
 
     /// 0014 P0: staging must never silently write unrelated unsaved
@@ -454,8 +463,8 @@ mod tests {
         e.feed_text("fn c() {}");
         e.feed_text("<esc>gg]c gp");
         // edit the origin buffer: the epoch moves, the preview goes stale
-        e.panes[0].buffer = 0; // ensure a pane points at the file
-        e.buffers[0].insert(0, "// touched\n");
+        e.panes[0].doc = e.first_doc(); // ensure a pane points at the file
+        e.doc_mut(e.first_doc()).buf.insert(0, "// touched\n");
         e.feed_text(" gu");
         assert!(
             e.message.contains("buffer changed"),

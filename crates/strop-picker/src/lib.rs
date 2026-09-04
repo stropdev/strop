@@ -17,8 +17,8 @@ use std::path::PathBuf;
 pub enum Payload {
     /// A file path relative to the working directory.
     File(PathBuf),
-    /// An open buffer (index into the editor's buffer list).
-    Buffer(usize),
+    /// An open document (stable generational id, 0014 wave 2).
+    Buffer(strop_core::id::DocumentId),
     /// A grep hit: path, 1-based line, 1-based col, matched-span length
     /// in bytes, the matched line.
     Grep {
@@ -337,10 +337,12 @@ mod tests {
 
     #[test]
     fn selection_wraps() {
+        let mut arena: strop_core::id::Arena<strop_core::id::DocumentKind, ()> =
+            strop_core::id::Arena::default();
         let items: Vec<Item> = (0..3)
             .map(|i| Item {
                 text: format!("f{i}"),
-                payload: Payload::Buffer(i),
+                payload: Payload::Buffer(arena.insert(())),
             })
             .collect();
         let mut p = Picker::new(Kind::Buffers, items, false);

@@ -120,7 +120,7 @@ impl Editor {
         let Some(client) = &self.lsp else { return };
         // buffers can be empty post-quit (the TUI breaks first, but
         // scripted/headless callers may drain past the last :q)
-        let Some(buf) = self.buffers.get(self.current) else {
+        let Some(buf) = self.docs.get(self.current).map(|d| &d.buf) else {
             return;
         };
         let Some(path) = buf.path.clone() else {
@@ -253,7 +253,7 @@ impl Editor {
 
     /// The open buffer backing an absolute path, if any.
     fn buffer_for_path(&self, abs: &std::path::Path) -> Option<&strop_core::Buffer> {
-        self.buffers.iter().find(|b| {
+        self.docs.iter().map(|(_, d)| &d.buf).find(|b| {
             b.path.as_deref().is_some_and(|p| {
                 let p = std::path::Path::new(p);
                 let buf_abs = if p.is_absolute() {

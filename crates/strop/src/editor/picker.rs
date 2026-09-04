@@ -42,7 +42,9 @@ impl Editor {
                     .mru
                     .iter()
                     .map(|&i| {
-                        let name = self.buffers[i]
+                        let name = self
+                            .doc(i)
+                            .buf
                             .path
                             .clone()
                             .unwrap_or_else(|| "[scratch]".into());
@@ -227,7 +229,7 @@ impl Editor {
                 }
             }
             Payload::Buffer(i) => {
-                if i < self.buffers.len() {
+                if self.docs.get(i).is_some() {
                     self.current = i;
                     self.touch_mru(i);
                     self.cursor = 0;
@@ -305,35 +307,39 @@ impl Editor {
     }
 
     /// Open-buffer index for an absolute path, if loaded.
-    fn buffer_index_of(&self, abs: &std::path::Path) -> Option<usize> {
-        self.buffers.iter().position(|b| {
-            b.path
-                .as_deref()
-                .map(|p| {
-                    let p = std::path::Path::new(p);
-                    let buf_abs = if p.is_absolute() {
-                        p.to_path_buf()
-                    } else {
-                        self.cwd.join(p)
-                    };
-                    buf_abs == abs
-                        || buf_abs.canonicalize().ok().as_ref() == Some(&abs.to_path_buf())
-                })
-                .unwrap_or(false)
-        })
+    fn buffer_index_of(&self, abs: &std::path::Path) -> Option<strop_core::id::DocumentId> {
+        self.docs
+            .iter()
+            .find(|(_, d)| {
+                let b = &d.buf;
+                b.path
+                    .as_deref()
+                    .map(|p| {
+                        let p = std::path::Path::new(p);
+                        let buf_abs = if p.is_absolute() {
+                            p.to_path_buf()
+                        } else {
+                            self.cwd.join(p)
+                        };
+                        buf_abs == abs
+                            || buf_abs.canonicalize().ok().as_ref() == Some(&abs.to_path_buf())
+                    })
+                    .unwrap_or(false)
+            })
+            .map(|(id, _)| id)
     }
 
     /// Verified, bottom-up replacement in an open buffer: one history
     /// transaction → one `u` reverts this buffer's replacements.
     fn replace_in_buffer(
         &mut self,
-        bi: usize,
+        bi: strop_core::id::DocumentId,
         hits: &[(usize, usize, usize, String)],
         replacement: &str,
     ) -> (usize, usize, usize) {
         let mut applied = 0;
         let mut stale = 0;
-        let buf = &mut self.buffers[bi];
+        let buf = &mut self.doc_mut(bi).buf;
         if buf.readonly {
             return (0, 0, hits.len());
         }
@@ -426,8 +432,9 @@ impl Editor {
         match item.payload {
             Payload::Buffer(i) => {
                 let name = self
-                    .buffers
+                    .docs
                     .get(i)?
+                    .buf
                     .path
                     .clone()
                     .unwrap_or_else(|| "[scratch]".into());
@@ -488,8 +495,8 @@ pub struct PreviewEntry {
 }
 
 pub enum PreviewSource<'a> {
-    /// Live buffer, highlighted with its own per-buffer highlighter.
-    Buffer(usize),
+    /// Live document, highlighted with its own highlighter.
+    Buffer(strop_core::id::DocumentId),
     Cached(&'a mut PreviewEntry),
     /// Worker read still in flight (or unreadable); render shows a
     /// placeholder, never blocks.
@@ -516,7 +523,7 @@ mod replace_tests {
             hit(1, 1, 3, "foo bar foo"),
             hit(1, 5, 3, "WRONG — stale line"),
         ];
-        let (touched, applied, stale) = e.replace_in_buffer(0, &hits, "baz");
+        let (touched, applied, stale) = e.replace_in_buffer(e.first_doc(), &hits, "baz");
         assert_eq!((touched, applied, stale), (1, 2, 1));
         assert_eq!(e.buf().rope.to_string(), "baz bar baz\n");
         // one undo revision for the whole apply (0007 §4)

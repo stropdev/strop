@@ -8,7 +8,7 @@ use super::Editor;
 /// One pane's view state.
 #[derive(Debug, Clone)]
 pub struct Pane {
-    pub buffer: usize,
+    pub doc: strop_core::id::DocumentId,
     pub cursor: usize,
     pub view_top: usize,
 }
@@ -34,7 +34,7 @@ impl Editor {
         }
         let (cursor, view_top) = (self.cursor, self.view_top);
         self.panes.push(Pane {
-            buffer: self.current,
+            doc: self.current,
             cursor,
             view_top,
         });
@@ -80,21 +80,20 @@ impl Editor {
     /// Save the active pane's state before switching away.
     fn sync_to_pane(&mut self) {
         let pane = &mut self.panes[self.active_pane];
-        pane.buffer = self.current;
+        pane.doc = self.current;
         pane.cursor = self.cursor;
         pane.view_top = self.view_top;
     }
 
     fn sync_from_pane(&mut self) {
         let pane = self.panes[self.active_pane].clone();
-        if pane.buffer < self.buffers.len() {
-            self.current = pane.buffer;
+        if self.docs.get(pane.doc).is_some() {
+            self.current = pane.doc;
         }
         self.cursor = pane.cursor.min(self.buf().len_bytes());
         self.view_top = pane.view_top;
         self.clamp_cursor();
         self.discover_git();
-        let _ = self.highlighters.get(self.current); // highlighters stay per-buffer
     }
 }
 
@@ -124,7 +123,7 @@ mod tests {
         // :q closes the pane, buffer stays
         e.feed_text(":q<cr>");
         assert_eq!(e.panes.len(), 1);
-        assert_eq!(e.buffers.len(), 1);
+        assert_eq!(e.docs.len(), 1);
     }
 
     #[test]

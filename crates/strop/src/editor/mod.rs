@@ -76,19 +76,39 @@ pub const FLASH_FOR: Duration = Duration::from_millis(280);
 /// One register cell: text + linewise flag (vim's unnamed register is `"`).
 pub type Registers = HashMap<char, (String, bool)>;
 
+/// One document: the text buffer plus everything that used to live in
+/// parallel vectors keyed by buffer index (0014 wave 2). One struct,
+/// one arena — the alignment invariant is the type system now.
+pub struct Document {
+    pub buf: Buffer,
+    /// None: unsupported extension.
+    pub highlighter: Option<Highlighter>,
+    /// Git memory surface attached to this document (0010).
+    pub surface: Option<Surface>,
+}
+
+impl Document {
+    pub fn new(buf: Buffer) -> Self {
+        let highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
+        Self {
+            buf,
+            highlighter,
+            surface: None,
+        }
+    }
+}
+
 pub struct Editor {
-    pub buffers: Vec<Buffer>,
+    pub docs: strop_core::id::Arena<strop_core::id::DocumentKind, Document>,
     /// Modal input on the `:`/`/`/`|` line (rootle's boxes): Esc once
     /// enters normal mode on the line, twice clears it.
     pub pending_normal: bool,
     pub pending_cursor: usize,
-    pub current: usize,
-    /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks (jumps.rs).
-    pub jumplist_past: Vec<(usize, usize)>,
-    pub jumplist_future: Vec<(usize, usize)>,
-    /// Syntax highlighter per buffer (None: unsupported ext), aligned
-    /// with `buffers` — previews and switches keep their highlighting.
-    pub highlighters: Vec<Option<Highlighter>>,
+    pub current: strop_core::id::DocumentId,
+    /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks of
+    /// (document, byte offset) (jumps.rs).
+    pub jumplist_past: Vec<(strop_core::id::DocumentId, usize)>,
+    pub jumplist_future: Vec<(strop_core::id::DocumentId, usize)>,
     pub mode: Mode,
     pub cursor: usize,
     pub pending: String,
@@ -106,16 +126,16 @@ pub struct Editor {
     pub last_search: Option<LastSearch>,
     pub anchor: usize,
     pub registers: Registers,
-    /// Marks: char → (buffer index, byte offset). `m{a}` sets, `'{a}` jumps.
-    pub marks: HashMap<char, (usize, usize)>,
+    /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
+    pub marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
     pub flash: Option<(Range, Instant)>,
     pub message: String,
     pub should_quit: bool,
     pub view_top: usize,
     pub picker: Option<PickerGlue>,
     pub cwd: PathBuf,
-    /// MRU buffer order (most recent first); drives `Space b`.
-    pub mru: Vec<usize>,
+    /// MRU document order (most recent first); drives `Space b`.
+    pub mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
     pub previews: Previews,
     /// Git working surface state (M2).
@@ -129,7 +149,6 @@ pub struct Editor {
     pub hunks_epoch: u64,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
-    pub surfaces: Vec<Option<Surface>>,
     pub blame_card: Option<strop_git::memory::BlameCard>,
     /// Blame gutters by canonical path (0011 §3): per-buffer view
     /// state that outlives index churn and never persists to sessions.
@@ -190,7 +209,7 @@ pub enum ShellResult {
     Display { cmd: String, output: String },
     /// `|cmd`: replace a range with stdout (verified before applying).
     Pipe {
-        buffer: usize,
+        buffer: strop_core::id::DocumentId,
         start: usize,
         end: usize,
         original: String,
@@ -207,10 +226,12 @@ impl Editor {
         let (shell_tx, shell_rx) = std::sync::mpsc::channel();
         let (clip_tx, clip_rx) = std::sync::mpsc::channel();
         let (git_tx, git_rx) = git_channel();
+        let mut docs = strop_core::id::Arena::default();
+        let current = docs.insert(Document::new(buf));
         let mut e = Self {
-            highlighters: vec![buf.path.as_deref().and_then(Highlighter::for_path)],
-            buffers: vec![buf],
-            current: 0,
+            current,
+            docs,
+            mru: vec![current],
             mode: Mode::Normal,
             cursor: 0,
             pending: String::new(),
@@ -234,14 +255,12 @@ impl Editor {
             cwd,
             blame_gutters: HashMap::new(),
             generation: 0,
-            mru: vec![0],
             previews: HashMap::new(),
             shell_tx,
             shell_rx,
             git: None,
             hunks: Vec::new(),
             hunks_epoch: u64::MAX,
-            surfaces: vec![None],
             blame_card: None,
             git_tx,
             git_rx,
@@ -264,7 +283,7 @@ impl Editor {
             lsp_sent_epochs: HashMap::new(),
             lsp_hints_shown: std::collections::HashSet::new(),
             panes: vec![Pane {
-                buffer: 0,
+                doc: current,
                 cursor: 0,
                 view_top: 0,
             }],
@@ -276,36 +295,70 @@ impl Editor {
         e
     }
 
-    /// Mark a buffer most-recently-used.
-    pub fn touch_mru(&mut self, i: usize) {
+    /// Mark a document most-recently-used.
+    pub fn touch_mru(&mut self, i: strop_core::id::DocumentId) {
         self.mru.retain(|&x| x != i);
         self.mru.insert(0, i);
     }
 
+    /// The current document. Invariant: the editor always has one live
+    /// document while it runs (closing the last one sets should_quit).
+    pub fn cur(&self) -> &Document {
+        self.docs
+            .get(self.current)
+            .expect("invariant: current document is live")
+    }
+
+    pub fn cur_mut(&mut self) -> &mut Document {
+        self.docs
+            .get_mut(self.current)
+            .expect("invariant: current document is live")
+    }
+
     pub fn buf(&self) -> &Buffer {
-        &self.buffers[self.current]
+        &self.cur().buf
     }
 
     pub fn buf_mut(&mut self) -> &mut Buffer {
-        &mut self.buffers[self.current]
+        &mut self.cur_mut().buf
+    }
+
+    /// One document by id — stale ids panic: an id outliving its
+    /// document is a bug, and the generation check is what keeps it
+    /// from silently resolving to the wrong one (0014 wave 2).
+    pub fn doc(&self, id: strop_core::id::DocumentId) -> &Document {
+        self.docs.get(id).expect("stale document id")
+    }
+
+    pub fn doc_mut(&mut self, id: strop_core::id::DocumentId) -> &mut Document {
+        self.docs.get_mut(id).expect("stale document id")
+    }
+
+    /// Tests: the first live document's id (the "buffers[0]" of the
+    /// index era).
+    #[cfg(test)]
+    pub(crate) fn first_doc(&self) -> strop_core::id::DocumentId {
+        self.docs
+            .iter()
+            .next()
+            .map(|(id, _)| id)
+            .expect("test document")
     }
 
     /// vim's [No Name] rule: the untouched initial scratch buffer is
     /// replaced by the first real thing you open — it never lingers as
     /// an extra :q with the welcome card on it.
     pub(crate) fn drop_stale_scratch(&mut self) {
-        if self.buffers.len() == 1 {
-            let b = &self.buffers[0];
+        if self.docs.len() == 1 {
+            let b = &self.cur().buf;
             if b.path.is_none() && !b.dirty && b.len_bytes() == 0 && b.name.is_none() {
-                self.buffers.clear();
-                self.surfaces.clear();
-                self.highlighters.clear();
+                self.docs.clear();
                 self.mru.clear();
             }
         }
     }
 
-    /// Open a file into a new buffer and switch to it (`:e`).
+    /// Open a file into a new document and switch to it (`:e`).
     pub fn open_buffer(&mut self, path: &str) -> std::io::Result<()> {
         self.drop_stale_scratch();
         self.push_jump(); // leaving a buffer is a jumplist entry (vim)
@@ -313,24 +366,31 @@ impl Editor {
         let canon = std::path::Path::new(path)
             .canonicalize()
             .unwrap_or_else(|_| self.cwd.join(path));
-        if let Some(i) = self.buffers.iter().position(|b| {
-            b.path
-                .as_deref()
-                .and_then(|p| std::path::Path::new(p).canonicalize().ok())
-                == Some(canon.clone())
-        }) {
-            self.current = i;
-            self.touch_mru(i);
+        let existing = self
+            .docs
+            .iter()
+            .find(|(_, d)| {
+                d.buf
+                    .path
+                    .as_deref()
+                    .and_then(|p| std::path::Path::new(p).canonicalize().ok())
+                    == Some(canon.clone())
+            })
+            .map(|(id, _)| id);
+        if let Some(id) = existing {
+            self.current = id;
+            self.touch_mru(id);
             return Ok(());
         }
         let buf = Buffer::open(path)?;
-        let hl = buf.path.as_deref().and_then(Highlighter::for_path);
-        self.buffers.push(buf);
-        self.surfaces.push(None);
-        self.highlighters.push(hl);
-        self.generation += 1; // buffer indices moved: old jobs are stale (0011 §2)
-        self.current = self.buffers.len() - 1;
-        self.touch_mru(self.current);
+        let id = self.docs.insert(Document::new(buf));
+        if self.docs.len() == 1 {
+            // the scratch was dropped under us
+            self.mru.clear();
+        }
+        self.generation += 1; // document set changed: old jobs are stale (0011 §2)
+        self.current = id;
+        self.touch_mru(id);
         self.cursor = 0;
         self.view_top = 0;
         self.discover_git();
@@ -338,53 +398,47 @@ impl Editor {
         Ok(())
     }
 
-    /// Close the current buffer; quits when the last one closes.
-    /// Returns false when unsaved changes block the close.
+    /// Close the current document; quits when the last one closes.
+    /// Returns false when unsaved changes block the close. Generational
+    /// ids mean no reindexing anywhere (0014 wave 2).
     pub fn close_buffer(&mut self, force: bool) -> bool {
         if self.buf().dirty && !force {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }
-        let closed_surface = self.surfaces[self.current].take();
-        self.buffers.remove(self.current);
-        self.surfaces.remove(self.current);
         let closed = self.current;
-        if self.buffers.is_empty() {
+        let closed_surface = self.docs.remove(closed).and_then(|d| d.surface);
+        if self.docs.is_empty() {
             crate::session::save(self);
             self.should_quit = true;
         } else {
             self.mru.retain(|&x| x != closed);
-            for m in &mut self.mru {
-                if *m > closed {
-                    *m -= 1;
-                }
-            }
-            self.highlighters.remove(closed);
-            self.generation += 1; // buffer indices moved: old jobs are stale (0011 §2)
-            self.current = self.current.min(self.buffers.len() - 1);
-            self.touch_mru(self.current);
+            self.generation += 1; // document set changed: old jobs are stale (0011 §2)
+            let next = self.mru.first().copied().unwrap_or_else(|| {
+                self.docs
+                    .iter()
+                    .next()
+                    .map(|(id, _)| id)
+                    .expect("docs non-empty")
+            });
+            self.current = next;
+            self.touch_mru(next);
             self.cursor = 0;
             self.view_top = 0;
             // a closing surface hands the cursor and view back to the
-            // buffer it opened from — unconditionally (0011 §1): when
-            // the origin isn't what we'd land on next, we switch to it
-            // (its index shifts down past `closed`)
+            // document it opened from — by id, no index math (0011 §1)
             if let Some(surface) = closed_surface {
                 if let Some(ret) = surface.return_point() {
-                    let buffer = if ret.buffer > closed {
-                        ret.buffer - 1
-                    } else {
-                        ret.buffer
-                    };
-                    if buffer != self.current {
-                        self.current = buffer;
-                        self.touch_mru(buffer);
+                    if self.docs.get(ret.buffer).is_some() {
+                        if ret.buffer != self.current {
+                            self.current = ret.buffer;
+                            self.touch_mru(ret.buffer);
+                        }
+                        self.cursor = ret.cursor.min(self.buf().len_bytes());
+                        self.view_top = ret.view_top;
                     }
-                    self.cursor = ret.cursor.min(self.buf().len_bytes());
-                    self.view_top = ret.view_top;
                 }
             }
-            self.discover_git();
         }
         true
     }
@@ -569,7 +623,7 @@ impl Editor {
     }
 
     /// (errors, warnings) on the buffer — the modeline's diag chips.
-    pub fn diag_counts(&self, idx: usize) -> (usize, usize) {
+    pub fn diag_counts(&self, idx: strop_core::id::DocumentId) -> (usize, usize) {
         let mut e = 0;
         let mut w = 0;
         for d in self.diags_for(idx).into_iter().flatten() {
@@ -630,8 +684,8 @@ impl Editor {
 
     /// Diagnostics of buffer `idx`, resolved against cwd like
     /// diag_severity_at.
-    fn diags_for(&self, idx: usize) -> Option<&Vec<strop_lsp::Diag>> {
-        let path = self.buffers.get(idx)?.path.as_deref()?;
+    fn diags_for(&self, idx: strop_core::id::DocumentId) -> Option<&Vec<strop_lsp::Diag>> {
+        let path = self.docs.get(idx).map(|d| &d.buf)?.path.as_deref()?;
         let abs = if std::path::Path::new(path).is_absolute() {
             PathBuf::from(path)
         } else {
@@ -642,7 +696,11 @@ impl Editor {
 
     /// The worst diagnostic's (severity, message) on a 1-based line —
     /// the cursor line's end-of-line note (0009 UX).
-    pub fn diag_message_at(&self, idx: usize, line_1based: usize) -> Option<(u8, &str)> {
+    pub fn diag_message_at(
+        &self,
+        idx: strop_core::id::DocumentId,
+        line_1based: usize,
+    ) -> Option<(u8, &str)> {
         self.diags_for(idx)?
             .iter()
             .filter(|d| d.line + 1 == line_1based)
@@ -652,7 +710,11 @@ impl Editor {
 
     /// Diagnostic spans on a 1-based line as (col, end_col, severity)
     /// — the undercurl layer (0009 UX). Same-line diags only.
-    pub fn diag_ranges_at(&self, idx: usize, line_1based: usize) -> Vec<(usize, usize, u8)> {
+    pub fn diag_ranges_at(
+        &self,
+        idx: strop_core::id::DocumentId,
+        line_1based: usize,
+    ) -> Vec<(usize, usize, u8)> {
         self.diags_for(idx)
             .map(|ds| {
                 ds.iter()
@@ -665,8 +727,12 @@ impl Editor {
     /// Worst diagnostic severity (1=error … 4=hint) for a 1-based line
     /// of buffer `idx`, if any (0001 pillar 4: merges with the git
     /// gutter). Per-buffer, so panes show their own diagnostics.
-    pub fn diag_severity_at(&self, idx: usize, line_1based: usize) -> Option<u8> {
-        let path = self.buffers.get(idx)?.path.as_deref()?;
+    pub fn diag_severity_at(
+        &self,
+        idx: strop_core::id::DocumentId,
+        line_1based: usize,
+    ) -> Option<u8> {
+        let path = self.docs.get(idx).map(|d| &d.buf)?.path.as_deref()?;
         let abs = if std::path::Path::new(path).is_absolute() {
             PathBuf::from(path)
         } else {
@@ -693,7 +759,7 @@ impl Editor {
         self.push_jump(); // mark jumps are jumplist entries
         match self.marks.get(&mark).copied() {
             Some((buf, offset)) => {
-                if buf < self.buffers.len() {
+                if self.docs.get(buf).is_some() {
                     if buf != self.current {
                         self.current = buf;
                         self.touch_mru(buf);
@@ -827,7 +893,7 @@ impl Editor {
 
     /// Collect clipboard reads (event-loop tick + headless settle).
     pub fn drain_clipboard(&mut self) {
-        if self.buffers.is_empty() {
+        if self.docs.is_empty() {
             return;
         }
         while let Ok(result) = self.clip_rx.try_recv() {
@@ -937,7 +1003,7 @@ mod scratch_tests {
         std::fs::write(&f, "fn a() {}\n").unwrap();
         let mut e = Editor::new(Buffer::from_text(""));
         e.open_buffer(f.to_str().unwrap()).unwrap();
-        assert_eq!(e.buffers.len(), 1, "scratch replaced, not stacked");
+        assert_eq!(e.docs.len(), 1, "scratch replaced, not stacked");
         assert_eq!(e.buf().path.as_deref(), f.to_str());
         e.feed_text(":q\r");
 
@@ -963,7 +1029,7 @@ mod scratch_tests {
         let f = dir.path().join("scratch-test.rs");
         std::fs::write(&f, "fn a() {}\n").unwrap();
         e.open_buffer(f.to_str().unwrap()).unwrap();
-        assert_eq!(e.buffers.len(), 2, "edited scratch is real work");
+        assert_eq!(e.docs.len(), 2, "edited scratch is real work");
     }
 }
 
@@ -1271,16 +1337,16 @@ mod tests {
         let mut e = editor_with("first\n");
         e.feed_text(":e /tmp/strop-test-b.rs<cr>");
 
-        assert_eq!(e.buffers.len(), 2);
+        assert_eq!(e.docs.len(), 2);
         assert_eq!(text(&e), "second\n");
         e.feed_text(":q<cr>");
-        assert_eq!(e.buffers.len(), 1);
+        assert_eq!(e.docs.len(), 1);
         assert_eq!(text(&e), "first\n");
         // dirty buffer refuses :q, allows :q!
         e.feed_text("ix");
         e.feed(crate::editor::Key::Esc);
         e.feed_text(":q<cr>");
-        assert_eq!(e.buffers.len(), 1);
+        assert_eq!(e.docs.len(), 1);
         assert!(e.message.contains("unsaved"));
         e.feed_text(":q!<cr>");
         assert!(e.should_quit);
@@ -1351,30 +1417,27 @@ mod indent_tests {
 mod alignment_tests {
     use super::*;
 
-    /// buffers / highlighters / surfaces stay index-aligned through every
-    /// open/close path (bitten twice; the contract now lives here).
+    /// Opens, surfaces, and closes never panic and keep the document
+    /// set honest (pre-0.4.1 this pinned the parallel-vectors alignment;
+    /// the Document struct made that invariant the type system).
     #[test]
-    fn parallel_vecs_stay_aligned() {
-        std::fs::write("/tmp/strop-align-a.rs", "a\n").unwrap();
-        std::fs::write("/tmp/strop-align-b.rs", "b\n").unwrap();
-        let mut e = Editor::new(Buffer::open("/tmp/strop-align-a.rs").unwrap());
-        let check = |e: &Editor| {
-            assert_eq!(e.buffers.len(), e.highlighters.len());
-            assert_eq!(e.buffers.len(), e.surfaces.len());
-        };
-        check(&e);
-        e.open_buffer("/tmp/strop-align-b.rs").unwrap();
-        check(&e);
-        // a surface (readonly virtual buffer)
-        e.surfaces.pop();
-        e.surfaces.push(None);
-        check(&e);
+    fn document_set_stays_honest() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("align-a.rs");
+        let b = dir.path().join("align-b.rs");
+        std::fs::write(&a, "a\n").unwrap();
+        std::fs::write(&b, "b\n").unwrap();
+        let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
+        e.open_buffer(b.to_str().unwrap()).unwrap();
+        assert_eq!(e.docs.len(), 2);
+        e.open_diff_surface("delta", "f.rs", vec![], None);
+        assert_eq!(e.docs.len(), 3);
+        assert!(e.cur().surface.is_some());
         e.close_buffer(true);
-        check(&e);
+        assert_eq!(e.docs.len(), 2);
         e.close_buffer(true);
-        assert!(e.should_quit);
-        std::fs::remove_file("/tmp/strop-align-a.rs").ok();
-        std::fs::remove_file("/tmp/strop-align-b.rs").ok();
+        e.close_buffer(true);
+        assert!(e.should_quit, "closing the last document quits");
     }
 }
 
@@ -1566,7 +1629,7 @@ mod hardening_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(":q!\r");
         assert!(e.should_quit);
-        assert!(e.buffers.is_empty());
+        assert!(e.docs.is_empty());
         e.drain_picker();
         e.drain_git_jobs();
         e.drain_lsp();

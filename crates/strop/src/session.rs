@@ -50,7 +50,8 @@ fn session_path(cwd: &Path) -> Option<PathBuf> {
 /// Snapshot the editor into a Session.
 pub(crate) fn capture(editor: &Editor) -> Option<Session> {
     let mut buffers = Vec::new();
-    for (i, buf) in editor.buffers.iter().enumerate() {
+    for (id, doc) in editor.docs.iter() {
+        let buf = &doc.buf;
         if buf.readonly || buf.path.is_none() {
             continue;
         }
@@ -64,17 +65,17 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
         };
         buffers.push(BufferState {
             path,
-            line: if i == editor.current {
+            line: if id == editor.current {
                 editor.buf().line_of(editor.cursor)
             } else {
                 0
             },
-            col: if i == editor.current {
+            col: if id == editor.current {
                 editor.buf().col_of(editor.cursor)
             } else {
                 0
             },
-            view_top: if i == editor.current {
+            view_top: if id == editor.current {
                 editor.view_top
             } else {
                 0
@@ -87,7 +88,7 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
     }
     let current = buffers
         .iter()
-        .position(|b| Some(&b.path) == editor.buffers[editor.current].path.as_ref())
+        .position(|b| Some(&b.path) == editor.cur().buf.path.as_ref())
         .unwrap_or(0);
     Some(Session { buffers, current })
 }
@@ -106,31 +107,30 @@ pub fn restore(editor: &mut Editor) -> bool {
     if session.buffers.is_empty() {
         return false;
     }
-    editor.buffers.clear();
-    editor.surfaces.clear();
-    editor.highlighters.clear();
+    editor.docs.clear();
     for b in &session.buffers {
         let mut buf = Buffer::open(&b.path).unwrap_or_else(|_| Buffer::from_text(""));
         if let Some(h) = &b.undo {
             buf.history = h.clone();
         }
-        let hl = buf
-            .path
-            .as_deref()
-            .and_then(strop_syntax::Highlighter::for_path);
-        editor.buffers.push(buf);
-        editor.surfaces.push(None);
-        editor.highlighters.push(hl);
+        editor.docs.insert(crate::editor::Document::new(buf));
     }
-    editor.current = session.current.min(editor.buffers.len() - 1);
-    let b = &session.buffers[editor.current];
+    let nth = session.current.min(editor.docs.len().saturating_sub(1));
+    let cur_id = editor
+        .docs
+        .iter()
+        .nth(nth)
+        .map(|(id, _)| id)
+        .expect("docs non-empty");
+    editor.current = cur_id;
+    let b = &session.buffers[nth];
     editor.view_top = b.view_top;
     let line_start = editor
         .buf()
         .line_start(b.line.min(editor.buf().len_lines() - 1));
     editor.cursor = editor.buf().clamp_boundary(line_start + b.col);
     editor.clamp_cursor();
-    editor.mru = (0..editor.buffers.len()).collect();
+    editor.mru = editor.docs.iter().map(|(id, _)| id).collect();
     editor.touch_mru(editor.current);
     editor.discover_git();
     true

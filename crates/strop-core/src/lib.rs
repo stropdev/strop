@@ -2,6 +2,7 @@
 //! No UI, no modes, no grammar — the thing everything else edits.
 
 pub mod history;
+pub mod id;
 
 use history::{Edit, EditKind, History};
 use ropey::Rope;

@@ -36,7 +36,7 @@ fn pad_row(mut line: Line<'static>, width: u16) -> Line<'static> {
 /// One pane's view of a buffer. `overlays` is false for inactive panes:
 /// preview/search/selection/flash belong to the pane being driven.
 struct PaneView {
-    buffer: usize,
+    doc: strop_core::id::DocumentId,
     cursor: usize,
     view_top: usize,
     overlays: bool,
@@ -84,7 +84,7 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
         };
         let view = if i == editor.active_pane {
             PaneView {
-                buffer: editor.current,
+                doc: editor.current,
                 cursor: editor.cursor,
                 view_top: editor.view_top,
                 overlays: true,
@@ -92,7 +92,11 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
         } else {
             let pane = &editor.panes[i];
             PaneView {
-                buffer: pane.buffer.min(editor.buffers.len().saturating_sub(1)),
+                doc: if editor.docs.get(pane.doc).is_some() {
+                    pane.doc
+                } else {
+                    editor.current
+                },
                 cursor: pane.cursor,
                 view_top: pane.view_top,
                 overlays: false,
@@ -132,10 +136,10 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
 /// The inactive pane's position, unfocused: a muted block on the saved
 /// cursor cell, offsets pane-local (unlike the native cursor).
 fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
-    let buf = &editor.buffers[view.buffer];
+    let buf = &editor.doc(view.doc).buf;
     let line = buf.line_of(view.cursor);
     let row = line.saturating_sub(view.view_top) as u16;
-    let gutter = diff::left_inset(editor, view.buffer) as u16;
+    let gutter = diff::left_inset(editor, view.doc) as u16;
     let col = gutter + buf.col_of(view.cursor) as u16;
     if row < area.height && col < area.width {
         let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
@@ -146,11 +150,11 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
 /// Secondary cursors (0013 §4): solid blocks on the active pane, like
 /// the native block cursor but painted.
 fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
-    if view.buffer != editor.current || editor.extra_cursors.is_empty() {
+    if view.doc != editor.current || editor.extra_cursors.is_empty() {
         return;
     }
-    let buf = &editor.buffers[view.buffer];
-    let inset = diff::left_inset(editor, view.buffer) as u16;
+    let buf = &editor.doc(view.doc).buf;
+    let inset = diff::left_inset(editor, view.doc) as u16;
     for &c in &editor.extra_cursors {
         let line = buf.line_of(c);
         if line < view.view_top {
@@ -169,22 +173,28 @@ fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &P
 /// Render one pane's rows: gutter, syntax/decoration, overlays, guides.
 fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
     let text_rows = area.height as usize;
-    let buf = &editor.buffers[view.buffer];
-    let cur_line = buf.line_of(view.cursor);
-    let surface = editor.surfaces.get(view.buffer).and_then(|s| s.as_ref());
-
-    // tree-sitter spans for the visible window (base layer, 0001 §5.8)
-    let first_byte = buf.line_start(view.view_top);
-    let last_line = (view.view_top + text_rows).min(buf.len_lines());
-    let last_byte = buf.line_end(last_line.saturating_sub(1));
-    let rope = editor.buffers[view.buffer].rope.clone();
-    let syn_spans: Vec<strop_syntax::Span> = match editor.highlighters.get_mut(view.buffer) {
-        Some(h) => h
-            .as_mut()
-            .map(|h| h.highlight(&rope, first_byte, last_byte))
-            .unwrap_or_default(),
-        None => Vec::new(),
+    // tree-sitter takes the mutable borrow first; everything below it
+    // reads immutably (one borrow discipline per pane render)
+    let (cur_line, first_byte, last_byte, rope) = {
+        let buf = &editor.doc(view.doc).buf;
+        let last_line = (view.view_top + text_rows).min(buf.len_lines());
+        (
+            buf.line_of(view.cursor),
+            buf.line_start(view.view_top),
+            buf.line_end(last_line.saturating_sub(1)),
+            buf.rope.clone(),
+        )
     };
+    let syn_spans: Vec<strop_syntax::Span> =
+        match editor.docs.get_mut(view.doc).map(|d| &mut d.highlighter) {
+            Some(h) => h
+                .as_mut()
+                .map(|h| h.highlight(&rope, first_byte, last_byte))
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+    let buf = &editor.doc(view.doc).buf;
+    let surface = editor.doc(view.doc).surface.as_ref();
 
     // overlays read live editor state; only the active pane shows them
     let mut row_style = RowStyle {
@@ -244,7 +254,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         _ => (None, false),
     };
     let sidebar_w = sidebar.map_or(0, |(files, _)| diff::sidebar_width(files) + 1);
-    let blame = editor.blame_gutter_for(view.buffer);
+    let blame = editor.blame_gutter_for(view.doc);
     let blame_w = if blame.is_some() { diff::BLAME_W } else { 0 };
     let content_width = area.width.saturating_sub((sidebar_w + blame_w) as u16);
     // :help rows color by the section they sit under (render/help.rs)
@@ -327,7 +337,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         row_style.diff_line = None;
         row_style.emphasis = None;
         row_style.diags = if view.overlays {
-            editor.diag_ranges_at(view.buffer, line_idx + 1)
+            editor.diag_ranges_at(view.doc, line_idx + 1)
         } else {
             Vec::new()
         };
@@ -352,7 +362,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         // cursor-line end-of-line diagnostic (scoped to the one line —
         // you see what the dot means without leaving the buffer)
         if view.overlays && line_idx == cur_line {
-            if let Some((sev, msg)) = editor.diag_message_at(view.buffer, line_idx + 1) {
+            if let Some((sev, msg)) = editor.diag_message_at(view.doc, line_idx + 1) {
                 let shown: String = msg.replace('\n', " · ").chars().take(80).collect();
                 left.push(Span::styled(
                     format!("  ▍ {shown}"),
@@ -385,14 +395,14 @@ fn diff_digits(surface: Option<&crate::editor::Surface>) -> usize {
 /// The sign column: diagnostics win over git signs (merged gutter,
 /// 0009), and only the pane's own buffer shows them.
 fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static str, Color) {
-    if let Some(sev) = editor.diag_severity_at(view.buffer, line_idx + 1) {
+    if let Some(sev) = editor.diag_severity_at(view.doc, line_idx + 1) {
         // severity dot (VSCode/gitui lesson: color reads faster than
         // letters) — the cursor line's EOL note carries the words
         return ("●", severity_color(sev));
     }
     // git signs: + add, ~ change, - deletion below (only for the
     // working buffer — surfaces have no path, so no leak)
-    if view.buffer == editor.current {
+    if view.doc == editor.current {
         match editor.sign_at(line_idx + 1) {
             Some('+') => return ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
             Some('~') => return ("▎", ACCENT),
@@ -434,7 +444,7 @@ fn content_spans(
     style: &RowStyle,
     width: u16,
 ) -> Vec<Span<'static>> {
-    let buf = &editor.buffers[view.buffer];
+    let buf = &editor.doc(view.doc).buf;
     let cur_line = buf.line_of(view.cursor);
     // indent guides: dim │ at each indent level within leading
     // whitespace (spaces only, v1)
@@ -538,9 +548,7 @@ fn content_spans(
     // full-row backgrounds for add/del rows run past the text (0010 §4)
     if let Some(dl) = style.diff_line {
         if let Some(bg) = diff::origin_bg(dl.origin) {
-            let used =
-                diff::gutter_width(editor.surfaces.get(view.buffer).and_then(|s| s.as_ref()))
-                    + chars;
+            let used = diff::gutter_width(editor.doc(view.doc).surface.as_ref()) + chars;
             let pad = (width as usize).saturating_sub(used);
             if pad > 0 {
                 spans.push(Span::styled(
@@ -610,14 +618,41 @@ mod tests {
                     })
                     .collect::<Vec<_>>()
             };
-        e.current = 0; // wide
+        let wide_id = e
+            .mru
+            .iter()
+            .copied()
+            .find(|&id| {
+                e.doc(id)
+                    .buf
+                    .path
+                    .as_deref()
+                    .is_some_and(|p| p.ends_with("wide.txt"))
+            })
+            .unwrap();
+        e.current = wide_id;
         let wide_frame = draw(&mut e, &mut terminal);
         assert!(
             wide_frame[0].contains(">>>"),
             "wide buffer rendered: {}",
             wide_frame[0]
         );
-        e.current = 1; // narrow
+        let narrow_id = e
+            .mru
+            .iter()
+            .copied()
+            .find(|&id| {
+                e.doc(id)
+                    .buf
+                    .path
+                    .as_deref()
+                    .is_some_and(|p| p.ends_with("narrow.txt"))
+            })
+            .unwrap();
+        e.current = narrow_id; // narrow
+                               // ratatui double-buffers: stale cells surface one swap later,
+                               // on the SECOND narrow frame
+        let _ = draw(&mut e, &mut terminal);
         let narrow_frame = draw(&mut e, &mut terminal);
         let leftover = narrow_frame.iter().filter(|row| row.contains('>')).count();
         assert_eq!(leftover, 0, "stale cells: {}", narrow_frame.join("\n"));

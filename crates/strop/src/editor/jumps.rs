@@ -9,7 +9,7 @@ impl Editor {
     /// (gd, gg, G, %, /, n, marks, buffer switches, dives). Consecutive
     /// duplicates don't pile up.
     pub(crate) fn push_jump(&mut self) {
-        if self.buffers.is_empty() {
+        if self.docs.is_empty() {
             return;
         }
         let pos = (self.current, self.cursor);
@@ -26,7 +26,11 @@ impl Editor {
             return;
         }
         self.jumplist_future.push((self.current, self.cursor));
-        let pos = self.jumplist_past.pop().unwrap_or((0, 0));
+        let Some(pos) = self.jumplist_past.pop() else {
+            self.jumplist_future.pop();
+            self.message = "no jumps".into();
+            return;
+        };
         self.jump_to(pos);
     }
 
@@ -40,11 +44,12 @@ impl Editor {
         self.jump_to(pos);
     }
 
-    /// Land on a jumplist position: switch buffer when it still exists,
-    /// skip the entry when its buffer is gone.
-    fn jump_to(&mut self, (buffer, offset): (usize, usize)) {
-        if buffer >= self.buffers.len() {
-            return; // the buffer is closed; the entry dies quietly
+    /// Land on a jumplist position: switch document when it still
+    /// exists, skip the entry when its document is gone (generational
+    /// id: no index shift, no aliasing — 0014 wave 2).
+    fn jump_to(&mut self, (buffer, offset): (strop_core::id::DocumentId, usize)) {
+        if self.docs.get(buffer).is_none() {
+            return; // the document is closed; the entry dies quietly
         }
         if buffer != self.current {
             self.current = buffer;

@@ -5,13 +5,13 @@
 
 use strop_core::{Buffer, Range};
 
-use super::{Editor, Key};
+use super::{Document, Editor, Key};
 
 /// Live browser state: which buffer is the browser, which buffer it
 /// describes, and the revision index per text row (after the header).
 pub struct UndoBrowser {
-    pub browser: usize,
-    pub origin: usize,
+    pub browser: strop_core::id::DocumentId,
+    pub origin: strop_core::id::DocumentId,
     /// revision index per browser line (line 0 is the header).
     pub row_rev: Vec<Option<usize>>,
 }
@@ -48,11 +48,13 @@ impl Editor {
         let mut buf = Buffer::from_text(&text);
         buf.readonly = true;
         buf.name = Some("undo tree".into());
-        self.buffers.push(buf);
-        self.surfaces.push(None);
-        self.highlighters.push(None);
-        self.current = self.buffers.len() - 1;
-        self.touch_mru(self.current);
+        let id = self.docs.insert(Document {
+            buf,
+            highlighter: None,
+            surface: None,
+        });
+        self.current = id;
+        self.touch_mru(id);
         self.cursor = 0;
         self.view_top = 0;
         // land on the current revision's row
@@ -75,11 +77,11 @@ impl Editor {
             return;
         };
         let (browser, origin) = (ub.browser, ub.origin);
-        let ops = self.buffers[origin].history.ops_to(rev);
+        let ops = self.doc_mut(origin).buf.history.ops_to(rev);
         self.undo_browser = None;
         self.current = browser;
-        self.close_buffer(true); // browser closes; origin is below it
-        self.current = if origin > browser { origin - 1 } else { origin };
+        self.close_buffer(true); // browser closes; origin keeps its id
+        self.current = origin;
         let Some(ops) = ops else { return };
         let at = ops.iter().map(|e| e.at).min().unwrap_or(0);
         self.buf_mut().apply_history(ops);
@@ -98,9 +100,9 @@ impl Editor {
         };
         // stale state guard: the browser buffer must still be current
         let alive = self
-            .buffers
+            .docs
             .get(ub.browser)
-            .is_some_and(|b| b.name.as_deref() == Some("undo tree"));
+            .is_some_and(|d| d.buf.name.as_deref() == Some("undo tree"));
         if !alive {
             self.undo_browser = None;
             return false;

@@ -5,17 +5,18 @@
 
 use strop_core::Buffer;
 
-use super::Editor;
+use super::{Document, Editor};
 
 impl Editor {
     /// Open the generated help buffer (`:help` / `Space ?`).
     pub(crate) fn open_help(&mut self) {
         // already open → switch, don't stack copies
-        if let Some(i) = self
-            .buffers
+        let existing = self
+            .docs
             .iter()
-            .position(|b| b.name.as_deref() == Some("help"))
-        {
+            .find(|(_, d)| d.buf.name.as_deref() == Some("help"))
+            .map(|(id, _)| id);
+        if let Some(i) = existing {
             self.current = i;
             self.touch_mru(i);
             self.cursor = 0;
@@ -49,11 +50,13 @@ impl Editor {
         self.push_jump(); // opening help is a jumplist entry
         buf.readonly = true;
         buf.name = Some("help".into());
-        self.buffers.push(buf);
-        self.surfaces.push(None);
-        self.highlighters.push(None);
-        self.current = self.buffers.len() - 1;
-        self.touch_mru(self.current);
+        let id = self.docs.insert(Document {
+            buf,
+            highlighter: None,
+            surface: None,
+        });
+        self.current = id;
+        self.touch_mru(id);
         self.cursor = 0;
         self.view_top = 0;
     }

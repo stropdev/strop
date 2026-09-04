@@ -854,7 +854,7 @@ mod tests {
             || e.clip_paste_pending.is_some()
             || e.osc52.is_some()
             || e.mode != Mode::Normal
-            || e.buffers.len() != 1
+            || e.docs.len() != 1
             || e.cursor != 0
             || e.hover_card.is_some()
             || e.blame_card.is_some()
