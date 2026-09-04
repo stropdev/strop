@@ -366,7 +366,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
             (
                 r.range,
                 r.range.inclusive(),
-                format!("surround with {}", *ch as char),
+                format!("surround with {}", *ch),
             )
         }
         Target::Motion(m) => match m {
@@ -640,7 +640,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 (
                     Range::charwise(s, e),
                     inclusive,
-                    format!("{verb} '{}'", *ch as char),
+                    format!("{verb} '{}'", *ch),
                 )
             }
             Motion::Search(pat) => {
