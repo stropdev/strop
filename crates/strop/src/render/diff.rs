@@ -479,7 +479,7 @@ pub(crate) fn sidebar_spans(
                 ]
             } else {
                 let shown = ellipsize(&path, w - 1);
-                let pad = w - shown.chars().count();
+                let pad = w - 1 - shown.chars().count();
                 vec![
                     Span::styled(format!(" {shown}"), Style::default().fg(TEXT)),
                     Span::styled(" ".repeat(pad), Style::default()),

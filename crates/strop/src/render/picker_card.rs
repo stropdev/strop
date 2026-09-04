@@ -266,13 +266,17 @@ fn render_replace_results(frame: &mut Frame, area: Rect, p: &strop_picker::Picke
         } else {
             Color::Rgb(0xb8, 0xb4, 0xa9)
         };
+        // respawns clear items before rows catch up — never index blind
+        let Some(item) = p.items.get(row.item) else {
+            continue;
+        };
         if let strop_picker::Payload::Grep {
             path,
             line,
             col,
             match_len,
             line_text,
-        } = &p.items[row.item].payload
+        } = &item.payload
         {
             spans.push(Span::styled(
                 format!(" {}:{line} · ", path.display()),
@@ -301,7 +305,7 @@ fn render_replace_results(frame: &mut Frame, area: Rect, p: &strop_picker::Picke
             ));
         } else {
             spans.push(Span::styled(
-                p.items[row.item].text.clone(),
+                item.text.clone(),
                 Style::default().fg(text_fg),
             ));
         }

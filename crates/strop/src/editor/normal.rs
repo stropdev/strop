@@ -56,7 +56,10 @@ impl Editor {
         };
         match c {
             '1'..='9' => self.pending.push(c),
-            '0' => self.run_motion("0"),
+            // 0 starts a count only as its first digit (vim: 30j works)
+            '0' if self.pending.chars().all(|c| c.is_ascii_digit()) && !self.pending.is_empty() => {
+                self.pending.push('0')
+            }
             'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'W' | 'B' | 'E' | '$' | 'G' | '%' => {
                 self.run_motion(&c.to_string())
             }
@@ -808,7 +811,7 @@ impl Editor {
     }
 
     /// > / < applied to every line a resolved range covers.
-    fn apply_indent(&mut self, range: Range, right: bool) {
+    pub(crate) fn apply_indent(&mut self, range: Range, right: bool) {
         let line = self.buf().line_of(range.start);
         let last = self.buf().line_of(range.end.saturating_sub(1)) + 1;
         for l in line..last {
@@ -862,6 +865,21 @@ impl Editor {
             "wq" => {
                 let _ = self.buf_mut().save();
                 self.close_buffer(true);
+            }
+            "noh" => {
+                // nohlsearch: the persistent highlight drops (0001 §5.8)
+                self.last_search = None;
+            }
+            _ if cmdline.bytes().all(|b| b.is_ascii_digit()) && !cmdline.is_empty() => {
+                // :30 jumps to line 30 (vim); past EOF clamps to the last
+                // content line, never the phantom past a trailing newline
+                let n: usize = cmdline.parse().unwrap_or(1);
+                let mut last = self.buf().len_lines().saturating_sub(1);
+                if self.buf().line_start(last) >= self.buf().len_bytes() {
+                    last = last.saturating_sub(1);
+                }
+                self.cursor = self.buf().line_start(n.saturating_sub(1).min(last));
+                self.clamp_cursor();
             }
             "vs" | "vsplit" => self.split(true, if arg.is_empty() { None } else { Some(arg) }),
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),

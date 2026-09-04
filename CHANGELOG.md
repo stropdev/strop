@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.4 — 2026-09-04
+
+Crash fix and a vim-gap sweep.
+
+### Fixed
+
+- **Replace-picker crash** (`index out of bounds, len 0`): typing in
+  `Space R` respawns rg per keystroke; the respawn cleared items but
+  not rows, and the renderer indexed a stale row. Rows clear with the
+  respawn now, plus defensive lookups (regression test included).
+- **Sidebar `│` alignment**: non-current file rows were one column
+  wider than the current row — the divider wobbled in and out.
+- **`:30`** jumps to a line (clamps to the last content line, never the
+  phantom past a trailing newline); **`:noh`** clears the persistent
+  search highlight.
+- **`30j`-style counts**: `0` after a count digit is a digit, not the
+  line-start motion — counts above 9 work now.
+- **Visual `<` / `>`** indent and dedent the selection (one undo unit).
+- **Visual pending no longer swallows keys**: invalid sequences clear
+  with a message instead of accumulating forever (which also made later
+  keys vanish).
+
+### Verified
+
+- `.` repeats deletes and change+insert (dot-repeat tests pinned).
+
 ## 0.3.3 — 2026-09-04
 
 The git-flow and command-line round, plus a vim-fidelity sweep.

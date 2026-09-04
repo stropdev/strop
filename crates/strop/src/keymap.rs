@@ -188,7 +188,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     // visual
     Binding {
-        keys: "d y c x",
+        keys: "d y c x > <",
         desc: "operate on selection",
         section: "visual",
         live: true,

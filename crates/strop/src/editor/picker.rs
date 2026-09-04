@@ -133,6 +133,7 @@ impl Editor {
             let cwd = self.cwd.clone();
             glue.grep_worker = None; // drop kills the old rg
             glue.picker.items.clear();
+            glue.picker.rows.clear(); // stale item indices must never render
             glue.picker.excluded.clear(); // item indices die with the respawn
             let (tx, rx) = channel();
             glue.tx = Some(tx.clone());
@@ -560,6 +561,7 @@ mod replace_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(" Rfoo");
         assert_eq!(e.picker.as_ref().unwrap().picker.kind, Kind::Replace);
+
         e.feed(crate::editor::Key::Tab);
         assert_eq!(
             e.picker.as_ref().unwrap().picker.field,
@@ -568,5 +570,33 @@ mod replace_tests {
         e.feed_text("bar");
         assert_eq!(e.picker.as_ref().unwrap().picker.replace_input, "bar");
         assert_eq!(e.picker.as_ref().unwrap().picker.input, "foo");
+    }
+
+    #[test]
+    fn respawn_never_renders_stale_rows() {
+        // regression (0.3.3 user crash): Space R, type a query, type
+        // more — the respawn cleared items but not rows, and the
+        // replace renderer indexed items[stale_row] → panic
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "alpha one\nalpha two\n").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "alpha three\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.cwd = dir.path().to_path_buf();
+        e.open_picker(Kind::Replace);
+        e.feed_text("alpha");
+        for _ in 0..300 {
+            e.drain_picker();
+            if !e.picker.as_ref().unwrap().picker.items.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            !e.picker.as_ref().unwrap().picker.items.is_empty(),
+            "rg delivered matches"
+        );
+        e.feed_text("b"); // respawn: items + rows both clear
+        let frame = crate::headless::frame_string(&mut e, 80, 20);
+        assert!(frame.contains("replace"), "{frame}");
     }
 }

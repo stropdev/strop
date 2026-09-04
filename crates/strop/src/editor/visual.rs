@@ -37,6 +37,28 @@ impl Editor {
                 self.mode = Mode::Normal;
                 self.pending.clear();
             }
+            Key::Char('>') | Key::Char('<') if self.pending.is_empty() => {
+                // visual indent: apply to every selected line, one undo
+                // unit, back to normal (vim re-selects with gv)
+                let Some(range) = self.visual_range() else {
+                    return;
+                };
+                if self.buf().readonly {
+                    self.message = "readonly buffer".into();
+                    self.mode = Mode::Normal;
+                    return;
+                }
+                let right = key == Key::Char('>');
+                self.tx_begin();
+                self.apply_indent(range, right);
+                self.tx_commit();
+                self.mode = Mode::Normal;
+                self.cursor = range.start;
+                self.clamp_cursor();
+                self.flash(Range::charwise(self.cursor, self.cursor));
+                self.last_cmd_keys = if right { "V>" } else { "V<" }.into();
+                self.last_insert = None;
+            }
             Key::Char('d') | Key::Char('y') | Key::Char('c') | Key::Char('x')
                 if self.pending.is_empty() =>
             {
@@ -112,6 +134,16 @@ impl Editor {
                     return;
                 }
                 self.pending.push(c);
+                if self.pending == "S" || self.pending == " " {
+                    return; // surround/leader await their second key
+                }
+                if matches!(grammar::parse(&self.pending), Parse::Invalid) {
+                    // invalid keys never squat in pending (visual had no
+                    // clear — `>x` used to swallow every later key)
+                    self.message = format!("not an editor command: {}", self.pending);
+                    self.pending.clear();
+                    return;
+                }
                 if let Parse::Complete(cmd) = grammar::parse(&self.pending) {
                     if cmd.op.is_none() {
                         self.pending.clear();

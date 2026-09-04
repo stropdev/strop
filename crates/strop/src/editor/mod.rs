@@ -1013,6 +1013,56 @@ mod tests {
     }
 
     #[test]
+    fn count_motions_and_ex_line_jump() {
+        // 30j: the 0 after a count digit is a digit, not line-start
+        let mut e = Editor::new(Buffer::from_text("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n"));
+        e.feed_text("10j");
+        assert_eq!(e.buf().line_of(e.cursor), 10);
+        // :30 jumps (and clamps past EOF)
+        e.feed_text(":30\r");
+        assert_eq!(e.buf().line_of(e.cursor), 11);
+        e.feed_text(":4\r");
+        assert_eq!(e.buf().line_of(e.cursor), 3);
+    }
+
+    #[test]
+    fn visual_indent_and_dedent() {
+        let mut e = Editor::new(Buffer::from_text("a\nb\nc\n"));
+        e.feed_text("Vj>");
+        assert_eq!(e.buf().rope.to_string(), "    a\n    b\nc\n");
+        e.feed_text("u");
+        assert_eq!(e.buf().rope.to_string(), "a\nb\nc\n");
+        e.feed_text("Vj>");
+        e.feed_text("Vj<");
+        assert_eq!(e.buf().rope.to_string(), "a\nb\nc\n");
+    }
+
+    #[test]
+    fn noh_clears_search_highlight() {
+        let mut e = Editor::new(Buffer::from_text("foo bar\n"));
+        e.feed_text("/foo\r");
+        assert!(e.last_search.is_some());
+        e.feed_text(":noh\r");
+        assert!(e.last_search.is_none());
+    }
+
+    #[test]
+    fn dot_repeats_delete_and_change() {
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
+        e.feed_text("dd");
+        assert_eq!(e.buf().rope.to_string(), "two\nthree\n");
+        e.feed_text(".");
+        assert_eq!(e.buf().rope.to_string(), "three\n");
+        let mut e = Editor::new(Buffer::from_text("aa bb\ncc dd\n"));
+        e.feed_text("cwX");
+        e.feed(crate::editor::Key::Esc);
+        assert_eq!(e.buf().rope.to_string(), "X bb\ncc dd\n");
+        e.feed_text("j"); // to line 2 — repeat there
+        e.feed_text(".");
+        assert_eq!(e.buf().rope.to_string(), "X bb\nX dd\n");
+    }
+
+    #[test]
     fn last_search_highlights_persistently() {
         let mut e = Editor::new(Buffer::from_text("foo bar foo\n"));
         e.feed_text("/foo\r");
