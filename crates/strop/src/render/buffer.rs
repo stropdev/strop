@@ -199,11 +199,11 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     // overlays read live editor state; only the active pane shows them
     let mut row_style = RowStyle {
         syn_spans: &syn_spans,
-        preview: view
-            .overlays
-            .then(|| editor.preview())
-            .flatten()
-            .map(|r| r.range),
+        preview: if view.overlays {
+            editor.preview().map(|(ranges, _)| ranges).unwrap_or_default()
+        } else {
+            Vec::new()
+        },
         flash: view.overlays.then(|| editor.flash_range()).flatten(),
         selection: view.overlays.then(|| editor.visual_range()).flatten(),
         search_hits: &[],
@@ -419,7 +419,7 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
 #[derive(Default)]
 struct RowStyle<'a> {
     syn_spans: &'a [strop_syntax::Span],
-    preview: Option<strop_core::Range>,
+    preview: Vec<strop_core::Range>,
     flash: Option<strop_core::Range>,
     selection: Option<strop_core::Range>,
     search_hits: &'a [usize],
@@ -531,7 +531,7 @@ fn content_spans(
                 cell = cell.fg(ACCENT).add_modifier(Modifier::BOLD);
             }
         }
-        if style.preview.is_some_and(|r| in_range(r, pos)) {
+        if style.preview.iter().any(|&r| in_range(r, pos)) {
             cell = cell.fg(ACCENT).bg(PREVIEW_BG);
         }
         if style.flash.is_some_and(|r| in_range(r, pos)) {

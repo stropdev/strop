@@ -127,8 +127,8 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     let total = editor.buf().len_lines().max(1);
     let pct = if total <= 1 { 100 } else { line * 100 / total };
 
-    let spec = if let Some(p) = editor.preview() {
-        format!("{}  ", p.spec)
+    let spec = if let Some((_, spec)) = editor.preview() {
+        format!("{spec}  ")
     } else if !editor.pending.is_empty() && !cmd_card_active(editor) {
         format!("{}  ", editor.pending.trim_end_matches('\r'))
     } else if !editor.message.is_empty() {

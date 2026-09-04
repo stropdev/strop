@@ -2,7 +2,7 @@
 //! registers, dot-repeat, the ex-line — and the live preview query.
 
 use strop_core::Range;
-use strop_grammar::{self as grammar, Command, Op, Parse, Resolved};
+use strop_grammar::{self as grammar, Command, Op, Parse};
 
 use super::{Editor, Key, Mode};
 
@@ -718,14 +718,17 @@ impl Editor {
     }
 
     /// The live preview: what would the pending keys do right now?
-    /// Same resolver the executor uses — the preview cannot lie.
-    pub fn preview(&self) -> Option<Resolved> {
+    /// The plan the executor would apply — every cursor's range (0014
+    /// wave 3): the preview cannot lie, and multicursor previews too.
+    pub fn preview(&self) -> Option<(Vec<Range>, String)> {
         if self.pending.is_empty() {
             return None;
         }
         match grammar::parse(&self.pending) {
             Parse::Complete(cmd) if cmd.op.is_some() => {
-                grammar::resolve(self.buf(), self.head(), &cmd)
+                let spec = grammar::resolve(self.buf(), self.head(), &cmd)?.spec;
+                let plan = grammar::plan(self.buf(), &self.all_cursors(), &cmd)?;
+                Some((plan.targets.iter().map(|t| t.range).collect(), spec))
             }
             _ => {
                 // partial backward search: d?foo mid-typing previews match→cursor
@@ -733,10 +736,10 @@ impl Editor {
                     let pat = &self.pending[idx + 1..];
                     if !pat.is_empty() && !pat.contains('\r') {
                         if let Some(hit) = grammar::search_backward(self.buf(), self.head(), pat) {
-                            return Some(Resolved {
-                                range: Range::charwise(hit, self.head()),
-                                spec: format!("search ?{pat}"),
-                            });
+                            return Some((
+                                vec![Range::charwise(hit, self.head())],
+                                format!("search ?{pat}"),
+                            ));
                         }
                     }
                 }
@@ -747,10 +750,10 @@ impl Editor {
                     if !pat.is_empty() {
                         if let Some(hit) = grammar::search_forward(self.buf(), self.head() + 1, pat)
                         {
-                            return Some(Resolved {
-                                range: Range::charwise(self.head(), hit),
-                                spec: format!("search /{pat}"),
-                            });
+                            return Some((
+                                vec![Range::charwise(self.head(), hit)],
+                                format!("search /{pat}"),
+                            ));
                         }
                     }
                 }
@@ -819,29 +822,17 @@ impl Editor {
         if let Some(()) = self.execute_surround(cmd) {
             return;
         }
-        // the cascade (0013 §3): resolve per cursor, then apply bottom-up
-        // so earlier ranges never shift under us
-        let mut targets: Vec<(usize, Range, bool)> = self
-            .all_cursors()
-            .into_iter()
-            .filter_map(|c| {
-                grammar::resolve(self.buf(), c, cmd).map(|r| (c, r.range, r.range.is_linewise()))
-            })
-            .collect();
-        if targets.is_empty() {
+        // the cascade (0013 §3) IS the plan (0014 §3): preview renders
+        // these same targets — one object, no preview/execute drift
+        let Some(plan) = grammar::plan(self.buf(), &self.all_cursors(), cmd) else {
             self.message = "no target".into();
             return;
-        }
-        // dedupe identical ranges (two cursors, same word), then drop
-        // ranges that overlap an already-kept one below them
-        targets.sort_by_key(|t| t.1.start);
-        targets.dedup_by_key(|t| (t.1.start, t.1.end));
-        let mut kept: Vec<(usize, Range, bool)> = Vec::new();
-        for t in targets {
-            if kept.last().is_none_or(|k| t.1.start >= k.1.end) {
-                kept.push(t);
-            }
-        }
+        };
+        let kept: Vec<(usize, Range, bool)> = plan
+            .targets
+            .iter()
+            .map(|t| (t.cursor, t.range, t.range.is_linewise()))
+            .collect();
         match cmd.op.unwrap() {
             Op::Yank => {
                 // one register, parts joined with newlines (helix rule)

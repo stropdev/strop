@@ -741,3 +741,40 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
         _ => r.range.start,
     }
 }
+
+/// A command resolved against a cursor SET (0014 wave 3): preview
+/// renders exactly these ranges, execute applies exactly these ranges.
+/// The preview cannot lie because both consume this object.
+#[derive(Debug, Clone)]
+pub struct ActionPlan {
+    /// Sorted by start, deduped, non-overlapping (overlaps keep the
+    /// lower range — the first cursor to claim a region owns it).
+    pub targets: Vec<PlannedTarget>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PlannedTarget {
+    /// The cursor this range was resolved from.
+    pub cursor: usize,
+    pub range: Range,
+}
+
+/// Resolve one command over every cursor; None when nothing resolves.
+pub fn plan(buf: &Buffer, cursors: &[usize], cmd: &Command) -> Option<ActionPlan> {
+    let mut targets: Vec<PlannedTarget> = cursors
+        .iter()
+        .filter_map(|&c| resolve(buf, c, cmd).map(|r| PlannedTarget { cursor: c, range: r.range }))
+        .collect();
+    if targets.is_empty() {
+        return None;
+    }
+    targets.sort_by_key(|t| t.range.start);
+    targets.dedup_by_key(|t| (t.range.start, t.range.end));
+    let mut kept: Vec<PlannedTarget> = Vec::with_capacity(targets.len());
+    for t in targets {
+        if kept.last().is_none_or(|k| t.range.start >= k.range.end) {
+            kept.push(t);
+        }
+    }
+    Some(ActionPlan { targets: kept })
+}

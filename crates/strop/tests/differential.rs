@@ -259,7 +259,8 @@ struct State {
     text: String,
     line: usize,
     col: usize,
-    register: String,
+    // the unnamed register is compared by hand in dedicated cases (the
+    // linewise-bit representation differs between vim and strop)
 }
 
 fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
@@ -291,14 +292,12 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
     }
     // dump layout: text lines…, then "POS:L:C"
     let mut lines: Vec<&str> = stdout.lines().collect();
-    let register = String::new(); // register compare: linewise-bit noise — later wave
     let pos = lines.pop().unwrap_or("POS:1:1").trim_start_matches("POS:");
     let (line, col) = pos.split_once(':').unwrap();
     State {
         text: lines.join("\n"),
         line: line.parse().unwrap(),
         col: col.parse().unwrap(),
-        register,
     }
 }
 
@@ -334,7 +333,6 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
         text: read_buffer(dir),
         line: v["line"].as_u64().unwrap() as usize,
         col: v["col"].as_u64().unwrap() as usize,
-        register: v["register"].as_str().unwrap().to_string(),
     }
 }
 
