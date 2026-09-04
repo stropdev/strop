@@ -2,11 +2,12 @@
 # Multi-stage musl static build (plan 0002). rust:alpine's host triple IS
 # musl, so plain `cargo build` is static for free. build-base (gcc/g++)
 # compiles tree-sitter's C (0002 §2.1, proven M0); ripgrep for the grep
-# worker's tests — rustls only; an openssl-dragging dependency is a bug.
+# worker's tests; neovim for the differential harness (0006 tier 1) —
+# rustls only; an openssl-dragging dependency is a bug.
 # a dependency that drags in openssl is a bug (AGENTS.md).
 
 FROM rust:alpine AS builder
-RUN apk add --no-cache build-base git ripgrep \
+RUN apk add --no-cache build-base git ripgrep neovim \
     && rustup component add clippy rustfmt
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./

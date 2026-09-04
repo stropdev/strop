@@ -994,7 +994,8 @@ impl Editor {
     }
 
     fn dot_repeat(&mut self) {
-        if self.last_change.is_none() && self.last_cmd_keys.is_empty() && self.last_insert.is_none() {
+        if self.last_change.is_none() && self.last_cmd_keys.is_empty() && self.last_insert.is_none()
+        {
             return;
         }
         let insert = self.last_insert.clone();

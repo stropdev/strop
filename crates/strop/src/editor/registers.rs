@@ -111,11 +111,8 @@ impl Editor {
             } else {
                 (cursor + 1).min(self.buf().len_bytes())
             };
-            let land = if before {
-                at + text_len.saturating_sub(1)
-            } else {
-                at
-            };
+            // vim: the cursor lands on the LAST pasted char, both p and P
+            let land = at + text_len.saturating_sub(1);
             (at, land)
         }
     }
