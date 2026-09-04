@@ -74,10 +74,30 @@ fn word_end(buf: &Buffer, mut pos: usize, big: bool) -> usize {
     pos
 }
 
+/// cw's target (vim): end of the word UNDER the cursor — unlike `e`,
+/// never jumps to the next word when the cursor is already on a word's
+/// last char. On whitespace, behaves like `e`.
+fn change_word_end(buf: &Buffer, pos: usize, big: bool) -> usize {
+    let n = buf.len_bytes();
+    if pos >= n || buf.byte(pos).is_ascii_whitespace() {
+        return word_end(buf, pos, big);
+    }
+    let class = class_of(buf.byte(pos), big);
+    let mut end = pos;
+    while end + 1 < n
+        && !buf.byte(end + 1).is_ascii_whitespace()
+        && class_of(buf.byte(end + 1), big) == class
+    {
+        end += 1;
+    }
+    end
+}
+
 /// % — matching pair. On a bracket: its mate. Else: first bracket on the
 /// line right of cursor, then its mate (vim semantics).
 pub fn match_pair(buf: &Buffer, pos: usize) -> Option<usize> {
     const PAIRS: &[(u8, u8)] = &[(b'(', b')'), (b'[', b']'), (b'{', b'}'), (b'<', b'>')];
+
     let on = buf
         .byte_at(pos)
         .and_then(|b| PAIRS.iter().find(|(o, c)| *o == b || *c == b));
@@ -385,6 +405,24 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                         },
                     )
                 }
+            }
+            Motion::WordForward | Motion::BigWordForward if matches!(cmd.op, Some(Op::Change)) => {
+                // vim: cw/cW behave like ce/cE — the change never eats
+                // the whitespace after the word
+                let big = matches!(m, Motion::BigWordForward);
+                let mut pos = change_word_end(buf, cursor, big);
+                for _ in 1..count {
+                    pos = word_end(buf, pos, big);
+                }
+                (
+                    Range::charwise(cursor.min(pos), pos.max(cursor) + 1),
+                    true,
+                    if big {
+                        "WORD forward (change=end)".to_string()
+                    } else {
+                        "word forward (change=end)".to_string()
+                    },
+                )
             }
             Motion::WordForward | Motion::BigWordForward => {
                 let big = matches!(m, Motion::BigWordForward);

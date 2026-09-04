@@ -28,6 +28,11 @@ impl Editor {
         if key == Key::Enter {
             return self.dive_from_blame();
         }
+        // Esc in normal mode: collapse to the primary cursor (0013 §3)
+        if key == Key::Esc {
+            self.collapse_cursors();
+            return;
+        }
         let Key::Char(c) = key else {
             return;
         };
@@ -102,13 +107,17 @@ impl Editor {
                 self.last_insert = None;
             }
             'v' => {
+                // v1: visual mode is primary-only — extras collapse (0013)
+                self.extra_cursors.clear();
                 self.mode = Mode::Visual;
                 self.anchor = self.cursor;
             }
             'V' => {
+                self.extra_cursors.clear();
                 self.mode = Mode::VisualLine;
                 self.anchor = self.cursor;
             }
+            'Q' => self.toggle_cursor(),
             'J' => self.join_lines(),
             '.' => self.dot_repeat(),
             'u' => self.undo(),
@@ -208,6 +217,7 @@ impl Editor {
                 if self.pending == " " {
                     self.pending.clear();
                     return match c {
+                        'c' => self.add_cursor_next_line(),
                         'f' => self.open_picker(strop_picker::Kind::Files),
                         'b' => self.open_picker(strop_picker::Kind::Buffers),
                         '/' => self.open_picker(strop_picker::Kind::Grep),
@@ -317,33 +327,54 @@ impl Editor {
 
     pub(crate) fn move_cursor(&mut self, cmd: &Command) {
         self.note_search(cmd);
+        // the cascade (0013 §3): one scalar resolver, mapped over every
+        // cursor — secondary cursors run the exact same motion
         if let Some(r) = grammar::resolve(self.buf(), self.cursor, cmd) {
             self.cursor = grammar::cursor_after(self.buf(), self.cursor, cmd, &r);
-            self.clamp_cursor();
         }
+        // take/compute/put-back: the resolver borrows self immutably
+        let mut extras = std::mem::take(&mut self.extra_cursors);
+        for c in &mut extras {
+            if let Some(r) = grammar::resolve(self.buf(), *c, cmd) {
+                *c = grammar::cursor_after(self.buf(), *c, cmd, &r);
+            }
+            *c = self.clamp_pos(*c);
+        }
+        self.extra_cursors = extras;
+        self.clamp_cursor();
+        self.normalize_cursors();
     }
 
     /// `n` / `N`: repeat the armed search, wrapping at the file edges.
+    /// Cascades: every cursor seeks from its own position (0013 §3).
     pub(crate) fn repeat_search(&mut self, invert: bool) {
         let Some((pat, backward)) = self.last_search.clone() else {
             self.message = "no previous search".into();
             return;
         };
         let backward = backward ^ invert;
-        let hit = if backward {
-            grammar::search_backward(self.buf(), self.cursor, &pat)
-        } else {
-            grammar::search_forward(self.buf(), self.cursor + 1, &pat)
-        };
-        // vim wraps around the file ends
-        let hit = hit.or_else(|| {
-            if backward {
-                grammar::search_backward(self.buf(), self.buf().len_bytes(), &pat)
+        let seek = |buf: &strop_core::Buffer, from: usize| {
+            let hit = if backward {
+                grammar::search_backward(buf, from, &pat)
             } else {
-                grammar::search_forward(self.buf(), 0, &pat)
+                grammar::search_forward(buf, from + 1, &pat)
+            };
+            hit.or_else(|| {
+                if backward {
+                    grammar::search_backward(buf, buf.len_bytes(), &pat)
+                } else {
+                    grammar::search_forward(buf, 0, &pat)
+                }
+            })
+        };
+        let mut extras = std::mem::take(&mut self.extra_cursors);
+        for c in &mut extras {
+            if let Some(h) = seek(self.buf(), *c) {
+                *c = self.buf().clamp_boundary(h);
             }
-        });
-        match hit {
+        }
+        self.extra_cursors = extras;
+        match seek(self.buf(), self.cursor) {
             Some(h) => {
                 self.cursor = self.buf().clamp_boundary(h);
                 self.clamp_cursor();
@@ -351,6 +382,7 @@ impl Editor {
             }
             None => self.message = format!("pattern not found: {pat}"),
         }
+        self.normalize_cursors();
     }
 
     /// The live preview: what would the pending keys do right now?
@@ -421,25 +453,78 @@ impl Editor {
         if let Some(()) = self.execute_surround(cmd) {
             return;
         }
-        let Some(r) = grammar::resolve(self.buf(), self.cursor, cmd) else {
+        // the cascade (0013 §3): resolve per cursor, then apply bottom-up
+        // so earlier ranges never shift under us
+        let mut targets: Vec<(usize, Range, bool)> = self
+            .all_cursors()
+            .into_iter()
+            .filter_map(|c| {
+                grammar::resolve(self.buf(), c, cmd).map(|r| (c, r.range, r.range.linewise))
+            })
+            .collect();
+        if targets.is_empty() {
             self.message = "no target".into();
             return;
-        };
+        }
+        // dedupe identical ranges (two cursors, same word), then drop
+        // ranges that overlap an already-kept one below them
+        targets.sort_by_key(|t| t.1.start);
+        targets.dedup_by_key(|t| (t.1.start, t.1.end));
+        let mut kept: Vec<(usize, Range, bool)> = Vec::new();
+        for t in targets {
+            if kept.last().is_none_or(|k| t.1.start >= k.1.end) {
+                kept.push(t);
+            }
+        }
         match cmd.op.unwrap() {
             Op::Yank => {
-                let text = self.buf().slice_string(r.range);
-                self.set_register(cmd.register, text, r.range.linewise);
-                self.flash(r.range);
+                // one register, parts joined with newlines (helix rule)
+                let texts: Vec<String> = kept
+                    .iter()
+                    .map(|(_, r, _)| self.buf().slice_string(*r))
+                    .collect();
+                let linewise = kept.first().is_some_and(|t| t.2);
+                self.set_register(cmd.register, texts.join("\n"), linewise);
+                self.flash(kept[0].1);
             }
             Op::Indent | Op::Dedent => {
-                self.apply_indent(r.range, cmd.op.unwrap() == Op::Indent);
+                self.tx_begin();
+                for (_, r, _) in kept.iter().rev() {
+                    self.apply_indent(*r, cmd.op.unwrap() == Op::Indent);
+                }
+                self.tx_commit();
+                self.normalize_cursors();
                 self.flash(Range::charwise(self.cursor, self.cursor));
             }
             Op::Delete | Op::Change => {
+                // yank text reads top-down before any delete lands
+                let texts: Vec<String> = kept
+                    .iter()
+                    .map(|(_, r, _)| self.buf().slice_string(*r))
+                    .collect();
+                let linewise = kept.first().is_some_and(|t| t.2);
                 self.tx_begin();
-                let text = self.buf_mut().delete(r.range);
-                self.set_register(cmd.register, text, r.range.linewise);
-                self.cursor = r.range.start;
+                for (_, r, _) in kept.iter().rev() {
+                    self.buf_mut().delete(*r);
+                }
+                self.set_register(cmd.register, texts.join("\n"), linewise);
+                // landings: each range start minus what lower deletes
+                // already removed (deletes applied bottom-up above)
+                let mut shift = 0usize;
+                let mut landings: Vec<(bool, usize)> = Vec::with_capacity(kept.len());
+                for (c, r, _) in &kept {
+                    landings.push((*c == self.cursor, r.start - shift));
+                    shift += r.end - r.start;
+                }
+                self.cursor = landings
+                    .iter()
+                    .find(|(p, _)| *p)
+                    .map(|(_, s)| *s)
+                    .unwrap_or(self.cursor);
+                let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
+                starts.sort_unstable();
+                self.extra_cursors = starts.into_iter().filter(|&s| s != self.cursor).collect();
+                self.normalize_cursors();
                 self.clamp_cursor();
                 self.flash(Range::charwise(self.cursor, self.cursor));
                 if cmd.op.unwrap() == Op::Change {

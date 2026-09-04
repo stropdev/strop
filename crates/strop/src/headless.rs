@@ -33,6 +33,7 @@ pub fn state_json(editor: &Editor) -> String {
         "col": editor.buf().col_of(editor.cursor) + 1,
         "pending": editor.pending,
         "message": editor.message,
+        "extra_cursors": editor.extra_cursors,
         "picker": editor.picker_open(),
         "picker_input": editor.picker.as_ref().map(|g| g.picker.input.clone()),
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),

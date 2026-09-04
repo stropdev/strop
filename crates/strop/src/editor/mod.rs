@@ -8,6 +8,8 @@ mod git_memory;
 mod help;
 mod insert;
 mod lsp;
+#[cfg(test)]
+mod multicursor_tests;
 mod normal;
 mod panes;
 mod picker;
@@ -75,6 +77,11 @@ pub struct Editor {
     pub mode: Mode,
     pub cursor: usize,
     pub pending: String,
+    /// Extra cursors beyond the primary `cursor` (`Q` toggles, normal
+    /// Esc collapses; 0013). Invariant: sorted, deduped, none equal to
+    /// `cursor`. Point cursors (byte offsets); visual mode is
+    /// primary-only in v1 and collapses them.
+    pub extra_cursors: Vec<usize>,
     /// `Space u` browser state (editor/undo.rs); None when closed.
     pub undo_browser: Option<undo::UndoBrowser>,
     /// Armed by `/`/`?` searches: (pattern, backward). `n`/`N` replay it.
@@ -161,6 +168,7 @@ impl Editor {
             anchor: 0,
             registers: HashMap::new(),
             marks: HashMap::new(),
+            extra_cursors: Vec::new(),
             flash: None,
             message: String::new(),
             should_quit: false,
@@ -401,6 +409,106 @@ impl Editor {
             .clamp_boundary(self.cursor.clamp(start, max.max(start)));
     }
 
+    /// Clamp one position the way clamp_cursor clamps the primary.
+    fn clamp_pos(&self, pos: usize) -> usize {
+        let line = self.buf().line_of(pos);
+        let start = self.buf().line_start(line);
+        let end = self.buf().line_end(line);
+        let max = if self.mode == Mode::Insert {
+            end
+        } else {
+            end.max(start + 1) - 1
+        };
+        self.buf().clamp_boundary(pos.clamp(start, max.max(start)))
+    }
+
+    /// Every cursor position, primary first (0013 §3).
+    pub(crate) fn all_cursors(&self) -> Vec<usize> {
+        std::iter::once(self.cursor)
+            .chain(self.extra_cursors.iter().copied())
+            .collect()
+    }
+
+    /// Restore the invariant after any cascade: sorted and deduped. An
+    /// extra MAY sit on the primary (Q plants there, then you move) —
+    /// edit cascades dedupe positions before applying.
+    pub(crate) fn normalize_cursors(&mut self) {
+        let mut extras = std::mem::take(&mut self.extra_cursors);
+        let len = self.buf().len_bytes();
+        for c in &mut extras {
+            *c = self.buf().clamp_boundary((*c).min(len));
+        }
+        extras.sort_unstable();
+        extras.dedup();
+        self.extra_cursors = extras;
+    }
+
+    /// Remap cursors after a mirrored edit of `delta` bytes at each of
+    /// `positions` (pre-edit, sorted, deduped): every cursor shifts by
+    /// its own edit plus every edit below it (0013 §3).
+    pub(crate) fn remap_after_mirrored_edit(&mut self, positions: &[usize], delta: isize) {
+        let map = |old: usize| -> usize {
+            let below = positions.partition_point(|&p| p < old);
+            let own = usize::from(positions.contains(&old));
+            (old as isize + delta * (below + own) as isize).max(0) as usize
+        };
+        self.cursor = map(self.cursor);
+        self.extra_cursors = self.extra_cursors.iter().map(|&c| map(c)).collect();
+        self.normalize_cursors();
+    }
+
+    /// `Q`: drop the cursor under point when one exists, else plant one.
+    pub(crate) fn toggle_cursor(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        if let Some(i) = self.extra_cursors.iter().position(|&c| c == self.cursor) {
+            self.extra_cursors.remove(i);
+        } else {
+            self.extra_cursors.push(self.cursor);
+            self.normalize_cursors();
+        }
+        let n = self.extra_cursors.len() + 1;
+        self.message = format!("{n} cursor{}", if n > 1 { "s" } else { "" });
+    }
+
+    /// `Space c` (helix's `C`): copy the primary cursor onto the same
+    /// column of the next line — how vertical cursor stacks are built.
+    pub(crate) fn add_cursor_next_line(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            return;
+        }
+        // stack from the bottom-most cursor (helix C semantics: repeated
+        // presses walk down the buffer)
+        let base = self.extra_cursors.last().copied().unwrap_or(self.cursor);
+        let line = self.buf().line_of(base);
+        // the phantom line past a trailing newline is not a cursor home
+        if line + 1 >= self.buf().len_lines()
+            || self.buf().line_start(line + 1) >= self.buf().len_bytes()
+        {
+            self.message = "no line below".into();
+            return;
+        }
+        let col = self.buf().col_of(base);
+        let start = self.buf().line_start(line + 1);
+        let end = self.buf().line_end(line + 1);
+        let pos = (start + col).min(end.saturating_sub(1).max(start));
+        self.extra_cursors.push(pos);
+        self.normalize_cursors();
+        let n = self.extra_cursors.len() + 1;
+        self.message = format!("{n} cursors");
+    }
+
+    /// Normal-mode Esc: collapse to the primary cursor (0013 §3).
+    pub(crate) fn collapse_cursors(&mut self) {
+        if !self.extra_cursors.is_empty() {
+            self.extra_cursors.clear();
+            self.message = "1 cursor".into();
+        }
+    }
+
     /// Keep the cursor on screen; `rows` = text area height.
     pub fn scroll_to_cursor(&mut self, rows: usize) {
         let line = self.buf().line_of(self.cursor);
@@ -581,30 +689,75 @@ impl Editor {
         }
     }
 
-    fn paste_text(&mut self, text: String, linewise: bool, before: bool) {
+    /// Insertion point + landing spot for one cursor's paste.
+    fn paste_points(
+        &self,
+        cursor: usize,
+        text_len: usize,
+        linewise: bool,
+        before: bool,
+    ) -> (usize, usize) {
         if linewise {
-            let line = self.buf().line_of(self.cursor);
+            let line = self.buf().line_of(cursor);
             let at = if before {
                 self.buf().line_start(line)
             } else {
                 self.buf().line_start(line + 1)
             };
-            let at = at.min(self.buf().len_bytes());
-            self.buf_mut().insert(at, &text);
-            self.cursor = at;
+            (
+                at.min(self.buf().len_bytes()),
+                at.min(self.buf().len_bytes()),
+            )
         } else {
             let at = if before {
-                self.cursor
+                cursor
             } else {
-                (self.cursor + 1).min(self.buf().len_bytes())
+                (cursor + 1).min(self.buf().len_bytes())
             };
-            self.buf_mut().insert(at, &text);
-            self.cursor = if before {
-                at + text.len().saturating_sub(1)
+            let land = if before {
+                at + text_len.saturating_sub(1)
             } else {
                 at
             };
+            (at, land)
         }
+    }
+
+    fn paste_text(&mut self, text: String, linewise: bool, before: bool) {
+        let cursors = self.all_cursors();
+        if cursors.len() == 1 {
+            let (at, land) = self.paste_points(self.cursor, text.len(), linewise, before);
+            self.buf_mut().insert(at, &text);
+            self.cursor = land;
+            self.clamp_cursor();
+            return;
+        }
+        // multicursor paste (0013 §3): same text at every cursor,
+        // bottom-up so insertion points stay valid mid-batch
+        let primary = self.cursor;
+        let mut jobs: Vec<(usize, usize, bool)> = cursors
+            .into_iter()
+            .map(|c| {
+                let (at, land) = self.paste_points(c, text.len(), linewise, before);
+                (at, land, c == primary)
+            })
+            .collect();
+        jobs.sort_by_key(|j| j.0);
+        jobs.dedup_by_key(|j| j.0); // stacked cursors paste once
+                                    // each landing shifts by what lower insertions already added
+        let mut shift = 0usize;
+        for j in &mut jobs {
+            j.1 += shift;
+            shift += text.len();
+        }
+        self.tx_begin();
+        for (at, _, _) in jobs.iter().rev() {
+            self.buf_mut().insert(*at, &text);
+        }
+        self.tx_commit();
+        self.extra_cursors = jobs.iter().filter(|j| !j.2).map(|j| j.1).collect();
+        self.cursor = jobs.iter().find(|j| j.2).map(|j| j.1).unwrap_or(primary);
+        self.normalize_cursors();
         self.clamp_cursor();
     }
 }

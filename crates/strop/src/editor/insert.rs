@@ -103,18 +103,28 @@ impl Editor {
                 self.tx_commit(); // the insert session is one undo unit
                 self.mode = Mode::Normal;
                 self.cursor = self.cursor.saturating_sub(1);
+                for c in &mut self.extra_cursors {
+                    *c = c.saturating_sub(1);
+                }
                 self.clamp_cursor();
+                self.normalize_cursors();
                 if let Some(rec) = self.recording_insert.take() {
                     self.last_insert = Some(rec);
                 }
             }
             Key::Backspace => {
-                if self.cursor > 0 {
-                    let prev = self.cursor - 1;
-                    let cur = self.cursor;
+                // cascade: every cursor deletes one char back, bottom-up
+                // so positions never shift mid-batch (0013 §3)
+                let mut positions = self.all_cursors();
+                positions.sort_unstable();
+                positions.dedup();
+                positions.retain(|&p| p > 0); // cursors at 0 can't delete
+                for &pos in positions.iter().rev() {
                     self.buf_mut()
-                        .delete(strop_core::Range::charwise(prev, cur));
-                    self.cursor = prev;
+                        .delete(strop_core::Range::charwise(pos - 1, pos));
+                }
+                if !positions.is_empty() {
+                    self.remap_after_mirrored_edit(&positions, -1);
                     if let Some(rec) = &mut self.recording_insert {
                         rec.pop();
                     }
@@ -123,9 +133,13 @@ impl Editor {
             Key::Enter => {
                 let indent = self.auto_indent();
                 let text = format!("\n{indent}");
-                let cur = self.cursor;
-                self.buf_mut().insert(cur, &text);
-                self.cursor += text.len();
+                let mut positions = self.all_cursors();
+                positions.sort_unstable();
+                positions.dedup(); // stacked cursors edit once
+                for &pos in positions.iter().rev() {
+                    self.buf_mut().insert(pos, &text);
+                }
+                self.remap_after_mirrored_edit(&positions, text.len() as isize);
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push('\n');
                     rec.push_str(&indent);
@@ -140,9 +154,14 @@ impl Editor {
                     self.dedent_for_closer();
                 }
                 let mut tmp = [0u8; 4];
-                let cur = self.cursor;
-                self.buf_mut().insert(cur, c.encode_utf8(&mut tmp));
-                self.cursor += c.len_utf8();
+                let encoded = c.encode_utf8(&mut tmp).to_string();
+                let mut positions = self.all_cursors();
+                positions.sort_unstable();
+                positions.dedup(); // stacked cursors edit once
+                for &pos in positions.iter().rev() {
+                    self.buf_mut().insert(pos, &encoded);
+                }
+                self.remap_after_mirrored_edit(&positions, c.len_utf8() as isize);
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push(c);
                 }

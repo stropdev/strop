@@ -86,6 +86,7 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
         render_pane(editor, frame, rect, &view);
         if i == editor.active_pane {
             active_rect = rect;
+            render_extra_cursors(editor, frame, rect, &view);
         } else {
             render_static_caret(editor, frame, rect, &view);
         }
@@ -124,6 +125,29 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
     if row < area.height && col < area.width {
         let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
         cell.set_bg(Color::Rgb(0x3a, 0x3d, 0x4d));
+    }
+}
+
+/// Secondary cursors (0013 §4): solid blocks on the active pane, like
+/// the native block cursor but painted.
+fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
+    if view.buffer != editor.current || editor.extra_cursors.is_empty() {
+        return;
+    }
+    let buf = &editor.buffers[view.buffer];
+    let inset = diff::left_inset(editor, view.buffer) as u16;
+    for &c in &editor.extra_cursors {
+        let line = buf.line_of(c);
+        if line < view.view_top {
+            continue;
+        }
+        let row = (line - view.view_top) as u16;
+        let col = inset + buf.col_of(c) as u16;
+        if row < area.height && col < area.width {
+            let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
+            cell.set_bg(TEXT);
+            cell.set_fg(BASE);
+        }
     }
 }
 

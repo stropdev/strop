@@ -157,6 +157,30 @@ Sleep 1.2s
 Type "q"
 Sleep 500ms
 
+# multicursor: Space c stacks cursors, cw edits all mirrors at once
+Type "strop proj/demo.rs"
+Enter
+Sleep 1s
+Type "0"
+Space
+Type "c"
+Sleep 700ms
+Space
+Type "c"
+Sleep 700ms
+Type "cw"
+Sleep 700ms
+Type "Mirror"
+Escape
+Sleep 1.2s
+Escape
+Sleep 300ms
+Type "u"
+Sleep 600ms
+Type ":q!"
+Enter
+Sleep 400ms
+
 # lsp: rust-analyzer diagnostics, picker, hover
 Escape
 Ctrl+C

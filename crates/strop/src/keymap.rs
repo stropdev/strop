@@ -101,6 +101,12 @@ pub const BINDINGS: &[Binding] = &[
         section: "normal",
         live: true,
     },
+    Binding {
+        keys: "Q",
+        desc: "toggle cursor at point (multicursor)",
+        section: "normal",
+        live: true,
+    },
     // normal: operators
     Binding {
         keys: "d y c > <",
@@ -288,6 +294,12 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space u",
         desc: "undo-tree browser",
+        section: "leader",
+        live: true,
+    },
+    Binding {
+        keys: "space c",
+        desc: "cursor on next line too (multicursor)",
         section: "leader",
         live: true,
     },
@@ -667,6 +679,9 @@ mod tests {
         "space g y",
         "space g o",
         "space u",
+        // multicursor (0013)
+        "Q",
+        "space c",
         // search repeat (normal mode)
         "n",
         "N",

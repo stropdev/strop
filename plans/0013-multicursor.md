@@ -5,7 +5,14 @@
 > resolver shared by preview and execute (decision 2). This plan picks
 > the model that keeps both.
 
-Status: planned. Target: after 0.2.2 hardening, before or with M5.
+Status: implemented (0.3.0, v1). v1 shape: `Q` toggles a cursor at point,
+`Space c` stacks one on the next line (helix's `C`), motions/search/
+operators/paste cascade across cursors (bottom-up, deduped, shift-
+remapped), insert mode mirrors, normal-mode Esc collapses, undo takes a
+cascade back as one unit. Deferred to v2: visual-mode multi-range (v1
+collapses extras on `v`/`V`), mouse placement, select-next-match, and
+the helix `Transaction` remap machinery (bottom-up cascade made it
+unnecessary for v1).
 
 ---
 

@@ -31,18 +31,22 @@ Already installed? `strop update` self-updates tarball installs.
 ```
 h j k l w b e 0 $ gg G %      motions          i a A o O            insert
 d y c > < + motion/object     operators        dd yy cc D C Y s x   shortcuts
-iw i" i' i( i[ i{             text objects     f t /                find & search
+iw i" i' i( i[ i{             text objects     f t / ? n N          find & search
 v V                           visual           u ctrl-r .           undo, redo, repeat
-"a …                          registers        :w :q :e :vs :sp     ex line · splits
+"a … "+                       registers        :w :q :e :help        ex line
+Q                            multicursor      Space c              cursor below
 
-Space  f files · b buffers · / grep            C-w h l j k w        panes
-Space g  l log · h history · b blame · y/o permalink · u/s/p hunk
+Space  f files · b buffers · / grep · R replace · ? help   C-w …    panes
+Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 
 Everything pending previews live — the preview is the same resolver that executes, so
-it cannot lie. Surround (`ys`/`cs`/`ds`), per-project sessions, undo history that
-crosses restarts, tree-sitter highlighting for ten languages, git gutter + blame +
-SHA-resolved permalinks over OSC52.
+it cannot lie. Surround (`ys`/`cs`/`ds`), multicursor cascades (`Q`/`Space c`, nvim-0.13
+style), project-wide search & replace with live row previews, per-project sessions, undo
+history that crosses restarts (with a `Space u` tree browser), tree-sitter highlighting
+for thirteen languages (bash/fish/lua/sql included, shebang detection too), git gutter +
+blame + commit dive chains, SHA-resolved permalinks over OSC52, and helix-flavored
+`.strop/languages.toml` LSP config.
 
 ## Links
 

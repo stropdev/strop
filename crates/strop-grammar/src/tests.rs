@@ -105,6 +105,20 @@ pub mod contract {
         assert!(r.spec.contains("inner ["), "{:?}", r.spec);
         assert!(r.spec.contains("inclusive"), "{:?}", r.spec);
     }
+
+    #[test]
+    fn cw_changes_to_word_end_never_trailing_space() {
+        // vim: cw behaves like ce — and at a word's last char it still
+        // changes only that word (single-char words included)
+        let buf = Buffer::from_text("x = 1\n");
+        assert_eq!(resolve_str(&buf, 0, "cw"), "x");
+        let buf = Buffer::from_text("alpha = 1\n");
+        assert_eq!(resolve_str(&buf, 2, "cw"), "pha"); // on 'p'
+        assert_eq!(resolve_str(&buf, 3, "cw"), "ha"); // on 'h'
+                                                      // on whitespace, cw reaches like e
+        let buf = Buffer::from_text("  beta = 1\n");
+        assert_eq!(resolve_str(&buf, 0, "cw"), "  beta");
+    }
 }
 
 mod zero_tests {

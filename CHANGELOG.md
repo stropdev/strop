@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.3.0 — 2026-09-04
+
+Multicursor lands, help becomes a buffer, the demo's LSP section is
+real again.
+
+### Added
+
+- **Multicursor** (plan 0013, nvim-0.13 interaction over a cascade
+  executor): `Q` toggles a cursor at point, `Space c` stacks one onto
+  the next line (helix's `C`). Motions, `n`/`N`, operators, yank, paste,
+  and insert mode all cascade — deletes apply bottom-up, mirrored edits
+  shift-remap, stacked cursors edit once. Normal-mode Esc collapses to
+  the primary cursor; `u` reverts a whole cascade as one unit. Secondary
+  cursors render as solid blocks. v1 deferrals (visual-mode multi-range,
+  mouse placement, select-next-match) are documented in 0013.
+- **`:help`** — the keybinding table as a real readonly buffer: `/`
+  searches it, motions walk it, `q` closes. `Space ?` opens the same.
+  The floating keybinds popup is gone (a buffer you can search beats a
+  card you can only scroll).
+- Headless `state` now reports `message` and `extra_cursors`.
+
+### Fixed
+
+- **Demo LSP section**: the vhs image now installs a rustup toolchain
+  with the `rust-analyzer` + `rust-src` components (apt's rust lacks
+  rust-src; the standalone binary half-worked and then errored).
+- **Graceful LSP shutdown**: quit sends the `shutdown`/`exit` sequence —
+  every session used to end with the server dying "client exited
+  without proper shutdown" and a fake failure on the statusline.
+- **vim fidelity: `cw`/`cW`** resolve like `ce`/`cE` — the trailing
+  whitespace is no longer eaten, and at a word's last char only that
+  word changes (pinned in the grammar contract tests).
+- Commit-diff sidebar width fits the file list (clamped 12–24) instead
+  of a fixed 28 columns.
+
 ## 0.2.2 — 2026-09-03
 
 Hardening + daily-driver release. The crash-on-quit class is dead, the
