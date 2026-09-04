@@ -195,12 +195,15 @@ fn tui(mut editor: Editor) {
             editor.drain_lsp();
             editor.drain_clipboard();
             editor.lsp_sync_changed();
+            editor.drain_shell();
             continue;
         }
         let Event::Key(ev) = event::read().unwrap() else {
             continue;
         };
-        if ev.modifiers.contains(KeyModifiers::CONTROL) && ev.code == KeyCode::Char('c') {
+        if (ev.modifiers.contains(KeyModifiers::CONTROL) && ev.code == KeyCode::Char('c'))
+            || ev.code == KeyCode::Char('\x03')
+        {
             break;
         }
         let key = match ev.code {
@@ -208,6 +211,11 @@ fn tui(mut editor: Editor) {
             KeyCode::Enter => Key::Enter,
             KeyCode::Backspace => Key::Backspace,
             KeyCode::Tab => Key::Tab,
+            // terminals that deliver the raw control byte instead of
+            // Char(letter)+CONTROL (Windows Terminal → WSL among them)
+            KeyCode::Char('\x12') => Key::CtrlR,
+            KeyCode::Char('\x17') => Key::CtrlW,
+            KeyCode::Char('\x18') => Key::CtrlX,
             KeyCode::BackTab => Key::Backtab,
             KeyCode::Char('n') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Down,
             KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
@@ -218,6 +226,7 @@ fn tui(mut editor: Editor) {
             _ => continue,
         };
         editor.feed(key);
+        editor.drain_shell();
         // the last :q empties the buffer list — the drains below assume
         // one exists (quit used to panic in lsp_sync_changed)
         if editor.should_quit {

@@ -8,6 +8,30 @@ use super::{Editor, Key, Mode};
 
 impl Editor {
     pub(crate) fn feed_visual(&mut self, key: Key) {
+        // the pipe input line: `|sort<cr>` pipes the selection through
+        // the command (helix's pipe) — its own tiny input state
+        if self.pending.starts_with('|') {
+            match key {
+                Key::Esc => self.pending.clear(),
+                Key::Backspace => {
+                    self.pending.pop();
+                    if self.pending.len() <= 1 {
+                        self.pending.clear();
+                    }
+                }
+                Key::Enter => {
+                    let cmd = self.pending[1..].to_string();
+                    self.pending.clear();
+                    if let Some(r) = self.visual_range() {
+                        self.pipe_run(r.start, r.end, &cmd);
+                    }
+                    self.mode = Mode::Normal;
+                }
+                Key::Char(c) => self.pending.push(c),
+                _ => {}
+            }
+            return;
+        }
         match key {
             Key::Esc => {
                 self.mode = Mode::Normal;
@@ -61,6 +85,10 @@ impl Editor {
                 self.clamp_cursor();
             }
             Key::Char(c) => {
+                if c == '|' && self.pending.is_empty() {
+                    self.pending = "|".into();
+                    return;
+                }
                 if self.pending == "S" {
                     // visual S<char>: wrap the selection (sandwich)
                     self.pending.clear();

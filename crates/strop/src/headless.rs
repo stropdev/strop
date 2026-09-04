@@ -34,6 +34,8 @@ pub fn state_json(editor: &Editor) -> String {
         "pending": editor.pending,
         "message": editor.message,
         "extra_cursors": editor.extra_cursors,
+        "panes": editor.panes.len(),
+        "active_pane": editor.active_pane,
         "picker": editor.picker_open(),
         "picker_input": editor.picker.as_ref().map(|g| g.picker.input.clone()),
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
@@ -65,6 +67,7 @@ pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: 
             let n: u64 = ms.trim().parse().unwrap_or(500);
             let deadline = std::time::Instant::now() + std::time::Duration::from_millis(n);
             while std::time::Instant::now() < deadline {
+                editor.drain_shell();
                 editor.drain_picker();
                 editor.drain_git_jobs();
                 editor.drain_lsp();
@@ -75,6 +78,7 @@ pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: 
             // let streaming sources deliver: drain until Done (bounded)
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
             loop {
+                editor.drain_shell();
                 editor.drain_picker();
                 editor.drain_git_jobs();
                 editor.drain_lsp();

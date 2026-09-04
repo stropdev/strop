@@ -191,10 +191,14 @@ pub(crate) fn diff_gutter(
     is_cursor_row: bool,
     digits: usize,
 ) -> Vec<Span<'static>> {
-    let (marker, color) = match line.origin {
-        LineOrigin::Addition => ("▎", ADD_FG),
-        LineOrigin::Deletion => ("▎", DEL_FG),
-        LineOrigin::Context => (" ", MUTED),
+    // rootle's triangle: the cursor row's marker points at you
+    let (marker, color) = match (line.origin, is_cursor_row) {
+        (LineOrigin::Addition, true) => ("▸", ADD_FG),
+        (LineOrigin::Deletion, true) => ("▸", DEL_FG),
+        (LineOrigin::Context, true) => ("▸", ACCENT),
+        (LineOrigin::Addition, false) => ("▎", ADD_FG),
+        (LineOrigin::Deletion, false) => ("▎", DEL_FG),
+        (LineOrigin::Context, false) => (" ", MUTED),
     };
     let number = |n: Option<usize>| {
         let style = if is_cursor_row {
@@ -450,13 +454,14 @@ pub(crate) fn sidebar_width(files: &[ChangedFile]) -> usize {
 }
 
 /// One sidebar row: the commit's changed files, current one marked `▌`
-/// on the selection background (house style 0003 §5.3), plus the dim
-/// rule that divides sidebar from content. Rows past the file list
-/// stay blank so the column reads as one surface.
+/// (or `▸` when the sidebar has Tab focus — tuicr's rule) on the
+/// selection background, plus the dividing rule — accent when focused.
+/// Rows past the file list stay blank so the column reads as one surface.
 pub(crate) fn sidebar_spans(
     files: &[ChangedFile],
     current: &str,
     row: usize,
+    focused: bool,
 ) -> Vec<Span<'static>> {
     let w = sidebar_width(files);
     let cell = match files.get(row) {
@@ -467,7 +472,7 @@ pub(crate) fn sidebar_spans(
                 let pad = w - 1 - shown.chars().count();
                 vec![
                     Span::styled(
-                        format!("▌{shown}"),
+                        format!("{}{shown}", if focused { "▸" } else { "▌" }),
                         Style::default().fg(ACCENT).bg(SELECT_BG),
                     ),
                     Span::styled(" ".repeat(pad), Style::default().bg(SELECT_BG)),
@@ -484,7 +489,10 @@ pub(crate) fn sidebar_spans(
         None => vec![Span::styled(" ".repeat(w), Style::default())],
     };
     let mut spans = cell;
-    spans.push(Span::styled("│", Style::default().fg(RULE)));
+    spans.push(Span::styled(
+        "│",
+        Style::default().fg(if focused { ACCENT } else { RULE }),
+    ));
     spans
 }
 

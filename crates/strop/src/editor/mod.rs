@@ -13,6 +13,7 @@ mod multicursor_tests;
 mod normal;
 mod panes;
 mod picker;
+mod shell;
 mod undo;
 mod visual;
 
@@ -84,8 +85,11 @@ pub struct Editor {
     pub extra_cursors: Vec<usize>,
     /// `Space u` browser state (editor/undo.rs); None when closed.
     pub undo_browser: Option<undo::UndoBrowser>,
-    /// Armed by `/`/`?` searches: (pattern, backward). `n`/`N` replay it.
-    pub last_search: Option<(String, bool)>,
+    /// Last `f/F/t/T` find: (char, backward, till). `;` and `,` replay it.
+    pub last_find: Option<(u8, bool, bool)>,
+    /// Armed by `/`/`?`/`*`/`#` searches. `n`/`N` replay it; the render
+    /// highlights matches persistently (rootle: current match underlined).
+    pub last_search: Option<LastSearch>,
     pub anchor: usize,
     pub registers: Registers,
     /// Marks: char → (buffer index, byte offset). `m{a}` sets, `'{a}` jumps.
@@ -137,6 +141,10 @@ pub struct Editor {
     pub lsp_opened: std::collections::HashSet<PathBuf>,
     pub lsp_sent_epochs: std::collections::HashMap<PathBuf, u64>,
     pub lsp_hints_shown: std::collections::HashSet<&'static str>,
+    /// Shell jobs (`:!cmd` output buffers, `|cmd` pipes): results land
+    /// in drain_shell — never a subprocess on the input path (0001 §3).
+    pub shell_tx: std::sync::mpsc::Sender<ShellResult>,
+    pub shell_rx: std::sync::mpsc::Receiver<ShellResult>,
     /// Splits: flat row/column of panes (v1; tree layout later).
     pub panes: Vec<Pane>,
     pub active_pane: usize,
@@ -148,12 +156,37 @@ pub struct Editor {
     pub(crate) recording_insert: Option<String>,
 }
 
+/// A search to repeat and highlight: `/pat`, `?pat`, or `*`-style
+/// whole-word (`whole_word` filters matches to word boundaries).
+#[derive(Debug, Clone)]
+pub struct LastSearch {
+    pub pattern: String,
+    pub backward: bool,
+    pub whole_word: bool,
+}
+
+/// What a shell job produced (0009-adjacent plumbing): `:!` displays,
+/// `|` pipes through and replaces.
+pub enum ShellResult {
+    /// `:!cmd`: show stdout+stderr in a readonly output buffer.
+    Display { cmd: String, output: String },
+    /// `|cmd`: replace a range with stdout (verified before applying).
+    Pipe {
+        buffer: usize,
+        start: usize,
+        end: usize,
+        original: String,
+        output: String,
+    },
+}
+
 impl Editor {
     pub fn new(buf: Buffer) -> Self {
         // cwd is the process directory (project-wide): pickers walk it,
         // LSP/git resolve against it; a file's own dir is not the project.
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let (preview_tx, preview_rx) = std::sync::mpsc::channel();
+        let (shell_tx, shell_rx) = std::sync::mpsc::channel();
         let (clip_tx, clip_rx) = std::sync::mpsc::channel();
         let (git_tx, git_rx) = git_channel();
         let mut e = Self {
@@ -169,6 +202,7 @@ impl Editor {
             registers: HashMap::new(),
             marks: HashMap::new(),
             extra_cursors: Vec::new(),
+            last_find: None,
             flash: None,
             message: String::new(),
             should_quit: false,
@@ -182,6 +216,8 @@ impl Editor {
             generation: 0,
             mru: vec![0],
             previews: HashMap::new(),
+            shell_tx,
+            shell_rx,
             git: None,
             hunks: Vec::new(),
             hunks_epoch: u64::MAX,
@@ -762,12 +798,16 @@ impl Editor {
     }
 
     fn paste_text(&mut self, text: String, linewise: bool, before: bool) {
+        // nvim rule: every command is one undo unit — a lone paste must
+        // commit its own revision (it used to ride the *next* command's)
+        self.tx_begin();
         let cursors = self.all_cursors();
         if cursors.len() == 1 {
             let (at, land) = self.paste_points(self.cursor, text.len(), linewise, before);
             self.buf_mut().insert(at, &text);
             self.cursor = land;
             self.clamp_cursor();
+            self.tx_commit();
             return;
         }
         // multicursor paste (0013 §3): same text at every cursor,
@@ -788,15 +828,14 @@ impl Editor {
             j.1 += shift;
             shift += text.len();
         }
-        self.tx_begin();
         for (at, _, _) in jobs.iter().rev() {
             self.buf_mut().insert(*at, &text);
         }
-        self.tx_commit();
         self.extra_cursors = jobs.iter().filter(|j| !j.2).map(|j| j.1).collect();
         self.cursor = jobs.iter().find(|j| j.2).map(|j| j.1).unwrap_or(primary);
         self.normalize_cursors();
         self.clamp_cursor();
+        self.tx_commit();
     }
 }
 
@@ -932,10 +971,63 @@ mod tests {
     }
 
     #[test]
+    fn paste_is_one_undo_unit() {
+        // regression: a lone paste never committed its revision — `u`
+        // after yank+paste said "already at oldest change"
+        let mut e = Editor::new(Buffer::from_text("hello world\n"));
+        e.feed_text("yiw"); // yank "hello"
+        e.feed_text("ep"); // paste after the word: "hellohello world"
+
+        assert_eq!(e.buf().rope.to_string(), "hellohello world\n");
+        e.feed_text("u");
+        assert_eq!(e.buf().rope.to_string(), "hello world\n");
+    }
+
+    #[test]
+    fn semicolon_and_comma_repeat_find() {
+        let mut e = Editor::new(Buffer::from_text("a.b.c.d\n"));
+        e.feed_text("f."); // find first '.'
+        assert_eq!(e.cursor, 1);
+        e.feed_text(";");
+        assert_eq!(e.cursor, 3);
+        e.feed_text(";");
+        assert_eq!(e.cursor, 5);
+        e.feed_text(","); // reverse
+        assert_eq!(e.cursor, 3);
+    }
+
+    #[test]
+    fn star_searches_word_under_cursor_whole_word() {
+        let mut e = Editor::new(Buffer::from_text("hone honed hone\n"));
+        e.feed_text("*"); // on "hone" at 0 → next whole-word match at 11
+        assert_eq!(e.cursor, 11);
+        e.feed_text("n"); // wraps to 0
+        assert_eq!(e.cursor, 0);
+        e.feed_text("#"); // backward: wraps to 11
+        assert_eq!(e.cursor, 11);
+        // whole-word: "honed" is skipped as a match for "hone" — the
+        // only other candidate, so the search wraps back to 0
+        let mut e = Editor::new(Buffer::from_text("hone honed\n"));
+        e.feed_text("*");
+        assert_eq!(e.cursor, 0, "honed is not a whole-word match for hone");
+    }
+
+    #[test]
+    fn last_search_highlights_persistently() {
+        let mut e = Editor::new(Buffer::from_text("foo bar foo\n"));
+        e.feed_text("/foo\r");
+        // committed: no pending pattern, but hits must still compute
+        assert!(e.search_pattern().is_none());
+        assert_eq!(e.last_search.as_ref().unwrap().pattern, "foo");
+        let frame = crate::headless::frame_string(&mut e, 40, 8);
+        assert!(frame.contains("foo bar foo"));
+    }
+    #[test]
     fn ex_open_and_close_buffers() {
         std::fs::write("/tmp/strop-test-b.rs", "second\n").unwrap();
         let mut e = editor_with("first\n");
         e.feed_text(":e /tmp/strop-test-b.rs<cr>");
+
         assert_eq!(e.buffers.len(), 2);
         assert_eq!(text(&e), "second\n");
         e.feed_text(":q<cr>");

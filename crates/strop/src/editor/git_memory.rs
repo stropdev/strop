@@ -43,6 +43,9 @@ pub enum Surface {
         deleted: usize,
         origin: Option<HunkOrigin>,
         commit: Option<CommitFiles>,
+        /// tuicr-style: Tab moves focus between the file sidebar and
+        /// the diff content (j/k step files when the sidebar has focus).
+        sidebar_focus: bool,
         return_to: Option<ReturnPoint>,
     },
 }
@@ -193,9 +196,17 @@ impl Editor {
                 deleted,
                 origin,
                 commit,
+                sidebar_focus: false,
                 return_to: None,
             },
         );
+        // syntax highlighting under the origin tint (delta's look):
+        // the label is the file path for commit deltas; "hunk" and
+        // friends resolve to None and keep origin colors
+        if let Some(hl) = strop_syntax::Highlighter::for_path(label) {
+            let last = self.highlighters.len() - 1;
+            self.highlighters[last] = Some(hl);
+        }
     }
 
     /// `Space g l`: commit browser. `Space g h`: log scoped to the file.
@@ -469,7 +480,16 @@ impl Editor {
             }
             // C-w works from surfaces too: splits are core grammar
             Key::CtrlW => self.pending = "\x17".into(),
+            // tuicr's tab: focus hops between the file sidebar and the
+            // diff content; focused j/k steps files, Enter hops back
+            Key::Tab | Key::Backtab => self.toggle_sidebar_focus(),
+            Key::Char('j') if self.sidebar_focused() => self.commit_file_step(true),
+            Key::Char('k') if self.sidebar_focused() => self.commit_file_step(false),
+            Key::Enter if self.sidebar_focused() => self.toggle_sidebar_focus(),
             Key::Enter => self.dive(),
+            // searches repeat on surfaces too (diff preview power tools)
+            Key::Char('n') => self.repeat_search(false),
+            Key::Char('N') => self.repeat_search(true),
             Key::Char('v') => {
                 self.mode = Mode::Visual;
                 self.anchor = self.cursor;
@@ -624,6 +644,31 @@ impl Editor {
         }
     }
 
+    /// Tab on a commit diff: hop focus between the file sidebar and
+    /// the diff content (tuicr's model, 0011 §4).
+    fn toggle_sidebar_focus(&mut self) {
+        let Some(Some(Surface::Diff {
+            commit: Some(_),
+            sidebar_focus,
+            ..
+        })) = self.surfaces.get_mut(self.current)
+        else {
+            self.message = "tab: no file sidebar here".into();
+            return;
+        };
+        *sidebar_focus = !*sidebar_focus;
+    }
+
+    fn sidebar_focused(&self) -> bool {
+        matches!(
+            self.surface(),
+            Some(Surface::Diff {
+                sidebar_focus: true,
+                ..
+            })
+        )
+    }
+
     /// `q`: pop one surface (0011 §1). In a split the *pane* closes —
     /// the buffer stays, vim `:q` semantics — and only the last pane's
     /// close closes the buffer, running the guaranteed return-point
@@ -695,6 +740,8 @@ impl Editor {
             *add_slot = added;
             *del_slot = deleted;
         }
+        // the highlighter follows the file the surface now shows
+        self.highlighters[idx] = strop_syntax::Highlighter::for_path(&label);
         self.cursor = 0;
         self.view_top = 0;
         let pos = cf
@@ -1245,6 +1292,32 @@ mod tests {
             4,
             "]f rewrites the surface in place (no new buffers)"
         );
+    }
+
+    /// Tab hops focus between sidebar and diff; focused j/k steps
+    /// files (tuicr's model); Enter hops back (0011 §4).
+    #[test]
+    fn tab_cycles_focus_between_sidebar_and_diff() {
+        let (_d, mut e) = multi_file_fixture();
+        e.open_log(false);
+        pump(&mut e);
+        e.feed(Key::Enter); // changed files
+        e.feed_text("jj");
+        e.feed(Key::Enter); // a.rs delta
+        assert!(!e.sidebar_focused());
+
+        e.feed(crate::editor::Key::Tab);
+        assert!(e.sidebar_focused(), "tab focuses the sidebar");
+        e.feed_text("j"); // focused j steps to the next file
+        assert!(
+            matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+            "j stepped to b.rs"
+        );
+        assert!(e.sidebar_focused(), "focus survives the file step");
+        e.feed(crate::editor::Key::Enter);
+        assert!(!e.sidebar_focused(), "enter hops back to the diff");
+        e.feed(crate::editor::Key::Backtab);
+        assert!(e.sidebar_focused(), "shift-tab focuses too");
     }
 
     /// `q` in a split closes the pane (buffer stays); the last pane's

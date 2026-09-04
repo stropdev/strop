@@ -102,6 +102,18 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
     },
     Binding {
+        keys: "* # ; ,",
+        desc: "word under cursor / repeat find",
+        section: "normal",
+        live: true,
+    },
+    Binding {
+        keys: "|",
+        desc: "pipe line/selection through shell (:! runs)",
+        section: "normal",
+        live: true,
+    },
+    Binding {
         keys: "Q",
         desc: "toggle cursor at point (multicursor)",
         section: "normal",
@@ -685,6 +697,11 @@ mod tests {
         // search repeat (normal mode)
         "n",
         "N",
+        "*",
+        "#",
+        ";",
+        ",",
+        "|",
         // prefixes with their own which-key cards
         "gg",
         "gd",

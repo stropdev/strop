@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.3.3 — 2026-09-04
+
+The git-flow and command-line round, plus a vim-fidelity sweep.
+
+### Added
+
+- **Tab focus-cycle in commit diffs** (tuicr's model): Tab/Shift-Tab
+  hops between the file sidebar and the diff content; focused j/k steps
+  files in place; the current file wears rootle's `▸` when focused.
+- **Syntax highlighting in diff views**: commit deltas highlight code
+  under the origin tint (delta's look); the highlighter follows `]f`
+  file steps.
+- **`:` autocomplete**: ex candidates render under the command card
+  with doc strings; Tab cycles them.
+- **`:!cmd`**: run a shell command in a job, output opens as a real
+  readonly buffer (search it, yank it, q closes).
+- **`|cmd` (helix's pipe)**: visual selections pipe through a command
+  and get replaced by stdout (one undo unit, never-clobber verified);
+  bare `|cmd` pipes the current line.
+- **`*` / `#`**: whole-word search for the word under the cursor,
+  wrapping; `;` / `,` repeat f/F/t/T finds (`, ` inverts).
+- **Persistent search highlight**: matches stay lit after the search
+  commits (rootle rule); the current match is underlined. Works on
+  readonly surfaces too, with n/N.
+
+### Fixed
+
+- **Undo**: a lone paste never committed its revision — `u` after
+  yank+paste claimed "already at oldest change". Every command now
+  commits exactly one undo unit (nvim's rule).
+- **Ctrl-W on some terminals**: keys that arrive as raw control bytes
+  (`\x12`/`\x17`/`\x18`/`\x03`) now map to Ctrl-R/W/X/C — C-w pane
+  cycling works on Windows Terminal → WSL.
 
 ## 0.3.2 — 2026-09-04
 

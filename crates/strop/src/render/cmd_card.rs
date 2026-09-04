@@ -28,12 +28,19 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     }
 
     let area = frame.area();
+    // ex completion rides along: candidates under the input (0003 §1)
+    let candidates = if kind == ':' {
+        editor.ex_candidates()
+    } else {
+        Vec::new()
+    };
     let width = (area.width * 50 / 100).clamp(30, area.width.saturating_sub(4));
+    let height = 3 + candidates.len().min(6) as u16;
     let card = Rect {
         x: (area.width - width) / 2,
         y: area.height / 6,
         width,
-        height: 3,
+        height,
     };
     frame.render_widget(Clear, card);
     let title = if kind == ':' { " command " } else { " search " };
@@ -85,6 +92,35 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         height: 1,
     };
     frame.render_widget(Paragraph::new(Line::from(spans)), text_area);
+
+    // completion rows: first candidate accent (Tab cycles to it), the
+    // rest muted with their doc strings
+    let body_str = pending.strip_prefix(':').unwrap_or("");
+    for (i, (name, doc)) in candidates.iter().take(6).enumerate() {
+        let y = text_area.y + 1 + i as u16;
+        let row = Rect {
+            y,
+            height: 1,
+            ..text_area
+        };
+        let (name_fg, doc_fg) = if i == 0 {
+            (ACCENT, TEXT)
+        } else {
+            (TEXT, MUTED)
+        };
+        let marker = if name == &body_str { "▌" } else { " " };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(marker, Style::default().fg(ACCENT)),
+                Span::styled(
+                    format!("{name:<10}"),
+                    Style::default().fg(name_fg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(doc.to_string(), Style::default().fg(doc_fg)),
+            ])),
+            row,
+        );
+    }
 
     // caret goes in the card, not the buffer
     let caret_x = text_area.x + 2 + body.chars().count() as u16;

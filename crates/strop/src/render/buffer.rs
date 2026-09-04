@@ -188,11 +188,28 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         emphasis: None,
         diff_line: None,
     };
+    // highlight the pending search (incsearch) or, persistently, the
+    // last committed search (rootle rule: matches stay lit; the current
+    // one is underlined by content_spans)
     let search_hits: Vec<usize> = if view.overlays {
-        editor
-            .search_pattern()
-            .map(|p| strop_grammar::search_all(editor.buf(), p))
-            .unwrap_or_default()
+        if let Some(p) = editor.search_pattern() {
+            strop_grammar::search_all(editor.buf(), p)
+        } else if let Some(ls) = &editor.last_search {
+            let mut hits = strop_grammar::search_all(editor.buf(), &ls.pattern);
+            if ls.whole_word {
+                let word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+                let len = ls.pattern.len();
+                let buf = editor.buf();
+                hits.retain(|&h| {
+                    let before_ok = h == 0 || !word_char(buf.byte(h - 1));
+                    let after_ok = h + len >= buf.len_bytes() || !word_char(buf.byte(h + len));
+                    before_ok && after_ok
+                });
+            }
+            hits
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };
@@ -203,13 +220,14 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     // 0011 left-margin columns: the commit file sidebar (Diff surfaces
     // from the dive chain) and the blame gutter (file buffers) prepend
     // to every row; content width shrinks by what they take
-    let sidebar = match surface {
+    let (sidebar, sidebar_focused) = match surface {
         Some(crate::editor::Surface::Diff {
             commit: Some(cf),
             label,
+            sidebar_focus,
             ..
-        }) => Some((cf.files.as_slice(), label.as_str())),
-        _ => None,
+        }) => (Some((cf.files.as_slice(), label.as_str())), *sidebar_focus),
+        _ => (None, false),
     };
     let sidebar_w = sidebar.map_or(0, |(files, _)| diff::sidebar_width(files) + 1);
     let blame = editor.blame_gutter_for(view.buffer);
@@ -222,7 +240,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         // the margin columns: sidebar cell (or blank), then the blame
         // cell (or blank past the buffer's lines)
         let mut left: Vec<Span> = sidebar
-            .map(|(files, label)| diff::sidebar_spans(files, label, line_idx))
+            .map(|(files, label)| diff::sidebar_spans(files, label, line_idx, sidebar_focused))
             .unwrap_or_default();
         if let Some(gutter) = blame {
             left.push(match gutter.lines.get(line_idx) {
@@ -414,6 +432,12 @@ fn content_spans(
     let tab = editor.config.tab_size.max(1);
     let syn_spans = style.syn_spans;
     let mut syn_idx = syn_spans.partition_point(|s| s.end <= start);
+    // pending search or the last committed one (persistent highlight)
+    let pat_len = editor
+        .search_pattern()
+        .map(str::len)
+        .or_else(|| editor.last_search.as_ref().map(|ls| ls.pattern.len()))
+        .unwrap_or(0);
     let mut spans = Vec::with_capacity(text.len() / 2 + 4);
     let mut chars = 0usize;
     for (i, ch) in text.chars().enumerate() {
@@ -424,6 +448,10 @@ fn content_spans(
         let mut cell = Style::default().fg(TEXT);
         if let Some(dl) = style.diff_line {
             cell = cell.fg(diff::origin_fg(dl.origin));
+            // syntax colors ride under the origin tint (delta's look)
+            if syn_idx < syn_spans.len() && syn_spans[syn_idx].start <= pos {
+                cell = cell.fg(class_color(syn_spans[syn_idx].class));
+            }
             if let Some(bg) = diff::origin_bg(dl.origin) {
                 cell = cell.bg(bg);
             }
@@ -452,12 +480,20 @@ fn content_spans(
         if style.selection.is_some_and(|r| in_range(r, pos)) {
             cell = cell.bg(SELECT_BG);
         }
-        if style
-            .search_hits
-            .iter()
-            .any(|&h| pos >= h && pos < h + editor.search_pattern().map_or(0, str::len))
-        {
-            cell = cell.fg(ACCENT).add_modifier(Modifier::BOLD);
+        // search hits light up (accent bold); the match under the
+        // cursor — the "current" one n/N walks — wears an underline
+        if pat_len > 0 {
+            if let Some(h) = style
+                .search_hits
+                .iter()
+                .find(|&&h| pos >= h && pos < h + pat_len)
+            {
+                cell = cell.fg(ACCENT).add_modifier(Modifier::BOLD);
+                let is_current = view.cursor >= *h && view.cursor < h + pat_len;
+                if is_current {
+                    cell = cell.add_modifier(Modifier::UNDERLINED);
+                }
+            }
         }
         if let Some((_, backward)) = style.find {
             // leap-style: candidates bold-accent on the pending side

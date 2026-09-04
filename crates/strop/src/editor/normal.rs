@@ -6,6 +6,24 @@ use strop_grammar::{self as grammar, Command, Op, Parse, Resolved};
 
 use super::{Editor, Key, Mode};
 
+/// The ex vocabulary (completion + `run_ex` dispatch reads the same
+/// list — one table, no drift).
+pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
+    ("w", "write"),
+    ("q", "quit"),
+    ("q!", "quit, force"),
+    ("wq", "write + quit"),
+    ("e", "edit file"),
+    ("e!", "edit file, force"),
+    ("vs", "split vertical"),
+    ("vsplit", "split vertical"),
+    ("sp", "split horizontal"),
+    ("split", "split horizontal"),
+    ("help", "help buffer"),
+    ("h", "help buffer"),
+    ("!", "run shell command"),
+];
+
 impl Editor {
     pub(crate) fn feed_normal(&mut self, key: Key) {
         // readonly surfaces (git browser/blame/etc.): q closes, Enter
@@ -43,7 +61,7 @@ impl Editor {
                 self.run_motion(&c.to_string())
             }
             'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | '?' | ':' | '"' | 'r' | '>'
-            | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' => self.pending.push(c),
+            | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' | '|' => self.pending.push(c),
             // n/N replay the last search (vim; N inverts direction)
             'n' => self.repeat_search(false),
             'N' => self.repeat_search(true),
@@ -121,6 +139,10 @@ impl Editor {
             'J' => self.join_lines(),
             '.' => self.dot_repeat(),
             'u' => self.undo(),
+            ';' => self.repeat_find(false),
+            ',' => self.repeat_find(true),
+            '*' => self.search_word_under_cursor(false),
+            '#' => self.search_word_under_cursor(true),
             _ => {}
         }
     }
@@ -187,6 +209,7 @@ impl Editor {
 
     fn feed_pending(&mut self, key: Key) {
         let is_ex = self.pending.starts_with(':');
+        let is_pipe = self.pending.starts_with('|');
         let is_search = !is_ex && (self.pending.contains('/') || self.pending.contains('?'));
         match key {
             Key::Esc => self.pending.clear(),
@@ -198,6 +221,8 @@ impl Editor {
                 self.pending.push('\r');
                 self.resolve_pending();
             }
+            Key::Enter if is_pipe => self.pipe_current_line(),
+            Key::Tab if is_ex => self.ex_tab_complete(),
             Key::Enter => self.pending.clear(),
             Key::CtrlR | Key::CtrlW | Key::CtrlX => {} // pending + window/undo keys: no-op
             Key::Up | Key::Down | Key::Tab | Key::Backtab => {}
@@ -282,7 +307,7 @@ impl Editor {
                     return;
                 }
                 self.pending.push(c);
-                if !is_ex {
+                if !is_ex && !is_pipe {
                     self.resolve_pending();
                 }
             }
@@ -312,14 +337,38 @@ impl Editor {
         }
     }
 
-    /// `/pat⏎` arms `n`/`N` (vim search repeat).
+    /// `|cmd` in normal mode: pipe the current line through cmd
+    /// (helix's pipe — the better `!`).
+    fn pipe_current_line(&mut self) {
+        let cmd = self.pending[1..].to_string();
+        self.pending.clear();
+        let line = self.buf().line_of(self.cursor);
+        let start = self.buf().line_start(line);
+        let end = self.buf().line_start(line + 1).min(self.buf().len_bytes());
+        self.pipe_run(start, end, &cmd);
+    }
     fn note_search(&mut self, cmd: &Command) {
         match &cmd.target {
             strop_grammar::Target::Motion(strop_grammar::Motion::Search(p)) => {
-                self.last_search = Some((p.clone(), false));
+                self.last_search = Some(super::LastSearch {
+                    pattern: p.clone(),
+                    backward: false,
+                    whole_word: false,
+                });
             }
             strop_grammar::Target::Motion(strop_grammar::Motion::SearchBackward(p)) => {
-                self.last_search = Some((p.clone(), true));
+                self.last_search = Some(super::LastSearch {
+                    pattern: p.clone(),
+                    backward: true,
+                    whole_word: false,
+                });
+            }
+            strop_grammar::Target::Motion(strop_grammar::Motion::FindChar {
+                ch,
+                till,
+                backward,
+            }) => {
+                self.last_find = Some((*ch, *backward, *till));
             }
             _ => {}
         }
@@ -345,26 +394,115 @@ impl Editor {
         self.normalize_cursors();
     }
 
+    /// `;` / `,`: replay the last f/F/t/T (vim: `,` inverts direction),
+    /// line-local like the original find, cascading over cursors.
+    pub(crate) fn repeat_find(&mut self, reverse: bool) {
+        let Some((ch, backward, till)) = self.last_find else {
+            self.message = "no previous find".into();
+            return;
+        };
+        let backward = backward ^ reverse;
+        let seek = |buf: &strop_core::Buffer, c: usize| -> Option<usize> {
+            let line = buf.line_of(c);
+            let (ls, le) = (buf.line_start(line), buf.line_end(line));
+            if backward {
+                let mut pos = c.min(le);
+                if pos == ls {
+                    return None;
+                }
+                pos -= 1;
+                loop {
+                    if buf.byte(pos) == ch {
+                        return Some(if till { (pos + 1).min(le) } else { pos });
+                    }
+                    if pos == ls {
+                        return None;
+                    }
+                    pos -= 1;
+                }
+            }
+            let mut pos = c + 1;
+            while pos < le {
+                if buf.byte(pos) == ch {
+                    return Some(if till {
+                        pos.saturating_sub(1).max(ls)
+                    } else {
+                        pos
+                    });
+                }
+                pos += 1;
+            }
+            None
+        };
+        let mut extras = std::mem::take(&mut self.extra_cursors);
+        for c in &mut extras {
+            if let Some(h) = seek(self.buf(), *c) {
+                *c = h;
+            }
+        }
+        self.extra_cursors = extras;
+        match seek(self.buf(), self.cursor) {
+            Some(h) => {
+                self.cursor = h;
+                self.flash(Range::charwise(self.cursor, self.cursor));
+            }
+            None => self.message = "find: no more matches".into(),
+        }
+        self.normalize_cursors();
+    }
+
     /// `n` / `N`: repeat the armed search, wrapping at the file edges.
     /// Cascades: every cursor seeks from its own position (0013 §3).
     pub(crate) fn repeat_search(&mut self, invert: bool) {
-        let Some((pat, backward)) = self.last_search.clone() else {
+        let Some(ls) = self.last_search.clone() else {
             self.message = "no previous search".into();
             return;
         };
-        let backward = backward ^ invert;
+        let backward = ls.backward ^ invert;
+        // a whole-word match has non-word bytes (or the edge) on both
+        // flanks — vim's \< \> without the regex layer
+        let word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        let boundary_ok = |buf: &strop_core::Buffer, at: usize, len: usize| {
+            let before_ok = at == 0 || !word_char(buf.byte(at - 1));
+            let after_ok = at + len >= buf.len_bytes() || !word_char(buf.byte(at + len));
+            !ls.whole_word || (before_ok && after_ok)
+        };
         let seek = |buf: &strop_core::Buffer, from: usize| {
-            let hit = if backward {
-                grammar::search_backward(buf, from, &pat)
+            let len = ls.pattern.len();
+            let mut hit = if backward {
+                grammar::search_backward(buf, from, &ls.pattern)
             } else {
-                grammar::search_forward(buf, from + 1, &pat)
+                grammar::search_forward(buf, from + 1, &ls.pattern)
             };
-            hit.or_else(|| {
-                if backward {
-                    grammar::search_backward(buf, buf.len_bytes(), &pat)
+            // skip boundary-mismatched hits (whole-word searches)
+            let mut guard = 0;
+            while hit.is_some_and(|h| !boundary_ok(buf, h, len)) && guard < 64 {
+                let h = hit;
+                hit = if backward {
+                    grammar::search_backward(buf, h.unwrap_or(0), &ls.pattern)
                 } else {
-                    grammar::search_forward(buf, 0, &pat)
+                    grammar::search_forward(buf, h.map(|x| x + 1).unwrap_or(0), &ls.pattern)
+                };
+                guard += 1;
+            }
+            // vim wraps around the file ends
+            hit.or_else(|| {
+                let mut h = if backward {
+                    grammar::search_backward(buf, buf.len_bytes(), &ls.pattern)
+                } else {
+                    grammar::search_forward(buf, 0, &ls.pattern)
+                };
+                let mut guard = 0;
+                while h.is_some_and(|x| !boundary_ok(buf, x, len)) && guard < 64 {
+                    let cur = h;
+                    h = if backward {
+                        grammar::search_backward(buf, cur.unwrap_or(0), &ls.pattern)
+                    } else {
+                        grammar::search_forward(buf, cur.map(|x| x + 1).unwrap_or(0), &ls.pattern)
+                    };
+                    guard += 1;
                 }
+                h
             })
         };
         let mut extras = std::mem::take(&mut self.extra_cursors);
@@ -380,9 +518,40 @@ impl Editor {
                 self.clamp_cursor();
                 self.flash(Range::charwise(self.cursor, self.cursor));
             }
-            None => self.message = format!("pattern not found: {pat}"),
+            None => self.message = format!("pattern not found: {}", ls.pattern),
         }
         self.normalize_cursors();
+    }
+
+    /// `*` / `#` (vim): search the word under the cursor — whole-word,
+    /// forward / backward, wrapping. `n`/`N` keep the same anchors.
+    pub(crate) fn search_word_under_cursor(&mut self, backward: bool) {
+        let word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        let buf_len = self.buf().len_bytes();
+        if self.cursor >= buf_len || !word_char(self.buf().byte(self.cursor)) {
+            self.message = "no word under cursor".into();
+            return;
+        }
+        let mut start = self.cursor;
+        while start > 0 && word_char(self.buf().byte(start - 1)) {
+            start -= 1;
+        }
+        let mut end = self.cursor;
+        while end < buf_len && word_char(self.buf().byte(end)) {
+            end += 1;
+        }
+        let pattern = self.buf().rope.byte_slice(start..end).to_string();
+        self.last_search = Some(super::LastSearch {
+            pattern,
+            backward,
+            whole_word: true,
+        });
+        // `#` seeks from the word's start so the current word isn't its
+        // own "previous" match (vim semantics)
+        if backward {
+            self.cursor = start;
+        }
+        self.repeat_search(false);
     }
 
     /// The live preview: what would the pending keys do right now?
@@ -409,6 +578,7 @@ impl Editor {
                         }
                     }
                 }
+
                 // partial search: d/foo mid-typing previews cursor→first match
                 if let Some(idx) = self.pending.find('/') {
                     let pat = &self.pending[idx + 1..];
@@ -423,9 +593,39 @@ impl Editor {
                         }
                     }
                 }
+
                 None
             }
         }
+    }
+
+    /// Ex-completion candidates for the pending prefix (name, doc).
+    pub(crate) fn ex_candidates(&self) -> Vec<(&'static str, &'static str)> {
+        let Some(prefix) = self.pending.strip_prefix(':') else {
+            return Vec::new();
+        };
+        if prefix.contains(' ') {
+            return Vec::new();
+        }
+        EX_COMMANDS
+            .iter()
+            .filter(|(name, _)| name.starts_with(prefix))
+            .copied()
+            .collect()
+    }
+
+    /// Tab on the ex line: cycle the completion candidates.
+    fn ex_tab_complete(&mut self) {
+        let cands = self.ex_candidates();
+        if cands.is_empty() {
+            return;
+        }
+        let prefix = self.pending.strip_prefix(':').unwrap_or("");
+        let next = cands
+            .iter()
+            .position(|(name, _)| *name == prefix)
+            .map_or(cands[0].0, |i| cands[(i + 1) % cands.len()].0);
+        self.pending = format!(":{next}");
     }
 
     /// Pending f/F/t/T awaiting its char: the leap-style candidates.
@@ -645,6 +845,7 @@ impl Editor {
         self.pending.clear();
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline.as_str(), ""));
         match cmd {
+            _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
             "w" => match self.buf_mut().save() {
                 Ok(()) => {
                     crate::session::save(self);
