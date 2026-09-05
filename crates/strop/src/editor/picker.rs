@@ -247,6 +247,14 @@ impl Editor {
                     self.message = format!("open {}: {e}", path.display());
                     return;
                 }
+                // same rule as LSP jumps: search hits outside the
+                // workspace are reading, not editing
+                let probe = self.cwd.join("x");
+                let root = strop_lsp::registry::workspace_root(&probe, &self.cwd);
+                if !full.starts_with(&root) && !self.buf().readonly {
+                    self.buf_mut().readonly = true;
+                    self.message = "readonly — outside workspace (:set noro to edit)".into();
+                }
                 let start = self.buf().line_start(line.saturating_sub(1));
                 self.set_head(self.buf().clamp_boundary(start + col.saturating_sub(1)));
                 self.clamp_cursor();

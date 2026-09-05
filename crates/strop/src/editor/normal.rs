@@ -1393,6 +1393,20 @@ impl Editor {
                     Err(e) => self.message = format!("write failed: {e}"),
                 }
             }
+            "set" => {
+                // vim's option surface, narrowly: ro/noro only for now
+                match arg {
+                    "ro" | "readonly" => {
+                        self.buf_mut().readonly = true;
+                        self.message = "readonly".into();
+                    }
+                    "noro" | "noreadonly" => {
+                        self.buf_mut().readonly = false;
+                        self.message = "writable".into();
+                    }
+                    _ => self.message = format!("unknown option: {arg}"),
+                }
+            }
             "view" => {
                 // vim view: edit readonly — no arg marks the current
                 // buffer readonly

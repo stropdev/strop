@@ -260,6 +260,18 @@ impl Editor {
             self.message = format!("open {path_s}: {e}");
             return;
         }
+        // IntelliJ's external-libraries rule without a list: following a
+        // definition OUT of the workspace is reading, not editing —
+        // the buffer opens readonly (0009's mutation boundary enforces
+        // it); `:set noro` unlocks deliberately.
+        // workspace_root takes a FILE path (walks from its parent) —
+        // cwd/x's parent is the cwd itself
+        let probe = self.cwd.join("x");
+        let root = registry::workspace_root(&probe, &self.cwd);
+        if !path.starts_with(&root) && !self.buf().readonly {
+            self.buf_mut().readonly = true;
+            self.message = format!("{path_s} [readonly — outside workspace; :set noro to edit]");
+        }
         let col = {
             let line_idx = line.min(self.buf().len_lines().saturating_sub(1));
             let text = self.buf().line_text(line_idx);

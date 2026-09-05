@@ -372,6 +372,13 @@ impl Editor {
                 }
             }
             Key::Char(c) => {
+                // `:` opens the modal ex line (0003 §1): the text owns
+                // every later key until Enter/Esc — never per-char
+                // resolve (:set noro died here)
+                if self.pending.starts_with(':') {
+                    self.pending.push(c);
+                    return;
+                }
                 // leader namespaces still work from a surface
                 if self.pending == " " {
                     self.pending.clear();
