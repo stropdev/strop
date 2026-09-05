@@ -40,13 +40,13 @@ impl Editor {
     /// document while it runs (closing the last one sets should_quit).
     pub fn cur(&self) -> &Document {
         self.docs
-            .get(self.current)
+            .get(self.current())
             .expect("invariant: current document is live")
     }
 
     pub fn cur_mut(&mut self) -> &mut Document {
         self.docs
-            .get_mut(self.current)
+            .get_mut(self.current())
             .expect("invariant: current document is live")
     }
 
@@ -93,6 +93,61 @@ impl Editor {
         }
     }
 
+    /// Open without switching (splits): the document exists, the active
+    /// view stays. Returns the id.
+    pub fn open_document(&mut self, path: &str) -> std::io::Result<strop_core::id::DocumentId> {
+        self.drop_stale_scratch();
+        let canon = std::path::Path::new(path)
+            .canonicalize()
+            .unwrap_or_else(|_| self.cwd.join(path));
+        if let Some((id, _)) = self.docs.iter().find(|(_, d)| {
+            d.buf
+                .path
+                .as_deref()
+                .and_then(|p| std::path::Path::new(p).canonicalize().ok())
+                == Some(canon.clone())
+        }) {
+            return Ok(id);
+        }
+        let buf = Buffer::open(path)?;
+        let id = self.docs.insert(Document::new(buf));
+        if self.docs.len() == 1 {
+            self.mru.clear();
+        }
+        self.generation += 1;
+        self.mru.push(id);
+        Ok(id)
+    }
+
+    /// The active document (derived: the active view's document).
+    #[inline]
+    pub fn current(&self) -> strop_core::id::DocumentId {
+        self.view().doc
+    }
+
+    /// Switch the active view to a document.
+    pub fn switch_to(&mut self, id: strop_core::id::DocumentId) {
+        self.view_mut().doc = id;
+        self.touch_mru(id);
+    }
+
+    /// The active view's selections.
+    #[inline]
+    pub fn sels(&self) -> &strop_core::selection::SelectionSet {
+        &self.view().sels
+    }
+
+    #[inline]
+    pub fn sels_mut(&mut self) -> &mut strop_core::selection::SelectionSet {
+        &mut self.view_mut().sels
+    }
+
+    /// The active view's scroll offset.
+    #[inline]
+    pub fn view_top(&self) -> usize {
+        self.view().view_top
+    }
+
     /// Open a file into a new document and switch to it (`:e`).
     pub fn open_buffer(&mut self, path: &str) -> std::io::Result<()> {
         self.drop_stale_scratch();
@@ -113,8 +168,7 @@ impl Editor {
             })
             .map(|(id, _)| id);
         if let Some(id) = existing {
-            self.current = id;
-            self.touch_mru(id);
+            self.switch_to(id);
             return Ok(());
         }
         let buf = Buffer::open(path)?;
@@ -124,10 +178,9 @@ impl Editor {
             self.mru.clear();
         }
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
-        self.current = id;
-        self.touch_mru(id);
+        self.switch_to(id);
         self.set_head(0);
-        self.view_top = 0;
+        self.view_mut().view_top = 0;
         self.discover_git();
         self.lsp_maybe_attach();
         Ok(())
@@ -141,7 +194,7 @@ impl Editor {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }
-        let closed = self.current;
+        let closed = self.current();
         let closed_surface = self.docs.remove(closed).and_then(|d| d.surface);
         if self.docs.is_empty() {
             crate::session::save(self);
@@ -156,21 +209,20 @@ impl Editor {
                     .map(|(id, _)| id)
                     .expect("docs non-empty")
             });
-            self.current = next;
-            self.touch_mru(next);
+            self.switch_to(next);
             self.set_head(0);
-            self.view_top = 0;
+            self.view_mut().view_top = 0;
             // a closing surface hands the cursor and view back to the
             // document it opened from — by id, no index math (0011 §1)
             if let Some(surface) = closed_surface {
                 if let Some(ret) = surface.return_point() {
                     if self.docs.get(ret.buffer).is_some() {
-                        if ret.buffer != self.current {
-                            self.current = ret.buffer;
+                        if ret.buffer != self.current() {
+                            self.view_mut().doc = ret.buffer;
                             self.touch_mru(ret.buffer);
                         }
                         self.set_head(ret.cursor.min(self.buf().len_bytes()));
-                        self.view_top = ret.view_top;
+                        self.view_mut().view_top = ret.view_top;
                     }
                 }
             }

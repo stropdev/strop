@@ -84,9 +84,9 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
         };
         let view = if i == editor.active_pane {
             PaneView {
-                doc: editor.current,
+                doc: editor.current(),
                 cursor: editor.head(),
-                view_top: editor.view_top,
+                view_top: editor.view_top(),
                 overlays: true,
             }
         } else {
@@ -95,9 +95,9 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
                 doc: if editor.docs.get(pane.doc).is_some() {
                     pane.doc
                 } else {
-                    editor.current
+                    editor.current()
                 },
-                cursor: pane.cursor,
+                cursor: pane.sels.primary().head,
                 view_top: pane.view_top,
                 overlays: false,
             }
@@ -150,7 +150,7 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
 /// Secondary cursors (0013 §4): solid blocks on the active pane, like
 /// the native block cursor but painted.
 fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
-    if view.doc != editor.current || editor.extra_selections().is_empty() {
+    if view.doc != editor.current() || editor.extra_selections().is_empty() {
         return;
     }
     let buf = &editor.doc(view.doc).buf;
@@ -405,7 +405,7 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
     }
     // git signs: + add, ~ change, - deletion below (only for the
     // working buffer — surfaces have no path, so no leak)
-    if view.doc == editor.current {
+    if view.doc == editor.current() {
         // the four states in one column: unstaged sign wins; staged-only
         // lines get the committed-adjacent tint (0014 wave 4)
         if editor.sign_at(line_idx + 1).is_none() && editor.sign_at_staged(line_idx + 1) {
@@ -638,7 +638,7 @@ mod tests {
                     .is_some_and(|p| p.ends_with("wide.txt"))
             })
             .unwrap();
-        e.current = wide_id;
+        e.view_mut().doc = wide_id;
         let wide_frame = draw(&mut e, &mut terminal);
         assert!(
             wide_frame[0].contains(">>>"),
@@ -657,9 +657,9 @@ mod tests {
                     .is_some_and(|p| p.ends_with("narrow.txt"))
             })
             .unwrap();
-        e.current = narrow_id; // narrow
-                               // ratatui double-buffers: stale cells surface one swap later,
-                               // on the SECOND narrow frame
+        e.view_mut().doc = narrow_id; // narrow
+                                      // ratatui double-buffers: stale cells surface one swap later,
+                                      // on the SECOND narrow frame
         let _ = draw(&mut e, &mut terminal);
         let narrow_frame = draw(&mut e, &mut terminal);
         let leftover = narrow_frame.iter().filter(|row| row.contains('>')).count();

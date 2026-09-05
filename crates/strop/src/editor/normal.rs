@@ -160,13 +160,14 @@ impl Editor {
 
     /// `v` / `V`: visual mode is primary-only — extras collapse (0013).
     pub(crate) fn enter_visual(&mut self, linewise: bool) {
-        self.sels.collapse_extras();
+        self.sels_mut().collapse_extras();
         self.mode = if linewise {
             Mode::VisualLine
         } else {
             Mode::Visual
         };
-        self.sels.stretch_primary(self.head(), self.head());
+        let h = self.head();
+        self.sels_mut().stretch_primary(h, h);
     }
 
     /// `.` — see dot_repeat (semantic; 0014).
@@ -532,7 +533,7 @@ impl Editor {
                 self.clamp_pos(c)
             })
             .collect();
-        self.sels.set_extras(extras);
+        self.sels_mut().set_extras(extras);
         self.clamp_cursor();
         self.normalize_cursors();
         // vim says so when a search finds nothing
@@ -595,7 +596,7 @@ impl Editor {
             .iter()
             .map(|s| seek(self.buf(), s.head).unwrap_or(s.head))
             .collect();
-        self.sels.set_extras(extras);
+        self.sels_mut().set_extras(extras);
         match seek(self.buf(), self.head()) {
             Some(h) => {
                 self.set_head(h);
@@ -670,7 +671,7 @@ impl Editor {
                     .unwrap_or(s.head)
             })
             .collect();
-        self.sels.set_extras(extras);
+        self.sels_mut().set_extras(extras);
         match seek(self.buf(), self.head()) {
             Some(h) => {
                 self.set_head(self.buf().clamp_boundary(h));
@@ -886,7 +887,7 @@ impl Editor {
                 );
                 let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
                 starts.sort_unstable();
-                self.sels.set_extras(starts);
+                self.sels_mut().set_extras(starts);
                 if cmd.op.unwrap() == Op::Change {
                     // no commit: the insert session closes the undo unit
                     self.enter_insert_from(&cmd.keys);
@@ -974,7 +975,7 @@ impl Editor {
         );
         let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
         starts.sort_unstable();
-        self.sels.set_extras(starts);
+        self.sels_mut().set_extras(starts);
         self.enter_insert_from(&cmd.keys);
         self.clamp_cursor();
         self.flash(Range::charwise(self.head(), self.head()));

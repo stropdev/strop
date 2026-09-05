@@ -163,8 +163,8 @@ impl Editor {
             head_lines[lo..hi.max(lo)].join("\n")
         };
 
-        let saved_current = self.current;
-        self.current = idx;
+        let saved_current = self.current();
+        self.view_mut().doc = idx;
         if new_count == 0 {
             // pure deletion: reinsert the old lines at the gap
             let total = self.buf().len_lines();
@@ -201,10 +201,10 @@ impl Editor {
             self.buf_mut().insert(start, &old);
             self.set_head(start);
         }
-        self.current = saved_current;
+        self.view_mut().doc = saved_current;
         // the cursor field belongs to the driven pane; only the origin
         // buffer's own view moves when it is current
-        if self.current == idx {
+        if self.current() == idx {
             self.clamp_cursor();
             self.flash(strop_core::Range::charwise(self.head(), self.head()));
         } else {
@@ -213,7 +213,7 @@ impl Editor {
                 buf.line_start(buf.len_lines().saturating_sub(1))
             };
             if let Some(pane) = self.panes.iter_mut().find(|p| p.doc == idx) {
-                pane.cursor = at;
+                pane.sels.collapse_primary(at);
             }
         }
         true
@@ -234,7 +234,7 @@ impl Editor {
                     self.message = "no hunk here".into();
                     return;
                 };
-                if self.restore_hunk_in(self.current, &hunk) {
+                if self.restore_hunk_in(self.current(), &hunk) {
                     self.message = "hunk reset".into();
                 }
             }
@@ -252,7 +252,7 @@ impl Editor {
                     self.message = "no hunk here".into();
                     return;
                 };
-                self.stage_hunk_in(self.current, &hunk);
+                self.stage_hunk_in(self.current(), &hunk);
             }
         }
     }
@@ -332,7 +332,7 @@ impl Editor {
             return;
         };
         let origin = HunkOrigin {
-            buffer: self.current,
+            buffer: self.current(),
             epoch: self.cur().buf.epoch,
         };
         self.open_diff_surface("hunk", "hunk", vec![hunk], Some(origin));
@@ -485,7 +485,7 @@ mod tests {
         let text = e.doc(e.first_doc()).buf.rope.to_string();
         assert_eq!(text, "fn a() {}\nfn b() {}\n", "hunk restored: {text}");
         e.feed_text("q");
-        assert_eq!(e.current, e.first_doc());
+        assert_eq!(e.current(), e.first_doc());
     }
 
     /// 0014 P0: staging must never silently write unrelated unsaved
@@ -526,8 +526,14 @@ mod tests {
         e.feed_text("Go");
         e.feed_text("fn c() {}");
         e.feed_text("<esc>gg]c gp");
-        // edit the origin buffer: the epoch moves, the preview goes stale
-        e.panes[0].doc = e.first_doc(); // ensure a pane points at the file
+        // edit the origin document: the epoch moves, the preview goes stale
+        // (the active pane's document IS the current one — the surface —
+        // so point a second pane at the file for the cursor-keep branch)
+        e.panes.push(crate::editor::Pane {
+            doc: e.first_doc(),
+            sels: strop_core::selection::SelectionSet::default(),
+            view_top: 0,
+        });
         e.doc_mut(e.first_doc()).buf.insert(0, "// touched\n");
         e.feed_text(" gu");
         assert!(

@@ -151,7 +151,7 @@ impl Editor {
         for (at, _, _) in jobs.iter().rev() {
             self.buf_mut().insert(*at, &text);
         }
-        self.sels
+        self.sels_mut()
             .set_extras(jobs.iter().filter(|j| !j.2).map(|j| j.1));
         self.set_head(jobs.iter().find(|j| j.2).map(|j| j.1).unwrap_or(primary));
         self.normalize_cursors();

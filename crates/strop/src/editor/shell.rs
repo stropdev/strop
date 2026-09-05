@@ -37,7 +37,7 @@ impl Editor {
             self.message = "pipe: needs a command".into();
             return;
         }
-        let buffer = self.current;
+        let buffer = self.current();
         let s = start.min(end).min(self.buf().len_bytes());
         let e = end.max(start).min(self.buf().len_bytes());
         let original = self.buf().rope.byte_slice(s..e).to_string();
@@ -73,10 +73,9 @@ impl Editor {
                         highlighter: None,
                         surface: None,
                     });
-                    self.current = id;
-                    self.touch_mru(id);
+                    self.switch_to(id);
                     self.set_head(0);
-                    self.view_top = 0;
+                    self.view_mut().view_top = 0;
                     self.message = format!("sh: {cmd} — q closes");
                 }
                 ShellResult::Pipe {
@@ -113,7 +112,7 @@ impl Editor {
                     buf.delete(strop_core::Range::charwise(s, e));
                     buf.insert(s, &out);
                     buf.history.commit();
-                    if buffer == self.current {
+                    if buffer == self.current() {
                         self.set_head(self.buf().clamp_boundary(s));
                         self.clamp_cursor();
                         self.flash(strop_core::Range::charwise(self.head(), self.head()));

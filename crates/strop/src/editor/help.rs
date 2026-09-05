@@ -17,10 +17,9 @@ impl Editor {
             .find(|(_, d)| d.buf.name.as_deref() == Some("help"))
             .map(|(id, _)| id);
         if let Some(i) = existing {
-            self.current = i;
-            self.touch_mru(i);
+            self.switch_to(i);
             self.set_head(0);
-            self.view_top = 0;
+            self.view_mut().view_top = 0;
             return;
         }
         let mut text = String::from("strop help — / searches · q closes\n");
@@ -55,10 +54,9 @@ impl Editor {
             highlighter: None,
             surface: None,
         });
-        self.current = id;
-        self.touch_mru(id);
+        self.switch_to(id);
         self.set_head(0);
-        self.view_top = 0;
+        self.view_mut().view_top = 0;
     }
 }
 

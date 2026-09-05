@@ -1,15 +1,18 @@
 //! Splits (0001 pillar 4: splits are core vim grammar). v1: a flat row
 //! (`:vs`, side by side) or column (`:sp`, stacked) — mixed nesting is
-//! the tree-layout follow-up. Buffers are shared between panes; cursor
-//! and view offset are per-pane.
+//! the tree-layout follow-up. Documents are shared between panes; the
+//! selections and scroll are per-pane (0014: the pane OWNS them — no
+//! sync_to/from_pane copy-back, the active pane's state is the editor's).
+
+use strop_core::selection::SelectionSet;
 
 use super::Editor;
 
-/// One pane's view state.
+/// One pane: the document it shows plus its own view state.
 #[derive(Debug, Clone)]
 pub struct Pane {
     pub doc: strop_core::id::DocumentId,
-    pub cursor: usize,
+    pub sels: SelectionSet,
     pub view_top: usize,
 }
 
@@ -22,21 +25,37 @@ pub enum LayoutDir {
 }
 
 impl Editor {
+    /// The active pane — the editor's selections/scroll ARE its state.
+    #[inline]
+    pub fn view(&self) -> &Pane {
+        &self.panes[self.active_pane]
+    }
+
+    #[inline]
+    pub fn view_mut(&mut self) -> &mut Pane {
+        &mut self.panes[self.active_pane]
+    }
+
     /// Split the active pane. `vertical` = `:vs` (new pane to the right).
-    /// Without a path the pane shows the same buffer (the split point).
+    /// Without a path the pane shows the same document (the split point).
     pub(crate) fn split(&mut self, vertical: bool, path: Option<&str>) {
-        self.sync_to_pane(); // capture the active pane before opening another
-        if let Some(p) = path {
-            if let Err(e) = self.open_buffer(p) {
-                self.message = format!("open {p}: {e}");
-                return;
+        let view = self.view().clone();
+        // with a path: the NEW pane shows it — the old pane keeps its doc
+        let doc = if let Some(p) = path {
+            match self.open_document(p) {
+                Ok(id) => id,
+                Err(e) => {
+                    self.message = format!("open {p}: {e}");
+                    return;
+                }
             }
-        }
-        let (cursor, view_top) = (self.head(), self.view_top);
+        } else {
+            view.doc
+        };
         self.panes.push(Pane {
-            doc: self.current,
-            cursor,
-            view_top,
+            doc,
+            sels: view.sels,
+            view_top: view.view_top,
         });
         self.layout = if vertical {
             LayoutDir::Row
@@ -44,14 +63,18 @@ impl Editor {
             LayoutDir::Column
         };
         self.active_pane = self.panes.len() - 1;
+        self.discover_git();
+        self.lsp_maybe_attach();
     }
 
-    /// `:q` closes the pane; the last pane's close is buffer close.
+    /// `:q` closes the pane; the last pane's close is document close.
     pub(crate) fn close_pane_or_buffer(&mut self, force: bool) {
         if self.panes.len() > 1 {
             self.panes.remove(self.active_pane);
             self.active_pane = self.active_pane.min(self.panes.len() - 1);
-            self.sync_from_pane();
+            // the surviving pane's document may differ from the closed
+            // pane's — git discovery follows the view, no copy-back
+            self.discover_git();
         } else {
             self.close_buffer(force);
         }
@@ -72,29 +95,9 @@ impl Editor {
             (_, 'w') => (self.active_pane + 1) % n,
             _ => return,
         };
-        self.sync_to_pane();
-        self.active_pane = next;
-        self.sync_from_pane();
-    }
-
-    /// Save the active pane's state before switching away.
-    fn sync_to_pane(&mut self) {
-        let (doc, cursor, view_top) = (self.current, self.head(), self.view_top);
-        let pane = &mut self.panes[self.active_pane];
-        pane.doc = doc;
-        pane.cursor = cursor;
-        pane.view_top = view_top;
-    }
-
-    fn sync_from_pane(&mut self) {
-        let pane = self.panes[self.active_pane].clone();
-        if self.docs.get(pane.doc).is_some() {
-            self.current = pane.doc;
-        }
-        self.set_head(pane.cursor.min(self.buf().len_bytes()));
-        self.view_top = pane.view_top;
-        self.clamp_cursor();
+        self.active_pane = next; // state is already per-pane: no sync
         self.discover_git();
+        self.clamp_cursor();
     }
 }
 

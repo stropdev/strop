@@ -16,10 +16,10 @@ mod tests {
     fn q_toggles_at_point_and_motions_move_all() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
         e.feed_text("Q");
-        assert_eq!(e.sels.heads(), vec![0, 0]);
+        assert_eq!(e.sels().heads(), vec![0, 0]);
         e.feed_text("j"); // every cursor moves (nvim 0.13)
         assert_eq!(e.head(), 4);
-        assert_eq!(e.sels.heads(), vec![4, 4]);
+        assert_eq!(e.sels().heads(), vec![4, 4]);
         e.feed_text("Q"); // the extra sits on the primary → toggles off
         assert!(e
             .extra_selections()
@@ -33,7 +33,7 @@ mod tests {
     fn space_c_stacks_down_a_column() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
         e.feed_text(" c"); // cursor below joins
-        assert_eq!(e.sels.heads(), vec![0, 4]);
+        assert_eq!(e.sels().heads(), vec![0, 4]);
         e.feed_text(" c");
         assert_eq!(
             e.extra_selections()
@@ -79,7 +79,7 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("a\nb\nc\n"));
         e.feed_text(" c");
         e.feed_text(" c");
-        assert_eq!((e.sels.count() - 1), 2);
+        assert_eq!((e.sels().count() - 1), 2);
         e.feed(crate::editor::Key::Esc);
         assert!(e
             .extra_selections()

@@ -170,7 +170,8 @@ impl Editor {
                         // its end — inclusive, vim semantics (0001 §5.5)
                         if let grammar::Target::Object { .. } = cmd.target {
                             if let Some(r) = grammar::resolve(self.buf(), self.head(), &cmd) {
-                                self.sels.stretch_primary(r.range.start, self.head());
+                                let h = self.head();
+                                self.sels_mut().stretch_primary(r.range.start, h);
                                 self.set_head(r.range.end.saturating_sub(1));
                             }
                         } else {

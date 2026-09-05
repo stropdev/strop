@@ -11,23 +11,23 @@ impl Editor {
     /// The primary cursor's byte offset (was the `cursor` field).
     #[inline]
     pub fn head(&self) -> usize {
-        self.sels.primary().head
+        self.sels().primary().head
     }
 
     #[inline]
     pub fn set_head(&mut self, pos: usize) {
-        self.sels.set_head(pos);
+        self.sels_mut().set_head(pos);
     }
 
     /// The visual anchor (== head when not in visual mode).
     #[inline]
     pub fn anchor(&self) -> usize {
-        self.sels.primary().anchor
+        self.sels().primary().anchor
     }
 
     /// Extra selections beyond the primary (0013).
     pub fn extra_selections(&self) -> &[strop_core::selection::Selection] {
-        self.sels.extra_heads()
+        self.sels().extra_heads()
     }
 
     pub(crate) fn flash(&mut self, range: Range) {
@@ -69,14 +69,14 @@ impl Editor {
 
     /// Every cursor position, primary first (0013 §3).
     pub(crate) fn all_cursors(&self) -> Vec<usize> {
-        self.sels.heads()
+        self.sels().heads()
     }
 
     /// Restore the invariant after any cascade: sorted and deduped. An
     /// extra MAY sit on the primary (Q plants there, then you move) —
     /// edit cascades dedupe positions before applying.
     pub(crate) fn normalize_cursors(&mut self) {
-        self.sels.normalize();
+        self.sels_mut().normalize();
     }
 
     /// Remap cursors after a mirrored edit of `delta` bytes at each of
@@ -94,7 +94,7 @@ impl Editor {
             .iter()
             .map(|s| map(s.head))
             .collect();
-        self.sels.set_extras(extras);
+        self.sels_mut().set_extras(extras);
     }
 
     /// `Q`: drop the cursor under point when one exists, else plant one.
@@ -103,8 +103,8 @@ impl Editor {
             self.message = "readonly buffer".into();
             return;
         }
-        self.sels.toggle_extra();
-        let n = self.sels.count();
+        self.sels_mut().toggle_extra();
+        let n = self.sels().count();
         self.message = format!("{n} cursor{}", if n > 1 { "s" } else { "" });
     }
 
@@ -134,15 +134,15 @@ impl Editor {
         let start = self.buf().line_start(line + 1);
         let end = self.buf().line_end(line + 1);
         let pos = (start + col).min(end.saturating_sub(1).max(start));
-        self.sels.plant_extra(pos);
-        let n = self.sels.count();
+        self.sels_mut().plant_extra(pos);
+        let n = self.sels().count();
         self.message = format!("{n} cursors");
     }
 
     /// Normal-mode Esc: collapse to the primary cursor (0013 §3).
     pub(crate) fn collapse_cursors(&mut self) {
-        if self.sels.count() > 1 {
-            self.sels.collapse_extras();
+        if self.sels().count() > 1 {
+            self.sels_mut().collapse_extras();
             self.message = "1 cursor".into();
         }
     }
@@ -150,10 +150,10 @@ impl Editor {
     /// Keep the cursor on screen; `rows` = text area height.
     pub fn scroll_to_cursor(&mut self, rows: usize) {
         let line = self.buf().line_of(self.head());
-        if line < self.view_top {
-            self.view_top = line;
-        } else if line >= self.view_top + rows {
-            self.view_top = line + 1 - rows;
+        if line < self.view_top() {
+            self.view_mut().view_top = line;
+        } else if line >= self.view_top() + rows {
+            self.view_mut().view_top = line + 1 - rows;
         }
     }
 }

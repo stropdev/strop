@@ -28,7 +28,7 @@ impl Editor {
             self.message = "no undo history".into();
             return;
         }
-        let origin = self.current;
+        let origin = self.current();
         let name = self
             .buf()
             .path
@@ -53,16 +53,15 @@ impl Editor {
             highlighter: None,
             surface: None,
         });
-        self.current = id;
-        self.touch_mru(id);
+        self.switch_to(id);
         self.set_head(0);
-        self.view_top = 0;
+        self.view_mut().view_top = 0;
         // land on the current revision's row
         if let Some(line) = rows.iter().position(|r| r.is_current) {
             self.set_head(self.buf().line_start(line + 1));
         }
         self.undo_browser = Some(UndoBrowser {
-            browser: self.current,
+            browser: self.current(),
             origin,
             row_rev,
         });
@@ -79,9 +78,9 @@ impl Editor {
         let (browser, origin) = (ub.browser, ub.origin);
         let ops = self.doc_mut(origin).buf.history.ops_to(rev);
         self.undo_browser = None;
-        self.current = browser;
+        self.view_mut().doc = browser;
         self.close_buffer(true); // browser closes; origin keeps its id
-        self.current = origin;
+        self.view_mut().doc = origin;
         let Some(ops) = ops else { return };
         let at = ops.iter().map(|e| e.at).min().unwrap_or(0);
         self.buf_mut().apply_history(ops);
@@ -107,7 +106,7 @@ impl Editor {
             self.undo_browser = None;
             return false;
         }
-        if self.current != ub.browser {
+        if self.current() != ub.browser {
             return false;
         }
         if key == Key::Enter {

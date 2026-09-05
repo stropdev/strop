@@ -110,7 +110,7 @@ impl Editor {
                     .iter()
                     .map(|s| s.head.saturating_sub(1))
                     .collect();
-                self.sels.set_extras(extras);
+                self.sels_mut().set_extras(extras);
                 // vim insert counts: `3iX` types X three times — the
                 // replay joins the session's undo unit (commit after)
                 let count = std::mem::replace(&mut self.insert_count, 1);

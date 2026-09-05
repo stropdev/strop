@@ -184,7 +184,7 @@ mod diff_surface_tests {
             "surface starts at its own top"
         );
         e.feed_text("q");
-        assert_eq!(e.current, e.first_doc());
+        assert_eq!(e.current(), e.first_doc());
         assert_eq!(e.buf().line_of(e.head()), 2, "cursor returned to line 3");
     }
 }

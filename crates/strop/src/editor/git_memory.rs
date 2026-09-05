@@ -145,9 +145,9 @@ impl Editor {
         // carries a return point (closing the deepest unwinds the chain)
         if self.surface().is_none() {
             surface.set_return_point(ReturnPoint {
-                buffer: self.current,
+                buffer: self.current(),
                 cursor: self.head(),
-                view_top: self.view_top,
+                view_top: self.view_top(),
             });
         }
         let mut buf = Buffer::from_text(text);
@@ -161,10 +161,9 @@ impl Editor {
         });
         self.push_jump(); // opening a surface is a jumplist entry
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
-        self.current = id;
-        self.touch_mru(id);
+        self.switch_to(id);
         self.set_head(0);
-        self.view_top = 0;
+        self.view_mut().view_top = 0;
     }
 
     /// A diff surface from structured hunks (0010 §2). `label` heads the
@@ -268,7 +267,7 @@ impl Editor {
                 return_to: None,
             },
         );
-        let idx = self.current;
+        let idx = self.current();
         let generation = self.generation;
         let tx = self.git_tx.clone();
         std::thread::spawn(move || {
@@ -344,7 +343,8 @@ impl Editor {
             Key::Char('N') => self.repeat_search(true),
             Key::Char('v') => {
                 self.mode = Mode::Visual;
-                self.sels.stretch_primary(self.head(), self.head());
+                let h = self.head();
+                self.sels_mut().stretch_primary(h, h);
             }
             Key::Char(c) => {
                 // multi-char heads wait for their second key; the rest
@@ -444,8 +444,9 @@ impl Editor {
     /// restore.
     fn close_surface(&mut self) {
         self.close_pane_or_buffer(true);
+        let doc = self.current();
         if let Some(pane) = self.panes.get_mut(self.active_pane) {
-            pane.doc = self.current; // the pane follows the successor
+            pane.doc = doc; // the pane follows the successor
         }
     }
 
@@ -486,9 +487,9 @@ impl Editor {
                         // the blame dive asked for this commit: land on
                         // it (only when the browser is still what's
                         // being driven)
-                        if self.current == buffer {
+                        if self.current() == buffer {
                             self.set_head(self.doc(buffer).buf.line_start(row));
-                            self.view_top = row;
+                            self.view_mut().view_top = row;
                         }
                     }
                 }
@@ -785,7 +786,7 @@ mod tests {
             1,
             "cursor on the first-commit row"
         );
-        assert_eq!(e.view_top, 1, "view positioned at the focused sha");
+        assert_eq!(e.view_top(), 1, "view positioned at the focused sha");
         let text = e.buf().rope.to_string();
         assert!(text.contains("first"), "{text}");
 
@@ -851,7 +852,7 @@ mod tests {
         std::fs::write(root.join("g.rs"), "other\n").unwrap();
         let origin = e.first_doc();
         e.open_buffer(root.join("g.rs").to_str().unwrap()).unwrap();
-        assert_ne!(e.current, origin, "switched away from the log's origin");
+        assert_ne!(e.current(), origin, "switched away from the log's origin");
         let log_surface = e.mru.iter().copied().find(|&id| {
             e.doc(id)
                 .buf
@@ -859,10 +860,10 @@ mod tests {
                 .as_deref()
                 .is_some_and(|n| n.contains("log"))
         });
-        e.current = log_surface.expect("log surface in mru"); // back onto the log surface
+        e.view_mut().doc = log_surface.expect("log surface in mru"); // back onto the log surface
         e.set_head(0);
         e.feed_text("q");
-        assert_eq!(e.current, origin, "closing switches back to the origin");
+        assert_eq!(e.current(), origin, "closing switches back to the origin");
         assert_eq!(e.head(), want, "cursor restored, not line 1");
         assert_eq!(e.buf().line_of(e.head()), 1);
     }
@@ -875,7 +876,7 @@ mod tests {
         e.open_log(false);
         pump(&mut e);
         let stale = e.generation;
-        let dead_surface = e.current; // the log surface's id
+        let dead_surface = e.current(); // the log surface's id
         e.feed_text("q"); // closes the surface; generation moves on
         assert_ne!(stale, e.generation);
         e.git_tx
@@ -1047,7 +1048,7 @@ mod tests {
         );
         e.feed_text("q");
         assert_eq!(e.docs.len(), 1, "the last pane's q closes the buffer");
-        assert_eq!(e.current, e.first_doc(), "back on the origin buffer");
+        assert_eq!(e.current(), e.first_doc(), "back on the origin buffer");
         assert!(e.surface().is_none());
     }
 

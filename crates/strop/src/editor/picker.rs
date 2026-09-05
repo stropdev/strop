@@ -230,10 +230,9 @@ impl Editor {
             }
             Payload::Buffer(i) => {
                 if self.docs.get(i).is_some() {
-                    self.current = i;
-                    self.touch_mru(i);
+                    self.switch_to(i);
                     self.set_head(0);
-                    self.view_top = 0;
+                    self.view_mut().view_top = 0;
                 }
             }
             Payload::Grep {

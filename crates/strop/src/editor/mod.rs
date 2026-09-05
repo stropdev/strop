@@ -89,15 +89,11 @@ pub struct Editor {
     /// enters normal mode on the line, twice clears it.
     pub pending_normal: bool,
     pub pending_cursor: usize,
-    pub current: strop_core::id::DocumentId,
     /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks of
     /// (document, byte offset) (jumps.rs).
     pub jumplist_past: Vec<(strop_core::id::DocumentId, usize)>,
     pub jumplist_future: Vec<(strop_core::id::DocumentId, usize)>,
     pub mode: Mode,
-    /// THE selection state (0014 wave 2): normal = collapsed primary,
-    /// visual = stretched primary, multicursor = extras. One owner.
-    pub sels: strop_core::selection::SelectionSet,
     pub pending: String,
     /// `Space u` browser state (editor/undo.rs); None when closed.
     pub undo_browser: Option<undo::UndoBrowser>,
@@ -112,7 +108,6 @@ pub struct Editor {
     pub flash: Option<(Range, Instant)>,
     pub message: String,
     pub should_quit: bool,
-    pub view_top: usize,
     pub picker: Option<PickerGlue>,
     pub cwd: PathBuf,
     /// MRU document order (most recent first); drives `Space b`.
@@ -219,11 +214,9 @@ impl Editor {
         let mut docs = strop_core::id::Arena::default();
         let current = docs.insert(Document::new(buf));
         let mut e = Self {
-            current,
             docs,
             mru: vec![current],
             mode: Mode::Normal,
-            sels: strop_core::selection::SelectionSet::default(),
             pending: String::new(),
             last_search: None,
             undo_browser: None,
@@ -233,7 +226,6 @@ impl Editor {
             flash: None,
             message: String::new(),
             should_quit: false,
-            view_top: 0,
             last_change: None,
             last_cmd_keys: String::new(),
             last_insert: None,
@@ -273,7 +265,7 @@ impl Editor {
             lsp_hints_shown: std::collections::HashSet::new(),
             panes: vec![Pane {
                 doc: current,
-                cursor: 0,
+                sels: strop_core::selection::SelectionSet::default(),
                 view_top: 0,
             }],
             active_pane: 0,
@@ -379,7 +371,7 @@ impl Editor {
 
     /// `m{a}`: set mark a at the cursor.
     pub(crate) fn set_mark(&mut self, mark: char) {
-        self.marks.insert(mark, (self.current, self.head()));
+        self.marks.insert(mark, (self.current(), self.head()));
         self.message = format!("mark {mark} set");
     }
 
@@ -389,9 +381,8 @@ impl Editor {
         match self.marks.get(&mark).copied() {
             Some((buf, offset)) => {
                 if self.docs.get(buf).is_some() {
-                    if buf != self.current {
-                        self.current = buf;
-                        self.touch_mru(buf);
+                    if buf != self.current() {
+                        self.switch_to(buf);
                         self.discover_git();
                     }
                     self.set_head(

@@ -151,7 +151,7 @@ impl Editor {
     pub fn lsp_sync_changed(&mut self) {
         // buffers can be empty post-quit (the TUI breaks first, but
         // scripted/headless callers may drain past the last :q)
-        let Some(buf) = self.docs.get(self.current).map(|d| &d.buf) else {
+        let Some(buf) = self.docs.get(self.current()).map(|d| &d.buf) else {
             return;
         };
         let Some(path) = buf.path.clone() else {

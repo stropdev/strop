@@ -12,7 +12,7 @@ impl Editor {
         if self.docs.is_empty() {
             return;
         }
-        let pos = (self.current, self.head());
+        let pos = (self.current(), self.head());
         if self.jumplist_past.last() != Some(&pos) {
             self.jumplist_past.push(pos);
         }
@@ -25,7 +25,7 @@ impl Editor {
             self.message = "no jumps".into();
             return;
         }
-        self.jumplist_future.push((self.current, self.head()));
+        self.jumplist_future.push((self.current(), self.head()));
         let Some(pos) = self.jumplist_past.pop() else {
             self.jumplist_future.pop();
             self.message = "no jumps".into();
@@ -40,7 +40,7 @@ impl Editor {
             self.message = "at newest jump".into();
             return;
         };
-        self.jumplist_past.push((self.current, self.head()));
+        self.jumplist_past.push((self.current(), self.head()));
         self.jump_to(pos);
     }
 
@@ -51,9 +51,8 @@ impl Editor {
         if self.docs.get(buffer).is_none() {
             return; // the document is closed; the entry dies quietly
         }
-        if buffer != self.current {
-            self.current = buffer;
-            self.touch_mru(buffer);
+        if buffer != self.current() {
+            self.switch_to(buffer);
             self.discover_git();
         }
         self.set_head(

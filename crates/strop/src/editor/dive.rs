@@ -21,7 +21,7 @@ impl Editor {
         let key = self.blame_key();
         match self.blame_gutters.get(&key) {
             None => {}
-            Some(_) if self.blame_gutter_for(self.current).is_some() => {
+            Some(_) if self.blame_gutter_for(self.current()).is_some() => {
                 let line = self.buf().line_of(self.head());
                 match self.blame_gutters.get(&key).and_then(|g| g.lines.get(line)) {
                     Some(bl) if bl.is_uncommitted() => self.message = "uncommitted line".into(),
@@ -101,7 +101,7 @@ impl Editor {
             commit: Some(_),
             sidebar_focus,
             ..
-        })) = self.docs.get_mut(self.current).map(|d| &mut d.surface)
+        })) = self.docs.get_mut(self.current()).map(|d| &mut d.surface)
         else {
             self.message = "tab: no file sidebar here".into();
             return;
@@ -164,7 +164,7 @@ impl Editor {
         let (added, deleted) = hunk_stats(&hunks);
         let label = path.display().to_string();
         let text = diff_surface_text(&label, &hunks);
-        let idx = self.current;
+        let idx = self.current();
         self.doc_mut(idx).buf.replace_all_system(&text);
         if let Some(Some(Surface::Diff {
             label: slot,
@@ -182,7 +182,7 @@ impl Editor {
         // the highlighter follows the file the surface now shows
         self.doc_mut(idx).highlighter = strop_syntax::Highlighter::for_path(&label);
         self.set_head(0);
-        self.view_top = 0;
+        self.view_mut().view_top = 0;
         let pos = cf
             .files
             .iter()
