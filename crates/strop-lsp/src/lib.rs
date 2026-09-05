@@ -204,7 +204,7 @@ impl ServerCaps {
         let Ok(guard) = self.0.lock() else {
             return false;
         };
-        guard.as_ref().is_some_and(|c| f(c))
+        guard.as_ref().is_some_and(f)
     }
 
     pub fn references(&self) -> bool {
