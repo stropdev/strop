@@ -45,6 +45,19 @@ agent or human working in this repo.
 - Golden cell-grid snapshots via `TestBackend` for anything visual; state assertions for
    anything grammatical.
 
+## Code structure
+
+- **File size is a design signal.** ~400 lines is healthy, ~800 is the
+  ceiling, past that split by responsibility (helix's `commands.rs` and
+  zed's crates are the cautionary tales). An editor subsystem file that
+  grows past the ceiling becomes a directory of modules by concern —
+  `editor/normal/{mod,dispatch,operators,ex}.rs`, not
+  `editor/normal.rs` at 1.5K. When a pattern's structure is unclear,
+  research how helix/zed/neovim structure the equivalent before
+  inventing one.
+- After landing a feature that pushed a file past the ceiling, the
+  follow-up split is part of the same change — not someday.
+
 ## Rust specifics
 
 - `cargo fmt --check` + `cargo clippy --locked --workspace --all-targets -- -D warnings`
