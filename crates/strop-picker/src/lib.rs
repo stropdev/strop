@@ -96,6 +96,9 @@ pub struct Picker {
     pub selected: usize,
     /// Streaming sources: true while the worker may still send.
     pub streaming: bool,
+    /// A source error (rg's stderr, a dead worker): sticky in the card —
+    /// the transient modeline clears on the next keystroke, this doesn't.
+    pub error: Option<String>,
 }
 
 impl Picker {
@@ -111,6 +114,7 @@ impl Picker {
             rows: Vec::new(),
             selected: 0,
             streaming,
+            error: None,
         };
         p.refilter();
         p

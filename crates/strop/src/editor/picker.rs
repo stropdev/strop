@@ -159,6 +159,7 @@ impl Editor {
             // stale generations can't race the new one.
             let pattern = glue.picker.input.text.clone();
             let cwd = self.cwd.clone();
+            glue.picker.error = None;
             glue.grep_worker = None; // drop kills the old rg
             glue.picker.items.clear();
             glue.picker.rows.clear(); // stale item indices must never render
@@ -182,7 +183,7 @@ impl Editor {
                 while let Ok(msg) = rx.try_recv() {
                     match msg {
                         PickerMsg::Items(batch) => items.extend(batch),
-                        PickerMsg::Error(e) => self.message = e,
+                        PickerMsg::Error(e) => glue.picker.error = Some(e),
                         PickerMsg::Done => done = true,
                     }
                 }
@@ -632,6 +633,61 @@ mod replace_tests {
         e.feed_text("b"); // respawn: items + rows both clear
         let frame = crate::headless::frame_string(&mut e, 80, 20);
         assert!(frame.contains("replace"), "{frame}");
+    }
+
+    #[test]
+    fn replace_filters_narrow_the_apply_set() {
+        // user ask: extension limiting + file exclusion in Space R —
+        // -t/--glob ride rg's passthrough and the apply set follows
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "foo one\n").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "foo two\n").unwrap();
+        std::fs::write(dir.path().join("c.py"), "foo three\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.cwd = dir.path().to_path_buf();
+        e.open_picker(Kind::Replace);
+        e.feed_text("foo --glob !*.py");
+        for _ in 0..300 {
+            e.drain_picker();
+            let p = &e.picker.as_ref().unwrap().picker;
+            if !p.streaming && !p.items.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let p = &e.picker.as_ref().unwrap().picker;
+        assert_eq!(p.items.len(), 2, "py excluded via --glob");
+        assert!(p.items.iter().all(|i| !format!("{i:?}").contains("c.py")));
+    }
+
+    #[test]
+    fn rg_error_is_sticky_in_the_card() {
+        // a bad filter must read as an error in the card, not a silent
+        // empty list or a modeline flash (cleared on the next key)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "foo\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.cwd = dir.path().to_path_buf();
+        e.open_picker(Kind::Replace);
+        e.feed_text("foo --glob/**/bad[");
+        for _ in 0..300 {
+            e.drain_picker();
+            if e.picker.as_ref().unwrap().picker.error.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let err = e.picker.as_ref().unwrap().picker.error.clone();
+        assert!(err.is_some(), "rg error captured");
+        // navigation, not a query edit: the error survives (a query
+        // edit clears it — the new search might be valid)
+        e.feed(crate::editor::Key::Esc); // field normal mode
+        e.feed(crate::editor::Key::Char('j'));
+        let frame = crate::headless::frame_string(&mut e, 80, 20);
+        assert!(
+            frame.contains("unclosed character class"),
+            "error in the card: {frame}"
+        );
     }
 
     #[test]

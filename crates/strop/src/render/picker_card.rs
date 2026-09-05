@@ -75,6 +75,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         total,
         excluded,
         normal_mode,
+        picker_error,
     ) = {
         let glue = editor.picker.as_ref().expect("picker open");
         let p = &glue.picker;
@@ -92,6 +93,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             // row + file exclusions both count (0007)
             p.rows.iter().filter(|r| p.is_excluded(r.item)).count(),
             p.input_normal(),
+            p.error.clone(),
         )
     };
     let replace_mode = kind == strop_picker::Kind::Replace;
@@ -101,7 +103,11 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     } else {
         " enter open · esc normal/close · ↑↓/tab move · j/k after esc "
     };
-    let count = if replace_mode {
+    let count = if let Some(e) = &picker_error {
+        // a failed source is the headline, not the count (0014: rg's
+        // bad-flag stderr reads like an empty project otherwise)
+        format!(" {e} ")
+    } else if replace_mode {
         format!(" {excluded}/{total} excluded ")
     } else if streaming {
         format!(" {total}… ")
