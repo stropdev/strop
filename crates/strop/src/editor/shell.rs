@@ -70,7 +70,21 @@ impl Editor {
         if self.docs.is_empty() {
             return;
         }
-        while let Ok(result) = self.shell_rx.try_recv() {
+        loop {
+            let next = self.shell_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+            match next {
+                Some(result) => self.handle_shell_result(result),
+                None => break,
+            }
+        }
+    }
+
+    /// One shell job result (TUI events land here directly — 0018).
+    pub(crate) fn handle_shell_result(&mut self, result: ShellResult) {
+        if self.docs.is_empty() {
+            return;
+        }
+        {
             match result {
                 ShellResult::Display { cmd, output } => {
                     let mut buf = Buffer::from_text(&output);
@@ -99,15 +113,15 @@ impl Editor {
                     // stderr explains itself in the message line
                     if !ok {
                         self.message = format!("pipe failed: {}", err.trim());
-                        continue;
+                        return;
                     }
                     let Some(buf) = self.docs.get_mut(buffer).map(|d| &mut d.buf) else {
                         self.message = "pipe: buffer is gone".into();
-                        continue;
+                        return;
                     };
                     if buf.readonly {
                         self.message = "pipe: readonly buffer".into();
-                        continue;
+                        return;
                     }
                     // never clobber: the range must still hold what we piped
                     let (s, e) = (start.min(end), end.max(start));
@@ -115,7 +129,7 @@ impl Editor {
                     let e = e.min(buf.len_bytes()).max(s);
                     if buf.rope.byte_slice(s..e) != original {
                         self.message = "pipe: text changed under the job — skipped".into();
-                        continue;
+                        return;
                     }
                     // linewise ranges keep their newline; charwise gets
                     // the command's trailing newline trimmed

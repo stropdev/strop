@@ -64,24 +64,34 @@ impl Editor {
         });
     }
 
-    /// Collect clipboard reads (event-loop tick + headless settle).
+    /// Collect clipboard reads (headless settle; the TUI forwards each
+    /// result as an AppEvent the moment it lands — 0018).
     pub fn drain_clipboard(&mut self) {
         if self.docs.is_empty() {
             return;
         }
-        while let Ok(result) = self.clip_rx.try_recv() {
-            let Some(before) = self.clip_paste_pending.take() else {
-                continue;
-            };
-            match result {
-                Some(text) if !text.is_empty() => {
-                    let linewise = text.len() > 1 && text.ends_with('\n');
-                    self.paste_text(text, linewise, before);
-                }
-                _ => {
-                    self.message =
-                        "clipboard: empty or no provider (wl-paste/xclip/xsel/pbpaste)".into()
-                }
+        loop {
+            let next = self.clip_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+            match next {
+                Some(result) => self.handle_clipboard(result),
+                None => break,
+            }
+        }
+    }
+
+    /// One clipboard-read result.
+    pub(crate) fn handle_clipboard(&mut self, result: Option<String>) {
+        let Some(before) = self.clip_paste_pending.take() else {
+            return;
+        };
+        match result {
+            Some(text) if !text.is_empty() => {
+                let linewise = text.len() > 1 && text.ends_with('\n');
+                self.paste_text(text, linewise, before);
+            }
+            _ => {
+                self.message =
+                    "clipboard: empty or no provider (wl-paste/xclip/xsel/pbpaste)".into()
             }
         }
     }

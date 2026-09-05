@@ -11,6 +11,25 @@ use strop_syntax::Highlighter;
 use super::{Editor, Key};
 
 impl PickerGlue {
+    /// Take the streaming channel (the TUI's forwarder owns it — 0018).
+    pub(crate) fn take_rx(&mut self) -> Option<Receiver<PickerMsg>> {
+        self.rx.take()
+    }
+
+    /// Hand the stream channel to the app event forwarder (0018).
+    pub(crate) fn forward_stream(&mut self, tx: &Sender<super::events::AppEvent>) {
+        if let Some(rx) = self.rx.take() {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                while let Ok(msg) = rx.recv() {
+                    if tx.send(super::events::AppEvent::Picker(msg)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    }
+
     /// A picker over editor-computed items (diagnostics; 0009 §3 Space d).
     pub fn diagnostics(picker: Picker) -> Self {
         Self {
@@ -31,6 +50,15 @@ pub struct PickerGlue {
 }
 
 impl Editor {
+    /// Assign a picker; a live stream forwards onto the app channel
+    /// when the TUI is connected (0018).
+    pub(crate) fn set_picker(&mut self, mut glue: PickerGlue) {
+        if let Some(tx) = &self.app_tx {
+            glue.forward_stream(tx);
+        }
+        self.picker = Some(glue);
+    }
+
     pub fn open_picker(&mut self, kind: Kind) {
         let (tx, rx) = channel();
         let mut tx = Some(tx);
@@ -66,7 +94,7 @@ impl Editor {
             }
         };
         let picker = Picker::new(kind, items, streaming);
-        self.picker = Some(PickerGlue {
+        self.set_picker(PickerGlue {
             picker,
             tx,
             rx,
@@ -190,6 +218,7 @@ impl Editor {
                         PickerMsg::Done => done = true,
                     }
                 }
+                let _ = &done;
                 if !items.is_empty() {
                     glue.picker.append(items);
                 }
@@ -201,25 +230,46 @@ impl Editor {
         self.drain_previews();
     }
 
-    /// Drain preview worker results (file reads happen off the render
-    /// path — 0001 §3).
-    fn drain_previews(&mut self) {
-        while let Ok((path, text)) = self.preview_rx.try_recv() {
-            self.preview_inflight.remove(&path);
-            if let Some(text) = text {
-                let rope = ropey::Rope::from_str(&text);
-                let hl = Highlighter::for_path(&path.display().to_string());
-                self.previews.insert(path, PreviewEntry { rope, hl });
-            } else {
-                // unreadable: cache the miss so we don't respawn per frame
-                self.previews.insert(
-                    path,
-                    PreviewEntry {
-                        rope: ropey::Rope::from_str(""),
-                        hl: None,
-                    },
-                );
+    /// One picker stream message (TUI forwards land here — 0018).
+    pub(crate) fn handle_picker_msg(&mut self, msg: PickerMsg) {
+        if let Some(glue) = &mut self.picker {
+            match msg {
+                PickerMsg::Items(batch) => glue.picker.append(batch),
+                PickerMsg::Error(e) => glue.picker.error = Some(e),
+                PickerMsg::Done => glue.picker.streaming = false,
             }
+        }
+    }
+
+    /// Drain preview worker results (file reads happen off the render
+    /// path — 0001 §3). Headless path; the TUI forwards each result as
+    /// an AppEvent (0018).
+    fn drain_previews(&mut self) {
+        loop {
+            let next = self.preview_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+            match next {
+                Some((path, text)) => self.handle_preview(path, text),
+                None => break,
+            }
+        }
+    }
+
+    /// One preview worker result → cached entry.
+    pub(crate) fn handle_preview(&mut self, path: PathBuf, text: Option<String>) {
+        self.preview_inflight.remove(&path);
+        if let Some(text) = text {
+            let rope = ropey::Rope::from_str(&text);
+            let hl = Highlighter::for_path(&path.display().to_string());
+            self.previews.insert(path, PreviewEntry { rope, hl });
+        } else {
+            // unreadable: cache the miss so we don't respawn per frame
+            self.previews.insert(
+                path,
+                PreviewEntry {
+                    rope: ropey::Rope::from_str(""),
+                    hl: None,
+                },
+            );
         }
     }
 

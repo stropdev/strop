@@ -27,7 +27,7 @@ pub struct LanguagesToml {
 /// A server definition. Every field is optional so an entry naming a
 /// registry server can *refine* it — set only what changes, the rest
 /// inherits from the embedded spec.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct ServerDef {
     pub command: Option<String>,
@@ -38,7 +38,7 @@ pub struct ServerDef {
 }
 
 /// `[language.LANG]`: which servers the language uses.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct LanguageDef {
     #[serde(rename = "language-servers")]
@@ -47,7 +47,7 @@ pub struct LanguageDef {
 
 /// The merged layers (0012 §1: project > XDG > embedded) plus where the
 /// project layer came from — the registry resolves through this.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Languages {
     pub servers: BTreeMap<String, ServerDef>,
     pub languages: BTreeMap<String, LanguageDef>,

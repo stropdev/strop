@@ -9,6 +9,7 @@ mod cursor;
 mod diagnostics;
 mod dive;
 mod document;
+pub mod events;
 mod git;
 mod git_memory;
 mod help;
@@ -140,6 +141,15 @@ pub struct Editor {
     pub view_rows: usize,
     /// Macro recording (0016): the register being recorded into.
     pub recording: Option<char>,
+    /// The app event channel (0018): set by connect_events; late LSP
+    /// attaches forward through it.
+    pub app_tx: Option<std::sync::mpsc::Sender<events::AppEvent>>,
+    /// The outstanding hover request's identity (doc, history depth) —
+    /// a reply against another state is stale (0018).
+    pub hover_request: Option<(strop_core::id::DocumentId, usize)>,
+    /// Merged languages.toml per workspace root (0018 — the OnceLock
+    /// used to pin the FIRST project's config process-wide).
+    pub langs_by_root: std::collections::HashMap<PathBuf, &'static strop_lsp::languages::Languages>,
     /// Recorded macros: register → key events.
     pub macros: std::collections::HashMap<char, Vec<Key>>,
     /// The last replayed macro register (@@).
@@ -160,7 +170,7 @@ pub struct Editor {
     /// Preview file reads run on worker threads (0001 §3); results and
     /// the in-flight set are drained in drain_picker.
     pub preview_tx: std::sync::mpsc::Sender<(PathBuf, Option<String>)>,
-    pub preview_rx: std::sync::mpsc::Receiver<(PathBuf, Option<String>)>,
+    pub preview_rx: Option<std::sync::mpsc::Receiver<(PathBuf, Option<String>)>>,
     pub preview_inflight: std::collections::HashSet<PathBuf>,
     pub hunks: Vec<strop_git::Hunk>,
     /// HEAD↔index — the staged set (0014 wave 4); rendered in the
@@ -178,12 +188,12 @@ pub struct Editor {
     /// surfaces are dropped (0011 §2).
     pub generation: u64,
     pub git_tx: std::sync::mpsc::Sender<GitJob>,
-    pub git_rx: std::sync::mpsc::Receiver<GitJob>,
+    pub git_rx: Option<std::sync::mpsc::Receiver<GitJob>>,
     pub osc52: Option<String>,
     /// System-clipboard reads (paste from `+`) run on a worker thread;
     /// `clip_paste_pending` remembers before/after until the read lands.
     pub clip_tx: std::sync::mpsc::Sender<Option<String>>,
-    pub clip_rx: std::sync::mpsc::Receiver<Option<String>>,
+    pub clip_rx: Option<std::sync::mpsc::Receiver<Option<String>>>,
     pub clip_paste_pending: Option<bool>,
     /// LSP server pool (0014 wave 2): one client per (workspace root,
     /// server) — a rust file and a python file in one session get their
@@ -197,7 +207,7 @@ pub struct Editor {
     /// Shell jobs (`:!cmd` output buffers, `|cmd` pipes): results land
     /// in drain_shell — never a subprocess on the input path (0001 §3).
     pub shell_tx: std::sync::mpsc::Sender<ShellResult>,
-    pub shell_rx: std::sync::mpsc::Receiver<ShellResult>,
+    pub shell_rx: Option<std::sync::mpsc::Receiver<ShellResult>>,
     /// Splits: flat row/column of panes (v1; tree layout later).
     pub panes: Vec<Pane>,
     pub active_pane: usize,
@@ -278,6 +288,9 @@ impl Editor {
             change_idx: None,
             view_rows: 24,
             recording: None,
+            app_tx: None,
+            langs_by_root: std::collections::HashMap::new(),
+            hover_request: None,
             macros: std::collections::HashMap::new(),
             last_macro: None,
             block_delete_pending: None,
@@ -294,17 +307,17 @@ impl Editor {
             generation: 0,
             previews: HashMap::new(),
             shell_tx,
-            shell_rx,
+            shell_rx: Some(shell_rx),
             git: None,
             hunks: Vec::new(),
             staged_hunks: Vec::new(),
             hunks_epoch: u64::MAX,
             blame_card: None,
             git_tx,
-            git_rx,
+            git_rx: Some(git_rx),
             osc52: None,
             preview_tx,
-            preview_rx,
+            preview_rx: Some(preview_rx),
             preview_inflight: std::collections::HashSet::new(),
             pending_normal: false,
             pending_cursor: 0,
@@ -312,7 +325,7 @@ impl Editor {
             jumplist_future: Vec::new(),
             lsp_servers: Vec::new(),
             clip_tx,
-            clip_rx,
+            clip_rx: Some(clip_rx),
             clip_paste_pending: None,
             diags: HashMap::new(),
             hover_card: None,

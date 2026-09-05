@@ -128,6 +128,10 @@ pub enum LspEvent {
     Diagnostics {
         path: PathBuf,
         diags: Vec<Diag>,
+        /// The server-side document version these were computed from
+        /// (0018: converting old positions against new text misplaces
+        /// them — the editor rejects older batches).
+        version: Option<i32>,
     },
     Ready {
         server: &'static str,
@@ -241,7 +245,13 @@ impl ServerCaps {
     }
 }
 /// A live server connection: send from any thread, the runtime thread
-/// owns the socket drain.
+/// owns the socket drain. Clone is a second HANDLE on the same
+/// connection (socket + channel clone; the mainloop thread is shared —
+/// shutdown is idempotent, wait joins once).
+///
+/// Note: cloning shares `thread` via Arc so a dropped handle never
+/// joins out from under the editor's shutdown path.
+#[derive(Clone)]
 pub struct Client {
     socket: ServerSocket,
     handle: tokio::runtime::Handle,
@@ -255,7 +265,7 @@ pub struct Client {
     /// The runtime thread running the server mainloop. Joined on
     /// shutdown — dropping the socket while it lives panics inside
     /// async-lsp ("Sender is alive", seen in the demo tape).
-    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
+    thread: std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
     /// Documents opened before initialize completes — flushed on
     /// Initialized (strict servers like pyright drop pre-init opens).
     pending_opens: std::sync::Arc<parking_lot::Mutex<Vec<(PathBuf, String, String)>>>,
@@ -302,7 +312,12 @@ impl Client {
             router.notification::<PublishDiagnostics>(|st, params| {
                 let path = params.uri.to_file_path().unwrap_or_default();
                 let diags = params.diagnostics.iter().map(diag_from_lsp).collect();
-                let _ = st.tx.send(LspEvent::Diagnostics { path, diags });
+                let version = params.version;
+                let _ = st.tx.send(LspEvent::Diagnostics {
+                    path,
+                    diags,
+                    version,
+                });
                 std::ops::ControlFlow::Continue(())
             });
             router
@@ -549,7 +564,7 @@ impl Client {
             socket,
             handle,
             tx,
-            thread: std::sync::Mutex::new(Some(thread)),
+            thread: std::sync::Arc::new(std::sync::Mutex::new(Some(thread))),
             root: root.to_path_buf(),
             caps: self_caps,
             quitting,

@@ -369,6 +369,10 @@ pub fn permalink(repo: &Repo, loc: &crate::SourceLocation) -> Option<String> {
     let sha = match &loc.revision {
         crate::GitRevision::Head => repo.head_sha()?,
         crate::GitRevision::Commit(sha) => sha.clone(),
+        // permalinks pin to an immutable commit — the index/worktree
+        // resolve through HEAD (their content is already local state)
+        crate::GitRevision::Index | crate::GitRevision::Worktree => repo.head_sha()?,
+        crate::GitRevision::MergeBase(a, b) => repo.merge_base(a, b)?,
     };
     let frag = if start_line == end_line {
         format!("#L{start_line}")

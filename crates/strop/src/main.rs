@@ -10,9 +10,11 @@ mod session;
 mod update;
 
 use std::io::{self, Write};
+
+use crossterm::event::{KeyCode, KeyModifiers};
 use std::time::Duration;
 
-use editor::{Editor, Key};
+use editor::Editor;
 use strop_core::Buffer;
 
 fn print_help() {
@@ -192,6 +194,45 @@ fn tui(mut editor: Editor) {
     let backend = ratatui::backend::CrosstermBackend::new(out);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
 
+    // 0018 §services: one event channel. The terminal reader thread
+    // translates crossterm events to editor keys; every job's results
+    // forward through editor.connect_events. The loop parks on the
+    // channel — no 500ms poll between a job landing and the UI moving.
+    use editor::events::AppEvent;
+    let (app_tx, app_rx) = std::sync::mpsc::channel::<AppEvent>();
+    editor.connect_events(app_tx.clone());
+    std::thread::spawn({
+        let tx = app_tx.clone();
+        move || loop {
+            match event::read() {
+                Ok(Event::Key(ev))
+                    if (ev.modifiers.contains(KeyModifiers::CONTROL)
+                        && ev.code == KeyCode::Char('c'))
+                        || ev.code == KeyCode::Char('\x03') =>
+                {
+                    if tx.send(AppEvent::QuitIntent).is_err() {
+                        break;
+                    }
+                }
+                Ok(Event::Key(ev)) => {
+                    let Some(key) = key_from_event(ev) else {
+                        continue;
+                    };
+                    if tx.send(AppEvent::Terminal(key)).is_err() {
+                        break;
+                    }
+                }
+                Ok(Event::Paste(text)) => {
+                    if tx.send(AppEvent::Paste(text)).is_err() {
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+    });
+
     loop {
         // quit check before draw: the last :q leaves zero buffers and
         // rendering needs one (caught by the demo tape)
@@ -222,87 +263,23 @@ fn tui(mut editor: Editor) {
         };
         let _ = out.execute(shape);
         terminal.draw(|f| render::render(&mut editor, f)).unwrap();
-        let timeout = if editor.flash_range().is_some() {
-            Duration::from_millis(16)
+        // a flash animation gets a 16ms frame budget; everything else
+        // parks until an event lands
+        let ev = if editor.flash_range().is_some() {
+            match app_rx.recv_timeout(Duration::from_millis(16)) {
+                Ok(ev) => Some(ev),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
         } else {
-            Duration::from_millis(500)
-        };
-        if !event::poll(timeout).unwrap() {
-            editor.drain_picker();
-            editor.drain_git_jobs();
-            editor.drain_lsp();
-            editor.drain_clipboard();
-            editor.lsp_sync_changed();
-            editor.drain_shell();
-            continue;
-        }
-        let ev = match event::read().unwrap() {
-            // bracketed paste (0017): the paste is ONE text payload —
-            // never a key stream (no auto-indent, no puns on ":")
-            Event::Paste(text) => {
-                editor.paste_bracketed(&text);
-                continue;
+            match app_rx.recv() {
+                Ok(ev) => Some(ev),
+                Err(_) => break,
             }
-            Event::Key(ev) => ev,
-            _ => continue,
         };
-        if (ev.modifiers.contains(KeyModifiers::CONTROL) && ev.code == KeyCode::Char('c'))
-            || ev.code == KeyCode::Char('\x03')
-        {
-            // 0015: ctrl-c is a quit intent, not a force-quit — dirty
-            // work gets one warning; a second press exits
-            if editor.ctrl_c_quit() {
-                break;
-            }
-            continue;
-        }
-        let key = match ev.code {
-            KeyCode::Esc => Key::Esc,
-            KeyCode::Enter => Key::Enter,
-            KeyCode::Char('d') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlD,
-            KeyCode::Char('u') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlU,
-            KeyCode::Char('f') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlF,
-            KeyCode::Char('b') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlB,
-            KeyCode::Char('6') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlCaret,
-            KeyCode::Char('\x1e') => Key::CtrlCaret,
-            KeyCode::Char('\x04') => Key::CtrlD,
-            KeyCode::Char('o') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlO,
-            KeyCode::Char('\x0f') => Key::CtrlO,
-            KeyCode::Backspace => Key::Backspace,
-            KeyCode::Tab => Key::Tab,
-            // terminals that deliver the raw control byte instead of
-            // Char(letter)+CONTROL (Windows Terminal → WSL among them)
-            KeyCode::Char('\x12') => Key::CtrlR,
-            KeyCode::Char('\x17') => Key::CtrlW,
-            KeyCode::Char('\x18') => Key::CtrlX,
-            KeyCode::BackTab => Key::Backtab,
-            // arrows were dropped by the catch-all once — pickers,
-            // cmd line, buffers all speak hjkl through these
-            KeyCode::Up => Key::Up,
-            KeyCode::Down => Key::Down,
-            KeyCode::Left => Key::Left,
-            KeyCode::Right => Key::Right,
-            KeyCode::Char('n') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Down,
-            KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
-            KeyCode::Char('r') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlR,
-            KeyCode::Char('x') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlX,
-            KeyCode::Char('v') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlV,
-            KeyCode::Char('\x16') => Key::CtrlV,
-            KeyCode::Char('w') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlW,
-            KeyCode::Char(c) => Key::Char(c),
-            _ => continue,
-        };
-        editor.feed(key);
-        editor.drain_shell();
-        // the last :q empties the buffer list — the drains below assume
-        // one exists (quit used to panic in lsp_sync_changed)
-        if editor.should_quit {
-            break;
-        }
-        editor.drain_picker();
-        editor.drain_git_jobs();
-        editor.drain_clipboard();
-        editor.drain_lsp();
+        let Some(ev) = ev else { continue };
+        editor.handle_app_event(ev);
+        // a paste/key may change text — push LSP syncs promptly
         editor.lsp_sync_changed();
         if let Some(payload) = editor.osc52.take() {
             // OSC52: system clipboard over the escape sequence — the
@@ -359,4 +336,45 @@ fn base64_encode(data: &[u8]) -> String {
         });
     }
     out
+}
+
+/// crossterm event → editor Key (terminals that deliver raw control
+/// bytes instead of Char(letter)+CONTROL included — Windows Terminal →
+/// WSL among them).
+fn key_from_event(ev: crossterm::event::KeyEvent) -> Option<editor::Key> {
+    use editor::Key;
+    Some(match ev.code {
+        KeyCode::Esc => Key::Esc,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Char('d') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlD,
+        KeyCode::Char('u') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlU,
+        KeyCode::Char('f') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlF,
+        KeyCode::Char('b') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlB,
+        KeyCode::Char('6') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlCaret,
+        KeyCode::Char('\x1e') => Key::CtrlCaret,
+        KeyCode::Char('\x04') => Key::CtrlD,
+        KeyCode::Char('o') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlO,
+        KeyCode::Char('\x0f') => Key::CtrlO,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Char('\x12') => Key::CtrlR,
+        KeyCode::Char('\x17') => Key::CtrlW,
+        KeyCode::Char('\x18') => Key::CtrlX,
+        KeyCode::BackTab => Key::Backtab,
+        // arrows were dropped by the catch-all once — pickers, cmd
+        // line, buffers all speak hjkl through these
+        KeyCode::Up => Key::Up,
+        KeyCode::Down => Key::Down,
+        KeyCode::Left => Key::Left,
+        KeyCode::Right => Key::Right,
+        KeyCode::Char('n') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Down,
+        KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
+        KeyCode::Char('r') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlR,
+        KeyCode::Char('x') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlX,
+        KeyCode::Char('v') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlV,
+        KeyCode::Char('\x16') => Key::CtrlV,
+        KeyCode::Char('w') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlW,
+        KeyCode::Char(c) => Key::Char(c),
+        _ => return None,
+    })
 }

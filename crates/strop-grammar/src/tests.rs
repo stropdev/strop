@@ -225,6 +225,4 @@ mod cursor_moves {
         let r = resolve(&buf, 0, &c).unwrap();
         assert_eq!(cursor_after(&buf, 0, &c, &r), 0);
     }
-
-
 }

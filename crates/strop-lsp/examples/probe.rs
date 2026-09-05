@@ -26,7 +26,7 @@ fn main() {
                     client.hover(&root.join("src/main.rs"), 1, 8);
                 }
                 strop_lsp::LspEvent::Failed { server, hint } => println!("FAILED {server}: {hint}"),
-                strop_lsp::LspEvent::Diagnostics { path, diags } => {
+                strop_lsp::LspEvent::Diagnostics { path, diags, .. } => {
                     println!(
                         "DIAGS {}: {:?}",
                         path.display(),

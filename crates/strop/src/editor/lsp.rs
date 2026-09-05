@@ -4,7 +4,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
-use std::sync::OnceLock;
 
 use strop_lsp::languages::Languages;
 use strop_lsp::registry::{self, ServerSpec};
@@ -41,7 +40,7 @@ impl Editor {
         } else {
             self.cwd.join(&path)
         };
-        let languages: &'static Languages = merged_languages(&abs);
+        let languages: &Languages = self.languages_for(&abs);
         let warn = languages.warnings();
         let Some(spec) = registry::for_extension(&ext, languages) else {
             if !warn.is_empty() {
@@ -73,7 +72,24 @@ impl Editor {
         let (tx, rx) = channel();
         match Client::spawn(&spec, &key.0.clone(), tx) {
             Some(client) => {
-                self.lsp_servers.push(LspServer { key, client, rx });
+                // the TUI forwards each event as it lands (0018); the
+                // headless harness drains the channel instead
+                if let Some(app_tx) = &self.app_tx {
+                    let enc = client.encoding();
+                    let tx = app_tx.clone();
+                    std::thread::spawn(move || {
+                        while let Ok(ev) = rx.recv() {
+                            if tx.send(super::events::AppEvent::Lsp(enc, ev)).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                    // keep a never-yielding channel in the slot
+                    let (_, rx) = channel();
+                    self.lsp_servers.push(LspServer { key, client, rx });
+                } else {
+                    self.lsp_servers.push(LspServer { key, client, rx });
+                }
                 self.message = format!("lsp: {} starting", spec.name);
                 if !warn.is_empty() {
                     self.message
@@ -112,7 +128,7 @@ impl Editor {
 
     /// The pooled server for the current buffer, resolved through its
     /// extension + root (None when nothing serves this file).
-    fn lsp_current(&self) -> Option<&LspServer> {
+    fn lsp_current(&mut self) -> Option<&LspServer> {
         let path = self.buf().path.as_deref()?;
         let abs = if Path::new(path).is_absolute() {
             PathBuf::from(path)
@@ -120,7 +136,7 @@ impl Editor {
             self.cwd.join(path)
         };
         let ext = format!(".{}", abs.extension()?.to_string_lossy());
-        let languages: &'static Languages = merged_languages(&abs);
+        let languages: &Languages = self.languages_for(&abs);
         let spec = registry::for_extension(&ext, languages)?;
         let root = self.lsp_server_root(&abs, languages);
         let key = (root, spec.name.to_string());
@@ -139,7 +155,7 @@ impl Editor {
         if !self.lsp_opened.insert(abs.clone()) {
             return;
         }
-        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
             return;
         };
         let lang = lang_id(&abs);
@@ -168,13 +184,14 @@ impl Editor {
         }
         self.lsp_sent_epochs.insert(abs.clone(), epoch);
         let text = buf.rope.to_string();
-        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
             return;
         };
         client.did_change(&abs, &text);
     }
 
-    /// Drain server events (event loop tick + headless settle).
+    /// Drain server events (headless settle; the TUI forwards each
+    /// event as it lands — 0018).
     pub fn drain_lsp(&mut self) {
         // drain every pooled server, remembering which one each event
         // came from (its negotiated encoding converts the columns)
@@ -185,8 +202,27 @@ impl Editor {
             }
         }
         for (enc, event) in events {
+            self.handle_lsp_event(enc, event);
+        }
+    }
+
+    /// One server event, handled with that server's encoding.
+    pub(crate) fn handle_lsp_event(&mut self, enc: strop_lsp::PositionEncoding, event: LspEvent) {
+        {
             match event {
-                LspEvent::Diagnostics { path, mut diags } => {
+                LspEvent::Diagnostics {
+                    path,
+                    mut diags,
+                    version,
+                } => {
+                    // reject batches older than what we last synced —
+                    // their positions were computed against text we no
+                    // longer hold (0018)
+                    if let (Some(v), Some(&sent)) = (version, self.lsp_sent_epochs.get(&path)) {
+                        if (v as u64) < sent {
+                            return; // stale batch — drop, don't misplace
+                        }
+                    }
                     // server columns → byte columns against the open
                     // buffer's text (unopened files keep wire values)
                     {
@@ -208,7 +244,16 @@ impl Editor {
                     self.message = format!("lsp: {server} failed — {hint}");
                 }
                 LspEvent::Note { text } => self.message = text,
-                LspEvent::HoverText { text } => self.hover_card = Some(text),
+                LspEvent::HoverText { text } => {
+                    // 0018: a hover answers the document state that
+                    // ASKED — an edit since makes the answer stale
+                    let stale = self.hover_request.is_some_and(|(doc, depth)| {
+                        doc != self.current() || self.buf().history.depth() != depth
+                    });
+                    if !stale {
+                        self.hover_card = Some(text);
+                    }
+                }
                 LspEvent::Locations { kind, items } => match items.len() {
                     0 => self.message = format!("lsp: no {}", kind.label()),
                     1 => {
@@ -232,7 +277,7 @@ impl Editor {
                             })
                             .collect();
                         let picker = strop_picker::Picker::new(Kind::Locations, items, false);
-                        self.picker = Some(crate::editor::PickerGlue::diagnostics(picker));
+                        self.set_picker(crate::editor::PickerGlue::diagnostics(picker));
                         self.message = format!("{n} {label}");
                     }
                 },
@@ -286,7 +331,7 @@ impl Editor {
     /// gr / gI / gy / gD: references, implementation, type definition,
     /// declaration — one request shape, four LSP methods.
     pub(crate) fn lsp_locations(&mut self, kind: strop_lsp::LocKind) {
-        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
             self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
@@ -299,7 +344,7 @@ impl Editor {
             self.cwd.join(&path)
         };
         let line = self.buf().line_of(self.head());
-        let col = self.server_col(client, self.buf().col_of(self.head()));
+        let col = self.server_col(&client, self.buf().col_of(self.head()));
         let label = kind.label();
         client.locations(kind, &abs, line, col);
         self.message = format!("lsp: {label} …");
@@ -373,12 +418,12 @@ impl Editor {
             return;
         }
         let picker = strop_picker::Picker::new(Kind::Diagnostics, items, false);
-        self.picker = Some(crate::editor::PickerGlue::diagnostics(picker));
+        self.set_picker(crate::editor::PickerGlue::diagnostics(picker));
     }
 
     /// `Space k`: hover at the cursor.
     pub(crate) fn lsp_hover(&mut self) {
-        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
             self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
@@ -392,7 +437,9 @@ impl Editor {
         };
         let line = self.buf().line_of(self.head());
         let col = self.buf().col_of(self.head());
-        let col = self.server_col(client, col);
+        let col = self.server_col(&client, col);
+        // the request's identity: which doc + which edit state asked
+        self.hover_request = Some((self.current(), self.buf().history.depth()));
         client.hover(&abs, line, col);
     }
 
@@ -420,7 +467,7 @@ impl Editor {
 
     /// `gd`: goto definition at the cursor.
     pub(crate) fn lsp_goto_definition(&mut self) {
-        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
             self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
@@ -434,13 +481,13 @@ impl Editor {
         };
         let line = self.buf().line_of(self.head());
         let col = self.buf().col_of(self.head());
-        let col = self.server_col(client, col);
+        let col = self.server_col(&client, col);
         client.goto_definition(&abs, line, col);
     }
 
     /// `gs`: switch between source and header (clangd's extension).
     pub(crate) fn lsp_switch_source_header(&mut self) {
-        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
             self.message = "no language server — install it or fix languages.toml".into();
             return;
         };
@@ -456,18 +503,27 @@ impl Editor {
     }
 }
 
-/// The merged languages.toml layers (0012: project > XDG > embedded),
-/// loaded once per process at first attach — never on the input path.
-/// One project layer per session matches the one-server-per-workspace
-/// model; the buffer anchors the project-file walk. OnceLock (not
-/// LazyLock) because the initializer needs that runtime buffer path.
-fn merged_languages(buffer: &Path) -> &'static Languages {
-    static MERGED: OnceLock<Languages> = OnceLock::new();
-    MERGED.get_or_init(|| {
-        let xdg = strop_lsp::languages::xdg_path();
-        let project = strop_lsp::languages::project_path(buffer);
-        Languages::load(xdg.as_deref(), project.as_deref())
-    })
+/// Per-workspace merged languages.toml (0018): a process-global
+/// OnceLock meant a second project's attach read the FIRST project's
+/// config. Keyed by workspace root; loads once per root, never on the
+/// input path.
+impl Editor {
+    /// Configs are load-once by design; the per-root leak gives them
+    /// the 'static lifetime the spawn path (threads) requires — bounded
+    /// by the number of projects one session touches.
+    fn languages_for(&mut self, buffer: &Path) -> &'static Languages {
+        let root = registry::workspace_root(buffer, &self.cwd);
+        if !self.langs_by_root.contains_key(&root) {
+            let xdg = strop_lsp::languages::xdg_path();
+            let project = strop_lsp::languages::project_path(buffer);
+            let loaded: &'static Languages = Box::leak(Box::new(Languages::load(
+                xdg.as_deref(),
+                project.as_deref(),
+            )));
+            self.langs_by_root.insert(root.clone(), loaded);
+        }
+        self.langs_by_root[&root]
+    }
 }
 
 /// LSP language id for a path (the registry's languages, lsp-named).

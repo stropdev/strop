@@ -460,7 +460,18 @@ impl Editor {
     // ---- job drain ------------------------------------------------------
 
     pub fn drain_git_jobs(&mut self) {
-        while let Ok(job) = self.git_rx.try_recv() {
+        loop {
+            let next = self.git_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+            match next {
+                Some(job) => self.handle_git_job(job),
+                None => break,
+            }
+        }
+    }
+
+    /// One git job result (TUI events land here directly — 0018).
+    pub(crate) fn handle_git_job(&mut self, job: GitJob) {
+        {
             match job {
                 GitJob::Log {
                     buffer,
@@ -471,7 +482,7 @@ impl Editor {
                     // next buffer: only same-generation results land
                     // (0011 §2)
                     if generation != self.generation || self.docs.get(buffer).is_none() {
-                        continue;
+                        return;
                     }
                     let text = rows
                         .iter()
@@ -512,7 +523,7 @@ impl Editor {
                 } => {
                     // toggled off meanwhile → the entry is gone → drop
                     if generation != self.generation {
-                        continue;
+                        return;
                     }
                     if let Some(gutter) = self.blame_gutters.get_mut(&path) {
                         gutter.lines = lines;
@@ -561,7 +572,7 @@ pub(crate) fn diff_surface_text(label: &str, hunks: &[Hunk]) -> String {
         text.push_str(&hunk.header());
         text.push('\n');
         for line in &hunk.lines {
-            text.push_str(&line.text);
+            text.push_str(&line.text_str());
             text.push('\n');
         }
     }

@@ -120,24 +120,28 @@ mod diff_surface_tests {
             3,
             vec![
                 DiffLine {
+                    has_newline: true,
                     origin: LineOrigin::Context,
                     old_lineno: Some(1),
                     new_lineno: Some(1),
                     text: "fn a() {}".into(),
                 },
                 DiffLine {
+                    has_newline: true,
                     origin: LineOrigin::Deletion,
                     old_lineno: Some(2),
                     new_lineno: None,
                     text: "fn old() {}".into(),
                 },
                 DiffLine {
+                    has_newline: true,
                     origin: LineOrigin::Addition,
                     old_lineno: None,
                     new_lineno: Some(2),
                     text: "fn new() {}".into(),
                 },
                 DiffLine {
+                    has_newline: true,
                     origin: LineOrigin::Addition,
                     old_lineno: None,
                     new_lineno: Some(3),

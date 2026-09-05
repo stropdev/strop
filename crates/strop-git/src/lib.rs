@@ -29,7 +29,27 @@ pub struct DiffLine {
     pub origin: LineOrigin,
     pub old_lineno: Option<usize>,
     pub new_lineno: Option<usize>,
-    pub text: String,
+    /// The line's bytes WITHOUT its terminator (0018: byte-precise —
+    /// a `\r` stays; non-UTF-8 stays bytes).
+    pub text: Vec<u8>,
+    /// Whether the source line ended in a newline — the missing-final-
+    /// newline marker is data, not a patch-text nuance (0018).
+    pub has_newline: bool,
+}
+
+impl DiffLine {
+    /// Display form (lossy at the render edge only).
+    pub fn text_str(&self) -> std::borrow::Cow<'_, str> {
+        String::from_utf8_lossy(&self.text)
+    }
+    /// The line's bytes WITH its terminator, exactly as stored.
+    pub fn bytes_with_terminator(&self) -> Vec<u8> {
+        let mut b = self.text.clone();
+        if self.has_newline {
+            b.push(b'\n');
+        }
+        b
+    }
 }
 
 /// One diff hunk between two versions of a file, in 1-based lines.
@@ -120,27 +140,6 @@ impl Hunk {
             Sign::AddOrChange => l == line_1based,
             Sign::DeleteAfter => l.min(total_lines) == line_1based,
         })
-    }
-
-    /// The hunk as a unified-diff patch fragment (`git apply` input).
-    /// The prefixed form is derived here — the one place it exists.
-    pub fn to_patch(&self, rel: &Path) -> String {
-        let mut patch = format!("--- a/{}\n+++ b/{}\n", rel.display(), rel.display());
-        patch.push_str(&format!(
-            "@@ -{},{} +{},{} @@\n",
-            self.old_start, self.old_count, self.new_start, self.new_count
-        ));
-        for line in &self.lines {
-            let prefix = match line.origin {
-                LineOrigin::Addition => '+',
-                LineOrigin::Deletion => '-',
-                LineOrigin::Context => ' ',
-            };
-            patch.push(prefix);
-            patch.push_str(&line.text);
-            patch.push('\n');
-        }
-        patch
     }
 
     /// The `@@ -a,b +c,d @@` header row as the diff surface shows it.
@@ -247,6 +246,43 @@ impl Repo {
     }
 
     /// HEAD's content for `path`, if tracked.
+    /// HEAD's blob bytes for a repo-relative path (typed, not lossy).
+    pub fn head_bytes(&self, rel: &Path) -> Option<Vec<u8>> {
+        let commit = self.inner.head().ok()?.peel_to_commit().ok()?;
+        let tree = commit.tree().ok()?;
+        let entry = tree.get_path(rel).ok()?;
+        let blob = self.inner.find_blob(entry.id()).ok()?;
+        Some(blob.content().to_vec())
+    }
+
+    /// A commit's blob bytes for a repo-relative path.
+    pub fn commit_bytes(&self, sha: &str, rel: &Path) -> Option<Vec<u8>> {
+        let oid = self.inner.revparse_single(sha).ok()?.id();
+        let commit = self.inner.find_commit(oid).ok()?;
+        let tree = commit.tree().ok()?;
+        let entry = tree.get_path(rel).ok()?;
+        let blob = self.inner.find_blob(entry.id()).ok()?;
+        Some(blob.content().to_vec())
+    }
+
+    /// The index's blob bytes for a repo-relative path (reloads — never
+    /// a stale snapshot).
+    pub fn index_bytes(&self, rel: &Path) -> Option<Vec<u8>> {
+        let mut index = self.inner.index().ok()?;
+        index.read(true).ok()?;
+        let entry = index.get_path(rel, 0)?;
+        let blob = self.inner.find_blob(entry.id).ok()?;
+        Some(blob.content().to_vec())
+    }
+
+    /// Merge-base oid of two revisions.
+    pub fn merge_base(&self, a: &str, b: &str) -> Option<String> {
+        let a = self.inner.revparse_single(a).ok()?.id();
+        let b = self.inner.revparse_single(b).ok()?.id();
+        let base = self.inner.merge_base(a, b).ok()?;
+        Some(base.to_string())
+    }
+
     pub fn head_content(&self, path: &Path) -> Option<String> {
         let rel = self.rel_path(path)?;
         let head = self.inner.head().ok()?.peel_to_tree().ok()?;
@@ -294,36 +330,15 @@ impl Repo {
         }
     }
 
-    /// Unstage one hunk: the index→HEAD edge, `git apply --cached -R`.
+    /// Unstage one hunk, STRUCTURED (0018): the staged hunk's new side
+    /// is what's in the index; swap that region for the old side.
     pub fn unstage_hunk(&self, rel: &Path, hunk: &Hunk) -> Result<(), String> {
-        let patch = hunk.to_patch(rel);
-        let mut child = std::process::Command::new("git")
-            .args([
-                "-C",
-                &self.workdir.display().to_string(),
-                "apply",
-                "--cached",
-                "--reverse",
-                "--unidiff-zero",
-            ])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("spawn git: {e}"))?;
-        use std::io::Write;
-        child
-            .stdin
-            .as_mut()
-            .expect("piped")
-            .write_all(patch.as_bytes())
-            .map_err(|e| e.to_string())?;
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if out.status.success() {
-            Ok(())
-        } else {
-            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-        }
+        let old_side: Vec<&DiffLine> = hunk
+            .lines
+            .iter()
+            .filter(|l| l.origin != LineOrigin::Addition)
+            .collect();
+        self.index_region_edit(rel, hunk.new_start, hunk.new_count, &old_side)
     }
 
     /// Hunks between HEAD and `content` for `path`. Untracked files
@@ -345,14 +360,15 @@ impl Repo {
                     new_count: count,
                     old_start: 0,
                     old_count: 0,
-                    lines: content
-                        .lines()
+                    lines: split_lines_bytes(content.as_bytes())
+                        .into_iter()
                         .enumerate()
-                        .map(|(i, l)| DiffLine {
+                        .map(|(i, (text, has_newline))| DiffLine {
                             origin: LineOrigin::Addition,
                             old_lineno: None,
                             new_lineno: Some(i + 1),
-                            text: l.to_string(),
+                            text,
+                            has_newline,
                         })
                         .collect(),
                 }]
@@ -424,38 +440,100 @@ impl Repo {
         file.ok_or_else(|| "no diff for path".to_string())
     }
 
-    /// Stage one hunk. Prototype path: synthesize a single-hunk patch and
-    /// `git apply --cached` it (shell git is the write path per 0001 §3;
-    /// libgit2 owns the read hot paths). `rel` is repo-relative.
+    /// Stage one hunk, STRUCTURED (0018): read the index blob, swap the
+    /// hunk's old-side region for its new-side lines, write the blob
+    /// back into the index. No patch serialization — path quoting,
+    /// CRLF, and missing-final-newline can't go wrong because nothing
+    /// is serialized. `rel` is repo-relative.
     pub fn stage_hunk(&self, rel: &Path, hunk: &Hunk) -> Result<(), String> {
-        let patch = hunk.to_patch(rel);
-        let mut child = std::process::Command::new("git")
-            .args([
-                "-C",
-                &self.workdir.display().to_string(),
-                "apply",
-                "--cached",
-                "--unidiff-zero",
-            ])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("spawn git: {e}"))?;
-        use std::io::Write;
-        child
-            .stdin
-            .as_mut()
-            .expect("piped")
-            .write_all(patch.as_bytes())
+        let new_side: Vec<&DiffLine> = hunk
+            .lines
+            .iter()
+            .filter(|l| l.origin != LineOrigin::Deletion)
+            .collect();
+        self.index_region_edit(rel, hunk.old_start, hunk.old_count, &new_side)
+    }
+
+    /// Replace 1-based line region [start, start+count) of `rel`'s
+    /// INDEX blob with the given lines, byte-precise. With an empty
+    /// index entry (untracked file) the region is the whole file.
+    fn index_region_edit(
+        &self,
+        rel: &Path,
+        start: usize,
+        count: usize,
+        new_lines: &[&DiffLine],
+    ) -> Result<(), String> {
+        let mut index = self.inner.index().map_err(|e| e.to_string())?;
+        index.read(true).map_err(|e| e.to_string())?; // never a stale in-memory index
+        let entry = index.get_path(rel, 0);
+        let (old_bytes, mode) = match entry {
+            Some(e) => {
+                let blob = self
+                    .inner
+                    .find_blob(e.id)
+                    .map_err(|e| format!("index blob: {e}"))?;
+                (blob.content().to_vec(), e.mode)
+            }
+            None => (Vec::new(), 0o100644), // untracked: stage from empty
+        };
+        let lines = split_lines_bytes(&old_bytes);
+        let lo = start.saturating_sub(1).min(lines.len());
+        let hi = (lo + count).min(lines.len());
+        let mut out: Vec<u8> = Vec::with_capacity(old_bytes.len() + 64);
+        for (text, nl) in &lines[..lo] {
+            out.extend_from_slice(text);
+            if *nl {
+                out.push(b'\n');
+            }
+        }
+        for l in new_lines {
+            out.extend_from_slice(&l.bytes_with_terminator());
+        }
+        for (text, nl) in &lines[hi..] {
+            out.extend_from_slice(text);
+            if *nl {
+                out.push(b'\n');
+            }
+        }
+        let oid = self.inner.blob(&out).map_err(|e| e.to_string())?;
+        index
+            .add(&git2::IndexEntry {
+                ctime: git2::IndexTime::new(0, 0),
+                mtime: git2::IndexTime::new(0, 0),
+                dev: 0,
+                ino: 0,
+                mode,
+                uid: 0,
+                gid: 0,
+                file_size: 0,
+                id: oid,
+                flags: 0,
+                flags_extended: 0,
+                path: rel.to_string_lossy().replace('\\', "/").into_bytes(),
+            })
             .map_err(|e| e.to_string())?;
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if out.status.success() {
-            Ok(())
-        } else {
-            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        index.write().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+/// Byte-precise line split: (content-without-terminator, had-newline)
+/// pairs. Unlike str::lines, the final unterminated line keeps its
+/// identity — staging round-trips a missing trailing newline (0018).
+fn split_lines_bytes(bytes: &[u8]) -> Vec<(Vec<u8>, bool)> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (i, b) in bytes.iter().enumerate() {
+        if *b == b'\n' {
+            out.push((bytes[start..i].to_vec(), true));
+            start = i + 1;
         }
     }
+    if start < bytes.len() {
+        out.push((bytes[start..].to_vec(), false));
+    }
+    out
 }
 
 /// Typed hunks from a libgit2 patch — the one place line origins and
@@ -471,6 +549,13 @@ fn hunks_from_patch(patch: &git2::Patch) -> Vec<Hunk> {
             let Ok(line) = patch.line_in_hunk(h, l) else {
                 continue;
             };
+            // the "\ No newline at end of file" marker arrives as a
+            // Context-origin line (libgit2 quirk) — it's patch
+            // metadata, not content; has_newline carries its truth
+            let raw = line.content();
+            if raw.starts_with(b"\\ No newline") || raw.starts_with(b"\n\\ No newline") {
+                continue;
+            }
             let origin = match line.origin() {
                 '+' => LineOrigin::Addition,
                 '-' => LineOrigin::Deletion,
@@ -479,14 +564,17 @@ fn hunks_from_patch(patch: &git2::Patch) -> Vec<Hunk> {
             // libgit2 numbers are 1-based; the absent side is None.
             let old_lineno = line.old_lineno().map(|n| n as usize);
             let new_lineno = line.new_lineno().map(|n| n as usize);
-            let text = String::from_utf8_lossy(line.content())
-                .trim_end_matches('\n')
-                .to_string();
+            let content = line.content();
+            let (text, has_newline) = match content.last() {
+                Some(b'\n') => (&content[..content.len() - 1], true),
+                _ => (content, false),
+            };
             lines.push(DiffLine {
                 origin,
                 old_lineno,
                 new_lineno,
-                text,
+                text: text.to_vec(),
+                has_newline,
             });
         }
         hunks.push(Hunk::build(
@@ -518,6 +606,30 @@ pub enum GitRevision {
     Head,
     /// A specific commit (surfaces carry this).
     Commit(String),
+    /// The staged content (the index) — 0018's four-state model makes
+    /// it a first-class revision, not an implicit middle.
+    Index,
+    /// The on-disk worktree file.
+    Worktree,
+    /// The merge-base of two commits (review starts here).
+    MergeBase(String, String),
+}
+
+impl GitRevision {
+    /// Read a file's bytes AT this revision. Live (the editor's buffer)
+    /// never crosses this seam — the editor owns that copy.
+    pub fn read(&self, repo: &Repo, rel: &Path) -> Option<Vec<u8>> {
+        match self {
+            GitRevision::Head => repo.head_bytes(rel),
+            GitRevision::Commit(sha) => repo.commit_bytes(sha, rel),
+            GitRevision::Index => repo.index_bytes(rel),
+            GitRevision::Worktree => std::fs::read(repo.workdir.join(rel)).ok(),
+            GitRevision::MergeBase(a, b) => {
+                let base = repo.merge_base(a, b)?;
+                repo.commit_bytes(&base, rel)
+            }
+        }
+    }
 }
 
 impl SourceLocation {
@@ -526,6 +638,9 @@ impl SourceLocation {
         match &self.revision {
             GitRevision::Head => "HEAD".into(),
             GitRevision::Commit(sha) => sha.clone(),
+            GitRevision::Index => "index".into(),
+            GitRevision::Worktree => "worktree".into(),
+            GitRevision::MergeBase(a, b) => format!("{a}...{b}"),
         }
     }
 }
@@ -577,7 +692,7 @@ mod tests {
         assert!(hunks[0]
             .lines
             .iter()
-            .any(|l| l.origin == LineOrigin::Addition && l.text.starts_with("fn d")));
+            .any(|l| l.origin == LineOrigin::Addition && l.text.starts_with(b"fn d")));
     }
 
     /// The typed structure carries both sides' 1-based numbers: the
@@ -602,7 +717,7 @@ mod tests {
         let add = h
             .lines
             .iter()
-            .find(|l| l.origin == LineOrigin::Addition && l.text.starts_with("fn d"))
+            .find(|l| l.origin == LineOrigin::Addition && l.text.starts_with(b"fn d"))
             .unwrap();
         assert_eq!((add.old_lineno, add.new_lineno), (None, Some(4)));
         let del = h
@@ -646,21 +761,51 @@ mod tests {
         assert!(stat.contains("f.rs"), "{stat}");
     }
 
-    /// `to_patch` is real `git apply` input: the prefixed form exists
-    /// only here, derived from typed origins.
+    /// Structured staging is byte-precise (0018): stage a hunk, and
+    /// the index holds exactly the post-edit bytes — including a
+    /// missing final newline, which the old patch path could not
+    /// represent.
     #[test]
-    fn to_patch_is_applyable() {
+    fn stage_hunk_is_byte_precise() {
         let (_d, repo, path) = fixture();
         let edited = "fn a() {}\nfn b2() {}\nfn c() {}\n";
         let hunks = repo.hunks(&path, edited);
         assert_eq!(hunks.len(), 1);
-        let patch = hunks[0].to_patch(Path::new("f.rs"));
-        assert!(
-            patch.starts_with("--- a/f.rs\n+++ b/f.rs\n@@ -1,3 +1,3 @@\n"),
-            "{patch}"
+        repo.stage_hunk(Path::new("f.rs"), &hunks[0]).unwrap();
+        // the index now holds the edited text; HEAD is untouched
+        assert_eq!(
+            repo.index_content(&path).as_deref(),
+            Some("fn a() {}\nfn b2() {}\nfn c() {}\n")
         );
-        assert!(patch.contains("-fn b() {}\n+fn b2() {}\n"), "{patch}");
-        assert!(patch.ends_with(" fn c() {}\n"), "{patch}");
+        assert_eq!(
+            repo.head_content(&path).as_deref(),
+            Some("fn a() {}\nfn b() {}\nfn c() {}\n")
+        );
+        // and unstaging the same hunk restores the index to HEAD
+        let staged = repo.staged_hunks(&path);
+        assert_eq!(staged.len(), 1);
+        repo.unstage_hunk(Path::new("f.rs"), &staged[0]).unwrap();
+        assert_eq!(
+            repo.index_content(&path).as_deref(),
+            Some("fn a() {}\nfn b() {}\nfn c() {}\n")
+        );
+    }
+
+    #[test]
+    fn stage_hunk_preserves_a_missing_final_newline() {
+        let (_d, repo, path) = fixture();
+        // the worktree file drops its trailing newline
+        let edited = "fn a() {}\nfn b() {}\nfn c() {}";
+        let hunks = repo.hunks(&path, edited);
+        repo.stage_hunk(Path::new("f.rs"), &hunks[0]).unwrap();
+        assert_eq!(repo.index_content(&path).as_deref(), Some(edited));
+        let staged = repo.staged_hunks(&path);
+        repo.unstage_hunk(Path::new("f.rs"), &staged[0]).unwrap();
+        assert_eq!(
+            repo.index_content(&path).as_deref(),
+            Some("fn a() {}\nfn b() {}\nfn c() {}\n"),
+            "unstage restores the newline-terminated HEAD text"
+        );
     }
 
     /// The commit delta view's data: structured hunks at a SHA, via
@@ -686,7 +831,7 @@ mod tests {
         assert_eq!(diff.deleted, 1);
         assert_eq!(diff.hunks.len(), 1);
         assert_eq!(diff.hunks[0].kind, HunkKind::Change);
-        assert!(diff.hunks[0].lines.iter().any(|l| l.text == "fn b2() {}"));
+        assert!(diff.hunks[0].lines.iter().any(|l| l.text == b"fn b2() {}"));
         let _ = path;
     }
 
@@ -772,7 +917,7 @@ mod head_tests {
         assert!(unstaged[0]
             .lines
             .iter()
-            .any(|l| l.text.starts_with("fn live")));
+            .any(|l| l.text.starts_with(b"fn live")));
         assert_eq!(repo.staged_hunks(&path).len(), 1, "staged untouched");
         // unstage reverses the edge
         let staged = repo.staged_hunks(&path);

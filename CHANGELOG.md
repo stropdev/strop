@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.9.0 — 2026-09-05
+
+Revision-native git and services (plan 0018): git content is
+byte-precise, index mutation is structured, and every async result
+wakes the UI.
+
+### Changed (architecture)
+
+- **Byte-precise git**: `DiffLine` holds raw bytes + a newline flag;
+  git's "\\ No newline at end of file" marker is data now, never
+  text that leaks into a staged blob.
+- **Structured index mutation**: staging/unstaging edits the index
+  blob directly through libgit2 — no hand-serialized patches, no
+  shell-outs, no path-quoting or CRLF hazards. Stage/unstage round-trips
+  a missing final newline exactly (new tests pin it).
+- **`GitRevision` spans the four states**: Head, Commit, Index,
+  Worktree, MergeBase — with byte-level readers; permalinks resolve
+  merge-bases.
+- **Unified event source**: one app channel; a reader thread translates
+  terminal input; every job's results forward the moment they land.
+  The 500ms idle poll is gone — hover/diagnostics/shell/git results
+  paint immediately.
+- **Per-workspace language config**: the process-global OnceLock is
+  gone; `languages.toml` merges are cached per workspace root (a second
+  project no longer reads the first project's config).
+- **Stale-answer guards**: diagnostics carry the server's document
+  version (older batches are dropped, not misplaced); a hover that
+  arrives after an edit never opens over changed text.
+
 ## 0.8.0 — 2026-09-05
 
 Text and terminal correctness (plan 0017): one layout layer owns the

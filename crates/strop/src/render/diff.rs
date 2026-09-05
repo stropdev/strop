@@ -119,7 +119,7 @@ fn hunk_emphasis(lines: &[DiffLine], idx: usize) -> Option<(usize, usize)> {
             lines
                 .get(add_start + k)
                 .filter(|l| l.origin == LineOrigin::Addition)
-                .map(|p| changed_range(&lines[idx].text, &p.text))
+                .map(|p| changed_range(&lines[idx].text_str(), &p.text_str()))
         }
         LineOrigin::Addition => {
             // add-run start and the del-run right before it
@@ -138,7 +138,7 @@ fn hunk_emphasis(lines: &[DiffLine], idx: usize) -> Option<(usize, usize)> {
             lines
                 .get(del_start + k)
                 .filter(|l| l.origin == LineOrigin::Deletion)
-                .map(|p| changed_range(&p.text, &lines[idx].text))
+                .map(|p| changed_range(&p.text_str(), &lines[idx].text_str()))
         }
     }
 }
@@ -631,6 +631,7 @@ mod tests {
     fn hunk_pairs_deletions_with_additions() {
         use strop_git::{DiffLine, LineOrigin};
         let line = |origin, old, new, text: &str| DiffLine {
+            has_newline: true,
             origin,
             old_lineno: old,
             new_lineno: new,
