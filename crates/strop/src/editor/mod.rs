@@ -15,6 +15,7 @@ mod input;
 mod insert;
 mod jumps;
 mod lsp;
+pub mod macros;
 #[cfg(test)]
 mod multicursor_tests;
 pub(crate) mod normal;
@@ -131,6 +132,14 @@ pub struct Editor {
     /// Text area height in rows — the render loop feeds it via
     /// scroll_to_cursor; viewport motions read it.
     pub view_rows: usize,
+    /// Macro recording (0016): the register being recorded into.
+    pub recording: Option<char>,
+    /// Recorded macros: register → key events.
+    pub macros: std::collections::HashMap<char, Vec<Key>>,
+    /// The last replayed macro register (@@).
+    pub last_macro: Option<char>,
+    /// Macro self-replay depth guard.
+    pub macro_depth: usize,
     pub picker: Option<PickerGlue>,
     pub cwd: PathBuf,
     /// MRU document order (most recent first); drives `Space b`.
@@ -259,6 +268,10 @@ impl Editor {
             last_insert_pos: None,
             change_idx: None,
             view_rows: 24,
+            recording: None,
+            macros: std::collections::HashMap::new(),
+            last_macro: None,
+            macro_depth: 0,
             last_change: None,
             last_cmd_keys: String::new(),
             last_insert: None,
@@ -361,6 +374,20 @@ impl Editor {
             self.pending_normal = false;
         }
         self.message.clear();
+        // macro recording (0016): q at ground stops and never reaches
+        // the machine; everything else records BEFORE it runs, so
+        // replay is exactly the live stream
+        if let Some(reg) = self.recording {
+            let at_ground = self.walker.display().is_empty() && self.pending.is_empty();
+            if at_ground && key == Key::Char('q') {
+                self.recording = None;
+                self.message = format!("recorded @{}", reg);
+                return;
+            }
+            if let Some(buf) = self.macros.get_mut(&reg) {
+                buf.push(key);
+            }
+        }
         if self.hover_card.is_some() {
             self.hover_card = None;
             return;

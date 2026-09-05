@@ -14,25 +14,32 @@ impl Editor {
     /// commit, positioned at its sha (0011 §3). An unloaded or edited-
     /// stale gutter falls back to the single-line card; with the gutter
     /// off, Enter stays inert in normal mode.
-    pub(crate) fn dive_from_blame(&mut self) {
+    pub(crate) fn dive_from_blame(&mut self) -> bool {
         if self.buf().readonly || self.buf().path.is_none() {
-            return;
+            return false;
         }
         let key = self.blame_key();
         match self.blame_gutters.get(&key) {
-            None => {}
+            None => false,
             Some(_) if self.blame_gutter_for(self.current()).is_some() => {
                 let line = self.buf().line_of(self.head());
                 match self.blame_gutters.get(&key).and_then(|g| g.lines.get(line)) {
-                    Some(bl) if bl.is_uncommitted() => self.message = "uncommitted line".into(),
+                    Some(bl) if bl.is_uncommitted() => {
+                        self.message = "uncommitted line".into();
+                        true
+                    }
                     Some(bl) => {
                         let sha = bl.sha.clone();
                         self.open_log_at(&sha);
+                        true
                     }
-                    None => {}
+                    None => false,
                 }
             }
-            Some(_) => self.blame_line(), // still loading (or stale): card
+            Some(_) => {
+                self.blame_line(); // still loading (or stale): card
+                true
+            }
         }
     }
 

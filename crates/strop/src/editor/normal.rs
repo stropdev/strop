@@ -34,230 +34,113 @@ impl Editor {
         if self.buf().readonly {
             return self.feed_readonly(key);
         }
-        if key == Key::CtrlR {
-            return self.redo();
-        }
-        if key == Key::CtrlW {
-            self.walker.prefix = "\x17"; // ctrl-w prefix
-            return;
-        }
         if !self.pending.is_empty() {
             return self.feed_pending(key);
         }
-        // Enter with the blame gutter on dives into the line's commit
-        // (0011 §3); with it off, Enter stays inert in normal mode
-        if key == Key::Enter {
-            return self.dive_from_blame();
-        }
-        // ctrl-o / ctrl-i (Tab) walk the jumplist (vim; terminal ctrl-i
-        // *is* Tab)
-        if key == Key::CtrlO {
-            return self.jump_back();
-        }
-        if key == Key::Tab {
-            return self.jump_forward();
-        }
-        // Esc in normal mode: collapse to the primary cursor (0013 §3)
+        // Esc is a mode-level key: collapse to the primary cursor and
+        // ground the machine (0013 §3) — it never walks the trie
         if key == Key::Esc {
             self.collapse_cursors();
             self.walker.clear();
             return;
         }
-        // arrows speak hjkl THROUGH the walker so pending counts apply
-        // and clear (0015: `2 <Right> x` moves twice, then x deletes 1)
-        let arrow = match key {
-            Key::Up => Some('k'),
-            Key::Down => Some('j'),
-            Key::Left => Some('h'),
-            Key::Right => Some('l'),
-            _ => None,
-        };
-        if let Some(c) = arrow {
-            if let super::input::Walk::Complete(keys) = self.walker.feed(c) {
-                self.dispatch_keys(&keys);
+        // every other key event walks the one machine (0016)
+        match self.walker.feed(key) {
+            super::input::Action::Pending => {}
+            super::input::Action::Invalid(keys) => {
+                self.message = format!("not an editor command: {keys}")
             }
-            return;
-        }
-        // viewport scroll: a pending count is the scroll size (vim)
-        match key {
-            Key::CtrlD | Key::CtrlU | Key::CtrlF | Key::CtrlB => {
-                let n = self.walker.state.count1.take();
-                self.walker.clear();
-                match (key, n) {
-                    (Key::CtrlD, Some(n)) => self.scroll_by(n.max(1), true),
-                    (Key::CtrlU, Some(n)) => self.scroll_by(n.max(1), false),
-                    (Key::CtrlD, None) => self.scroll_half_page(true),
-                    (Key::CtrlU, None) => self.scroll_half_page(false),
-                    (Key::CtrlF, _) => self.scroll_full_page(true),
-                    _ => self.scroll_full_page(false),
-                }
-                return;
-            }
-            Key::CtrlCaret => return self.alternate_buffer(),
-            _ => {}
-        }
-        let Key::Char(c) = key else {
-            return;
-        };
-        // the walker (0008 stage 2): counts/registers/operators/prefixes
-        // are typed state; complete sequences dispatch through the table
-        match self.walker.feed(c) {
-            super::input::Walk::Pending => {}
-            super::input::Walk::Complete(keys) => self.dispatch_keys(&keys),
-            super::input::Walk::EnterText(c) => {
-                // text fields seed pending and own every later key
+            super::input::Action::EnterText(c) => {
                 self.pending = c.to_string();
                 self.pending_normal = false;
                 self.pending_cursor = self.pending.len();
             }
-        }
-    }
-
-    /// A completed key sequence (the walker's output): table rows first
-    /// (leaf/alias/text-line), grammar for operator composition.
-    fn dispatch_keys(&mut self, keys: &str) {
-        // vim counts multiply leaf commands (2x, 3p, 4.) — strip the
-        // leading count, run the leaf that many times. Insert entries
-        // carry the count into the insert session instead (3iX!).
-        let digits: String = keys.chars().take_while(|c| c.is_ascii_digit()).collect();
-        if !digits.is_empty() {
-            let count: usize = digits.parse().unwrap_or(1);
-            let rest = &keys[digits.len()..];
-            let toks: Vec<String> = seq_tokens(rest);
-            if let Some(row) = crate::keymap::find_dispatch(&toks) {
-                use crate::keymap::Handler;
-                match row.handler {
-                    Handler::Leaf(f) => {
-                        if row.id == "visible-jumps" {
-                            // vim 2H/3L: the count is a line OFFSET,
-                            // not a repetition
-                            let which = rest.chars().next().unwrap_or('M');
-                            self.jump_visible(which, count);
-                            return;
-                        }
-                        if row.id == "insert-entries" {
-                            self.insert_count = count;
-                            f(self, rest.chars().last().unwrap_or('\0'));
-                        } else if row.id == "paste" {
-                            self.paste_n(count, rest == "P");
-                        } else {
-                            for _ in 0..count {
-                                f(self, rest.chars().last().unwrap_or('\0'));
-                            }
-                        }
-                        return;
-                    }
-                    // vim: 2D ≡ 2d$ — replay count + expansion through
-                    // the walker (0015: aliases keep their counts)
-                    Handler::Alias(expansion) => {
-                        let mut seq = digits.clone();
-                        seq.push_str(expansion);
-                        for c in seq.chars() {
-                            self.feed_normal(crate::editor::Key::Char(c));
-                        }
-                        return;
-                    }
-                    Handler::AbsorbChar(crate::keymap::AbsorbKind::Replace) => {
-                        // vim 3rx: replace <count> chars
-                        let c = rest.chars().nth(1).unwrap_or('\0');
-                        self.replace_char_n(c, count);
-                        return;
-                    }
-                    _ => {}
-                }
-            }
-            // grammar paths carry their own counts (2dd etc.)
-        }
-        // AbsorbChar rows: the absorbed char is keys[1] (r<c>, m<a>…)
-        if let Some(row) = crate::keymap::find_dispatch(&seq_tokens(keys)) {
-            if let crate::keymap::Handler::AbsorbChar(kind) = row.handler {
-                let c = keys.chars().nth(1).unwrap_or('\0');
-                use crate::keymap::AbsorbKind;
-                match kind {
-                    AbsorbKind::Replace => self.replace_char_n(c, 1),
-                    AbsorbKind::MarkSet => self.set_mark(c),
-                    AbsorbKind::MarkJump => self.jump_mark(c),
-                    AbsorbKind::Find => {} // grammar resolves f<c> below
-                }
-                if kind != AbsorbKind::Find {
-                    return;
-                }
-            }
-        }
-        // a `"x` register prefix applies to the leaf that follows
-        // (vim: "ap pastes a) — strip it, dispatch the leaf with the
-        // register set
-        if let Some(rest) = keys.strip_prefix('"').filter(|r| r.len() > 1) {
-            let reg = rest.chars().next().unwrap();
-            let rest = &rest[reg.len_utf8()..];
-            if let Some(row) = crate::keymap::find_dispatch(&seq_tokens(rest)) {
-                if let crate::keymap::Handler::Leaf(f) = row.handler {
-                    if row.id == "paste" {
-                        self.paste_named(Some(reg), rest == "P");
-                        return;
-                    }
-                    let _ = f; // register-prefixed non-paste leaves:
-                               // operators carry registers via the grammar below
-                }
-            }
-        }
-        let toks: Vec<String> = seq_tokens(keys);
-        if let Some(row) = crate::keymap::find_dispatch(&toks) {
-            use crate::keymap::Handler;
-            match row.handler {
-                Handler::Leaf(f) => return f(self, keys.chars().last().unwrap_or('\0')),
-                Handler::Alias(expansion) => {
-                    // vim: 2D ≡ 2d$ — the count rides BEFORE the op
-                    // (0015: aliases keep their counts)
-                    let count: String = keys.chars().take_while(|c| c.is_ascii_digit()).collect();
-                    for c in count.chars().chain(expansion.chars()) {
-                        self.feed_normal(crate::editor::Key::Char(c));
-                    }
-                    return;
-                }
-                // a prefix row: re-arm the walker at the longer path
-                // (" g" waits for the git verb); nothing dispatches yet
-                Handler::Prefix => {
-                    self.walker.prefix = if keys == " g" { " g" } else { "" };
-                    if keys == " g" {
-                        return;
-                    }
-                    self.message = format!("prefix: {keys}");
-                    return;
-                }
-                Handler::TextLine => {
-                    // the seed: ':' / '/' / '?' / '|' — the text layer
-                    // (modal line editing, incsearch) owns the rest
-                    self.pending = if keys == " |" {
-                        "|".into()
-                    } else {
-                        keys.into()
-                    };
-                    self.pending_normal = false;
-                    self.pending_cursor = self.pending.len();
-                    return;
-                }
-                _ => {}
-            }
-        }
-        // grammar composition: operators/motions/objects assemble from
-        // the walker's typed state already — parse decides completeness
-        match grammar::parse(keys) {
-            Parse::Complete(cmd) => match cmd.op {
+            super::input::Action::Grammar(cmd) => match cmd.op {
                 None => self.move_cursor(&cmd),
                 Some(_) => self.execute(&cmd),
             },
-            Parse::Incomplete => {
-                // object prefixes (i/a) and finds absorb more keys —
-                // the text line carries the partial until they land
-                self.pending = keys.into();
-                self.pending_normal = false;
-                self.pending_cursor = self.pending.len();
-            }
-            Parse::Invalid => self.message = format!("not an editor command: {keys}"),
+            super::input::Action::Row {
+                row,
+                count,
+                register,
+                arg,
+                key,
+            } => self.dispatch_row(row, count, register, arg, key),
         }
     }
 
+    /// A table row dispatch: typed count/register/arg ride the Action
+    /// (0016 — no string inspection). Count semantics by id:
+    /// most leaves repeat, insert entries carry it into the session,
+    /// visible jumps treat it as a line offset, replace multiplies.
+    fn dispatch_row(
+        &mut self,
+        row: &'static crate::keymap::Binding,
+        count: Option<usize>,
+        register: Option<char>,
+        arg: Option<char>,
+        key: char,
+    ) {
+        use crate::keymap::Handler;
+        let n = count.unwrap_or(1);
+        match row.handler {
+            Handler::Leaf(f) => {
+                let last = key;
+                match row.id {
+                    "visible-jumps" => self.jump_visible(last, n),
+                    "insert-entries" => {
+                        self.insert_count = n;
+                        f(self, last);
+                    }
+                    "paste" if register.is_some() => self.paste_named(register, last == 'P'),
+                    "paste" => self.paste_n(n, last == 'P'),
+                    "scroll-pages" => self.scroll_counted(last, n),
+                    _ => {
+                        for _ in 0..n {
+                            f(self, last);
+                        }
+                    }
+                }
+            }
+            // aliases are semantic (0016): the expansion parses ONCE
+            // into a grammar Command; the walker's count/register merge
+            // in — nothing replays through input
+            Handler::Alias(expansion) => {
+                if let Parse::Complete(mut cmd) = grammar::parse(expansion) {
+                    cmd.count = Some(n * cmd.count.unwrap_or(1));
+                    if register.is_some() {
+                        cmd.register = register;
+                    }
+                    match cmd.op {
+                        None => self.move_cursor(&cmd),
+                        Some(_) => self.execute(&cmd),
+                    }
+                }
+            }
+            Handler::AbsorbChar(kind) => {
+                let c = arg.unwrap_or('\0');
+                use crate::keymap::AbsorbKind;
+                match kind {
+                    AbsorbKind::Replace => self.replace_char_n(c, n),
+                    AbsorbKind::MarkSet => self.set_mark(c),
+                    AbsorbKind::MarkJump => self.jump_mark(c),
+                    AbsorbKind::Find => {} // grammar resolved f<c> in the machine
+                    AbsorbKind::MacroRecord => self.macro_toggle(c),
+                    AbsorbKind::MacroPlay if c == '@' => self.macro_again(n),
+                    AbsorbKind::MacroPlay => self.macro_play(c, n),
+                }
+            }
+            Handler::Prefix
+            | Handler::Motion
+            | Handler::Operator
+            | Handler::ObjectPrefix
+            | Handler::TextLine
+            | Handler::AbsorbRegister
+            | Handler::Soon => {}
+        }
+    }
+
+    /// `x`: delete the whole char under the cursor — a bare +1 splits
     /// `x`: delete the whole char under the cursor — a bare +1 splits
     /// multibyte chars and panics ropey's byte_slice.
     pub(crate) fn delete_char(&mut self) {
@@ -491,6 +374,29 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// vim Enter: [count] lines down, first non-blank. With the blame
+    /// gutter on, Enter dives into the line's commit instead (0011 §3).
+    pub fn enter_pub(&mut self) {
+        if self.dive_from_blame() {
+            return;
+        }
+        let n = self.walker.state.count1.unwrap_or(1);
+        let line = (self.buf().line_of(self.head()) + n).min(self.buf().last_content_line());
+        let s = self.buf().line_start(line);
+        let e = self.buf().line_end(line);
+        let mut p = s;
+        while p < e
+            && self
+                .buf()
+                .byte_at(p)
+                .is_some_and(|b| b == b' ' || b == b'\t')
+        {
+            p += 1;
+        }
+        self.set_head(p.min(e));
+        self.clamp_cursor();
     }
 
     pub(crate) fn run_motion(&mut self, keys: &str) {
@@ -1505,16 +1411,11 @@ impl Editor {
     }
 }
 
-/// Walker sequence → table tokens: a leading space is the leader, the
-/// ctrl-w byte is its name, every other char is its own token.
-pub(crate) fn seq_tokens(keys: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for c in keys.chars() {
-        match c {
-            ' ' => out.push("space".to_string()),
-            '\x17' => out.push("ctrl-w".to_string()),
-            c => out.push(c.to_string()),
-        }
+mod dbg3 {
+    #[test]
+    fn editor_3x() {
+        let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("abcde\n"));
+        e.feed_text("3x");
+        eprintln!("text {:?} msg {:?}", e.buf().rope.to_string(), e.message);
     }
-    out
 }

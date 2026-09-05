@@ -79,6 +79,12 @@ fn main() {
         print_help();
         return;
     }
+    if args.iter().any(|a| a == "--dump-compat") {
+        // the vim-compatibility report, generated from the command
+        // table (0016: docs can't drift from dispatch)
+        print!("{}", keymap::compat_report());
+        std::process::exit(0);
+    }
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("strop {}", env!("CARGO_PKG_VERSION"));
         return;

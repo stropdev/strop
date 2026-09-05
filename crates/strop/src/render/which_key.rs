@@ -31,10 +31,11 @@ pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
     }
     // the walker owns the prefix now (0008 stage 2); pending only for
     // the free-text lines
-    let pending = if editor.walker.prefix.is_empty() {
+    let prefix = editor.walker.prefix_display();
+    let pending = if prefix.is_empty() {
         editor.pending.as_str()
     } else {
-        editor.walker.prefix
+        &prefix
     };
     let Some(&(_, title)) = PREFIXES.iter().find(|(p, _)| *p == pending) else {
         return;

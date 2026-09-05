@@ -80,6 +80,19 @@ impl Editor {
         self.clamp_cursor();
     }
 
+    /// Counted scroll dispatch (vim: <count>ctrl-d scrolls count lines).
+    pub(crate) fn scroll_counted(&mut self, which: char, n: usize) {
+        let counted = n > 1;
+        match (which, counted) {
+            ('d', true) => self.scroll_by(n, true),
+            ('u', true) => self.scroll_by(n, false),
+            ('d', false) => self.scroll_half_page(true),
+            ('u', false) => self.scroll_half_page(false),
+            ('f', _) => self.scroll_full_page(true),
+            _ => self.scroll_full_page(false),
+        }
+    }
+
     /// `ZZ`: write + close the window (vim's :x — only writes when
     /// dirty; a failed save keeps everything open).
     pub(crate) fn write_quit(&mut self) {

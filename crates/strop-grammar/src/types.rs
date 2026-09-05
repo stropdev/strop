@@ -25,6 +25,18 @@ impl Op {
         }
     }
 
+    /// Key → operator (the machine's typed op entry, 0016).
+    pub fn from_key(c: char) -> Option<Op> {
+        match c {
+            'd' => Some(Op::Delete),
+            'y' => Some(Op::Yank),
+            'c' => Some(Op::Change),
+            '>' => Some(Op::Indent),
+            '<' => Some(Op::Dedent),
+            _ => None,
+        }
+    }
+
     /// The operator's key — the walker assembles grammar strings from
     /// typed parts (0008 stage 2).
     pub fn key(self) -> &'static str {
@@ -119,7 +131,7 @@ pub struct Command {
     pub op: Option<Op>,
     /// Named register (`"a` prefix); None = unnamed.
     pub register: Option<char>,
-    pub count: usize,
+    pub count: Option<usize>,
     pub target: Target,
     /// The keys that produced this command (dot-repeat, flash, spec footer).
     pub keys: String,

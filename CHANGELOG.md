@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.7.0 — 2026-09-05
+
+One input machine (plan 0016, landed fully). Every normal-mode key
+event — letters, arrows, ctrl keys, Enter, Tab — traverses a single
+typed state machine whose trie IS the command table; the machine emits
+typed actions (a table row with count/register, or a grammar Command)
+and never an assembled string.
+
+### Added
+
+- **Macros**: `q{reg}` records, `@{reg}` replays (counts work,
+  `@@` repeats) — replay feeds the same machine, so a macro is exactly
+  as capable as hands on the keyboard.
+- **vim Enter**: `[count]` lines down to the first non-blank (blame
+  gutter keeps its dive).
+- **`strop --dump-compat`**: the vim-compatibility report, generated
+  from the command table; `docs/vim-compat.md` is pinned fresh by a
+  test. 106 live bindings listed.
+
+### Changed (architecture)
+
+- The walker is table-driven: prefixes derive from BINDINGS, never a
+  hardcoded list; `Command.count` is `Option<usize>` — bare `G` vs `1G`
+  is typed now, and the digit-sniffing hack is gone.
+- Aliases are semantic: `D`/`C`/`Y`/`S` map to grammar commands with
+  the walker's count/register merged — nothing replays through input.
+- Model-based tests pin the machine's invariants: every live row
+  completes or pends VISIBLY; junk never poisons the next count; counts
+  cap under adversarial input.
+- The dead string-token dispatch path is deleted (clean cutover).
+
 ## 0.6.1 — 2026-09-05
 
 The trust release (plan 0015): the second review round's destructive

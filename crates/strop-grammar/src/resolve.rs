@@ -323,7 +323,7 @@ pub fn search_all(buf: &Buffer, pat: &str) -> Vec<usize> {
 /// Resolve a complete command against the buffer at `cursor`.
 /// This is THE function: execute and preview both consume it.
 pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
-    let count = cmd.count.max(1);
+    let count = cmd.count.unwrap_or(1);
     let (range, inclusive, mut spec) = match &cmd.target {
         Target::Linewise => {
             let line = buf.line_of(cursor);
@@ -389,7 +389,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
             let sub = Command {
                 op: Some(Op::Yank),
                 register: None,
-                count: 1,
+                count: Some(1),
                 target: (**inner).clone(),
                 keys: String::new(),
             };
@@ -644,13 +644,11 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     count - 1
                 } else {
                     // G with an explicit count is that line (vim); bare G
-                    // is the last content line. keys carry the digits:
-                    // "3G" vs "G" — count alone can't tell (default 1)
-                    let digits = &cmd.keys[..cmd.keys.len().saturating_sub(1)];
-                    if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-                        digits.parse::<usize>().unwrap_or(1).saturating_sub(1)
-                    } else {
-                        buf.last_content_line()
+                    // is the last content line — count is typed now
+                    // (0016), no more digit-sniffing in keys
+                    match cmd.count {
+                        Some(n) => n.saturating_sub(1),
+                        None => buf.last_content_line(),
                     }
                 };
                 let target = target.min(buf.len_lines() - 1);
@@ -797,13 +795,11 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
         }
         Target::Motion(Motion::FirstLine | Motion::LastLine) => {
             let line = if matches!(cmd.target, Target::Motion(Motion::FirstLine)) {
-                cmd.count - 1
+                cmd.count.unwrap_or(1) - 1
             } else {
-                let digits = &cmd.keys[..cmd.keys.len().saturating_sub(1)];
-                if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-                    digits.parse::<usize>().unwrap_or(1).saturating_sub(1)
-                } else {
-                    buf.last_content_line()
+                match cmd.count {
+                    Some(n) => n.saturating_sub(1),
+                    None => buf.last_content_line(),
                 }
             };
             buf.line_start(line.min(buf.len_lines().saturating_sub(1)))

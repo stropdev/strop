@@ -53,12 +53,16 @@ pub enum Handler {
 }
 
 /// The one-char absorber flavors.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbsorbKind {
     Replace,
     MarkSet,
     MarkJump,
     Find,
+    /// q<a> — toggle macro recording into register a.
+    MacroRecord,
+    /// @<a> — replay register a's macro.
+    MacroPlay,
 }
 
 /// One binding as it appears in `Space ?` / which-key AND in dispatch
@@ -177,6 +181,62 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Motion,
     },
     Binding {
+        keys: "enter",
+        desc: "line down, first non-blank (blame gutter: dive)",
+        section: "normal",
+        live: true,
+        id: "enter",
+        handler: Handler::Leaf(|e, _| e.enter_pub()),
+    },
+    Binding {
+        keys: "tab",
+        desc: "jump list forward (ctrl-i)",
+        section: "normal",
+        live: true,
+        id: "jump-forward",
+        handler: Handler::Leaf(|e, _| e.jump_forward()),
+    },
+    Binding {
+        keys: "ctrl-r",
+        desc: "redo",
+        section: "normal",
+        live: true,
+        id: "redo",
+        handler: Handler::Leaf(|e, _| e.redo()),
+    },
+    Binding {
+        keys: "ctrl-d ctrl-u ctrl-f ctrl-b",
+        desc: "half/full page scroll (count = lines)",
+        section: "normal",
+        live: true,
+        id: "scroll-pages",
+        handler: Handler::Leaf(|_, _| {}), // count-aware: dispatch_row
+    },
+    Binding {
+        keys: "ctrl-^",
+        desc: "alternate buffer",
+        section: "normal",
+        live: true,
+        id: "alternate-buffer",
+        handler: Handler::Leaf(|e, _| e.alternate_buffer()),
+    },
+    Binding {
+        keys: "q<a>",
+        desc: "record macro into register",
+        section: "normal",
+        live: true,
+        id: "macro-record",
+        handler: Handler::AbsorbChar(AbsorbKind::MacroRecord),
+    },
+    Binding {
+        keys: "@<a>",
+        desc: "play macro (count repeats)",
+        section: "normal",
+        live: true,
+        id: "macro-play",
+        handler: Handler::AbsorbChar(AbsorbKind::MacroPlay),
+    },
+    Binding {
         keys: "gr",
         desc: "references (LSP)",
         section: "normal",
@@ -239,6 +299,14 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
         id: "find-char",
         handler: Handler::AbsorbChar(AbsorbKind::Find),
+    },
+    Binding {
+        keys: ":",
+        desc: "ex command line",
+        section: "normal",
+        live: true,
+        id: "ex-line",
+        handler: Handler::TextLine,
     },
     Binding {
         keys: "/ ?",
@@ -875,64 +943,6 @@ pub const BINDINGS: &[Binding] = &[
 /// Expand a row's `keys` into its sequences (see the notation above).
 /// Dispatch lookup: the sequence (walker's tokens) → its row.
 /// `<c>`/`<a>` in a row's keys match any char (parameterized rows).
-pub(crate) fn find_dispatch(toks: &[String]) -> Option<&'static Binding> {
-    // a row token is one KEY only when it's a named key or a
-    // placeholder; everything else is a char sequence ("gg", "]c")
-    fn row_tokens<'a>(seq: &[&'a str]) -> Vec<std::borrow::Cow<'a, str>> {
-        const NAMED: &[&str] = &[
-            "space",
-            "ctrl-w",
-            "ctrl-o",
-            "ctrl-i",
-            "up",
-            "down",
-            "left",
-            "right",
-            "tab",
-            "s-tab",
-            "esc",
-            "enter",
-            "backspace",
-            "ctrl-r",
-            "ctrl-x",
-        ];
-        let mut out: Vec<std::borrow::Cow<'a, str>> = Vec::new();
-        for t in seq {
-            // ex-command tokens (":view") are whole; so are named keys
-            // and <c>/<a> placeholders
-            if NAMED.contains(t) || t.starts_with('<') || t.starts_with(':') {
-                out.push((*t).into());
-                continue;
-            }
-            if let Some(i) = t.find('<') {
-                // "r<c>": the r, then the placeholder
-                for c in t[..i].chars() {
-                    out.push(c.to_string().into());
-                }
-                out.push(t[i..].into());
-                continue;
-            }
-            for c in t.chars() {
-                out.push(c.to_string().into());
-            }
-        }
-        out
-    }
-    BINDINGS.iter().find(|b| {
-        if !b.live {
-            return false;
-        }
-        expand(b.keys).iter().any(|seq| {
-            let seq = row_tokens(seq);
-            seq.len() == toks.len()
-                && seq
-                    .iter()
-                    .zip(toks)
-                    .all(|(k, t)| (k.len() > 2 && k.starts_with('<')) || k.as_ref() == t)
-        })
-    })
-}
-
 pub(crate) fn expand(keys: &str) -> Vec<Vec<&str>> {
     let toks: Vec<&str> = keys.split(' ').filter(|t| !t.is_empty()).collect();
     let mut seqs: Vec<Vec<&str>> = Vec::new();
@@ -984,6 +994,96 @@ pub(crate) fn expand(keys: &str) -> Vec<Vec<&str>> {
         i += 1;
     }
     seqs
+}
+
+/// A row's sequences at PER-KEY granularity (0016: the machine's trie
+/// walks keys, not row tokens): "gg" is ["g","g"], "ctrl-w h" is
+/// ["ctrl-w","h"], placeholders ("<a>") stay whole and match any key.
+pub(crate) fn key_seqs(row: &Binding) -> Vec<Vec<String>> {
+    expand(row.keys)
+        .iter()
+        .map(|seq| {
+            let mut out: Vec<String> = Vec::new();
+            for t in seq {
+                if t.len() > 1 && !t.starts_with('<') && !t.starts_with(':') && !NAMED.contains(t) {
+                    if let Some(i) = t.find('<') {
+                        // "r<c>": the key chars, then the placeholder whole
+                        for c in t[..i].chars() {
+                            out.push(c.to_string());
+                        }
+                        out.push(t[i..].to_string());
+                    } else {
+                        for c in t.chars() {
+                            out.push(c.to_string());
+                        }
+                    }
+                } else {
+                    out.push(t.to_string());
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+const NAMED: &[&str] = &[
+    "space",
+    "ctrl-w",
+    "ctrl-o",
+    "ctrl-i",
+    "up",
+    "down",
+    "left",
+    "right",
+    "tab",
+    "s-tab",
+    "esc",
+    "enter",
+    "backspace",
+    "ctrl-r",
+    "ctrl-x",
+    "ctrl-d",
+    "ctrl-u",
+    "ctrl-f",
+    "ctrl-b",
+    "ctrl-^",
+];
+
+/// A placeholder token ("<a>") matches any key; the operator "<" is
+/// a literal (len-1) and must not.
+fn is_placeholder(k: &str) -> bool {
+    k.len() > 1 && k.starts_with('<')
+}
+
+fn seq_matches(seq: &[String], path: &[String]) -> bool {
+    seq.len() == path.len()
+        && seq
+            .iter()
+            .zip(path)
+            .all(|(k, t)| is_placeholder(k) || k == t)
+}
+
+fn seq_has_prefix(seq: &[String], path: &[String]) -> bool {
+    seq.len() > path.len()
+        && seq
+            .iter()
+            .zip(path)
+            .all(|(k, t)| is_placeholder(k) || k == t)
+}
+
+/// The row a key path completes exactly (the machine's trie lookup).
+pub(crate) fn find_row(path: &[String]) -> Option<&'static Binding> {
+    BINDINGS
+        .iter()
+        .find(|b| b.live && key_seqs(b).iter().any(|seq| seq_matches(seq, path)))
+}
+
+/// Any live row whose sequence EXTENDS this path (trie prefix check —
+/// the machine's prefixes derive from the table, never a list).
+pub(crate) fn any_child(path: &[String]) -> bool {
+    BINDINGS
+        .iter()
+        .any(|b| b.live && key_seqs(b).iter().any(|seq| seq_has_prefix(seq, path)))
 }
 
 /// One which-key hint row: the next key after a pending prefix.
@@ -1267,35 +1367,19 @@ mod tests {
                 .find(|(a, _)| a == entry)
                 .map(|(_, c)| *c)
                 .unwrap_or(*entry);
-            // match the way dispatch does: placeholders and char runs
-            let toks: Vec<String> = if [
-                "up",
-                "down",
-                "left",
-                "right",
-                "tab",
-                "s-tab",
-                "esc",
-                "enter",
-                "backspace",
-            ]
-            .contains(&canonical)
-            {
-                vec![canonical.to_string()]
-            } else if canonical.starts_with(':') || canonical.starts_with("ctrl-") {
-                canonical.split(' ').map(|t| t.to_string()).collect()
-            } else {
-                // walker keys: the leader is a space char, then chars;
-                // <a>/<c> placeholders materialize to a concrete char
-                let concretized = canonical.replace("<a>", "a").replace("<c>", "x");
-                let keys = concretized
-                    .strip_prefix("space ")
-                    .map(|rest| format!(" {}", rest.replace(' ', "")))
-                    .unwrap_or(concretized);
-                crate::editor::normal::seq_tokens(&keys)
-            };
+            // the machine's granularity (0016): per-key tokens; named
+            // keys and ex commands stay whole; placeholders materialize
+            let concretized = canonical.replace("<a>", "a").replace("<c>", "x");
+            let mut toks: Vec<String> = Vec::new();
+            for tok in concretized.split(' ') {
+                if NAMED.contains(&tok) || tok.starts_with(':') {
+                    toks.push(tok.to_string());
+                } else {
+                    toks.extend(tok.chars().map(|c| c.to_string()));
+                }
+            }
             assert!(
-                find_dispatch(&toks).is_some(),
+                find_row(&toks).is_some(),
                 "{entry} dispatches but has no BINDINGS row (0003 §5.7)"
             );
         }
@@ -1371,7 +1455,10 @@ mod tests {
                 if !dispatched_something(&e) {
                     panic!(
                         "{} (fed as {keys:?}) no-op: msg={:?} pending={:?} prefix={:?}",
-                        b.keys, e.message, e.pending, e.walker.prefix
+                        b.keys,
+                        e.message,
+                        e.pending,
+                        e.walker.prefix_display()
                     );
                 }
             }
@@ -1382,7 +1469,7 @@ mod tests {
         !e.message.is_empty()
             || !e.pending.is_empty()
             || e.picker_open()
-            || !e.walker.prefix.is_empty()
+            || !e.walker.prefix_display().is_empty()
             || e.clip_paste_pending.is_some()
             || e.osc52.is_some()
             || e.mode != Mode::Normal
@@ -1422,5 +1509,44 @@ mod tests {
         e.feed_text("\"+yiw");
         assert_eq!(e.register(Some('+')).0, "hello");
         assert!(e.osc52.is_some(), "clipboard yank stages OSC52");
+    }
+}
+
+/// The vim-compatibility report (0016): generated from this table —
+/// docs can never drift from dispatch. Checked into docs/vim-compat.md;
+/// the test pins freshness (STROP_REGEN=1 cargo test regenerates).
+pub fn compat_report() -> String {
+    let mut out = String::from(
+        "# Vim compatibility\n\nGenerated from the command table (`cargo test` pins freshness; \
+         STROP_REGEN=1 rewrites).\n`✓` ships exactly; `(soon)` is a planned slot.\n",
+    );
+    for section in SECTIONS {
+        out.push_str(&format!("\n## {section}\n\n"));
+        for b in BINDINGS.iter().filter(|b| b.section == *section) {
+            let mark = if b.live { "✓" } else { "·" };
+            let soon = if b.live { "" } else { " (soon)" };
+            out.push_str(&format!("- `{mark} {}` — {}{}\n", b.keys, b.desc, soon));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod compat_tests {
+    #[test]
+    fn compat_report_is_fresh() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/vim-compat.md");
+        let generated = super::compat_report();
+        if std::env::var_os("STROP_REGEN").is_some() {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &generated).unwrap();
+        }
+        let checked_in = std::fs::read_to_string(&path)
+            .expect("docs/vim-compat.md missing — STROP_REGEN=1 cargo test");
+        assert_eq!(
+            checked_in, generated,
+            "docs/vim-compat.md is stale — STROP_REGEN=1 cargo test to regen"
+        );
     }
 }

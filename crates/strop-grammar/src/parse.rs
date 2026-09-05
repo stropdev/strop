@@ -67,7 +67,13 @@ pub fn parse(keys: &str) -> Parse {
             i += 1;
         }
     }
-    let count = (count1.max(1)) * (count2.max(1));
+    // 0 is "no digits" (parse-level); the typed Option distinguishes
+    // bare G from 1G (0016)
+    let count = if count1 == 0 && count2 == 0 {
+        None
+    } else {
+        Some(count1.max(1) * count2.max(1))
+    };
     let rest = &bytes[i..];
     // dynamic args (delimiters, find-chars) decode from the string, not
     // the bytes — counts/ops above are pure ASCII so i is a boundary
