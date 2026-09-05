@@ -65,8 +65,15 @@ for safety + structural work.
 - `DocumentId`/`ViewId`/`PaneId` generational arenas; kill the parallel
   vectors; `Document` owns text+history+syntax+stamps; `View` owns
   selections+scroll.
-- Typed coordinates: `ByteOffset`/`LineIndex`/`ByteColumn`/
-  `Utf16Column`/`DisplayColumn`, conversions centralised.
+- Typed coordinates: real newtypes in `strop_core::id`
+  (`ByteOffset`/`LineIndex`/`ByteColumn`/`Utf16Column`/`DisplayColumn`),
+  conversions centralised. **Shipped shape (0.5.x):** the Buffer API takes
+  `impl Into<ByteOffset>`/`impl Into<LineIndex>` — a line index passed
+  where bytes go stops compiling, which is the observed bug class;
+  LSP columns convert through the tested `to_server_col`/`to_byte_col`.
+  Internal byte arithmetic stays `usize` (post-0.3.9 boundary-honest);
+  full internal newtyping continues per call-site cluster as waves touch
+  them — big-bang rewrites of every arithmetic site are unreviewable.
 - `SelectionSet` unifies cursor/visual/extra-cursors.
 - LSP server pool keyed by (root, server) — rust + pyright + clangd in
   one session.

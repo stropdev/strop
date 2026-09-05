@@ -146,10 +146,104 @@ impl<K, T> Arena<K, T> {
     }
 }
 
-/// Byte offset into a document's UTF-8 text. The storage coordinate.
-pub type ByteOffset = usize;
-/// Zero-based line index.
-pub type LineIndex = usize;
+/// A coordinate newtype: the inner value is bytes (ByteOffset), lines
+/// (LineIndex), or columns in a named unit (ByteColumn/Utf16Column/
+/// DisplayColumn). Copy, ordered, hashable; arithmetic is explicit.
+macro_rules! coordinate {
+    ($name:ident, $unit:literal) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[repr(transparent)]
+        pub struct $name(pub usize);
+
+        impl $name {
+            #[inline]
+            pub fn new(v: usize) -> Self {
+                Self(v)
+            }
+            /// Raw units (bytes / lines / columns per the type) — escape
+            /// hatch for arithmetic; naming the unit is the point.
+            #[inline]
+            pub fn get(self) -> usize {
+                self.0
+            }
+            #[inline]
+            pub fn saturating_sub(self, n: usize) -> Self {
+                Self(self.0.saturating_sub(n))
+            }
+        }
+
+        impl std::ops::AddAssign<usize> for $name {
+            #[inline]
+            fn add_assign(&mut self, n: usize) {
+                self.0 += n;
+            }
+        }
+        impl std::ops::SubAssign<usize> for $name {
+            #[inline]
+            fn sub_assign(&mut self, n: usize) {
+                self.0 -= n;
+            }
+        }
+        /// Raw-unit comparison: `offset > 0` reads naturally; the type
+        /// system still stops offset-vs-line mixes (the bug class).
+        impl PartialEq<usize> for $name {
+            #[inline]
+            fn eq(&self, other: &usize) -> bool {
+                self.0 == *other
+            }
+        }
+        impl PartialOrd<usize> for $name {
+            #[inline]
+            fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
+                self.0.partial_cmp(other)
+            }
+        }
+        impl std::ops::Add<usize> for $name {
+            type Output = $name;
+            #[inline]
+            fn add(self, n: usize) -> $name {
+                $name(self.0 + n)
+            }
+        }
+        impl std::ops::Sub<usize> for $name {
+            type Output = $name;
+            #[inline]
+            fn sub(self, n: usize) -> $name {
+                $name(self.0 - n)
+            }
+        }
+        impl std::ops::Sub<$name> for $name {
+            type Output = usize; // a length
+            #[inline]
+            fn sub(self, other: $name) -> usize {
+                self.0 - other.0
+            }
+        }
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{} {}", self.0, $unit)
+            }
+        }
+        impl From<$name> for usize {
+            #[inline]
+            fn from(v: $name) -> usize {
+                v.0
+            }
+        }
+        impl From<usize> for $name {
+            #[inline]
+            fn from(v: usize) -> $name {
+                $name(v)
+            }
+        }
+    };
+}
+
+coordinate!(ByteOffset, "B");
+coordinate!(LineIndex, "L");
+coordinate!(ByteColumn, "col:B");
+coordinate!(Utf16Column, "col:u16");
+coordinate!(DisplayColumn, "col:dsp");
 
 // NOTE: full newtype wrappers (ByteOffset(usize), Utf16Column(u32), …)
 // are the target; the pragmatic cutover is to name the domains first

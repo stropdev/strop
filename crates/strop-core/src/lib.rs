@@ -38,7 +38,8 @@ pub enum MotionShape {
     Linewise,
 }
 
-/// A half-open byte range `[start, end)` plus its vim shape.
+/// A half-open byte range `[start, end)` plus its vim shape. Fields are
+/// ByteOffset — the storage coordinate is typed end to end (0014).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Range {
     pub start: usize,
@@ -47,7 +48,8 @@ pub struct Range {
 }
 
 impl Range {
-    pub fn charwise(start: usize, end: usize) -> Self {
+    pub fn charwise(start: impl Into<id::ByteOffset>, end: impl Into<id::ByteOffset>) -> Self {
+        let (start, end) = (start.into().get(), end.into().get());
         debug_assert!(start <= end);
         Self {
             start,
@@ -55,7 +57,8 @@ impl Range {
             shape: MotionShape::Characterwise { inclusive: false },
         }
     }
-    pub fn linewise(start: usize, end: usize) -> Self {
+    pub fn linewise(start: impl Into<id::ByteOffset>, end: impl Into<id::ByteOffset>) -> Self {
+        let (start, end) = (start.into().get(), end.into().get());
         debug_assert!(start <= end);
         Self {
             start,
@@ -76,6 +79,7 @@ impl Range {
     pub fn inclusive(&self) -> bool {
         matches!(self.shape, MotionShape::Characterwise { inclusive: true })
     }
+    /// Length in bytes.
     pub fn len(&self) -> usize {
         self.end - self.start
     }
@@ -169,13 +173,14 @@ impl Buffer {
     }
 
     /// Byte offset of the first char of `line` (0-indexed).
-    pub fn line_start(&self, line: usize) -> usize {
+    pub fn line_start(&self, line: impl Into<id::LineIndex>) -> usize {
         self.rope
-            .line_to_byte(line.min(self.len_lines().saturating_sub(1)))
+            .line_to_byte(line.into().get().min(self.len_lines().saturating_sub(1)))
     }
 
     /// Byte offset one past the last content char of `line` (excludes `\n`).
-    pub fn line_end(&self, line: usize) -> usize {
+    pub fn line_end(&self, line: impl Into<id::LineIndex>) -> usize {
+        let line = line.into().get();
         let start = self.line_start(line);
         let mut end = self.line_start((line + 1).min(self.len_lines().saturating_sub(1)));
         if line + 1 >= self.len_lines() {
@@ -188,23 +193,25 @@ impl Buffer {
         end
     }
 
-    pub fn line_of(&self, offset: usize) -> usize {
-        self.rope.byte_to_line(offset.min(self.len_bytes()))
+    pub fn line_of(&self, offset: impl Into<id::ByteOffset>) -> usize {
+        self.rope.byte_to_line(offset.into().get().min(self.len_bytes()))
     }
 
     /// Column (in bytes) of `offset` within its line.
-    pub fn col_of(&self, offset: usize) -> usize {
-        offset - self.line_start(self.line_of(offset))
+    pub fn col_of(&self, offset: impl Into<id::ByteOffset>) -> usize {
+        let offset = offset.into();
+        offset.get() - self.line_start(self.line_of(offset))
     }
 
-    pub fn byte(&self, offset: usize) -> u8 {
+    pub fn byte(&self, offset: impl Into<id::ByteOffset>) -> u8 {
         self.rope
-            .byte(offset.min(self.len_bytes().saturating_sub(1)))
+            .byte(offset.into().get().min(self.len_bytes().saturating_sub(1)))
     }
 
-    pub fn byte_at(&self, offset: usize) -> Option<u8> {
-        if offset < self.len_bytes() {
-            Some(self.rope.byte(offset))
+    pub fn byte_at(&self, offset: impl Into<id::ByteOffset>) -> Option<u8> {
+        let off = offset.into().get();
+        if off < self.len_bytes() {
+            Some(self.rope.byte(off))
         } else {
             None
         }
@@ -214,23 +221,24 @@ impl Buffer {
     /// maps a mid-char byte to its containing char without complaint —
     /// only the byte↔char roundtrip actually detects boundaries. (The
     /// pre-0.3.9 clamp trusted it and never clamped anything.)
-    pub fn is_boundary(&self, offset: usize) -> bool {
-        if offset == 0 || offset == self.len_bytes() {
+    pub fn is_boundary(&self, offset: impl Into<id::ByteOffset>) -> bool {
+        let off = offset.into().get();
+        if off == 0 || off == self.len_bytes() {
             return true;
         }
-        if offset > self.len_bytes() {
+        if off > self.len_bytes() {
             return false;
         }
-        match self.rope.try_byte_to_char(offset) {
-            Ok(c) => self.rope.try_char_to_byte(c).is_ok_and(|b| b == offset),
+        match self.rope.try_byte_to_char(off) {
+            Ok(c) => self.rope.try_char_to_byte(c).is_ok_and(|b| b == off),
             Err(_) => false,
         }
     }
 
     /// Clamp a byte offset down to a char boundary (the grapheme policy
     /// in 0001 §5.9 hardens this further when text goes wide).
-    pub fn clamp_boundary(&self, mut offset: usize) -> usize {
-        offset = offset.min(self.len_bytes());
+    pub fn clamp_boundary(&self, offset: impl Into<id::ByteOffset>) -> usize {
+        let mut offset = offset.into().get().min(self.len_bytes());
         while offset > 0 && !self.is_boundary(offset) {
             offset -= 1;
         }
@@ -241,8 +249,8 @@ impl Buffer {
     /// (`cursor + 1` in x/a/r/~) lands inside a multibyte char; deleting
     /// or inserting there panics ropey. Round up, never down — a
     /// deletion that rounds down eats the previous char's tail.
-    pub fn ceil_boundary(&self, mut offset: usize) -> usize {
-        offset = offset.min(self.len_bytes());
+    pub fn ceil_boundary(&self, offset: impl Into<id::ByteOffset>) -> usize {
+        let mut offset = offset.into().get().min(self.len_bytes());
         while offset < self.len_bytes() && !self.is_boundary(offset) {
             offset += 1;
         }
@@ -269,7 +277,8 @@ impl Buffer {
                 EditKind::Delete => {
                     // both bounds must land on char boundaries — a stale
                     // replay against drifted text panics ropey otherwise
-                    let end = self.clamp_boundary((op.at + op.text.len()).min(self.len_bytes()));
+                    let end = self
+                        .clamp_boundary((op.at + op.text.len()).min(self.len_bytes()));
                     let start = self.clamp_boundary(op.at.min(end));
                     if start < end {
                         self.rope
@@ -338,10 +347,11 @@ impl Buffer {
         text
     }
 
-    pub fn insert(&mut self, at: usize, text: &str) {
+    pub fn insert(&mut self, at: impl Into<id::ByteOffset>, text: &str) {
         if self.readonly && !self.replaying {
             return;
         }
+        let at = self.clamp_boundary(at);
         self.rope.insert(self.rope.byte_to_char(at), text);
         self.dirty = true;
         self.epoch += 1;
@@ -361,7 +371,8 @@ impl Buffer {
         }
     }
 
-    pub fn line_text(&self, line: usize) -> String {
+    pub fn line_text(&self, line: impl Into<id::LineIndex>) -> String {
+        let line = line.into().get();
         let start = self.line_start(line);
         let end = self.line_end(line);
         self.rope.byte_slice(start..end).to_string()
@@ -378,7 +389,7 @@ mod safety_tests {
         let f = dir.path().join("f.txt");
         std::fs::write(&f, "original\n").unwrap();
         let mut b = Buffer::open(f.to_str().unwrap()).unwrap();
-        b.insert(0, "mine ");
+        b.insert(id::ByteOffset::new(0), "mine ");
         // another process touches the file
         std::thread::sleep(std::time::Duration::from_millis(5));
         std::fs::write(&f, "theirs\n").unwrap();
@@ -398,7 +409,7 @@ mod safety_tests {
         std::fs::write(&f, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o750)).unwrap();
         let mut b = Buffer::open(f.to_str().unwrap()).unwrap();
-        b.insert(b.len_bytes(), "echo hi\n");
+        b.insert(id::ByteOffset::new(b.len_bytes()), "echo hi\n");
         b.save(false).unwrap();
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "#!/bin/sh\necho hi\n");
         let mode = std::fs::metadata(&f).unwrap().permissions().mode() & 0o777;
@@ -412,7 +423,7 @@ mod safety_tests {
         // 0014: the guard lives in Buffer, not in every caller's memory
         let mut b = Buffer::from_text("abc\n");
         b.readonly = true;
-        b.insert(0, "nope");
+        b.insert(id::ByteOffset::new(0), "nope");
         let gone = b.delete(Range::charwise(0, 2));
         assert_eq!(gone, "");
         assert_eq!(b.rope.to_string(), "abc\n", "untouched");
