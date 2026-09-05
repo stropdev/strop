@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.6.1 — 2026-09-05
+
+The trust release (plan 0015): the second review round's destructive
+paths close, and the vim canon fills in.
+
+### Fixed (safety)
+
+- **ctrl-c is a quit intent, not a hidden force-quit** — dirty work
+  warns once ("unsaved — ctrl-c again to force-quit"); a second press
+  exits. No exit path silently discards buffers anymore.
+- **A pathless `:w` errors** ("no file name — :w {path}") instead of
+  reporting "written"; `:wq` on a dirty scratch stays open; `:w {file}`
+  names and adopts a path.
+- **A failed shell filter never touches the source** — `| false` used
+  to erase the selection; now stderr explains itself in the statusline
+  and the text stands.
+- **`:wq` closes the window, not the shared document** — the
+  stale-DocumentId panic path with one document in two panes is gone.
+- **Session undo histories carry a content identity** — a history
+  captured against dirty text never replays onto changed disk content.
+- **`didClose` completes the LSP lifecycle** — close/reopen in one
+  process no longer leaves the server holding stale text.
+- **`Buffer::byte()`** no longer panics on an empty rope.
+
+### Fixed (vim canon)
+
+- `d0` is a motion again (contextual zero); counts cap at 99 999
+  instead of wrapping; arrows ride the walker (`2 <Right> x` moves
+  twice, deletes one); aliases keep their counts (`2D` ≡ `2d$`).
+- Edit cascades no longer stack a phantom second cursor on the
+  primary's landing.
+- The pending-keys display shows the full structural state
+  (`"a2d3`), never a blank.
+
+### Added
+
+- **Viewport canon**: `ctrl-d/u/f/b` (a count is the scroll size),
+  `zz/zt/zb`, `H/M/L` (counts are line offsets), `ZZ`, `ctrl-^`
+  alternate buffer, `gv`, `gi`, and `g;`/`g,` over a changelist
+  derived from the undo history.
+- **Grammar motions**: `{`/`}` paragraphs and `ge`/`gE` — they compose
+  with operators and preview like every other motion.
+- **Ex ranges**: `:N` goto, `%`/`N,M` with +/- offsets, ranged `:d`
+  (yanks) and `:y`, and literal `:[range]s/a/b/[g]` as one undo unit.
+- **LSP navigation**: `gr` references, `gI` implementation, `gy` type
+  definition, `gD` declaration — many results land in a picker with
+  previews, one jumps directly; pre-init requests queue and flush.
+  `]d`/`[d` traverse diagnostics with the message in the statusline.
+- **Commit-viewer file sidebar is a tree**: directories group as dim
+  header rows, files indent by depth.
+
 ## 0.6.0 — 2026-09-05
 
 The input layer lands (plan 0008, fully): key events walk a typed
