@@ -550,6 +550,14 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::AbsorbRegister,
     },
     Binding {
+        keys: "ctrl-v",
+        desc: "visual block",
+        section: "normal",
+        live: true,
+        id: "visual-block",
+        handler: Handler::Leaf(|e, _| e.enter_block_pub()),
+    },
+    Binding {
         keys: "v V",
         desc: "visual / visual-line",
         section: "normal",
@@ -1047,6 +1055,7 @@ const NAMED: &[&str] = &[
     "ctrl-f",
     "ctrl-b",
     "ctrl-^",
+    "ctrl-v",
 ];
 
 /// A placeholder token ("<a>") matches any key; the operator "<" is
@@ -1103,7 +1112,7 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
     use crate::editor::Mode;
     let sections: &[&str] = match mode {
         Mode::Normal => &["normal", "leader", "git", "ex+panes"],
-        Mode::Visual | Mode::VisualLine => &["visual"],
+        Mode::Visual | Mode::VisualLine | Mode::VisualBlock => &["visual"],
         Mode::Insert => &[],
     };
     let mut cands: Vec<(usize, Hint)> = Vec::new();

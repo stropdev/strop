@@ -123,7 +123,7 @@ impl Editor {
                 }
             }
             Key::CtrlR | Key::CtrlW => {}
-            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlCaret => {}
+            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
             Key::Up => glue.picker.move_by(-1),
             Key::Down => glue.picker.move_by(1),
             Key::Tab => glue.picker.move_by(1),

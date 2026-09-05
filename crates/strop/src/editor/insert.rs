@@ -134,6 +134,9 @@ impl Editor {
                             }
                         }
                     }
+                    if self.block_delete_pending.is_some() {
+                        self.block_replicate(&rec);
+                    }
                     self.last_insert = Some(rec);
                 } else {
                     self.insert_open = None;
@@ -209,6 +212,7 @@ impl Editor {
             | Key::CtrlF
             | Key::CtrlB
             | Key::CtrlCaret
+            | Key::CtrlV
             | Key::Tab
             | Key::Backtab => {}
             Key::Char(c) => {

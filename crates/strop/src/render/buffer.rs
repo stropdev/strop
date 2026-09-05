@@ -140,7 +140,7 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
     let line = buf.line_of(view.cursor);
     let row = line.saturating_sub(view.view_top) as u16;
     let gutter = diff::left_inset(editor, view.doc) as u16;
-    let col = gutter + buf.col_of(view.cursor) as u16;
+    let col = gutter + buf.cell_col_of(view.cursor);
     if row < area.height && col < area.width {
         let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
         cell.set_bg(Color::Rgb(0x3a, 0x3d, 0x4d));
@@ -161,7 +161,7 @@ fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &P
             continue;
         }
         let row = (line - view.view_top) as u16;
-        let col = inset + buf.col_of(c) as u16;
+        let col = inset + buf.cell_col_of(c);
         if row < area.height && col < area.width {
             let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
             cell.set_bg(TEXT);
@@ -197,6 +197,11 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     let surface = editor.doc(view.doc).surface.as_ref();
 
     // overlays read live editor state; only the active pane shows them
+    let block = if view.overlays {
+        editor.block_rect_pub()
+    } else {
+        None
+    };
     let mut row_style = RowStyle {
         syn_spans: &syn_spans,
         preview: if view.overlays {
@@ -209,6 +214,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         },
         flash: view.overlays.then(|| editor.flash_range()).flatten(),
         selection: view.overlays.then(|| editor.visual_range()).flatten(),
+        block,
         search_hits: &[],
         find: view.overlays.then(|| editor.find_candidates()).flatten(),
         diags: Vec::new(),
@@ -430,6 +436,9 @@ struct RowStyle<'a> {
     preview: Vec<strop_core::Range>,
     flash: Option<strop_core::Range>,
     selection: Option<strop_core::Range>,
+    /// ctrl-v rectangle: (first line, last line, left cell, right cell)
+    /// — per-row byte ranges derive through LineLayout (0017).
+    block: Option<(usize, usize, u16, u16)>,
     search_hits: &'a [usize],
     find: Option<(u8, bool)>,
     /// Diagnostic spans on this row: (col, end_col, severity) — the
@@ -472,8 +481,11 @@ fn content_spans(
         .unwrap_or(0);
     let mut spans = Vec::with_capacity(text.len() / 2 + 4);
     let mut chars = 0usize;
-    for (i, ch) in text.chars().enumerate() {
-        let pos = start + i; // prototype is ASCII-honest (0001 §5.9 later)
+    // 0017: walk GRAPHEMES with byte offsets — char indices drifted
+    // every overlay after the first multibyte char
+    let trimmed = text.strip_suffix('\n').unwrap_or(text);
+    for (i, ch) in unicode_segmentation::UnicodeSegmentation::grapheme_indices(trimmed, true) {
+        let pos = start + i;
         while syn_idx < syn_spans.len() && syn_spans[syn_idx].end <= pos {
             syn_idx += 1;
         }
@@ -509,7 +521,17 @@ fn content_spans(
                 .add_modifier(Modifier::UNDERLINED)
                 .underline_color(severity_color(*sev));
         }
-        if style.selection.is_some_and(|r| in_range(r, pos)) {
+        let selected = if let Some((la, lh, cl, cr)) = style.block {
+            let line_idx = buf.line_of(pos);
+            (la..=lh).contains(&line_idx) && {
+                let layout = strop_core::layout::LineLayout::build(trimmed, 8);
+                let cell = layout.cell_at_byte(pos - start);
+                cl <= cell && cell <= cr
+            }
+        } else {
+            style.selection.is_some_and(|r| in_range(r, pos))
+        };
+        if selected {
             cell = cell.bg(SELECT_BG);
         }
         // search hits light up (accent bold); the match under the
@@ -535,7 +557,7 @@ fn content_spans(
             } else {
                 pos > view.cursor
             };
-            if on_line && ahead && !ch.is_whitespace() {
+            if on_line && ahead && !ch.chars().all(|c| c.is_whitespace()) {
                 cell = cell.fg(ACCENT).add_modifier(Modifier::BOLD);
             }
         }
@@ -664,5 +686,35 @@ mod tests {
         let narrow_frame = draw(&mut e, &mut terminal);
         let leftover = narrow_frame.iter().filter(|row| row.contains('>')).count();
         assert_eq!(leftover, 0, "stale cells: {}", narrow_frame.join("\n"));
+    }
+    #[test]
+    fn block_mode_highlights_the_rectangle() {
+        // ctrl-v lj selects cells 0-1 on rows 0-1 — the SELECT_BG must
+        // land on exactly those cells (0017: the rect, not the bytes)
+        let mut e = Editor::new(Buffer::from_text("aabb\nccdd\n"));
+        e.feed_text("<c-v>lj");
+        let backend = ratatui::backend::TestBackend::new(30, 6);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+        let buf = terminal.backend().buffer();
+        let bg = |x: u16, y: u16| buf[(x, y)].bg;
+        // text starts after the 5-cell gutter ("▎  1 ")
+        let sel = crate::render::SELECT_BG;
+        assert_eq!(bg(5, 0), sel, "block corner");
+        assert_eq!(bg(6, 0), sel, "block col 2 row 0");
+        assert_eq!(bg(5, 1), sel, "block row 1");
+        assert_ne!(bg(7, 0), sel, "outside the rectangle");
+        assert_ne!(bg(5, 2), sel, "past the rectangle's last row");
+    }
+
+    #[test]
+    fn cursor_cell_tracks_wide_chars() {
+        // 0017: l through a wide char lands on the next char, and the
+        // caret's display CELL tracks layout, not byte columns
+        let mut e = Editor::new(Buffer::from_text("a界b\n"));
+        e.feed_text("l"); // onto 界
+        assert_eq!(e.buf().cell_col_of(e.head()), 1); // 界 starts at cell 1
+        e.feed_text("l"); // onto b (byte 4)
+        assert_eq!(e.buf().cell_col_of(e.head()), 3); // b at cell 3
     }
 }

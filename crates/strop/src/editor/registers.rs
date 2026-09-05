@@ -189,4 +189,24 @@ impl Editor {
     pub(crate) fn clipboard_paste_pub(&mut self, before: bool) {
         self.clipboard_paste(before);
     }
+    /// Bracketed paste (0017): one undo unit, no key interpretation —
+    /// the payload is text, not keystrokes. In normal mode it behaves
+    /// like p; a trailing newline pastes linewise (vim's paste plugin
+    /// convention).
+    pub fn paste_bracketed(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if self.mode == super::Mode::Insert {
+            let pos = self.head();
+            self.tx_begin();
+            self.buf_mut().insert(pos, text);
+            self.tx_commit();
+            self.set_head(pos + text.len());
+            self.clamp_cursor();
+        } else {
+            let linewise = text.ends_with('\n');
+            self.paste_text(text.to_string(), linewise, false);
+        }
+    }
 }

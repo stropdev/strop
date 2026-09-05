@@ -173,6 +173,7 @@ fn main() {
 
 fn tui(mut editor: Editor) {
     use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+    use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
     use crossterm::terminal::{
         disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
     };
@@ -182,12 +183,12 @@ fn tui(mut editor: Editor) {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = crossterm::execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = crossterm::execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
         default_hook(info);
     }));
     enable_raw_mode().unwrap();
     let mut out = io::stdout();
-    crossterm::execute!(out, EnterAlternateScreen).unwrap();
+    crossterm::execute!(out, EnterAlternateScreen, EnableBracketedPaste).unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(out);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
 
@@ -203,7 +204,9 @@ fn tui(mut editor: Editor) {
         let shape = match editor.mode {
             editor::Mode::Insert if editor.input_normal() => SetCursorStyle::SteadyBlock,
             editor::Mode::Insert => SetCursorStyle::SteadyBar,
-            editor::Mode::Visual | editor::Mode::VisualLine => SetCursorStyle::SteadyUnderScore,
+            editor::Mode::Visual | editor::Mode::VisualLine | editor::Mode::VisualBlock => {
+                SetCursorStyle::SteadyUnderScore
+            }
             // insert-mode input fields (picker fields, the : line) want
             // the bar even when the editor's mode is Normal
             _ if editor.input_normal() => SetCursorStyle::SteadyBlock,
@@ -233,8 +236,15 @@ fn tui(mut editor: Editor) {
             editor.drain_shell();
             continue;
         }
-        let Event::Key(ev) = event::read().unwrap() else {
-            continue;
+        let ev = match event::read().unwrap() {
+            // bracketed paste (0017): the paste is ONE text payload —
+            // never a key stream (no auto-indent, no puns on ":")
+            Event::Paste(text) => {
+                editor.paste_bracketed(&text);
+                continue;
+            }
+            Event::Key(ev) => ev,
+            _ => continue,
         };
         if (ev.modifiers.contains(KeyModifiers::CONTROL) && ev.code == KeyCode::Char('c'))
             || ev.code == KeyCode::Char('\x03')
@@ -276,6 +286,8 @@ fn tui(mut editor: Editor) {
             KeyCode::Char('p') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::Up,
             KeyCode::Char('r') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlR,
             KeyCode::Char('x') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlX,
+            KeyCode::Char('v') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlV,
+            KeyCode::Char('\x16') => Key::CtrlV,
             KeyCode::Char('w') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlW,
             KeyCode::Char(c) => Key::Char(c),
             _ => continue,
@@ -314,7 +326,12 @@ fn tui(mut editor: Editor) {
         srv.client.wait(Duration::from_millis(500));
     }
     disable_raw_mode().unwrap();
-    crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen).unwrap();
+    crossterm::execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        LeaveAlternateScreen
+    )
+    .unwrap();
 }
 
 /// Minimal base64 for OSC52 (no dep for a twenty-line function).

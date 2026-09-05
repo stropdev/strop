@@ -402,16 +402,27 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
         }
         Target::Motion(m) => match m {
             Motion::Left | Motion::Right => {
-                // h/l never leave the line (vim)
+                // h/l never leave the line (vim) and step CHAR
+                // boundaries (0017): a byte step from a multibyte lead
+                // lands on a continuation byte and clamps straight back
                 let line = buf.line_of(cursor);
                 let lo = buf.line_start(line);
                 let hi = buf.line_end(line).saturating_sub(1).max(lo);
+                let is_cont = |p: usize| p < buf.len_bytes() && buf.byte(p) & 0xC0 == 0x80;
                 let mut pos = cursor;
                 for _ in 0..count {
                     pos = if *m == Motion::Left {
-                        pos.saturating_sub(1).max(lo)
+                        let mut p = pos.saturating_sub(1).max(lo);
+                        while p > lo && is_cont(p) {
+                            p -= 1;
+                        }
+                        p
                     } else {
-                        (pos + 1).min(hi)
+                        let mut p = (pos + 1).min(hi);
+                        while p < hi && is_cont(p) {
+                            p += 1;
+                        }
+                        p
                     };
                 }
                 let (s, e) = if pos <= cursor {

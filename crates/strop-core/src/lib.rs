@@ -3,6 +3,7 @@
 
 pub mod history;
 pub mod id;
+pub mod layout;
 pub mod selection;
 
 use history::{Edit, EditKind, History};
@@ -168,6 +169,23 @@ impl Buffer {
         self.disk_stamp = None; // fresh target: no overwrite baseline
         self.save(true)
     }
+    /// Display CELL of an offset within its line (0017): cursor
+    /// placement and overlays need terminal cells, not byte cols —
+    /// wide chars and tabs make the difference. The LineLayout is the
+    /// single translation seam.
+    pub fn cell_col_of(&self, offset: impl Into<id::ByteOffset>) -> u16 {
+        let offset = offset.into().get();
+        if self.len_bytes() == 0 {
+            return 0;
+        }
+        let line = self.line_of(offset);
+        let (s, e) = (self.line_start(line), self.line_end(line));
+        let text = self.rope.byte_slice(s..e).to_string();
+        let col = offset.saturating_sub(s);
+        let layout = layout::LineLayout::build(text.trim_end_matches('\n'), 8);
+        layout.cell_at_byte(col.min(layout.len_bytes))
+    }
+
     pub fn len_bytes(&self) -> usize {
         self.rope.len_bytes()
     }

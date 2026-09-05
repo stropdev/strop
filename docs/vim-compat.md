@@ -62,6 +62,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ u ctrl-r` — undo / redo (one unit per command)
 - `✓ "+y "+p "+P` — system clipboard: yank / paste after / before
 - `✓ "xy "xp` — named register: yank / paste
+- `✓ ctrl-v` — visual block
 - `✓ v V` — visual / visual-line
 
 ## visual

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.8.0 — 2026-09-05
+
+Text and terminal correctness (plan 0017): one layout layer owns the
+byte↔cell seam, and the editor is honest on real human text.
+
+### Added
+
+- **`LineLayout`** (strop-core): per-visible-line grapheme spans with
+  byte↔display-cell maps — the single translation seam every
+  visible-line consumer now reads.
+- **Visual block mode** (`ctrl-v`): rectangle select on CELL columns
+  (wide chars and tabs can't skew the columns apart), `x`/`d`/`y` on
+  the rectangle, `c`/`I`/`A` with per-row text replication at Esc.
+- **Bracketed paste**: pastes insert as one undo unit of TEXT — no key
+  interpretation, no `:` puns; normal-mode paste behaves like `p`.
+- **The caret is cell-accurate**: wide chars and tabs place it right,
+  and splits place it in the RIGHT pane (the pane origin was never
+  applied).
+
+### Fixed
+
+- The paint loop walks graphemes with byte offsets — syntax, search,
+  selection, diagnostic, and preview overlays no longer drift after
+  the first multibyte char on a line.
+- `l`/`h` step char boundaries (a byte step from a multibyte lead
+  clamped straight back — the "stuck at é" bug).
+- `r` counts characters, not bytes (`2rX` over ü is two chars).
+- `*`/`#` classify word chars by Unicode, not ASCII — café, münchen,
+  and 変数 are words.
+
 ## 0.7.0 — 2026-09-05
 
 One input machine (plan 0016, landed fully). Every normal-mode key

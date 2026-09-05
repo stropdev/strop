@@ -85,7 +85,7 @@ pub(crate) fn mode_color(mode: Mode) -> Color {
     match mode {
         Mode::Normal => ACCENT,
         Mode::Insert => Color::Rgb(0xa9, 0xc4, 0x7c), // green
-        Mode::Visual | Mode::VisualLine => Color::Rgb(0xc5, 0x8a, 0xe8), // violet
+        Mode::Visual | Mode::VisualLine | Mode::VisualBlock => Color::Rgb(0xc5, 0x8a, 0xe8), // violet
     }
 }
 
@@ -228,10 +228,12 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
     let row = line.saturating_sub(editor.view_top()) as u16;
     // composed once: sidebar + blame column + the surface's number
     // gutter (0011) — diff-wide gutters used to drift the caret
-    let col = diff::left_inset(editor, editor.current()) as u16
-        + editor.buf().col_of(editor.head()) as u16;
+    let col =
+        diff::left_inset(editor, editor.current()) as u16 + editor.buf().cell_col_of(editor.head());
     if row < area.height - 1 && col < area.width {
-        frame.set_cursor_position((col, row));
+        // pane-relative → absolute (0017: the caret followed neither
+        // the pane's x/y in splits nor wide chars on the line)
+        frame.set_cursor_position((area.x + col, area.y + row));
     }
 }
 

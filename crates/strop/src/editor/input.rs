@@ -348,6 +348,7 @@ fn key_token(key: Key) -> String {
         Key::CtrlF => "ctrl-f".into(),
         Key::CtrlB => "ctrl-b".into(),
         Key::CtrlCaret => "ctrl-^".into(),
+        Key::CtrlV => "ctrl-v".into(),
     }
 }
 
@@ -371,6 +372,7 @@ mod tests {
                         "ctrl-f" => out.push(Key::CtrlF),
                         "ctrl-b" => out.push(Key::CtrlB),
                         "ctrl-^" => out.push(Key::CtrlCaret),
+                        "ctrl-v" => out.push(Key::CtrlV),
                         "tab" => out.push(Key::Tab),
                         "enter" => out.push(Key::Enter),
                         t if t.contains('<') => {

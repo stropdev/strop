@@ -331,7 +331,7 @@ impl Editor {
             Key::Tab if is_ex => self.ex_tab_complete(),
             Key::Enter => self.pending.clear(),
             Key::CtrlR | Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO => {} // pending + window/undo keys: no-op
-            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlCaret => {}
+            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
             Key::Up | Key::Down | Key::Left | Key::Right | Key::Tab | Key::Backtab => {}
             Key::Char(c) => {
                 // modal editing on the input line (0003 §1)
@@ -461,7 +461,8 @@ impl Editor {
         // cursor — secondary cursors run the exact same motion
         let primary_hit = grammar::resolve(self.buf(), self.head(), cmd);
         if let Some(r) = &primary_hit {
-            self.set_head(grammar::cursor_after(self.buf(), self.head(), cmd, r));
+            let land = grammar::cursor_after(self.buf(), self.head(), cmd, r);
+            self.set_head(land);
         }
         // take/compute/replant: the resolver borrows self immutably
         let extras: Vec<usize> = self
@@ -628,19 +629,49 @@ impl Editor {
     /// `*` / `#` (vim): search the word under the cursor — whole-word,
     /// forward / backward, wrapping. `n`/`N` keep the same anchors.
     pub(crate) fn search_word_under_cursor(&mut self, backward: bool) {
-        let word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        // char-classified (0017): identifiers in every script count —
+        // é/fün/変数 are words. Walk CHAR boundaries via the line text.
+        let word_char = |c: char| c.is_alphanumeric() || c == '_';
         let buf_len = self.buf().len_bytes();
-        if self.head() >= buf_len || !word_char(self.buf().byte(self.head())) {
+        let head = self.buf().clamp_boundary(self.head());
+        if head >= buf_len {
             self.message = "no word under cursor".into();
             return;
         }
-        let mut start = self.head();
-        while start > 0 && word_char(self.buf().byte(start - 1)) {
-            start -= 1;
+        let char_at = |p: usize| -> Option<char> {
+            let line = self.buf().line_of(p);
+            let (s, e) = (self.buf().line_start(line), self.buf().line_end(line));
+            self.buf()
+                .rope
+                .byte_slice(s..e)
+                .to_string()
+                .trim_end_matches('\n')
+                .get(p - s..)
+                .and_then(|t| t.chars().next())
+        };
+        if !char_at(head).is_some_and(word_char) {
+            self.message = "no word under cursor".into();
+            return;
         }
-        let mut end = self.head();
-        while end < buf_len && word_char(self.buf().byte(end)) {
-            end += 1;
+        let mut start = head;
+        while start > 0 {
+            let prev = self.buf().clamp_boundary(start.saturating_sub(4));
+            let prev = if prev == start { start - 1 } else { prev };
+            if char_at(prev).is_some_and(word_char) {
+                start = prev;
+            } else {
+                break;
+            }
+        }
+        let mut end = head;
+        while end < buf_len {
+            let line = self.buf().line_of(end);
+            let (_, le) = (self.buf().line_start(line), self.buf().line_end(line));
+            let next = char_at(end).map(|c| end + c.len_utf8());
+            match next {
+                Some(n) if n <= le && char_at(end).is_some_and(word_char) => end = n,
+                _ => break,
+            }
         }
         let pattern = self.buf().rope.byte_slice(start..end).to_string();
         self.last_search = Some(super::LastSearch {
@@ -960,18 +991,38 @@ impl Editor {
 
     /// vim `3rx` replaces three chars (clamped to the line end).
     fn replace_char_n(&mut self, c: char, count: usize) {
-        let line_end = self.buf().line_end(self.buf().line_of(self.head()));
-        let end = (self.head() + count).min(line_end);
+        // count is CHARS (0017) — a byte count splits multibyte text
+        let line = self.buf().line_of(self.head());
+        let (s, e) = (self.buf().line_start(line), self.buf().line_end(line));
+        let text_line = self.buf().rope.byte_slice(s..e).to_string();
+        let col = self.head().saturating_sub(s);
+        let end = text_line
+            .trim_end_matches('\n')
+            .get(col..)
+            .map(|t| {
+                t.char_indices()
+                    .nth(count)
+                    .map(|(i, _)| s + col + i)
+                    .unwrap_or(e)
+            })
+            .unwrap_or(e);
         if end <= self.head() || c == '\n' {
             return;
         }
         let cursor = self.head();
+        let n_chars = self
+            .buf()
+            .rope
+            .byte_slice(cursor..end)
+            .to_string()
+            .chars()
+            .count();
         self.tx_begin();
         self.buf_mut().delete(Range::charwise(cursor, end));
-        let text: String = std::iter::repeat_n(c, end - cursor).collect();
+        let text: String = std::iter::repeat_n(c, n_chars).collect();
         self.buf_mut().insert(cursor, &text);
         self.tx_commit();
-        self.set_head(cursor + text.len() - 1); // last replaced char
+        self.set_head(cursor + text.len() - c.len_utf8()); // last replaced char
         self.flash(Range::charwise(self.head(), self.head()));
         self.last_cmd_keys = format!("r{c}");
         self.last_insert = None;

@@ -4,6 +4,7 @@
 //! Mode handlers live beside this file: `normal`, `visual`, `insert`.
 
 mod blame;
+pub mod block;
 mod cursor;
 mod diagnostics;
 mod dive;
@@ -45,6 +46,8 @@ pub enum Mode {
     Insert,
     Visual,
     VisualLine,
+    /// ctrl-v: the rectangle selection (0017).
+    VisualBlock,
 }
 
 impl Mode {
@@ -54,6 +57,7 @@ impl Mode {
             Mode::Insert => "INSERT",
             Mode::Visual => "VISUAL",
             Mode::VisualLine => "V-LINE",
+            Mode::VisualBlock => "V-BLOCK",
         }
     }
 }
@@ -84,6 +88,8 @@ pub enum Key {
     CtrlB,
     /// vim ctrl-^: alternate buffer.
     CtrlCaret,
+    /// vim ctrl-v: visual block mode.
+    CtrlV,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -138,6 +144,9 @@ pub struct Editor {
     pub macros: std::collections::HashMap<char, Vec<Key>>,
     /// The last replayed macro register (@@).
     pub last_macro: Option<char>,
+    /// Block insert/change context (0017): (first line, last line,
+    /// edge cell) — the typed text replicates per row at Esc.
+    pub block_delete_pending: Option<(usize, usize, u16)>,
     /// Macro self-replay depth guard.
     pub macro_depth: usize,
     pub picker: Option<PickerGlue>,
@@ -271,6 +280,7 @@ impl Editor {
             recording: None,
             macros: std::collections::HashMap::new(),
             last_macro: None,
+            block_delete_pending: None,
             macro_depth: 0,
             last_change: None,
             last_cmd_keys: String::new(),
@@ -351,6 +361,7 @@ impl Editor {
                         "c-f" => Key::CtrlF,
                         "c-b" => Key::CtrlB,
                         "c-^" => Key::CtrlCaret,
+                        "c-v" => Key::CtrlV,
                         "c-w" => Key::CtrlW,
                         "c-o" => Key::CtrlO,
                         _ => {
@@ -416,7 +427,7 @@ impl Editor {
         }
         match self.mode {
             Mode::Insert => self.feed_insert(key),
-            Mode::Visual | Mode::VisualLine => self.feed_visual(key),
+            Mode::Visual | Mode::VisualLine | Mode::VisualBlock => self.feed_visual(key),
             Mode::Normal => self.feed_normal(key),
         }
     }

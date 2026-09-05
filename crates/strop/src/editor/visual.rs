@@ -68,6 +68,17 @@ impl Editor {
                 self.last_insert = None;
             }
             Key::Char('d') | Key::Char('y') | Key::Char('c') | Key::Char('x')
+                if self.pending.is_empty() && self.mode == Mode::VisualBlock =>
+            {
+                match key {
+                    Key::Char('y') => self.block_yank(),
+                    Key::Char('c') => self.block_change(),
+                    _ => self.block_delete(),
+                }
+            }
+            Key::Char('I') if self.mode == Mode::VisualBlock => self.block_insert(false),
+            Key::Char('A') if self.mode == Mode::VisualBlock => self.block_insert(true),
+            Key::Char('d') | Key::Char('y') | Key::Char('c') | Key::Char('x')
                 if self.pending.is_empty() =>
             {
                 let op = match key {

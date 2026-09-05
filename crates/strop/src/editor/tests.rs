@@ -991,4 +991,79 @@ mod keybinds_tests {
         e.feed_text("[d"); // wraps back to the last
         assert_eq!(e.buf().line_of(e.head()), 3);
     }
+    #[test]
+    fn dbg_unicode() {
+        let mut e = Editor::new(Buffer::from_text("café münchen\n"));
+        e.feed_text("llll");
+        eprintln!(
+            "after 4l: byte {} col {}",
+            e.head(),
+            e.buf().col_of(e.head())
+        );
+        e.feed_text("rX");
+        eprintln!("after rX: {:?}", e.buf().rope.to_string());
+        let mut e = Editor::new(Buffer::from_text("café münchen\n"));
+        e.feed_text("/mü\r");
+        eprintln!(
+            "search land: byte {} col {}",
+            e.head(),
+            e.buf().col_of(e.head())
+        );
+    }
+    #[test]
+    fn dbg_l_steps() {
+        let mut e = Editor::new(Buffer::from_text("café münchen\n"));
+        for i in 0..5 {
+            e.feed_text("l");
+            eprintln!("l{}: byte {}", i + 1, e.head());
+        }
+    }
+    #[test]
+    fn dbg_l_from_3() {
+        let mut e = Editor::new(Buffer::from_text("café münchen\n"));
+        e.set_head(3);
+        e.feed_text("l");
+        eprintln!(
+            "l from 3 -> {} (mode {:?}, msg {:?})",
+            e.head(),
+            e.mode,
+            e.message
+        );
+        e.feed_text("l");
+        eprintln!("again -> {}", e.head());
+    }
+    #[test]
+    fn bracketed_paste_is_one_text_unit() {
+        // 0017: paste inserts the payload verbatim (":q!" is TEXT here,
+        // never a command), one undo unit
+        let mut e = Editor::new(Buffer::from_text("fn main() {}\n"));
+        e.feed_text("i");
+        e.paste_bracketed("// :q! not a command\n");
+        e.feed(crate::editor::Key::Esc);
+        assert!(e
+            .buf()
+            .rope
+            .to_string()
+            .starts_with("// :q! not a command\n"));
+        e.feed_text("u");
+        assert_eq!(e.buf().rope.to_string(), "fn main() {}\n");
+        // normal mode: behaves like p
+        let mut e = Editor::new(Buffer::from_text("ab\n"));
+        e.paste_bracketed("XY");
+        assert_eq!(e.buf().rope.to_string(), "aXYb\n");
+    }
+
+    #[test]
+    fn block_mode_ops() {
+        // 0017: ctrl-v rectangle delete + insert replicate
+        let mut e = Editor::new(Buffer::from_text("aa11bb\ncc22dd\nee33ff\n"));
+        e.feed_text("<c-v>lljx");
+        assert_eq!(e.buf().rope.to_string(), "1bb\n2dd\nee33ff\n");
+        let mut e = Editor::new(Buffer::from_text("aa\ncc\n"));
+        e.feed_text("<c-v>j");
+        e.feed_text("I");
+        e.feed_text(">>");
+        e.feed(crate::editor::Key::Esc);
+        assert_eq!(e.buf().rope.to_string(), ">>aa\n>>cc\n");
+    }
 }
