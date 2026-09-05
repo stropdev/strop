@@ -47,6 +47,23 @@ impl Diag {
 }
 
 /// Events the editor drains from the channel.
+/// Requests that can queue pre-init (0.6.1: gd on a freshly opened
+/// project raced clangd's init and died silently).
+#[derive(Debug, Clone, Copy)]
+pub enum QueuedRequest {
+    Goto,
+    Hover,
+    SwitchHeader,
+}
+
+/// One pre-init request: target doc, position, kind.
+pub struct PendingRequest {
+    pub path: PathBuf,
+    pub line: usize,
+    pub col: usize,
+    pub kind: QueuedRequest,
+}
+
 /// Position encoding negotiated with the server (LSP 3.17): strop is
 /// byte-native and offers `utf-8` first; a server that only speaks
 /// UTF-16 (the spec default) gets converted columns both ways.
@@ -189,6 +206,10 @@ pub struct Client {
     /// Documents opened before initialize completes — flushed on
     /// Initialized (strict servers like pyright drop pre-init opens).
     pending_opens: std::sync::Arc<parking_lot::Mutex<Vec<(PathBuf, String, String)>>>,
+    /// goto/hover/switch fired before initialize answered: caps are
+    /// unknown (not "no") — queue, flush on Initialized like
+    /// pending_opens.
+    pending_requests: std::sync::Arc<parking_lot::Mutex<Vec<PendingRequest>>>,
     initialized: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Per-document didChange versions — the spec requires strictly
     /// increasing, and pyright-family servers enforce it (0014).
@@ -262,7 +283,12 @@ impl Client {
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(match std::env::var_os("STROP_LSP_LOG") {
-                        Some(p) => std::fs::File::create(p)
+                        // append: strop's own trace lines share the file —
+                        // create() truncated them on every server spawn
+                        Some(p) => std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(p)
                             .map(Stdio::from)
                             .unwrap_or(Stdio::null()),
                         None => Stdio::null(),
@@ -293,6 +319,8 @@ impl Client {
         let init_flag = initialized.clone();
         let pending = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
         let pending_init = pending.clone();
+        let pending_reqs = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let pending_reqs_init = pending_reqs.clone();
         let params = InitializeParams {
             #[allow(deprecated)] // root_uri is what every server still honors
             root_uri: Some(root_uri),
@@ -318,7 +346,8 @@ impl Client {
             },
             ..Default::default()
         };
-        handle.spawn(async move {
+        let handle_spawn = handle.clone();
+        handle_spawn.spawn(async move {
             let init = sock
                 .request::<async_lsp::lsp_types::request::Initialize>(params)
                 .await;
@@ -347,6 +376,104 @@ impl Client {
                             });
                         }
                     }
+                    // requests that arrived pre-init fire now (caps are
+                    // known — the gate below runs for real this time)
+                    let pending_reqs: Vec<_> = std::mem::take(&mut *pending_reqs_init.lock());
+                    for PendingRequest {
+                        path,
+                        line,
+                        col,
+                        kind,
+                    } in pending_reqs
+                    {
+                        let Ok(uri) = Url::from_file_path(&path) else {
+                            continue;
+                        };
+                        match kind {
+                            QueuedRequest::Goto => {
+                                let params = GotoDefinitionParams {
+                                    text_document_position_params: TextDocumentPositionParams {
+                                        text_document: TextDocumentIdentifier { uri },
+                                        position: Position {
+                                            line: line as u32,
+                                            character: col as u32,
+                                        },
+                                    },
+                                    work_done_progress_params: WorkDoneProgressParams::default(),
+                                    partial_result_params: Default::default(),
+                                };
+                                let resp = sock.request::<GotoDefinition>(params).await;
+                                if let Ok(Some(resp)) = resp {
+                                    use async_lsp::lsp_types::GotoDefinitionResponse as R;
+                                    let loc = match resp {
+                                        R::Scalar(l) => Some(l),
+                                        R::Array(v) => v.into_iter().next(),
+                                        R::Link(v) => v.into_iter().next().map(|l| {
+                                            async_lsp::lsp_types::Location {
+                                                uri: l.target_uri,
+                                                range: l.target_selection_range,
+                                            }
+                                        }),
+                                    };
+                                    if let Some(l) = loc {
+                                        if let Ok(path) = l.uri.to_file_path() {
+                                            let _ = tx2.send(LspEvent::GotoLocation {
+                                                path,
+                                                line: l.range.start.line as usize,
+                                                col: l.range.start.character as usize,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            QueuedRequest::Hover => {
+                                let params = async_lsp::lsp_types::HoverParams {
+                                    text_document_position_params: TextDocumentPositionParams {
+                                        text_document: TextDocumentIdentifier { uri },
+                                        position: Position {
+                                            line: line as u32,
+                                            character: col as u32,
+                                        },
+                                    },
+                                    work_done_progress_params: WorkDoneProgressParams::default(),
+                                };
+                                let resp = sock
+                                    .request::<async_lsp::lsp_types::request::HoverRequest>(params)
+                                    .await;
+                                if let Ok(Some(h)) = resp {
+                                    let _ = tx2.send(LspEvent::HoverText {
+                                        text: hover_text(&h),
+                                    });
+                                }
+                            }
+                            QueuedRequest::SwitchHeader => {
+                                let resp = sock
+                                    .request::<SwitchSourceHeader>(TextDocumentIdentifier { uri })
+                                    .await;
+                                match resp {
+                                    Ok(Some(target)) => {
+                                        if let Ok(path) = target.to_file_path() {
+                                            let _ = tx2.send(LspEvent::GotoLocation {
+                                                path,
+                                                line: 0,
+                                                col: 0,
+                                            });
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        let _ = tx2.send(LspEvent::Note {
+                                            text: "no header/source counterpart".into(),
+                                        });
+                                    }
+                                    Err(e) => {
+                                        let _ = tx2.send(LspEvent::Note {
+                                            text: format!("switch source/header: {e}"),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
                     let _ = tx2.send(LspEvent::Ready { server: name });
                 }
                 Err(_) => {
@@ -364,6 +491,7 @@ impl Client {
             caps: self_caps,
             quitting,
             pending_opens: pending,
+            pending_requests: pending_reqs,
             initialized,
             versions: std::sync::Arc::new(
                 parking_lot::Mutex::new(std::collections::HashMap::new()),
@@ -471,6 +599,15 @@ impl Client {
     /// response posts onto the channel as HoverText (or nothing).
     /// Quiet no-op when the server doesn't advertise hover (0009 §2.5).
     pub fn hover(&self, path: &Path, line: usize, col: usize) {
+        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
+            self.pending_requests.lock().push(PendingRequest {
+                path: path.to_path_buf(),
+                line,
+                col,
+                kind: QueuedRequest::Hover,
+            });
+            return;
+        }
         if !self.caps.hover() {
             return;
         }
@@ -514,6 +651,20 @@ impl Client {
     /// Goto-definition; response posts as GotoLocation. Quiet no-op when
     /// the server doesn't advertise definitions (0009 §2.5).
     pub fn goto_definition(&self, path: &Path, line: usize, col: usize) {
+        // pre-init: caps unknown ≠ unsupported — queue, flush on
+        // Initialized (gd right after opening a project used to die
+        // silently here)
+        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
+            self.pending_requests
+                .lock()
+                .push(PendingRequest {
+                    path: path.to_path_buf(),
+                    line,
+                    col,
+                    kind: QueuedRequest::Goto,
+                });
+            return;
+        }
         if !self.caps.goto_definition() {
             return;
         }
@@ -569,6 +720,15 @@ impl Client {
     /// counterpart posts as GotoLocation at its top; "no counterpart"
     /// and unsupported servers surface as a Note, never an error.
     pub fn switch_source_header(&self, path: &Path) {
+        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
+            self.pending_requests.lock().push(PendingRequest {
+                path: path.to_path_buf(),
+                line: 0,
+                col: 0,
+                kind: QueuedRequest::SwitchHeader,
+            });
+            return;
+        }
         let Some(uri) = self.uri(path) else { return };
         let sock = self.socket.clone();
         let tx = self.tx.clone();
@@ -649,7 +809,7 @@ fn diag_from_lsp(d: &Diagnostic) -> Diag {
 
 /// Protocol logging goes to the file named by STROP_LSP_LOG — never the
 /// TTY (an eprintln mid-frame clobbers the alt screen; caught in the demo).
-pub(crate) fn log_line(line: String) {
+pub fn log_line(line: String) {
     if let Some(p) = std::env::var_os("STROP_LSP_LOG") {
         use std::io::Write;
         if let Ok(mut f) = std::fs::OpenOptions::new()
