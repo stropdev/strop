@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.5.0 — 2026-09-05
+
+The restructure release. All four waves of `plans/0014` landed: the
+editor's centre is identity-typed and selection-unified, the input layer
+is becoming data, and git is a data model, not a sidebar.
+
+### Changed (architecture)
+
+- **Generational document ids** (`strop_core::id::Arena`): buffers,
+  panes, marks, jumplist, surfaces, hunk origins, picker payloads all
+  hold stable `DocumentId`s — closing a buffer can never alias another.
+  The parallel-vectors alignment invariant is one `Document` struct now.
+- **One selection model** (`strop_core::selection::SelectionSet`):
+  normal = collapsed primary, visual = stretched primary, multicursor =
+  extras. The three old fields could disagree; the set owns the
+  invariants.
+- **`MotionShape`** replaces `Range { linewise: bool }`:
+  `Characterwise { inclusive }` carries what dfx-vs-dtx need; Blockwise
+  is the enum's extension point for visual block.
+- **LSP server pool**: one client per (workspace root, server) — Rust +
+  Python + C++ in one session, each with its negotiated encoding.
+- **Leaf commands are data** (`editor/registry.rs`, plan 0008 stage 1):
+  44 normal-mode leaves dispatch from a static table; a parity test
+  fuses dispatch and docs. Caught a dormant bug on day one: `W`/`B`/`E`
+  never moved the cursor (the grammar's cursor_after lacked BigWord
+  arms).
+- **`editor/mod.rs` split** (1817 → ~400 lines): document, cursor,
+  diagnostics, registers modules; tests live beside the behavior they
+  pin. git_memory split into dive/blame/permalink.
+
+### Fixed
+
+- **Paste lands the cursor on the last pasted char** (vim), found by the
+  new differential harness.
+- **`f`/`t` find multibyte chars** (`f é` works; found bytes before).
+  All dynamic command args are `char`, never `u8`.
+
+### Added
+
+- **The nvim differential harness** (0006 tier 1): 40 cases drive strop
+  headless and pinned nvim over the same keys; text + cursor must agree.
+  Runs in the docker gate.
+- **Semantic dot-repeat**: `.` re-resolves the parsed command from the
+  current position instead of replaying a key string.
+- **ActionPlan**: `strop_grammar::plan(buf, cursors, cmd)` is the single
+  object preview renders and execute applies — multicursor previews
+  highlight every cursor's target now.
+- **Git as four states**: HEAD → index → worktree → live document are
+  separate diffable edges. The gutter shows staged lines in the
+  committed-adjacent tint; `Space g s` stages (live→index), `Space g S`
+  unstages (index→HEAD), `Space g u` discards unstaged (restore from
+  index, not HEAD).
+- **Selection history**: visual mode `Space g h` = `git log -L` on the
+  selected lines. Permalinks from commit surfaces pin that commit.
+
 ## 0.4.0 — 2026-09-04
 
 The safety release. An external architecture review (now `plans/0014`)
