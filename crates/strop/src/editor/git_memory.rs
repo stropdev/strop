@@ -215,16 +215,27 @@ impl Editor {
 
     /// `Space g l`: commit browser. `Space g h`: log scoped to the file.
     pub(crate) fn open_log(&mut self, file_scoped: bool) {
-        self.open_log_inner(file_scoped, None);
+        self.open_log_inner(file_scoped, None, None);
     }
 
     /// Open the commit browser *at* a commit — the blame dive lands on
     /// the row it was asked about (0011 §3), not the newest entry.
     pub(crate) fn open_log_at(&mut self, sha: &str) {
-        self.open_log_inner(false, Some(sha.to_string()));
+        self.open_log_inner(false, Some(sha.to_string()), None);
     }
 
-    fn open_log_inner(&mut self, file_scoped: bool, focus: Option<String>) {
+    /// `Space g h` in visual mode: the history of the selected lines
+    /// (git log -L) — selection archaeology (0014 wave 4).
+    pub(crate) fn open_line_history(&mut self, start: usize, end: usize) {
+        self.open_log_inner(true, None, Some((start, end)));
+    }
+
+    fn open_log_inner(
+        &mut self,
+        file_scoped: bool,
+        focus: Option<String>,
+        range: Option<(usize, usize)>,
+    ) {
         let Some(repo) = &self.git else {
             self.message = "not a git repo".into();
             return;
@@ -243,7 +254,9 @@ impl Editor {
             None
         };
         self.push_surface(
-            Some(if file_scoped {
+            Some(if range.is_some() {
+                "git log ·lines"
+            } else if file_scoped {
                 "git log ·file"
             } else {
                 "git log"
@@ -259,7 +272,7 @@ impl Editor {
         let generation = self.generation;
         let tx = self.git_tx.clone();
         std::thread::spawn(move || {
-            let msg = match memory::log_graph(&workdir, 200, file.as_deref()) {
+            let msg = match memory::log_graph_range(&workdir, 200, file.as_deref(), range) {
                 Ok(rows) => GitJob::Log {
                     buffer: idx,
                     generation,

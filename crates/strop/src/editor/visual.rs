@@ -98,6 +98,18 @@ impl Editor {
                     self.enter_insert_from(if linewise { "V..." } else { "v..." });
                 }
             }
+            // visual Space g h: history of the selected lines (0014 §4)
+            Key::Char('g') if self.pending == " " => {
+                self.pending = " g".into();
+            }
+            Key::Char('h') if self.pending == " g" => {
+                self.pending.clear();
+                let (a, b) = (
+                    self.buf().line_of(self.anchor()) + 1,
+                    self.buf().line_of(self.head()) + 1,
+                );
+                self.open_line_history(a.min(b), a.max(b));
+            }
             Key::Char('y') if self.pending == " " => {
                 // Space y: yank the selection to the system clipboard
                 self.pending.clear();
@@ -140,8 +152,8 @@ impl Editor {
                     return;
                 }
                 self.pending.push(c);
-                if self.pending == "S" || self.pending == " " {
-                    return; // surround/leader await their second key
+                if self.pending == "S" || self.pending == " " || self.pending == " g" {
+                    return; // surround/leader/git await their second key
                 }
                 if matches!(grammar::parse(&self.pending), Parse::Invalid) {
                     // invalid keys never squat in pending (visual had no

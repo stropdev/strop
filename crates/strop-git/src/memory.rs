@@ -18,18 +18,42 @@ pub struct LogRow {
 /// `git log --graph` for the browser. Shells out — the log is not a
 /// per-keystroke path (0001 §3). Caller decides threading.
 pub fn log_graph(workdir: &Path, max: usize, file: Option<&Path>) -> Result<Vec<LogRow>, String> {
+    log_graph_range(workdir, max, file, None)
+}
+
+/// `git log -L start,end:path` — the history of a line range (0014 wave
+/// 4: selection archaeology). The graph flag is meaningless with -L;
+/// rows come straight from the patch headers.
+pub fn log_graph_range(
+    workdir: &Path,
+    max: usize,
+    file: Option<&Path>,
+    range: Option<(usize, usize)>,
+) -> Result<Vec<LogRow>, String> {
     let mut cmd = std::process::Command::new("git");
+    let (marker_fmt, ranged) = match range {
+        Some(_) => ("%x01%h %an · %ar · %s%x00%H", true),
+        None => ("%h %an · %ar · %s%x00%H", false),
+    };
     cmd.args([
         "-C",
         &workdir.display().to_string(),
         "log",
-        "--graph",
-        "--format=%h %an · %ar · %s%x00%H",
+        &format!("--format={marker_fmt}"),
         "-n",
         &max.to_string(),
     ]);
-    if let Some(f) = file {
-        cmd.arg("--").arg(f);
+    match (file, range) {
+        (Some(f), Some((a, b))) => {
+            cmd.arg(format!("-L{a},{b}:{}", f.display()));
+        }
+        (Some(f), None) => {
+            cmd.arg("--graph").arg("--").arg(f);
+        }
+        (None, None) => {
+            cmd.arg("--graph");
+        }
+        (None, Some(_)) => return Err("-L needs a file".into()),
     }
     let out = cmd.output().map_err(|e| format!("spawn git log: {e}"))?;
     if !out.status.success() {
@@ -38,7 +62,10 @@ pub fn log_graph(workdir: &Path, max: usize, file: Option<&Path>) -> Result<Vec<
     let text = String::from_utf8_lossy(&out.stdout);
     Ok(text
         .lines()
+        // -L output carries patch text; only marked lines are commits
+        .filter(|line| !ranged || line.starts_with('\x01'))
         .map(|line| {
+            let line = line.strip_prefix('\x01').unwrap_or(line);
             // the format hides the full SHA after a NUL
             let (vis, sha) = match line.split_once('\0') {
                 Some((v, s)) => (v.to_string(), Some(s.trim().to_string())),

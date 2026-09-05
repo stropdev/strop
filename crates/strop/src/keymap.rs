@@ -348,7 +348,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "space g h",
-        desc: "file history",
+        desc: "file history (visual: selected lines)",
         section: "git",
         live: true,
     },
