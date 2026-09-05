@@ -139,7 +139,7 @@ impl Editor {
         self.cur().surface.as_ref()
     }
     // ---- surface lifecycle --------------------------------------------
-    fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
+    pub(crate) fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
         self.drop_stale_scratch();
         // surfaces stack: only the first one opened from a plain buffer
         // carries a return point (closing the deepest unwinds the chain)
@@ -181,7 +181,7 @@ impl Editor {
 
     /// The diff-surface builder: `commit` rides along when the delta
     /// came from the dive chain (sidebar + `]f`/`[f`, 0011 §4).
-    fn open_delta(
+    pub(crate) fn open_delta(
         &mut self,
         name: &str,
         label: &str,
@@ -269,218 +269,6 @@ impl Editor {
             };
             let _ = tx.send(msg);
         });
-    }
-
-    /// `Space g b`: on a file buffer, toggle the blame gutter; anywhere
-    /// else (or as feedback while the gutter loads) the single-line
-    /// card (0011 §3).
-    pub(crate) fn toggle_blame_gutter(&mut self) {
-        if self.buf().readonly || self.buf().path.is_none() {
-            return self.blame_line();
-        }
-        let key = self.blame_key();
-        if self.blame_gutters.remove(&key).is_some() {
-            return; // toggle off
-        }
-        self.blame_gutters.insert(
-            key.clone(),
-            BlameGutter {
-                lines: Vec::new(),
-                epoch: self.buf().epoch,
-            },
-        );
-        self.spawn_blame_file(&key);
-        self.blame_line(); // the card covers the line until data lands
-    }
-
-    /// Canonical path key for the current buffer's gutter entry — the
-    /// same normalization every lookup uses, so `f.rs` and an absolute
-    /// path for one file share one entry.
-    fn blame_key(&self) -> PathBuf {
-        self.blame_key_of(self.buf().path.as_deref().unwrap_or(""))
-    }
-
-    fn blame_key_of(&self, path: &str) -> PathBuf {
-        Path::new(path)
-            .canonicalize()
-            .unwrap_or_else(|_| self.cwd.join(path))
-    }
-
-    fn spawn_blame_file(&mut self, key: &Path) {
-        let Some(repo) = &self.git else {
-            self.message = "not a git repo".into();
-            return;
-        };
-        let workdir = repo.workdir().to_path_buf();
-        let key = key.to_path_buf(); // owned: the job outlives the caller
-        let Ok(rel) = key.strip_prefix(&workdir).map(|r| r.to_path_buf()) else {
-            self.message = "buffer not under workdir".into();
-            return;
-        };
-        let generation = self.generation;
-        let tx = self.git_tx.clone();
-        std::thread::spawn(move || {
-            let msg = match memory::blame_file(&workdir, &rel) {
-                Ok(lines) => GitJob::Gutter {
-                    path: key.to_path_buf(),
-                    generation,
-                    lines,
-                },
-                Err(e) => GitJob::Error(e),
-            };
-            let _ = tx.send(msg);
-        });
-    }
-
-    /// The buffer's blame gutter, if its data is still trustworthy:
-    /// same edit epoch, same line count. Any edit since the capture
-    pub fn blame_gutter_for(&self, buffer: strop_core::id::DocumentId) -> Option<&BlameGutter> {
-        let buf = self.docs.get(buffer).map(|d| &d.buf)?;
-        let path = buf.path.as_deref()?;
-        let key = Path::new(path)
-            .canonicalize()
-            .unwrap_or_else(|_| self.cwd.join(path));
-        let gutter = self.blame_gutters.get(&key)?;
-        // len_lines counts the trailing newline's phantom line — the
-        // content count is what blame rows pair with
-        let content_lines = buf.last_content_line() + 1;
-        (gutter.epoch == buf.epoch && gutter.lines.len() == content_lines).then_some(gutter)
-    }
-
-    /// Enter with the blame gutter on: dive into the cursor line's
-    /// commit, positioned at its sha (0011 §3). An unloaded or edited-
-    /// stale gutter falls back to the single-line card; with the gutter
-    /// off, Enter stays inert in normal mode.
-    pub(crate) fn dive_from_blame(&mut self) {
-        if self.buf().readonly || self.buf().path.is_none() {
-            return;
-        }
-        let key = self.blame_key();
-        match self.blame_gutters.get(&key) {
-            None => {}
-            Some(_) if self.blame_gutter_for(self.current).is_some() => {
-                let line = self.buf().line_of(self.head());
-                match self.blame_gutters.get(&key).and_then(|g| g.lines.get(line)) {
-                    Some(bl) if bl.is_uncommitted() => self.message = "uncommitted line".into(),
-                    Some(bl) => {
-                        let sha = bl.sha.clone();
-                        self.open_log_at(&sha);
-                    }
-                    None => {}
-                }
-            }
-            Some(_) => self.blame_line(), // still loading (or stale): card
-        }
-    }
-
-    /// `Space g b` fallback / surface blame: the card for the cursor
-    /// line.
-    pub(crate) fn blame_line(&mut self) {
-        let Some(repo) = &self.git else {
-            self.message = "not a git repo".into();
-            return;
-        };
-        let Some(path) = self.buf().path.clone() else {
-            self.message = "blame works on file buffers".into();
-            return;
-        };
-        let workdir = repo.workdir().to_path_buf();
-        let line = self.buf().line_of(self.head()) + 1;
-        let generation = self.generation;
-        let tx = self.git_tx.clone();
-        std::thread::spawn(move || {
-            let abs = if Path::new(&path).is_absolute() {
-                PathBuf::from(&path)
-            } else {
-                workdir.join(&path)
-            };
-            let rel = match abs.strip_prefix(&workdir) {
-                Ok(r) => r.to_path_buf(),
-                Err(_) => {
-                    let _ = tx.send(GitJob::Error("not under workdir".into()));
-                    return;
-                }
-            };
-            let msg = match memory::blame_line(&workdir, &rel, line) {
-                Ok(card) => GitJob::Card {
-                    generation,
-                    card: Box::new(card),
-                },
-                Err(e) => GitJob::Error(e),
-            };
-            let _ = tx.send(msg);
-        });
-    }
-
-    /// `Space g y`: permalink for the cursor line (or visual range) —
-    /// SHA-resolved, remote-prioritized (0001 pillar 3.3).
-    pub(crate) fn yank_permalink(&mut self) {
-        match self.build_permalink() {
-            Ok(url) => {
-                self.set_register(None, url.clone(), false);
-                self.osc52 = Some(url);
-                self.message = "permalink copied".into();
-            }
-            Err(e) => self.message = e,
-        }
-    }
-
-    /// `Space g o`: open the permalink in the browser.
-    pub(crate) fn open_permalink(&mut self) {
-        let url = match self.build_permalink() {
-            Ok(url) => url,
-            Err(e) => {
-                self.message = e;
-                return;
-            }
-        };
-        for opener in ["wslview", "xdg-open", "open"] {
-            if std::process::Command::new(opener)
-                .arg(&url)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .is_ok()
-            {
-                self.message = format!("opened {url}");
-                return;
-            }
-        }
-        self.message = format!("no opener found — {url}");
-    }
-
-    fn build_permalink(&self) -> Result<String, String> {
-        let Some(repo) = self.git.as_ref() else {
-            return Err("not a git repository".into());
-        };
-        let Some(path) = self.buf().path.as_deref() else {
-            return Err("no file for this buffer".into());
-        };
-        let abs = if Path::new(path).is_absolute() {
-            PathBuf::from(path)
-        } else {
-            repo.workdir().join(path)
-        };
-        let Ok(rel) = abs.strip_prefix(repo.workdir()) else {
-            return Err(format!("{} is outside the repo", abs.display()));
-        };
-        let (a, b) = if self.mode == Mode::Visual || self.mode == Mode::VisualLine {
-            (
-                self.buf().line_of(self.anchor()) + 1,
-                self.buf().line_of(self.head()) + 1,
-            )
-        } else {
-            let l = self.buf().line_of(self.head()) + 1;
-            (l, l)
-        };
-        let remotes = repo.remotes();
-        if remotes.is_empty() {
-            return Err("no remote configured".into());
-        }
-        if memory::pick_remote(repo).is_none() {
-            return Err(format!("unsupported remote URL: {}", remotes[0].1));
-        }
-        memory::permalink(repo, rel, a.min(b), a.max(b)).ok_or_else(|| "no HEAD commit".into())
     }
 
     // ---- surface interaction -------------------------------------------
@@ -637,89 +425,6 @@ impl Editor {
         }
     }
 
-    /// Enter on a surface line dives deeper (0001 pillar 3.2).
-    fn dive(&mut self) {
-        let line = self.buf().line_of(self.head());
-        match self.surface().cloned() {
-            Some(Surface::CommitLog { rows, .. }) => {
-                let Some(sha) = rows.get(line).and_then(|r| r.sha.clone()) else {
-                    return;
-                };
-                let Some(repo) = &self.git else { return };
-                match memory::show_stat(repo.workdir(), &sha) {
-                    Ok(files) => {
-                        let mut text = format!("commit {}\n\n", &sha[..10.min(sha.len())]);
-                        for f in &files {
-                            text.push_str(&f.path.display().to_string());
-                            text.push('\n');
-                        }
-                        self.push_surface(
-                            Some("commit files"),
-                            &text,
-                            Surface::ChangedFiles {
-                                sha,
-                                files,
-                                return_to: None,
-                            },
-                        );
-                    }
-                    Err(e) => self.message = e,
-                }
-            }
-            Some(Surface::ChangedFiles { sha, files, .. }) => {
-                // row 0/1 are the header
-                let Some(file) = line.checked_sub(2).and_then(|i| files.get(i)) else {
-                    return;
-                };
-                let Some(repo) = &self.git else { return };
-                match repo.commit_file_diff(&sha, &file.path) {
-                    Ok(diff) => {
-                        // the delta carries its commit + siblings: the
-                        // sidebar and `]f`/`[f` navigate them (0011 §4)
-                        let commit = CommitFiles {
-                            sha: sha.clone(),
-                            files: files.clone(),
-                        };
-                        self.open_delta(
-                            "delta",
-                            &file.path.display().to_string(),
-                            diff.hunks,
-                            None,
-                            Some(commit),
-                        );
-                    }
-                    Err(e) => self.message = e,
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Tab on a commit diff: hop focus between the file sidebar and
-    /// the diff content (tuicr's model, 0011 §4).
-    fn toggle_sidebar_focus(&mut self) {
-        let Some(Some(Surface::Diff {
-            commit: Some(_),
-            sidebar_focus,
-            ..
-        })) = self.docs.get_mut(self.current).map(|d| &mut d.surface)
-        else {
-            self.message = "tab: no file sidebar here".into();
-            return;
-        };
-        *sidebar_focus = !*sidebar_focus;
-    }
-
-    fn sidebar_focused(&self) -> bool {
-        matches!(
-            self.surface(),
-            Some(Surface::Diff {
-                sidebar_focus: true,
-                ..
-            })
-        )
-    }
-
     /// `q`: pop one surface (0011 §1). In a split the *pane* closes —
     /// the buffer stays, vim `:q` semantics — and only the last pane's
     /// close closes the buffer, running the guaranteed return-point
@@ -729,78 +434,6 @@ impl Editor {
         if let Some(pane) = self.panes.get_mut(self.active_pane) {
             pane.doc = self.current; // the pane follows the successor
         }
-    }
-
-    /// `]f` / `[f`: next/previous file of the same commit (0011 §4).
-    /// Rewrites the diff surface in place — the surface keeps its
-    /// return point; only the file it shows changes.
-    pub(crate) fn commit_file_step(&mut self, forward: bool) {
-        let Some(Surface::Diff {
-            commit: Some(cf),
-            label,
-            ..
-        }) = self.surface().cloned()
-        else {
-            self.message = "]f/[f: file navigation needs a commit diff".into();
-            return;
-        };
-        if cf.files.len() < 2 {
-            self.message = "single-file commit".into();
-            return;
-        }
-        let Some(cur) = cf
-            .files
-            .iter()
-            .position(|f| f.path.display().to_string() == label)
-        else {
-            self.message = "current file not in commit".into();
-            return;
-        };
-        let n = cf.files.len();
-        let next = if forward {
-            (cur + 1) % n
-        } else {
-            (cur + n - 1) % n
-        };
-        let file = cf.files[next].clone();
-        let Some(repo) = &self.git else { return };
-        match repo.commit_file_diff(&cf.sha, &file.path) {
-            Ok(diff) => self.load_commit_delta(&cf, &file.path, diff.hunks),
-            Err(e) => self.message = e,
-        }
-    }
-
-    /// Swap the current diff surface to another file of the same
-    /// commit: surface data and buffer text in place, cursor to top.
-    fn load_commit_delta(&mut self, cf: &CommitFiles, path: &Path, hunks: Vec<Hunk>) {
-        let (added, deleted) = hunk_stats(&hunks);
-        let label = path.display().to_string();
-        let text = diff_surface_text(&label, &hunks);
-        let idx = self.current;
-        self.doc_mut(idx).buf.replace_all_system(&text);
-        if let Some(Some(Surface::Diff {
-            label: slot,
-            hunks: hunk_slot,
-            added: add_slot,
-            deleted: del_slot,
-            ..
-        })) = self.docs.get_mut(idx).map(|d| &mut d.surface)
-        {
-            *slot = label.clone();
-            *hunk_slot = hunks;
-            *add_slot = added;
-            *del_slot = deleted;
-        }
-        // the highlighter follows the file the surface now shows
-        self.doc_mut(idx).highlighter = strop_syntax::Highlighter::for_path(&label);
-        self.set_head(0);
-        self.view_top = 0;
-        let pos = cf
-            .files
-            .iter()
-            .position(|f| f.path == path)
-            .map_or(0, |i| i + 1);
-        self.message = format!("{label} · {pos}/{}", cf.files.len());
     }
 
     // ---- job drain ------------------------------------------------------
@@ -881,7 +514,7 @@ impl Editor {
 }
 
 /// Added/deleted counts across hunks.
-fn hunk_stats(hunks: &[Hunk]) -> (usize, usize) {
+pub(crate) fn hunk_stats(hunks: &[Hunk]) -> (usize, usize) {
     hunks.iter().fold((0, 0), |(a, d), h| {
         let adds = h
             .lines
@@ -900,7 +533,7 @@ fn hunk_stats(hunks: &[Hunk]) -> (usize, usize) {
 /// The buffer text a diff surface shows: stats row, then per hunk a
 /// header row and unprefixed content rows — exactly the rendered
 /// layout (0010 §2).
-fn diff_surface_text(label: &str, hunks: &[Hunk]) -> String {
+pub(crate) fn diff_surface_text(label: &str, hunks: &[Hunk]) -> String {
     let (added, deleted) = hunk_stats(hunks);
     let mut text = format!("{label} +{added} -{deleted}\n");
     for hunk in hunks {

@@ -255,6 +255,77 @@ impl Repo {
         String::from_utf8(blob.content().to_vec()).ok()
     }
 
+    /// The index's content for `path` (the staged version), if any.
+    pub fn index_content(&self, path: &Path) -> Option<String> {
+        let rel = self.rel_path(path)?;
+        // the shell write path (git apply --cached) owns the on-disk
+        // index — reload before reading or we serve a cached snapshot
+        let mut index = self.inner.index().ok()?;
+        index.read(true).ok()?;
+        let entry = index.get_path(&rel, 0)?;
+        let blob = self.inner.find_blob(entry.id).ok()?;
+        String::from_utf8(blob.content().to_vec()).ok()
+    }
+
+    /// Hunks between HEAD and the index — the STAGED set (0014 wave 4:
+    /// the four states are HEAD → index → worktree → live document, and
+    /// every command names its edge).
+    pub fn staged_hunks(&self, path: &Path) -> Vec<Hunk> {
+        let Some(rel) = self.rel_path(path) else {
+            return vec![];
+        };
+        let (Some(head), Some(index)) = (self.head_content(path), self.index_content(path)) else {
+            return vec![];
+        };
+        self.diff_strings(&head, &index, &rel)
+    }
+
+    /// Hunks between the index and `content` — the UNSTAGED set (what
+    /// the gutter shows while you edit). When nothing is staged this
+    /// equals HEAD↔content, matching pre-0.5 behavior.
+    pub fn unstaged_hunks(&self, path: &Path, content: &str) -> Vec<Hunk> {
+        let Some(rel) = self.rel_path(path) else {
+            return vec![];
+        };
+        let base = self.index_content(path).or_else(|| self.head_content(path));
+        match base {
+            None => self.hunks(path, content), // untracked: all-add
+            Some(base) => self.diff_strings(&base, content, &rel),
+        }
+    }
+
+    /// Unstage one hunk: the index→HEAD edge, `git apply --cached -R`.
+    pub fn unstage_hunk(&self, rel: &Path, hunk: &Hunk) -> Result<(), String> {
+        let patch = hunk.to_patch(rel);
+        let mut child = std::process::Command::new("git")
+            .args([
+                "-C",
+                &self.workdir.display().to_string(),
+                "apply",
+                "--cached",
+                "--reverse",
+                "--unidiff-zero",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn git: {e}"))?;
+        use std::io::Write;
+        child
+            .stdin
+            .as_mut()
+            .expect("piped")
+            .write_all(patch.as_bytes())
+            .map_err(|e| e.to_string())?;
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        }
+    }
+
     /// Hunks between HEAD and `content` for `path`. Untracked files
     /// report a single all-Add hunk.
     pub fn hunks(&self, path: &Path, content: &str) -> Vec<Hunk> {
@@ -429,12 +500,42 @@ fn hunks_from_patch(patch: &git2::Patch) -> Vec<Hunk> {
     hunks
 }
 
+/// A revisioned source location (0014 wave 4): permalinks, jumps into
+/// history, and blame's parent-hop all speak this — no more "permalink
+/// from a historical view links HEAD's file".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceLocation {
+    pub revision: GitRevision,
+    /// Repo-relative path.
+    pub path: PathBuf,
+    /// 1-based line range, when the location is a selection.
+    pub lines: Option<(usize, usize)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitRevision {
+    /// The checked-out branch head.
+    Head,
+    /// A specific commit (surfaces carry this).
+    Commit(String),
+}
+
+impl SourceLocation {
+    /// The URL slug: a pinned commit sha or the branch's name.
+    pub fn revision_slug(&self) -> String {
+        match &self.revision {
+            GitRevision::Head => "HEAD".into(),
+            GitRevision::Commit(sha) => sha.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::process::Command;
 
-    fn git(root: &std::path::Path, args: &[&str]) {
+    pub(crate) fn git(root: &std::path::Path, args: &[&str]) {
         Command::new("git")
             .args(args)
             .current_dir(root)
@@ -442,7 +543,7 @@ mod tests {
             .unwrap();
     }
 
-    fn fixture() -> (tempfile::TempDir, Repo, PathBuf) {
+    pub(crate) fn fixture() -> (tempfile::TempDir, Repo, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         git(root, &["init", "-q"]);
@@ -616,6 +717,7 @@ mod tests {
 
 #[cfg(test)]
 mod head_tests {
+    use super::tests::fixture;
     use super::*;
     use std::process::Command;
 
@@ -642,5 +744,40 @@ mod head_tests {
         eprintln!("abs: {:?} rel: {:?}", abs, repo.rel_path(&abs));
         eprintln!("head: {:?}", repo.head_content(&abs));
         assert!(repo.head_content(&abs).is_some());
+    }
+
+    /// 0014 wave 4: the four states are real and separately diffable.
+    #[test]
+    fn four_state_edges() {
+        let (_d, repo, path) = fixture();
+        // worktree edit, stage it, then edit again (live-only)
+        std::fs::write(&path, "fn a() {}\nfn STAGED() {}\nfn c() {}\n").unwrap();
+        let staged = repo.unstaged_hunks(&path, &std::fs::read_to_string(&path).unwrap());
+        assert_eq!(staged.len(), 1);
+        let hunk = staged.into_iter().next().unwrap();
+        repo.stage_hunk(Path::new("f.rs"), &hunk).unwrap();
+        // index now differs from HEAD
+        let idx = repo.index_content(&path).unwrap();
+        assert!(idx.contains("STAGED"));
+        let head = repo.head_content(&path).unwrap();
+        assert!(!head.contains("STAGED"));
+        // staged set: HEAD↔index has the hunk; unstaged (index↔same content) is empty
+        assert_eq!(repo.staged_hunks(&path).len(), 1);
+        let wt = std::fs::read_to_string(&path).unwrap();
+        assert!(repo.unstaged_hunks(&path, &wt).is_empty());
+        // a further live-only edit shows in the unstaged set only
+        let live = "fn a() {}\nfn STAGED() {}\nfn c() {}\nfn live()\n";
+        let unstaged = repo.unstaged_hunks(&path, live);
+        assert_eq!(unstaged.len(), 1);
+        assert!(unstaged[0]
+            .lines
+            .iter()
+            .any(|l| l.text.starts_with("fn live")));
+        assert_eq!(repo.staged_hunks(&path).len(), 1, "staged untouched");
+        // unstage reverses the edge
+        let staged = repo.staged_hunks(&path);
+        repo.unstage_hunk(Path::new("f.rs"), &staged[0]).unwrap();
+        assert!(repo.staged_hunks(&path).is_empty());
+        assert!(!repo.index_content(&path).unwrap().contains("STAGED"));
     }
 }

@@ -334,9 +334,15 @@ pub fn pick_remote(repo: &Repo) -> Option<Remote> {
 
 /// Build the immutable permalink for a file at 1-based lines. Branch is
 /// always resolved to a commit SHA (0001 pillar 3.3).
-pub fn permalink(repo: &Repo, rel: &Path, start_line: usize, end_line: usize) -> Option<String> {
+/// The URL for a revisioned location (0014): pinned to the location's
+/// revision — a commit surface links that commit, not HEAD.
+pub fn permalink(repo: &Repo, loc: &crate::SourceLocation) -> Option<String> {
     let remote = pick_remote(repo)?;
-    let sha = repo.head_sha()?;
+    let (start_line, end_line) = loc.lines.unwrap_or((1, 1));
+    let sha = match &loc.revision {
+        crate::GitRevision::Head => repo.head_sha()?,
+        crate::GitRevision::Commit(sha) => sha.clone(),
+    };
     let frag = if start_line == end_line {
         format!("#L{start_line}")
     } else {
@@ -347,7 +353,7 @@ pub fn permalink(repo: &Repo, rel: &Path, start_line: usize, end_line: usize) ->
         remote.base,
         remote.owner_repo,
         sha,
-        rel.display()
+        loc.path.display()
     ))
 }
 

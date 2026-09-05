@@ -47,8 +47,14 @@ impl Editor {
             return;
         }
         let path = self.buf().path.clone();
+        // the four states (0014 wave 4): unstaged = index↔live, staged
+        // = HEAD↔index — two edges, two sign sets
         self.hunks = match &path {
-            Some(p) => repo.hunks(std::path::Path::new(p), &self.buf().rope.to_string()),
+            Some(p) => repo.unstaged_hunks(std::path::Path::new(p), &self.buf().rope.to_string()),
+            None => vec![],
+        };
+        self.staged_hunks = match &path {
+            Some(p) => repo.staged_hunks(std::path::Path::new(p)),
             None => vec![],
         };
         self.hunks_epoch = epoch;
@@ -79,6 +85,18 @@ impl Editor {
             }
         }
         None
+    }
+
+    /// Staged sign (HEAD↔index edge, 0014 wave 4): the line sits inside
+    /// a staged hunk's new side. Line alignment between index and live
+    /// text is approximate when both sets exist — the gutter's rule:
+    /// unstaged wins, staged marks what's already in the index.
+    pub fn sign_at_staged(&self, line_1based: usize) -> bool {
+        self.staged_hunks.iter().any(|h| {
+            h.lines.iter().any(|l| {
+                l.origin == strop_git::LineOrigin::Addition && l.new_lineno == Some(line_1based)
+            })
+        })
     }
 
     /// `]c` / `[c`: jump to the next/previous changed line.
@@ -124,7 +142,12 @@ impl Editor {
             return false;
         };
         let Some(repo) = &self.git else { return false };
-        let Some(head) = repo.head_content(std::path::Path::new(&path)) else {
+        // undo's edge is live/worktree ← index (discard UNSTAGED); with
+        // nothing staged the index IS HEAD (0014 wave 4)
+        let Some(head) = repo
+            .index_content(std::path::Path::new(&path))
+            .or_else(|| repo.head_content(std::path::Path::new(&path)))
+        else {
             return false;
         };
         let head_lines: Vec<&str> = head.lines().collect();
@@ -262,6 +285,44 @@ impl Editor {
         }
     }
 
+    /// `Space g S`: unstage the hunk under the cursor — the
+    /// index→HEAD edge. Needs a staged hunk under the cursor (the
+    /// staged set's lines are index-numbered; find its hunk by line).
+    pub(crate) fn unstage_hunk(&mut self) {
+        if self.buf().dirty {
+            self.message = "unsaved changes — :w first".into();
+            return;
+        }
+        let line = self.buf().line_of(self.head()) + 1;
+        let Some(hunk) = self
+            .staged_hunks
+            .iter()
+            .find(|h| h.covers(line, self.buf().len_lines()))
+            .cloned()
+        else {
+            self.message = "no staged hunk here".into();
+            return;
+        };
+        let Some(path) = self.buf().path.clone() else {
+            return;
+        };
+        let Some(repo) = &self.git else { return };
+        let Ok(rel) = std::path::Path::new(&path)
+            .strip_prefix(repo.workdir())
+            .map(|p| p.to_path_buf())
+        else {
+            self.message = "buffer not under workdir".into();
+            return;
+        };
+        match repo.unstage_hunk(&rel, &hunk) {
+            Ok(()) => {
+                self.hunks_epoch = u64::MAX;
+                self.message = "hunk unstaged".into();
+            }
+            Err(e) => self.message = format!("unstage failed: {e}"),
+        }
+    }
+
     /// `Space g p`: preview the hunk under the cursor as a diff surface
     /// (0010 §2) — a readonly buffer you can move in; `q` closes,
     /// `Space g u`/`g s` still act on the file.
@@ -304,6 +365,8 @@ impl Editor {
         match c {
             'u' => self.undo_hunk(),
             's' => self.stage_hunk(),
+            // unstage: the index→HEAD edge (0014 wave 4 names edges)
+            'S' => self.unstage_hunk(),
             'p' => self.preview_hunk(),
             'l' => self.open_log(false),
             'h' => self.open_log(true),
@@ -472,5 +535,38 @@ mod tests {
             "stale preview must refuse: {}",
             e.message
         );
+    }
+
+    /// 0014 wave 4: the full edge dance by keys — edit, save, stage,
+    /// unstage; the index is the witness.
+    #[test]
+    fn stage_and_unstage_name_their_edges() {
+        let (d, mut e) = fixture();
+        e.feed_text("Gofn c() {}");
+        e.feed_text("<esc>");
+        e.feed_text(":w\r");
+        e.feed_text("]c gs");
+        assert!(e.message.contains("staged"), "{}", e.message);
+        let staged = Command::new("git")
+            .args(["diff", "--cached", "--stat"])
+            .current_dir(d.path())
+            .output()
+            .unwrap();
+        assert!(!staged.stdout.is_empty(), "hunk in the index");
+        // staged set drives the gutter's committed-adjacent tint
+        e.refresh_hunks();
+        assert!(e.sign_at_staged(3), "staged line marked");
+        assert!(e.sign_at(3).is_none(), "not also unstaged");
+        e.feed_text(" gS");
+        assert!(e.message.contains("unstaged"), "{}", e.message);
+        let staged = Command::new("git")
+            .args(["diff", "--cached", "--stat"])
+            .current_dir(d.path())
+            .output()
+            .unwrap();
+        assert!(staged.stdout.is_empty(), "index back to HEAD");
+        // and now the same line reads as unstaged again
+        e.refresh_hunks();
+        assert_eq!(e.sign_at(3), Some('+'));
     }
 }

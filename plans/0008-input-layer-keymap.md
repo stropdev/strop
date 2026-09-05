@@ -3,7 +3,10 @@
 > Why the keymap must become a table, what we borrow, and what we
 > deliberately don't build on.
 
-Status: planned (research decided; implementation follows this doc).
+Status: stage 1 landed (0.5.0): leaf commands are data
+(editor/registry.rs), dispatched from the table; coverage pinned by
+keymap tests. Stage 2 (the trie absorbing pending/operator state and the
+BINDINGS/LEAVES merge) remains planned.
 
 ---
 

@@ -3,8 +3,10 @@
 //!
 //! Mode handlers live beside this file: `normal`, `visual`, `insert`.
 
+mod blame;
 mod cursor;
 mod diagnostics;
+mod dive;
 mod document;
 mod git;
 mod git_memory;
@@ -16,6 +18,7 @@ mod lsp;
 mod multicursor_tests;
 mod normal;
 mod panes;
+mod permalink;
 mod picker;
 mod registers;
 pub(crate) mod registry;
@@ -124,6 +127,9 @@ pub struct Editor {
     pub preview_rx: std::sync::mpsc::Receiver<(PathBuf, Option<String>)>,
     pub preview_inflight: std::collections::HashSet<PathBuf>,
     pub hunks: Vec<strop_git::Hunk>,
+    /// HEAD↔index — the staged set (0014 wave 4); rendered in the
+    /// gutter's committed-adjacent color.
+    pub staged_hunks: Vec<strop_git::Hunk>,
     pub hunks_epoch: u64,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
@@ -243,6 +249,7 @@ impl Editor {
             shell_rx,
             git: None,
             hunks: Vec::new(),
+            staged_hunks: Vec::new(),
             hunks_epoch: u64::MAX,
             blame_card: None,
             git_tx,

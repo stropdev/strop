@@ -406,6 +406,11 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
     // git signs: + add, ~ change, - deletion below (only for the
     // working buffer — surfaces have no path, so no leak)
     if view.doc == editor.current {
+        // the four states in one column: unstaged sign wins; staged-only
+        // lines get the committed-adjacent tint (0014 wave 4)
+        if editor.sign_at(line_idx + 1).is_none() && editor.sign_at_staged(line_idx + 1) {
+            return ("▎", dim_color(Color::Rgb(0xa9, 0xc4, 0x7c)));
+        }
         match editor.sign_at(line_idx + 1) {
             Some('+') => return ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
             Some('~') => return ("▎", ACCENT),

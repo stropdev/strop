@@ -372,13 +372,19 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "space g u",
-        desc: "hunk: undo (reset to HEAD)",
+        desc: "hunk: undo unstaged (restore from index)",
         section: "git",
         live: true,
     },
     Binding {
         keys: "space g s",
-        desc: "hunk: stage",
+        desc: "hunk: stage (live→index)",
+        section: "git",
+        live: true,
+    },
+    Binding {
+        keys: "space g S",
+        desc: "hunk: unstage (index→HEAD)",
         section: "git",
         live: true,
     },
@@ -675,7 +681,7 @@ mod tests {
             "space j renders as soon"
         );
         let git = children_of(" g", Mode::Normal);
-        assert_eq!(git.len(), 8);
+        assert_eq!(git.len(), 9); // l h b y o u s S p
         assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
         assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
         assert_eq!(children_of("g", Mode::Normal).len(), 3); // gg, gd, gs
@@ -714,6 +720,7 @@ mod tests {
         // git namespace
         "space g u",
         "space g s",
+        "space g S",
         "space g p",
         "space g l",
         "space g h",
