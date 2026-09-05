@@ -22,6 +22,9 @@ pub struct ServerSpec<'a> {
     pub install_hint: Option<&'a str>,
     /// initializationOptions — helix's `[language-server.NAME.config]`.
     pub init_options: Option<&'a serde_json::Value>,
+    /// The command/args come from a PROJECT languages.toml (0020 §15:
+    /// executable content — the trust gate keys on this).
+    pub project_executable: bool,
 }
 
 impl ServerSpec<'_> {
@@ -46,6 +49,7 @@ fn embedded_spec(e: &'static EmbeddedServer) -> ServerSpec<'static> {
         args: &e.args,
         install_hint: Some(e.hint),
         init_options: None,
+        project_executable: false,
     }
 }
 
@@ -165,6 +169,8 @@ fn server_by_name<'a>(cfg: &'a Languages, name: &str) -> Option<ServerSpec<'a>> 
     };
     // the command must come from the def or the embedded spec it refines
     let command = def.command.as_deref().or(emb.map(|e| e.command))?;
+    let project_executable =
+        cfg.project_root.is_some() && (def.command.is_some() || def.args.is_some());
     Some(ServerSpec {
         name: key.as_str(),
         command,
@@ -175,6 +181,7 @@ fn server_by_name<'a>(cfg: &'a Languages, name: &str) -> Option<ServerSpec<'a>> 
             .unwrap_or(&[]),
         install_hint: emb.map(|e| e.hint),
         init_options: def.config.as_ref(),
+        project_executable,
     })
 }
 

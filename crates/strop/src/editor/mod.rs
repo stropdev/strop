@@ -144,6 +144,9 @@ pub struct Editor {
     /// The app event channel (0018): set by connect_events; late LSP
     /// attaches forward through it.
     pub app_tx: Option<std::sync::mpsc::Sender<events::AppEvent>>,
+    /// Anchor-map watermark (revision depth, ops mapped) — an op must
+    /// never shift an anchor twice (0020 §14).
+    pub anchor_map_mark: Option<(usize, usize)>,
     /// Picker instance identity for stream tagging (0020 §2).
     pub next_picker_id: u64,
     /// The outstanding hover request's identity (doc, history depth) —
@@ -294,6 +297,7 @@ impl Editor {
             langs_by_root: std::collections::HashMap::new(),
             hover_request: None,
             next_picker_id: 1,
+            anchor_map_mark: None,
             macros: std::collections::HashMap::new(),
             last_macro: None,
             block_delete_pending: None,

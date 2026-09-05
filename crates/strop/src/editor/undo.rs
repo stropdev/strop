@@ -126,6 +126,76 @@ impl Editor {
 
     pub(crate) fn tx_commit(&mut self) {
         self.buf_mut().history.commit();
+        // 0020 §14: every anchor of this document maps through the
+        // transaction — marks, jumplists, and the OTHER panes' cursors.
+        // The active pane's selections are each command's own business.
+        let Some(all_ops) = self.buf().history.last_committed_ops() else {
+            return;
+        };
+        // one op maps anchors EXACTLY once, even when a revision spans
+        // several commits (o/O's opening newline + the insert session):
+        // the watermark skips already-mapped ops (0020 §14)
+        let depth = self.buf().history.depth();
+        let skip = match self.anchor_map_mark {
+            Some((d, n)) if d == depth => n.min(all_ops.len()),
+            _ => 0,
+        };
+        if skip == all_ops.len() {
+            return;
+        }
+        self.anchor_map_mark = Some((depth, all_ops.len()));
+        let ops: Vec<strop_core::history::Edit> = all_ops.into_iter().skip(skip).collect();
+        let doc = self.current();
+        let map_one = |mut pos: usize| -> usize {
+            for op in &ops {
+                let len = op.text.len();
+                match op.kind {
+                    strop_core::history::EditKind::Insert => {
+                        if pos > op.at {
+                            pos += len;
+                        }
+                    }
+                    strop_core::history::EditKind::Delete => {
+                        if pos > op.at + len {
+                            pos -= len;
+                        } else if pos > op.at {
+                            pos = op.at;
+                        }
+                    }
+                }
+            }
+            pos
+        };
+        for (d, m) in self.marks.values_mut() {
+            if *d == doc {
+                *m = map_one(*m);
+            }
+        }
+        for (d, j) in self
+            .jumplist_past
+            .iter_mut()
+            .chain(self.jumplist_future.iter_mut())
+        {
+            if *d == doc {
+                *j = map_one(*j);
+            }
+        }
+        let active = self.active_pane;
+        for (i, pane) in self.panes.iter_mut().enumerate() {
+            if pane.doc != doc || i == active {
+                continue;
+            }
+            let primary = pane.sels.primary();
+            pane.sels
+                .stretch_primary(map_one(primary.anchor), map_one(primary.head));
+            let extras: Vec<usize> = pane
+                .sels
+                .extra_heads()
+                .iter()
+                .map(|s| map_one(s.head))
+                .collect();
+            pane.sels.set_extras(extras);
+        }
     }
 
     /// `u`: undo one revision. Readonly buffers never record.

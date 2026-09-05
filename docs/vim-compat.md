@@ -114,7 +114,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 
 ## ex+panes
 
-- `✓ :w :q :q! :wq :w {file}` — write / quit (force) / write-quit / write-as
+- `✓ :w :q :q! :wq :w {file} :trust` — write / quit (force) / write-quit / write-as
 - `✓ :[range]s/a/b/[g] :N :% :N,Md :N,My` — substitute (literal) / goto line / ranged delete+yank
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ :e` — edit file

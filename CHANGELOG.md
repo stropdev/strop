@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.2 — 2026-09-05
+
+The structural half of plan 0020.
+
+### Changed (architecture)
+
+- **Universal anchor mapping**: every committed transaction emits its
+  ops through one ChangeMap applied to marks, jumplists, and every
+  OTHER pane's selections of the document (the active pane's cursors
+  remain each command's own job; a watermark guarantees an op never
+  shifts an anchor twice, even across multi-commit revisions).
+- **Project-config trust gate**: a project's `.strop/languages.toml`
+  that supplies the server `command`/`args` is executable content —
+  attach is refused until `:trust` (once, remembered per project root
+  in the state dir). Init-options-only configs (pythonPath-style) stay
+  free.
+
 ## 0.9.1 — 2026-09-05
 
 The third review round (plan 0020): fourteen contract fixes, each

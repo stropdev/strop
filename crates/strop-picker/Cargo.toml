@@ -7,5 +7,5 @@ license.workspace = true
 
 [dependencies]
 ignore = "0.4"
-strop-core = { path = "../strop-core", version = "0.9.1" }
+strop-core = { path = "../strop-core", version = "0.9.2" }
 serde_json = "1"

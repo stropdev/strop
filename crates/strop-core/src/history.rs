@@ -246,6 +246,15 @@ impl History {
         Some(ops)
     }
 
+    /// The redo ops of the revision just committed (the transaction's
+    /// edits in apply order — the anchor-map input, 0020 §14).
+    pub fn last_committed_ops(&self) -> Option<Vec<Edit>> {
+        if self.current == 0 {
+            return None;
+        }
+        Some(self.revisions[self.current].redo.clone())
+    }
+
     /// The change list (vim g;/g,): positions of the ancestor chain's
     /// committed revisions, NEWEST first. Each revision contributes its
     /// earliest edit position — where that change began.

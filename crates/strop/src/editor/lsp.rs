@@ -48,6 +48,18 @@ impl Editor {
             }
             return;
         };
+        // 0020 §15: a project layer supplying the command/args is
+        // executable content — gate on remembered trust
+        if spec.project_executable {
+            let root = registry::workspace_root(&abs, &self.cwd);
+            if !crate::session::is_trusted(self.state_dir.as_deref(), &root) {
+                self.message = format!(
+                    "project config wants to run `{}` — :trust to allow (once)",
+                    spec.command
+                );
+                return;
+            }
+        }
         // already pooled for this (root, server)? just did_open — the
         // root resolve repeats the languages/git walk, cheap and rare
         let root_known = self.lsp_server_root(&abs, languages);

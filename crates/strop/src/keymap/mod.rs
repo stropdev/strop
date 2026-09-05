@@ -843,7 +843,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     // ex + panes
     Binding {
-        keys: ":w :q :q! :wq :w {file}",
+        keys: ":w :q :q! :wq :w {file} :trust",
         desc: "write / quit (force) / write-quit / write-as",
         section: "ex+panes",
         live: true,

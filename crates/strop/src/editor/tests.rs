@@ -1197,4 +1197,27 @@ mod keybinds_tests {
         let _ = e.buf();
         assert_eq!(e.docs.len(), 1);
     }
+    #[test]
+    fn edits_map_marks_jumps_and_other_panes() {
+        // 0020 §14: one document in two panes + a mark; an edit above
+        // the anchors moves ALL of them
+        let mut e = Editor::new(Buffer::from_text("aaa\nbbb TARGET\nccc\n"));
+        e.feed_text("jma"); // mark a on the TARGET line
+        e.feed_text("<c-w>v"); // second pane, same doc (cursor on TARGET)
+        e.feed_text("<c-w>h"); // back to pane 1
+        e.feed_text("ggOheader");
+        e.feed(crate::editor::Key::Esc);
+        // the mark moved from line 1 to line 2
+        let (_, mpos) = e.marks[&'a'];
+        assert_eq!(e.buf().line_of(mpos), 2);
+        // pane 2's cursor tracked the edit: still on TARGET (line 2 now)
+        let pane2 = &e.panes[1];
+        assert_eq!(e.buf().line_of(pane2.sels.primary().head), 2);
+        assert!(e
+            .buf()
+            .rope
+            .byte_slice(e.buf().line_start(2)..e.buf().line_end(2))
+            .to_string()
+            .contains("TARGET"));
+    }
 }

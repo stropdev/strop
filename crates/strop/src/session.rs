@@ -174,6 +174,41 @@ pub fn save(editor: &Editor) {
     let _ = std::fs::write(path, serde_json::to_string(&session).unwrap_or_default());
 }
 
+/// Project trust (0020 §15): a project's languages.toml can name an
+/// executable server command — running it needs a one-time "yes" per
+/// project root, remembered here.
+fn trust_path(base_dir: Option<&Path>) -> Option<PathBuf> {
+    base_dir.map(|b| b.join("strop").join("trusted-projects"))
+}
+
+pub fn is_trusted(base_dir: Option<&Path>, root: &Path) -> bool {
+    let Some(path) = trust_path(base_dir) else {
+        return false;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let want = root.to_string_lossy().to_string();
+    text.lines().any(|l| l == want)
+}
+
+pub fn trust(base_dir: Option<&Path>, root: &Path) {
+    let Some(path) = trust_path(base_dir) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = writeln!(f, "{}", root.to_string_lossy());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,5 +280,20 @@ mod tests {
         );
         e2.feed_text("u");
         assert_eq!(e2.buf().rope.to_string(), "fn a() {}\n");
+    }
+    #[test]
+    fn trust_store_remembers_projects() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let root = std::path::Path::new("/tmp/proj-a");
+        assert!(!is_trusted(Some(&state), root));
+        trust(Some(&state), root);
+        assert!(is_trusted(Some(&state), root));
+        assert!(!is_trusted(
+            Some(&state),
+            std::path::Path::new("/tmp/proj-b")
+        ));
+        // absent state dir = untrusted (never silently trust)
+        assert!(!is_trusted(None, root));
     }
 }

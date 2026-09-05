@@ -299,6 +299,15 @@ impl Editor {
                 let line = self.buf().line_of(self.head());
                 self.substitute_range(line, line, &cmdline[2..]);
             }
+            "trust" => {
+                // 0020 §15: allow this project's executable server
+                // config, once, remembered
+                let probe = self.cwd.join("x");
+                let root = strop_lsp::registry::workspace_root(&probe, &self.cwd);
+                crate::session::trust(self.state_dir.as_deref(), &root);
+                self.message = format!("trusted {}", root.display());
+                self.lsp_maybe_attach();
+            }
             "noh" => {
                 // nohlsearch: the persistent highlight drops (0001 §5.8)
                 self.last_search = None;
