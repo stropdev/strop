@@ -229,4 +229,19 @@ impl Editor {
         }
         true
     }
+    /// Any path-backed or scratch document holding unsaved content.
+    pub fn any_dirty(&self) -> bool {
+        self.docs.iter().any(|(_, d)| d.buf.dirty)
+    }
+
+    /// ctrl-c's quit intent (0015): warn once when dirty work exists,
+    /// force on the second press. Returns true when the app may exit.
+    pub fn ctrl_c_quit(&mut self) -> bool {
+        if self.ctrl_c_armed || !self.any_dirty() {
+            return true;
+        }
+        self.ctrl_c_armed = true;
+        self.message = "unsaved changes — ctrl-c again to force-quit".into();
+        false
+    }
 }

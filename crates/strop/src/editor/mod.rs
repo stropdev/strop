@@ -112,6 +112,8 @@ pub struct Editor {
     pub flash: Option<(Range, Instant)>,
     pub message: String,
     pub should_quit: bool,
+    /// ctrl-c is armed after the first warn (0015 quit policy).
+    pub ctrl_c_armed: bool,
     pub picker: Option<PickerGlue>,
     pub cwd: PathBuf,
     /// MRU document order (most recent first); drives `Space b`.
@@ -203,6 +205,10 @@ pub enum ShellResult {
         end: usize,
         original: String,
         output: String,
+        /// false when the command failed (nonzero exit or spawn error):
+        /// the source text is NEVER replaced (0015).
+        ok: bool,
+        err: String,
     },
 }
 
@@ -231,6 +237,7 @@ impl Editor {
             flash: None,
             message: String::new(),
             should_quit: false,
+            ctrl_c_armed: false,
             last_change: None,
             last_cmd_keys: String::new(),
             last_insert: None,

@@ -130,7 +130,12 @@ impl Buffer {
     /// `force` is `:w!`.
     pub fn save(&mut self, force: bool) -> std::io::Result<()> {
         let Some(path) = self.path.clone() else {
-            return Ok(());
+            // a pathless buffer has nothing to persist to — "written"
+            // would be a lie (0015)
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no file name — :w {path} to name it",
+            ));
         };
         let current = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if !force && current.is_some() && current != self.disk_stamp {
@@ -154,6 +159,14 @@ impl Buffer {
         self.disk_stamp = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         self.dirty = false;
         Ok(())
+    }
+
+    /// `:w {path}` — vim's write-to: persist under a new name and adopt
+    /// it (the buffer is now that file).
+    pub fn save_as(&mut self, path: &str) -> std::io::Result<()> {
+        self.path = Some(path.to_string());
+        self.disk_stamp = None; // fresh target: no overwrite baseline
+        self.save(true)
     }
     pub fn len_bytes(&self) -> usize {
         self.rope.len_bytes()
@@ -203,8 +216,14 @@ impl Buffer {
         let offset = offset.into();
         offset.get() - self.line_start(self.line_of(offset))
     }
-
+    /// Byte at a position. An empty rope reads as NUL: every classifier
+    /// treats NUL as a boundary, and the alternative (a panic) is how
+    /// the second review found this (0015). `byte_at` when absence
+    /// itself matters.
     pub fn byte(&self, offset: impl Into<id::ByteOffset>) -> u8 {
+        if self.len_bytes() == 0 {
+            return 0;
+        }
         self.rope
             .byte(offset.into().get().min(self.len_bytes().saturating_sub(1)))
     }

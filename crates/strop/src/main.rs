@@ -233,7 +233,12 @@ fn tui(mut editor: Editor) {
         if (ev.modifiers.contains(KeyModifiers::CONTROL) && ev.code == KeyCode::Char('c'))
             || ev.code == KeyCode::Char('\x03')
         {
-            break;
+            // 0015: ctrl-c is a quit intent, not a force-quit — dirty
+            // work gets one warning; a second press exits
+            if editor.ctrl_c_quit() {
+                break;
+            }
+            continue;
         }
         let key = match ev.code {
             KeyCode::Esc => Key::Esc,

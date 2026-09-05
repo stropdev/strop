@@ -20,7 +20,13 @@ impl Editor {
         let cwd = self.cwd.clone();
         let job_cmd = cmd.clone();
         std::thread::spawn(move || {
-            let output = run_shell(&job_cmd, &cwd, None);
+            let proc = run_shell(&job_cmd, &cwd, None);
+            // the display buffer shows both streams like a terminal
+            let output = if proc.stderr.is_empty() {
+                proc.stdout
+            } else {
+                format!("{}\n--- stderr ---\n{}", proc.stdout, proc.stderr)
+            };
             let _ = tx.send(ShellResult::Display {
                 cmd: job_cmd,
                 output,
@@ -45,13 +51,15 @@ impl Editor {
         let cwd = self.cwd.clone();
         let job_cmd = cmd.clone();
         std::thread::spawn(move || {
-            let output = run_shell(&job_cmd, &cwd, Some(&original));
+            let proc = run_shell(&job_cmd, &cwd, Some(&original));
             let _ = tx.send(ShellResult::Pipe {
                 buffer,
                 start,
                 end,
                 original,
-                output,
+                output: proc.stdout,
+                ok: proc.ok,
+                err: proc.stderr,
             });
         });
         self.message = format!("| {cmd} …");
@@ -84,7 +92,15 @@ impl Editor {
                     end,
                     original,
                     output,
+                    ok,
+                    err,
                 } => {
+                    // a failed command never touches the source — its
+                    // stderr explains itself in the message line
+                    if !ok {
+                        self.message = format!("pipe failed: {}", err.trim());
+                        continue;
+                    }
                     let Some(buf) = self.docs.get_mut(buffer).map(|d| &mut d.buf) else {
                         self.message = "pipe: buffer is gone".into();
                         continue;
@@ -124,9 +140,17 @@ impl Editor {
     }
 }
 
+/// What a shell job produced — status stays structured so pipe
+/// results can refuse to clobber on failure (0015).
+struct ProcResult {
+    ok: bool,
+    stdout: String,
+    stderr: String,
+}
+
 /// Run `sh -c cmd` with optional stdin; returns stdout + stderr (a
 /// failed spawn reports itself as output — jobs never panic the loop).
-fn run_shell(cmd: &str, cwd: &std::path::Path, stdin_text: Option<&str>) -> String {
+fn run_shell(cmd: &str, cwd: &std::path::Path, stdin_text: Option<&str>) -> ProcResult {
     let mut child = match std::process::Command::new("sh")
         .arg("-c")
         .arg(cmd)
@@ -137,7 +161,13 @@ fn run_shell(cmd: &str, cwd: &std::path::Path, stdin_text: Option<&str>) -> Stri
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return format!("spawn failed: {e}"),
+        Err(e) => {
+            return ProcResult {
+                ok: false,
+                stdout: String::new(),
+                stderr: format!("spawn failed: {e}"),
+            }
+        }
     };
     if let Some(text) = stdin_text {
         use std::io::Write;
@@ -146,17 +176,16 @@ fn run_shell(cmd: &str, cwd: &std::path::Path, stdin_text: Option<&str>) -> Stri
         }
     }
     match child.wait_with_output() {
-        Ok(out) => {
-            let mut text = String::from_utf8_lossy(&out.stdout).to_string();
-            if !out.stderr.is_empty() {
-                if !text.is_empty() {
-                    text.push_str("\n--- stderr ---\n");
-                }
-                text.push_str(&String::from_utf8_lossy(&out.stderr));
-            }
-            text
-        }
-        Err(e) => format!("wait failed: {e}"),
+        Ok(out) => ProcResult {
+            ok: out.status.success(),
+            stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+        },
+        Err(e) => ProcResult {
+            ok: false,
+            stdout: String::new(),
+            stderr: format!("wait failed: {e}"),
+        },
     }
 }
 

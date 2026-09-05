@@ -772,4 +772,72 @@ mod keybinds_tests {
             "backward search lands on the second 'one'"
         );
     }
+    #[test]
+    fn dw_leaves_exactly_one_cursor() {
+        // 0015: the cascade must not stack the primary's own landing
+        let mut e = Editor::new(Buffer::from_text("one two three\n"));
+        e.feed_text("dw");
+        assert_eq!(e.sels().extra_heads().len(), 0);
+        assert_eq!(e.buf().rope.to_string(), "two three\n");
+    }
+
+    #[test]
+    fn arrows_consume_pending_counts() {
+        // 0015: 2 <Right> x — the count moves twice and clears; x is 1
+        let mut e = Editor::new(Buffer::from_text("hello world\n"));
+        e.feed_text("2");
+        e.feed(crate::editor::Key::Right);
+        assert_eq!(e.buf().col_of(e.head()), 2);
+        e.feed_text("x");
+        assert_eq!(e.buf().rope.to_string(), "helo world\n");
+    }
+
+    #[test]
+    fn pathless_save_is_an_error_not_a_lie() {
+        // 0015: :w on a scratch must never report "written"
+        let mut e = Editor::new(Buffer::from_text("unsaved\n"));
+        e.feed_text(":w\r");
+        assert!(e.message.contains("no file name"), "{}", e.message);
+        // :wq must not close the dirty scratch either
+        e.feed_text(":wq\r");
+        assert_eq!(e.buf().rope.to_string(), "unsaved\n");
+        // :w {path} names it and persists
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("named.txt");
+        e.feed_text(&format!(":w {}\r", p.display()));
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "unsaved\n");
+        assert_eq!(e.buf().path.as_deref(), Some(p.to_str().unwrap()));
+    }
+
+    #[test]
+    fn ctrl_c_warns_once_then_forces() {
+        // 0015: dirty work gets one warning; the second press exits
+        let mut e = Editor::new(Buffer::from_text("dirty\n"));
+        e.feed_text("ix");
+        e.feed(crate::editor::Key::Esc);
+        assert!(!e.ctrl_c_quit());
+        assert!(e.message.contains("ctrl-c again"));
+        assert!(e.ctrl_c_quit());
+        // clean editor: quits immediately
+        let mut e = Editor::new(Buffer::from_text("clean\n"));
+        assert!(e.ctrl_c_quit());
+    }
+
+    #[test]
+    fn failed_pipe_never_touches_the_source() {
+        // 0015: `| false` preserves the range; stderr explains itself
+        let mut e = Editor::new(Buffer::from_text("keep me\n"));
+        e.feed_text("V");
+        e.feed_text(" |false");
+        e.feed(crate::editor::Key::Enter);
+        for _ in 0..200 {
+            e.drain_shell();
+            if e.message.starts_with("pipe failed") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(e.buf().rope.to_string(), "keep me\n");
+        assert!(e.message.starts_with("pipe failed"), "{}", e.message);
+    }
 }

@@ -63,13 +63,20 @@ impl Editor {
             self.walker.clear();
             return;
         }
-        // arrows speak hjkl (never dropped at the translation layer)
-        match key {
-            Key::Up => return self.run_motion("k"),
-            Key::Down => return self.run_motion("j"),
-            Key::Left => return self.run_motion("h"),
-            Key::Right => return self.run_motion("l"),
-            _ => {}
+        // arrows speak hjkl THROUGH the walker so pending counts apply
+        // and clear (0015: `2 <Right> x` moves twice, then x deletes 1)
+        let arrow = match key {
+            Key::Up => Some('k'),
+            Key::Down => Some('j'),
+            Key::Left => Some('h'),
+            Key::Right => Some('l'),
+            _ => None,
+        };
+        if let Some(c) = arrow {
+            if let super::input::Walk::Complete(keys) = self.walker.feed(c) {
+                self.dispatch_keys(&keys);
+            }
+            return;
         }
         let Key::Char(c) = key else {
             return;
@@ -115,9 +122,16 @@ impl Editor {
                         }
                         return;
                     }
-                    // aliases drop the count (2D ≈ 2d$ via expansion;
-                    // counts on these are rare and inert at line end)
-                    Handler::Alias(_) => {}
+                    // vim: 2D ≡ 2d$ — replay count + expansion through
+                    // the walker (0015: aliases keep their counts)
+                    Handler::Alias(expansion) => {
+                        let mut seq = digits.clone();
+                        seq.push_str(expansion);
+                        for c in seq.chars() {
+                            self.feed_normal(crate::editor::Key::Char(c));
+                        }
+                        return;
+                    }
                     Handler::AbsorbChar(crate::keymap::AbsorbKind::Replace) => {
                         // vim 3rx: replace <count> chars
                         let c = rest.chars().nth(1).unwrap_or('\0');
@@ -168,7 +182,10 @@ impl Editor {
             match row.handler {
                 Handler::Leaf(f) => return f(self, keys.chars().last().unwrap_or('\0')),
                 Handler::Alias(expansion) => {
-                    for c in expansion.chars() {
+                    // vim: 2D ≡ 2d$ — the count rides BEFORE the op
+                    // (0015: aliases keep their counts)
+                    let count: String = keys.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    for c in count.chars().chain(expansion.chars()) {
                         self.feed_normal(crate::editor::Key::Char(c));
                     }
                     return;
@@ -878,7 +895,13 @@ impl Editor {
                         .map(|(_, s)| *s)
                         .unwrap_or(self.head()),
                 );
-                let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
+                // extras are the SECONDARY landings — the primary must
+                // never stack with itself (0015: dw leaves 1 cursor)
+                let mut starts: Vec<usize> = landings
+                    .iter()
+                    .filter(|(p, _)| !*p)
+                    .map(|(_, s)| *s)
+                    .collect();
                 starts.sort_unstable();
                 self.sels_mut().set_extras(starts);
                 if cmd.op.unwrap() == Op::Change {
@@ -1124,20 +1147,30 @@ impl Editor {
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline.as_str(), ""));
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
-            "w" | "w!" => match self.buf_mut().save(cmd == "w!") {
-                Ok(()) => {
-                    crate::session::save(self);
-                    self.message = "written".into();
+            "w" | "w!" => {
+                // vim: :w {file} writes under a new name and adopts it
+                let r = if arg.is_empty() {
+                    self.buf_mut().save(cmd == "w!")
+                } else {
+                    self.buf_mut().save_as(arg)
+                };
+                match r {
+                    Ok(()) => {
+                        crate::session::save(self);
+                        self.message = "written".into();
+                    }
+                    Err(e) => self.message = format!("write failed: {e}"),
                 }
-                Err(e) => self.message = format!("write failed: {e}"),
-            },
+            }
             "wq" | "wq!" => {
                 // a failed save keeps the buffer open and dirty — never
                 // close into data loss (0014 wave 1)
                 match self.buf_mut().save(cmd == "wq!") {
                     Ok(()) => {
                         crate::session::save(self);
-                        self.close_buffer(true);
+                        // vim: :wq closes the WINDOW like :q — the shared
+                        // document lives on in other panes (0015)
+                        self.close_pane_or_buffer(false);
                     }
                     Err(e) => self.message = format!("write failed: {e}"),
                 }

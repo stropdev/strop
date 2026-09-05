@@ -28,6 +28,11 @@ pub(crate) struct BufferState {
     /// Linear undo path (root→current, capped). Branches don't cross
     /// sessions — the tree lives in-memory; the cap is the contract.
     pub undo: Option<History>,
+    /// Hash of the text the undo path was captured against (0015): a
+    /// session may persist dirty state whose history assumes text the
+    /// disk never held — restore verifies before replaying.
+    #[serde(default)]
+    pub undo_hash: u64,
 }
 
 /// `base_dir` is the resolved XDG state dir (None → sessions off).
@@ -55,12 +60,12 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
             continue;
         }
         let path = buf.path.clone()?;
-        let undo = if buf.history.depth() > 0 {
+        let (undo, undo_hash) = if buf.history.depth() > 0 {
             let mut h = buf.history.clone();
             h.cap(UNDO_CAP);
-            Some(h)
+            (Some(h), content_hash(&buf.rope.to_string()))
         } else {
-            None
+            (None, 0)
         };
         buffers.push(BufferState {
             path,
@@ -80,6 +85,7 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
                 0
             },
             undo,
+            undo_hash,
         });
     }
     if buffers.is_empty() {
@@ -93,6 +99,17 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
 }
 
 /// Restore a session into the editor (replaces its initial buffer).
+/// FNV-1a over the full text — cheap, deterministic, and only ever
+/// compared within one machine's sessions.
+fn content_hash(text: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in text.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
 pub fn restore(editor: &mut Editor) -> bool {
     let Some(path) = session_path(editor.state_dir.as_deref(), &editor.cwd) else {
         return false;
@@ -110,7 +127,15 @@ pub fn restore(editor: &mut Editor) -> bool {
     for b in &session.buffers {
         let mut buf = Buffer::open(&b.path).unwrap_or_else(|_| Buffer::from_text(""));
         if let Some(h) = &b.undo {
-            buf.history = h.clone();
+            // the history only speaks for the text it was captured
+            // against — a mismatch (the session saved dirty state the
+            // disk never held) drops it, never replays (0015)
+            if content_hash(&buf.rope.to_string()) == b.undo_hash {
+                buf.history = h.clone();
+            } else {
+                editor.message =
+                    format!("{}: changed since capture — undo history dropped", b.path);
+            }
         }
         editor.docs.insert(crate::editor::Document::new(buf));
     }
@@ -176,10 +201,16 @@ mod tests {
         );
         assert_eq!(e2.buf().line_of(e2.head()), 1);
         assert_eq!(e2.buf().col_of(e2.head()), 1);
-        assert!(
-            e2.buf().history.depth() > 0,
-            "undo history crossed the session"
+        // the session captured DIRTY history; the disk text differs —
+        // the history must NOT cross (0015: replaying it against the
+        // wrong text corrupts). A clean save is what carries undo.
+        // (depth 1 = the root sentinel alone = a fresh history)
+        assert_eq!(
+            e2.buf().history.depth(),
+            1,
+            "dirty history must not replay against the disk version"
         );
+        assert!(e2.message.contains("undo history dropped"));
         let _ = Command::new("true").output();
     }
 
@@ -191,5 +222,28 @@ mod tests {
         e.state_dir = Some(dir.path().join("state"));
         save(&e);
         assert!(!dir.path().join("state").exists());
+    }
+    #[test]
+    fn undo_history_crosses_when_disk_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+        let mut e = Editor::new(Buffer::open(root.join("a.rs").to_str().unwrap()).unwrap());
+        e.cwd = root.to_path_buf();
+        e.state_dir = Some(root.join("state"));
+        e.feed_text("o// note");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text(":w\r"); // the disk now matches the capture
+        save(&e);
+        let mut e2 = Editor::new(Buffer::from_text(""));
+        e2.cwd = root.to_path_buf();
+        e2.state_dir = Some(root.join("state"));
+        assert!(restore(&mut e2));
+        assert!(
+            e2.buf().history.depth() > 1,
+            "history crosses when the text matches"
+        );
+        e2.feed_text("u");
+        assert_eq!(e2.buf().rope.to_string(), "fn a() {}\n");
     }
 }
