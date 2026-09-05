@@ -77,6 +77,9 @@ agent or human working in this repo.
   `cargo` is acceptable for rapid iteration mid-change, but "done" means the compose
   gate passed; never commit build artifacts.
 - Release: tags `v*`; the workflow (0002 §5) owns crates.io, tarballs, homebrew tap,
-  site redeploy. Never hand-publish.
+  site redeploy. Never hand-publish. A version bump is three moves, all in the
+  tagged commit: workspace `Cargo.toml` + the member crates' inter-dep pins +
+  `cargo check` to sync `Cargo.lock` (the release gate runs `--locked` — a stale
+  lock fails the tag's builds).
 - The demo must never lie (0004 §4): tapes drive the real binary; a demo-only code path
   is a bug.
