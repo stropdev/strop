@@ -97,6 +97,70 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Motion,
     },
     Binding {
+        keys: "zz zt zb",
+        desc: "center/top/bottom the cursor line",
+        section: "normal",
+        live: true,
+        id: "view-place",
+        handler: Handler::Leaf(|e, k| e.view_place(k)),
+    },
+    Binding {
+        keys: "H M L",
+        desc: "top/middle/bottom visible line",
+        section: "normal",
+        live: true,
+        id: "visible-jumps",
+        handler: Handler::Leaf(|e, k| e.jump_visible(k, 1)),
+    },
+    Binding {
+        keys: "ZZ",
+        desc: "write + close window",
+        section: "normal",
+        live: true,
+        id: "write-quit",
+        handler: Handler::Leaf(|e, _| e.write_quit()),
+    },
+    Binding {
+        keys: "gv",
+        desc: "reselect last visual",
+        section: "normal",
+        live: true,
+        id: "reselect-visual",
+        handler: Handler::Leaf(|e, _| e.reselect_visual()),
+    },
+    Binding {
+        keys: "gi",
+        desc: "insert at last insert",
+        section: "normal",
+        live: true,
+        id: "insert-at-last",
+        handler: Handler::Leaf(|e, _| e.insert_at_last()),
+    },
+    Binding {
+        keys: "g;",
+        desc: "older change (changelist)",
+        section: "normal",
+        live: true,
+        id: "change-back",
+        handler: Handler::Leaf(|e, _| e.change_jump(true)),
+    },
+    Binding {
+        keys: "g,",
+        desc: "newer change (changelist)",
+        section: "normal",
+        live: true,
+        id: "change-forward",
+        handler: Handler::Leaf(|e, _| e.change_jump(false)),
+    },
+    Binding {
+        keys: "ge gE { }",
+        desc: "word-end back / paragraph motions",
+        section: "normal",
+        live: true,
+        id: "paragraph-motions",
+        handler: Handler::Motion,
+    },
+    Binding {
         keys: "0 $ G %",
         desc: "line/file/pair jumps",
         section: "normal",
@@ -663,11 +727,27 @@ pub const BINDINGS: &[Binding] = &[
     },
     // ex + panes
     Binding {
-        keys: ":w :q :q! :wq",
-        desc: "write / quit (force) / write-quit",
+        keys: ":w :q :q! :wq :w {file}",
+        desc: "write / quit (force) / write-quit / write-as",
         section: "ex+panes",
         live: true,
         id: "ex-write-quit",
+        handler: Handler::TextLine,
+    },
+    Binding {
+        keys: ":[range]s/a/b/[g] :N :% :N,Md :N,My",
+        desc: "substitute (literal) / goto line / ranged delete+yank",
+        section: "ex+panes",
+        live: true,
+        id: "ex-ranges",
+        handler: Handler::TextLine,
+    },
+    Binding {
+        keys: "ctrl-d ctrl-u ctrl-f ctrl-b",
+        desc: "half/full page scroll (count = lines)",
+        section: "ex+panes",
+        live: true,
+        id: "scroll-pages",
         handler: Handler::TextLine,
     },
     Binding {
@@ -1015,7 +1095,7 @@ mod tests {
         assert_eq!(git.len(), 9); // l h b y o u s S p
         assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
         assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
-        assert_eq!(children_of("g", Mode::Normal).len(), 3); // gg, gd, gs
+        assert_eq!(children_of("g", Mode::Normal).len(), 9); // gg gd gs ge gE gv gi g; g,
                                                              // visual mode: only the visual table feeds the card
         let v = children_of(" ", Mode::Visual);
         assert_eq!(v.len(), 1);

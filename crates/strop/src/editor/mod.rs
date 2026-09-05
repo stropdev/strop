@@ -24,6 +24,7 @@ mod picker;
 mod registers;
 mod shell;
 mod undo;
+pub mod view;
 mod visual;
 
 pub use document::Document;
@@ -76,6 +77,12 @@ pub enum Key {
     CtrlW,
     /// Replace picker: exclude/include the selected match (0007 §2).
     CtrlX,
+    /// vim ctrl-u/ctrl-f/ctrl-b: half/full page up.
+    CtrlU,
+    CtrlF,
+    CtrlB,
+    /// vim ctrl-^: alternate buffer.
+    CtrlCaret,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -114,6 +121,16 @@ pub struct Editor {
     pub should_quit: bool,
     /// ctrl-c is armed after the first warn (0015 quit policy).
     pub ctrl_c_armed: bool,
+    /// Last visual range for `gv` (recorded per visual-mode key).
+    pub last_visual: Option<(usize, usize)>,
+    /// Where the last insert session was for `gi`.
+    pub last_insert_pos: Option<usize>,
+    /// g;/g, walk: (index, history depth it was taken at) — a new
+    /// commit invalidates the walk.
+    pub change_idx: Option<(usize, usize)>,
+    /// Text area height in rows — the render loop feeds it via
+    /// scroll_to_cursor; viewport motions read it.
+    pub view_rows: usize,
     pub picker: Option<PickerGlue>,
     pub cwd: PathBuf,
     /// MRU document order (most recent first); drives `Space b`.
@@ -238,6 +255,10 @@ impl Editor {
             message: String::new(),
             should_quit: false,
             ctrl_c_armed: false,
+            last_visual: None,
+            last_insert_pos: None,
+            change_idx: None,
+            view_rows: 24,
             last_change: None,
             last_cmd_keys: String::new(),
             last_insert: None,
@@ -313,6 +334,10 @@ impl Editor {
                         "c-r" => Key::CtrlR,
                         "c-x" => Key::CtrlX,
                         "c-d" => Key::CtrlD,
+                        "c-u" => Key::CtrlU,
+                        "c-f" => Key::CtrlF,
+                        "c-b" => Key::CtrlB,
+                        "c-^" => Key::CtrlCaret,
                         "c-w" => Key::CtrlW,
                         "c-o" => Key::CtrlO,
                         _ => {

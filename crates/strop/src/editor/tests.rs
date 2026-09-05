@@ -840,4 +840,128 @@ mod keybinds_tests {
         assert_eq!(e.buf().rope.to_string(), "keep me\n");
         assert!(e.message.starts_with("pipe failed"), "{}", e.message);
     }
+    fn tall_editor() -> Editor {
+        let text: String = (1..=100).map(|i| format!("line {i:03}\n")).collect();
+        let mut e = Editor::new(Buffer::from_text(&text));
+        e.view_rows = 20;
+        e
+    }
+
+    #[test]
+    fn ctrl_d_u_scroll_half_pages() {
+        let mut e = tall_editor();
+        e.feed_text("<c-d>");
+        assert_eq!(e.buf().line_of(e.head()), 10);
+        e.feed_text("<c-u>");
+        assert_eq!(e.buf().line_of(e.head()), 0);
+        // a pending count is the scroll size (vim)
+        e.feed_text("5<c-d>");
+        assert_eq!(e.buf().line_of(e.head()), 5);
+    }
+
+    #[test]
+    fn view_place_centers_and_edges() {
+        let mut e = tall_editor();
+        e.feed_text("50G");
+        e.view_place('z');
+        let line = e.buf().line_of(e.head());
+        assert_eq!(e.view_top() + 10, line);
+        e.view_place('t');
+        assert_eq!(e.view_top(), line);
+        e.view_place('b');
+        assert_eq!(e.view_top() + 20, line + 1);
+    }
+
+    #[test]
+    fn visible_jumps_and_counts() {
+        let mut e = tall_editor();
+        e.view_mut().view_top = 30;
+        e.feed_text("H");
+        assert_eq!(e.buf().line_of(e.head()), 30);
+        e.feed_text("3L");
+        assert_eq!(e.buf().line_of(e.head()), 30 + 20 - 1 - 2);
+        e.feed_text("M");
+        assert_eq!(e.buf().line_of(e.head()), 30 + 10);
+    }
+
+    #[test]
+    fn gv_reselects_and_gi_reinserts() {
+        let mut e = Editor::new(Buffer::from_text("hello world\nsecond\n"));
+        e.feed_text("vll");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("gv");
+        assert_eq!(e.mode, crate::editor::Mode::Visual);
+        let p = e.sels().primary();
+        assert_eq!((p.anchor.min(p.head), p.anchor.max(p.head)), (0, 2));
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("2Gix");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("gg");
+        e.feed_text("gi");
+        assert_eq!(e.mode, crate::editor::Mode::Insert);
+        assert_eq!(e.buf().line_of(e.head()), 1);
+    }
+
+    #[test]
+    fn change_list_walks_and_invalidates() {
+        let mut e = Editor::new(Buffer::from_text("aaa\nbbb\nccc\n"));
+        e.feed_text("ix");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("G");
+        e.feed_text("Ay");
+        e.feed(crate::editor::Key::Esc);
+        // newest change first: the y-append at the last line
+        e.feed_text("gg");
+        e.feed_text("g;");
+        assert_eq!(e.buf().line_of(e.head()), 2);
+        e.feed_text("g;");
+        assert_eq!(e.buf().line_of(e.head()), 0);
+        e.feed_text("g,");
+        assert_eq!(e.buf().line_of(e.head()), 2);
+        // a new edit invalidates the walk: g; starts from newest again
+        e.feed_text("ggiz");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("g;");
+        assert_eq!(e.buf().line_of(e.head()), 0);
+    }
+
+    #[test]
+    fn alternate_buffer_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        std::fs::write(&a, "aaa\n").unwrap();
+        std::fs::write(&b, "bbb\n").unwrap();
+        let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
+        e.feed_text(&format!(":e {}\r", b.display()));
+        assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
+        e.feed_text("<c-^>");
+        assert!(e.buf().path.as_deref().unwrap().ends_with("a.txt"));
+        e.feed_text("<c-^>");
+        assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
+    }
+
+    #[test]
+    fn ex_ranges_and_substitute() {
+        let mut e = Editor::new(Buffer::from_text("foo one\nfoo two\nfoo three\n"));
+        // :%s with g rewrites every hit
+        e.feed_text(":%s/foo/bar/g\r");
+        assert_eq!(e.buf().rope.to_string(), "bar one\nbar two\nbar three\n");
+        e.feed_text("u");
+        // one undo unit for the whole substitute
+        assert_eq!(e.buf().rope.to_string(), "foo one\nfoo two\nfoo three\n");
+        // :2s/x/y/ scopes to line 2
+        e.feed_text(":2s/foo/only/\r");
+        assert_eq!(e.buf().rope.to_string(), "foo one\nonly two\nfoo three\n");
+        // :2,3d deletes the range, yanking it (vim :d)
+        e.feed_text(":2,3d\r");
+        assert_eq!(e.buf().rope.to_string(), "foo one\n");
+        e.feed_text("u");
+        // :3 jumps
+        e.feed_text("gg:3\r");
+        assert_eq!(e.buf().line_of(e.head()), 2);
+        // missing pattern reports, never mutates
+        e.feed_text(":%s/nope/x/g\r");
+        assert!(e.message.contains("pattern not found"));
+    }
 }

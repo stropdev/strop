@@ -246,6 +246,24 @@ impl History {
         Some(ops)
     }
 
+    /// The change list (vim g;/g,): positions of the ancestor chain's
+    /// committed revisions, NEWEST first. Each revision contributes its
+    /// earliest edit position — where that change began.
+    pub fn change_positions(&self) -> Vec<usize> {
+        let mut out = Vec::new();
+        let mut i = self.current;
+        while i != 0 {
+            let rev = &self.revisions[i];
+            // redo ops are in apply order; the first one's position is
+            // where the change starts
+            if let Some(first) = rev.redo.first() {
+                out.push(first.at);
+            }
+            i = rev.parent;
+        }
+        out
+    }
+
     pub fn depth(&self) -> usize {
         self.revisions.len()
     }

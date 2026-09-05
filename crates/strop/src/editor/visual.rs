@@ -8,6 +8,10 @@ use super::{Editor, Key, Mode};
 
 impl Editor {
     pub(crate) fn feed_visual(&mut self, key: Key) {
+        // gv's memory: the live visual range, refreshed per key — any
+        // exit path (Esc, operator, yank) leaves the last range behind
+        let p = self.sels().primary();
+        self.last_visual = Some((p.anchor, p.head));
         // the pipe input line: `|sort<cr>` pipes the selection through
         // the command (helix's pipe) — its own tiny input state
         if self.pending.starts_with('|') {

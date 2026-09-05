@@ -103,6 +103,37 @@ fn word_end(buf: &Buffer, mut pos: usize, big: bool) -> usize {
     pos
 }
 
+/// ge/gE: the end of the PREVIOUS word — vim never answers with the
+/// word the cursor sits in, so a cursor inside a word walks to its
+/// start first, then steps past.
+fn word_end_backward(buf: &Buffer, pos: usize, big: bool) -> usize {
+    if pos == 0 {
+        return 0;
+    }
+    let mut p = pos;
+    if !buf.byte(p).is_ascii_whitespace() {
+        let class = class_at(buf, p, big);
+        while p > 0 && !buf.byte(p - 1).is_ascii_whitespace() && class_at(buf, p - 1, big) == class
+        {
+            p -= 1;
+        }
+    }
+    if p == 0 {
+        return 0;
+    }
+    p -= 1;
+    while p > 0 && buf.byte(p).is_ascii_whitespace() {
+        p -= 1;
+    }
+    p
+}
+
+/// Is this line blank (empty or whitespace only)? Paragraph motions.
+fn line_blank(buf: &Buffer, line: usize) -> bool {
+    let (s, e) = (buf.line_start(line), buf.line_end(line));
+    (s..e).all(|p| buf.byte(p).is_ascii_whitespace())
+}
+
 /// cw's target (vim): end of the word UNDER the cursor — unlike `e`,
 /// never jumps to the next word when the cursor is already on a word's
 /// last char. On whitespace, behaves like `e`.
@@ -500,6 +531,63 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     },
                 )
             }
+            Motion::WordEndBackward | Motion::BigWordEndBackward => {
+                let big = matches!(m, Motion::BigWordEndBackward);
+                let mut pos = cursor;
+                for _ in 0..count {
+                    pos = word_end_backward(buf, pos, big);
+                }
+                (
+                    Range::charwise(pos.min(cursor), pos.max(cursor) + 1),
+                    true,
+                    if big {
+                        "WORD end backward".to_string()
+                    } else {
+                        "word end backward".to_string()
+                    },
+                )
+            }
+            Motion::ParagraphBackward | Motion::ParagraphForward => {
+                // vim: the first blank line strictly past the cursor, or
+                // the file edge when no blank remains
+                let forward = matches!(m, Motion::ParagraphForward);
+                let n = buf.len_lines();
+                let mut line = buf.line_of(cursor);
+                for _ in 0..count {
+                    if forward {
+                        loop {
+                            line += 1;
+                            if line >= n {
+                                line = n.saturating_sub(1);
+                                break;
+                            }
+                            if line_blank(buf, line) {
+                                break;
+                            }
+                        }
+                    } else {
+                        loop {
+                            if line == 0 {
+                                break;
+                            }
+                            line -= 1;
+                            if line_blank(buf, line) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                let target = buf.line_start(line);
+                (
+                    Range::charwise(cursor.min(target), cursor.max(target)),
+                    false,
+                    if forward {
+                        "paragraph forward".to_string()
+                    } else {
+                        "paragraph backward".to_string()
+                    },
+                )
+            }
             Motion::MatchPair => {
                 let target = match_pair(buf, cursor)?;
                 let (s, e) = if target >= cursor {
@@ -741,6 +829,10 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
             r.range.start.saturating_sub(pat.len().min(1))
         }
         Target::Motion(Motion::Right) => r.range.end,
+        Target::Motion(Motion::ParagraphForward) => r.range.end,
+        Target::Motion(
+            Motion::ParagraphBackward | Motion::WordEndBackward | Motion::BigWordEndBackward,
+        ) => r.range.start,
         _ => r.range.start,
     }
 }

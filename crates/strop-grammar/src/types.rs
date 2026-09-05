@@ -70,6 +70,12 @@ pub enum Motion {
     BigWordForward,
     BigWordBackward,
     BigWordEnd,
+    /// `ge` / `gE` — end of the PREVIOUS word (never the current one).
+    WordEndBackward,
+    BigWordEndBackward,
+    /// `{` / `}` — paragraph motions (to the blank line, else edge).
+    ParagraphBackward,
+    ParagraphForward,
     /// % — jump to the matching pair.
     MatchPair,
 }

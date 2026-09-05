@@ -64,6 +64,13 @@ pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: 
             editor.feed_text(keys);
             editor.drain_picker();
             editor.drain_git_jobs();
+            // the real loop draws after every key event; the draw is
+            // where view_top/view_rows refresh — mirror that so
+            // viewport motions (H/M/L) see the same state headless
+            if !editor.should_quit && !editor.docs.is_empty() {
+                let rows = editor.view_rows();
+                editor.scroll_to_cursor(rows);
+            }
         } else if let Some(ms) = line.strip_prefix("wait ") {
             // drain events for N ms (LSP servers index on their own clock)
             let n: u64 = ms.trim().parse().unwrap_or(500);

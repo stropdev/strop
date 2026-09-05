@@ -207,6 +207,14 @@ impl Walker {
                 self.prefix = "r";
                 Walk::Pending
             }
+            'z' => {
+                self.prefix = "z";
+                Walk::Pending
+            }
+            'Z' => {
+                self.prefix = "Z";
+                Walk::Pending
+            }
             ':' | '/' | '?' => {
                 self.clear();
                 Walk::EnterText(c)

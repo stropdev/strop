@@ -144,6 +144,11 @@ impl Editor {
 
     /// The active view's scroll offset.
     #[inline]
+    /// The active pane's text-area height in rows (render-loop fed).
+    pub fn view_rows(&self) -> usize {
+        self.view_rows
+    }
+
     pub fn view_top(&self) -> usize {
         self.view().view_top
     }

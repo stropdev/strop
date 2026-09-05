@@ -100,6 +100,9 @@ impl Editor {
     }
 
     pub(crate) fn feed_insert(&mut self, key: Key) {
+        // gi's memory: where the insert session is (Esc leaves the
+        // final position behind)
+        self.last_insert_pos = Some(self.head());
         match key {
             Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO => {}
             Key::Esc => {
@@ -201,7 +204,13 @@ impl Editor {
                         .clamp_boundary(self.buf().line_start(target) + col),
                 );
             }
-            Key::CtrlR | Key::Tab | Key::Backtab => {}
+            Key::CtrlR
+            | Key::CtrlU
+            | Key::CtrlF
+            | Key::CtrlB
+            | Key::CtrlCaret
+            | Key::Tab
+            | Key::Backtab => {}
             Key::Char(c) => {
                 // smartindent (vim/helix behavior): a closer typed on an
                 // indent-only line dedents one level first — typing `}`

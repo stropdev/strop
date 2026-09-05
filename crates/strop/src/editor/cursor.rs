@@ -147,8 +147,11 @@ impl Editor {
         }
     }
 
-    /// Keep the cursor on screen; `rows` = text area height.
+    /// Keep the cursor on screen; `rows` = text area height. The
+    /// render loop calls this every frame, so it doubles as the
+    /// viewport-height feed for the H/M/L/zz/ctrl-d family.
     pub fn scroll_to_cursor(&mut self, rows: usize) {
+        self.view_rows = rows;
         let line = self.buf().line_of(self.head());
         if line < self.view_top() {
             self.view_mut().view_top = line;
