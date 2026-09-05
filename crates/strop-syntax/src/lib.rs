@@ -90,33 +90,23 @@ impl Highlighter {
             parser,
             query,
             classes,
-            source_hash: 0,
+            source_hash: u64::MAX, // never a real revision
             spans: Vec::new(),
         })
     }
 
     /// Highlight spans intersecting `[first_byte, last_byte)` of the rope.
-    /// Reparses only when the text changed. Owned: callers hold buffer
-    /// borrows, so the visible-window clone (small) keeps lifetimes flat.
+    /// Reparses only when the text changed. `revision` is the document's
+    /// edit counter (0020 §5: the len+first+last key under-invalidated
+    /// same-length middle edits deterministically).
     pub fn highlight(
         &mut self,
         rope: &ropey::Rope,
+        revision: u64,
         first_byte: usize,
         last_byte: usize,
     ) -> Vec<Span> {
-        let mut hasher = std::hash::DefaultHasher::new();
-        std::hash::Hash::hash(&rope.len_bytes(), &mut hasher);
-        // cheap change detector: length + first/last bytes; sufficient for
-        // the prototype, replaced by real edit-diff tracking later
-        if let (Some(first), Some(last)) = (
-            rope.get_byte(0),
-            rope.len_bytes()
-                .checked_sub(1)
-                .and_then(|i| rope.get_byte(i)),
-        ) {
-            std::hash::Hash::hash(&(first, last), &mut hasher);
-        }
-        let hash = std::hash::Hasher::finish(&hasher);
+        let hash = revision;
         if hash != self.source_hash {
             let text = rope.to_string(); // prototype: whole-buffer; chunk callback when hot
             let Some(tree) = self.parser.parse(&text, None) else {
@@ -173,7 +163,7 @@ mod tests {
     fn classes_for(path: &str, src: &str) -> Vec<Class> {
         let mut hl = Highlighter::for_path(path).expect("language");
         let rope = ropey::Rope::from_str(src);
-        hl.highlight(&rope, 0, src.len())
+        hl.highlight(&rope, 0, 0, src.len())
             .iter()
             .map(|s| s.class)
             .collect()
@@ -224,6 +214,6 @@ mod tests {
         std::fs::remove_file(&path).ok();
         let mut hl = resolved.expect("bash via shebang");
         let rope = ropey::Rope::from_str("#!/usr/bin/env bash\necho hi\n");
-        assert!(!hl.highlight(&rope, 0, rope.len_bytes()).is_empty());
+        assert!(!hl.highlight(&rope, 0, 0, rope.len_bytes()).is_empty());
     }
 }

@@ -239,7 +239,7 @@ impl Editor {
                 let r = if arg.is_empty() {
                     self.buf_mut().save(cmd == "w!")
                 } else {
-                    self.buf_mut().save_as(arg)
+                    self.buf_mut().save_as(arg, cmd == "w!")
                 };
                 match r {
                     Ok(()) => {

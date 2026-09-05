@@ -96,7 +96,6 @@ impl Editor {
     /// Open without switching (splits): the document exists, the active
     /// view stays. Returns the id.
     pub fn open_document(&mut self, path: &str) -> std::io::Result<strop_core::id::DocumentId> {
-        self.drop_stale_scratch();
         let canon = std::path::Path::new(path)
             .canonicalize()
             .unwrap_or_else(|_| self.cwd.join(path));
@@ -109,7 +108,10 @@ impl Editor {
         }) {
             return Ok(id);
         }
+        // fallible I/O BEFORE any ownership change (0020 §11): a failed
+        // open used to drop the scratch buffer and strand the pane
         let buf = Buffer::open(path)?;
+        self.drop_stale_scratch();
         let id = self.docs.insert(Document::new(buf));
         if self.docs.len() == 1 {
             self.mru.clear();
@@ -155,9 +157,8 @@ impl Editor {
 
     /// Open a file into a new document and switch to it (`:e`).
     pub fn open_buffer(&mut self, path: &str) -> std::io::Result<()> {
-        self.drop_stale_scratch();
-        self.push_jump(); // leaving a buffer is a jumplist entry (vim)
-                          // vim semantics: :e on an open file switches to its buffer
+        // vim semantics: :e on an open file switches to its buffer —
+        // checked before ANY I/O or state change (0020 §11)
         let canon = std::path::Path::new(path)
             .canonicalize()
             .unwrap_or_else(|_| self.cwd.join(path));
@@ -176,7 +177,11 @@ impl Editor {
             self.switch_to(id);
             return Ok(());
         }
+        // fallible I/O before any ownership change: a failed :e used to
+        // drop the scratch and strand the pane's document id
         let buf = Buffer::open(path)?;
+        self.drop_stale_scratch();
+        self.push_jump(); // leaving a buffer is a jumplist entry (vim)
         let id = self.docs.insert(Document::new(buf));
         if self.docs.len() == 1 {
             // the scratch was dropped under us

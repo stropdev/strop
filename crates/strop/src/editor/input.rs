@@ -105,6 +105,16 @@ impl Walker {
             .min(Self::MAX_COUNT)
     }
 
+    /// The pending operator + motion text, when mid-composition
+    /// (the preview's window — 0020 §4).
+    pub fn op_motion(&self) -> Option<(Op, &str)> {
+        self.state.op.zip(if self.motion.is_empty() {
+            None
+        } else {
+            Some(self.motion.as_str())
+        })
+    }
+
     /// The trie position as the which-key renderer's prefix string
     /// (" g" style — the table's token vocabulary mapped back).
     pub fn prefix_display(&self) -> String {
@@ -169,7 +179,19 @@ impl Walker {
                     return Action::Pending;
                 }
             }
-            self.motion.push_str(&token);
+            // motion TEXT is literal (0020 §4): a space in /foo bar is
+            // a space, not the leader token; Enter completes a search
+            // as \r, not the word "enter"
+            let motion_char = match key {
+                Key::Char(c) => c.to_string(),
+                Key::Enter => "\r".into(),
+                _ => {
+                    self.clear();
+                    return Action::Pending;
+                }
+            };
+            let _ = token;
+            self.motion.push_str(&motion_char);
             return match strop_grammar::parse(&self.op_string()) {
                 strop_grammar::Parse::Complete(mut cmd) => {
                     cmd.register = self.state.register.filter(|r| *r != '\0');

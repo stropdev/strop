@@ -119,7 +119,11 @@ impl Editor {
             let at = if before {
                 cursor
             } else {
-                (cursor + 1).min(self.buf().len_bytes())
+                // 0020 §10: after the cursor means after the CHAR — a
+                // byte step from a multibyte lead inserted before it
+                self.buf()
+                    .ceil_boundary(cursor + 1)
+                    .min(self.buf().len_bytes())
             };
             // vim: the cursor lands on the LAST pasted char, both p and P
             let land = at + text_len.saturating_sub(1);

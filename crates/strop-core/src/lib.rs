@@ -145,29 +145,30 @@ impl Buffer {
                 "file changed on disk — :w! to force",
             ));
         }
-        let target = std::path::Path::new(&path);
-        let tmp = target.with_file_name(format!(
-            ".strop-tmp-{}-{}",
-            std::process::id(),
-            target.file_name().and_then(|n| n.to_str()).unwrap_or("x")
-        ));
-        std::fs::write(&tmp, self.rope.to_string())?;
-        if let Ok(meta) = std::fs::metadata(target) {
-            // keep the file's permissions across the atomic swap
-            let _ = std::fs::set_permissions(&tmp, meta.permissions());
-        }
-        std::fs::rename(&tmp, target)?;
+        write_atomic(std::path::Path::new(&path), &self.rope.to_string())?;
         self.disk_stamp = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         self.dirty = false;
         Ok(())
     }
 
-    /// `:w {path}` — vim's write-to: persist under a new name and adopt
-    /// it (the buffer is now that file).
-    pub fn save_as(&mut self, path: &str) -> std::io::Result<()> {
+    /// `:w {path}` — persist under a new name and adopt it (the buffer
+    /// becomes that file). The identity changes only after a SUCCESSFUL
+    /// write (0020 §1): an existing target needs `force`, and a failed
+    /// write leaves path, baseline and dirty state untouched.
+    pub fn save_as(&mut self, path: &str, force: bool) -> std::io::Result<()> {
+        let target = std::path::Path::new(path);
+        if !force && target.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "file exists — :w! to overwrite",
+            ));
+        }
+        write_atomic(target, &self.rope.to_string())?;
+        // success: adopt the identity
         self.path = Some(path.to_string());
-        self.disk_stamp = None; // fresh target: no overwrite baseline
-        self.save(true)
+        self.disk_stamp = std::fs::metadata(target).and_then(|m| m.modified()).ok();
+        self.dirty = false;
+        Ok(())
     }
     /// Display CELL of an offset within its line (0017): cursor
     /// placement and overlays need terminal cells, not byte cols —
@@ -414,6 +415,22 @@ impl Buffer {
         let end = self.line_end(line);
         self.rope.byte_slice(start..end).to_string()
     }
+}
+
+/// Same-directory temp + rename, preserving the target's permissions —
+/// the ONE atomic writer (0020 §8: no third copy of this logic).
+fn write_atomic(target: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    let tmp = target.with_file_name(format!(
+        ".strop-tmp-{}-{}",
+        std::process::id(),
+        target.file_name().and_then(|n| n.to_str()).unwrap_or("x")
+    ));
+    std::fs::write(&tmp, contents)?;
+    if let Ok(meta) = std::fs::metadata(target) {
+        // keep the file's permissions across the atomic swap
+        let _ = std::fs::set_permissions(&tmp, meta.permissions());
+    }
+    std::fs::rename(&tmp, target)
 }
 
 #[cfg(test)]

@@ -372,7 +372,7 @@ fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
             let spans = d
                 .highlighter
                 .as_mut()
-                .map(|hl| hl.highlight(&rope, 0, rope.len_bytes()));
+                .map(|hl| hl.highlight(&rope, 0, 0, rope.len_bytes()));
             highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible)
         }
         PreviewSource::Cached(entry) => {
@@ -380,7 +380,7 @@ fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
             let spans = entry
                 .hl
                 .as_mut()
-                .map(|hl| hl.highlight(&entry.rope, 0, entry.rope.len_bytes()));
+                .map(|hl| hl.highlight(&entry.rope, 0, 0, entry.rope.len_bytes()));
             highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible)
         }
         PreviewSource::Loading => vec![Line::from(Span::styled(

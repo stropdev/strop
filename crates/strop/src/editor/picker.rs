@@ -16,13 +16,18 @@ impl PickerGlue {
         self.rx.take()
     }
 
-    /// Hand the stream channel to the app event forwarder (0018).
+    /// Hand the stream channel to the app event forwarder (0018),
+    /// tagged with this picker's identity and generation (0020 §2).
     pub(crate) fn forward_stream(&mut self, tx: &Sender<super::events::AppEvent>) {
         if let Some(rx) = self.rx.take() {
+            let (id, gen) = (self.id, self.gen);
             let tx = tx.clone();
             std::thread::spawn(move || {
                 while let Ok(msg) = rx.recv() {
-                    if tx.send(super::events::AppEvent::Picker(msg)).is_err() {
+                    if tx
+                        .send(super::events::AppEvent::Picker { id, gen, msg })
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -33,6 +38,8 @@ impl PickerGlue {
     /// A picker over editor-computed items (diagnostics; 0009 §3 Space d).
     pub fn diagnostics(picker: Picker) -> Self {
         Self {
+            id: 0,
+            gen: 0,
             picker,
             tx: None,
             rx: None,
@@ -43,6 +50,10 @@ impl PickerGlue {
 
 pub struct PickerGlue {
     pub picker: Picker,
+    /// This instance's identity (streams tag their messages with it).
+    pub id: u64,
+    /// The current query generation — bumped per respawn (0020 §2).
+    pub gen: u64,
     /// Sender stays alive for grep respawns (kill + respawn per keystroke).
     tx: Option<Sender<PickerMsg>>,
     rx: Option<Receiver<PickerMsg>>,
@@ -53,6 +64,8 @@ impl Editor {
     /// Assign a picker; a live stream forwards onto the app channel
     /// when the TUI is connected (0018).
     pub(crate) fn set_picker(&mut self, mut glue: PickerGlue) {
+        glue.id = self.next_picker_id;
+        self.next_picker_id += 1;
         if let Some(tx) = &self.app_tx {
             glue.forward_stream(tx);
         }
@@ -95,6 +108,8 @@ impl Editor {
         };
         let picker = Picker::new(kind, items, streaming);
         self.set_picker(PickerGlue {
+            id: 0,
+            gen: 0,
             picker,
             tx,
             rx,
@@ -200,6 +215,25 @@ impl Editor {
             glue.rx = Some(rx);
             glue.grep_worker = GrepWorker::spawn(&pattern, &cwd, tx);
             glue.picker.streaming = glue.grep_worker.is_some();
+            glue.gen += 1;
+            // the respawn's channel must reach the SAME event source as
+            // the initial stream (0020 §2 — 0.9.0 silently dropped it)
+            if let Some(app_tx) = &self.app_tx {
+                let (id, gen) = (glue.id, glue.gen);
+                let atx = app_tx.clone();
+                if let Some(rx) = glue.rx.take() {
+                    std::thread::spawn(move || {
+                        while let Ok(msg) = rx.recv() {
+                            if atx
+                                .send(super::events::AppEvent::Picker { id, gen, msg })
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
         } else {
             glue.picker.refilter();
         }
@@ -349,10 +383,28 @@ impl Editor {
             // bottom-up: earlier hits' offsets stay valid while applying
             hits.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
             let full = self.cwd.join(&rel);
-            let (f, a, s) = if let Some(bi) = self.buffer_index_of(&full) {
-                self.replace_in_buffer(bi, &hits, &replacement)
-            } else {
-                Self::replace_in_file(&full, &hits, &replacement)
+            // 0020 §8: unopened files become real buffers — one
+            // transaction model, one persistence path, real undo
+            let (f, a, s) = match self.buffer_index_of(&full) {
+                Some(bi) => self.replace_in_buffer(bi, &hits, &replacement),
+                None => {
+                    match self.open_buffer(&full.display().to_string()) {
+                        Ok(()) => {
+                            let bi = self.current();
+                            let (f, a, s) = self.replace_in_buffer(bi, &hits, &replacement);
+                            if a > 0 {
+                                // persist through the buffer's own atomic
+                                // writer (mode preserved, baseline set)
+                                let r = self.buf_mut().save(true);
+                                if let Err(err) = r {
+                                    self.message = format!("write {}: {err}", full.display());
+                                }
+                            }
+                            (f, a, s)
+                        }
+                        Err(_) => (0, 0, hits.len()),
+                    }
+                }
             };
             files += f;
             applied += a;
@@ -364,7 +416,7 @@ impl Editor {
             String::new()
         };
         self.message =
-            format!("replaced {applied} in {files} files (u per buffer to undo){stale_msg}");
+            format!("replaced {applied} in {files} files — u per buffer undoes{stale_msg}");
     }
 
     /// Open-buffer index for an absolute path, if loaded.
@@ -392,6 +444,16 @@ impl Editor {
 
     /// Verified, bottom-up replacement in an open buffer: one history
     /// transaction → one `u` reverts this buffer's replacements.
+    #[cfg(test)]
+    pub(crate) fn replace_in_buffer_pub(
+        &mut self,
+        bi: strop_core::id::DocumentId,
+        hits: &[(usize, usize, usize, String)],
+        replacement: &str,
+    ) -> (usize, usize, usize) {
+        self.replace_in_buffer(bi, hits, replacement)
+    }
+
     fn replace_in_buffer(
         &mut self,
         bi: strop_core::id::DocumentId,
@@ -416,7 +478,13 @@ impl Editor {
             let ls = buf.line_start(line - 1);
             let abs_s = ls + s;
             let abs_e = (ls + e).min(buf.len_bytes());
-            if abs_s > abs_e || buf.rope.slice(abs_s..abs_e) != expected[s..e] {
+            // byte-exact verification (0020 §3): Rope::slice is
+            // CHAR-indexed — passing byte offsets mis-verified or
+            // panicked on any multibyte text before the match
+            if abs_s > abs_e
+                || buf.rope.byte_slice(abs_s..abs_e).to_string().as_bytes()
+                    != &expected.as_bytes()[s..e]
+            {
                 stale += 1;
                 continue;
             }
@@ -431,60 +499,6 @@ impl Editor {
     /// Replace hits in a file that isn't open: verified line-by-line,
     /// mtime-guarded, written atomically (temp + rename) — never a silent
     /// partial write (0007 §4). Returns (touched, applied, stale).
-    fn replace_in_file(
-        path: &std::path::Path,
-        hits: &[(usize, usize, usize, String)],
-        replacement: &str,
-    ) -> (usize, usize, usize) {
-        let Ok(meta) = std::fs::metadata(path) else {
-            return (0, 0, hits.len());
-        };
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return (0, 0, hits.len());
-        };
-        let line_offsets: Vec<usize> = std::iter::once(0)
-            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
-            .collect();
-        let mut content = text.clone();
-        let mut applied = 0;
-        let mut stale = 0;
-        for (line, col, match_len, expected) in hits {
-            let Some(&ls) = line_offsets.get(line.saturating_sub(1)) else {
-                stale += 1;
-                continue;
-            };
-            // verify the matched *span* (same-line hits stay verifiable
-            // as rightward ones apply), in content: bottom-up order keeps
-            // smaller offsets valid
-            let (s, e) = strop_picker::replace_span(expected, *col, *match_len);
-            let abs_s = ls + s;
-            let abs_e = ls + e;
-            if content.get(abs_s..abs_e) != expected.get(s..e) {
-                stale += 1;
-                continue;
-            }
-            content.replace_range(abs_s..abs_e, replacement);
-            applied += 1;
-        }
-        if applied == 0 {
-            return (0, 0, stale);
-        }
-        // mtime guard: somebody rewrote the file under the search — skip
-        let moved =
-            std::fs::metadata(path).ok().and_then(|m| m.modified().ok()) != meta.modified().ok();
-        if moved {
-            return (0, 0, applied + stale);
-        }
-        let tmp = path.with_file_name(format!(
-            "{}.strop-tmp",
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("strop")
-        ));
-        if std::fs::write(&tmp, &content).is_err() || std::fs::rename(&tmp, path).is_err() {
-            let _ = std::fs::remove_file(&tmp);
-            return (0, 0, applied + stale);
-        }
-        (1, applied, stale)
-    }
     /// Preview payload for the render layer: (title, focus line, rope).
     /// Files are read once and cached with a highlighter; buffers render
     /// from the live rope.
@@ -594,17 +608,28 @@ mod replace_tests {
 
     #[test]
     fn file_replace_writes_atomically_and_verifies() {
+        // 0020 §8: an unopened file becomes a real buffer — atomic
+        // write through the buffer's own path, undo included
         let dir = std::env::temp_dir().join(format!("strop-replace-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("a.txt");
         std::fs::write(&file, "alpha foo\nbeta foo\ngamma\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.cwd = dir.clone();
         let hits = vec![
             hit(2, 6, 3, "beta foo"),
             hit(1, 7, 3, "alpha foo"),
             hit(3, 1, 5, "drifted"),
         ];
-        let (touched, applied, stale) = Editor::replace_in_file(&file, &hits, "bar");
+        e.open_buffer(&file.display().to_string()).unwrap();
+        let bi = e.current();
+        let (touched, applied, stale) = e.replace_in_buffer(bi, &hits, "bar");
         assert_eq!((touched, applied, stale), (1, 2, 1));
+        e.buf_mut().save(true).unwrap();
+        // undo exists for the file-backed buffer too
+        e.undo();
+        assert_eq!(e.buf().rope.to_string(), "alpha foo\nbeta foo\ngamma\n");
+        e.redo();
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "alpha bar\nbeta bar\ngamma\n"

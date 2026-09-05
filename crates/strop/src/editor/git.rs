@@ -150,21 +150,28 @@ impl Editor {
         else {
             return false;
         };
-        let head_lines: Vec<&str> = head.lines().collect();
-        let (new_first, new_count, old_first, old_count) = hunk.changed_region();
-        // only computed when restoring (change/delete); pure adds need
-        // none — and a top-of-file add has old_first == 0, so the `- 1`
-        // math must stay saturating
-        let old: String = if old_count == 0 {
-            String::new()
-        } else {
-            let lo = old_first.saturating_sub(1).min(head_lines.len());
-            let hi = (lo + old_count).min(head_lines.len());
-            head_lines[lo..hi.max(lo)].join("\n")
+        let _ = &head; // existence gate above; content comes from the hunk
+        let (new_first, new_count, _old_first, old_count) = hunk.changed_region();
+        // byte-precise restore text (0020 §7): the hunk's own old-side
+        // lines carry CRLF and missing-final-newline exactly — the
+        // str::lines + LF join it replaces could not
+        let old: String = {
+            let mut bytes = Vec::new();
+            for l in hunk
+                .lines
+                .iter()
+                .filter(|l| l.origin != strop_git::LineOrigin::Addition)
+            {
+                bytes.extend_from_slice(&l.bytes_with_terminator());
+            }
+            String::from_utf8_lossy(&bytes).into_owned()
         };
 
         let saved_current = self.current();
         self.view_mut().doc = idx;
+        // one undo transaction, exactly like typing (0020 §7 — discard
+        // used to mutate without any committed history step)
+        self.buf_mut().history.begin();
         if new_count == 0 {
             // pure deletion: reinsert the old lines at the gap
             let total = self.buf().len_lines();
@@ -201,6 +208,7 @@ impl Editor {
             self.buf_mut().insert(start, &old);
             self.set_head(start);
         }
+        self.buf_mut().history.commit();
         self.view_mut().doc = saved_current;
         // the cursor field belongs to the driven pane; only the origin
         // buffer's own view moves when it is current

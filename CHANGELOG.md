@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.9.1 — 2026-09-05
+
+The third review round (plan 0020): fourteen contract fixes, each
+with its regression test.
+
+### Fixed
+
+- **`:w {path}` honors overwrite policy** — an existing target needs
+  `:w!`; identity adopts only after a successful write; a failed write
+  changes nothing.
+- **Streaming pickers no longer die on the second keystroke** (a 0.9.0
+  regression): respawned rg workers forward to the same event source,
+  tagged (picker id, query generation); stale streams are dropped.
+- **Project replace is byte-exact past multibyte text** (Ropey's
+  char-indexed slice was being fed byte offsets).
+- **`d/foo<Enter>` works in normal mode** (motion text is literal —
+  spaces stay spaces, Enter is `\r`), and search composition previews
+  its target as you type, from the typed plan.
+- **Syntax highlighting invalidates on the document revision**, not a
+  len+first+last-byte hash that kept stale colors on same-length edits.
+- **LSP diagnostics compare against the server's own version clock**
+  (the buffer's edit epoch was the wrong counter); position encoding is
+  read per event, not captured possibly pre-negotiation.
+- **Git hunk discard is one committed undo transaction** (`u` restores
+  byte-exact), restoring from the hunk's own CRLF/newline-precise lines.
+- **Unopened files in project replace become real buffers** — one
+  transaction model, one atomic writer, real undo, permissions kept.
+- **Grep rows are never fuzzy-filtered by the regex query** — rg's
+  matches are the apply set, exactly.
+- **UTF-8 boundaries**: charwise paste and repeat-search step whole
+  chars; charwise visual spans whole chars (three panic classes closed).
+- **A failed `:e` leaves the current document intact** (I/O before any
+  ownership change).
+- **Resize events reach the event loop**; an idle terminal redraws.
+- **Sessions persist for every launch mode**, including `strop file.rs`.
+- `strop-picker` is a workspace member.
+
 ## 0.9.0 — 2026-09-05
 
 Revision-native git and services (plan 0018): git content is

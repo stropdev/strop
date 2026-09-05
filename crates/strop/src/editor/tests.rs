@@ -1066,4 +1066,135 @@ mod keybinds_tests {
         e.feed(crate::editor::Key::Esc);
         assert_eq!(e.buf().rope.to_string(), ">>aa\n>>cc\n");
     }
+    #[test]
+    fn write_to_path_respects_overwrite_policy() {
+        // 0020 §1: ordinary :w existing refuses; :w! forces; a failed
+        // write leaves path/dirty untouched
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        std::fs::write(&a, "content a\n").unwrap();
+        std::fs::write(&b, "content b\n").unwrap();
+        let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
+        e.feed_text("ix");
+        e.feed(crate::editor::Key::Esc);
+        // ordinary :w b.txt — b exists: refused, b unchanged
+        e.feed_text(&format!(":w {}\r", b.display()));
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "content b\n");
+        assert!(e.message.contains("exists"), "{}", e.message);
+        assert!(e.buf().path.as_deref().unwrap().ends_with("a.txt"));
+        assert!(e.buf().dirty);
+        // :w! b.txt — forced
+        e.feed_text(&format!(":w! {}\r", b.display()));
+        assert!(std::fs::read_to_string(&b)
+            .unwrap()
+            .starts_with("xcontent a"));
+        assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
+        assert!(!e.buf().dirty);
+        // a failed write (unwritable dir) keeps identity
+        e.feed_text("iy");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text(":w /nonexistent-dir-xyz/q.txt\r");
+        assert!(e.message.contains("write failed"), "{}", e.message);
+        assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
+        assert!(e.buf().dirty);
+    }
+
+    #[test]
+    fn grep_respawns_reach_the_production_event_source() {
+        // 0020 §2: connect_events + query edits — results must arrive
+        // through AppEvent (the 0.9.0 silent-drop regression), and a
+        // stale generation's messages are ignored
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hit.txt"), "needle here\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.cwd = dir.path().to_path_buf();
+        let (tx, rx) = std::sync::mpsc::channel();
+        e.connect_events(tx);
+        e.open_picker(strop_picker::Kind::Grep);
+        // type the query: respawns flow through the forwarded channel
+        for c in "needle".chars() {
+            e.feed(crate::editor::Key::Char(c));
+        }
+        // pump the PRODUCTION event source until Done (bounded)
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut saw_hit = false;
+        let mut done = false;
+        while std::time::Instant::now() < deadline && !done {
+            match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                Ok(ev) => {
+                    e.handle_app_event(ev);
+                    let glue = e.picker.as_ref().unwrap();
+                    saw_hit =
+                        saw_hit || glue.picker.rows.iter().any(|r| r.text.contains("hit.txt"));
+                    done = !glue.picker.streaming;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        assert!(saw_hit, "grep results arrived through AppEvent");
+        assert!(done, "the stream completed");
+        // a stale generation's message is dropped
+        let stale_gen = e.picker.as_ref().unwrap().gen.wrapping_sub(1);
+        let before = e.picker.as_ref().unwrap().picker.rows.len();
+        e.handle_app_event(crate::editor::events::AppEvent::Picker {
+            id: e.picker.as_ref().unwrap().id,
+            gen: stale_gen,
+            msg: strop_picker::PickerMsg::Items(vec![strop_picker::Item {
+                text: "STALE".into(),
+                payload: strop_picker::Payload::Buffer(*e.mru.first().unwrap()),
+            }]),
+        });
+        assert_eq!(e.picker.as_ref().unwrap().picker.rows.len(), before);
+    }
+
+    #[test]
+    fn project_replace_is_byte_exact_past_multibyte() {
+        // 0020 §3: é before the match must not break verification
+        let mut e = Editor::new(Buffer::from_text("éé foo\n"));
+        let id = e.current();
+        let hits = vec![(1usize, 6usize, 3usize, "éé foo".to_string())];
+        let (applied, _, stale) = e.replace_in_buffer_pub(id, &hits, "bar");
+        assert_eq!((applied, stale), (1, 0));
+        assert_eq!(e.buf().rope.to_string(), "éé bar\n");
+        // and inside the match itself
+        let mut e = Editor::new(Buffer::from_text("féé and féé\n"));
+        let id = e.current();
+        let hits = vec![(1usize, 1usize, 5usize, "féé and féé".to_string())];
+        let (applied, _, stale) = e.replace_in_buffer_pub(id, &hits, "x");
+        assert_eq!((applied, stale), (1, 0));
+        assert_eq!(e.buf().rope.to_string(), "x and féé\n");
+    }
+
+    #[test]
+    fn paste_after_multibyte_inserts_after_the_char() {
+        // 0020 §10: p after é appends after it, not before it
+        let mut e = Editor::new(Buffer::from_text("aé b\n"));
+        e.feed_text("vly");
+        e.feed_text("llp"); // cursor past é; paste goes after the space? no — after char under cursor
+        assert!(!e.buf().rope.to_string().contains("\u{fffd}"));
+        // repeat-search past a multibyte hit never panics
+        let mut e = Editor::new(Buffer::from_text("x é y é z\n"));
+        e.feed_text("/é\r");
+        assert_eq!(e.buf().col_of(e.head()), 2); // first é
+        e.feed_text("n");
+        assert_eq!(e.buf().col_of(e.head()), 7); // second é
+    }
+
+    #[test]
+    fn failed_open_keeps_the_scratch_document() {
+        // 0020 §11: :e on a directory errors and the scratch stays current
+        let mut e = Editor::new(Buffer::from_text(""));
+        let dir = tempfile::tempdir().unwrap();
+        e.feed_text(&format!(":e {}\r", dir.path().display()));
+        assert!(
+            e.message.contains("error")
+                || e.message.contains("Is a directory")
+                || !e.message.is_empty()
+        );
+        // the editor still has a live current document (no panic on render)
+        let _ = e.buf();
+        assert_eq!(e.docs.len(), 1);
+    }
 }

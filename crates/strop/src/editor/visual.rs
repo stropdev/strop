@@ -202,9 +202,11 @@ impl Editor {
     pub fn visual_range(&self) -> Option<Range> {
         match self.mode {
             Mode::Visual => {
+                // charwise-inclusive spans whole CHARS (0020 §10): the
+                // +1 from a multibyte lead landed mid-char and panicked
                 let (s, e) = (
                     self.anchor().min(self.head()),
-                    self.anchor().max(self.head()) + 1,
+                    self.buf().ceil_boundary(self.anchor().max(self.head()) + 1),
                 );
                 Some(Range::charwise(s, e.min(self.buf().len_bytes())))
             }

@@ -19,6 +19,8 @@ use super::{Editor, Key, ShellResult};
 /// by the reader thread.
 pub enum AppEvent {
     Terminal(Key),
+    /// Terminal resized — a redraw is owed even with no input (0020 §12).
+    Resize,
     /// Bracketed paste: one text payload, never a key stream.
     Paste(String),
     /// ctrl-c: the quit intent (0015's policy lives in the editor).
@@ -26,7 +28,13 @@ pub enum AppEvent {
     Lsp(strop_lsp::PositionEncoding, strop_lsp::LspEvent),
     Shell(ShellResult),
     Git(super::GitJob),
-    Picker(PickerMsg),
+    Picker {
+        /// Which picker instance and which query generation produced
+        /// this message — stale streams die at the handler (0020 §2).
+        id: u64,
+        gen: u64,
+        msg: PickerMsg,
+    },
     Preview(PathBuf, Option<String>),
     Clipboard(Option<String>),
 }
@@ -65,7 +73,8 @@ impl Editor {
         }
         if let Some(glue) = &mut self.picker {
             if let Some(rx) = glue.take_rx() {
-                forward(rx, tx.clone(), AppEvent::Picker);
+                let (id, gen) = (glue.id, glue.gen);
+                forward(rx, tx.clone(), move |msg| AppEvent::Picker { id, gen, msg });
             }
         }
         for srv in &mut self.lsp_servers {
@@ -81,6 +90,7 @@ impl Editor {
     pub fn handle_app_event(&mut self, ev: AppEvent) {
         match ev {
             AppEvent::Terminal(key) => self.feed(key),
+            AppEvent::Resize => {} // the loop redraws after every event
             AppEvent::Paste(text) => self.paste_bracketed(&text),
             AppEvent::QuitIntent => {
                 if self.ctrl_c_quit() {
@@ -90,7 +100,16 @@ impl Editor {
             AppEvent::Lsp(enc, ev) => self.handle_lsp_event(enc, ev),
             AppEvent::Shell(r) => self.handle_shell_result(r),
             AppEvent::Git(job) => self.handle_git_job(job),
-            AppEvent::Picker(msg) => self.handle_picker_msg(msg),
+            AppEvent::Picker { id, gen, msg } => {
+                // stale generation or dead picker: ignore
+                if self
+                    .picker
+                    .as_ref()
+                    .is_some_and(|g| g.id == id && g.gen == gen)
+                {
+                    self.handle_picker_msg(msg);
+                }
+            }
             AppEvent::Preview(path, content) => self.handle_preview(path, content),
             AppEvent::Clipboard(content) => self.handle_clipboard(content),
         }

@@ -144,6 +144,8 @@ pub struct Editor {
     /// The app event channel (0018): set by connect_events; late LSP
     /// attaches forward through it.
     pub app_tx: Option<std::sync::mpsc::Sender<events::AppEvent>>,
+    /// Picker instance identity for stream tagging (0020 §2).
+    pub next_picker_id: u64,
     /// The outstanding hover request's identity (doc, history depth) —
     /// a reply against another state is stale (0018).
     pub hover_request: Option<(strop_core::id::DocumentId, usize)>,
@@ -291,6 +293,7 @@ impl Editor {
             app_tx: None,
             langs_by_root: std::collections::HashMap::new(),
             hover_request: None,
+            next_picker_id: 1,
             macros: std::collections::HashMap::new(),
             last_macro: None,
             block_delete_pending: None,

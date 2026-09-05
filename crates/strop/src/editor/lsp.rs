@@ -215,13 +215,19 @@ impl Editor {
                     mut diags,
                     version,
                 } => {
-                    // reject batches older than what we last synced —
-                    // their positions were computed against text we no
-                    // longer hold (0018)
-                    if let (Some(v), Some(&sent)) = (version, self.lsp_sent_epochs.get(&path)) {
-                        if (v as u64) < sent {
-                            return; // stale batch — drop, don't misplace
-                        }
+                    // reject batches older than the last version WE sent
+                    // — their positions were computed against text the
+                    // server hadn't seen yet (0020 §6: the comparison is
+                    // against the server's own version clock, not the
+                    // buffer's edit epoch — different counters)
+                    let stale = self
+                        .lsp_servers
+                        .iter()
+                        .find(|srv| path.starts_with(&srv.key.0))
+                        .and_then(|srv| srv.client.sent_version(&path))
+                        .is_some_and(|sent| version.is_some_and(|v| v < sent));
+                    if stale {
+                        return;
                     }
                     // server columns → byte columns against the open
                     // buffer's text (unopened files keep wire values)

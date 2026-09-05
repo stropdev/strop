@@ -516,6 +516,14 @@ impl Client {
     }
 
     /// didChange — full document replacement (TextDocumentSyncKind::Full).
+    /// The protocol version this client last sent for a path (0020 §6:
+    /// diagnostics are fresh when their version is at least this —
+    /// the buffer's edit epoch is a DIFFERENT clock and must never be
+    /// compared against it).
+    pub fn sent_version(&self, path: &Path) -> Option<i32> {
+        self.versions.lock().get(path).copied()
+    }
+
     pub fn did_change(&self, path: &Path, text: &str) {
         let Some(uri) = self.uri(path) else { return };
         let socket = self.socket.clone();

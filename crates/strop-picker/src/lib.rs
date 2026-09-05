@@ -244,12 +244,17 @@ impl Picker {
     /// Recompute rows from items + input. Grep rows arrive pre-filtered
     /// from rg; everything else fuzzy-filters here.
     pub fn refilter(&mut self) {
+        // 0020 §9: grep/replace items were matched by rg against the
+        // REAL query (a regex — "foo|bar" rows contain no "|") — fuzzy-
+        // filtering them again hides valid results. Their rows are the
+        // items, enumerated; fuzzy scoring is for local sources only.
+        let upstream_filtered = matches!(self.kind, Kind::Grep | Kind::Replace);
         self.rows = self
             .items
             .iter()
             .enumerate()
             .filter_map(|(i, item)| {
-                if self.input.text.is_empty() {
+                if self.input.text.is_empty() || upstream_filtered {
                     return Some(Row {
                         item: i,
                         text: item.text.clone(),
@@ -381,6 +386,35 @@ mod tests {
         assert_eq!(p.accepted().count(), 1);
         assert_eq!(p.accepted().next().unwrap().text, "b.rs");
         p.toggle_file_excluded(); // toggle back
+        assert_eq!(p.accepted().count(), 3);
+    }
+    #[test]
+    fn regex_query_never_hides_rg_rows() {
+        // 0020 §9: "foo|bar" matched three rows upstream — all of them
+        // stay visible even though none contains the literal "|"
+        let mut p = Picker::new(
+            Kind::Grep,
+            vec![
+                Item {
+                    text: "a.rs:1 foo".into(),
+                    payload: Payload::File("a.rs".into()),
+                },
+                Item {
+                    text: "b.rs:2 bar".into(),
+                    payload: Payload::File("b.rs".into()),
+                },
+                Item {
+                    text: "c.rs:3 baz".into(),
+                    payload: Payload::File("c.rs".into()),
+                },
+            ],
+            false,
+        );
+        for c in "foo|bar".chars() {
+            p.push_char(c);
+        }
+        assert_eq!(p.rows.len(), 3);
+        // and the apply set is exactly those rows
         assert_eq!(p.accepted().count(), 3);
     }
 }

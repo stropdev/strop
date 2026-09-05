@@ -157,17 +157,17 @@ fn main() {
     if let Some(e) = config_err {
         editor.message = e;
     }
-    // per-project session: restore where we left off (0001 pillar 4) —
-    // explicit file args beat the session
+    // session state exists for EVERY launch mode (0020 §13): a file
+    // arg used to disable persistence entirely. Restoration of the
+    // previous layout only happens for bare launches (explicit files
+    // beat the session), but saving always works.
+    editor.state_dir = std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|h| std::path::PathBuf::from(h).join(".local").join("state"))
+        });
     if path.is_none() {
-        // XDG state dir resolves once here; the editor carries it so the
-        // write path never reads process-global env mid-run
-        editor.state_dir = std::env::var_os("XDG_STATE_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| std::path::PathBuf::from(h).join(".local").join("state"))
-            });
         session::restore(&mut editor);
     }
     tui(editor);
@@ -224,6 +224,11 @@ fn tui(mut editor: Editor) {
                 }
                 Ok(Event::Paste(text)) => {
                     if tx.send(AppEvent::Paste(text)).is_err() {
+                        break;
+                    }
+                }
+                Ok(Event::Resize(..)) => {
+                    if tx.send(AppEvent::Resize).is_err() {
                         break;
                     }
                 }

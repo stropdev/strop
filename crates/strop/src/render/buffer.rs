@@ -175,7 +175,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     let text_rows = area.height as usize;
     // tree-sitter takes the mutable borrow first; everything below it
     // reads immutably (one borrow discipline per pane render)
-    let (cur_line, first_byte, last_byte, rope) = {
+    let (cur_line, first_byte, last_byte, rope, revision) = {
         let buf = &editor.doc(view.doc).buf;
         let last_line = (view.view_top + text_rows).min(buf.len_lines());
         (
@@ -183,13 +183,14 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
             buf.line_start(view.view_top),
             buf.line_end(last_line.saturating_sub(1)),
             buf.rope.clone(),
+            buf.history.depth() as u64,
         )
     };
     let syn_spans: Vec<strop_syntax::Span> =
         match editor.docs.get_mut(view.doc).map(|d| &mut d.highlighter) {
             Some(h) => h
                 .as_mut()
-                .map(|h| h.highlight(&rope, first_byte, last_byte))
+                .map(|h| h.highlight(&rope, revision, first_byte, last_byte))
                 .unwrap_or_default(),
             None => Vec::new(),
         };

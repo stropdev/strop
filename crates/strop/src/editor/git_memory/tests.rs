@@ -514,3 +514,26 @@ fn gutters_and_sidebar_render() {
     let frame = crate::headless::frame_string(&mut e, 100, 12);
     assert!(frame.contains("▌b.rs"), "marker follows ]f: {frame}");
 }
+
+#[test]
+fn hunk_discard_undoes_byte_exact() {
+    // 0020 §7: discard creates a committed undo step; u restores the
+    // exact pre-discard worktree text
+    let (dir, mut e) = fixture();
+    let root = dir.path().to_path_buf();
+    // the edit happens IN the editor (live buffer = the worktree state)
+    e.feed_text("Gofn c() {}");
+    e.feed(crate::editor::Key::Esc);
+    let before = e.buf().rope.to_string();
+    let _ = &root;
+    e.refresh_hunks();
+    assert!(!e.hunks.is_empty(), "the worktree edit shows as a hunk");
+    e.undo_hunk();
+    assert_eq!(e.buf().rope.to_string(), "fn a() {}\nfn b() {}\n");
+    // u restores the exact pre-discard text
+    e.feed_text("u");
+    assert_eq!(e.buf().rope.to_string(), before);
+    // and redo discards again
+    e.feed(crate::editor::Key::CtrlR);
+    assert_eq!(e.buf().rope.to_string(), "fn a() {}\nfn b() {}\n");
+}

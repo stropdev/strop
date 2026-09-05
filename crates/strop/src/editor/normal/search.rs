@@ -115,7 +115,9 @@ impl Editor {
             let mut hit = if backward {
                 grammar::search_backward(buf, from, &ls.pattern)
             } else {
-                grammar::search_forward(buf, from + 1, &ls.pattern)
+                // from+1 must be a char boundary (0020 §10 — a repeat
+                // from a multibyte hit panicked Ropey outright)
+                grammar::search_forward(buf, buf.ceil_boundary(from + 1), &ls.pattern)
             };
             // skip boundary-mismatched hits (whole-word searches)
             let mut guard = 0;
