@@ -11,17 +11,17 @@ mod document;
 mod git;
 mod git_memory;
 mod help;
+mod input;
 mod insert;
 mod jumps;
 mod lsp;
 #[cfg(test)]
 mod multicursor_tests;
-mod normal;
+pub(crate) mod normal;
 mod panes;
 mod permalink;
 mod picker;
 mod registers;
-pub(crate) mod registry;
 mod shell;
 mod undo;
 mod visual;
@@ -95,6 +95,10 @@ pub struct Editor {
     pub jumplist_future: Vec<(strop_core::id::DocumentId, usize)>,
     pub mode: Mode,
     pub pending: String,
+    /// The input walker (0008 stage 2): typed parser state for
+    /// counts/registers/operators/prefixes — pending stays for the
+    /// free-text lines only.
+    pub walker: input::Walker,
     /// `Space u` browser state (editor/undo.rs); None when closed.
     pub undo_browser: Option<undo::UndoBrowser>,
     /// Last `f/F/t/T` find: (char, backward, till). `;` and `,` replay it.
@@ -218,6 +222,7 @@ impl Editor {
             mru: vec![current],
             mode: Mode::Normal,
             pending: String::new(),
+            walker: input::Walker::new(),
             last_search: None,
             undo_browser: None,
             registers: HashMap::new(),

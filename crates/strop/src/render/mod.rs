@@ -131,6 +131,10 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
         format!("{spec}  ")
     } else if !editor.pending.is_empty() && !cmd_card_active(editor) {
         format!("{}  ", editor.pending.trim_end_matches('\r'))
+    } else if !editor.walker.prefix.is_empty() || !editor.walker.state.empty() {
+        // structural input mid-flight (3d…, g…, space…): the modeline
+        // shows the walker's typed state
+        format!("{}  ", editor.walker.display())
     } else if !editor.message.is_empty() {
         format!("{}  ", editor.message)
     } else {

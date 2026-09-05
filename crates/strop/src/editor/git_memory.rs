@@ -566,6 +566,13 @@ pub fn git_channel() -> (Sender<GitJob>, Receiver<GitJob>) {
     channel()
 }
 
+impl Editor {
+    /// Table shim (0008 stage 2).
+    pub(crate) fn open_log_pub(&mut self, file_scoped: bool) {
+        self.open_log(file_scoped);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::process::Command;

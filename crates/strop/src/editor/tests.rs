@@ -773,24 +773,3 @@ mod keybinds_tests {
         );
     }
 }
-
-#[cfg(test)]
-mod w_probe {
-    #[test]
-    fn w_moves() {
-        let cmd = match strop_grammar::parse("w") {
-            strop_grammar::Parse::Complete(c) => c,
-            other => panic!("parse w: {other:?}"),
-        };
-        let buf = strop_core::Buffer::from_text("hello world\n");
-        let r = strop_grammar::resolve(&buf, 0, &cmd);
-        assert!(r.is_some(), "resolve w");
-        let r = r.unwrap();
-        assert_eq!((r.range.start, r.range.end), (0, 6), "w range");
-        let after = strop_grammar::cursor_after(&buf, 0, &cmd, &r);
-        assert_eq!(after, 6, "cursor after w");
-        let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("hello world\n"));
-        e.feed_text("w");
-        assert_eq!(e.head(), 6, "w moves to word start");
-    }
-}

@@ -375,3 +375,16 @@ fn lang_id(path: &std::path::Path) -> &'static str {
         _ => "plaintext",
     }
 }
+
+impl Editor {
+    /// Table shims (0008 stage 2).
+    pub(crate) fn lsp_goto_definition_pub(&mut self) {
+        self.lsp_goto_definition();
+    }
+    pub(crate) fn lsp_switch_source_header_pub(&mut self) {
+        self.lsp_switch_source_header();
+    }
+    pub(crate) fn lsp_hover_pub(&mut self) {
+        self.lsp_hover();
+    }
+}

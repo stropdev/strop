@@ -179,3 +179,14 @@ fn read_system_clipboard() -> Option<String> {
     }
     None
 }
+
+impl Editor {
+    /// Table shims (0008 stage 2): `Space y` arms the `+` register for
+    /// the next yank; `Space p/P` paste from the system clipboard.
+    pub(crate) fn clipboard_yank_pub(&mut self) {
+        self.pending = "\"+y".into();
+    }
+    pub(crate) fn clipboard_paste_pub(&mut self, before: bool) {
+        self.clipboard_paste(before);
+    }
+}

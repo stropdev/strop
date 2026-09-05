@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.0 — 2026-09-05
+
+The input layer lands (plan 0008, fully): key events walk a typed
+state machine, and the doc table IS the dispatch table.
+
+### Changed (architecture)
+
+- **The input walker** (`editor/input.rs`): counts, registers,
+  operators, and prefixes are typed parser state — pending strings
+  survive only as free-text line content (`:` `/` `?` `|`, the modal
+  text fields of 0003 §1) and as the grammar's assembly interchange.
+- **One command table**: every BINDINGS row carries a stable `id` plus
+  its dispatch handler — `Space ?`, which-key cards, and dispatch read
+  the same rows. Parameterized rows (`r<c>`, `m<a>`) match by
+  placeholder; the coverage tests tokenize exactly like dispatch.
+- **Panes own their selections and scroll** (the ViewModel split):
+  `Pane { doc, sels, view_top }` — switching panes never copies state
+  back and forth; the active pane's state IS the editor's.
+
+### Fixed
+
+- Found by the new dispatch-coverage tests: `,` didn't reverse the
+  find (shared row handlers ignored the completing key — `;`/`N`/`#`/
+  `[c`/`P` all key-aware now); `ctrl-w` pane keys route through the
+  walker; counts reach leaf commands through the table (2x, 3rx, 2p).
+
 ## 0.5.0 — 2026-09-05
 
 The restructure release. All four waves of `plans/0014` landed: the

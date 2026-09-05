@@ -24,6 +24,18 @@ impl Op {
             Op::Dedent => "dedent",
         }
     }
+
+    /// The operator's key — the walker assembles grammar strings from
+    /// typed parts (0008 stage 2).
+    pub fn key(self) -> &'static str {
+        match self {
+            Op::Delete => "d",
+            Op::Yank => "y",
+            Op::Change => "c",
+            Op::Indent => ">",
+            Op::Dedent => "<",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

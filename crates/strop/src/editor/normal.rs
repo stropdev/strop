@@ -38,7 +38,7 @@ impl Editor {
             return self.redo();
         }
         if key == Key::CtrlW {
-            self.pending = "\x17".into(); // ctrl-w prefix
+            self.walker.prefix = "\x17"; // ctrl-w prefix
             return;
         }
         if !self.pending.is_empty() {
@@ -60,6 +60,7 @@ impl Editor {
         // Esc in normal mode: collapse to the primary cursor (0013 §3)
         if key == Key::Esc {
             self.collapse_cursors();
+            self.walker.clear();
             return;
         }
         // arrows speak hjkl (never dropped at the translation layer)
@@ -73,23 +74,145 @@ impl Editor {
         let Key::Char(c) = key else {
             return;
         };
-        match c {
-            '1'..='9' => self.pending.push(c),
-            // 0 starts a count only as its first digit (vim: 30j works)
-            '0' if self.pending.chars().all(|c| c.is_ascii_digit()) && !self.pending.is_empty() => {
-                self.pending.push('0')
+        // the walker (0008 stage 2): counts/registers/operators/prefixes
+        // are typed state; complete sequences dispatch through the table
+        match self.walker.feed(c) {
+            super::input::Walk::Pending => {}
+            super::input::Walk::Complete(keys) => self.dispatch_keys(&keys),
+            super::input::Walk::EnterText(c) => {
+                // text fields seed pending and own every later key
+                self.pending = c.to_string();
+                self.pending_normal = false;
+                self.pending_cursor = self.pending.len();
             }
-            // bare 0 is the line-start motion (vim); only a digit after
-            // a count continues the count
-            '0' => self.run_motion("0"),
-            'g' | 'd' | 'y' | 'c' | 'f' | 'F' | 't' | 'T' | '/' | '?' | ':' | '"' | 'r' | '>'
-            | '<' | ' ' | '[' | ']' | 'm' | '\'' | '`' => self.pending.push(c),
-            // leaf commands are DATA (0008 stage 1): the registry table
-            // dispatches, `?`/which-key document, the same row
-            _ => match super::registry::leaf_for(c) {
-                Some(leaf) => (leaf.run)(self),
-                None => self.message = format!("not an editor command: {c}"),
+        }
+    }
+
+    /// A completed key sequence (the walker's output): table rows first
+    /// (leaf/alias/text-line), grammar for operator composition.
+    fn dispatch_keys(&mut self, keys: &str) {
+        // vim counts multiply leaf commands (2x, 3p, 4.) — strip the
+        // leading count, run the leaf that many times. Insert entries
+        // carry the count into the insert session instead (3iX!).
+        let digits: String = keys.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !digits.is_empty() {
+            let count: usize = digits.parse().unwrap_or(1);
+            let rest = &keys[digits.len()..];
+            let toks: Vec<String> = seq_tokens(rest);
+            if let Some(row) = crate::keymap::find_dispatch(&toks) {
+                use crate::keymap::Handler;
+                match row.handler {
+                    Handler::Leaf(f) => {
+                        if row.id == "insert-entries" {
+                            self.insert_count = count;
+                            f(self, rest.chars().last().unwrap_or('\0'));
+                        } else if row.id == "paste" {
+                            self.paste_n(count, rest == "P");
+                        } else {
+                            for _ in 0..count {
+                                f(self, rest.chars().last().unwrap_or('\0'));
+                            }
+                        }
+                        return;
+                    }
+                    // aliases drop the count (2D ≈ 2d$ via expansion;
+                    // counts on these are rare and inert at line end)
+                    Handler::Alias(_) => {}
+                    Handler::AbsorbChar(crate::keymap::AbsorbKind::Replace) => {
+                        // vim 3rx: replace <count> chars
+                        let c = rest.chars().nth(1).unwrap_or('\0');
+                        self.replace_char_n(c, count);
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            // grammar paths carry their own counts (2dd etc.)
+        }
+        // AbsorbChar rows: the absorbed char is keys[1] (r<c>, m<a>…)
+        if let Some(row) = crate::keymap::find_dispatch(&seq_tokens(keys)) {
+            if let crate::keymap::Handler::AbsorbChar(kind) = row.handler {
+                let c = keys.chars().nth(1).unwrap_or('\0');
+                use crate::keymap::AbsorbKind;
+                match kind {
+                    AbsorbKind::Replace => self.replace_char_n(c, 1),
+                    AbsorbKind::MarkSet => self.set_mark(c),
+                    AbsorbKind::MarkJump => self.jump_mark(c),
+                    AbsorbKind::Find => {} // grammar resolves f<c> below
+                }
+                if kind != AbsorbKind::Find {
+                    return;
+                }
+            }
+        }
+        // a `"x` register prefix applies to the leaf that follows
+        // (vim: "ap pastes a) — strip it, dispatch the leaf with the
+        // register set
+        if let Some(rest) = keys.strip_prefix('"').filter(|r| r.len() > 1) {
+            let reg = rest.chars().next().unwrap();
+            let rest = &rest[reg.len_utf8()..];
+            if let Some(row) = crate::keymap::find_dispatch(&seq_tokens(rest)) {
+                if let crate::keymap::Handler::Leaf(f) = row.handler {
+                    if row.id == "paste" {
+                        self.paste_named(Some(reg), rest == "P");
+                        return;
+                    }
+                    let _ = f; // register-prefixed non-paste leaves:
+                               // operators carry registers via the grammar below
+                }
+            }
+        }
+        let toks: Vec<String> = seq_tokens(keys);
+        if let Some(row) = crate::keymap::find_dispatch(&toks) {
+            use crate::keymap::Handler;
+            match row.handler {
+                Handler::Leaf(f) => return f(self, keys.chars().last().unwrap_or('\0')),
+                Handler::Alias(expansion) => {
+                    for c in expansion.chars() {
+                        self.feed_normal(crate::editor::Key::Char(c));
+                    }
+                    return;
+                }
+                // a prefix row: re-arm the walker at the longer path
+                // (" g" waits for the git verb); nothing dispatches yet
+                Handler::Prefix => {
+                    self.walker.prefix = if keys == " g" { " g" } else { "" };
+                    if keys == " g" {
+                        return;
+                    }
+                    self.message = format!("prefix: {keys}");
+                    return;
+                }
+                Handler::TextLine => {
+                    // the seed: ':' / '/' / '?' / '|' — the text layer
+                    // (modal line editing, incsearch) owns the rest
+                    self.pending = if keys == " |" {
+                        "|".into()
+                    } else {
+                        keys.into()
+                    };
+                    self.pending_normal = false;
+                    self.pending_cursor = self.pending.len();
+                    return;
+                }
+                _ => {}
+            }
+        }
+        // grammar composition: operators/motions/objects assemble from
+        // the walker's typed state already — parse decides completeness
+        match grammar::parse(keys) {
+            Parse::Complete(cmd) => match cmd.op {
+                None => self.move_cursor(&cmd),
+                Some(_) => self.execute(&cmd),
             },
+            Parse::Incomplete => {
+                // object prefixes (i/a) and finds absorb more keys —
+                // the text line carries the partial until they land
+                self.pending = keys.into();
+                self.pending_normal = false;
+                self.pending_cursor = self.pending.len();
+            }
+            Parse::Invalid => self.message = format!("not an editor command: {keys}"),
         }
     }
 
@@ -288,136 +411,6 @@ impl Editor {
                 // modal editing on the input line (0003 §1)
                 if self.pending_normal {
                     self.pending_normal_key(c);
-                    return;
-                }
-                // count + non-operator command: vim multiplies (2x, 3p,
-                // 2u, 4.…). The count never aborts the command.
-                if self.pending.bytes().all(|b| b.is_ascii_digit()) {
-                    let count: usize = self.pending.parse().unwrap_or(1);
-                    match c {
-                        'p' | 'P' => {
-                            // vim 2p: the register lands twice at one
-                            // spot, not paste-advance-paste
-                            self.pending.clear();
-                            return self.paste_n(count, c == 'P');
-                        }
-                        'x' | 'X' | 'J' | 's' | '~' | '^' | 'u' | '.' | 'n' | 'N' => {
-                            self.pending.clear();
-                            for _ in 0..count {
-                                self.feed_normal(Key::Char(c));
-                            }
-                            return;
-                        }
-                        'i' | 'a' | 'A' | 'o' | 'O' | 'I' => {
-                            // vim: the inserted text repeats <count> times
-                            self.pending.clear();
-                            self.insert_count = count;
-                            return self.feed_normal(Key::Char(c));
-                        }
-                        'r' => {
-                            self.pending.push('r'); // count rides to the char
-                            return;
-                        }
-                        'D' | 'C' | 'Y' => {
-                            // the alias once — count on these is rare and
-                            // d$/c$/yy re-runs are inert at line end
-                            self.pending.clear();
-                            return self.feed_normal(Key::Char(c));
-                        }
-                        _ => {} // operators/motions: grammar resolves counts
-                    }
-                }
-                // window commands (C-w): h l j k w move, v s split
-                if self.pending == "\x17" {
-                    self.pending.clear();
-                    return match c {
-                        'h' | 'l' | 'j' | 'k' | 'w' => self.pane_move(c),
-                        'v' => self.split(true, None),
-                        's' => self.split(false, None),
-                        'q' => self.close_pane_or_buffer(false),
-                        _ => self.message = "C-w: h l j k w move · v s split · q close".into(),
-                    };
-                }
-                // Space leader (0003 §2): one namespace, which-key overlay
-                if self.pending == " " {
-                    self.pending.clear();
-                    return match c {
-                        'c' => self.add_cursor_next_line(),
-                        'f' => self.open_picker(strop_picker::Kind::Files),
-                        'b' => self.open_picker(strop_picker::Kind::Buffers),
-                        '/' => self.open_picker(strop_picker::Kind::Grep),
-                        'R' => self.open_picker(strop_picker::Kind::Replace),
-                        'g' => {
-                            self.pending = " g".into();
-                        }
-                        '?' => self.open_help(),
-                        'u' => self.open_undo_tree(),
-                        'd' => self.open_diagnostics_picker(),
-                        'k' => self.lsp_hover(),
-                        // system clipboard via the `+` register (helix's
-                        // space y/p, vim's "+ machinery underneath)
-                        'y' => {
-                            self.pending = "\"+y".into();
-                        }
-                        'p' => self.clipboard_paste(false),
-                        'P' => self.clipboard_paste(true),
-                        // pipe the line through a shell command (was
-                        // bare `|`, which is vim's column motion)
-                        '|' => {
-                            self.pending = "|".into();
-                        }
-                        _ => {
-                            self.message =
-                                "Space: f files · b buffers · / grep · y/p clipboard · g git".into()
-                        }
-                    };
-                }
-                // git namespace (0003 §4): working-surface verbs (M2)
-                if self.pending == " g" {
-                    return self.feed_git_pending(c);
-                }
-                // gd: goto definition (LSP)
-                if self.pending == "g" && c == 'd' {
-                    self.pending.clear();
-                    return self.lsp_goto_definition();
-                }
-                // gs: switch source ↔ header (clangd extension)
-                if self.pending == "g" && c == 's' {
-                    self.pending.clear();
-                    return self.lsp_switch_source_header();
-                }
-                // hunk motions (0001 pillar 3.1)
-                if (self.pending == "]" || self.pending == "[") && c == 'c' {
-                    let forward = self.pending == "]";
-                    self.pending.clear();
-                    return self.jump_hunk(forward);
-                }
-                // marks: m<a> sets, '<a> jumps
-                if self.pending == "m" && c.is_ascii_lowercase() {
-                    self.pending.clear();
-                    return self.set_mark(c);
-                }
-                if (self.pending == "'" || self.pending == "`") && c.is_ascii_lowercase() {
-                    self.pending.clear();
-                    return self.jump_mark(c);
-                }
-                // r<char>: replace the char under the cursor, stay normal
-                let r_prefix = self.pending.strip_suffix('r').unwrap_or("");
-                if (self.pending == "r" || r_prefix.bytes().all(|b| b.is_ascii_digit()))
-                    && self.pending.ends_with('r')
-                {
-                    let count: usize = r_prefix.parse().unwrap_or(1);
-                    self.pending.clear();
-                    return self.replace_char_n(c, count);
-                }
-                // "xp / "xP: paste from a named register
-                if self.pending.len() == 2
-                    && self.pending.starts_with('"')
-                    && (c == 'p' || c == 'P')
-                {
-                    let reg = self.pending.chars().nth(1);
-                    self.pending.clear();
-                    self.paste(reg, c == 'P');
                     return;
                 }
                 self.pending.push(c);
@@ -1198,4 +1191,60 @@ impl Editor {
             other => self.message = format!("unknown ex: :{other}"),
         }
     }
+    // ---- handler shims for the command table (0008 stage 2) ---------
+
+    pub(crate) fn repeat_search_pub(&mut self, invert: bool) {
+        self.repeat_search(invert);
+    }
+    pub(crate) fn jump_hunk_pub(&mut self, forward: bool) {
+        self.jump_hunk(forward);
+    }
+    pub(crate) fn search_word_under_cursor_pub(&mut self, backward: bool) {
+        self.search_word_under_cursor(backward);
+    }
+    pub(crate) fn repeat_find_pub(&mut self, reverse: bool) {
+        self.repeat_find(reverse);
+    }
+    /// "p P" row: the completing key picks before/after.
+    pub(crate) fn paste_named_pub(&mut self, name: Option<char>, before: bool) {
+        self.paste_named(name, before);
+    }
+    /// "J ." row: the completing key picks the command.
+    pub(crate) fn join_or_repeat(&mut self, key: char) {
+        if key == 'J' {
+            self.join_lines_pub();
+        } else {
+            self.dot_repeat_pub();
+        }
+    }
+    /// "i a A o O I" row: insert entries by key.
+    pub(crate) fn insert_entry_pub(&mut self, key: char) {
+        match key {
+            'i' => self.enter_insert_from("i"),
+            'a' => self.append(),
+            'A' => self.append_eol(),
+            'o' => self.open_below(),
+            'O' => self.open_above(),
+            'I' => self.alias("I", "^i"),
+            _ => {}
+        }
+    }
+    /// "v V" row.
+    pub(crate) fn enter_visual_pub(&mut self, key: char) {
+        self.enter_visual(key == 'V');
+    }
+}
+
+/// Walker sequence → table tokens: a leading space is the leader, the
+/// ctrl-w byte is its name, every other char is its own token.
+pub(crate) fn seq_tokens(keys: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for c in keys.chars() {
+        match c {
+            ' ' => out.push("space".to_string()),
+            '\x17' => out.push("ctrl-w".to_string()),
+            c => out.push(c.to_string()),
+        }
+    }
+    out
 }

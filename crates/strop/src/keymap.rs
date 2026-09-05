@@ -21,7 +21,49 @@
 //!   several (`h j k l`), and a leading bare `/` is the search-forward
 //!   key (`/ ?`).
 
-/// One binding as it appears in `Space ?` / which-key.
+/// How a sequence dispatches (0008 stage 2). The walker consults these;
+/// `?`/which-key read the same row — the table is the single source.
+#[derive(Clone, Copy)]
+pub enum Handler {
+    /// A direct command.
+    /// The key that completed the sequence rides along (J vs ., p vs P).
+    Leaf(fn(&mut crate::editor::Editor, char)),
+    /// Alias: expands to these keys through the walker (D → d$).
+    Alias(&'static str),
+    /// A grammar motion: the key completes a motion (or the pending
+    /// operator's target) via strop_grammar.
+    Motion,
+    /// A grammar operator (d/y/c/>/<): the walker's typed op-pending.
+    Operator,
+    /// An object prefix (i/a) after an operator or in visual mode —
+    /// bare i/a in normal mode is the insert entry (the walker knows
+    /// from ParserState).
+    ObjectPrefix,
+    /// A prefix: children follow; which-key renders them.
+    Prefix,
+    /// Free-text line (`:` `/` `?` `|`…): a modal text field (0003 §1),
+    /// NOT a key sequence — the text layer owns it.
+    TextLine,
+    /// One-char absorbers: r<c> replace, m<a> mark, '/` jump, f<c> find.
+    AbsorbChar(AbsorbKind),
+    /// `"x` — register selection.
+    AbsorbRegister,
+    /// Planned slot: no dispatch yet (renders muted "(soon)").
+    Soon,
+}
+
+/// The one-char absorber flavors.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum AbsorbKind {
+    Replace,
+    MarkSet,
+    MarkJump,
+    Find,
+}
+
+/// One binding as it appears in `Space ?` / which-key AND in dispatch
+/// (0008 stage 2: one table). `id` is the stable command identity —
+/// macros, dot-repeat, a future palette, and config rebinds ride it.
 pub struct Binding {
     pub keys: &'static str,
     pub desc: &'static str,
@@ -29,6 +71,9 @@ pub struct Binding {
     pub section: &'static str,
     /// false = planned slot: no dispatch yet, renders muted "(soon)".
     pub live: bool,
+    /// Stable identity per row; per-sequence ids derive as `{id}:{key}`.
+    pub id: &'static str,
+    pub handler: Handler,
 }
 
 pub const SECTIONS: &[&str] = &["normal", "visual", "insert", "leader", "git", "ex+panes"];
@@ -40,96 +85,144 @@ pub const BINDINGS: &[Binding] = &[
         desc: "move (never off the line)",
         section: "normal",
         live: true,
+        id: "move",
+        handler: Handler::Motion,
     },
     Binding {
         keys: "w b e W B E",
         desc: "word / WORD motions",
         section: "normal",
         live: true,
+        id: "word-motions",
+        handler: Handler::Motion,
     },
     Binding {
         keys: "0 $ G %",
         desc: "line/file/pair jumps",
         section: "normal",
         live: true,
+        id: "line-jumps",
+        handler: Handler::Motion,
     },
     Binding {
         keys: "gg",
         desc: "top of file",
         section: "normal",
         live: true,
+        id: "top",
+        handler: Handler::Motion,
     },
     Binding {
         keys: "gd",
         desc: "goto definition (LSP)",
         section: "normal",
         live: true,
+        id: "goto-definition",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::lsp_goto_definition_pub(e)),
     },
     Binding {
         keys: "gs",
         desc: "switch source/header (clangd)",
         section: "normal",
         live: true,
+        id: "switch-source-header",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::lsp_switch_source_header_pub(e)),
     },
     Binding {
         keys: "f<c> F<c> t<c> T<c>",
         desc: "find/till char (candidates light up)",
         section: "normal",
         live: true,
+        id: "find-char",
+        handler: Handler::AbsorbChar(AbsorbKind::Find),
     },
     Binding {
         keys: "/ ?",
         desc: "search forward / backward",
         section: "normal",
         live: true,
+        id: "search",
+        handler: Handler::TextLine,
     },
     Binding {
-        keys: "n N",
-        desc: "next / prev match",
+        keys: "n",
+        desc: "next match",
         section: "normal",
         live: true,
+        id: "search-next",
+        handler: Handler::Leaf(|e, _| e.repeat_search_pub(false)),
+    },
+    Binding {
+        keys: "N",
+        desc: "previous match",
+        section: "normal",
+        live: true,
+        id: "search-prev",
+        handler: Handler::Leaf(|e, _| e.repeat_search_pub(true)),
     },
     Binding {
         keys: "]c [c",
         desc: "next / prev git hunk",
         section: "normal",
         live: true,
+        id: "hunk-nav",
+        handler: Handler::Leaf(|e, k| e.jump_hunk_pub(k != '[')),
     },
     Binding {
         keys: "m<a>",
         desc: "set mark at cursor",
         section: "normal",
         live: true,
+        id: "mark-set",
+        handler: Handler::AbsorbChar(AbsorbKind::MarkSet),
     },
     Binding {
-        keys: "'a `a",
+        keys: "'<a> `<a>",
         desc: "jump to mark",
         section: "normal",
         live: true,
+        id: "mark-jump",
+        handler: Handler::AbsorbChar(AbsorbKind::MarkJump),
     },
     Binding {
-        keys: "* # ; ,",
-        desc: "word under cursor / repeat find",
+        keys: "* #",
+        desc: "word under cursor, forward / backward",
         section: "normal",
         live: true,
+        id: "word-search",
+        handler: Handler::Leaf(|e, k| e.search_word_under_cursor_pub(k == '#')),
+    },
+    Binding {
+        keys: "; ,",
+        desc: "repeat find, same / reversed",
+        section: "normal",
+        live: true,
+        id: "find-repeat",
+        handler: Handler::Leaf(|e, k| e.repeat_find_pub(k == ',')),
     },
     Binding {
         keys: "|",
         desc: "column motion (vim); pipe moved to space |",
         section: "normal",
         live: true,
+        id: "column-motion",
+        handler: Handler::Motion,
     },
     Binding {
         keys: "space |",
         desc: "pipe line/selection through shell (:! runs)",
         section: "leader",
         live: true,
+        id: "pipe-shell",
+        handler: Handler::TextLine,
     },
     Binding {
         keys: "Q",
         desc: "toggle cursor at point (multicursor)",
         section: "normal",
         live: true,
+        id: "cursor-toggle",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::toggle_cursor(e)),
     },
     // normal: operators
     Binding {
@@ -137,72 +230,160 @@ pub const BINDINGS: &[Binding] = &[
         desc: "operators + motion/object (live preview)",
         section: "normal",
         live: true,
+        id: "operators",
+        handler: Handler::Operator,
     },
     Binding {
-        keys: "dd yy cc D C Y s x X",
-        desc: "line/char shortcuts",
+        keys: "dd yy cc",
+        desc: "line delete/yank/change",
         section: "normal",
         live: true,
+        id: "line-ops",
+        handler: Handler::Operator,
+    },
+    Binding {
+        keys: "D",
+        desc: "delete to line end",
+        section: "normal",
+        live: true,
+        id: "op-alias-d",
+        handler: Handler::Alias("d$"),
+    },
+    Binding {
+        keys: "C",
+        desc: "change to line end",
+        section: "normal",
+        live: true,
+        id: "op-alias-c",
+        handler: Handler::Alias("c$"),
+    },
+    Binding {
+        keys: "Y",
+        desc: "yank line",
+        section: "normal",
+        live: true,
+        id: "op-alias-y",
+        handler: Handler::Alias("yy"),
+    },
+    Binding {
+        keys: "s",
+        desc: "substitute char",
+        section: "normal",
+        live: true,
+        id: "op-alias-s",
+        handler: Handler::Alias("cl"),
+    },
+    Binding {
+        keys: "x X",
+        desc: "delete char / char back",
+        section: "normal",
+        live: true,
+        id: "char-delete",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::delete_char(e)),
     },
     Binding {
         keys: "iw i\" i' i( i[ i{",
         desc: "inner objects (quotes scan the line)",
         section: "normal",
         live: true,
+        id: "objects",
+        handler: Handler::ObjectPrefix,
     },
     Binding {
         keys: "ds\" cs\"' ysiw\"",
         desc: "surround: delete / change / add",
         section: "normal",
         live: true,
+        id: "surround",
+        handler: Handler::ObjectPrefix,
     },
     Binding {
         keys: "i a A o O I",
         desc: "insert (auto-indent)",
         section: "normal",
         live: true,
+        id: "insert-entries",
+        handler: Handler::Leaf(crate::editor::Editor::insert_entry_pub),
     },
     Binding {
         keys: "p P",
         desc: "paste after / before",
         section: "normal",
         live: true,
+        id: "paste",
+        handler: Handler::Leaf(|e, k| e.paste_named_pub(None, k == 'P')),
     },
     Binding {
-        keys: "r<c> J .",
-        desc: "replace char / join / repeat",
+        keys: "r<c>",
+        desc: "replace char",
         section: "normal",
         live: true,
+        id: "replace-char",
+        handler: Handler::AbsorbChar(AbsorbKind::Replace),
     },
     Binding {
-        keys: "^ ~ S",
-        desc: "first non-blank / toggle case / change line",
+        keys: "J .",
+        desc: "join lines · repeat change",
         section: "normal",
         live: true,
+        id: "join-repeat",
+        handler: Handler::Leaf(crate::editor::Editor::join_or_repeat),
+    },
+    Binding {
+        keys: "^",
+        desc: "first non-blank",
+        section: "normal",
+        live: true,
+        id: "first-non-blank",
+        handler: Handler::Motion,
+    },
+    Binding {
+        keys: "~",
+        desc: "toggle case",
+        section: "normal",
+        live: true,
+        id: "toggle-case",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::toggle_case_pub(e)),
+    },
+    Binding {
+        keys: "S",
+        desc: "change line",
+        section: "normal",
+        live: true,
+        id: "subst-line",
+        handler: Handler::Alias("cc"),
     },
     Binding {
         keys: "u ctrl-r",
         desc: "undo / redo (one unit per command)",
         section: "normal",
         live: true,
+        id: "undo-redo",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::undo(e)),
     },
     Binding {
         keys: "\"+y \"+p \"+P",
         desc: "system clipboard: yank / paste after / before",
         section: "normal",
         live: true,
+        id: "reg-clipboard",
+        handler: Handler::AbsorbRegister,
     },
     Binding {
         keys: "\"xy \"xp",
         desc: "named register: yank / paste",
         section: "normal",
         live: true,
+        id: "reg-named",
+        handler: Handler::AbsorbRegister,
     },
     Binding {
         keys: "v V",
         desc: "visual / visual-line",
         section: "normal",
         live: true,
+        id: "visual-enter",
+        handler: Handler::Leaf(|e, k| e.enter_visual_pub(k)),
     },
     // visual
     Binding {
@@ -210,24 +391,32 @@ pub const BINDINGS: &[Binding] = &[
         desc: "operate on selection",
         section: "visual",
         live: true,
+        id: "visual-ops",
+        handler: Handler::Operator,
     },
     Binding {
         keys: "S<c>",
         desc: "wrap selection in pair",
         section: "visual",
         live: true,
+        id: "visual-surround",
+        handler: Handler::AbsorbChar(AbsorbKind::Replace),
     },
     Binding {
         keys: "i<a> a<a>",
         desc: "objects select (vi[ works)",
         section: "visual",
         live: true,
+        id: "visual-objects",
+        handler: Handler::ObjectPrefix,
     },
     Binding {
         keys: "space y",
         desc: "yank selection → clipboard",
         section: "visual",
         live: true,
+        id: "clip-yank",
+        handler: Handler::Leaf(|e, _| e.clipboard_yank_pub()),
     },
     // insert
     Binding {
@@ -235,24 +424,32 @@ pub const BINDINGS: &[Binding] = &[
         desc: "normal mode (session = one undo unit)",
         section: "insert",
         live: true,
+        id: "insert-esc",
+        handler: Handler::Prefix,
     },
     Binding {
         keys: "backspace",
         desc: "delete back",
         section: "insert",
         live: true,
+        id: "insert-bs",
+        handler: Handler::Prefix,
     },
     Binding {
         keys: "enter",
         desc: "new line (auto-indent)",
         section: "insert",
         live: true,
+        id: "insert-enter",
+        handler: Handler::Prefix,
     },
     Binding {
         keys: "} ] )",
         desc: "closer on indent-only line dedents",
         section: "insert",
         live: true,
+        id: "insert-closers",
+        handler: Handler::Prefix,
     },
     // leader
     Binding {
@@ -260,78 +457,104 @@ pub const BINDINGS: &[Binding] = &[
         desc: "file finder",
         section: "leader",
         live: true,
+        id: "files",
+        handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Files)),
     },
     Binding {
         keys: "space b",
         desc: "buffers (MRU)",
         section: "leader",
         live: true,
+        id: "buffers",
+        handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Buffers)),
     },
     Binding {
         keys: "space /",
         desc: "live grep",
         section: "leader",
         live: true,
+        id: "grep",
+        handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Grep)),
     },
     Binding {
         keys: "space R",
         desc: "global search & replace",
         section: "leader",
         live: true,
+        id: "replace-global",
+        handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Replace)),
     },
     Binding {
         keys: "space ?",
         desc: "this popup",
         section: "leader",
         live: true,
+        id: "help",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::open_help(e)),
     },
     Binding {
         keys: "space y",
         desc: "yank motion → system clipboard",
         section: "leader",
         live: true,
+        id: "clip-yank",
+        handler: Handler::Leaf(|e, _| e.clipboard_yank_pub()),
     },
     Binding {
         keys: "space p",
         desc: "paste clipboard after",
         section: "leader",
         live: true,
+        id: "clip-paste",
+        handler: Handler::Leaf(|e, k| e.clipboard_paste_pub(k == 'P')),
     },
     Binding {
         keys: "space P",
         desc: "paste clipboard before",
         section: "leader",
         live: true,
+        id: "clip-paste-before",
+        handler: Handler::Leaf(|e, k| e.clipboard_paste_pub(k == 'P')),
     },
     Binding {
         keys: "space d",
         desc: "diagnostics picker",
         section: "leader",
         live: true,
+        id: "diagnostics",
+        handler: Handler::Leaf(|e, _| e.open_diagnostics_picker()),
     },
     Binding {
         keys: "space k",
         desc: "hover docs",
         section: "leader",
         live: true,
+        id: "hover",
+        handler: Handler::Leaf(|e, _| e.lsp_hover_pub()),
     },
     Binding {
         keys: "space j",
         desc: "jumplist picker",
         section: "leader",
         live: false,
+        id: "jumplist-picker",
+        handler: Handler::Soon,
     },
     Binding {
         keys: "space u",
         desc: "undo-tree browser",
         section: "leader",
         live: true,
+        id: "undo-tree",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::open_undo_tree(e)),
     },
     Binding {
         keys: "space c",
         desc: "cursor on next line too (multicursor)",
         section: "leader",
         live: true,
+        id: "cursor-stack",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::add_cursor_next_line(e)),
     },
     // git
     Binding {
@@ -339,78 +562,104 @@ pub const BINDINGS: &[Binding] = &[
         desc: "git…",
         section: "git",
         live: true,
+        id: "git-prefix",
+        handler: Handler::Prefix,
     },
     Binding {
         keys: "space g l",
         desc: "commit browser",
         section: "git",
         live: true,
+        id: "git-log",
+        handler: Handler::Leaf(|e, _| e.open_log_pub(false)),
     },
     Binding {
         keys: "space g h",
         desc: "file history (visual: selected lines)",
         section: "git",
         live: true,
+        id: "git-file-history",
+        handler: Handler::Leaf(|e, _| e.open_log_pub(true)),
     },
     Binding {
         keys: "space g b",
         desc: "toggle blame gutter / card",
         section: "git",
         live: true,
+        id: "git-blame",
+        handler: Handler::Leaf(|e, _| e.toggle_blame_gutter()),
     },
     Binding {
         keys: "space g y",
         desc: "permalink: copy",
         section: "git",
         live: true,
+        id: "git-permalink-yank",
+        handler: Handler::Leaf(|e, _| e.yank_permalink()),
     },
     Binding {
         keys: "space g o",
         desc: "permalink: open",
         section: "git",
         live: true,
+        id: "git-permalink-open",
+        handler: Handler::Leaf(|e, _| e.open_permalink()),
     },
     Binding {
         keys: "space g u",
         desc: "hunk: undo unstaged (restore from index)",
         section: "git",
         live: true,
+        id: "git-hunk-undo",
+        handler: Handler::Leaf(|e, _| e.undo_hunk()),
     },
     Binding {
         keys: "space g s",
         desc: "hunk: stage (live→index)",
         section: "git",
         live: true,
+        id: "git-hunk-stage",
+        handler: Handler::Leaf(|e, _| e.stage_hunk()),
     },
     Binding {
         keys: "space g S",
         desc: "hunk: unstage (index→HEAD)",
         section: "git",
         live: true,
+        id: "git-hunk-unstage",
+        handler: Handler::Leaf(|e, _| e.unstage_hunk()),
     },
     Binding {
         keys: "space g p",
         desc: "hunk: preview",
         section: "git",
         live: true,
+        id: "git-hunk-preview",
+        handler: Handler::Leaf(|e, _| e.preview_hunk()),
     },
     Binding {
         keys: "]f [f",
         desc: "next / prev file in commit diff",
         section: "git",
         live: true,
+        id: "commit-file-nav",
+        handler: Handler::Soon,
     },
     Binding {
         keys: "enter",
         desc: "dive into the line's commit (blame gutter)",
         section: "git",
         live: true,
+        id: "surface-dive",
+        handler: Handler::Prefix,
     },
     Binding {
         keys: "q",
         desc: "close surface (readonly buffers)",
         section: "git",
         live: true,
+        id: "surface-close",
+        handler: Handler::Prefix,
     },
     // ex + panes
     Binding {
@@ -418,70 +667,152 @@ pub const BINDINGS: &[Binding] = &[
         desc: "write / quit (force) / write-quit",
         section: "ex+panes",
         live: true,
+        id: "ex-write-quit",
+        handler: Handler::TextLine,
     },
     Binding {
         keys: ":e",
         desc: "edit file",
         section: "ex+panes",
         live: true,
+        id: "ex-edit",
+        handler: Handler::TextLine,
     },
     Binding {
         keys: ":help",
         desc: "help buffer (this text — / searches it)",
         section: "ex+panes",
         live: true,
+        id: "ex-help",
+        handler: Handler::TextLine,
     },
     Binding {
         keys: ":vs :sp",
         desc: "split vertical / horizontal",
         section: "ex+panes",
         live: true,
+        id: "ex-split",
+        handler: Handler::TextLine,
     },
     Binding {
         keys: "ctrl-w h / l / j / k / w",
         desc: "pane move / cycle",
         section: "ex+panes",
         live: true,
+        id: "pane-nav",
+        handler: Handler::Leaf(crate::editor::Editor::pane_move_pub),
     },
     Binding {
         keys: "ctrl-o / ctrl-i (tab)",
         desc: "jump back / forward (jumplist)",
         section: "ex+panes",
         live: true,
+        id: "jumplist",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::jump_back(e)),
     },
     Binding {
         keys: "ctrl-w v / s",
         desc: "pane split (vs / sp)",
         section: "ex+panes",
         live: true,
+        id: "pane-split",
+        handler: Handler::Leaf(crate::editor::Editor::split_pub),
     },
     Binding {
         keys: ":view / -R",
         desc: "readonly browsing",
         section: "ex+panes",
         live: true,
+        id: "readonly",
+        handler: Handler::TextLine,
     },
     Binding {
         keys: "ctrl-w q",
         desc: "close pane (last → buffer)",
         section: "ex+panes",
         live: true,
+        id: "pane-close",
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::pane_close_pub(e)),
     },
     Binding {
-        keys: "up down tab s-tab",
-        desc: "picker navigation",
+        keys: "up down left right tab s-tab",
+        desc: "picker navigation / arrows = hjkl everywhere",
         section: "ex+panes",
         live: true,
+        id: "picker-nav",
+        handler: Handler::Prefix,
     },
     Binding {
         keys: "ctrl-x",
         desc: "replace picker: exclude/include match",
         section: "ex+panes",
         live: true,
+        id: "replace-exclude",
+        handler: Handler::Prefix,
     },
 ];
 
 /// Expand a row's `keys` into its sequences (see the notation above).
+/// Dispatch lookup: the sequence (walker's tokens) → its row.
+/// `<c>`/`<a>` in a row's keys match any char (parameterized rows).
+pub(crate) fn find_dispatch(toks: &[String]) -> Option<&'static Binding> {
+    // a row token is one KEY only when it's a named key or a
+    // placeholder; everything else is a char sequence ("gg", "]c")
+    fn row_tokens<'a>(seq: &[&'a str]) -> Vec<std::borrow::Cow<'a, str>> {
+        const NAMED: &[&str] = &[
+            "space",
+            "ctrl-w",
+            "ctrl-o",
+            "ctrl-i",
+            "up",
+            "down",
+            "left",
+            "right",
+            "tab",
+            "s-tab",
+            "esc",
+            "enter",
+            "backspace",
+            "ctrl-r",
+            "ctrl-x",
+        ];
+        let mut out: Vec<std::borrow::Cow<'a, str>> = Vec::new();
+        for t in seq {
+            // ex-command tokens (":view") are whole; so are named keys
+            // and <c>/<a> placeholders
+            if NAMED.contains(t) || t.starts_with('<') || t.starts_with(':') {
+                out.push((*t).into());
+                continue;
+            }
+            if let Some(i) = t.find('<') {
+                // "r<c>": the r, then the placeholder
+                for c in t[..i].chars() {
+                    out.push(c.to_string().into());
+                }
+                out.push(t[i..].into());
+                continue;
+            }
+            for c in t.chars() {
+                out.push(c.to_string().into());
+            }
+        }
+        out
+    }
+    BINDINGS.iter().find(|b| {
+        if !b.live {
+            return false;
+        }
+        expand(b.keys).iter().any(|seq| {
+            let seq = row_tokens(seq);
+            seq.len() == toks.len()
+                && seq
+                    .iter()
+                    .zip(toks)
+                    .all(|(k, t)| (k.len() > 2 && k.starts_with('<')) || k.as_ref() == t)
+        })
+    })
+}
+
 pub(crate) fn expand(keys: &str) -> Vec<Vec<&str>> {
     let toks: Vec<&str> = keys.split(' ').filter(|t| !t.is_empty()).collect();
     let mut seqs: Vec<Vec<&str>> = Vec::new();
@@ -785,6 +1116,8 @@ mod tests {
         // picker (0007 replace incl. ctrl-x), insert closers, surfaces
         "up",
         "down",
+        "left",
+        "right",
         "tab",
         "s-tab",
         "ctrl-x",
@@ -814,40 +1147,81 @@ mod tests {
                 .find(|(a, _)| a == entry)
                 .map(|(_, c)| *c)
                 .unwrap_or(*entry);
-            let want: Vec<&str> = canonical.split(' ').collect();
-
+            // match the way dispatch does: placeholders and char runs
+            let toks: Vec<String> = if [
+                "up",
+                "down",
+                "left",
+                "right",
+                "tab",
+                "s-tab",
+                "esc",
+                "enter",
+                "backspace",
+            ]
+            .contains(&canonical)
+            {
+                vec![canonical.to_string()]
+            } else if canonical.starts_with(':') || canonical.starts_with("ctrl-") {
+                canonical.split(' ').map(|t| t.to_string()).collect()
+            } else {
+                // walker keys: the leader is a space char, then chars;
+                // <a>/<c> placeholders materialize to a concrete char
+                let concretized = canonical.replace("<a>", "a").replace("<c>", "x");
+                let keys = concretized
+                    .strip_prefix("space ")
+                    .map(|rest| format!(" {}", rest.replace(' ', "")))
+                    .unwrap_or(concretized);
+                crate::editor::normal::seq_tokens(&keys)
+            };
             assert!(
-                BINDINGS.iter().any(|b| expand(b.keys).contains(&want)),
+                find_dispatch(&toks).is_some(),
                 "{entry} dispatches but has no BINDINGS row (0003 §5.7)"
             );
         }
     }
 
-    /// 0008 stage 1 structural pin: every registry leaf dispatches to a
-    /// real change AND has a BINDINGS row — dispatch and docs are one
-    /// table now.
+    /// 0008 stage 2 structural pin: every live normal/leader row
+    /// dispatches observably through the walker — the table IS dispatch.
     #[test]
-    fn registry_leaves_dispatch_and_document() {
-        for leaf in crate::editor::registry::LEAVES {
-            let key = leaf.key.to_string();
-            assert!(
-                BINDINGS
+    fn live_rows_dispatch_through_the_table() {
+        for b in BINDINGS.iter().filter(|b| b.live) {
+            for seq in expand(b.keys) {
+                let keys = seq
                     .iter()
-                    .any(|b| expand(b.keys).contains(&vec![key.as_str()])),
-                "registry leaf '{}' has no BINDINGS row",
-                leaf.key
-            );
-            // recognized ≠ unknown-key error; legal no-op states (e at a
-            // word's own end, % on a bracketless line) are vim's too
-            let mut e = Editor::new(Buffer::from_text("fn f(x) {\n    let y = f(x);\n}\n"));
-            e.set_head(18);
-            (leaf.run)(&mut e);
-            assert!(
-                !e.message.starts_with("not an editor command"),
-                "leaf '{}' failed to dispatch: {}",
-                leaf.key,
-                e.message
-            );
+                    .map(|t| match *t {
+                        "space" => " ".to_string(),
+                        "<a>" => "a".into(),
+                        "<c>" => "x".into(),
+                        t if t.starts_with("ctrl-") || t == "up" || t == "down" || t == "tab" => {
+                            String::new() // key events, not walker chars
+                        }
+                        t if t.contains('<') => {
+                            // "f<c>": the key, then a concrete char
+                            let i = t.find('<').unwrap();
+                            format!("{}x", &t[..i])
+                        }
+                        t => t.to_string(),
+                    })
+                    .collect::<String>();
+                if keys.is_empty() || keys.starts_with(':') || keys.starts_with('-') {
+                    continue; // event-layer, ex-line, and CLI-flag rows
+                }
+                if matches!(b.handler, Handler::Soon) {
+                    continue; // surface-only verbs (]f/[f) dispatch in the
+                              // readonly layer, not on plain buffers
+                }
+                // legal no-ops (motions at edges) say nothing; what must
+                // never happen is the unknown-key marker
+                let mut e = Editor::new(Buffer::from_text("fn f(x) {\n    let y = f(x);\n}\n"));
+                e.set_head(14);
+                e.feed_text(&keys);
+                assert!(
+                    !e.message.starts_with("not an editor command"),
+                    "{} (fed as {keys:?}) failed to dispatch — table drift",
+                    b.keys
+                );
+            }
         }
     }
 
@@ -874,19 +1248,21 @@ mod tests {
                     .collect::<String>();
                 let mut e = Editor::new(Buffer::from_text("x\n"));
                 e.feed_text(&keys);
-                assert!(
-                    dispatched_something(&e),
-                    "{} (fed as {keys:?}) was a no-op — table drift",
-                    b.keys
-                );
+                if !dispatched_something(&e) {
+                    panic!(
+                        "{} (fed as {keys:?}) no-op: msg={:?} pending={:?} prefix={:?}",
+                        b.keys, e.message, e.pending, e.walker.prefix
+                    );
+                }
             }
         }
     }
 
     fn dispatched_something(e: &Editor) -> bool {
         !e.message.is_empty()
-            || e.picker_open()
             || !e.pending.is_empty()
+            || e.picker_open()
+            || !e.walker.prefix.is_empty()
             || e.clip_paste_pending.is_some()
             || e.osc52.is_some()
             || e.mode != Mode::Normal

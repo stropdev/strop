@@ -3,10 +3,13 @@
 > Why the keymap must become a table, what we borrow, and what we
 > deliberately don't build on.
 
-Status: stage 1 landed (0.5.0): leaf commands are data
-(editor/registry.rs), dispatched from the table; coverage pinned by
-keymap tests. Stage 2 (the trie absorbing pending/operator state and the
-BINDINGS/LEAVES merge) remains planned.
+Status: landed (0.6.0). The input walker (editor/input.rs) carries
+typed parser state (count1/register/op/count2 + prefix path); BINDINGS
+rows carry stable ids + handlers and ARE the dispatch table
+(find_dispatch); pending strings survive only as free-text line content
+(:ex /search ?search |pipe — text fields, not key sequences) and as the
+grammar's assembly interchange. Registry.rs is gone; coverage tests
+tokenize exactly like dispatch.
 
 ---
 

@@ -29,10 +29,17 @@ pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
     if editor.picker_open() {
         return;
     }
-    let Some(&(_, title)) = PREFIXES.iter().find(|(p, _)| *p == editor.pending) else {
+    // the walker owns the prefix now (0008 stage 2); pending only for
+    // the free-text lines
+    let pending = if editor.walker.prefix.is_empty() {
+        editor.pending.as_str()
+    } else {
+        editor.walker.prefix
+    };
+    let Some(&(_, title)) = PREFIXES.iter().find(|(p, _)| *p == pending) else {
         return;
     };
-    let hints = keymap::children_of(&editor.pending, editor.mode);
+    let hints = keymap::children_of(pending, editor.mode);
     if hints.is_empty() {
         return;
     }

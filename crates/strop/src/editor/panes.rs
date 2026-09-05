@@ -101,6 +101,19 @@ impl Editor {
     }
 }
 
+impl Editor {
+    /// Table shims (0008 stage 2): ctrl-w children dispatch by key.
+    pub(crate) fn pane_move_pub(&mut self, key: char) {
+        self.pane_move(key);
+    }
+    pub(crate) fn split_pub(&mut self, key: char) {
+        self.split(key == 'v', None);
+    }
+    pub(crate) fn pane_close_pub(&mut self) {
+        self.close_pane_or_buffer(false);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

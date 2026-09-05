@@ -194,7 +194,8 @@ impl Buffer {
     }
 
     pub fn line_of(&self, offset: impl Into<id::ByteOffset>) -> usize {
-        self.rope.byte_to_line(offset.into().get().min(self.len_bytes()))
+        self.rope
+            .byte_to_line(offset.into().get().min(self.len_bytes()))
     }
 
     /// Column (in bytes) of `offset` within its line.
@@ -277,8 +278,7 @@ impl Buffer {
                 EditKind::Delete => {
                     // both bounds must land on char boundaries — a stale
                     // replay against drifted text panics ropey otherwise
-                    let end = self
-                        .clamp_boundary((op.at + op.text.len()).min(self.len_bytes()));
+                    let end = self.clamp_boundary((op.at + op.text.len()).min(self.len_bytes()));
                     let start = self.clamp_boundary(op.at.min(end));
                     if start < end {
                         self.rope
