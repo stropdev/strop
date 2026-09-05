@@ -12,6 +12,7 @@ RUN apk add --no-cache build-base git ripgrep neovim \
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY docs ./docs
 
 FROM builder AS test
 RUN cargo fmt --check \
