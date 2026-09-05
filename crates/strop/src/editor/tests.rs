@@ -964,4 +964,31 @@ mod keybinds_tests {
         e.feed_text(":%s/nope/x/g\r");
         assert!(e.message.contains("pattern not found"));
     }
+    #[test]
+    fn diagnostic_jumps_wrap() {
+        use strop_lsp::Diag;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("d.txt");
+        std::fs::write(&p, "aaa\nbbb\nccc\nddd\n").unwrap();
+        let mut e = Editor::new(Buffer::open(p.to_str().unwrap()).unwrap());
+        e.cwd = dir.path().to_path_buf();
+        let mk = |line: usize, msg: &str| Diag {
+            line,
+            col: 0,
+            end_line: line,
+            end_col: 1,
+            severity: 1,
+            message: msg.into(),
+        };
+        e.diags
+            .insert(p.clone(), vec![mk(1, "second"), mk(3, "fourth")]);
+        e.feed_text("]d");
+        assert_eq!(e.buf().line_of(e.head()), 1);
+        e.feed_text("]d");
+        assert_eq!(e.buf().line_of(e.head()), 3);
+        e.feed_text("]d"); // wraps to the first
+        assert_eq!(e.buf().line_of(e.head()), 1);
+        e.feed_text("[d"); // wraps back to the last
+        assert_eq!(e.buf().line_of(e.head()), 3);
+    }
 }

@@ -54,6 +54,7 @@ pub enum QueuedRequest {
     Goto,
     Hover,
     SwitchHeader,
+    Locations(LocKind),
 }
 
 /// One pre-init request: target doc, position, kind.
@@ -103,6 +104,26 @@ pub fn to_byte_col(line: &str, server_col: usize, enc: PositionEncoding) -> usiz
     }
 }
 
+/// Which location request a `Locations` event answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocKind {
+    References,
+    Implementation,
+    TypeDefinition,
+    Declaration,
+}
+
+impl LocKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            LocKind::References => "references",
+            LocKind::Implementation => "implementation",
+            LocKind::TypeDefinition => "type definition",
+            LocKind::Declaration => "declaration",
+        }
+    }
+}
+
 pub enum LspEvent {
     Diagnostics {
         path: PathBuf,
@@ -122,6 +143,12 @@ pub enum LspEvent {
         path: PathBuf,
         line: usize,
         col: usize,
+    },
+    /// references/implementation/typeDef/declaration results — many
+    /// locations land in the picker, one jumps directly.
+    Locations {
+        kind: LocKind,
+        items: Vec<(PathBuf, usize, usize)>,
     },
     /// A user-facing note that is neither ready nor failure (e.g.
     /// "no header counterpart").
@@ -171,6 +198,32 @@ impl ServerCaps {
             guard.as_ref().and_then(|c| c.definition_provider.as_ref()),
             Some(OneOf::Left(true)) | Some(OneOf::Right(_))
         )
+    }
+
+    fn flag(&self, f: impl Fn(&async_lsp::lsp_types::ServerCapabilities) -> bool) -> bool {
+        let Ok(guard) = self.0.lock() else {
+            return false;
+        };
+        guard.as_ref().is_some_and(|c| f(c))
+    }
+
+    pub fn references(&self) -> bool {
+        self.flag(|c| {
+            matches!(
+                c.references_provider,
+                Some(async_lsp::lsp_types::OneOf::Left(true))
+                    | Some(async_lsp::lsp_types::OneOf::Right(_))
+            )
+        })
+    }
+    pub fn implementation(&self) -> bool {
+        self.flag(|c| c.implementation_provider.is_some())
+    }
+    pub fn type_definition(&self) -> bool {
+        self.flag(|c| c.type_definition_provider.is_some())
+    }
+    pub fn declaration(&self) -> bool {
+        self.flag(|c| c.declaration_provider.is_some())
     }
 
     /// The negotiated column encoding (spec default UTF-16 until the
@@ -446,6 +499,16 @@ impl Client {
                                     });
                                 }
                             }
+                            QueuedRequest::Locations(kind) => {
+                                let tdp = TextDocumentPositionParams {
+                                    text_document: TextDocumentIdentifier { uri },
+                                    position: Position {
+                                        line: line as u32,
+                                        character: col as u32,
+                                    },
+                                };
+                                request_locations(sock.clone(), tx2.clone(), kind, tdp).await;
+                            }
                             QueuedRequest::SwitchHeader => {
                                 let resp = sock
                                     .request::<SwitchSourceHeader>(TextDocumentIdentifier { uri })
@@ -713,6 +776,41 @@ impl Client {
         });
     }
 
+    /// references / implementation / type-definition / declaration:
+    /// one shape, four LSP methods; the response posts as Locations.
+    pub fn locations(&self, kind: LocKind, path: &Path, line: usize, col: usize) {
+        // pre-init: caps unknown ≠ unsupported — queue like gd (0015)
+        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
+            self.pending_requests.lock().push(PendingRequest {
+                path: path.to_path_buf(),
+                line,
+                col,
+                kind: QueuedRequest::Locations(kind),
+            });
+            return;
+        }
+        let supported = match kind {
+            LocKind::References => self.caps.references(),
+            LocKind::Implementation => self.caps.implementation(),
+            LocKind::TypeDefinition => self.caps.type_definition(),
+            LocKind::Declaration => self.caps.declaration(),
+        };
+        if !supported {
+            return; // quiet no-op like gd (0009 §2.5)
+        }
+        let Some(uri) = self.uri(path) else { return };
+        let sock = self.socket.clone();
+        let tx = self.tx.clone();
+        let tdp = TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri },
+            position: Position {
+                line: line as u32,
+                character: col as u32,
+            },
+        };
+        self.handle.spawn(request_locations(sock, tx, kind, tdp));
+    }
+
     /// clangd's `textDocument/switchSourceHeader` (a clangd extension,
     /// absent from lsp-types' request set): the .cpp ↔ .h jump. The
     /// counterpart posts as GotoLocation at its top; "no counterpart"
@@ -768,6 +866,106 @@ fn is_content_modified<T>(resp: &Result<T, async_lsp::Error>) -> bool {
 }
 
 /// Hover content → plain text (markdown flattened).
+/// The location-request body shared by `Client::locations` and the
+/// pre-init flush.
+async fn request_locations(
+    sock: ServerSocket,
+    tx: std::sync::mpsc::Sender<LspEvent>,
+    kind: LocKind,
+    tdp: TextDocumentPositionParams,
+) {
+    use async_lsp::lsp_types as lt;
+    let to_items = |locs: Vec<lt::Location>| -> Vec<(PathBuf, usize, usize)> {
+        locs.into_iter()
+            .filter_map(|l| {
+                l.uri.to_file_path().ok().map(|p| {
+                    (
+                        p,
+                        l.range.start.line as usize,
+                        l.range.start.character as usize,
+                    )
+                })
+            })
+            .collect()
+    };
+    let from_goto =
+        |r: Option<lt::GotoDefinitionResponse>| -> Option<Vec<(PathBuf, usize, usize)>> {
+            r.map(|resp| {
+                let locs = match resp {
+                    lt::GotoDefinitionResponse::Scalar(l) => vec![l],
+                    lt::GotoDefinitionResponse::Array(v) => v,
+                    lt::GotoDefinitionResponse::Link(v) => v
+                        .into_iter()
+                        .map(|l| lt::Location {
+                            uri: l.target_uri,
+                            range: l.target_selection_range,
+                        })
+                        .collect(),
+                };
+                to_items(locs)
+            })
+        };
+    let items = match kind {
+        LocKind::References => {
+            let params = lt::ReferenceParams {
+                text_document_position: tdp,
+                context: lt::ReferenceContext {
+                    include_declaration: true,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            sock.request::<lt::request::References>(params)
+                .await
+                .ok()
+                .flatten()
+                .map(to_items)
+        }
+        LocKind::Implementation => {
+            let params = lt::request::GotoImplementationParams {
+                text_document_position_params: tdp,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            from_goto(
+                sock.request::<lt::request::GotoImplementation>(params)
+                    .await
+                    .ok()
+                    .flatten(),
+            )
+        }
+        LocKind::TypeDefinition => {
+            let params = lt::request::GotoTypeDefinitionParams {
+                text_document_position_params: tdp,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            from_goto(
+                sock.request::<lt::request::GotoTypeDefinition>(params)
+                    .await
+                    .ok()
+                    .flatten(),
+            )
+        }
+        LocKind::Declaration => {
+            let params = lt::request::GotoDeclarationParams {
+                text_document_position_params: tdp,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            from_goto(
+                sock.request::<lt::request::GotoDeclaration>(params)
+                    .await
+                    .ok()
+                    .flatten(),
+            )
+        }
+    };
+    if let Some(items) = items {
+        let _ = tx.send(LspEvent::Locations { kind, items });
+    }
+}
+
 fn hover_text(hover: &async_lsp::lsp_types::Hover) -> String {
     use async_lsp::lsp_types::HoverContents;
     match &hover.contents {

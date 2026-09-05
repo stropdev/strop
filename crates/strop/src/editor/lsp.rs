@@ -209,27 +209,126 @@ impl Editor {
                 }
                 LspEvent::Note { text } => self.message = text,
                 LspEvent::HoverText { text } => self.hover_card = Some(text),
+                LspEvent::Locations { kind, items } => match items.len() {
+                    0 => self.message = format!("lsp: no {}", kind.label()),
+                    1 => {
+                        let (path, line, col) = items.into_iter().next().unwrap();
+                        self.jump_to_location(path, line, col, enc);
+                    }
+                    n => {
+                        use strop_picker::{Item, Kind, Payload};
+                        let label = kind.label();
+                        let items: Vec<Item> = items
+                            .into_iter()
+                            .map(|(path, line, col)| Item {
+                                text: format!("{}:{}:{}", path.display(), line + 1, col + 1),
+                                payload: Payload::Grep {
+                                    path,
+                                    line: line + 1,
+                                    col: col + 1,
+                                    match_len: 1,
+                                    line_text: String::new(),
+                                },
+                            })
+                            .collect();
+                        let picker = strop_picker::Picker::new(Kind::Locations, items, false);
+                        self.picker = Some(crate::editor::PickerGlue::diagnostics(picker));
+                        self.message = format!("{n} {label}");
+                    }
+                },
                 LspEvent::GotoLocation { path, line, col } => {
                     if std::env::var_os("STROP_LSP_LOG").is_some() {
                         eprintln!("strop: goto {}:{}:{}", path.display(), line, col);
                     }
-                    let path_s = path.display().to_string();
-                    if let Err(e) = self.open_buffer(&path_s) {
-                        self.message = format!("open {path_s}: {e}");
-                    } else {
-                        // server col → byte col against the target line
-                        let col = {
-                            let line_idx = line.min(self.buf().len_lines().saturating_sub(1));
-                            let text = self.buf().line_text(line_idx);
-                            strop_lsp::to_byte_col(&text, col, enc)
-                        };
-                        let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
-                        self.set_head(self.buf().clamp_boundary(start + col));
-                        self.clamp_cursor();
-                    }
+                    self.jump_to_location(path, line, col, enc);
                 }
             }
         }
+    }
+
+    /// Open the target and land on the position (server col → byte
+    /// col against the target line).
+    fn jump_to_location(
+        &mut self,
+        path: PathBuf,
+        line: usize,
+        col: usize,
+        enc: strop_lsp::PositionEncoding,
+    ) {
+        let path_s = path.display().to_string();
+        if let Err(e) = self.open_buffer(&path_s) {
+            self.message = format!("open {path_s}: {e}");
+            return;
+        }
+        let col = {
+            let line_idx = line.min(self.buf().len_lines().saturating_sub(1));
+            let text = self.buf().line_text(line_idx);
+            strop_lsp::to_byte_col(&text, col, enc)
+        };
+        let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
+        self.set_head(self.buf().clamp_boundary(start + col));
+        self.clamp_cursor();
+        self.scroll_to_cursor(self.view_rows());
+    }
+
+    /// gr / gI / gy / gD: references, implementation, type definition,
+    /// declaration — one request shape, four LSP methods.
+    pub(crate) fn lsp_locations(&mut self, kind: strop_lsp::LocKind) {
+        let Some(client) = self.lsp_current().map(|s| &s.client) else {
+            self.message = "no language server — install it or fix languages.toml".into();
+            return;
+        };
+        let Some(path) = self.buf().path.clone() else {
+            return;
+        };
+        let abs = if std::path::Path::new(&path).is_absolute() {
+            PathBuf::from(&path)
+        } else {
+            self.cwd.join(&path)
+        };
+        let line = self.buf().line_of(self.head());
+        let col = self.server_col(client, self.buf().col_of(self.head()));
+        let label = kind.label();
+        client.locations(kind, &abs, line, col);
+        self.message = format!("lsp: {label} …");
+    }
+
+    /// `]d` / `[d`: jump to the next/previous diagnostic in this
+    /// buffer, wrapping (vim's diagnostic traversal).
+    pub(crate) fn jump_diagnostic(&mut self, forward: bool) {
+        let Some(path) = self.buf().path.clone() else {
+            return;
+        };
+        let abs = if std::path::Path::new(&path).is_absolute() {
+            PathBuf::from(&path)
+        } else {
+            self.cwd.join(&path)
+        };
+        let Some(diags) = self.diags.get(&abs).filter(|d| !d.is_empty()) else {
+            self.message = "no diagnostics".into();
+            return;
+        };
+        let cur = self.buf().line_of(self.head());
+        // diags arrive sorted by position from the server; wrap at ends
+        let target = if forward {
+            diags
+                .iter()
+                .find(|d| d.line > cur || (d.line == cur && d.col > self.buf().col_of(self.head())))
+                .or(diags.first())
+        } else {
+            diags
+                .iter()
+                .rev()
+                .find(|d| d.line < cur || (d.line == cur && d.col < self.buf().col_of(self.head())))
+                .or(diags.last())
+        };
+        let Some(d) = target else { return };
+        let (line, col, msg) = (d.line, d.col, d.message.clone());
+        let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
+        self.set_head(self.buf().clamp_boundary(start + col));
+        self.clamp_cursor();
+        self.scroll_to_cursor(self.view_rows());
+        self.message = msg;
     }
 
     /// `Space d`: diagnostics picker over the current buffer's diags.
@@ -386,5 +485,12 @@ impl Editor {
     }
     pub(crate) fn lsp_hover_pub(&mut self) {
         self.lsp_hover();
+    }
+    pub fn lsp_locations_pub(&mut self, kind: strop_lsp::LocKind) {
+        self.lsp_locations(kind);
+    }
+
+    pub fn jump_diagnostic_pub(&mut self, forward: bool) {
+        self.jump_diagnostic(forward);
     }
 }

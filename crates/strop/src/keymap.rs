@@ -177,6 +177,46 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Motion,
     },
     Binding {
+        keys: "gr",
+        desc: "references (LSP)",
+        section: "normal",
+        live: true,
+        id: "references",
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::References)),
+    },
+    Binding {
+        keys: "gI",
+        desc: "implementation (LSP)",
+        section: "normal",
+        live: true,
+        id: "implementation",
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::Implementation)),
+    },
+    Binding {
+        keys: "gy",
+        desc: "type definition (LSP)",
+        section: "normal",
+        live: true,
+        id: "type-definition",
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::TypeDefinition)),
+    },
+    Binding {
+        keys: "gD",
+        desc: "declaration (LSP)",
+        section: "normal",
+        live: true,
+        id: "declaration",
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::Declaration)),
+    },
+    Binding {
+        keys: "]d [d",
+        desc: "next/prev diagnostic",
+        section: "normal",
+        live: true,
+        id: "diagnostic-jumps",
+        handler: Handler::Leaf(|e, k| e.jump_diagnostic_pub(k != '[')),
+    },
+    Binding {
         keys: "gd",
         desc: "goto definition (LSP)",
         section: "normal",
@@ -1095,8 +1135,8 @@ mod tests {
         assert_eq!(git.len(), 9); // l h b y o u s S p
         assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
         assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
-        assert_eq!(children_of("g", Mode::Normal).len(), 9); // gg gd gs ge gE gv gi g; g,
-                                                             // visual mode: only the visual table feeds the card
+        assert_eq!(children_of("g", Mode::Normal).len(), 13); // gg gd gs ge gE gv gi g; g, gr gI gy gD
+                                                              // visual mode: only the visual table feeds the card
         let v = children_of(" ", Mode::Visual);
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].key, "y");

@@ -46,6 +46,9 @@ pub enum Kind {
     Replace,
     /// Editor-computed items (LSP diagnostics, 0009 §3).
     Diagnostics,
+    /// LSP location lists (references/implementation/…): same
+    /// payload shape as grep rows, title set per request.
+    Locations,
 }
 
 impl Kind {
@@ -55,6 +58,7 @@ impl Kind {
             Kind::Buffers => " buffers ",
             Kind::Grep => " grep ",
             Kind::Replace => " replace ",
+            Kind::Locations => " locations ",
             Kind::Diagnostics => " diagnostics ",
         }
     }

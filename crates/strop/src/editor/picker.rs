@@ -61,7 +61,9 @@ impl Editor {
                 (vec![], true, Some(rx))
             }
             Kind::Grep | Kind::Replace => (vec![], false, Some(rx)),
-            Kind::Diagnostics => unreachable!("diagnostics use PickerGlue::diagnostics"),
+            Kind::Diagnostics | Kind::Locations => {
+                unreachable!("location lists use PickerGlue::diagnostics")
+            }
         };
         let picker = Picker::new(kind, items, streaming);
         self.picker = Some(PickerGlue {
