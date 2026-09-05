@@ -444,19 +444,64 @@ pub(crate) fn blame_blank() -> Span<'static> {
 }
 /// Sidebar width fits the commit's longest path (clamped 12–24) — a
 /// two-file commit shouldn't pay a 28-column pane.
+/// One sidebar row in tree form (zed-lite: always-expanded, directories
+/// as dim header rows, files indented by depth — the hierarchy reads
+/// at a glance).
+pub(crate) enum SidebarRow {
+    Dir(String),
+    File { index: usize, depth: usize },
+}
+
+/// Flat sorted file list → tree rows: a directory row appears the first
+/// time its path prefix shows up.
+pub(crate) fn sidebar_tree(files: &[ChangedFile]) -> Vec<SidebarRow> {
+    let mut paths: Vec<String> = files.iter().map(|f| f.path.display().to_string()).collect();
+    paths.sort();
+    let mut rows: Vec<SidebarRow> = Vec::new();
+    let mut seen_dirs: Vec<String> = Vec::new();
+    for (i, p) in paths.iter().enumerate() {
+        let parts: Vec<&str> = p.split('/').collect();
+        // every ancestor dir of this file, in order
+        for d in 1..parts.len() {
+            let dir = parts[..d].join("/") + "/";
+            if !seen_dirs.contains(&dir) {
+                seen_dirs.push(dir.clone());
+                rows.push(SidebarRow::Dir(dir));
+            }
+        }
+        // the file index is its position in `files` (path lookup)
+        let index = files
+            .iter()
+            .position(|f| f.path.display().to_string() == *p)
+            .unwrap_or(i);
+        rows.push(SidebarRow::File {
+            index,
+            depth: parts.len() - 1,
+        });
+    }
+    rows
+}
+
 pub(crate) fn sidebar_width(files: &[ChangedFile]) -> usize {
-    let longest = files
+    let longest = sidebar_tree(files)
         .iter()
-        .map(|f| f.path.display().to_string().chars().count())
+        .map(|r| match r {
+            SidebarRow::Dir(d) => d.chars().count() + 1,
+            SidebarRow::File { index, depth } => {
+                let name = files[*index].path.display().to_string();
+                let base = name.rsplit('/').next().unwrap_or(&name);
+                base.chars().count() + 2 * depth
+            }
+        })
         .max()
         .unwrap_or(0);
     (longest + 2).clamp(12, 24)
 }
 
-/// One sidebar row: the commit's changed files, current one marked `▌`
-/// (or `▸` when the sidebar has Tab focus — tuicr's rule) on the
-/// selection background, plus the dividing rule — accent when focused.
-/// Rows past the file list stay blank so the column reads as one surface.
+/// One sidebar row: the commit's changed files as a simple tree (dirs
+/// dim, files indented by depth), current one marked `▌`/`▸` (tuicr's
+/// focus rule) on the selection background, plus the dividing rule.
+/// Rows past the tree stay blank so the column reads as one surface.
 pub(crate) fn sidebar_spans(
     files: &[ChangedFile],
     current: &str,
@@ -464,24 +509,44 @@ pub(crate) fn sidebar_spans(
     focused: bool,
 ) -> Vec<Span<'static>> {
     let w = sidebar_width(files);
-    let cell = match files.get(row) {
-        Some(f) => {
+    let rows = sidebar_tree(files);
+    let cell = match rows.get(row) {
+        Some(SidebarRow::Dir(d)) => {
+            let shown = ellipsize(d, w - 1);
+            let pad = w - 1 - shown.chars().count();
+            vec![
+                Span::styled(format!(" {shown}"), Style::default().fg(MUTED)),
+                Span::styled(" ".repeat(pad), Style::default()),
+            ]
+        }
+        Some(SidebarRow::File { index, depth }) => {
+            let f = &files[*index];
             let path = f.path.display().to_string();
-            if path == current {
-                let shown = ellipsize(&path, w - 2);
-                let pad = w - 1 - shown.chars().count();
+            let base = path.rsplit('/').next().unwrap_or(&path);
+            let indent = "  ".repeat(*depth);
+            let cur = path == current;
+            let marker = if cur {
+                if focused {
+                    "▸"
+                } else {
+                    "▌"
+                }
+            } else {
+                " "
+            };
+            let shown = ellipsize(&format!("{indent}{base}"), w - 2);
+            let pad = w - 1 - shown.chars().count();
+            if cur {
                 vec![
                     Span::styled(
-                        format!("{}{shown}", if focused { "▸" } else { "▌" }),
+                        format!("{marker}{shown}"),
                         Style::default().fg(ACCENT).bg(SELECT_BG),
                     ),
                     Span::styled(" ".repeat(pad), Style::default().bg(SELECT_BG)),
                 ]
             } else {
-                let shown = ellipsize(&path, w - 1);
-                let pad = w - 1 - shown.chars().count();
                 vec![
-                    Span::styled(format!(" {shown}"), Style::default().fg(TEXT)),
+                    Span::styled(format!("{marker}{shown}"), Style::default().fg(TEXT)),
                     Span::styled(" ".repeat(pad), Style::default()),
                 ]
             }
@@ -592,5 +657,54 @@ mod tests {
         );
         // context never emphasizes
         assert_eq!(hunk_emphasis(&lines, 0), None);
+    }
+
+    #[test]
+    fn sidebar_tree_groups_by_directory() {
+        let files = vec![
+            ChangedFile {
+                path: "src/api/handlers.rs".into(),
+                added: 1,
+                deleted: 0,
+            },
+            ChangedFile {
+                path: "README.md".into(),
+                added: 1,
+                deleted: 0,
+            },
+            ChangedFile {
+                path: "src/main.rs".into(),
+                added: 1,
+                deleted: 0,
+            },
+            ChangedFile {
+                path: "src/api/mod.rs".into(),
+                added: 1,
+                deleted: 0,
+            },
+        ];
+        let rows = sidebar_tree(&files);
+        let shape: Vec<String> = rows
+            .iter()
+            .map(|r| match r {
+                SidebarRow::Dir(d) => format!("D{d}"),
+                SidebarRow::File { index, depth } => {
+                    format!("F{}{}", "  ".repeat(*depth), files[*index].path.display())
+                }
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                "FREADME.md", // root file, no dir row
+                "Dsrc/",
+                "Dsrc/api/",
+                "F    src/api/handlers.rs",
+                "F    src/api/mod.rs",
+                "F  src/main.rs",
+            ]
+        );
+        // sorted: README.md (root) first, then src tree
+        assert!(matches!(rows[0], SidebarRow::File { depth: 0, .. }));
     }
 }

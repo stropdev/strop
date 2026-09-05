@@ -655,14 +655,12 @@ impl Client {
         // Initialized (gd right after opening a project used to die
         // silently here)
         if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
-            self.pending_requests
-                .lock()
-                .push(PendingRequest {
-                    path: path.to_path_buf(),
-                    line,
-                    col,
-                    kind: QueuedRequest::Goto,
-                });
+            self.pending_requests.lock().push(PendingRequest {
+                path: path.to_path_buf(),
+                line,
+                col,
+                kind: QueuedRequest::Goto,
+            });
             return;
         }
         if !self.caps.goto_definition() {
