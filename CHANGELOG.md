@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.13.0 — 2026-09-06
+
+PathBuf paths end to end (plan 0026) + the file-size split wave.
+
+### Fixed
+
+- **Non-UTF-8 filenames work end to end**: the argv file operand comes
+  from `args_os`, `open_document`/`open_buffer`/`save_as`/`for_path`
+  take `Path`, and the LSP/picker `display().to_string()` roundtrips are
+  gone — a `b"\xff.rs"` file opens, highlights, saves, and a gd into it
+  lands (regression test pins it).
+
+### Changed
+
+- File-size discipline wave (no behavior change, public APIs
+  unchanged): `strop-core` lib.rs → buffer.rs + range.rs;
+  `strop-grammar` resolve.rs → resolve/{mod,motions,objects,search};
+  `strop-git` lib.rs → {diff,repo,revision}; `strop-lsp` lib.rs →
+  {caps,client,convert}; `editor/picker.rs` → picker/{mod,drain,accept,
+  replace,preview,tests}; `editor/tests.rs` → tests/ one file per
+  module. Keymap table exempt per AGENTS.md.
+
 ## 0.12.0 — 2026-09-06
 
 The 1.0 perf gate (plan 0025) + jumplist fixes.
