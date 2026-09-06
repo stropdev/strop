@@ -123,14 +123,18 @@ trap 'rm -rf "$TMP"' EXIT
 
 fetch_to "$URL" "$TMP/$ARCHIVE"
 
-# Verify the checksum; macOS has no sha256sum — fall back to shasum
-# rather than silently skipping verification.
-if fetch_to "${URL}.sha256" "$TMP/$ARCHIVE.sha256" 2>/dev/null; then
-    if command -v sha256sum >/dev/null 2>&1; then
-        (cd "$TMP" && sha256sum -c "$ARCHIVE.sha256") || err "checksum mismatch — aborting"
-    elif command -v shasum >/dev/null 2>&1; then
-        (cd "$TMP" && shasum -a 256 -c "$ARCHIVE.sha256") || err "checksum mismatch — aborting"
-    fi
+# Verify the checksum — mandatory (0023: install and update share one
+# policy; a missing sidecar or checker aborts rather than installs
+# unverified bytes).
+if ! fetch_to "${URL}.sha256" "$TMP/$ARCHIVE.sha256"; then
+    err "no checksum sidecar at ${URL}.sha256 — refusing to install unverified"
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$TMP" && sha256sum -c "$ARCHIVE.sha256") || err "checksum mismatch — aborting"
+elif command -v shasum >/dev/null 2>&1; then
+    (cd "$TMP" && shasum -a 256 -c "$ARCHIVE.sha256") || err "checksum mismatch — aborting"
+else
+    err "no sha256sum/shasum available — refusing to install unverified"
 fi
 
 info "Extracting..."

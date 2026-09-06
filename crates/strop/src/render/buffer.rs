@@ -60,17 +60,21 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
     };
     for i in 0..n {
         let (w, h): (u16, u16) = if is_row {
-            let w = ((total_w - dividers) / n) as u16;
+            // 0023: more panes than cells must not underflow — a resize
+            // can put the layout there; every pane gets what exists
+            let usable = total_w.saturating_sub(dividers) as u16;
+            let w = usable / n as u16;
             let w = if i == n - 1 {
-                (total_w - dividers) as u16 - w * (n as u16 - 1)
+                usable.saturating_sub(w * (n as u16 - 1))
             } else {
                 w
             };
             (w, total_h as u16)
         } else {
-            let h = ((total_h - dividers) / n) as u16;
+            let usable_h = total_h.saturating_sub(dividers) as u16;
+            let h = usable_h / n as u16;
             let h = if i == n - 1 {
-                (total_h - dividers) as u16 - h * (n as u16 - 1)
+                usable_h.saturating_sub(h * (n as u16 - 1))
             } else {
                 h
             };
@@ -110,21 +114,27 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
             render_static_caret(editor, frame, rect, &view);
         }
         if i < n - 1 {
-            // divider column/row
+            // divider column/row — clamped to the area (0023: more
+            // panes than cells must not index past the buffer)
+            let bounds = frame.area();
             if is_row {
                 let dx = x + w;
-                for dy in y..y + h {
-                    let cell = &mut frame.buffer_mut()[(dx, dy)];
-                    cell.set_symbol("│");
-                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                if dx < bounds.width {
+                    for dy in y..(y + h).min(bounds.height) {
+                        let cell = &mut frame.buffer_mut()[(dx, dy)];
+                        cell.set_symbol("│");
+                        cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                    }
                 }
                 x = dx + 1;
             } else {
                 let dy = y + h;
-                for dx in x..x + w {
-                    let cell = &mut frame.buffer_mut()[(dx, dy)];
-                    cell.set_symbol("─");
-                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                if dy < bounds.height {
+                    for dx in x..(x + w).min(bounds.width) {
+                        let cell = &mut frame.buffer_mut()[(dx, dy)];
+                        cell.set_symbol("─");
+                        cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                    }
                 }
                 y = dy + 1;
             }
@@ -140,7 +150,7 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
     let line = buf.line_of(view.cursor);
     let row = line.saturating_sub(view.view_top) as u16;
     let gutter = diff::left_inset(editor, view.doc) as u16;
-    let col = gutter + buf.cell_col_of(view.cursor);
+    let col = gutter + buf.cell_col_with_tab(view.cursor, editor.config.tab_size as u16);
     if row < area.height && col < area.width {
         let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
         cell.set_bg(Color::Rgb(0x3a, 0x3d, 0x4d));
@@ -161,7 +171,7 @@ fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &P
             continue;
         }
         let row = (line - view.view_top) as u16;
-        let col = inset + buf.cell_col_of(c);
+        let col = inset + buf.cell_col_with_tab(c, editor.config.tab_size as u16);
         if row < area.height && col < area.width {
             let cell = &mut frame.buffer_mut()[(area.x + col, area.y + row)];
             cell.set_bg(TEXT);
@@ -183,7 +193,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
             buf.line_start(view.view_top),
             buf.line_end(last_line.saturating_sub(1)),
             buf.rope.clone(),
-            buf.history.depth() as u64,
+            buf.epoch,
         )
     };
     let syn_spans: Vec<strop_syntax::Span> =
@@ -485,6 +495,9 @@ fn content_spans(
     // 0017: walk GRAPHEMES with byte offsets — char indices drifted
     // every overlay after the first multibyte char
     let trimmed = text.strip_suffix('\n').unwrap_or(text);
+    // one layout per line (0023): glyph, caret, and block selection
+    // read the SAME byte↔cell map, tabs included
+    let layout = strop_core::layout::LineLayout::build(trimmed, tab as u16);
     for (i, ch) in unicode_segmentation::UnicodeSegmentation::grapheme_indices(trimmed, true) {
         let pos = start + i;
         while syn_idx < syn_spans.len() && syn_spans[syn_idx].end <= pos {
@@ -525,7 +538,6 @@ fn content_spans(
         let selected = if let Some((la, lh, cl, cr)) = style.block {
             let line_idx = buf.line_of(pos);
             (la..=lh).contains(&line_idx) && {
-                let layout = strop_core::layout::LineLayout::build(trimmed, 8);
                 let cell = layout.cell_at_byte(pos - start);
                 cl <= cell && cell <= cr
             }
@@ -571,6 +583,11 @@ fn content_spans(
         let is_guide = i < lead_ws && (i + 1) % tab == 0;
         if is_guide {
             spans.push(Span::styled("│", cell.fg(Color::Rgb(0x2e, 0x30, 0x42))));
+        } else if ch == "\t" {
+            // the layout owns tab width: glyph and caret can't disagree
+            let span = layout.spans().iter().find(|s| s.byte == i);
+            let w = span.map(|s| s.width as usize).unwrap_or(1);
+            spans.push(Span::styled(" ".repeat(w), cell));
         } else {
             spans.push(Span::styled(ch.to_string(), cell));
         }

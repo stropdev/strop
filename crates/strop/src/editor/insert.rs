@@ -230,6 +230,20 @@ impl Editor {
                 for &pos in positions.iter().rev() {
                     self.buf_mut().insert(pos, &encoded);
                 }
+                // the parse tree tracks every keystroke, not just the
+                // session commit — mid-session renders read a live tree
+                // (0023 probe: insert-mode highlighting went stale).
+                // single cursor: exact bridge; multicursor: invalidate
+                // (per-op points across stacked inserts lie otherwise)
+                if positions.len() == 1 {
+                    self.bridge_applied_ops(&[strop_core::history::Edit {
+                        at: positions[0],
+                        text: encoded.clone(),
+                        kind: strop_core::history::EditKind::Insert,
+                    }]);
+                } else {
+                    self.invalidate_syntax_tree();
+                }
                 self.remap_after_mirrored_edit(&positions, c.len_utf8() as isize);
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push(c);

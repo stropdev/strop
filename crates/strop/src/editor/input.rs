@@ -173,8 +173,11 @@ impl Walker {
         // --- operator pending: digits extend count2 (contextual zero),
         // everything else is motion text for the grammar
         if self.state.op.is_some() {
+            // after f/F/t/T the next char is the TARGET — digits are
+            // text there (0023: df2 deletes through "2")
+            let is_find = matches!(self.motion.as_str(), "f" | "F" | "t" | "T");
             if let Key::Char(c) = key {
-                if c.is_ascii_digit() && (c != '0' || self.state.count2.is_some()) {
+                if !is_find && c.is_ascii_digit() && (c != '0' || self.state.count2.is_some()) {
                     self.state.count2 = Some(Self::push_digit(self.state.count2, c));
                     return Action::Pending;
                 }

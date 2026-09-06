@@ -26,7 +26,7 @@ RUN cargo build --locked -p strop-editor
 # libraries. (`ldd | grep "not a dynamic"` is wrong on current
 # rust:alpine — a static-pie musl binary still prints the ld-musl line;
 # and `! ldd | grep "=>"` passes vacuously. readelf NEEDED is the truth.)
-FROM builder AS release
+FROM test AS release
 RUN cargo build --release --locked -p strop-editor \
     && strip target/release/strop \
     && ! readelf -d target/release/strop | grep -q NEEDED \

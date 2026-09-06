@@ -136,15 +136,34 @@ impl Editor {
     }
 
     /// vim's [No Name] rule: the untouched initial scratch buffer is
-    /// replaced by the first real thing you open — it never lingers as
-    /// an extra :q with the welcome card on it.
-    pub(crate) fn drop_stale_scratch(&mut self) {
-        if self.docs.len() == 1 {
-            let b = &self.cur().buf;
-            if b.path.is_none() && !b.dirty && b.len_bytes() == 0 && b.name.is_none() {
-                self.docs.clear();
-                self.mru.clear();
+    /// replaced by the first real thing you open. `replacement` is the
+    /// document taking over (0023 §1): panes on the scratch rebind to
+    /// it FIRST — the drop used to strand them (the :vs crash probe).
+    pub(crate) fn drop_stale_scratch(&mut self, replacement: strop_core::id::DocumentId) {
+        // find the pristine scratch (pathless, untouched) wherever it is
+        // — the replacement exists by now, so len() is no longer the
+        // signal (0023: it must fire AFTER the insert so panes can rebind)
+        let scratch = self.docs.iter().find_map(|(id, d)| {
+            let b = &d.buf;
+            (b.path.is_none()
+                && !b.dirty
+                && b.len_bytes() == 0
+                && b.name.is_none()
+                && id != replacement)
+                .then_some(id)
+        });
+        let Some(scratch) = scratch else {
+            return;
+        };
+        for pane in &mut self.panes {
+            if pane.doc == scratch {
+                pane.doc = replacement;
             }
+        }
+        self.docs.remove(scratch);
+        self.mru.retain(|&x| x != scratch);
+        if self.view().doc == scratch {
+            self.view_mut().doc = replacement;
         }
     }
 
@@ -166,8 +185,8 @@ impl Editor {
         // fallible I/O BEFORE any ownership change (0020 §11): a failed
         // open used to drop the scratch buffer and strand the pane
         let buf = Buffer::open(path)?;
-        self.drop_stale_scratch();
         let id = self.docs.insert(Document::new(buf));
+        self.drop_stale_scratch(id);
         if self.docs.len() == 1 {
             self.mru.clear();
         }
@@ -235,9 +254,8 @@ impl Editor {
         // fallible I/O before any ownership change: a failed :e used to
         // drop the scratch and strand the pane's document id
         let buf = Buffer::open(path)?;
-        self.drop_stale_scratch();
-        self.push_jump(); // leaving a buffer is a jumplist entry (vim)
         let id = self.docs.insert(Document::new(buf));
+        self.drop_stale_scratch(id);
         if self.docs.len() == 1 {
             // the scratch was dropped under us
             self.mru.clear();

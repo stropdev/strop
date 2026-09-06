@@ -266,7 +266,7 @@ impl Editor {
                     // 0018: a hover answers the document state that
                     // ASKED — an edit since makes the answer stale
                     let stale = self.hover_request.is_some_and(|(doc, depth)| {
-                        doc != self.current() || self.buf().history.depth() != depth
+                        doc != self.current() || self.buf().epoch != depth
                     });
                     if !stale {
                         self.hover_card = Some(text);
@@ -379,8 +379,8 @@ impl Editor {
         let line = self.buf().line_of(self.head());
         let col = self.server_col(&client, self.buf().col_of(self.head()));
         let label = kind.label();
-        self.lsp_nav_request = Some((self.current(), self.buf().history.depth() as u64));
-        client.locations(kind, &abs, line, col, self.buf().history.depth() as u64);
+        self.lsp_nav_request = Some((self.current(), self.buf().epoch));
+        client.locations(kind, &abs, line, col, self.buf().epoch);
         self.message = format!("lsp: {label} …");
     }
 
@@ -426,7 +426,7 @@ impl Editor {
     /// be current AND at the same revision (0021 §2).
     fn lsp_nav_fresh(&self, req_revision: u64) -> bool {
         self.lsp_nav_request.is_some_and(|(doc, rev)| {
-            doc == self.current() && rev == self.buf().history.depth() as u64 && rev == req_revision
+            doc == self.current() && rev == self.buf().epoch && rev == req_revision
         })
     }
 
@@ -481,7 +481,7 @@ impl Editor {
         let col = self.buf().col_of(self.head());
         let col = self.server_col(&client, col);
         // the request's identity: which doc + which edit state asked
-        self.hover_request = Some((self.current(), self.buf().history.depth()));
+        self.hover_request = Some((self.current(), self.buf().epoch));
         client.hover(&abs, line, col);
     }
 
@@ -524,8 +524,8 @@ impl Editor {
         let line = self.buf().line_of(self.head());
         let col = self.buf().col_of(self.head());
         let col = self.server_col(&client, col);
-        self.lsp_nav_request = Some((self.current(), self.buf().history.depth() as u64));
-        client.goto_definition(&abs, line, col, self.buf().history.depth() as u64);
+        self.lsp_nav_request = Some((self.current(), self.buf().epoch));
+        client.goto_definition(&abs, line, col, self.buf().epoch);
     }
 
     /// `gs`: switch between source and header (clangd's extension).

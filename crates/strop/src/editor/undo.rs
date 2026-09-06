@@ -44,12 +44,12 @@ impl Editor {
             text.push_str(&format!("{}* {}#{}{cur}\n", indent, branch, r.index));
             row_rev.push(Some(r.index));
         }
-        self.drop_stale_scratch();
         self.push_jump(); // opening the browser is a jumplist entry
         let mut buf = Buffer::from_text(&text);
         buf.readonly = true;
         buf.name = Some("undo tree".into());
         let id = self.docs.insert(Document::output(buf));
+        self.drop_stale_scratch(id);
         self.switch_to(id);
         self.set_head(0);
         self.view_mut().view_top = 0;
@@ -125,28 +125,36 @@ impl Editor {
     pub(crate) fn tx_commit(&mut self) {
         self.buf_mut().history.commit();
         self.bridge_edits_to_tree();
-        // 0020 §14: every anchor of this document maps through the
+        // 0020 §14 + 0023: every anchor of this document maps through the
         // transaction — marks, jumplists, and the OTHER panes' cursors.
         // The active pane's selections are each command's own business.
         let Some(all_ops) = self.buf().history.last_committed_ops() else {
             return;
         };
-        // one op maps anchors EXACTLY once, even when a revision spans
-        // several commits (o/O's opening newline + the insert session):
-        // the watermark skips already-mapped ops (0020 §14)
-        let depth = self.buf().history.depth();
+        // the watermark keys on (document, history node) — one op maps
+        // anchors EXACTLY once, even when a revision spans several
+        // commits (o/O's opening newline + the insert session), and
+        // equal depths across documents never collide
+        let mark = (self.current(), self.buf().history.depth());
         let skip = match self.anchor_map_mark {
-            Some((d, n)) if d == depth => n.min(all_ops.len()),
+            Some(((d, depth), n)) if (d, depth) == mark => n.min(all_ops.len()),
             _ => 0,
         };
         if skip == all_ops.len() {
             return;
         }
-        self.anchor_map_mark = Some((depth, all_ops.len()));
-        let ops: Vec<strop_core::history::Edit> = all_ops.into_iter().skip(skip).collect();
+        self.anchor_map_mark = Some((mark, all_ops.len()));
+        self.map_anchors_for_current(&all_ops, skip);
+    }
+
+    /// Map this document's anchors through a committed op set. Called by
+    /// tx_commit (with the watermark's skip) and by undo/redo (inverse
+    /// ops map anchors the same way — 0023).
+    fn map_anchors_for_current(&mut self, ops: &[strop_core::history::Edit], skip: usize) {
+        let ops = ops.iter().skip(skip);
         let doc = self.current();
         let map_one = |mut pos: usize| -> usize {
-            for op in &ops {
+            for op in ops.clone() {
                 let len = op.text.len();
                 match op.kind {
                     strop_core::history::EditKind::Insert => {
@@ -205,16 +213,23 @@ impl Editor {
             doc.highlighter.as_mut(),
             doc.buf.history.last_committed_ops(),
         ) {
-            let revision = doc.buf.history.depth() as u64;
+            let revision = doc.buf.epoch;
             h.apply_edits(&Self::ts_edits(&doc.buf, &ops), revision);
         }
     }
 
+    /// Drop the kept tree when exact coordinates aren't computable.
+    pub(crate) fn invalidate_syntax_tree(&mut self) {
+        if let Some(h) = self.cur_mut().highlighter.as_mut() {
+            h.invalidate();
+        }
+    }
+
     /// Bridge the last-applied ops (undo/redo included) to the tree.
-    fn bridge_applied_ops(&mut self, ops: &[strop_core::history::Edit]) {
+    pub(crate) fn bridge_applied_ops(&mut self, ops: &[strop_core::history::Edit]) {
         let doc = self.cur_mut();
         if let Some(h) = doc.highlighter.as_mut() {
-            let revision = doc.buf.history.depth() as u64;
+            let revision = doc.buf.epoch;
             h.apply_edits(&Self::ts_edits(&doc.buf, ops), revision);
         }
     }
@@ -261,6 +276,8 @@ impl Editor {
                 let start = ops.iter().map(|e| e.at).min().unwrap_or(0);
                 self.buf_mut().apply_history(ops.clone());
                 self.bridge_applied_ops(&ops);
+                // undo moves anchors too (0023: marks follow their text)
+                self.map_anchors_for_current(&ops, 0);
                 self.set_head(start);
                 self.clamp_cursor();
                 self.flash(strop_core::Range::charwise(self.head(), self.head()));
@@ -288,6 +305,7 @@ impl Editor {
                     .unwrap_or(0);
                 self.buf_mut().apply_history(ops.clone());
                 self.bridge_applied_ops(&ops);
+                self.map_anchors_for_current(&ops, 0);
                 self.set_head(at);
                 self.clamp_cursor();
                 self.flash(strop_core::Range::charwise(self.head(), self.head()));

@@ -73,6 +73,12 @@ pub struct Highlighter {
 impl Highlighter {
     /// Apply the transaction's edits to the kept tree (0022 §1):
     /// cheap pointer walk at commit time; the reparse stays lazy.
+    /// Drop the kept tree (0023: a mutation path that can't produce
+    /// exact edit coordinates invalidates rather than lying).
+    pub fn invalidate(&mut self) {
+        self.tree = None;
+    }
+
     pub fn apply_edits(&mut self, edits: &[tree_sitter::InputEdit], revision: u64) {
         if revision == self.tree_revision {
             return;

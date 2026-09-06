@@ -45,11 +45,10 @@ impl Editor {
             }
         }
         let mut buf = Buffer::from_text(&text);
-        self.drop_stale_scratch();
-        self.push_jump(); // opening help is a jumplist entry
-        buf.readonly = true;
         buf.name = Some("help".into());
+        self.push_jump(); // opening help is a jumplist entry
         let id = self.docs.insert(Document::output(buf));
+        self.drop_stale_scratch(id);
         self.switch_to(id);
         self.set_head(0);
         self.view_mut().view_top = 0;

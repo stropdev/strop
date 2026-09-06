@@ -5,6 +5,8 @@
 
 mod blame;
 pub mod block;
+#[cfg(test)]
+pub mod contract_probes;
 mod cursor;
 mod diagnostics;
 mod dive;
@@ -145,14 +147,15 @@ pub struct Editor {
     /// The app event channel (0018): set by connect_events; late LSP
     /// attaches forward through it.
     pub app_tx: Option<std::sync::mpsc::Sender<events::AppEvent>>,
-    /// Anchor-map watermark (revision depth, ops mapped) — an op must
-    /// never shift an anchor twice (0020 §14).
-    pub anchor_map_mark: Option<(usize, usize)>,
+    /// Anchor-map watermark ((doc, revision), ops mapped) — an op must
+    /// never shift an anchor twice, and equal depths across documents
+    /// never collide (0020 §14, per-doc in 0023).
+    pub anchor_map_mark: Option<((strop_core::id::DocumentId, usize), usize)>,
     /// Picker instance identity for stream tagging (0020 §2).
     pub next_picker_id: u64,
     /// The outstanding hover request's identity (doc, history depth) —
     /// a reply against another state is stale (0018).
-    pub hover_request: Option<(strop_core::id::DocumentId, usize)>,
+    pub hover_request: Option<(strop_core::id::DocumentId, u64)>,
     /// The outstanding goto/locations request's identity (0021 §2).
     pub lsp_nav_request: Option<(strop_core::id::DocumentId, u64)>,
     /// Merged languages.toml per workspace root (0018 — the OnceLock
@@ -201,10 +204,11 @@ pub struct Editor {
     pub git_rx: Option<std::sync::mpsc::Receiver<GitJob>>,
     pub osc52: Option<String>,
     /// System-clipboard reads (paste from `+`) run on a worker thread;
-    /// `clip_paste_pending` remembers before/after until the read lands.
+    /// `clip_paste_pending` remembers before/after AND the initiating
+    /// document until the read lands (0023 §4).
     pub clip_tx: std::sync::mpsc::Sender<Option<String>>,
     pub clip_rx: Option<std::sync::mpsc::Receiver<Option<String>>>,
-    pub clip_paste_pending: Option<bool>,
+    pub clip_paste_pending: Option<(bool, strop_core::id::DocumentId)>,
     /// LSP server pool (0014 wave 2): one client per (workspace root,
     /// server) — a rust file and a python file in one session get their
     /// own servers. Diagnostics by path, hover card, open bookkeeping.

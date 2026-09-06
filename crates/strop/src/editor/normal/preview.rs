@@ -26,9 +26,11 @@ impl Editor {
                         // mid-pattern: the first hit is the would-be target
                         if let Some(pat) = motion.strip_prefix('/') {
                             if !pat.is_empty() && !pat.contains('\r') {
-                                if let Some(hit) =
-                                    grammar::search_forward(self.buf(), self.head() + 1, pat)
-                                {
+                                if let Some(hit) = grammar::search_forward(
+                                    self.buf(),
+                                    self.buf().ceil_boundary(self.head() + 1),
+                                    pat,
+                                ) {
                                     return Some((
                                         vec![Range::charwise(self.head(), hit)],
                                         format!("search /{pat}"),
@@ -78,8 +80,11 @@ impl Editor {
                 if let Some(idx) = self.pending.find('/') {
                     let pat = &self.pending[idx + 1..];
                     if !pat.is_empty() {
-                        if let Some(hit) = grammar::search_forward(self.buf(), self.head() + 1, pat)
-                        {
+                        if let Some(hit) = grammar::search_forward(
+                            self.buf(),
+                            self.buf().ceil_boundary(self.head() + 1),
+                            pat,
+                        ) {
                             return Some((
                                 vec![Range::charwise(self.head(), hit)],
                                 format!("search /{pat}"),

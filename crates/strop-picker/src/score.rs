@@ -28,12 +28,18 @@ pub fn fuzzy_with(
     if query.is_empty() {
         return Some((0, vec![]));
     }
+    // 0023 P1: Ascii is for ASCII — anything else gets the checked
+    // Unicode path (the review's Japanese-filename probe)
+    let hay = if text.is_ascii() {
+        nucleo_matcher::Utf32Str::Ascii(text.as_bytes())
+    } else {
+        nucleo_matcher::Utf32Str::Unicode(&text.chars().collect::<Vec<_>>())
+    };
     let pat = nucleo_matcher::pattern::Pattern::parse(
         query,
         nucleo_matcher::pattern::CaseMatching::Smart,
         nucleo_matcher::pattern::Normalization::Smart,
     );
-    let hay = nucleo_matcher::Utf32Str::Ascii(text.as_bytes());
     let mut cols_u32: Vec<u32> = Vec::new();
     let score = pat.indices(hay, matcher, &mut cols_u32)?;
     // char-indexed columns for the renderer (nucleo reports them

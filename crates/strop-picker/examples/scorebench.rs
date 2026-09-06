@@ -1,89 +1,39 @@
-//! The nucleo evaluation (0022 §2): the picker's scorer vs
-//! nucleo-matcher on realistic refilter workloads. Decision with
-//! numbers, not principle. Run: cargo run -p strop-picker --example scorebench --release
+//! The picker regression bench (0023): measures the REAL hot path —
+//! Picker::refilter over accumulated items, per keystroke — the way the
+//! reviewer's audit did. Not a comparison: a regression floor. Run:
+//! cargo run -p strop-picker --example scorebench --release
 
 use std::time::Instant;
 
-use strop_picker::fuzzy_score;
+use strop_picker::{Item, Kind, Payload, Picker};
 
-/// A realistic file-list item corpus: repo-shaped paths with varied
-/// depth, camelCase, and separators.
-fn corpus(n: usize) -> Vec<String> {
-    const PARTS: &[&str] = &[
-        "src", "crates", "editor", "render", "core", "git", "lsp", "picker", "syntax", "grammar",
-        "mod", "lib", "main", "normal", "visual", "insert", "document", "panes", "buffer", "diff",
-    ];
-    const NAMES: &[&str] = &[
-        "mod.rs",
-        "lib.rs",
-        "main.rs",
-        "normal.rs",
-        "buffer.rs",
-        "keymap.rs",
-        "undo.rs",
-        "cursor.rs",
-        "picker_card.rs",
-        "hover_card.rs",
-        "diff.rs",
-        "memory.rs",
-        "resolve.rs",
-        "parse.rs",
-        "selection.rs",
-        "history.rs",
-    ];
+fn items(n: usize) -> Vec<Item> {
     (0..n)
-        .map(|i| {
-            let a = PARTS[i % PARTS.len()];
-            let b = PARTS[(i / PARTS.len()) % PARTS.len()];
-            let name = NAMES[i % NAMES.len()];
-            format!("{a}/{b}/{name}")
+        .map(|i| Item {
+            text: format!("crates/package_{i:06}/src/main_{i}.rs"),
+            payload: Payload::File(format!("{i}.rs").into()),
         })
         .collect()
 }
 
 fn main() {
-    let queries = ["nm", "modrs", "ednor", "pk", "buffer", "xyzqqq"];
+    let median = |mut ns: Vec<u128>| {
+        ns.sort_unstable();
+        ns[ns.len() / 2] as f64 / 1e6
+    };
     for n in [10_000usize, 50_000, 100_000] {
-        let items = corpus(n);
-
-        // custom scorer: full refilter (the per-keystroke hot path)
-        let t0 = Instant::now();
-        let mut hits = 0usize;
-        for q in &queries {
-            for it in &items {
-                if fuzzy_score(q, it).is_some() {
-                    hits += 1;
-                }
-            }
+        let mut p = Picker::new(Kind::Files, items(n), false);
+        p.input.text = "mainrs".into();
+        let mut samples = Vec::new();
+        for _ in 0..7 {
+            let t = Instant::now();
+            p.refilter();
+            samples.push(t.elapsed().as_nanos());
         }
-        let custom = t0.elapsed();
-
-        // nucleo-matcher
-        let mut matcher = nucleo_matcher::Matcher::new(nucleo_matcher::Config::DEFAULT);
-        let t1 = Instant::now();
-        let mut nhits = 0usize;
-        for q in &queries {
-            let pat = nucleo_matcher::pattern::Pattern::parse(
-                q,
-                nucleo_matcher::pattern::CaseMatching::Smart,
-                nucleo_matcher::pattern::Normalization::Smart,
-            );
-            for it in &items {
-                if pat
-                    .score(nucleo_matcher::Utf32Str::Ascii(it.as_bytes()), &mut matcher)
-                    .is_some()
-                {
-                    nhits += 1;
-                }
-            }
-        }
-        let nucleo = t1.elapsed();
-
         println!(
-            "{n:>7} items × {} queries — custom: {:>7.2?} ({hits} hits) · nucleo: {:>7.2?} ({nhits} hits)",
-            queries.len(),
-            custom,
-            nucleo
+            "PERF refilter items={n} rows={} median_ms={:.3}",
+            p.rows.len(),
+            median(samples)
         );
     }
 }

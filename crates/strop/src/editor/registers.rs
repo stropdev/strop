@@ -57,7 +57,7 @@ impl Editor {
         if self.clip_paste_pending.is_some() {
             return; // one read in flight
         }
-        self.clip_paste_pending = Some(before);
+        self.clip_paste_pending = Some((before, self.current()));
         let tx = self.clip_tx.clone();
         std::thread::spawn(move || {
             let _ = tx.send(read_system_clipboard());
@@ -81,9 +81,15 @@ impl Editor {
 
     /// One clipboard-read result.
     pub(crate) fn handle_clipboard(&mut self, result: Option<String>) {
-        let Some(before) = self.clip_paste_pending.take() else {
+        let Some((before, doc)) = self.clip_paste_pending.take() else {
             return;
         };
+        // the read answers the document that asked (0023 §4): a switch
+        // mid-read must not paste into the newly active buffer
+        if self.current() != doc {
+            self.message = "clipboard: destination changed — paste dropped".into();
+            return;
+        }
         match result {
             Some(text) if !text.is_empty() => {
                 let linewise = text.len() > 1 && text.ends_with('\n');

@@ -482,7 +482,11 @@ impl Editor {
             // byte-exact verification (0020 §3): Rope::slice is
             // CHAR-indexed — passing byte offsets mis-verified or
             // panicked on any multibyte text before the match
+            // byte-exact verification (0020 §3) — and a drifted offset
+            // landing mid-char is STALE, never a panic (0023 probe)
+            let aligned = buf.is_boundary(abs_s) && buf.is_boundary(abs_e);
             if abs_s > abs_e
+                || !aligned
                 || buf.rope.byte_slice(abs_s..abs_e).to_string().as_bytes()
                     != &expected.as_bytes()[s..e]
             {

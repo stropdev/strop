@@ -142,6 +142,9 @@ impl Buffer {
                 "no file name — :w {path} to name it",
             ));
         };
+        // write THROUGH links (0023: replacing a symlink with a regular
+        // file silently breaks the link — vim preserves it)
+        let path = std::fs::canonicalize(&path).unwrap_or(path);
         let current = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if !force && current.is_some() && current != self.disk_stamp {
             return Err(std::io::Error::new(
@@ -179,6 +182,12 @@ impl Buffer {
     /// wide chars and tabs make the difference. The LineLayout is the
     /// single translation seam.
     pub fn cell_col_of(&self, offset: impl Into<id::ByteOffset>) -> u16 {
+        self.cell_col_with_tab(offset, 8)
+    }
+
+    /// The cell col under a caller's tab stop (0023: the caret and the
+    /// tab glyph must read the same width — render config drives both).
+    pub fn cell_col_with_tab(&self, offset: impl Into<id::ByteOffset>, tab: u16) -> u16 {
         let offset = offset.into().get();
         if self.len_bytes() == 0 {
             return 0;
@@ -187,7 +196,7 @@ impl Buffer {
         let (s, e) = (self.line_start(line), self.line_end(line));
         let text = self.rope.byte_slice(s..e).to_string();
         let col = offset.saturating_sub(s);
-        let layout = layout::LineLayout::build(text.trim_end_matches('\n'), 8);
+        let layout = layout::LineLayout::build(text.trim_end_matches('\n'), tab.max(1));
         layout.cell_at_byte(col.min(layout.len_bytes))
     }
 
@@ -480,14 +489,24 @@ impl Buffer {
                 new_end_byte: op.at + op.text.len(),
                 start_point,
                 old_end_point: start_point,
-                new_end_point: (start_point.0 + extent.0, extent.1),
+                // a single-line insert ends at start.column + len — the
+                // extent's col is relative, not absolute (0023 probe)
+                new_end_point: if extent.0 == 0 {
+                    (start_point.0, start_point.1 + extent.1)
+                } else {
+                    (start_point.0 + extent.0, extent.1)
+                },
             },
             history::EditKind::Delete => InputEdit {
                 start_byte: op.at,
                 old_end_byte: op.at + op.text.len(),
                 new_end_byte: op.at,
                 start_point,
-                old_end_point: (start_point.0 + extent.0, extent.1),
+                old_end_point: if extent.0 == 0 {
+                    (start_point.0, start_point.1 + extent.1)
+                } else {
+                    (start_point.0 + extent.0, extent.1)
+                },
                 new_end_point: start_point,
             },
         }

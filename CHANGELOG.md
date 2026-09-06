@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.10.3 — 2026-09-06
+
+The consolidation round (plan 0023): review 4's 18 contract probes ship
+in the repo as the acceptance suite (`editor/contract_probes.rs`) — all
+green.
+
+### Fixed
+
+- **Split from scratch no longer strands the pane** (panes rebind before
+  the scratch drops).
+- **Clipboard replies retain their destination document** — a switch
+  mid-read drops the paste with a message instead of inserting into the
+  wrong buffer.
+- **Saving through a symlink writes through** (vim's rule: the link
+  survives).
+- **More panes than cells renders** instead of panicking.
+- **`df2` deletes through `2`** (a digit after `f` is the target).
+- **`:1y` fills the register `p` reads.**
+- **Stale replacement ranges over Unicode edits report stale**, never
+  panic; search previews never start mid-char.
+- **Unicode picker rows match** (the ASCII-only scorer input was library
+  misuse); match columns are char indices.
+- **Tab glyph and caret read one layout** (config's tab width drives
+  both; one LineLayout per line, not per grapheme).
+
+### Changed (architecture)
+
+- **`epoch` is THE text clock** — syntax invalidation, the tree bridge,
+  and LSP freshness all read the counter that moves on every mutation,
+  including mid-insert-session and through undo. Anchor mapping runs on
+  undo/redo too, and its watermark is per-document.
+- **Git gutter results carry their document id** — a snapshot can't
+  populate the wrong buffer.
+- **The release target builds from the test stage** — a tag that fails
+  the gate can't ship. The installer's checksum verification is
+  mandatory, matching the updater.
+- **Preview claims are precise**: composition windows (search, replace,
+  git) preview live; instant operator+object chords execute at the
+  completing key. The site says so.
+- The scorebench example measures the real `Picker::refilter` path.
+
 ## 0.10.2 — 2026-09-06
 
 ### Fixed

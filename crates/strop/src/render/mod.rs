@@ -231,8 +231,10 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
     let row = line.saturating_sub(editor.view_top()) as u16;
     // composed once: sidebar + blame column + the surface's number
     // gutter (0011) — diff-wide gutters used to drift the caret
-    let col =
-        diff::left_inset(editor, editor.current()) as u16 + editor.buf().cell_col_of(editor.head());
+    let col = diff::left_inset(editor, editor.current()) as u16
+        + editor
+            .buf()
+            .cell_col_with_tab(editor.head(), editor.config.tab_size as u16);
     if row < area.height - 1 && col < area.width {
         // pane-relative → absolute (0017: the caret followed neither
         // the pane's x/y in splits nor wide chars on the line)

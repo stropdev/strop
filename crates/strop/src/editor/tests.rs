@@ -186,7 +186,7 @@ mod edit_tests {
     #[test]
     fn clipboard_paste_inserts_read_result() {
         let mut e = Editor::new(Buffer::from_text("ab\n"));
-        e.clip_paste_pending = Some(false);
+        e.clip_paste_pending = Some((false, e.current()));
         e.clip_tx.send(Some("XY".into())).unwrap();
         e.drain_clipboard();
         assert_eq!(e.buf().rope.to_string(), "aXYb\n");
@@ -195,7 +195,7 @@ mod edit_tests {
     #[test]
     fn clipboard_paste_reports_missing_provider() {
         let mut e = Editor::new(Buffer::from_text("ab\n"));
-        e.clip_paste_pending = Some(false);
+        e.clip_paste_pending = Some((false, e.current()));
         e.clip_tx.send(None).unwrap();
         e.drain_clipboard();
         assert!(e.message.contains("clipboard"));

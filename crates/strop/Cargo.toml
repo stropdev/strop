@@ -6,12 +6,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.10.2" }
-strop-grammar = { path = "../strop-grammar", version = "0.10.2" }
-strop-picker = { path = "../strop-picker", version = "0.10.2" }
-strop-git = { path = "../strop-git", version = "0.10.2" }
-strop-syntax = { path = "../strop-syntax", version = "0.10.2" }
-strop-lsp = { path = "../strop-lsp", version = "0.10.2" }
+strop-core = { path = "../strop-core", version = "0.10.3" }
+strop-grammar = { path = "../strop-grammar", version = "0.10.3" }
+strop-picker = { path = "../strop-picker", version = "0.10.3" }
+strop-git = { path = "../strop-git", version = "0.10.3" }
+strop-syntax = { path = "../strop-syntax", version = "0.10.3" }
+strop-lsp = { path = "../strop-lsp", version = "0.10.3" }
 unicode-segmentation = "1"
 tree-sitter = "0.25"
 crossterm = "0.28"

@@ -139,7 +139,7 @@ impl Editor {
                     self.buf().len_bytes()
                 };
                 let text = self.buf().rope.byte_slice(s..e).to_string();
-                self.registers.insert('\0', (text, true));
+                self.set_register(None, text, true);
                 let b = self.buf_mut();
                 b.history.begin();
                 b.delete(strop_core::Range::charwise(s, e));
@@ -156,7 +156,7 @@ impl Editor {
                     self.buf().len_bytes()
                 };
                 let text = self.buf().rope.byte_slice(s..e).to_string();
-                self.registers.insert('\0', (text, true));
+                self.set_register(None, text, true);
                 self.message = format!("{} lines yanked", hi - lo + 1);
             }
             _ if rest.starts_with("s/") => self.substitute_range(lo, hi, &rest[2..]),

@@ -66,6 +66,9 @@ pub enum GitJob {
     /// The gutter snapshot (0021): diff computed off the render path
     /// against an immutable rope clone.
     Hunks {
+        /// The requesting document (0023: two documents share epochs) +
+        /// its text clock at request time.
+        doc: strop_core::id::DocumentId,
         epoch: u64,
         unstaged: Vec<strop_git::Hunk>,
         staged: Vec<strop_git::Hunk>,
@@ -78,7 +81,9 @@ impl Editor {
     }
     // ---- surface lifecycle --------------------------------------------
     pub(crate) fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
-        self.drop_stale_scratch();
+        // rebind-after-insert happens in Document::surface insertion
+        // below — dropping before the new id exists strands panes
+
         // surfaces stack: only the first one opened from a plain buffer
         // carries a return point (closing the deepest unwinds the chain)
         if self.surface().is_none() {
@@ -93,6 +98,7 @@ impl Editor {
         // surfaces render via delta/plain rules: no tree-sitter;
         // readonly derives from the source (0021 §4)
         let id = self.docs.insert(Document::surface(buf, surface));
+        self.drop_stale_scratch(id);
         self.push_jump(); // opening a surface is a jumplist entry
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
         self.switch_to(id);
@@ -475,14 +481,15 @@ impl Editor {
                 }
                 GitJob::Error(e) => self.message = e,
                 GitJob::Hunks {
+                    doc,
                     epoch,
                     unstaged,
                     staged,
                 } => {
-                    // stale snapshots drop; the next render re-enqueues
-                    // (hunks_epoch covers an older epoch)
+                    // the snapshot applies to the document that asked,
+                    // at that epoch — nothing else (0023 probe)
                     self.hunks_in_flight = false;
-                    if epoch == self.buf().epoch {
+                    if doc == self.current() && epoch == self.buf().epoch {
                         self.hunks = unstaged;
                         self.staged_hunks = staged;
                     } else {
