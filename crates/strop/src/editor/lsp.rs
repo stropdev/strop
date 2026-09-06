@@ -272,9 +272,9 @@ impl Editor {
                         self.hover_card = Some(text);
                     }
                 }
-                LspEvent::Locations {
-                    req_revision, ..
-                } if req_revision != 0 && !self.lsp_nav_fresh(req_revision) => {
+                LspEvent::Locations { req_revision, .. }
+                    if req_revision != 0 && !self.lsp_nav_fresh(req_revision) =>
+                {
                     // stale asker — drop
                 }
                 LspEvent::Locations { kind, items, .. } => match items.len() {
