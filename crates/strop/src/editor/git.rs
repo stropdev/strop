@@ -198,7 +198,7 @@ impl Editor {
         self.view_mut().doc = idx;
         // one undo transaction, exactly like typing (0020 §7 — discard
         // used to mutate without any committed history step)
-        self.buf_mut().history.begin();
+        self.tx_begin();
         if new_count == 0 {
             // pure deletion: reinsert the old lines at the gap
             let total = self.buf().len_lines();
@@ -235,7 +235,7 @@ impl Editor {
             self.buf_mut().insert(start, &old);
             self.set_head(start);
         }
-        self.buf_mut().history.commit();
+        self.tx_commit();
         self.view_mut().doc = saved_current;
         // the cursor field belongs to the driven pane; only the origin
         // buffer's own view moves when it is current

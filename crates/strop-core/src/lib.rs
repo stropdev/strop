@@ -437,6 +437,63 @@ fn write_atomic(target: &std::path::Path, contents: &str) -> std::io::Result<()>
     std::fs::rename(&tmp, target)
 }
 
+/// One edit in tree-sitter's terms (0022 §1): byte range + point
+/// positions, computed from the op itself at commit time — no old text
+/// needed (the point extents derive from the op's own content).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InputEdit {
+    pub start_byte: usize,
+    pub old_end_byte: usize,
+    pub new_end_byte: usize,
+    pub start_point: (usize, usize),
+    pub old_end_point: (usize, usize),
+    pub new_end_point: (usize, usize),
+}
+
+impl Buffer {
+    /// (line, col) of a byte offset, as tree-sitter Points.
+    pub fn point_of(&self, offset: usize) -> (usize, usize) {
+        let offset = offset.min(self.len_bytes());
+        (self.line_of(offset), self.col_of(offset))
+    }
+
+    /// The (line, col) extent of a text fragment.
+    fn point_extent(text: &str) -> (usize, usize) {
+        let lines = text.bytes().filter(|b| *b == b'\n').count();
+        let col = if lines == 0 {
+            text.len()
+        } else {
+            text.rsplit('\n').next().map(str::len).unwrap_or(0)
+        };
+        (lines, col)
+    }
+
+    /// Bridge one recorded history op to tree-sitter's InputEdit.
+    /// Call against the post-edit buffer (the transaction has landed).
+    pub fn input_edit_of(&self, op: &history::Edit) -> InputEdit {
+        let start_point = self.point_of(op.at);
+        let extent = Self::point_extent(&op.text);
+        match op.kind {
+            history::EditKind::Insert => InputEdit {
+                start_byte: op.at,
+                old_end_byte: op.at,
+                new_end_byte: op.at + op.text.len(),
+                start_point,
+                old_end_point: start_point,
+                new_end_point: (start_point.0 + extent.0, extent.1),
+            },
+            history::EditKind::Delete => InputEdit {
+                start_byte: op.at,
+                old_end_byte: op.at + op.text.len(),
+                new_end_byte: op.at,
+                start_point,
+                old_end_point: (start_point.0 + extent.0, extent.1),
+                new_end_point: start_point,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod safety_tests {
     use super::*;

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.1 — 2026-09-06
+
+The 1.0-hardening remainder (plan 0022): incremental tree-sitter and
+the nucleo decision.
+
+### Changed
+
+- **Syntax highlighting parses incrementally**: the highlighter keeps
+  the parse tree; every transaction (typing, undo, redo, git discard,
+  ex edits) applies its ops as tree-sitter InputEdits at commit time
+  — a cheap pointer walk — and the reparse runs from rope chunks
+  against the old tree, never a from-scratch parse and never a
+  materialized document String. Correctness is property-pinned:
+  incremental spans equal a fresh parse across edit scripts.
+- **The picker's scorer is nucleo-matcher** (docs/nucleo-decision.md):
+  42–50ms → 12ms on a 100k-item refilter, identical hit sets,
+  boundary-preferred match columns for the accent render. Adopted on
+  numbers, not principle — the bench lives at
+  `cargo run -p strop-picker --example scorebench --release`.
+
 ## 0.10.0 — 2026-09-06
 
 Document identity and the last 0018 seams (plan 0021). No new

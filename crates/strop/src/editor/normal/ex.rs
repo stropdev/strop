@@ -203,13 +203,13 @@ impl Editor {
             self.message = format!("pattern not found: {pat}");
             return;
         }
+        self.tx_begin();
         {
             let b = self.buf_mut();
-            b.history.begin();
             b.delete(strop_core::Range::charwise(s0, e0));
             b.insert(s0, &out);
-            b.history.commit();
         }
+        self.tx_commit();
         self.set_head(self.buf().clamp_boundary(s0));
         self.clamp_cursor();
         let end = (s0 + out.len()).min(self.buf().len_bytes());

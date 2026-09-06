@@ -1232,4 +1232,60 @@ mod keybinds_tests {
         e.feed_text(":w\r");
         assert_eq!(e.message, "git log: readonly — :w! to force");
     }
+    #[test]
+    fn incremental_syntax_equals_fresh_parse() {
+        // 0022 §1's contract: after every edit transaction, the kept
+        // tree's spans equal a from-scratch parse — property corpus
+        let scripts: Vec<Vec<&str>> = vec![
+            vec!["ix", "<esc>", "u", "<c-r>", "dd", "u"],
+            vec!["ofn main() {", "<esc>", "ciwrun", "<esc>", "u", "yyP"],
+            vec!["dw", "u", "ciwasync", "<esc>", "3x", "u"],
+        ];
+        for script in scripts {
+            let mut e = Editor::new(Buffer::from_text("fn demo() {\n    let x = 1;\n}\n"));
+            e.buf_mut().path = Some(std::path::PathBuf::from("/tmp/demo.rs"));
+            e.cur_mut().highlighter = strop_syntax::Highlighter::for_path("/tmp/demo.rs");
+            // warm the tree BEFORE edits — without this the test passes
+            // trivially through the full-parse fallback
+            {
+                let rope = e.buf().rope.clone();
+                let len = e.buf().len_bytes();
+                let rev = e.buf().history.depth() as u64;
+                let _ = e
+                    .cur_mut()
+                    .highlighter
+                    .as_mut()
+                    .unwrap()
+                    .highlight(&rope, rev, 0, len);
+            }
+            for keys in &script {
+                match *keys {
+                    "<esc>" => e.feed(crate::editor::Key::Esc),
+                    "<c-r>" => e.feed(crate::editor::Key::CtrlR),
+                    k => e.feed_text(k),
+                }
+            }
+            let revision = e.buf().history.depth() as u64;
+            let rope = e.buf().rope.clone();
+            let len = e.buf().len_bytes();
+            // incremental: the kept tree + lazy reparse
+            let inc = e
+                .cur_mut()
+                .highlighter
+                .as_mut()
+                .unwrap()
+                .highlight(&rope, revision, 0, len);
+            // fresh: no old tree at all
+            let mut fresh = strop_syntax::Highlighter::for_path("/tmp/demo.rs").unwrap();
+            let expected = fresh.highlight(&rope, revision, 0, len);
+            assert_eq!(
+                inc.iter().map(|s| (s.start, s.end)).collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|s| (s.start, s.end))
+                    .collect::<Vec<_>>(),
+                "script {script:?}: incremental spans diverged"
+            );
+        }
+    }
 }

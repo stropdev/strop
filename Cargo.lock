@@ -728,6 +728,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nucleo-matcher"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
+dependencies = [
+ "memchr",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "number_prefix"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1096,7 +1106,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ropey",
  "serde",
@@ -1107,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "crossterm",
  "indicatif",
@@ -1123,12 +1133,13 @@ dependencies = [
  "strop-syntax",
  "tempfile",
  "toml",
+ "tree-sitter",
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "strop-git"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "git2",
  "tempfile",
@@ -1136,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ropey",
  "strop-core",
@@ -1144,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "async-lsp",
  "parking_lot",
@@ -1157,16 +1168,17 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ignore",
+ "nucleo-matcher",
  "serde_json",
  "strop-core",
 ]
 
 [[package]]
 name = "strop-syntax"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ropey",
  "streaming-iterator",

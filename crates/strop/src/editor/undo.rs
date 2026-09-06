@@ -80,7 +80,8 @@ impl Editor {
         self.view_mut().doc = origin;
         let Some(ops) = ops else { return };
         let at = ops.iter().map(|e| e.at).min().unwrap_or(0);
-        self.buf_mut().apply_history(ops);
+        self.buf_mut().apply_history(ops.clone());
+        self.bridge_applied_ops(&ops);
         self.set_head(self.buf().clamp_boundary(at.min(self.buf().len_bytes())));
         self.clamp_cursor();
         self.flash(Range::charwise(self.head(), self.head()));
@@ -123,6 +124,7 @@ impl Editor {
 
     pub(crate) fn tx_commit(&mut self) {
         self.buf_mut().history.commit();
+        self.bridge_edits_to_tree();
         // 0020 §14: every anchor of this document maps through the
         // transaction — marks, jumplists, and the OTHER panes' cursors.
         // The active pane's selections are each command's own business.
@@ -195,6 +197,56 @@ impl Editor {
         }
     }
 
+    /// 0022 §1: the parse tree tracks each committed edit — the bridge
+    /// is a cheap pointer walk at commit time; the reparse stays lazy.
+    fn bridge_edits_to_tree(&mut self) {
+        let doc = self.cur_mut();
+        if let (Some(h), Some(ops)) = (
+            doc.highlighter.as_mut(),
+            doc.buf.history.last_committed_ops(),
+        ) {
+            let revision = doc.buf.history.depth() as u64;
+            h.apply_edits(&Self::ts_edits(&doc.buf, &ops), revision);
+        }
+    }
+
+    /// Bridge the last-applied ops (undo/redo included) to the tree.
+    fn bridge_applied_ops(&mut self, ops: &[strop_core::history::Edit]) {
+        let doc = self.cur_mut();
+        if let Some(h) = doc.highlighter.as_mut() {
+            let revision = doc.buf.history.depth() as u64;
+            h.apply_edits(&Self::ts_edits(&doc.buf, ops), revision);
+        }
+    }
+
+    fn ts_edits(
+        buf: &strop_core::Buffer,
+        ops: &[strop_core::history::Edit],
+    ) -> Vec<tree_sitter::InputEdit> {
+        ops.iter()
+            .map(|op| {
+                let e = buf.input_edit_of(op);
+                tree_sitter::InputEdit {
+                    start_byte: e.start_byte,
+                    old_end_byte: e.old_end_byte,
+                    new_end_byte: e.new_end_byte,
+                    start_position: tree_sitter::Point {
+                        row: e.start_point.0,
+                        column: e.start_point.1,
+                    },
+                    old_end_position: tree_sitter::Point {
+                        row: e.old_end_point.0,
+                        column: e.old_end_point.1,
+                    },
+                    new_end_position: tree_sitter::Point {
+                        row: e.new_end_point.0,
+                        column: e.new_end_point.1,
+                    },
+                }
+            })
+            .collect()
+    }
+
     /// `u`: undo one revision. Readonly buffers never record.
     pub(crate) fn undo(&mut self) {
         if self.buf().readonly {
@@ -207,7 +259,8 @@ impl Editor {
                 // change; undo ops replay in reverse record order, so
                 // first() is the tail of the change — take the minimum
                 let start = ops.iter().map(|e| e.at).min().unwrap_or(0);
-                self.buf_mut().apply_history(ops);
+                self.buf_mut().apply_history(ops.clone());
+                self.bridge_applied_ops(&ops);
                 self.set_head(start);
                 self.clamp_cursor();
                 self.flash(strop_core::Range::charwise(self.head(), self.head()));
@@ -233,7 +286,8 @@ impl Editor {
                         strop_core::history::EditKind::Delete => e.at,
                     })
                     .unwrap_or(0);
-                self.buf_mut().apply_history(ops);
+                self.buf_mut().apply_history(ops.clone());
+                self.bridge_applied_ops(&ops);
                 self.set_head(at);
                 self.clamp_cursor();
                 self.flash(strop_core::Range::charwise(self.head(), self.head()));

@@ -64,9 +64,29 @@ pub struct Highlighter {
     classes: Vec<Class>,
     source_hash: u64,
     spans: Vec<Span>,
+    /// The parse tree covering `tree_revision` (0022 §1: edits apply
+    /// incrementally; a full reparse is the fallback, not the rule).
+    tree: Option<tree_sitter::Tree>,
+    tree_revision: u64,
 }
 
 impl Highlighter {
+    /// Apply the transaction's edits to the kept tree (0022 §1):
+    /// cheap pointer walk at commit time; the reparse stays lazy.
+    pub fn apply_edits(&mut self, edits: &[tree_sitter::InputEdit], revision: u64) {
+        if revision == self.tree_revision {
+            return;
+        }
+        if let Some(tree) = &mut self.tree {
+            for e in edits {
+                tree.edit(e);
+            }
+        }
+        // with no kept tree the next parse builds it — the revision
+        // still advances so reparse-once stays the rule, not per frame
+        self.tree_revision = revision;
+    }
+
     pub fn for_path(path: &str) -> Option<Self> {
         let spec = languages::detect(path, None).or_else(|| {
             // basename/extension both missed: one bounded read of the
@@ -92,6 +112,8 @@ impl Highlighter {
             classes,
             source_hash: u64::MAX, // never a real revision
             spans: Vec::new(),
+            tree: None,
+            tree_revision: 0,
         })
     }
 
@@ -108,10 +130,30 @@ impl Highlighter {
     ) -> Vec<Span> {
         let hash = revision;
         if hash != self.source_hash {
-            let text = rope.to_string(); // prototype: whole-buffer; chunk callback when hot
-            let Some(tree) = self.parser.parse(&text, None) else {
-                return Vec::new();
+            // 0022 §1: parse from rope chunks against the kept tree —
+            // no String materialization, no from-scratch parse
+            let text = rope.to_string();
+            let tree = {
+                let mut chunk_iter = rope.chunks();
+                let mut offset = 0usize;
+                self.parser
+                    .parse_with_options(
+                        &mut |byte: usize, _| {
+                            for chunk in chunk_iter.by_ref() {
+                                if byte < offset + chunk.len() {
+                                    return &chunk[byte - offset..];
+                                }
+                                offset += chunk.len();
+                            }
+                            ""
+                        },
+                        self.tree.as_ref(),
+                        None,
+                    )
+                    .unwrap_or_else(|| self.parser.parse(&text, None).unwrap())
             };
+            self.tree = Some(tree.clone());
+            self.tree_revision = revision;
             let mut cursor = QueryCursor::new();
             let mut by_byte: HashMap<usize, (usize, Class)> = HashMap::new();
             let mut matches = cursor.matches(&self.query, tree.root_node(), text.as_bytes());
