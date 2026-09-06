@@ -4,7 +4,7 @@
 
 use strop_git::{Hunk, HunkKind, Repo, Sign};
 
-use super::git_memory::HunkOrigin;
+use super::git_memory::{GitJob, HunkOrigin};
 use super::Editor;
 
 /// What a hunk verb (`Space g u`/`g s`) targets from the current view.
@@ -36,28 +36,55 @@ impl Editor {
         self.hunks_epoch = u64::MAX;
     }
 
-    /// Recompute hunks when the buffer changed since the last diff.
-    /// libgit2 in-memory diff — no process spawn per keystroke (0001 §3).
+    /// Mark the gutter stale when the buffer changed; a worker owns the
+    /// diff (0021: render never computes one). Ropey clones share, so
+    /// the snapshot text costs a pointer bump, not a copy.
     pub fn refresh_hunks(&mut self) {
         let Some(repo) = &self.git else {
             return;
         };
         let epoch = self.buf().epoch;
         if epoch == self.hunks_epoch {
-            return;
+            return; // the snapshot is current
         }
-        let path = self.buf().path.clone();
-        // the four states (0014 wave 4): unstaged = index↔live, staged
-        // = HEAD↔index — two edges, two sign sets
-        self.hunks = match &path {
-            Some(p) => repo.unstaged_hunks(std::path::Path::new(p), &self.buf().rope.to_string()),
-            None => vec![],
+        if self.hunks_in_flight {
+            return; // a worker covers it; completion re-checks staleness
+        }
+        let Some(path) = self.buf().path.clone() else {
+            self.hunks.clear();
+            self.staged_hunks.clear();
+            self.hunks_epoch = epoch;
+            return;
         };
-        self.staged_hunks = match &path {
-            Some(p) => repo.staged_hunks(std::path::Path::new(p)),
-            None => vec![],
-        };
+        self.hunks_in_flight = true;
         self.hunks_epoch = epoch;
+        // stale signs paint WRONG lines after an edit — clear honestly
+        // for the one frame the diff takes, never lie
+        self.hunks.clear();
+        self.staged_hunks.clear();
+        let workdir = repo.workdir().to_path_buf();
+        let text = self.buf().rope.to_string();
+        let tx = self.git_tx.clone();
+        std::thread::spawn(move || {
+            let result = std::panic::catch_unwind(move || {
+                let repo = Repo::discover(&workdir);
+                let unstaged = repo
+                    .as_ref()
+                    .map(|r| r.unstaged_hunks(std::path::Path::new(&path), &text))
+                    .unwrap_or_default();
+                let staged = repo
+                    .map(|r| r.staged_hunks(std::path::Path::new(&path)))
+                    .unwrap_or_default();
+                (unstaged, staged)
+            });
+            if let Ok((unstaged, staged)) = result {
+                let _ = tx.send(GitJob::Hunks {
+                    epoch,
+                    unstaged,
+                    staged,
+                });
+            }
+        });
     }
 
     /// Gutter sign for a 1-based buffer line: `+` add, `~` change,
@@ -391,6 +418,29 @@ impl Editor {
 
 #[cfg(test)]
 mod tests {
+    /// The gutter is async now (0021): refresh enqueues, then pump the
+    /// job to completion like the event loop would.
+    fn pump_hunks(e: &mut Editor) {
+        e.refresh_hunks();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            e.drain_git_jobs();
+            if !e.hunks_in_flight || std::time::Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        e.refresh_hunks(); // a stale drop re-enqueues; pump once more
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            e.drain_git_jobs();
+            if !e.hunks_in_flight || std::time::Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
     use std::process::Command;
 
     use super::*;
@@ -432,12 +482,12 @@ mod tests {
     #[test]
     fn gutter_tracks_live_edits() {
         let (_d, mut e) = fixture();
-        e.refresh_hunks();
+        pump_hunks(&mut e);
         assert_eq!(e.sign_at(1), None, "clean buffer has no signs");
         e.feed_text("G");
         e.feed_text("ofn c() {}");
         e.feed_text("<esc>");
-        e.refresh_hunks();
+        pump_hunks(&mut e);
         assert_eq!(e.sign_at(3), Some('+'), "added line signs +");
         assert_eq!(e.sign_at(1), None);
     }
@@ -449,6 +499,7 @@ mod tests {
         e.feed_text("fn c() {}");
         e.feed_text("<esc>");
         e.feed_text("gg");
+        pump_hunks(&mut e);
         e.jump_hunk(true);
         assert_eq!(e.buf().line_of(e.head()) + 1, 3, "]c lands on the hunk");
         e.undo_hunk();
@@ -464,6 +515,7 @@ mod tests {
             e.feed(Key::Char(c));
         }
         e.feed(Key::Esc);
+        pump_hunks(&mut e);
         e.feed_text(" gp"); // Space, g, p
         assert!(
             matches!(e.surface(), Some(Surface::Diff { .. })),
@@ -480,6 +532,7 @@ mod tests {
         e.feed_text("Go");
         e.feed_text("fn c() {}");
         e.feed_text("<esc>");
+        pump_hunks(&mut e);
         e.feed_text("]c"); // like the tape: jump onto the hunk first
         e.feed_text(" gp");
         assert!(e.buf().readonly);
@@ -503,7 +556,9 @@ mod tests {
         let (d, mut e) = fixture();
         e.feed_text("Go");
         e.feed_text("fn c() {}");
-        e.feed_text("<esc>gg]c");
+        e.feed_text("<esc>gg");
+        pump_hunks(&mut e);
+        e.feed_text("]c");
         e.feed_text(" gs");
         assert!(
             e.message.contains(":w first"),
@@ -533,7 +588,9 @@ mod tests {
         let (_d, mut e) = fixture();
         e.feed_text("Go");
         e.feed_text("fn c() {}");
-        e.feed_text("<esc>gg]c gp");
+        e.feed_text("<esc>");
+        pump_hunks(&mut e);
+        e.feed_text("gg]c gp");
         // edit the origin document: the epoch moves, the preview goes stale
         // (the active pane's document IS the current one — the surface —
         // so point a second pane at the file for the cursor-keep branch)
@@ -542,6 +599,7 @@ mod tests {
             sels: strop_core::selection::SelectionSet::default(),
             view_top: 0,
         });
+        pump_hunks(&mut e);
         e.doc_mut(e.first_doc()).buf.insert(0, "// touched\n");
         e.feed_text(" gu");
         assert!(
@@ -559,6 +617,7 @@ mod tests {
         e.feed_text("Gofn c() {}");
         e.feed_text("<esc>");
         e.feed_text(":w\r");
+        pump_hunks(&mut e);
         e.feed_text("]c gs");
         assert!(e.message.contains("staged"), "{}", e.message);
         let staged = Command::new("git")
@@ -568,7 +627,7 @@ mod tests {
             .unwrap();
         assert!(!staged.stdout.is_empty(), "hunk in the index");
         // staged set drives the gutter's committed-adjacent tint
-        e.refresh_hunks();
+        pump_hunks(&mut e);
         assert!(e.sign_at_staged(3), "staged line marked");
         assert!(e.sign_at(3).is_none(), "not also unstaged");
         e.feed_text(" gS");
@@ -580,7 +639,7 @@ mod tests {
             .unwrap();
         assert!(staged.stdout.is_empty(), "index back to HEAD");
         // and now the same line reads as unstaged again
-        e.refresh_hunks();
+        pump_hunks(&mut e);
         assert_eq!(e.sign_at(3), Some('+'));
     }
 }

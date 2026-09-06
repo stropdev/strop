@@ -42,6 +42,8 @@ pub struct PendingRequest {
     pub path: PathBuf,
     pub line: usize,
     pub col: usize,
+    /// The asking document's revision (0021 §2).
+    pub req_revision: u64,
     pub kind: QueuedRequest,
 }
 
@@ -127,12 +129,16 @@ pub enum LspEvent {
         path: PathBuf,
         line: usize,
         col: usize,
+        /// The asking document's revision (0021 §2).
+        req_revision: u64,
     },
     /// references/implementation/typeDef/declaration results — many
     /// locations land in the picker, one jumps directly.
     Locations {
         kind: LocKind,
         items: Vec<(PathBuf, usize, usize)>,
+        /// The asking document's revision.
+        req_revision: u64,
     },
     /// A user-facing note that is neither ready nor failure (e.g.
     /// "no header counterpart").

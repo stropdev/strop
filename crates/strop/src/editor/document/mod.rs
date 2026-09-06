@@ -5,7 +5,11 @@
 use strop_core::Buffer;
 use strop_syntax::Highlighter;
 
-use super::{Editor, Surface};
+pub mod surfaces;
+
+pub use surfaces::{DocumentSource, ReturnPoint, Surface};
+
+use super::Editor;
 
 /// One document: the text buffer plus everything that used to live in
 /// parallel vectors keyed by buffer index (0014 wave 2). One struct,
@@ -14,17 +18,68 @@ pub struct Document {
     pub buf: Buffer,
     /// None: unsupported extension.
     pub highlighter: Option<Highlighter>,
-    /// Git memory surface attached to this document (0010).
-    pub surface: Option<Surface>,
+    /// What backs this document (0021 §4): the surface payload lives in
+    /// the source variant; readonly derives from it at construction.
+    pub source: DocumentSource,
 }
 
 impl Document {
     pub fn new(buf: Buffer) -> Self {
-        let highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
+        let highlighter = buf
+            .path
+            .as_deref()
+            .and_then(|p| Highlighter::for_path(&p.to_string_lossy()));
         Self {
             buf,
             highlighter,
-            surface: None,
+            source: DocumentSource::File,
+        }
+    }
+
+    /// A scratch document (no file).
+    pub fn scratch(buf: Buffer) -> Self {
+        Self {
+            buf,
+            highlighter: None,
+            source: DocumentSource::Scratch,
+        }
+    }
+
+    /// A git-memory surface: job-owned content, readonly derived from
+    /// the source — not set by hand (0021 §4).
+    pub fn surface(mut buf: Buffer, surface: Surface) -> Self {
+        buf.readonly = true;
+        Self {
+            buf,
+            highlighter: None,
+            source: DocumentSource::Surface(surface),
+        }
+    }
+
+    /// Named virtual content (`:!cmd` output, help, the undo browser):
+    /// readonly derived from the source.
+    pub fn output(mut buf: Buffer) -> Self {
+        buf.readonly = true;
+        Self {
+            buf,
+            highlighter: None,
+            source: DocumentSource::Output,
+        }
+    }
+
+    /// The surface payload, when this document is one.
+    pub fn surface_payload(&self) -> Option<&Surface> {
+        match &self.source {
+            DocumentSource::Surface(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Mutable surface payload, when this document is one.
+    pub fn surface_payload_mut(&mut self) -> Option<&mut Surface> {
+        match &mut self.source {
+            DocumentSource::Surface(s) => Some(s),
+            _ => None,
         }
     }
 }
@@ -205,7 +260,10 @@ impl Editor {
             return false;
         }
         let closed = self.current();
-        let closed_surface = self.docs.remove(closed).and_then(|d| d.surface);
+        let closed_surface = self.docs.remove(closed).and_then(|d| match d.source {
+            DocumentSource::Surface(s) => Some(s),
+            _ => None,
+        });
         if self.docs.is_empty() {
             crate::session::save(self);
             self.should_quit = true;

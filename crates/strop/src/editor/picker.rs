@@ -87,7 +87,8 @@ impl Editor {
                             .doc(i)
                             .buf
                             .path
-                            .clone()
+                            .as_ref()
+                            .map(|p| p.to_string_lossy().into_owned())
                             .unwrap_or_else(|| "[scratch]".into());
                         Item {
                             text: name,
@@ -511,7 +512,8 @@ impl Editor {
                     .get(i)?
                     .buf
                     .path
-                    .clone()
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "[scratch]".into());
                 let _ = i;
                 Some((name, None, PreviewSource::Buffer(i)))

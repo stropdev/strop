@@ -195,7 +195,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
             None => Vec::new(),
         };
     let buf = &editor.doc(view.doc).buf;
-    let surface = editor.doc(view.doc).surface.as_ref();
+    let surface = editor.doc(view.doc).surface_payload();
 
     // overlays read live editor state; only the active pane shows them
     let block = if view.overlays {
@@ -579,7 +579,7 @@ fn content_spans(
     // full-row backgrounds for add/del rows run past the text (0010 §4)
     if let Some(dl) = style.diff_line {
         if let Some(bg) = diff::origin_bg(dl.origin) {
-            let used = diff::gutter_width(editor.doc(view.doc).surface.as_ref()) + chars;
+            let used = diff::gutter_width(editor.doc(view.doc).surface_payload()) + chars;
             let pad = (width as usize).saturating_sub(used);
             if pad > 0 {
                 spans.push(Span::styled(

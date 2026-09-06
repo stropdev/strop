@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.10.0 — 2026-09-06
+
+Document identity and the last 0018 seams (plan 0021). No new
+user-visible features — the document model is formalized and the render
+path is clean.
+
+### Changed (architecture)
+
+- **The gutter never diffs on the render path**: edits mark the hunk
+  snapshot stale; a worker computes against a shared rope clone and
+  posts the revision-keyed result. Stale snapshots drop and re-enqueue;
+  signs clear honestly for the frame instead of painting wrong lines.
+- **Every interactive LSP reply is stale-droppable by construction**:
+  goto/locations answers carry the asking document's revision; a reply
+  against another edit state never navigates.
+- **`Buffer.path` is `PathBuf`** (0020 review): the filesystem model
+  isn't UTF-8 — a file with non-UTF-8 bytes in its name opens, edits,
+  and round-trips (test-pinned).
+- **`DocumentSource`** (File / Scratch / Surface / Output): readonly
+  and save refusal derive from the source at construction — no more
+  `readonly`/`name`/path conventions kept in sync by callers. The
+  document layer splits into `document/{mod,surfaces}.rs`; the git
+  surface model lives with the payload, and `:w` on a readonly buffer
+  names it.
+
 ## 0.9.2 — 2026-09-05
 
 The structural half of plan 0020.

@@ -88,13 +88,8 @@ impl Editor {
             match result {
                 ShellResult::Display { cmd, output } => {
                     let mut buf = Buffer::from_text(&output);
-                    buf.readonly = true;
                     buf.name = Some(format!("sh: {cmd}"));
-                    let id = self.docs.insert(Document {
-                        buf,
-                        highlighter: None,
-                        surface: None,
-                    });
+                    let id = self.docs.insert(Document::output(buf));
                     self.switch_to(id);
                     self.set_head(0);
                     self.view_mut().view_top = 0;

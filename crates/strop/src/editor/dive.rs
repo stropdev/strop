@@ -6,7 +6,8 @@ use std::path::Path;
 
 use strop_git::Hunk;
 
-use super::git_memory::{diff_surface_text, hunk_stats, CommitFiles, Surface};
+use super::document::Surface;
+use super::git_memory::{diff_surface_text, hunk_stats, CommitFiles};
 use super::Editor;
 
 impl Editor {
@@ -108,7 +109,10 @@ impl Editor {
             commit: Some(_),
             sidebar_focus,
             ..
-        })) = self.docs.get_mut(self.current()).map(|d| &mut d.surface)
+        })) = self
+            .docs
+            .get_mut(self.current())
+            .map(|d| d.surface_payload_mut())
         else {
             self.message = "tab: no file sidebar here".into();
             return;
@@ -179,7 +183,7 @@ impl Editor {
             added: add_slot,
             deleted: del_slot,
             ..
-        })) = self.docs.get_mut(idx).map(|d| &mut d.surface)
+        })) = self.docs.get_mut(idx).map(|d| d.surface_payload_mut())
         {
             *slot = label.clone();
             *hunk_slot = hunks;

@@ -566,7 +566,7 @@ pub(crate) fn sidebar_spans(
 /// inactive-pane caret both derive from here — one composition, no
 /// per-surface drift (0011 §3/§4).
 pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) -> usize {
-    let surface = editor.docs.get(buffer).and_then(|d| d.surface.as_ref());
+    let surface = editor.docs.get(buffer).and_then(|d| d.surface_payload());
     let mut inset = gutter_width(surface);
     if editor.blame_gutter_for(buffer).is_some() {
         inset += BLAME_W;

@@ -34,13 +34,12 @@ impl Editor {
     /// same normalization every lookup uses, so `f.rs` and an absolute
     /// path for one file share one entry.
     pub(crate) fn blame_key(&self) -> PathBuf {
-        self.blame_key_of(self.buf().path.as_deref().unwrap_or(""))
+        let p = self.buf().path.clone().unwrap_or_default();
+        self.blame_key_of(&p)
     }
 
-    pub(crate) fn blame_key_of(&self, path: &str) -> PathBuf {
-        Path::new(path)
-            .canonicalize()
-            .unwrap_or_else(|_| self.cwd.join(path))
+    pub(crate) fn blame_key_of(&self, path: &Path) -> PathBuf {
+        path.canonicalize().unwrap_or_else(|_| self.cwd.join(path))
     }
 
     fn spawn_blame_file(&mut self, key: &Path) {

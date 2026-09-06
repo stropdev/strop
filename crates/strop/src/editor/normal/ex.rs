@@ -235,6 +235,13 @@ impl Editor {
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
             "w" | "w!" => {
+                // vim: readonly buffers refuse plain :w (surfaces, :view);
+                // :w! forces through the mutation boundary's rule
+                if self.buf().readonly && cmd != "w!" {
+                    let name = self.buf().name.as_deref().unwrap_or("readonly buffer");
+                    self.message = format!("{name}: readonly — :w! to force");
+                    return;
+                }
                 // vim: :w {file} writes under a new name and adopts it
                 let r = if arg.is_empty() {
                     self.buf_mut().save(cmd == "w!")

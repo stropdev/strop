@@ -316,6 +316,7 @@ impl Client {
                         path,
                         line,
                         col,
+                        req_revision,
                         kind,
                     } in pending_reqs
                     {
@@ -354,6 +355,7 @@ impl Client {
                                                 path,
                                                 line: l.range.start.line as usize,
                                                 col: l.range.start.character as usize,
+                                                req_revision,
                                             });
                                         }
                                     }
@@ -387,7 +389,14 @@ impl Client {
                                         character: col as u32,
                                     },
                                 };
-                                request_locations(sock.clone(), tx2.clone(), kind, tdp).await;
+                                request_locations(
+                                    sock.clone(),
+                                    tx2.clone(),
+                                    kind,
+                                    tdp,
+                                    req_revision,
+                                )
+                                .await;
                             }
                             QueuedRequest::SwitchHeader => {
                                 let resp = sock
@@ -400,6 +409,7 @@ impl Client {
                                                 path,
                                                 line: 0,
                                                 col: 0,
+                                                req_revision,
                                             });
                                         }
                                     }
@@ -555,6 +565,7 @@ impl Client {
                 path: path.to_path_buf(),
                 line,
                 col,
+                req_revision: 0,
                 kind: QueuedRequest::Hover,
             });
             return;
@@ -601,7 +612,7 @@ impl Client {
 
     /// Goto-definition; response posts as GotoLocation. Quiet no-op when
     /// the server doesn't advertise definitions (0009 §2.5).
-    pub fn goto_definition(&self, path: &Path, line: usize, col: usize) {
+    pub fn goto_definition(&self, path: &Path, line: usize, col: usize, req_revision: u64) {
         // pre-init: caps unknown ≠ unsupported — queue, flush on
         // Initialized (gd right after opening a project used to die
         // silently here)
@@ -610,6 +621,7 @@ impl Client {
                 path: path.to_path_buf(),
                 line,
                 col,
+                req_revision,
                 kind: QueuedRequest::Goto,
             });
             return;
@@ -657,6 +669,7 @@ impl Client {
                             path,
                             line: l.range.start.line as usize,
                             col: l.range.start.character as usize,
+                            req_revision,
                         });
                     }
                 }
@@ -666,13 +679,21 @@ impl Client {
 
     /// references / implementation / type-definition / declaration:
     /// one shape, four LSP methods; the response posts as Locations.
-    pub fn locations(&self, kind: LocKind, path: &Path, line: usize, col: usize) {
+    pub fn locations(
+        &self,
+        kind: LocKind,
+        path: &Path,
+        line: usize,
+        col: usize,
+        req_revision: u64,
+    ) {
         // pre-init: caps unknown ≠ unsupported — queue like gd (0015)
         if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
             self.pending_requests.lock().push(PendingRequest {
                 path: path.to_path_buf(),
                 line,
                 col,
+                req_revision,
                 kind: QueuedRequest::Locations(kind),
             });
             return;
@@ -696,7 +717,8 @@ impl Client {
                 character: col as u32,
             },
         };
-        self.handle.spawn(request_locations(sock, tx, kind, tdp));
+        self.handle
+            .spawn(request_locations(sock, tx, kind, tdp, req_revision));
     }
 
     /// clangd's `textDocument/switchSourceHeader` (a clangd extension,
@@ -709,6 +731,7 @@ impl Client {
                 path: path.to_path_buf(),
                 line: 0,
                 col: 0,
+                req_revision: 0,
                 kind: QueuedRequest::SwitchHeader,
             });
             return;
@@ -727,6 +750,7 @@ impl Client {
                             path,
                             line: 0,
                             col: 0,
+                            req_revision: 0, // gs is a jump command, not a position answer
                         });
                     }
                 }
@@ -761,6 +785,7 @@ async fn request_locations(
     tx: std::sync::mpsc::Sender<LspEvent>,
     kind: LocKind,
     tdp: TextDocumentPositionParams,
+    req_revision: u64,
 ) {
     use async_lsp::lsp_types as lt;
     let to_items = |locs: Vec<lt::Location>| -> Vec<(PathBuf, usize, usize)> {
@@ -850,7 +875,11 @@ async fn request_locations(
         }
     };
     if let Some(items) = items {
-        let _ = tx.send(LspEvent::Locations { kind, items });
+        let _ = tx.send(LspEvent::Locations {
+            kind,
+            items,
+            req_revision,
+        });
     }
 }
 

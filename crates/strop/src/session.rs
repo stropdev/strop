@@ -68,7 +68,7 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
             (None, 0)
         };
         buffers.push(BufferState {
-            path,
+            path: path.to_string_lossy().into_owned(),
             line: if id == editor.current() {
                 editor.buf().line_of(editor.head())
             } else {
@@ -93,7 +93,16 @@ pub(crate) fn capture(editor: &Editor) -> Option<Session> {
     }
     let current = buffers
         .iter()
-        .position(|b| Some(&b.path) == editor.cur().buf.path.as_ref())
+        .position(|b| {
+            Some(&b.path)
+                == editor
+                    .cur()
+                    .buf
+                    .path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .as_ref()
+        })
         .unwrap_or(0);
     Some(Session { buffers, current })
 }
@@ -230,10 +239,7 @@ mod tests {
         e2.cwd = root.to_path_buf();
         e2.state_dir = Some(root.join("state"));
         assert!(restore(&mut e2));
-        assert_eq!(
-            e2.buf().path.as_deref(),
-            Some(root.join("a.rs").to_str().unwrap())
-        );
+        assert_eq!(e2.buf().path.as_deref(), Some(root.join("a.rs").as_path()));
         assert_eq!(e2.buf().line_of(e2.head()), 1);
         assert_eq!(e2.buf().col_of(e2.head()), 1);
         // the session captured DIRTY history; the disk text differs —

@@ -153,9 +153,9 @@ mod tests {
         let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
         e.feed_text(&format!(":vs {}<cr>", b.display()));
         assert_eq!(e.panes.len(), 2);
-        assert_eq!(e.buf().path.as_deref(), b.to_str());
+        assert_eq!(e.buf().path.as_deref(), Some(b.as_path()));
         e.feed(crate::editor::Key::CtrlW);
         e.feed(crate::editor::Key::Char('h'));
-        assert_eq!(e.buf().path.as_deref(), a.to_str());
+        assert_eq!(e.buf().path.as_deref(), Some(a.as_path()));
     }
 }

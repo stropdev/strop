@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::git_memory::Surface;
+use super::document::Surface;
 use super::{Editor, Mode};
 
 impl Editor {
@@ -55,10 +55,12 @@ impl Editor {
             Some(Surface::Diff { label, .. }) => Some(label.clone()),
             _ => None,
         };
-        let path = surface_label
-            .as_deref()
-            .or(self.buf().path.as_deref())
-            .map(str::to_string);
+        let path = surface_label.or_else(|| {
+            self.buf()
+                .path
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+        });
         let Some(path) = path else {
             return Err("no file for this buffer".into());
         };

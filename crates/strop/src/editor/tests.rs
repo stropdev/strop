@@ -113,7 +113,7 @@ mod scratch_tests {
         let mut e = Editor::new(Buffer::from_text(""));
         e.open_buffer(f.to_str().unwrap()).unwrap();
         assert_eq!(e.docs.len(), 1, "scratch replaced, not stacked");
-        assert_eq!(e.buf().path.as_deref(), f.to_str());
+        assert_eq!(e.buf().path.as_deref(), Some(f.as_path()));
         e.feed_text(":q\r");
 
         assert!(e.should_quit, "one :q quits");
@@ -521,7 +521,7 @@ mod alignment_tests {
         assert_eq!(e.docs.len(), 2);
         e.open_diff_surface("delta", "f.rs", vec![], None);
         assert_eq!(e.docs.len(), 3);
-        assert!(e.cur().surface.is_some());
+        assert!(e.cur().surface_payload().is_some());
         e.close_buffer(true);
         assert_eq!(e.docs.len(), 2);
         e.close_buffer(true);
@@ -754,7 +754,10 @@ mod keybinds_tests {
         e.feed_text("mb"); // mark b here
         e.feed_text(":e /tmp/strop-mark-b.rs<cr>");
         e.feed_text("'b"); // jump back to mark
-        assert_eq!(e.buf().path.as_deref(), Some("/tmp/strop-mark-a.rs"));
+        assert_eq!(
+            e.buf().path.as_deref(),
+            Some(std::path::Path::new("/tmp/strop-mark-a.rs"))
+        );
         assert_eq!(e.buf().line_of(e.head()), 2);
         std::fs::remove_file("/tmp/strop-mark-a.rs").ok();
         std::fs::remove_file("/tmp/strop-mark-b.rs").ok();
@@ -806,7 +809,7 @@ mod keybinds_tests {
         let p = dir.path().join("named.txt");
         e.feed_text(&format!(":w {}\r", p.display()));
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "unsaved\n");
-        assert_eq!(e.buf().path.as_deref(), Some(p.to_str().unwrap()));
+        assert_eq!(e.buf().path.as_deref(), Some(p.as_path()));
     }
 
     #[test]
@@ -1219,5 +1222,14 @@ mod keybinds_tests {
             .byte_slice(e.buf().line_start(2)..e.buf().line_end(2))
             .to_string()
             .contains("TARGET"));
+    }
+    #[test]
+    fn write_on_readonly_names_the_buffer() {
+        // 0021 exit: a surface's :w refuses, named
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.buf_mut().readonly = true;
+        e.buf_mut().name = Some("git log".into());
+        e.feed_text(":w\r");
+        assert_eq!(e.message, "git log: readonly — :w! to force");
     }
 }

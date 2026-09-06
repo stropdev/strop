@@ -12,7 +12,10 @@ use ropey::Rope;
 /// A text buffer. Positions are UTF-8 byte offsets, everywhere (0001 §5.1).
 pub struct Buffer {
     pub rope: Rope,
-    pub path: Option<String>,
+    /// Filesystem identity (0021 §3: Unix filenames aren't UTF-8 — a
+    /// String path makes the filesystem model a UI model). Display via
+    /// to_string_lossy at the edge only.
+    pub path: Option<std::path::PathBuf>,
     pub dirty: bool,
     /// Monotonic edit counter; async readers (git gutter) diff lazily.
     pub epoch: u64,
@@ -106,7 +109,8 @@ impl Buffer {
 
     /// Open a file; a missing file is a new empty buffer with that path
     /// (vim semantics — `:w` creates it). Real I/O errors still error.
-    pub fn open(path: &str) -> std::io::Result<Self> {
+    pub fn open(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
+        let path = path.as_ref();
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -115,7 +119,7 @@ impl Buffer {
         let disk_stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         Ok(Self {
             rope: Rope::from_str(&text),
-            path: Some(path.to_string()),
+            path: Some(path.to_path_buf()),
             dirty: false,
             epoch: 0,
             readonly: false,
@@ -165,7 +169,7 @@ impl Buffer {
         }
         write_atomic(target, &self.rope.to_string())?;
         // success: adopt the identity
-        self.path = Some(path.to_string());
+        self.path = Some(std::path::PathBuf::from(path));
         self.disk_stamp = std::fs::metadata(target).and_then(|m| m.modified()).ok();
         self.dirty = false;
         Ok(())
@@ -484,5 +488,21 @@ mod safety_tests {
         // the owner path still works (job-generated surfaces)
         b.replace_all_system("gen\n");
         assert_eq!(b.rope.to_string(), "gen\n");
+    }
+    #[test]
+    fn non_utf8_filename_opens_and_roundtrips() {
+        // 0021 §3: the filesystem is not UTF-8 — a weird name must open,
+        // save, and keep its identity
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        let weird = dir
+            .path()
+            .join(std::ffi::OsStr::from_bytes(b"weird-\xff.rs"));
+        std::fs::write(&weird, "fn main() {}\n").unwrap();
+        let mut b = Buffer::open(&weird).unwrap();
+        assert_eq!(b.path.as_deref(), Some(weird.as_path()));
+        b.insert(0, "// x\n");
+        b.save(false).unwrap();
+        assert!(std::fs::read_to_string(&weird).unwrap().starts_with("// x"));
     }
 }

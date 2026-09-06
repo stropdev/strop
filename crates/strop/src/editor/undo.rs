@@ -32,7 +32,8 @@ impl Editor {
         let name = self
             .buf()
             .path
-            .clone()
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_else(|| "[scratch]".into());
         let mut text = format!("undo tree — {name}   (enter: restore · q: close)\n");
         let mut row_rev = vec![None];
@@ -48,11 +49,7 @@ impl Editor {
         let mut buf = Buffer::from_text(&text);
         buf.readonly = true;
         buf.name = Some("undo tree".into());
-        let id = self.docs.insert(Document {
-            buf,
-            highlighter: None,
-            surface: None,
-        });
+        let id = self.docs.insert(Document::output(buf));
         self.switch_to(id);
         self.set_head(0);
         self.view_mut().view_top = 0;

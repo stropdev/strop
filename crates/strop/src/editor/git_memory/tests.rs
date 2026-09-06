@@ -527,6 +527,12 @@ fn hunk_discard_undoes_byte_exact() {
     let before = e.buf().rope.to_string();
     let _ = &root;
     e.refresh_hunks();
+    // the gutter is async (0021): pump the job like the event loop
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while e.hunks_in_flight && std::time::Instant::now() < deadline {
+        e.drain_git_jobs();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert!(!e.hunks.is_empty(), "the worktree edit shows as a hunk");
     e.undo_hunk();
     assert_eq!(e.buf().rope.to_string(), "fn a() {}\nfn b() {}\n");

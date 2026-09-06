@@ -31,7 +31,8 @@ pub mod view;
 mod visual;
 
 pub use document::Document;
-pub use git_memory::{git_channel, BlameGutter, GitJob, Surface};
+pub use document::Surface;
+pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{PickerGlue, PreviewSource, Previews};
 
@@ -152,6 +153,8 @@ pub struct Editor {
     /// The outstanding hover request's identity (doc, history depth) —
     /// a reply against another state is stale (0018).
     pub hover_request: Option<(strop_core::id::DocumentId, usize)>,
+    /// The outstanding goto/locations request's identity (0021 §2).
+    pub lsp_nav_request: Option<(strop_core::id::DocumentId, u64)>,
     /// Merged languages.toml per workspace root (0018 — the OnceLock
     /// used to pin the FIRST project's config process-wide).
     pub langs_by_root: std::collections::HashMap<PathBuf, &'static strop_lsp::languages::Languages>,
@@ -182,6 +185,8 @@ pub struct Editor {
     /// gutter's committed-adjacent color.
     pub staged_hunks: Vec<strop_git::Hunk>,
     pub hunks_epoch: u64,
+    /// A gutter diff is in flight (0021: at most one per editor).
+    pub hunks_in_flight: bool,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
     pub blame_card: Option<strop_git::memory::BlameCard>,
@@ -272,7 +277,13 @@ impl Editor {
         let (clip_tx, clip_rx) = std::sync::mpsc::channel();
         let (git_tx, git_rx) = git_channel();
         let mut docs = strop_core::id::Arena::default();
-        let current = docs.insert(Document::new(buf));
+        // the source identity is set at construction, not by convention
+        let doc = if buf.path.is_some() {
+            Document::new(buf)
+        } else {
+            Document::scratch(buf)
+        };
+        let current = docs.insert(doc);
         let mut e = Self {
             docs,
             mru: vec![current],
@@ -296,6 +307,7 @@ impl Editor {
             app_tx: None,
             langs_by_root: std::collections::HashMap::new(),
             hover_request: None,
+            lsp_nav_request: None,
             next_picker_id: 1,
             anchor_map_mark: None,
             macros: std::collections::HashMap::new(),
@@ -319,6 +331,7 @@ impl Editor {
             hunks: Vec::new(),
             staged_hunks: Vec::new(),
             hunks_epoch: u64::MAX,
+            hunks_in_flight: false,
             blame_card: None,
             git_tx,
             git_rx: Some(git_rx),

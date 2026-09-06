@@ -10,45 +10,8 @@ use strop_core::Buffer;
 use strop_git::memory::{self, BlameCard, BlameLine, ChangedFile, LogRow};
 use strop_git::{Hunk, LineOrigin};
 
+use super::document::{ReturnPoint, Surface};
 use super::{Document, Editor, Key, Mode};
-
-/// What a readonly buffer is — drives Enter/q and per-row rendering.
-#[derive(Debug, Clone)]
-pub enum Surface {
-    CommitLog {
-        rows: Vec<LogRow>,
-        /// Sha to land the cursor on once rows arrive (the blame dive
-        /// opens the browser *at* a commit, 0011 §3).
-        focus: Option<String>,
-        return_to: Option<ReturnPoint>,
-    },
-    ChangedFiles {
-        sha: String,
-        files: Vec<ChangedFile>,
-        return_to: Option<ReturnPoint>,
-    },
-    /// A diff as a readonly buffer (0010 §2): the file's delta at a
-    /// commit, or the `Space g p` hunk preview. The buffer's rows mirror
-    /// the rendered layout — a stats row, then per hunk a `@@` header
-    /// row and unprefixed content rows — so motions, `/` and yank see
-    /// exactly what's on screen. `origin` names the working buffer a
-    /// hunk preview belongs to, so `Space g u`/`g s` act on the file;
-    /// `commit` carries the commit's other files when this delta came
-    /// from the dive chain (the sidebar + `]f`/`[f`, 0011 §4).
-    Diff {
-        /// Stats-row label: the file path (delta view) or "hunk".
-        label: String,
-        hunks: Vec<Hunk>,
-        added: usize,
-        deleted: usize,
-        origin: Option<HunkOrigin>,
-        commit: Option<CommitFiles>,
-        /// tuicr-style: Tab moves focus between the file sidebar and
-        /// the diff content (j/k step files when the sidebar has focus).
-        sidebar_focus: bool,
-        return_to: Option<ReturnPoint>,
-    },
-}
 
 /// The commit a Diff surface's file belongs to, with the commit's full
 /// changed-file list — the sidebar's data (typed numstat rows, the same
@@ -57,38 +20,6 @@ pub enum Surface {
 pub struct CommitFiles {
     pub sha: String,
     pub files: Vec<ChangedFile>,
-}
-
-/// Where a surface was opened from: closing it hands the cursor and
-/// view back to that buffer (vim's window-close behavior — without
-/// this, `q` dumps you on line 1).
-#[derive(Debug, Clone)]
-pub struct ReturnPoint {
-    pub buffer: strop_core::id::DocumentId,
-    pub cursor: usize,
-    pub view_top: usize,
-}
-
-impl Surface {
-    fn set_return_point(&mut self, ret: ReturnPoint) {
-        *self.return_slot() = Some(ret);
-    }
-
-    pub(crate) fn return_point(&self) -> Option<&ReturnPoint> {
-        match self {
-            Surface::CommitLog { return_to, .. }
-            | Surface::ChangedFiles { return_to, .. }
-            | Surface::Diff { return_to, .. } => return_to.as_ref(),
-        }
-    }
-
-    fn return_slot(&mut self) -> &mut Option<ReturnPoint> {
-        match self {
-            Surface::CommitLog { return_to, .. }
-            | Surface::ChangedFiles { return_to, .. }
-            | Surface::Diff { return_to, .. } => return_to,
-        }
-    }
 }
 
 /// Where a hunk preview came from: the buffer it undoes/stages in, at
@@ -132,11 +63,18 @@ pub enum GitJob {
         lines: Vec<BlameLine>,
     },
     Error(String),
+    /// The gutter snapshot (0021): diff computed off the render path
+    /// against an immutable rope clone.
+    Hunks {
+        epoch: u64,
+        unstaged: Vec<strop_git::Hunk>,
+        staged: Vec<strop_git::Hunk>,
+    },
 }
 
 impl Editor {
     pub fn surface(&self) -> Option<&Surface> {
-        self.cur().surface.as_ref()
+        self.cur().surface_payload()
     }
     // ---- surface lifecycle --------------------------------------------
     pub(crate) fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
@@ -151,14 +89,10 @@ impl Editor {
             });
         }
         let mut buf = Buffer::from_text(text);
-        buf.readonly = true;
         buf.name = name.map(|n| n.to_string());
-        // surfaces render via delta/plain rules: no tree-sitter
-        let id = self.docs.insert(Document {
-            buf,
-            highlighter: None,
-            surface: Some(surface),
-        });
+        // surfaces render via delta/plain rules: no tree-sitter;
+        // readonly derives from the source (0021 §4)
+        let id = self.docs.insert(Document::surface(buf, surface));
         self.push_jump(); // opening a surface is a jumplist entry
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
         self.switch_to(id);
@@ -494,7 +428,7 @@ impl Editor {
                     let mut focus_row = None;
                     if let Some(Some(Surface::CommitLog {
                         rows: slot, focus, ..
-                    })) = self.docs.get_mut(buffer).map(|d| &mut d.surface)
+                    })) = self.docs.get_mut(buffer).map(|d| d.surface_payload_mut())
                     {
                         focus_row = focus.take().and_then(|sha| {
                             rows.iter().position(|r| r.sha.as_deref() == Some(&sha))
@@ -540,6 +474,21 @@ impl Editor {
                     }
                 }
                 GitJob::Error(e) => self.message = e,
+                GitJob::Hunks {
+                    epoch,
+                    unstaged,
+                    staged,
+                } => {
+                    // stale snapshots drop; the next render re-enqueues
+                    // (hunks_epoch covers an older epoch)
+                    self.hunks_in_flight = false;
+                    if epoch == self.buf().epoch {
+                        self.hunks = unstaged;
+                        self.staged_hunks = staged;
+                    } else {
+                        self.hunks_epoch = u64::MAX;
+                    }
+                }
             }
         }
     }

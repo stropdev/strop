@@ -110,9 +110,12 @@ fn in_range(r: Range, pos: usize) -> bool {
 fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     let y = area.height - 1;
     let mode = editor.mode.chip();
-    let file = editor
+    let binding = editor
         .buf()
         .path
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned());
+    let file = binding
         .as_deref()
         .or(editor.buf().name.as_deref())
         .unwrap_or("[scratch]");

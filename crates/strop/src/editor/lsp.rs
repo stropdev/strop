@@ -272,7 +272,12 @@ impl Editor {
                         self.hover_card = Some(text);
                     }
                 }
-                LspEvent::Locations { kind, items } => match items.len() {
+                LspEvent::Locations {
+                    req_revision, ..
+                } if req_revision != 0 && !self.lsp_nav_fresh(req_revision) => {
+                    // stale asker — drop
+                }
+                LspEvent::Locations { kind, items, .. } => match items.len() {
                     0 => self.message = format!("lsp: no {}", kind.label()),
                     1 => {
                         let (path, line, col) = items.into_iter().next().unwrap();
@@ -299,7 +304,17 @@ impl Editor {
                         self.message = format!("{n} {label}");
                     }
                 },
-                LspEvent::GotoLocation { path, line, col } => {
+                LspEvent::GotoLocation {
+                    path,
+                    line,
+                    col,
+                    req_revision,
+                } => {
+                    // 0021 §2: the answer is only valid against the
+                    // document state that asked
+                    if req_revision != 0 && !self.lsp_nav_fresh(req_revision) {
+                        return;
+                    }
                     if std::env::var_os("STROP_LSP_LOG").is_some() {
                         eprintln!("strop: goto {}:{}:{}", path.display(), line, col);
                     }
@@ -364,7 +379,8 @@ impl Editor {
         let line = self.buf().line_of(self.head());
         let col = self.server_col(&client, self.buf().col_of(self.head()));
         let label = kind.label();
-        client.locations(kind, &abs, line, col);
+        self.lsp_nav_request = Some((self.current(), self.buf().history.depth() as u64));
+        client.locations(kind, &abs, line, col, self.buf().history.depth() as u64);
         self.message = format!("lsp: {label} …");
     }
 
@@ -404,6 +420,14 @@ impl Editor {
         self.clamp_cursor();
         self.scroll_to_cursor(self.view_rows());
         self.message = msg;
+    }
+
+    /// Is a navigation answer still current? The asking document must
+    /// be current AND at the same revision (0021 §2).
+    fn lsp_nav_fresh(&self, req_revision: u64) -> bool {
+        self.lsp_nav_request.is_some_and(|(doc, rev)| {
+            doc == self.current() && rev == self.buf().history.depth() as u64 && rev == req_revision
+        })
     }
 
     /// `Space d`: diagnostics picker over the current buffer's diags.
@@ -500,7 +524,8 @@ impl Editor {
         let line = self.buf().line_of(self.head());
         let col = self.buf().col_of(self.head());
         let col = self.server_col(&client, col);
-        client.goto_definition(&abs, line, col);
+        self.lsp_nav_request = Some((self.current(), self.buf().history.depth() as u64));
+        client.goto_definition(&abs, line, col, self.buf().history.depth() as u64);
     }
 
     /// `gs`: switch between source and header (clangd's extension).
