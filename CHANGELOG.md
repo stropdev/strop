@@ -1,9 +1,14 @@
 # Changelog
 
-## 0.14.0 — 2026-09-06
+## 0.14.1 — 2026-09-07
 
 Search/terminal correctness, diagnostic session traces, and a safety review
 (plans 0027–0030).
+
+The 0.14.0 tag stopped before publication: the strengthened macOS verification
+correctly ran but its allowlist omitted Apple's system zlib. This release accepts
+that system library while still rejecting non-system dependencies; tags were not
+moved. All application changes below are included in 0.14.1.
 
 ### Fixed
 

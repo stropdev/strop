@@ -87,7 +87,7 @@ jobs:
           bin="$(find "$tmp" -type f -name strop | head -1)"
           file "$bin"
           otool -L "$bin"
-          if otool -L "$bin" | sed '1d' | grep -qvE "^[[:space:]]+(/usr/lib/(libSystem|libiconv)[^ ]*|/System/Library/Frameworks/(CoreFoundation|Security|SystemConfiguration)\\.framework/[^ ]*)[[:space:]]"; then
+          if otool -L "$bin" | sed '1d' | grep -qvE "^[[:space:]]+(/usr/lib/(libSystem|libiconv|libz)[^ ]*|/System/Library/Frameworks/(CoreFoundation|Security|SystemConfiguration)\\.framework/[^ ]*)[[:space:]]"; then
             echo "::error::non-system dynamic dependency"
             exit 1
           fi
