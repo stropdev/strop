@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.2 — 2026-09-06
+
+### Fixed
+
+- **A crash (and a release-build garbage-read) in incremental syntax
+  highlighting**: the rope-chunk parse callback assumed tree-sitter
+  requests bytes monotonically. On error recovery in large
+  template-heavy files it backtracks; `byte - offset` underflowed and
+  panicked in debug, and could feed garbage slices in release. Repro:
+  gd into `/usr/include/c++/13/optional` and back. The callback now
+  uses ropey's random-access `chunk_at_byte`. Regression test pins
+  backtracking-heavy inputs.
+
 ## 0.10.1 — 2026-09-06
 
 The 1.0-hardening remainder (plan 0022): incremental tree-sitter and

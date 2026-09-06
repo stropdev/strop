@@ -134,23 +134,25 @@ impl Highlighter {
             // no String materialization, no from-scratch parse
             let text = rope.to_string();
             let tree = {
-                let mut chunk_iter = rope.chunks();
-                let mut offset = 0usize;
-                self.parser
-                    .parse_with_options(
-                        &mut |byte: usize, _| {
-                            for chunk in chunk_iter.by_ref() {
-                                if byte < offset + chunk.len() {
-                                    return &chunk[byte - offset..];
-                                }
-                                offset += chunk.len();
-                            }
-                            ""
-                        },
-                        self.tree.as_ref(),
-                        None,
-                    )
-                    .unwrap_or_else(|| self.parser.parse(&text, None).unwrap())
+                // random-access chunks (0022 fix): tree-sitter re-requests
+                // earlier bytes on error recovery — a forward-only chunk
+                // iterator underflowed there and panicked (or fed garbage
+                // in release builds)
+                let parse_result = self.parser.parse_with_options(
+                    &mut |byte: usize, _| {
+                        if byte >= rope.len_bytes() {
+                            return "";
+                        }
+                        let (chunk, start, _, _) = rope.chunk_at_byte(byte);
+                        &chunk[byte - start..]
+                    },
+                    self.tree.as_ref(),
+                    None,
+                );
+                match parse_result {
+                    Some(tree) => tree,
+                    None => self.parser.parse(&text, None).unwrap(),
+                }
             };
             self.tree = Some(tree.clone());
             self.tree_revision = revision;
@@ -257,5 +259,28 @@ mod tests {
         let mut hl = resolved.expect("bash via shebang");
         let rope = ropey::Rope::from_str("#!/usr/bin/env bash\necho hi\n");
         assert!(!hl.highlight(&rope, 0, 0, rope.len_bytes()).is_empty());
+    }
+    #[test]
+    fn highlight_survives_backtracking_requests() {
+        // 0022 fix: tree-sitter re-requests earlier bytes on error
+        // recovery in large template-heavy files — the forward-only
+        // chunk iterator underflowed and panicked (the optional crash)
+        let mut big = String::from("namespace std {\n");
+        for i in 0..400 {
+            big.push_str(&format!(
+                "template <typename T{i}> struct O{i} {{ T{i} v; O{i} f() {{ return O{i}{{}}; }} }};\n"
+            ));
+        }
+        big.push_str("}\n");
+        let mut hl = Highlighter::for_path("x.hpp").unwrap();
+        let rope = ropey::Rope::from_str(&big);
+        let spans = hl.highlight(&rope, 1, 0, rope.len_bytes());
+        assert!(!spans.is_empty(), "the big file highlights");
+        // an edit shifts everything — the incremental path must not
+        // panic either (the chunk callback sees arbitrary byte asks)
+        let edited = big.replacen("namespace", "namespace extra_long_name_here", 1);
+        let rope2 = ropey::Rope::from_str(&edited);
+        let spans2 = hl.highlight(&rope2, 2, 0, rope2.len_bytes());
+        assert!(!spans2.is_empty());
     }
 }
