@@ -18,39 +18,41 @@ impl Editor {
         }
         self.jumplist_future.clear(); // a new jump truncates the forward path
     }
-
-    /// `ctrl-o`: one jump back.
+    /// `ctrl-o`: one jump back. Entries whose document was closed die
+    /// here, not in `jump_to` — skipping there would leave the current
+    /// position stranded on the future stack.
     pub(crate) fn jump_back(&mut self) {
-        if self.jumplist_past.is_empty() {
-            self.message = "no jumps".into();
+        while let Some(pos) = self.jumplist_past.last().copied() {
+            self.jumplist_past.pop();
+            if self.docs.get(pos.0).is_none() {
+                continue; // the document is closed; the entry dies quietly
+            }
+            self.jumplist_future.push((self.current(), self.head()));
+            self.jump_to(pos);
             return;
         }
-        self.jumplist_future.push((self.current(), self.head()));
-        let Some(pos) = self.jumplist_past.pop() else {
-            self.jumplist_future.pop();
-            self.message = "no jumps".into();
-            return;
-        };
-        self.jump_to(pos);
+        self.message = "no jumps".into();
     }
 
-    /// `ctrl-i` (Tab in a terminal): one jump forward.
+    /// `ctrl-i` (Tab in a terminal): one jump forward. Dead entries are
+    /// skipped the same way as `jump_back`.
     pub(crate) fn jump_forward(&mut self) {
-        let Some(pos) = self.jumplist_future.pop() else {
-            self.message = "at newest jump".into();
+        while let Some(pos) = self.jumplist_future.last().copied() {
+            self.jumplist_future.pop();
+            if self.docs.get(pos.0).is_none() {
+                continue;
+            }
+            self.jumplist_past.push((self.current(), self.head()));
+            self.jump_to(pos);
             return;
-        };
-        self.jumplist_past.push((self.current(), self.head()));
-        self.jump_to(pos);
-    }
-
-    /// Land on a jumplist position: switch document when it still
-    /// exists, skip the entry when its document is gone (generational
-    /// id: no index shift, no aliasing — 0014 wave 2).
-    fn jump_to(&mut self, (buffer, offset): (strop_core::id::DocumentId, usize)) {
-        if self.docs.get(buffer).is_none() {
-            return; // the document is closed; the entry dies quietly
         }
+        self.message = "at newest jump".into();
+    }
+    /// Land on a jumplist position: switch document when needed.
+    /// Callers (`jump_back`/`jump_forward`) have already dropped entries
+    /// whose document is gone.
+    fn jump_to(&mut self, (buffer, offset): (strop_core::id::DocumentId, usize)) {
+        debug_assert!(self.docs.get(buffer).is_some(), "jump_to: dead entry");
         if buffer != self.current() {
             self.switch_to(buffer);
             self.discover_git();
@@ -67,6 +69,7 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::Document;
     use strop_core::Buffer;
 
     #[test]
@@ -114,5 +117,22 @@ mod tests {
         e.feed_text("/hone\r");
         assert_eq!(e.buf().line_of(e.head()), 1, "landed on the match");
         assert_eq!(e.jumplist_past.len(), 1, "the jump was recorded");
+    }
+
+    #[test]
+    fn ctrl_o_skips_jumps_into_closed_buffers() {
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
+        e.feed_text("j"); // line 2
+        e.push_jump(); // (docA, line 2)
+        e.feed_text("G"); // line 3
+        let b = e.docs.insert(Document::output(Buffer::from_text("x\ny\n")));
+        e.switch_to(b);
+        e.push_jump(); // (docB, 0) — dead after the close below
+        e.close_buffer(true); // back to docA, cursor on line 3
+        e.jump_back();
+        // the dead entry is skipped; the LIVE docA entry is the landing
+        assert_eq!(e.buf().line_of(e.head()), 1);
+        e.jump_back();
+        assert_eq!(e.message, "no jumps");
     }
 }

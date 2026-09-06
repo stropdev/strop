@@ -327,6 +327,8 @@ impl Editor {
             Payload::Grep {
                 path, line, col, ..
             } => {
+                // accepting a search/locations hit is a jump — same as gd
+                self.push_jump();
                 let full = self.cwd.join(&path);
                 if let Err(e) = self.open_buffer(&full.display().to_string()) {
                     self.message = format!("open {}: {e}", path.display());

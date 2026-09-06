@@ -333,6 +333,9 @@ impl Editor {
         col: usize,
         enc: strop_lsp::PositionEncoding,
     ) {
+        // gd/gr are jumps: record the origin BEFORE the buffer switch or
+        // ctrl-o has nothing to come back to
+        self.push_jump();
         let path_s = path.display().to_string();
         if let Err(e) = self.open_buffer(&path_s) {
             self.message = format!("open {path_s}: {e}");
@@ -603,5 +606,25 @@ impl Editor {
 
     pub fn jump_diagnostic_pub(&mut self, forward: bool) {
         self.jump_diagnostic(forward);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strop_core::Buffer;
+
+    #[test]
+    fn goto_definition_records_the_origin_as_a_jump() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("disk_reader.cpp");
+        std::fs::write(&path, "std::optional<int> x;\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("auto v = read();\n"));
+        e.feed_text("$");
+        let origin = e.head();
+        e.jump_to_location(path, 0, 4, strop_lsp::PositionEncoding::Utf16);
+        assert_ne!(e.head(), origin); // landed in the target
+        e.jump_back();
+        assert_eq!(e.head(), origin, "ctrl-o returns to the gd origin");
     }
 }
