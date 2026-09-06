@@ -8,7 +8,7 @@ use strop_core::Buffer;
 
 fn syntax_editor() -> Editor {
     let mut e = Editor::new(Buffer::from_text("fn demo() {\n    let x = 1;\n}\n"));
-    e.cur_mut().highlighter = strop_syntax::Highlighter::for_path("audit.rs");
+    e.cur_mut().highlighter = strop_syntax::Highlighter::for_path(std::path::Path::new("audit.rs"));
     e
 }
 
@@ -23,7 +23,7 @@ fn spans(e: &mut Editor) -> Vec<strop_syntax::Span> {
 }
 
 fn fresh_spans(e: &Editor) -> Vec<strop_syntax::Span> {
-    let mut h = strop_syntax::Highlighter::for_path("audit.rs").unwrap();
+    let mut h = strop_syntax::Highlighter::for_path(std::path::Path::new("audit.rs")).unwrap();
     h.highlight(&e.buf().rope, e.buf().epoch, 0, e.buf().len_bytes())
 }
 

@@ -147,7 +147,7 @@ impl Editor {
         // syntax highlighting under the origin tint (delta's look):
         // the label is the file path for commit deltas; "hunk" and
         // friends resolve to None and keep origin colors
-        if let Some(hl) = strop_syntax::Highlighter::for_path(label) {
+        if let Some(hl) = strop_syntax::Highlighter::for_path(std::path::Path::new(label)) {
             self.cur_mut().highlighter = Some(hl);
         }
     }

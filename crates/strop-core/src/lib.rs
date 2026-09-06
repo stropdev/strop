@@ -162,8 +162,12 @@ impl Buffer {
     /// becomes that file). The identity changes only after a SUCCESSFUL
     /// write (0020 §1): an existing target needs `force`, and a failed
     /// write leaves path, baseline and dirty state untouched.
-    pub fn save_as(&mut self, path: &str, force: bool) -> std::io::Result<()> {
-        let target = std::path::Path::new(path);
+    pub fn save_as(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        force: bool,
+    ) -> std::io::Result<()> {
+        let target = path.as_ref();
         if !force && target.exists() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
@@ -172,7 +176,7 @@ impl Buffer {
         }
         write_atomic(target, &self.rope.to_string())?;
         // success: adopt the identity
-        self.path = Some(std::path::PathBuf::from(path));
+        self.path = Some(target.to_path_buf());
         self.disk_stamp = std::fs::metadata(target).and_then(|m| m.modified()).ok();
         self.dirty = false;
         Ok(())

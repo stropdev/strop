@@ -648,8 +648,8 @@ mod tests {
         std::fs::write(&wide, &junk).unwrap();
         std::fs::write(&narrow, "hi\n").unwrap();
         let mut e = Editor::new(Buffer::from_text(""));
-        e.open_buffer(wide.to_str().unwrap()).unwrap();
-        e.open_buffer(narrow.to_str().unwrap()).unwrap();
+        e.open_buffer(&wide).unwrap();
+        e.open_buffer(&narrow).unwrap();
         // same terminal, two frames: ratatui TestBackend diffing is the
         // real path, so drive both frames through one terminal
         let backend = ratatui::backend::TestBackend::new(40, 12);

@@ -294,7 +294,7 @@ impl Editor {
         self.preview_inflight.remove(&path);
         if let Some(text) = text {
             let rope = ropey::Rope::from_str(&text);
-            let hl = Highlighter::for_path(&path.display().to_string());
+            let hl = Highlighter::for_path(&path);
             self.previews.insert(path, PreviewEntry { rope, hl });
         } else {
             // unreadable: cache the miss so we don't respawn per frame
@@ -312,7 +312,7 @@ impl Editor {
         match payload {
             Payload::File(rel) => {
                 let path = self.cwd.join(&rel);
-                match self.open_buffer(&path.display().to_string()) {
+                match self.open_buffer(&path) {
                     Ok(()) => {}
                     Err(e) => self.message = format!("open {}: {e}", rel.display()),
                 }
@@ -330,7 +330,7 @@ impl Editor {
                 // accepting a search/locations hit is a jump — same as gd
                 self.push_jump();
                 let full = self.cwd.join(&path);
-                if let Err(e) = self.open_buffer(&full.display().to_string()) {
+                if let Err(e) = self.open_buffer(&full) {
                     self.message = format!("open {}: {e}", path.display());
                     return;
                 }
@@ -391,7 +391,7 @@ impl Editor {
             let (f, a, s) = match self.buffer_index_of(&full) {
                 Some(bi) => self.replace_in_buffer(bi, &hits, &replacement),
                 None => {
-                    match self.open_buffer(&full.display().to_string()) {
+                    match self.open_buffer(&full) {
                         Ok(()) => {
                             let bi = self.current();
                             let (f, a, s) = self.replace_in_buffer(bi, &hits, &replacement);
@@ -656,7 +656,7 @@ mod replace_tests {
             hit(1, 7, 3, "alpha foo"),
             hit(3, 1, 5, "drifted"),
         ];
-        e.open_buffer(&file.display().to_string()).unwrap();
+        e.open_buffer(&file).unwrap();
         let bi = e.current();
         let (touched, applied, stale) = e.replace_in_buffer(bi, &hits, "bar");
         assert_eq!((touched, applied, stale), (1, 2, 1));
@@ -834,7 +834,7 @@ mod replace_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         for f in ["a.txt", "b.txt", "c.txt", "d.txt"] {
             std::fs::write(dir.path().join(f), "x\n").unwrap();
-            e.open_buffer(dir.path().join(f).to_str().unwrap()).unwrap();
+            e.open_buffer(&dir.path().join(f)).unwrap();
         }
         e.open_picker(Kind::Buffers);
         let sel = |e: &Editor| e.picker.as_ref().unwrap().picker.selected;
@@ -861,7 +861,7 @@ mod replace_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         for f in ["a.txt", "b.txt", "c.txt"] {
             std::fs::write(dir.path().join(f), "x\n").unwrap();
-            e.open_buffer(dir.path().join(f).to_str().unwrap()).unwrap();
+            e.open_buffer(&dir.path().join(f)).unwrap();
         }
         e.open_picker(Kind::Buffers);
         e.feed_text("a");

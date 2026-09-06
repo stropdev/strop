@@ -25,10 +25,7 @@ pub struct Document {
 
 impl Document {
     pub fn new(buf: Buffer) -> Self {
-        let highlighter = buf
-            .path
-            .as_deref()
-            .and_then(|p| Highlighter::for_path(&p.to_string_lossy()));
+        let highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
         Self {
             buf,
             highlighter,
@@ -169,7 +166,10 @@ impl Editor {
 
     /// Open without switching (splits): the document exists, the active
     /// view stays. Returns the id.
-    pub fn open_document(&mut self, path: &str) -> std::io::Result<strop_core::id::DocumentId> {
+    pub fn open_document(
+        &mut self,
+        path: &std::path::Path,
+    ) -> std::io::Result<strop_core::id::DocumentId> {
         let canon = std::path::Path::new(path)
             .canonicalize()
             .unwrap_or_else(|_| self.cwd.join(path));
@@ -230,7 +230,7 @@ impl Editor {
     }
 
     /// Open a file into a new document and switch to it (`:e`).
-    pub fn open_buffer(&mut self, path: &str) -> std::io::Result<()> {
+    pub fn open_buffer(&mut self, path: &std::path::Path) -> std::io::Result<()> {
         // vim semantics: :e on an open file switches to its buffer —
         // checked before ANY I/O or state change (0020 §11)
         let canon = std::path::Path::new(path)
@@ -329,5 +329,27 @@ impl Editor {
         self.ctrl_c_armed = true;
         self.message = "unsaved changes — ctrl-c again to force-quit".into();
         false
+    }
+}
+
+#[cfg(test)]
+mod pathbuf_tests {
+    //! 0026: non-UTF-8 filenames (linux names are bytes) work end to end.
+    use super::*;
+    use std::os::unix::ffi::OsStrExt;
+
+    #[test]
+    fn non_utf8_filename_opens_highlights_and_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(std::ffi::OsStr::from_bytes(b"\xff\xfe.rs"));
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        let id = e.open_document(&path).expect("opens by bytes");
+        e.switch_to(id);
+        // extension detection works through the OsStr, not a lossy str
+        assert!(e.cur().highlighter.is_some());
+        e.feed_text("dd"); // delete the line
+        e.feed_text(":w\r");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
     }
 }

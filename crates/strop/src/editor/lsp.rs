@@ -336,8 +336,10 @@ impl Editor {
         // gd/gr are jumps: record the origin BEFORE the buffer switch or
         // ctrl-o has nothing to come back to
         self.push_jump();
+        // no display() roundtrip on the open path (0026): non-UTF-8
+        // filenames must survive a gd
         let path_s = path.display().to_string();
-        if let Err(e) = self.open_buffer(&path_s) {
+        if let Err(e) = self.open_buffer(&path) {
             self.message = format!("open {path_s}: {e}");
             return;
         }

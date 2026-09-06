@@ -172,8 +172,8 @@ pub fn for_shebang(first_line: &str) -> Option<LanguageSpec> {
 /// Path → spec, pure in `first_line`: exact basename first, then the
 /// extension table, then — only when the extension is unknown or
 /// absent — whatever the (already-read) first line shebangs to.
-pub fn detect(path: &str, first_line: Option<&str>) -> Option<LanguageSpec> {
-    let p = Path::new(path);
+pub fn detect(path: &Path, first_line: Option<&str>) -> Option<LanguageSpec> {
+    let p = path;
     if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
         if let Some(spec) = for_basename(name) {
             return Some(spec);
@@ -204,15 +204,24 @@ mod tests {
     #[test]
     fn exact_filenames_beat_extension_and_shebang() {
         for name in [".bashrc", ".bash_profile", ".profile", "PKGBUILD"] {
-            let spec = detect(&format!("/home/tarek/{name}"), None)
+            let spec = detect(std::path::Path::new(&format!("/home/tarek/{name}")), None)
                 .unwrap_or_else(|| panic!("{name} unresolved"));
             assert_eq!(spec.name, "bash", "{name}");
         }
         // exact basename wins even against a contradictory shebang
-        let spec = detect("/home/tarek/.bashrc", Some("#!/usr/bin/env fish\n")).unwrap();
+        let spec = detect(
+            std::path::Path::new("/home/tarek/.bashrc"),
+            Some("#!/usr/bin/env fish\n"),
+        )
+        .unwrap();
         assert_eq!(spec.name, "bash");
         // "PKGBUILD.fish" is not an exact basename — extension rules
-        assert_eq!(detect("PKGBUILD.fish", None).unwrap().name, "fish");
+        assert_eq!(
+            detect(std::path::Path::new("PKGBUILD.fish"), None)
+                .unwrap()
+                .name,
+            "fish"
+        );
     }
 
     #[test]
@@ -227,24 +236,26 @@ mod tests {
             ("#!/usr/bin/fish\n", "fish"),
             ("#!/usr/bin/env fish\n", "fish"),
         ] {
-            let spec = detect("some-script", Some(line))
+            let spec = detect(std::path::Path::new("some-script"), Some(line))
                 .unwrap_or_else(|| panic!("unresolved shebang {line:?}"));
             assert_eq!(spec.name, lang, "{line:?}");
         }
         // unknown extension still defers to the shebang
         assert_eq!(
-            detect("weird.tool", Some("#!/bin/bash\n")).unwrap().name,
+            detect(std::path::Path::new("weird.tool"), Some("#!/bin/bash\n"))
+                .unwrap()
+                .name,
             "bash"
         );
         // no shebang, no extension, no dice
-        assert!(detect("README", Some("# comment\n")).is_none());
-        assert!(detect("run.pl", Some("#!/usr/bin/perl\n")).is_none());
-        assert!(detect("empty", Some("")).is_none());
+        assert!(detect(std::path::Path::new("README"), Some("# comment\n")).is_none());
+        assert!(detect(std::path::Path::new("run.pl"), Some("#!/usr/bin/perl\n")).is_none());
+        assert!(detect(std::path::Path::new("empty"), Some("")).is_none());
     }
 
     #[test]
     fn known_extension_beats_shebang() {
-        let spec = detect("x.fish", Some("#!/bin/bash\n")).unwrap();
+        let spec = detect(std::path::Path::new("x.fish"), Some("#!/bin/bash\n")).unwrap();
         assert_eq!(spec.name, "fish");
     }
 }

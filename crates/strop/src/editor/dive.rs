@@ -191,7 +191,8 @@ impl Editor {
             *del_slot = deleted;
         }
         // the highlighter follows the file the surface now shows
-        self.doc_mut(idx).highlighter = strop_syntax::Highlighter::for_path(&label);
+        self.doc_mut(idx).highlighter =
+            strop_syntax::Highlighter::for_path(std::path::Path::new(&label));
         self.set_head(0);
         self.view_mut().view_top = 0;
         let pos = cf

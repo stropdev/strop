@@ -60,7 +60,13 @@ fn config_path_display() -> String {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Flags are ASCII — matched on the lossy view; file OPERANDS come
+    // from args_os so non-UTF-8 names survive end to end (0026).
+    let args_os: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let args: Vec<String> = args_os
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     if args.first().is_some_and(|a| a == "config") {
         let (cfg, err) = config::Config::load();
         if let Some(e) = err {
@@ -98,9 +104,12 @@ fn main() {
         return;
     }
     if let Some(i) = args.iter().position(|a| a == "--headless") {
-        let file = args.get(i + 1).filter(|a| !a.starts_with('-')).cloned();
+        let file = args_os
+            .get(i + 1)
+            .filter(|_| !args[i + 1].starts_with('-'))
+            .cloned();
         let script = file
-            .as_deref()
+            .as_ref()
             .map(std::fs::read_to_string)
             .transpose()
             .unwrap_or_else(|e| {
@@ -111,12 +120,17 @@ fn main() {
             })
             .or_else(|| args.get(i + 2).cloned())
             .unwrap_or_default();
-        let path = args
+        let path = args_os
             .iter()
-            .find(|a| !a.starts_with('-') && Some(*a) != file.as_ref());
+            .zip(&args)
+            .find(|(os, f)| !f.starts_with('-') && Some(*os) != file.as_ref())
+            .map(|(os, _)| os.clone());
         let buf = path.map_or_else(
             || Buffer::from_text(""),
-            |p| Buffer::open(p).unwrap_or_else(|e| panic!("open {p}: {e}")),
+            |p| {
+                Buffer::open(&p)
+                    .unwrap_or_else(|e| panic!("open {}: {e}", std::path::Path::new(&p).display()))
+            },
         );
         let (cfg, _) = config::Config::load();
         let mut editor = Editor::new(buf);
@@ -133,13 +147,16 @@ fn main() {
     }
 
     let (cfg, config_err) = config::Config::load();
-    let path = args.iter().find(|a| !a.starts_with('-'));
+    let path = args
+        .iter()
+        .position(|a| !a.starts_with('-'))
+        .map(|j| std::path::PathBuf::from(&args_os[j]));
     // a directory arg means "project here": cd into it and land on the
     // file picker (helix's `hx .`), instead of erroring on EISDIR
-    let dir_arg = path.filter(|p| std::path::Path::new(p).is_dir()).cloned();
+    let dir_arg = path.as_ref().filter(|p| p.is_dir()).cloned();
     let buf = match &path {
         Some(p) if dir_arg.is_none() => Buffer::open(p).unwrap_or_else(|e| {
-            eprintln!("strop: open {p}: {e}");
+            eprintln!("strop: open {}: {e}", p.display());
             std::process::exit(1);
         }),
         _ => Buffer::from_text(""),
@@ -150,9 +167,7 @@ fn main() {
         editor.buf_mut().readonly = true;
     }
     if let Some(d) = &dir_arg {
-        let dir = std::path::Path::new(d)
-            .canonicalize()
-            .unwrap_or_else(|_| std::path::PathBuf::from(d));
+        let dir = d.canonicalize().unwrap_or_else(|_| d.clone());
         if std::env::set_current_dir(&dir).is_ok() {
             editor.cwd = dir;
             editor.open_picker(strop_picker::Kind::Files);

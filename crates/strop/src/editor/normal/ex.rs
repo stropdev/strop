@@ -289,7 +289,7 @@ impl Editor {
                 if arg.is_empty() {
                     self.buf_mut().readonly = true;
                     self.message = "readonly".into();
-                } else if let Err(e) = self.open_buffer(arg) {
+                } else if let Err(e) = self.open_buffer(std::path::Path::new(arg)) {
                     self.message = format!("view {arg}: {e}");
                 } else {
                     self.buf_mut().readonly = true;
@@ -339,7 +339,7 @@ impl Editor {
                     self.message = ":e needs a path".into();
                 } else if self.buf().dirty && cmd == "e" {
                     self.message = "unsaved changes — :e! to force".into();
-                } else if let Err(e) = self.open_buffer(arg) {
+                } else if let Err(e) = self.open_buffer(std::path::Path::new(arg)) {
                     self.message = format!("open {arg}: {e}");
                 }
             }

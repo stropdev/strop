@@ -42,7 +42,7 @@ impl Editor {
         let view = self.view().clone();
         // with a path: the NEW pane shows it — the old pane keeps its doc
         let doc = if let Some(p) = path {
-            match self.open_document(p) {
+            match self.open_document(std::path::Path::new(p)) {
                 Ok(id) => id,
                 Err(e) => {
                     self.message = format!("open {p}: {e}");

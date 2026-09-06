@@ -281,7 +281,7 @@ fn return_point_restores_when_origin_not_current() {
     pump(&mut e);
     std::fs::write(root.join("g.rs"), "other\n").unwrap();
     let origin = e.first_doc();
-    e.open_buffer(root.join("g.rs").to_str().unwrap()).unwrap();
+    e.open_buffer(&root.join("g.rs")).unwrap();
     assert_ne!(e.current(), origin, "switched away from the log's origin");
     let log_surface = e.mru.iter().copied().find(|&id| {
         e.doc(id)

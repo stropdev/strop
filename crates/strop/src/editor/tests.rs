@@ -111,7 +111,7 @@ mod scratch_tests {
         let f = dir.path().join("scratch-test.rs");
         std::fs::write(&f, "fn a() {}\n").unwrap();
         let mut e = Editor::new(Buffer::from_text(""));
-        e.open_buffer(f.to_str().unwrap()).unwrap();
+        e.open_buffer(&f).unwrap();
         assert_eq!(e.docs.len(), 1, "scratch replaced, not stacked");
         assert_eq!(e.buf().path.as_deref(), Some(f.as_path()));
         e.feed_text(":q\r");
@@ -137,7 +137,7 @@ mod scratch_tests {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("scratch-test.rs");
         std::fs::write(&f, "fn a() {}\n").unwrap();
-        e.open_buffer(f.to_str().unwrap()).unwrap();
+        e.open_buffer(&f).unwrap();
         assert_eq!(e.docs.len(), 2, "edited scratch is real work");
     }
 }
@@ -517,7 +517,7 @@ mod alignment_tests {
         std::fs::write(&a, "a\n").unwrap();
         std::fs::write(&b, "b\n").unwrap();
         let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
-        e.open_buffer(b.to_str().unwrap()).unwrap();
+        e.open_buffer(&b).unwrap();
         assert_eq!(e.docs.len(), 2);
         e.open_diff_surface("delta", "f.rs", vec![], None);
         assert_eq!(e.docs.len(), 3);
@@ -1244,7 +1244,8 @@ mod keybinds_tests {
         for script in scripts {
             let mut e = Editor::new(Buffer::from_text("fn demo() {\n    let x = 1;\n}\n"));
             e.buf_mut().path = Some(std::path::PathBuf::from("/tmp/demo.rs"));
-            e.cur_mut().highlighter = strop_syntax::Highlighter::for_path("/tmp/demo.rs");
+            e.cur_mut().highlighter =
+                strop_syntax::Highlighter::for_path(std::path::Path::new("/tmp/demo.rs"));
             // warm the tree BEFORE edits — without this the test passes
             // trivially through the full-parse fallback
             {
@@ -1276,7 +1277,8 @@ mod keybinds_tests {
                 .unwrap()
                 .highlight(&rope, revision, 0, len);
             // fresh: no old tree at all
-            let mut fresh = strop_syntax::Highlighter::for_path("/tmp/demo.rs").unwrap();
+            let mut fresh =
+                strop_syntax::Highlighter::for_path(std::path::Path::new("/tmp/demo.rs")).unwrap();
             let expected = fresh.highlight(&rope, revision, 0, len);
             assert_eq!(
                 inc.iter().map(|s| (s.start, s.end)).collect::<Vec<_>>(),
