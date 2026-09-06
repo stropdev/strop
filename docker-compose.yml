@@ -3,6 +3,7 @@
 #   docker compose run --build --rm build     # debug binary
 #   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
 #   docker compose run --build --rm model     # TLC over the editor protocol (0024)
+#   docker compose run --build --rm bench     # the perf gate suite (0025)
 
 services:
   test:
@@ -28,6 +29,13 @@ services:
       target: model
     # TLC runs at image-build time; the image existing IS the gate.
     command: 'echo "gate passed: editor protocol model checks clean (TLC)"'
+  bench:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: release
+    # Measurement, not an assert (0025 §2): wall clock varies by machine.
+    command: ["/app/target/release/strop", "--bench", "all"]
 
   # Exports a versioned tarball + checksum to ./dist/ (VERSION required).
   # Tarball layout is the install.sh contract:

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.12.0 — 2026-09-06
+
+The 1.0 perf gate (plan 0025) + jumplist fixes.
+
+### Fixed
+
+- **gd/gr now record the jumplist** — `ctrl-o` returns to the origin
+  after an LSP jump (and after accepting a grep/locations hit). Dead
+  entries (closed buffers) are skipped without corrupting the stacks.
+
+### Added
+
+- **`strop --bench [scenario|all]`** — the perf gate suite
+  (1/10/100MB buffers, 100k-line navigation, 1k cursors, p50/p95/p99
+  input-to-frame) on the production feed+render path, synthetic
+  deterministic data, `docker compose run bench`. Baseline in
+  `plans/0025-perf-gate.md`: input-to-frame p99 1.5ms, edits flat to
+  80MB, no cursor superlinearity. Perf claims now need these numbers.
+
 ## 0.11.0 — 2026-09-06
 
 The transaction gateway + verified state machine (plan 0024).

@@ -1,6 +1,7 @@
 //! strop — prototype binary. TUI by default; `--headless` for the
 //! scripted, deterministic driver (0006 tier 2).
 
+mod bench;
 mod config;
 mod editor;
 mod headless;
@@ -89,6 +90,11 @@ fn main() {
     }
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("strop {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if let Some(i) = args.iter().position(|a| a == "--bench") {
+        let which = args.get(i + 1).map(String::as_str).unwrap_or("all");
+        bench::run(which);
         return;
     }
     if let Some(i) = args.iter().position(|a| a == "--headless") {
