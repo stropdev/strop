@@ -237,3 +237,12 @@ fn readonly_buffers_use_the_same_search_edit_and_commit_path() {
     assert!(editor.search_origin.is_none());
     assert_eq!(editor.buf().rope.to_string(), text);
 }
+
+#[test]
+fn leader_pipe_keeps_command_text_out_of_normal_dispatch() {
+    let mut editor = Editor::new(Buffer::from_text("untouched\n"));
+    editor.feed_text(" |tr a-z A-Z");
+    assert_eq!(editor.pending, "|tr a-z A-Z");
+    assert_eq!(editor.buf().rope.to_string(), "untouched\n");
+    assert_eq!(editor.mode, Mode::Normal);
+}

@@ -123,7 +123,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ ctrl-w h / l / j / k / w` — pane move / cycle
 - `✓ ctrl-o / ctrl-i (tab)` — jump back / forward (jumplist)
 - `✓ ctrl-w v / s` — pane split (vs / sp)
-- `✓ :view / -R / :set ro,noro` — readonly browsing
+- `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ ctrl-w q` — close pane (last → buffer)
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
 - `✓ ctrl-x` — replace picker: exclude/include match

@@ -915,8 +915,8 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Leaf(crate::editor::Editor::split_pub),
     },
     Binding {
-        keys: ":view / -R / :set ro,noro",
-        desc: "readonly browsing",
+        keys: ":view :set",
+        desc: "readonly browsing (:set ro/noro; CLI: -R)",
         section: "ex+panes",
         live: true,
         id: "readonly",

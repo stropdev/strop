@@ -300,7 +300,12 @@ impl Walker {
                 }
                 Handler::TextLine => {
                     self.clear();
-                    Action::EnterText(path_str.chars().next().unwrap_or(':'))
+                    // A leader can open a text line too ("space |"): the
+                    // completing key is the sigil, not the first token's 's'.
+                    match key {
+                        Key::Char(sigil @ (':' | '/' | '?' | '|')) => Action::EnterText(sigil),
+                        _ => Action::Invalid(path_str),
+                    }
                 }
                 Handler::Alias(_) | Handler::Leaf(_) => {
                     let count = self.state.count();
