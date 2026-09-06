@@ -2,6 +2,7 @@
 #   docker compose run --build --rm test      # fmt + clippy -D warnings + cargo test
 #   docker compose run --build --rm build     # debug binary
 #   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
+#   docker compose run --build --rm model     # TLC over the editor protocol (0024)
 
 services:
   test:
@@ -19,6 +20,14 @@ services:
       dockerfile: Dockerfile
       target: bin
     command: cargo build --locked
+
+  model:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: model
+    # TLC runs at image-build time; the image existing IS the gate.
+    command: 'echo "gate passed: editor protocol model checks clean (TLC)"'
 
   # Exports a versioned tarball + checksum to ./dist/ (VERSION required).
   # Tarball layout is the install.sh contract:

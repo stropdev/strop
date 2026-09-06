@@ -37,3 +37,12 @@ RUN cargo build --release --locked -p strop-editor \
 FROM scratch AS ship
 COPY --from=release /app/target/release/strop /strop
 ENTRYPOINT ["/strop"]
+
+# The editor protocol model check (0024): TLC over specs/EditorProtocol.tla.
+# The image existing IS the gate — a spec regression fails the build.
+FROM eclipse-temurin:21-jre AS model
+ARG TLA_TOOLS_SHA256=b658b4e504fdf0b721caf7066320f6b6fe5805f4dd2f717d0e47baba4097205e
+ADD --checksum=sha256:${TLA_TOOLS_SHA256} https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar /tla/tla2tools.jar
+WORKDIR /work
+COPY specs ./specs
+RUN java -jar /tla/tla2tools.jar -cleanup -config specs/cfg/editor-protocol.cfg specs/EditorProtocol.tla > /tmp/model.log 2>&1     && grep -q "Model checking completed. No error" /tmp/model.log     || { echo "TLC failed for EditorProtocol"; cat /tmp/model.log; exit 1; };     echo "EditorProtocol: clean"

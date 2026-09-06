@@ -6,6 +6,8 @@
 mod blame;
 pub mod block;
 #[cfg(test)]
+pub mod conformance;
+#[cfg(test)]
 pub mod contract_probes;
 mod cursor;
 mod diagnostics;
@@ -28,6 +30,7 @@ mod permalink;
 mod picker;
 mod registers;
 mod shell;
+pub mod transact;
 mod undo;
 pub mod view;
 mod visual;

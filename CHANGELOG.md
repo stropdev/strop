@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.11.0 — 2026-09-06
+
+The transaction gateway + verified state machine (plan 0024).
+
+### Added
+
+- **The gateway**: `apply(document, base_revision, changeset)` — typed
+  validation (stale revision, readonly, invalid range, missing
+  document), one undo unit, and every side effect (history, anchors,
+  tree bridge, clock) in one place. Project replace and git discard
+  flow through it; the typing path flows through the same commit seam.
+- **`specs/EditorProtocol.tla`** — the editor's document/pane/
+  transaction/service protocol model-checked by TLC: NoStalePane,
+  NoMisapply, NoPartialCommit, monotonic clock. The kept mutant (an
+  unguarded Deliver) is caught by the gate — the invariants have teeth.
+  In the docker gate (`compose run model`) and CI.
+- **The conformance harness** — a String reference model and the real
+  editor run the same generated streams through the production path;
+  text equality + invariants asserted every step (found vim's
+  insert-Esc cursor move and the welcome card's first key on day one).
+
 ## 0.10.3 — 2026-09-06
 
 The consolidation round (plan 0023): review 4's 18 contract probes ship

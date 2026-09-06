@@ -15,3 +15,8 @@ jobs:
       # no host toolchain, layer-cached.
       - name: Gate
         run: docker compose run --build --rm test
+
+      # the editor protocol spec, model-checked with the kept mutant
+      # (0024 — the 0023 probe classes as protocol invariants)
+      - name: Protocol model (TLC)
+        run: docker compose run --build --rm model

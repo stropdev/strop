@@ -290,3 +290,83 @@ fn review_search_preview_starts_at_utf8_boundary() {
     e.feed_text("d/f");
     let _ = e.preview();
 }
+
+#[test]
+fn gateway_validates_everything() {
+    // 0024: the gateway refuses, typed — never panics, never no-ops
+    use super::transact::{ApplyError, ChangeSet};
+    let mk = |at: usize, text: &str, kind| strop_core::history::Edit {
+        at,
+        text: text.into(),
+        kind,
+    };
+    let insert = |at: usize, t: &str| strop_core::history::Edit {
+        at,
+        text: t.into(),
+        kind: strop_core::history::EditKind::Insert,
+    };
+    let mut e = Editor::new(Buffer::from_text("hello\n"));
+    let doc = e.current();
+    let base = e.buf().epoch;
+    // happy path
+    let r = e.apply(
+        doc,
+        base,
+        ChangeSet {
+            edits: vec![insert(0, "hi ")],
+            undo_open: false,
+        },
+    );
+    assert!(r.is_ok());
+    assert_eq!(e.buf().rope.to_string(), "hi hello\n");
+    // stale base refused
+    let r = e.apply(
+        doc,
+        0,
+        ChangeSet {
+            edits: vec![insert(0, "x")],
+            undo_open: false,
+        },
+    );
+    assert!(matches!(r, Err(ApplyError::StaleRevision { .. })));
+    // readonly refused
+    e.buf_mut().readonly = true;
+    let r = e.apply(
+        doc,
+        e.buf().epoch,
+        ChangeSet {
+            edits: vec![insert(0, "x")],
+            undo_open: false,
+        },
+    );
+    assert!(matches!(r, Err(ApplyError::ReadOnly)));
+    e.buf_mut().readonly = false;
+    // off-boundary refused
+    let r = e.apply(
+        doc,
+        e.buf().epoch,
+        ChangeSet {
+            edits: vec![insert(999, "x")],
+            undo_open: false,
+        },
+    );
+    assert!(matches!(r, Err(ApplyError::InvalidRange)));
+    // one undo unit
+    let mut e2 = Editor::new(Buffer::from_text("ab\n"));
+    let d2 = e2.current();
+    let cs = ChangeSet {
+        edits: vec![
+            mk(0, "a", strop_core::history::EditKind::Delete),
+            mk(0, "A", strop_core::history::EditKind::Insert),
+        ],
+        undo_open: false,
+    };
+    assert!(e2.apply(d2, e2.buf().epoch, cs).is_ok());
+    assert_eq!(e2.buf().rope.to_string(), "Ab\n");
+    e2.feed_text("u");
+    assert_eq!(
+        e2.buf().rope.to_string(),
+        "ab\n",
+        "one u undoes the whole changeset"
+    );
+}

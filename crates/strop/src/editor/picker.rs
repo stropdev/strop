@@ -463,42 +463,69 @@ impl Editor {
     ) -> (usize, usize, usize) {
         let mut applied = 0;
         let mut stale = 0;
-        let buf = &mut self.doc_mut(bi).buf;
-        if buf.readonly {
+        if self.docs.get(bi).is_none() {
             return (0, 0, hits.len());
         }
-        buf.history.begin();
+        if self.doc(bi).buf.readonly {
+            return (0, 0, hits.len());
+        }
+        // verify each hit against the CURRENT text; the accepted edits
+        // go through the gateway as one validated changeset (0024)
+        let mut edits = Vec::new();
         for (line, col, match_len, expected) in hits {
-            if *line == 0 || *line > buf.len_lines() {
-                stale += 1;
-                continue;
-            }
+            let (s, e) = strop_picker::replace_span(expected, *col, *match_len);
+            let (ls, len) = (
+                self.doc(bi).buf.line_start(line - 1),
+                self.doc(bi).buf.len_bytes(),
+            );
+            let abs_s = ls + s;
+            let abs_e = (ls + e).min(len);
             // verify the matched *span*, not the whole line: same-line
             // hits stay verifiable as earlier (rightward) ones apply
-            let (s, e) = strop_picker::replace_span(expected, *col, *match_len);
-            let ls = buf.line_start(line - 1);
-            let abs_s = ls + s;
-            let abs_e = (ls + e).min(buf.len_bytes());
-            // byte-exact verification (0020 §3): Rope::slice is
-            // CHAR-indexed — passing byte offsets mis-verified or
-            // panicked on any multibyte text before the match
-            // byte-exact verification (0020 §3) — and a drifted offset
-            // landing mid-char is STALE, never a panic (0023 probe)
-            let aligned = buf.is_boundary(abs_s) && buf.is_boundary(abs_e);
-            if abs_s > abs_e
-                || !aligned
-                || buf.rope.byte_slice(abs_s..abs_e).to_string().as_bytes()
-                    != &expected.as_bytes()[s..e]
-            {
+            let aligned =
+                self.doc(bi).buf.is_boundary(abs_s) && self.doc(bi).buf.is_boundary(abs_e);
+            let matches = aligned
+                && abs_s <= abs_e
+                && self
+                    .doc(bi)
+                    .buf
+                    .rope
+                    .byte_slice(abs_s..abs_e)
+                    .to_string()
+                    .as_bytes()
+                    == &expected.as_bytes()[s..e];
+            if *line == 0 || *line > self.doc(bi).buf.len_lines() || !matches {
                 stale += 1;
                 continue;
             }
-            buf.delete(strop_core::Range::charwise(abs_s, abs_e));
-            buf.insert(abs_s, replacement);
+            // delete+insert as one edit pair (delete first)
+            edits.push(strop_core::history::Edit {
+                at: abs_s,
+                text: self.doc(bi).buf.rope.byte_slice(abs_s..abs_e).to_string(),
+                kind: strop_core::history::EditKind::Delete,
+            });
+            edits.push(strop_core::history::Edit {
+                at: abs_s,
+                text: replacement.to_string(),
+                kind: strop_core::history::EditKind::Insert,
+            });
             applied += 1;
         }
-        buf.history.commit();
-        ((applied > 0) as usize, applied, stale)
+        if edits.is_empty() {
+            return (0, 0, stale);
+        }
+        let base = self.doc(bi).buf.epoch;
+        match self.apply(
+            bi,
+            base,
+            super::transact::ChangeSet {
+                edits,
+                undo_open: false,
+            },
+        ) {
+            Ok(_) => (1, applied, stale),
+            Err(_) => (0, 0, applied + stale), // raced — report all stale
+        }
     }
 
     /// Replace hits in a file that isn't open: verified line-by-line,

@@ -196,49 +196,79 @@ impl Editor {
             String::from_utf8_lossy(&bytes).into_owned()
         };
 
-        let saved_current = self.current();
-        self.view_mut().doc = idx;
-        // one undo transaction, exactly like typing (0020 §7 — discard
-        // used to mutate without any committed history step)
-        self.tx_begin();
-        if new_count == 0 {
+        // one validated changeset through the gateway (0024) — the
+        // base-epoch check refuses a drifted hunk
+        let base = self.doc(idx).buf.epoch;
+        let doc_lines = self.doc(idx).buf.len_lines();
+        let cs = if new_count == 0 {
             // pure deletion: reinsert the old lines at the gap
-            let total = self.buf().len_lines();
-            if new_first > total {
-                let end = self.buf().len_bytes();
-                self.buf_mut().insert(end, &format!("\n{old}"));
+            let (at, text) = if new_first > doc_lines {
+                (self.doc(idx).buf.len_bytes(), format!("\n{old}"))
             } else {
-                let at = self.buf().line_start(new_first.saturating_sub(1));
-                self.buf_mut().insert(at, &format!("{old}\n"));
-            }
-            self.set_head(self.buf().line_start(new_first.saturating_sub(1)));
-        } else if old_count == 0 {
-            // pure addition: drop the added lines
-            let start = self.buf().line_start(new_first - 1);
-            let last = (new_first - 1 + new_count).min(self.buf().len_lines());
-            let end = if last >= self.buf().len_lines() {
-                self.buf().len_bytes()
-            } else {
-                self.buf().line_start(last)
+                (
+                    self.doc(idx).buf.line_start(new_first.saturating_sub(1)),
+                    format!("{old}\n"),
+                )
             };
-            self.buf_mut()
-                .delete(strop_core::Range::charwise(start, end));
-            self.set_head(
-                self.buf()
-                    .line_start((new_first - 1).min(self.buf().len_lines() - 1)),
-            );
+            super::transact::ChangeSet {
+                edits: vec![strop_core::history::Edit {
+                    at,
+                    text,
+                    kind: strop_core::history::EditKind::Insert,
+                }],
+                undo_open: false,
+            }
         } else {
-            let start = self.buf().line_start(new_first - 1);
-            let end = self
-                .buf()
-                .line_end((new_first - 1 + new_count - 1).min(self.buf().len_lines() - 1));
-            self.buf_mut()
-                .delete(strop_core::Range::charwise(start, end));
-            self.buf_mut().insert(start, &old);
-            self.set_head(start);
+            let start = self.doc(idx).buf.line_start(new_first - 1);
+            let end = if old_count == 0 {
+                // pure addition: drop the added lines
+                let last = (new_first - 1 + new_count).min(doc_lines);
+                if last >= doc_lines {
+                    self.doc(idx).buf.len_bytes()
+                } else {
+                    self.doc(idx).buf.line_start(last)
+                }
+            } else {
+                self.doc(idx)
+                    .buf
+                    .line_end((new_first - 1 + new_count - 1).min(doc_lines - 1))
+            };
+            let current_text = self.doc(idx).buf.rope.byte_slice(start..end).to_string();
+            let mut edits = vec![strop_core::history::Edit {
+                at: start,
+                text: current_text,
+                kind: strop_core::history::EditKind::Delete,
+            }];
+            if old_count > 0 {
+                edits.push(strop_core::history::Edit {
+                    at: start,
+                    text: old.clone(),
+                    kind: strop_core::history::EditKind::Insert,
+                });
+            }
+            super::transact::ChangeSet {
+                edits,
+                undo_open: false,
+            }
+        };
+        if self.apply(idx, base, cs).is_err() {
+            self.message = "buffer changed — reopen the hunk preview".into();
+            return false;
         }
-        self.tx_commit();
-        self.view_mut().doc = saved_current;
+        // cursor placement (was interleaved with the edit): the target's
+        // own pane moves to the restored region
+        let land = self
+            .doc(idx)
+            .buf
+            .line_start((new_first - 1).min(self.doc(idx).buf.len_lines().saturating_sub(1)));
+        if self.current() == idx {
+            self.set_head(land);
+            self.clamp_cursor();
+            self.flash(strop_core::Range::charwise(self.head(), self.head()));
+        } else if let Some(pane) = self.panes.iter_mut().find(|p| p.doc == idx) {
+            pane.sels.collapse_primary(land);
+        }
+
         // the cursor field belongs to the driven pane; only the origin
         // buffer's own view moves when it is current
         if self.current() == idx {
