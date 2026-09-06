@@ -18,6 +18,8 @@ handle deletion/insertion inside the prompt, including UTF-8 text.
 longer receive operator-preview coloring. Find-candidate coloring reads the
 walker's actual `f/F/t/T` state, not the final letter of a search or shell command.
 Synthetic clipboard-yank compositions remain supported and covered.
+Read-only/git/help text prompts use that same entry and editing path; the old
+read-only prompt handler no longer owns a second copy of search/Ex text editing.
 
 Operator-search previews are completed temporarily with Enter, then use the
 same grammar plan as execution, including count/register and all cursors.
@@ -43,7 +45,7 @@ A kept regression sends real Crossterm diff bytes into a VT terminal emulator,
 compares the physical screen with the model, then shortens/deletes CRLF lines on
 the same terminal. Another covers escape-bearing text and metadata. Tiny popup
 geometry uses bounded dimensions rather than invalid `clamp(min > max)` calls;
-resize/restore is covered. Ctrl-L is a user-requested repaint recovery, **not**
+resize/restore is covered. Ctrl-L is an explicit repaint recovery, **not**
 the fix for #14 and not an automatic clear-every-frame workaround.
 
 ## Quality and adjacent safety
@@ -67,8 +69,9 @@ the fix for #14 and not an automatic clear-every-frame workaround.
 
 ## Evidence
 
-Targeted search and physical-terminal suites: 16 passing tests after the final
-search changes. Actual TUI smoke exercised `/needle`, two Backspaces, Enter,
+Targeted search and physical-terminal regressions pass; a subsequent 32-test
+search/git/help run also covers the final read-only caller cutover. Actual TUI
+smoke exercised `/needle`, two Backspaces, Enter,
 insert/Esc and `:q!` on a CRLF fixture; exit 0 and trace recorded the expected
 edited first row, clean filler rows, cursor and successful session end.
 

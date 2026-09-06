@@ -216,3 +216,24 @@ fn wrapping_incsearch_and_enter_land_on_the_same_match() {
         "search origin remains the jumplist entry"
     );
 }
+
+#[test]
+fn readonly_buffers_use_the_same_search_edit_and_commit_path() {
+    let text = "zero foo\none foobar\n";
+    let mut editor = Editor::new(Buffer::from_text(text));
+    editor.buf_mut().readonly = true;
+    editor.feed_text("/foob");
+    assert_eq!(editor.head(), 13);
+    editor.feed(Key::Backspace);
+    assert_eq!(editor.head(), 5);
+    editor.feed(Key::Enter);
+    assert_eq!(editor.head(), 5);
+    editor.feed_text("G$?foo");
+    assert_eq!(editor.head(), 13);
+    editor.feed(Key::Enter);
+    assert_eq!(editor.head(), 13);
+    assert!(editor.pending.is_empty());
+    assert_eq!(editor.pending_cursor, 0);
+    assert!(editor.search_origin.is_none());
+    assert_eq!(editor.buf().rope.to_string(), text);
+}

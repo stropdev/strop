@@ -418,6 +418,10 @@ impl Editor {
         let _trace_scope = trace::InputScope::enter(self, key);
         self.trace_state();
         self.feed_inner(key);
+        if self.pending.is_empty() {
+            self.pending_cursor = 0;
+            self.pending_normal = false;
+        }
         self.trace_state();
     }
 

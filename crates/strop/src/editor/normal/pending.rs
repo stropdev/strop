@@ -10,7 +10,16 @@ enum LineInput {
 }
 
 impl Editor {
-    pub(super) fn feed_pending(&mut self, key: Key) {
+    pub(crate) fn begin_text_line(&mut self, sigil: char) {
+        debug_assert!(matches!(sigil, ':' | '/' | '?' | '|'));
+        self.pending.clear();
+        self.pending.push(sigil);
+        self.pending_cursor = self.pending.len();
+        self.pending_normal = false;
+        self.search_origin = matches!(sigil, '/' | '?').then(|| self.head());
+    }
+
+    pub(crate) fn feed_pending(&mut self, key: Key) {
         let sigil = self.pending_sigil();
         // synthetic compositions (`"+y` + motion, set by Space y/p)
         // resolve per keystroke like the old free lines did — only

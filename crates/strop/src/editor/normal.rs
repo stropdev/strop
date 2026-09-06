@@ -58,14 +58,7 @@ impl Editor {
             super::input::Action::Invalid(keys) => {
                 self.message = format!("not an editor command: {keys}")
             }
-            super::input::Action::EnterText(c) => {
-                self.pending = c.to_string();
-                self.pending_normal = false;
-                self.pending_cursor = self.pending.len();
-                // incsearch origin: `/`/`?` jumps resolve from here
-                // until Enter commits (search.rs)
-                self.search_origin = matches!(c, '/' | '?').then(|| self.head());
-            }
+            super::input::Action::EnterText(sigil) => self.begin_text_line(sigil),
             super::input::Action::Grammar(cmd) => match cmd.op {
                 None => self.move_cursor(&cmd),
                 Some(_) => self.execute(&cmd),

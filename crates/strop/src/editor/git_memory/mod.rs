@@ -242,6 +242,8 @@ impl Editor {
             return self.feed_pending_readonly(key);
         }
         match key {
+            Key::Char(sigil @ (':' | '/' | '?')) => self.begin_text_line(sigil),
+            Key::CtrlL => self.needs_repaint = true,
             Key::Char('q') => {
                 self.close_surface();
             }
@@ -306,12 +308,13 @@ impl Editor {
     }
 
     fn feed_pending_readonly(&mut self, key: Key) {
+        if self.pending_sigil().is_some() {
+            return self.feed_pending(key);
+        }
         match key {
             Key::Esc => self.pending.clear(),
             Key::Enter => {
-                if self.pending.starts_with(':') {
-                    self.run_ex(); // :q & friends work on surfaces too
-                } else if self.pending.contains('/') {
+                if self.pending.contains(['/', '?']) {
                     self.pending.push('\r');
                     self.resolve_pending_readonly();
                 } else {
@@ -319,13 +322,6 @@ impl Editor {
                 }
             }
             Key::Char(c) => {
-                // `:` opens the modal ex line (0003 §1): the text owns
-                // every later key until Enter/Esc — never per-char
-                // resolve (:set noro died here)
-                if self.pending.starts_with(':') {
-                    self.pending.push(c);
-                    return;
-                }
                 // leader namespaces still work from a surface
                 if self.pending == " " {
                     self.pending.clear();
