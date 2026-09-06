@@ -10,7 +10,7 @@ pub mod protocol;
 pub mod registry;
 
 pub use caps::ServerCaps;
-pub use client::{log_line, Client};
+pub use client::Client;
 pub use protocol::*;
 
 #[cfg(test)]

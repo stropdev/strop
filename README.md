@@ -11,9 +11,10 @@
 
 ![strop demo](demos/demo.gif)
 
-**strop** is a modal text editor in Rust: Neovim grammar on a Helix-class core, with
-world-class search/git baked in — and the operator-pending preview: every pending
-operation renders its target range live, before you commit. `ci[` shows you the cut.
+**strop** is a modal text editor in Rust with Vim-style commands, project search,
+git surfaces and operator previews. Composition windows such as `d/pattern`
+preview their affected ranges; completed object chords such as `ci[` execute
+at the completing key rather than pausing for an inspection step.
 
 ## Install
 
@@ -40,13 +41,33 @@ Space  f files · b buffers · / grep · R replace · ? help   C-w …    panes
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 
-Everything pending previews live — the preview is the same resolver that executes, so
-it cannot lie. Surround (`ys`/`cs`/`ds`), multicursor cascades (`Q`/`Space c`, nvim-0.13
-style), project-wide search & replace with live row previews, per-project sessions, undo
+Operator previews and execution consume the same resolver. Surround
+(`ys`/`cs`/`ds`), multicursor cascades (`Q`/`Space c`), project-wide search &
+replace with live row previews, per-project sessions, and undo
 history that crosses restarts (with a `Space u` tree browser), tree-sitter highlighting
 for thirteen languages (bash/fish/lua/sql included, shebang detection too), git gutter +
 blame + commit dive chains, SHA-resolved permalinks over OSC52, and helix-flavored
 `.strop/languages.toml` LSP config.
+
+## Reporting a bug
+
+```sh
+strop --log-file issue.jsonl path/to/file.rs
+# Or capture file/paste text and cell grids for a self-contained input reproducer:
+strop --log-file issue-full.jsonl --log-content path/to/file.rs
+strop --headless steps.keys path/to/file.rs --log-file headless.jsonl
+strop --replay-script issue-full.jsonl > replay.keys
+```
+
+Attach the JSONL file with the observed and expected behavior. Logs contain keys,
+commands, paths and diagnostic messages; full-content logs also contain documents,
+pastes and rendered cells. **Inspect before sharing.** Existing files are never
+overwritten. The extracted script replays inputs from a scratch snapshot, not
+external service results or filesystem state; inspect it before executing it.
+
+See [tracing design](plans/0029-session-tracing.md), the
+[prioritized review/roadmap](plans/0028-roadmap-and-review.md), and the
+[hardening proposal (not implemented)](plans/0030-correctness-hardening.md).
 
 ## Links
 

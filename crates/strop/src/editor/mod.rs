@@ -9,6 +9,8 @@ pub mod block;
 pub mod conformance;
 #[cfg(test)]
 pub mod contract_probes;
+pub mod trace;
+
 mod cursor;
 mod diagnostics;
 mod dive;
@@ -20,6 +22,7 @@ mod help;
 mod input;
 mod insert;
 mod jumps;
+pub(crate) mod keys;
 mod lsp;
 pub mod macros;
 #[cfg(test)]
@@ -69,7 +72,7 @@ impl Mode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Key {
     Char(char),
     Esc,
@@ -97,6 +100,8 @@ pub enum Key {
     CtrlCaret,
     /// vim ctrl-v: visual block mode.
     CtrlV,
+    /// vim ctrl-l: force a full terminal repaint (desync recovery).
+    CtrlL,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -106,6 +111,8 @@ pub type Registers = HashMap<char, (String, bool)>;
 
 pub struct Editor {
     pub docs: strop_core::id::Arena<strop_core::id::DocumentKind, Document>,
+    pub(crate) trace_documents:
+        HashMap<strop_core::id::DocumentId, strop_core::diagnostics::BufferTraceId>,
     /// Modal input on the `:`/`/`/`|` line (rootle's boxes): Esc once
     /// enters normal mode on the line, twice clears it.
     pub pending_normal: bool,
@@ -127,6 +134,10 @@ pub struct Editor {
     /// Armed by `/`/`?`/`*`/`#` searches. `n`/`N` replay it; the render
     /// highlights matches persistently (rootle: current match underlined).
     pub last_search: Option<LastSearch>,
+    /// Where the cursor sat when the `/`/`?` line opened: incsearch
+    /// jumps resolve from here (typing AND backspace), aborts restore
+    /// it (vim: the search origin is fixed until Enter commits).
+    pub search_origin: Option<usize>,
     pub registers: Registers,
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
     pub marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
@@ -206,6 +217,9 @@ pub struct Editor {
     pub git_tx: std::sync::mpsc::Sender<GitJob>,
     pub git_rx: Option<std::sync::mpsc::Receiver<GitJob>>,
     pub osc52: Option<String>,
+    /// ctrl-l: the terminal desynced from the model — the draw loop
+    /// answers with a full repaint (vim's redraw).
+    pub needs_repaint: bool,
     /// System-clipboard reads (paste from `+`) run on a worker thread;
     /// `clip_paste_pending` remembers before/after AND the initiating
     /// document until the read lands (0023 §4).
@@ -255,6 +269,24 @@ pub struct LastSearch {
     pub whole_word: bool,
 }
 
+/// A pending `f/F/t/T` awaiting its target char — the leap-style
+/// candidate overlay's input. Named fields, not a naked `(u8, bool)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FindPending {
+    pub ch: char,
+    pub backward: bool,
+}
+
+/// The ctrl-v rectangle (0017): line span by buffer index, cell span
+/// by LineLayout columns — named fields, not a naked mixed-unit tuple.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockRect {
+    pub first_line: usize,
+    pub last_line: usize,
+    pub left_cell: u16,
+    pub right_cell: u16,
+}
+
 /// What a shell job produced (0009-adjacent plumbing): `:!` displays,
 /// `|` pipes through and replaces.
 pub enum ShellResult {
@@ -293,6 +325,7 @@ impl Editor {
         let current = docs.insert(doc);
         let mut e = Self {
             docs,
+            trace_documents: HashMap::new(),
             mru: vec![current],
             mode: Mode::Normal,
             pending: String::new(),
@@ -342,10 +375,12 @@ impl Editor {
             blame_card: None,
             git_tx,
             git_rx: Some(git_rx),
+            needs_repaint: false,
             osc52: None,
             preview_tx,
             preview_rx: Some(preview_rx),
             preview_inflight: std::collections::HashSet::new(),
+            search_origin: None,
             pending_normal: false,
             pending_cursor: 0,
             jumplist_past: Vec::new(),
@@ -373,53 +408,20 @@ impl Editor {
         e
     }
 
-    pub fn feed_text(&mut self, s: &str) {
-        let mut chars = s.chars().peekable();
-        while let Some(c) = chars.next() {
-            let key = match c {
-                '\x1b' => Key::Esc,
-                '\r' | '\n' => Key::Enter,
-                '\x7f' => Key::Backspace,
-                '<' => {
-                    // token form: <esc> <cr> <bs>
-                    let rest: String = chars.by_ref().take_while(|&c| c != '>').collect();
-                    match rest.to_ascii_lowercase().as_str() {
-                        "esc" => Key::Esc,
-                        "cr" | "enter" => Key::Enter,
-                        "bs" => Key::Backspace,
-                        "space" => Key::Char(' '),
-                        "up" => Key::Up,
-                        "down" => Key::Down,
-                        "tab" => Key::Tab,
-                        "s-tab" => Key::Backtab,
-                        "left" => Key::Left,
-                        "right" => Key::Right,
-                        "c-r" => Key::CtrlR,
-                        "c-x" => Key::CtrlX,
-                        "c-d" => Key::CtrlD,
-                        "c-u" => Key::CtrlU,
-                        "c-f" => Key::CtrlF,
-                        "c-b" => Key::CtrlB,
-                        "c-^" => Key::CtrlCaret,
-                        "c-v" => Key::CtrlV,
-                        "c-w" => Key::CtrlW,
-                        "c-o" => Key::CtrlO,
-                        _ => {
-                            self.feed(Key::Char('<'));
-                            for c in rest.chars().chain(std::iter::once('>')) {
-                                self.feed(Key::Char(c));
-                            }
-                            continue;
-                        }
-                    }
-                }
-                c => Key::Char(c),
-            };
+    pub fn feed_text(&mut self, text: &str) {
+        for key in keys::parse(text) {
             self.feed(key);
         }
     }
 
     pub fn feed(&mut self, key: Key) {
+        let _trace_scope = trace::InputScope::enter(self, key);
+        self.trace_state();
+        self.feed_inner(key);
+        self.trace_state();
+    }
+
+    fn feed_inner(&mut self, key: Key) {
         // the modal input line dies with the pending text (0003 §1)
         if self.pending.is_empty() {
             self.pending_normal = false;
@@ -482,6 +484,17 @@ impl Editor {
                 .is_some_and(|g| g.picker.input_normal())
     }
 
+    /// The modal line's sigil when a free-text line is open (`: / ? |`)
+    /// — the ONE authority; the render card, the terminal's bar-cursor
+    /// shape, and pending dispatch all ask here (a `|sed s/a/b/` body
+    /// is a pipe, not a search).
+    pub fn pending_sigil(&self) -> Option<char> {
+        match self.pending.chars().next() {
+            Some(c @ (':' | '/' | '?' | '|')) => Some(c),
+            _ => None,
+        }
+    }
+
     // ---- shared helpers -------------------------------------------------
 
     /// `m{a}`: set mark a at the cursor.
@@ -514,3 +527,13 @@ impl Editor {
 
 #[cfg(test)]
 mod tests;
+
+impl Drop for Editor {
+    fn drop(&mut self) {
+        // One shutdown boundary, including headless errors and terminal failures.
+        for server in std::mem::take(&mut self.lsp_servers) {
+            server.client.shutdown();
+            server.client.wait(Duration::from_millis(500));
+        }
+    }
+}

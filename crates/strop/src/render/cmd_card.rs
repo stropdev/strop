@@ -15,17 +15,18 @@ use crate::editor::Editor;
 use super::{ACCENT, BASE, MUTED, TEXT};
 
 pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
-    let pending = &editor.pending;
-    let kind = if pending.starts_with(':') {
-        ':'
-    } else if pending.contains('/') && !pending.is_empty() {
-        '/'
-    } else {
+    // `?` is a first-class search sigil here (the old detection missed
+    // it: backward searches never got the card)
+    let Some(kind) = editor.pending_sigil() else {
         return;
     };
+    if !matches!(kind, ':' | '/' | '?') {
+        return;
+    }
     if editor.picker_open() {
         return;
     }
+    let pending = editor.pending.as_str();
 
     let area = frame.area();
     // ex completion rides along: candidates under the input (0003 §1)
@@ -34,11 +35,13 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     } else {
         Vec::new()
     };
-    let width = (area.width * 50 / 100).clamp(30, area.width.saturating_sub(4));
-    let height = 3 + candidates.len().min(6) as u16;
+    let width = ((u32::from(area.width) * 50 / 100) as u16)
+        .max(30)
+        .min(area.width.saturating_sub(4));
+    let height = (3 + candidates.len().min(6) as u16).min(area.height.saturating_sub(1));
     let card = Rect {
-        x: (area.width - width) / 2,
-        y: area.height / 6,
+        x: (area.width.saturating_sub(width)) / 2,
+        y: 1,
         width,
         height,
     };
@@ -56,12 +59,8 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     frame.render_widget(&block, card);
     let inner = block.inner(card);
 
-    // body: the payload, not the prefix — ":w" shows "w", "d/foo" shows "foo"
-    let body = match kind {
-        ':' => pending.strip_prefix(':').unwrap_or(pending),
-        '/' => pending.split_once('/').map(|(_, p)| p).unwrap_or(pending),
-        _ => pending.as_str(),
-    };
+    // body: the payload, not the prefix — ":w" shows "w", "/foo" shows "foo"
+    let body = pending.strip_prefix(kind).unwrap_or(pending);
     let mut spans = vec![
         Span::styled(
             format!("{kind} "),
@@ -72,16 +71,13 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     ];
 
     // search rides with a live match count
-    if kind == '/' {
-        if let Some(idx) = pending.find('/') {
-            let pat = &pending[idx + 1..];
-            if !pat.is_empty() {
-                let n = grammar::search_all(editor.buf(), pat).len();
-                spans.push(Span::styled(
-                    format!("   {n} match{}", if n == 1 { "" } else { "es" }),
-                    Style::default().fg(MUTED),
-                ));
-            }
+    if matches!(kind, '/' | '?') {
+        if let Some(pat) = editor.search_pattern() {
+            let n = grammar::search_all(editor.buf(), pat).len();
+            spans.push(Span::styled(
+                format!("   {n} match{}", if n == 1 { "" } else { "es" }),
+                Style::default().fg(MUTED),
+            ));
         }
     }
 
@@ -123,8 +119,13 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     }
 
     // caret goes in the card, not the buffer
-    let caret_x = text_area.x + 2 + body.chars().count() as u16;
+    let caret_byte = editor.pending_cursor.saturating_sub(1).min(body.len());
+    let layout = strop_core::layout::LineLayout::build(body, 4);
+    let caret_x = text_area
+        .x
+        .saturating_add(2)
+        .saturating_add(layout.cell_at_byte(caret_byte));
     if caret_x < text_area.x + text_area.width {
-        frame.set_cursor_position((caret_x, text_area.y));
+        crate::editor::trace::frame::place_cursor(frame, (caret_x, text_area.y));
     }
 }

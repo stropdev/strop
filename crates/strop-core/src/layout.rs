@@ -10,6 +10,16 @@
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+/// A terminal cell must contain printable text, never protocol bytes. Use the
+/// same one-cell replacement in layout and emission; tab expansion is separate.
+pub fn printable_grapheme(grapheme: &str) -> &str {
+    if grapheme.chars().any(char::is_control) {
+        "\u{fffd}"
+    } else {
+        grapheme
+    }
+}
+
 /// One grapheme cluster's placement on the line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GraphemeSpan {
@@ -33,8 +43,8 @@ pub struct LineLayout {
 }
 
 impl LineLayout {
-    /// Lay out one line's text (no trailing newline). `tab` is the tab
-    /// stop; control chars render zero-width (terminals show them raw).
+    /// Lay out one content line. Tabs expand to stops; control graphemes use
+    /// the same visible one-cell replacement as the renderer.
     pub fn build(text: &str, tab: u16) -> Self {
         let tab = tab.max(1);
         let mut spans = Vec::with_capacity(text.len() / 2 + 4);
@@ -43,7 +53,7 @@ impl LineLayout {
             let w = if g == "\t" {
                 (tab - cell % tab) as u8
             } else {
-                UnicodeWidthStr::width(g).min(u8::MAX as usize) as u8
+                UnicodeWidthStr::width(printable_grapheme(g)).min(u8::MAX as usize) as u8
             };
             spans.push(GraphemeSpan {
                 byte,

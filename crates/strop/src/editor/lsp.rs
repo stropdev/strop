@@ -2,6 +2,7 @@
 //! the input path. Diagnostics merge into the git gutter (severity wins),
 //! Space d is the diagnostics picker, Space k hover, gd goto-definition.
 
+use super::trace;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 
@@ -205,21 +206,20 @@ impl Editor {
     /// Drain server events (headless settle; the TUI forwards each
     /// event as it lands — 0018).
     pub fn drain_lsp(&mut self) {
-        // drain every pooled server, remembering which one each event
-        // came from (its negotiated encoding converts the columns)
-        let mut events: Vec<(strop_lsp::PositionEncoding, LspEvent)> = Vec::new();
-        for srv in &self.lsp_servers {
-            while let Ok(ev) = srv.rx.try_recv() {
-                events.push((srv.client.encoding(), ev));
+        let mut events = Vec::new();
+        for server in &self.lsp_servers {
+            while let Ok(event) = server.rx.try_recv() {
+                events.push((server.client.encoding(), event));
             }
         }
-        for (enc, event) in events {
-            self.handle_lsp_event(enc, event);
+        for (encoding, event) in events {
+            self.handle_lsp_event(encoding, event);
         }
     }
 
     /// One server event, handled with that server's encoding.
     pub(crate) fn handle_lsp_event(&mut self, enc: strop_lsp::PositionEncoding, event: LspEvent) {
+        trace::services::lsp(&event);
         {
             match event {
                 LspEvent::Diagnostics {
@@ -239,6 +239,10 @@ impl Editor {
                         .and_then(|srv| srv.client.sent_version(&path))
                         .is_some_and(|sent| version.is_some_and(|v| v < sent));
                     if stale {
+                        trace::services::rejected(
+                            "lsp",
+                            "diagnostic version precedes sent version",
+                        );
                         return;
                     }
                     // server columns → byte columns against the open
@@ -270,12 +274,21 @@ impl Editor {
                     });
                     if !stale {
                         self.hover_card = Some(text);
+                    } else {
+                        trace::services::rejected(
+                            "lsp",
+                            "hover requester document/revision changed",
+                        );
                     }
                 }
                 LspEvent::Locations { req_revision, .. }
                     if req_revision != 0 && !self.lsp_nav_fresh(req_revision) =>
                 {
                     // stale asker — drop
+                    trace::services::rejected(
+                        "lsp",
+                        "locations requester document/revision changed",
+                    );
                 }
                 LspEvent::Locations { kind, items, .. } => match items.len() {
                     0 => self.message = format!("lsp: no {}", kind.label()),
@@ -313,10 +326,11 @@ impl Editor {
                     // 0021 §2: the answer is only valid against the
                     // document state that asked
                     if req_revision != 0 && !self.lsp_nav_fresh(req_revision) {
+                        trace::services::rejected(
+                            "lsp",
+                            "navigation requester document/revision changed",
+                        );
                         return;
-                    }
-                    if std::env::var_os("STROP_LSP_LOG").is_some() {
-                        eprintln!("strop: goto {}:{}:{}", path.display(), line, col);
                     }
                     self.jump_to_location(path, line, col, enc);
                 }

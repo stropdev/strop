@@ -148,6 +148,8 @@ pub enum Parse {
 #[derive(Debug, Clone)]
 pub struct Resolved {
     pub range: Range,
+    /// Destination retained independently of sorted affected ranges (wrapped search).
+    pub motion_target: Option<usize>,
     /// Motion metadata (e.g. "inner [", "word forward", "3 lines").
     /// Inclusivity lives on range.shape (0014).
     pub spec: String,

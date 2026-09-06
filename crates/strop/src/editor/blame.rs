@@ -55,6 +55,10 @@ impl Editor {
         };
         let generation = self.generation;
         let tx = self.git_tx.clone();
+        strop_trace::record_with(
+            strop_trace::EventKind::JobStarted,
+            || serde_json::json!({"service":"git","request":"blame_gutter","path":key.to_string_lossy(),"generation":generation}),
+        );
         std::thread::spawn(move || {
             let msg = match strop_git::memory::blame_file(&workdir, &rel) {
                 Ok(lines) => GitJob::Gutter {
@@ -98,6 +102,10 @@ impl Editor {
         let line = self.buf().line_of(self.head()) + 1;
         let generation = self.generation;
         let tx = self.git_tx.clone();
+        strop_trace::record_with(
+            strop_trace::EventKind::JobStarted,
+            || serde_json::json!({"service":"git","request":"blame_line","path":path.to_string_lossy(),"line":line,"generation":generation}),
+        );
         std::thread::spawn(move || {
             let abs = if Path::new(&path).is_absolute() {
                 PathBuf::from(&path)

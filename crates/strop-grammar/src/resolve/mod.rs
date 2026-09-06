@@ -20,6 +20,7 @@ pub use search::{search_all, search_backward, search_forward};
 /// This is THE function: execute and preview both consume it.
 pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
     let count = cmd.count.unwrap_or(1);
+    let mut motion_target = None;
     let (range, inclusive, mut spec) = match &cmd.target {
         Target::Linewise => {
             let line = buf.line_of(cursor);
@@ -436,23 +437,28 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     format!("{verb} '{}'", *ch),
                 )
             }
-            Motion::Search(pat) => {
-                let target = search_forward(buf, cursor + 1, pat)?;
-                // exclusive: up to but not including the match
+            Motion::Search(pat) | Motion::SearchBackward(pat) => {
+                let backward = matches!(m, Motion::SearchBackward(_));
+                let mut target = cursor;
+                for _ in 0..count {
+                    target = if backward {
+                        search_backward(buf, target, pat)
+                            .or_else(|| search_backward(buf, buf.len_bytes(), pat))?
+                    } else {
+                        search_forward(buf, buf.ceil_boundary(target.saturating_add(1)), pat)
+                            .or_else(|| search_forward(buf, 0, pat))?
+                    };
+                }
+                motion_target = Some(target);
+                let range = if target < cursor {
+                    Range::charwise(buf.ceil_boundary(target + 1), cursor)
+                } else {
+                    Range::charwise(cursor, target)
+                };
                 (
-                    Range::charwise(cursor, target),
+                    range,
                     false,
-                    format!("search /{pat}"),
-                )
-            }
-            Motion::SearchBackward(pat) => {
-                let target = search_backward(buf, cursor, pat)?;
-                // exclusive backward: covers (match, cursor) — vim d?pat
-                // is exclusive of the target's first char
-                (
-                    Range::charwise(target + pat.len().min(1), cursor),
-                    false,
-                    format!("search ?{pat}"),
+                    format!("search {}{pat}", if backward { '?' } else { '/' }),
                 )
             }
         },
@@ -476,12 +482,16 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
     }
     Some(Resolved {
         range: range.with_inclusive(inclusive),
+        motion_target,
         spec,
     })
 }
 
 /// Where the cursor lands after a resolved motion command.
 pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -> usize {
+    if let Some(target) = r.motion_target {
+        return target;
+    }
     match &cmd.target {
         Target::Motion(Motion::Down | Motion::Up) => r.range.start,
         Target::Motion(Motion::WordBackward | Motion::LineStart) => r.range.start,

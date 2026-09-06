@@ -11,6 +11,7 @@ use strop_git::memory::{self, BlameCard, BlameLine, ChangedFile, LogRow};
 use strop_git::{Hunk, LineOrigin};
 
 use super::document::{ReturnPoint, Surface};
+use super::trace;
 use super::{Document, Editor, Key, Mode};
 
 /// The commit a Diff surface's file belongs to, with the commit's full
@@ -210,6 +211,12 @@ impl Editor {
         let idx = self.current();
         let generation = self.generation;
         let tx = self.git_tx.clone();
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"git","request":"log","document":{"slot":idx.index(),"generation":idx.generation()},
+                "generation":generation,"path":file.as_ref().map(|p|p.to_string_lossy()),
+            })
+        });
         std::thread::spawn(move || {
             let msg = match memory::log_graph_range(&workdir, 200, file.as_deref(), range) {
                 Ok(rows) => GitJob::Log {
@@ -403,7 +410,9 @@ impl Editor {
         loop {
             let next = self.git_rx.as_ref().and_then(|rx| rx.try_recv().ok());
             match next {
-                Some(job) => self.handle_git_job(job),
+                Some(job) => {
+                    self.handle_git_job(job);
+                }
                 None => break,
             }
         }
@@ -411,6 +420,7 @@ impl Editor {
 
     /// One git job result (TUI events land here directly — 0018).
     pub(crate) fn handle_git_job(&mut self, job: GitJob) {
+        trace::services::git(&job);
         {
             match job {
                 GitJob::Log {
@@ -422,6 +432,7 @@ impl Editor {
                     // next buffer: only same-generation results land
                     // (0011 §2)
                     if generation != self.generation || self.docs.get(buffer).is_none() {
+                        trace::services::rejected("git", "log document or generation changed");
                         return;
                     }
                     let text = rows
@@ -463,6 +474,7 @@ impl Editor {
                 } => {
                     // toggled off meanwhile → the entry is gone → drop
                     if generation != self.generation {
+                        trace::services::rejected("git", "gutter generation changed");
                         return;
                     }
                     if let Some(gutter) = self.blame_gutters.get_mut(&path) {
@@ -494,6 +506,7 @@ impl Editor {
                         self.staged_hunks = staged;
                     } else {
                         self.hunks_epoch = u64::MAX;
+                        trace::services::rejected("git", "hunks document or revision changed");
                     }
                 }
             }

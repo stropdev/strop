@@ -33,7 +33,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ gs` — switch source/header (clangd)
 - `✓ f<c> F<c> t<c> T<c>` — find/till char (candidates light up)
 - `✓ :` — ex command line
-- `✓ / ?` — search forward / backward
+- `✓ / ?` — literal search forward / backward (live as you type or delete)
 - `✓ n` — next match
 - `✓ N` — previous match
 - `✓ ]c [c` — next / prev git hunk
@@ -127,3 +127,4 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ ctrl-w q` — close pane (last → buffer)
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
 - `✓ ctrl-x` — replace picker: exclude/include match
+- `✓ ctrl-l` — redraw: full repaint when the terminal desyncs

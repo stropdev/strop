@@ -144,6 +144,13 @@ impl Editor {
             return;
         }
         self.anchor_map_mark = Some((mark, all_ops.len()));
+        strop_trace::record_with(strop_trace::EventKind::History, || {
+            serde_json::json!({
+                "operation":"commit", "buffer":self.buf().trace_id(),
+                "document":{"slot":self.current().index(),"generation":self.current().generation()},
+                "revision":self.buf().epoch,"history_node":mark.1,"new_edits":all_ops.len() - skip,
+            })
+        });
         self.map_anchors_for_current(&all_ops, skip);
     }
 
@@ -158,7 +165,9 @@ impl Editor {
                 let len = op.text.len();
                 match op.kind {
                     strop_core::history::EditKind::Insert => {
-                        if pos > op.at {
+                        // Persistent anchors follow the original text, including
+                        // insertions at their exact byte boundary.
+                        if pos >= op.at {
                             pos += len;
                         }
                     }

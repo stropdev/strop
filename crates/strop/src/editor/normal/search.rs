@@ -3,8 +3,7 @@
 use strop_core::Range;
 use strop_grammar::{self as grammar, Command};
 
-use crate::editor::Editor;
-use crate::editor::LastSearch;
+use crate::editor::{Editor, FindPending, LastSearch};
 
 impl Editor {
     pub(super) fn note_search(&mut self, cmd: &Command) {
@@ -232,22 +231,66 @@ impl Editor {
         self.repeat_search(false);
     }
 
-    /// Pending f/F/t/T awaiting its char: the leap-style candidates.
-    pub fn find_candidates(&self) -> Option<(u8, bool)> {
-        let b = self.pending.as_bytes();
-        let (&pfx, _) = b.split_last()?;
-        let backward = matches!(pfx, b'F' | b'T');
-        if !matches!(pfx, b'f' | b'F' | b't' | b'T') {
-            return None;
-        }
-        Some((pfx, backward))
+    /// Pending `f/F/t/T` awaiting its char: the leap-style candidates.
+    /// The WALKER owns that state — the old check read the free-text
+    /// line's last byte, so any pattern ending in `f`/`t` (`/const`)
+    /// lit candidates over the cursor line (issue 13's "stale match").
+    pub fn find_candidates(&self) -> Option<FindPending> {
+        let m = self.walker.pending_motion();
+        let ch = m.chars().next()?;
+        (m.chars().count() == 1 && matches!(ch, 'f' | 'F' | 't' | 'T')).then_some(FindPending {
+            ch,
+            backward: matches!(ch, 'F' | 'T'),
+        })
     }
 
-    /// Pending search pattern (incsearch highlight), if any.
+    /// Close the `/`/`?` line without committing: the cursor returns
+    /// to the search origin (vim: aborting a search moves you back).
+    pub(super) fn abort_search_line(&mut self) {
+        if let Some(origin) = self.search_origin.take() {
+            self.set_head(origin);
+            self.clamp_cursor();
+        }
+    }
+
+    /// Live incsearch (vim parity, issue 13): while the `/`/`?` line is
+    /// open the cursor sits on the pattern's first match from the
+    /// fixed search origin — typing AND backspace re-resolve it.
+    /// Wraps like `n`/`N`; an empty pattern or no match parks at the
+    /// origin (vim keeps position and reports E486).
+    pub(super) fn incsearch_jump(&mut self) {
+        let Some(origin) = self.search_origin else {
+            return;
+        };
+        let Some(pat) = self.search_pattern() else {
+            self.set_head(origin);
+            self.clamp_cursor();
+            return;
+        };
+        let target = if self.pending.starts_with('?') {
+            grammar::Motion::SearchBackward(pat.to_string())
+        } else {
+            grammar::Motion::Search(pat.to_string())
+        };
+        let command = Command {
+            op: None,
+            register: None,
+            count: None,
+            target: grammar::Target::Motion(target),
+            keys: String::new(),
+        };
+        let destination = grammar::resolve(self.buf(), origin, &command)
+            .map(|resolved| grammar::cursor_after(self.buf(), origin, &command, &resolved))
+            .unwrap_or(origin);
+        self.set_head(destination);
+        self.clamp_cursor();
+    }
+
+    /// Pending search pattern (incsearch highlight), if any: the `/` or
+    /// `?` line's body. Pipes and ex bodies never misread as patterns
+    /// (the old `find('/')` matched `|sed s/a/b/`).
     pub fn search_pattern(&self) -> Option<&str> {
-        self.pending
-            .find('/')
-            .map(|i| &self.pending[i + 1..])
-            .filter(|p| !p.is_empty())
+        let body = self.pending.strip_prefix(['/', '?'])?;
+        (!body.is_empty()).then_some(body)
     }
 }

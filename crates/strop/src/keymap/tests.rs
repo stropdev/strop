@@ -1,3 +1,4 @@
+use super::lookup::{expand, NAMED};
 use super::*;
 use crate::editor::{Editor, Mode};
 use strop_core::Buffer;

@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.14.0 — 2026-09-06
+
+Search/terminal correctness, diagnostic session traces, and a safety review
+(plans 0027–0030).
+
+### Fixed
+
+- Search typing and Backspace resolve from the same origin as Enter; edits at
+  the prompt caret update the match. Backward searches get the same card.
+  Plain search text no longer triggers find/operator overlays.
+- CRLF rows no longer emit raw carriage returns. Control bytes in text or UI
+  metadata cannot become terminal commands; physical-terminal regressions cover
+  shrinking lines, filler rows and escape-bearing content.
+- Operator-search previews use the same counted/multicursor resolver as execution.
+  Literal matching streams rope chunks instead of copying whole documents.
+- Tiny popup geometry survives resize/restore. Ctrl-L requests a full repaint.
+- Saves and updater installation use exclusive private staging. Save-as without
+  force cannot clobber an existing destination.
+- Delayed shell results validate UTF-8 boundaries before slicing. Shell and
+  ranged Ex deletion now use transaction-owned anchor/history/syntax updates.
+- Git diff text materialization runs on its worker, not on the render path.
+- Legacy LSP terminal logging is removed; release library checks explicitly
+  reject forbidden dependencies instead of relying on inverted-pipeline errexit.
+
+### Added
+
+- `strop-trace`: one opt-in asynchronous JSONL sink shared by core, LSP and editor.
+  `--log`, `--log=ALL`, `--log-file PATH`, `--log=PATH`, and `STROP_LOG` select capture.
+  It records input, state, immediate mutations, history, frames, job decisions,
+  actual bidirectional LSP traffic and failures without disk I/O on input→render.
+- `--log-content` enables sensitive full document/paste/cell capture;
+  `--replay-script TRACE` extracts an inspectable headless input reproducer.
+  Existing logs are refused, files are private, and incomplete capture is reported.
+- A prioritized editor critique/roadmap (0028) and a separate research-backed
+  hardening proposal (0030). The broader hardening redesign is **plan-only**.
+
+### Changed
+
+- Separate client transport, CLI, terminal, trace and keymap-query responsibilities;
+  renderer tests no longer inflate the production renderer.
+- Restored omitted smart-indent coverage and script tokens. Headless now keeps
+  a persistent terminal and draws the real feed path after each scripted key.
+
 ## 0.13.0 — 2026-09-06
 
 PathBuf paths end to end (plan 0026) + the file-size split wave.

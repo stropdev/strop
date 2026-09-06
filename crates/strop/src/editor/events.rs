@@ -91,8 +91,19 @@ impl Editor {
         match ev {
             AppEvent::Terminal(key) => self.feed(key),
             AppEvent::Resize => {} // the loop redraws after every event
-            AppEvent::Paste(text) => self.paste_bracketed(&text),
+            AppEvent::Paste(text) => {
+                strop_trace::record_with(strop_trace::EventKind::Paste, || {
+                    serde_json::json!({
+                        "bytes":text.len(),"text":strop_trace::capture_content().then_some(text.as_str()),
+                    })
+                });
+                self.paste_bracketed(&text);
+            }
             AppEvent::QuitIntent => {
+                strop_trace::record_with(
+                    strop_trace::EventKind::Input,
+                    || serde_json::json!({"action":"quit_intent","source":"external"}),
+                );
                 if self.ctrl_c_quit() {
                     self.should_quit = true;
                 }
@@ -108,6 +119,11 @@ impl Editor {
                     .is_some_and(|g| g.id == id && g.gen == gen)
                 {
                     self.handle_picker_msg(msg);
+                } else {
+                    super::trace::services::rejected(
+                        "picker",
+                        "picker identity or query generation changed",
+                    );
                 }
             }
             AppEvent::Preview(path, content) => self.handle_preview(path, content),

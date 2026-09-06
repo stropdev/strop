@@ -72,6 +72,11 @@ impl Editor {
     pub(crate) fn set_picker(&mut self, mut glue: PickerGlue) {
         glue.id = self.next_picker_id;
         self.next_picker_id += 1;
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"picker","id":glue.id,"generation":glue.gen,"streaming":glue.picker.streaming,
+            })
+        });
         if let Some(tx) = &self.app_tx {
             glue.forward_stream(tx);
         }
@@ -172,6 +177,7 @@ impl Editor {
                     self.picker_input_changed();
                 }
             }
+            Key::CtrlL => self.needs_repaint = true, // desync recovery
             Key::CtrlR | Key::CtrlW => {}
             Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
             Key::Up => glue.picker.move_by(-1),
@@ -223,6 +229,11 @@ impl Editor {
             glue.grep_worker = GrepWorker::spawn(&pattern, &cwd, tx);
             glue.picker.streaming = glue.grep_worker.is_some();
             glue.gen += 1;
+            strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+                serde_json::json!({
+                    "service":"picker","id":glue.id,"generation":glue.gen,"query":pattern,"streaming":glue.picker.streaming,
+                })
+            });
             // the respawn's channel must reach the SAME event source as
             // the initial stream (0020 §2 — 0.9.0 silently dropped it)
             if let Some(app_tx) = &self.app_tx {

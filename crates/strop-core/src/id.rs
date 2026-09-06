@@ -20,10 +20,14 @@ impl<K> Id<K> {
     pub fn index(self) -> usize {
         self.index as usize
     }
+
+    pub fn generation(self) -> u32 {
+        self.generation
+    }
 }
 
 /// Marker kinds for the arena's identities.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DocumentKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewKind;

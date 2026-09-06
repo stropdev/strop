@@ -16,9 +16,14 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
         return;
     };
     let area = frame.area();
-    let width = (area.width * 60 / 100).clamp(40, area.width.saturating_sub(4));
-    let lines = text.lines().count() as u16;
-    let height = (lines + 2).clamp(5, area.height.saturating_sub(4));
+    let width = ((u32::from(area.width) * 60 / 100) as u16)
+        .max(40)
+        .min(area.width.saturating_sub(4));
+    let lines = text.lines().take(usize::from(area.height)).count() as u16;
+    let height = lines
+        .saturating_add(2)
+        .max(5)
+        .min(area.height.saturating_sub(4));
     let card = Rect {
         x: (area.width - width) / 2,
         y: (area.height / 4).min(area.height.saturating_sub(height)),

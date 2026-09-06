@@ -68,7 +68,10 @@ jobs:
           bin="$(find "$tmp" -type f -name strop | head -1)"
           file "$bin"
           file "$bin" | grep -qE "static-pie linked|statically linked"
-          ! readelf -d "$bin" | grep -q NEEDED
+          if readelf -d "$bin" | grep -q NEEDED; then
+            echo "::error::dynamic dependency in static release"
+            exit 1
+          fi
           "$bin" --version
           printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"
           printf 'frame\n' > "$tmp/smoke.txt"
@@ -84,7 +87,10 @@ jobs:
           bin="$(find "$tmp" -type f -name strop | head -1)"
           file "$bin"
           otool -L "$bin"
-          ! otool -L "$bin" | grep -qvE "libSystem|libiconv|CoreFoundation|Security|SystemConfiguration"
+          if otool -L "$bin" | sed '1d' | grep -qvE "^[[:space:]]+(/usr/lib/(libSystem|libiconv)[^ ]*|/System/Library/Frameworks/(CoreFoundation|Security|SystemConfiguration)\\.framework/[^ ]*)[[:space:]]"; then
+            echo "::error::non-system dynamic dependency"
+            exit 1
+          fi
           "$bin" --version
           printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"
           printf 'frame\n' > "$tmp/smoke.txt"

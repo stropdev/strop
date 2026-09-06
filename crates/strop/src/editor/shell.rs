@@ -5,6 +5,7 @@
 
 use strop_core::Buffer;
 
+use super::trace;
 use super::{Document, Editor, ShellResult};
 
 impl Editor {
@@ -19,6 +20,10 @@ impl Editor {
         let tx = self.shell_tx.clone();
         let cwd = self.cwd.clone();
         let job_cmd = cmd.clone();
+        strop_trace::record_with(
+            strop_trace::EventKind::JobStarted,
+            || serde_json::json!({"service":"shell","command":cmd,"cwd":cwd.to_string_lossy()}),
+        );
         std::thread::spawn(move || {
             let proc = run_shell(&job_cmd, &cwd, None);
             // the display buffer shows both streams like a terminal
@@ -50,6 +55,10 @@ impl Editor {
         let tx = self.shell_tx.clone();
         let cwd = self.cwd.clone();
         let job_cmd = cmd.clone();
+        strop_trace::record_with(
+            strop_trace::EventKind::JobStarted,
+            || serde_json::json!({"service":"pipe","command":cmd,"start_byte":s,"end_byte":e,"revision":self.buf().epoch}),
+        );
         std::thread::spawn(move || {
             let proc = run_shell(&job_cmd, &cwd, Some(&original));
             let _ = tx.send(ShellResult::Pipe {
@@ -73,7 +82,9 @@ impl Editor {
         loop {
             let next = self.shell_rx.as_ref().and_then(|rx| rx.try_recv().ok());
             match next {
-                Some(result) => self.handle_shell_result(result),
+                Some(result) => {
+                    self.handle_shell_result(result);
+                }
                 None => break,
             }
         }
@@ -81,6 +92,7 @@ impl Editor {
 
     /// One shell job result (TUI events land here directly — 0018).
     pub(crate) fn handle_shell_result(&mut self, result: ShellResult) {
+        trace::services::shell(&result);
         if self.docs.is_empty() {
             return;
         }
@@ -108,22 +120,28 @@ impl Editor {
                     // stderr explains itself in the message line
                     if !ok {
                         self.message = format!("pipe failed: {}", err.trim());
+                        trace::services::rejected("shell", &self.message);
                         return;
                     }
                     let Some(buf) = self.docs.get_mut(buffer).map(|d| &mut d.buf) else {
                         self.message = "pipe: buffer is gone".into();
+                        trace::services::rejected("shell", &self.message);
                         return;
                     };
                     if buf.readonly {
                         self.message = "pipe: readonly buffer".into();
+                        trace::services::rejected("shell", &self.message);
                         return;
                     }
                     // never clobber: the range must still hold what we piped
                     let (s, e) = (start.min(end), end.max(start));
-                    let s = s.min(buf.len_bytes());
-                    let e = e.min(buf.len_bytes()).max(s);
-                    if buf.rope.byte_slice(s..e) != original {
+                    if e > buf.len_bytes()
+                        || !buf.is_boundary(s)
+                        || !buf.is_boundary(e)
+                        || buf.rope.byte_slice(s..e) != original
+                    {
                         self.message = "pipe: text changed under the job — skipped".into();
+                        trace::services::rejected("shell", &self.message);
                         return;
                     }
                     // linewise ranges keep their newline; charwise gets
@@ -133,10 +151,27 @@ impl Editor {
                     } else {
                         output.strip_suffix('\n').unwrap_or(&output).to_string()
                     };
-                    buf.history.begin();
-                    buf.delete(strop_core::Range::charwise(s, e));
-                    buf.insert(s, &out);
-                    buf.history.commit();
+                    let base = buf.epoch;
+                    let changes = super::transact::ChangeSet {
+                        edits: vec![
+                            strop_core::history::Edit {
+                                at: s,
+                                text: original,
+                                kind: strop_core::history::EditKind::Delete,
+                            },
+                            strop_core::history::Edit {
+                                at: s,
+                                text: out,
+                                kind: strop_core::history::EditKind::Insert,
+                            },
+                        ],
+                        undo_open: false,
+                    };
+                    if let Err(error) = self.apply(buffer, base, changes) {
+                        self.message = format!("pipe: {error}");
+                        trace::services::rejected("shell", &self.message);
+                        return;
+                    }
                     if buffer == self.current() {
                         self.set_head(self.buf().clamp_boundary(s));
                         self.clamp_cursor();

@@ -115,6 +115,16 @@ impl Walker {
         })
     }
 
+    /// The pending motion text (grammar input) — `find_candidates`
+    /// reads it to know an `f/F/t/T` awaits its char.
+    pub fn pending_motion(&self) -> &str {
+        if self.motion.is_empty() && self.path.len() == 1 {
+            &self.path[0]
+        } else {
+            &self.motion
+        }
+    }
+
     /// The trie position as the which-key renderer's prefix string
     /// (" g" style — the table's token vocabulary mapped back).
     pub fn prefix_display(&self) -> String {
@@ -374,6 +384,7 @@ fn key_token(key: Key) -> String {
         Key::CtrlB => "ctrl-b".into(),
         Key::CtrlCaret => "ctrl-^".into(),
         Key::CtrlV => "ctrl-v".into(),
+        Key::CtrlL => "ctrl-l".into(),
     }
 }
 
@@ -382,7 +393,7 @@ mod tests {
     use super::*;
 
     fn row_events(keys: &str) -> Vec<Vec<Key>> {
-        crate::keymap::expand(keys)
+        crate::keymap::lookup::expand(keys)
             .iter()
             .map(|seq| {
                 let mut out = Vec::new();

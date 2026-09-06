@@ -12,7 +12,7 @@ pub fn frame_string(editor: &mut Editor, cols: u16, rows: u16) -> String {
     let backend = TestBackend::new(cols, rows);
     let mut terminal = Terminal::new(backend).expect("test backend");
     terminal
-        .draw(|f| crate::render::render(editor, f))
+        .draw(|f| crate::editor::trace::frame::draw(editor, f))
         .expect("draw");
     let buf = terminal.backend().buffer();
     let mut out = String::new();
@@ -26,6 +26,9 @@ pub fn frame_string(editor: &mut Editor, cols: u16, rows: u16) -> String {
 }
 
 pub fn state_json(editor: &Editor) -> String {
+    if editor.docs.is_empty() {
+        return serde_json::json!({"should_quit":editor.should_quit,"documents":0,"message":editor.message}).to_string();
+    }
     serde_json::json!({
         "mode": editor.mode.chip(),
         "cursor": editor.head(),
@@ -51,61 +54,136 @@ pub fn state_json(editor: &Editor) -> String {
 /// <right> <c-r> <c-x> <c-d> <c-w> <c-o>); `wait N` ms drains jobs;
 /// `settle` waits out streaming pickers; `frame` dumps the screen;
 /// `state` dumps JSON. `#` comments. Blank lines ignored.
-pub fn run_script(editor: &mut Editor, script: &str, cols: u16, rows: u16, out: &mut dyn Write) {
-    for line in script.lines() {
-        let line = line.trim_end();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
+pub fn run_script(
+    editor: &mut Editor,
+    script: &str,
+    cols: u16,
+    rows: u16,
+    out: &mut dyn Write,
+) -> std::io::Result<()> {
+    let mut steps = script
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .peekable();
+    if let Some(text) = steps.peek().and_then(|line| line.strip_prefix("buffer ")) {
+        let text: String = serde_json::from_str(text).map_err(std::io::Error::other)?;
+        let configuration = std::mem::take(&mut editor.config);
+        *editor = Editor::new(strop_core::Buffer::from_text(&text));
+        editor.config = configuration;
+        steps.next();
+    }
+    let mut terminal = Terminal::new(TestBackend::new(cols, rows))?;
+    editor.trace_state();
+    editor.lsp_maybe_attach();
+    draw(editor, &mut terminal)?;
+    for line in steps {
         if editor.should_quit {
-            break; // nothing to drive; the editor is gone
+            break;
         }
         if let Some(keys) = line.strip_prefix("keys ") {
-            editor.feed_text(keys);
-            editor.drain_picker();
-            editor.drain_git_jobs();
-            // the real loop draws after every key event; the draw is
-            // where view_top/view_rows refresh — mirror that so
-            // viewport motions (H/M/L) see the same state headless
-            if !editor.should_quit && !editor.docs.is_empty() {
-                let rows = editor.view_rows();
-                editor.scroll_to_cursor(rows);
+            for key in crate::editor::keys::parse(keys) {
+                editor.feed(key);
+                after_input(editor, &mut terminal)?;
+                if editor.should_quit {
+                    break;
+                }
             }
-        } else if let Some(ms) = line.strip_prefix("wait ") {
-            // drain events for N ms (LSP servers index on their own clock)
-            let n: u64 = ms.trim().parse().unwrap_or(500);
-            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(n);
-            while std::time::Instant::now() < deadline {
-                editor.drain_shell();
-                editor.drain_picker();
-                editor.drain_git_jobs();
-                editor.drain_lsp();
-                editor.drain_clipboard();
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-        } else if line == "settle" {
-            // let streaming sources deliver: drain until Done (bounded)
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        } else if let Some(key) = line.strip_prefix("key ") {
+            let key = serde_json::from_str(key).map_err(std::io::Error::other)?;
+            editor.feed(key);
+            after_input(editor, &mut terminal)?;
+        } else if let Some(text) = line.strip_prefix("paste ") {
+            let text = serde_json::from_str(text).map_err(std::io::Error::other)?;
+            editor.handle_app_event(crate::editor::events::AppEvent::Paste(text));
+            after_input(editor, &mut terminal)?;
+        } else if line == "quit-intent" {
+            editor.handle_app_event(crate::editor::events::AppEvent::QuitIntent);
+            after_input(editor, &mut terminal)?;
+        } else if let Some(size) = line.strip_prefix("resize ") {
+            let values: Result<Vec<u16>, _> = size.split_whitespace().map(str::parse).collect();
+            let values = values.map_err(std::io::Error::other)?;
+            let [columns, rows] = values.as_slice() else {
+                return Err(std::io::Error::other("resize requires columns and rows"));
+            };
+            terminal.backend_mut().resize(*columns, *rows);
+            strop_trace::record_with(
+                strop_trace::EventKind::Resize,
+                || serde_json::json!({"columns":columns,"rows":rows}),
+            );
+            draw(editor, &mut terminal)?;
+        } else if line == "settle" || line.starts_with("wait ") {
+            let milliseconds: u64 = if line == "settle" {
+                2000
+            } else {
+                line[5..].trim().parse().map_err(std::io::Error::other)?
+            };
+            let deadline =
+                std::time::Instant::now() + std::time::Duration::from_millis(milliseconds);
             loop {
-                editor.drain_shell();
-                editor.drain_picker();
-                editor.drain_git_jobs();
-                editor.drain_lsp();
-                editor.drain_clipboard();
-                let streaming = editor.picker.as_ref().is_some_and(|g| g.picker.streaming);
-                if !streaming || std::time::Instant::now() > deadline {
+                drain(editor);
+                draw(editor, &mut terminal)?;
+                if std::time::Instant::now() >= deadline
+                    || (line == "settle"
+                        && !editor
+                            .picker
+                            .as_ref()
+                            .is_some_and(|glue| glue.picker.streaming))
+                {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         } else if line == "frame" {
-            editor.drain_picker();
-            let _ = writeln!(out, "─── frame {}×{}", cols, rows);
-            let _ = write!(out, "{}", frame_string(editor, cols, rows));
+            drain(editor);
+            draw(editor, &mut terminal)?;
+            let buffer = terminal.backend().buffer();
+            writeln!(
+                out,
+                "─── frame {}×{}",
+                buffer.area.width, buffer.area.height
+            )?;
+            for y in 0..buffer.area.height {
+                for x in 0..buffer.area.width {
+                    write!(out, "{}", buffer[(x, y)].symbol())?;
+                }
+                writeln!(out)?;
+            }
         } else if line == "state" {
-            let _ = writeln!(out, "─── state {}", state_json(editor));
+            writeln!(out, "─── state {}", state_json(editor))?;
+        } else {
+            return Err(std::io::Error::other(format!(
+                "unknown script command: {line}"
+            )));
         }
     }
+    Ok(())
+}
+
+fn drain(editor: &mut Editor) {
+    editor.drain_shell();
+    editor.drain_picker();
+    editor.drain_git_jobs();
+    editor.drain_lsp();
+    editor.drain_clipboard();
+    editor.trace_state();
+}
+
+fn draw(editor: &mut Editor, terminal: &mut Terminal<TestBackend>) -> std::io::Result<()> {
+    if !editor.should_quit && !editor.docs.is_empty() {
+        if std::mem::take(&mut editor.needs_repaint) {
+            terminal.clear()?;
+        }
+        terminal.draw(|frame| crate::editor::trace::frame::draw(editor, frame))?;
+    }
+    Ok(())
+}
+
+fn after_input(editor: &mut Editor, terminal: &mut Terminal<TestBackend>) -> std::io::Result<()> {
+    if !editor.should_quit && !editor.docs.is_empty() {
+        editor.lsp_sync_changed();
+        drain(editor);
+    }
+    draw(editor, terminal)
 }
 
 #[cfg(test)]
@@ -206,7 +284,7 @@ mod quit_tests {
     fn quit_then_frame_does_not_panic() {
         let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("x\n"));
         let mut out = Vec::new();
-        crate::headless::run_script(&mut e, "keys :q!<cr>\nframe\n", 60, 10, &mut out);
+        crate::headless::run_script(&mut e, "keys :q!<cr>\nframe\n", 60, 10, &mut out).unwrap();
         assert!(e.should_quit);
     }
 }

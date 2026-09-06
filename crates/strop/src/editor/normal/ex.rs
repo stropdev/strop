@@ -140,10 +140,9 @@ impl Editor {
                 };
                 let text = self.buf().rope.byte_slice(s..e).to_string();
                 self.set_register(None, text, true);
-                let b = self.buf_mut();
-                b.history.begin();
-                b.delete(strop_core::Range::charwise(s, e));
-                b.history.commit();
+                self.tx_begin();
+                self.buf_mut().delete(strop_core::Range::charwise(s, e));
+                self.tx_commit();
                 self.set_head(self.buf().clamp_boundary(s));
                 self.clamp_cursor();
                 self.message = format!("{} lines deleted", hi - lo + 1);

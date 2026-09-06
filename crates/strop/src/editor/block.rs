@@ -3,7 +3,7 @@
 //! rectangle derives from CELL columns — wide chars and tabs measure
 //! the same on every row because LineLayout is the single seam.
 
-use super::{Editor, Mode};
+use super::{BlockRect, Editor, Mode};
 
 impl Editor {
     /// `ctrl-v`: enter block mode with an empty rectangle at the cursor.
@@ -17,21 +17,25 @@ impl Editor {
         self.mode = Mode::VisualBlock;
     }
 
-    pub fn block_rect_pub(&self) -> Option<(usize, usize, u16, u16)> {
+    pub fn block_rect_pub(&self) -> Option<BlockRect> {
         self.block_rect()
     }
 
-    /// The rectangle: (first line, last line, left cell, right cell).
-    /// Cell columns come from the SAME LineLayout on every row — a tab
-    /// or wide char can't skew the columns apart.
-    pub(crate) fn block_rect(&self) -> Option<(usize, usize, u16, u16)> {
+    /// The rectangle. Cell columns come from the SAME LineLayout on
+    /// every row — a tab or wide char can't skew the columns apart.
+    pub(crate) fn block_rect(&self) -> Option<BlockRect> {
         if self.mode != Mode::VisualBlock {
             return None;
         }
         let (a, h) = (self.anchor(), self.head());
         let (la, lh) = (self.buf().line_of(a), self.buf().line_of(h));
         let (ca, ch) = (self.buf().cell_col_of(a), self.buf().cell_col_of(h));
-        Some((la.min(lh), la.max(lh), ca.min(ch), ca.max(ch)))
+        Some(BlockRect {
+            first_line: la.min(lh),
+            last_line: la.max(lh),
+            left_cell: ca.min(ch),
+            right_cell: ca.max(ch),
+        })
     }
 
     /// One rect row's byte range on `line` — None when the line is too
@@ -62,7 +66,13 @@ impl Editor {
 
     /// `x`/`d` on the rectangle: per-line delete, one undo unit.
     pub(crate) fn block_delete(&mut self) {
-        let Some((la, lh, cl, cr)) = self.block_rect() else {
+        let Some(BlockRect {
+            first_line: la,
+            last_line: lh,
+            left_cell: cl,
+            right_cell: cr,
+        }) = self.block_rect()
+        else {
             return;
         };
         let mut killed = Vec::new();
@@ -88,7 +98,13 @@ impl Editor {
 
     /// `y` on the rectangle: join the cell-span text of every row.
     pub(crate) fn block_yank(&mut self) {
-        let Some((la, lh, cl, cr)) = self.block_rect() else {
+        let Some(BlockRect {
+            first_line: la,
+            last_line: lh,
+            left_cell: cl,
+            right_cell: cr,
+        }) = self.block_rect()
+        else {
             return;
         };
         let mut parts = Vec::new();
@@ -105,15 +121,23 @@ impl Editor {
     /// `c` on the rectangle: delete it, insert on every row (the typed
     /// text replicates at Esc — vim's block change).
     pub(crate) fn block_change(&mut self) {
-        let Some((la, lh, cl, _)) = self.block_rect() else {
+        let Some(BlockRect {
+            first_line: la,
+            last_line: lh,
+            left_cell: cl,
+            right_cell: _,
+        }) = self.block_rect()
+        else {
             return;
         };
         self.block_delete_pending = Some((la, lh, cl));
         self.tx_begin();
         for line in (la..=lh).rev() {
-            if let Some((s, e)) =
-                self.rect_line_bytes(line, cl, self.block_rect().map(|r| r.3).unwrap_or(cl))
-            {
+            if let Some((s, e)) = self.rect_line_bytes(
+                line,
+                cl,
+                self.block_rect().map(|r| r.right_cell).unwrap_or(cl),
+            ) {
                 if e > s {
                     self.buf_mut().delete(strop_core::Range::charwise(s, e));
                 }
@@ -136,7 +160,13 @@ impl Editor {
     /// `I`/`A` on the rectangle: insert at the left/right edge, text
     /// replicating per row at Esc.
     pub(crate) fn block_insert(&mut self, right_edge: bool) {
-        let Some((la, lh, cl, cr)) = self.block_rect() else {
+        let Some(BlockRect {
+            first_line: la,
+            last_line: lh,
+            left_cell: cl,
+            right_cell: cr,
+        }) = self.block_rect()
+        else {
             return;
         };
         let cell = if right_edge { cr + 1 } else { cl };

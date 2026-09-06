@@ -16,7 +16,9 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
         return;
     };
     let area = frame.area();
-    let width = (area.width * 55 / 100).clamp(46, area.width.saturating_sub(4));
+    let width = ((u32::from(area.width) * 55 / 100) as u16)
+        .max(46)
+        .min(area.width.saturating_sub(4));
     let height = 7u16.min(area.height.saturating_sub(4));
     let rect = Rect {
         x: (area.width - width) / 2,

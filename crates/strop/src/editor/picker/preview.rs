@@ -60,6 +60,10 @@ impl Editor {
         if self.preview_inflight.insert(path.clone()) {
             let tx = self.preview_tx.clone();
             let p = path.clone();
+            strop_trace::record_with(
+                strop_trace::EventKind::JobStarted,
+                || serde_json::json!({"service":"preview","path":path.to_string_lossy()}),
+            );
             std::thread::spawn(move || {
                 let text = std::fs::metadata(&p)
                     .ok()

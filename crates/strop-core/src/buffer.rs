@@ -1,6 +1,7 @@
 //! The buffer: a rope, byte-offset positions, edit ops, persistence.
 //! No UI, no modes, no grammar — the thing everything else edits.
 
+use crate::diagnostics::{BufferTraceId, MutationSource};
 use crate::history::{Edit, EditKind, History};
 use crate::range::Range;
 use crate::{id, layout};
@@ -8,6 +9,7 @@ use ropey::Rope;
 
 /// A text buffer. Positions are UTF-8 byte offsets, everywhere (0001 §5.1).
 pub struct Buffer {
+    pub(crate) trace_identity: BufferTraceId,
     pub rope: Rope,
     /// Filesystem identity (0021 §3: Unix filenames aren't UTF-8 — a
     /// String path makes the filesystem model a UI model). Display via
@@ -33,6 +35,7 @@ pub struct Buffer {
 impl Buffer {
     pub fn from_text(text: &str) -> Self {
         Self {
+            trace_identity: BufferTraceId::next(),
             rope: Rope::from_str(text),
             path: None,
             dirty: false,
@@ -56,6 +59,7 @@ impl Buffer {
         };
         let disk_stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         Ok(Self {
+            trace_identity: BufferTraceId::next(),
             rope: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
             dirty: false,
@@ -90,7 +94,7 @@ impl Buffer {
                 "file changed on disk — :w! to force",
             ));
         }
-        write_atomic(std::path::Path::new(&path), &self.rope.to_string())?;
+        write_atomic(std::path::Path::new(&path), &self.rope.to_string(), true)?;
         self.disk_stamp = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         self.dirty = false;
         Ok(())
@@ -112,7 +116,7 @@ impl Buffer {
                 "file exists — :w! to overwrite",
             ));
         }
-        write_atomic(target, &self.rope.to_string())?;
+        write_atomic(target, &self.rope.to_string(), force)?;
         // success: adopt the identity
         self.path = Some(target.to_path_buf());
         self.disk_stamp = std::fs::metadata(target).and_then(|m| m.modified()).ok();
@@ -165,7 +169,7 @@ impl Buffer {
             .line_to_byte(line.into().get().min(self.len_lines().saturating_sub(1)))
     }
 
-    /// Byte offset one past the last content char of `line` (excludes `\n`).
+    /// Byte offset one past the last content char (excludes LF or CRLF).
     pub fn line_end(&self, line: impl Into<id::LineIndex>) -> usize {
         let line = line.into().get();
         let start = self.line_start(line);
@@ -176,6 +180,9 @@ impl Buffer {
         // strip the trailing newline
         if end > start && self.byte(end - 1) == b'\n' {
             end -= 1;
+            if end > start && self.byte(end - 1) == b'\r' {
+                end -= 1;
+            }
         }
         end
     }
@@ -262,7 +269,7 @@ impl Buffer {
     /// Apply history edits (undo/redo replay — never recorded).
     pub fn apply_history(&mut self, ops: Vec<Edit>) {
         self.replaying = true;
-        for op in ops {
+        for op in &ops {
             match op.kind {
                 EditKind::Insert => {
                     let at = self.clamp_boundary(op.at.min(self.len_bytes()));
@@ -283,6 +290,7 @@ impl Buffer {
         self.replaying = false;
         self.dirty = true;
         self.epoch += 1;
+        self.trace_history(&ops);
     }
 
     /// Replace the whole contents (user-facing path). Refuses on
@@ -299,8 +307,10 @@ impl Buffer {
     /// owned by jobs (git/LSP/shell), refreshed under the user's feet —
     /// the readonly guard is about *user* edits, not the owner.
     pub fn replace_all_system(&mut self, text: &str) {
+        let removed_bytes = self.len_bytes();
         self.rope = Rope::from_str(text);
         self.epoch += 1;
+        self.trace_edit(MutationSource::System, 0, removed_bytes, text);
     }
 
     /// Returns the deleted text (register payoff). Refuses on readonly
@@ -323,15 +333,16 @@ impl Buffer {
         self.rope.remove(cstart..cend);
         self.dirty = true;
         self.epoch += 1;
+        self.trace_edit(MutationSource::User, start, end - start, "");
         if !self.replaying && !self.readonly {
             self.history.record(
                 Edit {
-                    at: range.start,
+                    at: start,
                     text: text.clone(),
                     kind: EditKind::Insert,
                 },
                 Edit {
-                    at: range.start,
+                    at: start,
                     text: text.clone(),
                     kind: EditKind::Delete,
                 },
@@ -348,6 +359,7 @@ impl Buffer {
         self.rope.insert(self.rope.byte_to_char(at), text);
         self.dirty = true;
         self.epoch += 1;
+        self.trace_edit(MutationSource::User, at, 0, text);
         if !self.replaying && !self.readonly {
             self.history.record(
                 Edit {
@@ -374,18 +386,28 @@ impl Buffer {
 
 /// Same-directory temp + rename, preserving the target's permissions —
 /// the ONE atomic writer (0020 §8: no third copy of this logic).
-fn write_atomic(target: &std::path::Path, contents: &str) -> std::io::Result<()> {
-    let tmp = target.with_file_name(format!(
-        ".strop-tmp-{}-{}",
-        std::process::id(),
-        target.file_name().and_then(|n| n.to_str()).unwrap_or("x")
-    ));
-    std::fs::write(&tmp, contents)?;
-    if let Ok(meta) = std::fs::metadata(target) {
-        // keep the file's permissions across the atomic swap
-        let _ = std::fs::set_permissions(&tmp, meta.permissions());
+fn write_atomic(target: &std::path::Path, contents: &str, overwrite: bool) -> std::io::Result<()> {
+    use std::io::Write;
+    let parent = target
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    match std::fs::metadata(target) {
+        Ok(metadata) => temporary
+            .as_file()
+            .set_permissions(metadata.permissions())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
     }
-    std::fs::rename(&tmp, target)
+    temporary.write_all(contents.as_bytes())?;
+    temporary.as_file().sync_all()?;
+    let result = if overwrite {
+        temporary.persist(target)
+    } else {
+        temporary.persist_noclobber(target)
+    };
+    result.map(|_| ()).map_err(|error| error.error)
 }
 
 /// One edit in tree-sitter's terms (0022 §1): byte range + point

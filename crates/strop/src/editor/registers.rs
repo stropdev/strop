@@ -2,6 +2,7 @@
 //! (`+` via OSC52/wl-paste, helix's playbook). Reads run on workers;
 //! results land on the drain — never a subprocess on the input path.
 
+use super::trace;
 use super::Editor;
 
 impl Editor {
@@ -59,6 +60,10 @@ impl Editor {
         }
         self.clip_paste_pending = Some((before, self.current()));
         let tx = self.clip_tx.clone();
+        strop_trace::record_with(
+            strop_trace::EventKind::JobStarted,
+            || serde_json::json!({"service":"clipboard","document":{"slot":self.current().index(),"generation":self.current().generation()}}),
+        );
         std::thread::spawn(move || {
             let _ = tx.send(read_system_clipboard());
         });
@@ -73,7 +78,9 @@ impl Editor {
         loop {
             let next = self.clip_rx.as_ref().and_then(|rx| rx.try_recv().ok());
             match next {
-                Some(result) => self.handle_clipboard(result),
+                Some(result) => {
+                    self.handle_clipboard(result);
+                }
                 None => break,
             }
         }
@@ -81,6 +88,10 @@ impl Editor {
 
     /// One clipboard-read result.
     pub(crate) fn handle_clipboard(&mut self, result: Option<String>) {
+        strop_trace::record_with(
+            strop_trace::EventKind::JobFinished,
+            || serde_json::json!({"service":"clipboard","bytes":result.as_ref().map(String::len),"available":result.is_some()}),
+        );
         let Some((before, doc)) = self.clip_paste_pending.take() else {
             return;
         };
@@ -88,6 +99,7 @@ impl Editor {
         // mid-read must not paste into the newly active buffer
         if self.current() != doc {
             self.message = "clipboard: destination changed — paste dropped".into();
+            trace::services::rejected("clipboard", &self.message);
             return;
         }
         match result {

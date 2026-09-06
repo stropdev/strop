@@ -64,10 +64,17 @@ impl Editor {
         self.staged_hunks.clear();
         let workdir = repo.workdir().to_path_buf();
         let doc = self.current();
-        let text = self.buf().rope.to_string();
+        let text = self.buf().rope.clone();
         let tx = self.git_tx.clone();
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"git","request":"hunks","document":{"slot":doc.index(),"generation":doc.generation()},
+                "revision":epoch,"path":path.to_string_lossy(),
+            })
+        });
         std::thread::spawn(move || {
             let result = std::panic::catch_unwind(move || {
+                let text = text.to_string();
                 let repo = Repo::discover(&workdir);
                 let unstaged = repo
                     .as_ref()

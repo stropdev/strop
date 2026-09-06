@@ -21,6 +21,8 @@ mod diff;
 mod help;
 mod hover_card;
 mod picker_card;
+#[cfg(test)]
+mod terminal_tests;
 mod which_key;
 
 // strop default palette (plan 0004 site, --accent amber)
@@ -78,6 +80,13 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     blame_card::render_blame_card(editor, frame);
     hover_card::render_hover_card(editor, frame);
     which_key::render_which_key(editor, frame);
+    // Every widget can display external text (paths, LSP messages, shell output).
+    // Enforce the printable-cell invariant at the final emission boundary too.
+    for cell in &mut frame.buffer_mut().content {
+        if cell.symbol().chars().any(char::is_control) {
+            cell.set_symbol("\u{fffd}");
+        }
+    }
 }
 
 /// Mode chip colors (0001 §4: mode = accent color change, not bars).
@@ -108,6 +117,9 @@ fn in_range(r: Range, pos: usize) -> bool {
 }
 
 fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
+    if area.height == 0 {
+        return; // a 0-height resize must not underflow (0027 §2)
+    }
     let y = area.height - 1;
     let mode = editor.mode.chip();
     let binding = editor
@@ -235,10 +247,10 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
         + editor
             .buf()
             .cell_col_with_tab(editor.head(), editor.config.tab_size as u16);
-    if row < area.height - 1 && col < area.width {
+    if row + 1 < area.height && col < area.width {
         // pane-relative → absolute (0017: the caret followed neither
         // the pane's x/y in splits nor wide chars on the line)
-        frame.set_cursor_position((area.x + col, area.y + row));
+        crate::editor::trace::frame::place_cursor(frame, (area.x + col, area.y + row));
     }
 }
 
@@ -316,7 +328,5 @@ fn render_welcome(editor: &Editor, frame: &mut Frame) {
 
 /// True when the floating command/search card owns the caret.
 pub(crate) fn cmd_card_active(editor: &Editor) -> bool {
-    !editor.picker_open()
-        && (editor.pending.starts_with(':') || editor.pending.contains('/'))
-        && !editor.pending.is_empty()
+    !editor.picker_open() && matches!(editor.pending_sigil(), Some(':' | '/' | '?'))
 }

@@ -6,37 +6,28 @@ use std::path::PathBuf;
 use strop_picker::PickerMsg;
 use strop_syntax::Highlighter;
 
+use super::super::trace;
 use super::super::Editor;
 use super::PreviewEntry;
 
 impl Editor {
     /// Drain worker messages (called from the event loop each tick).
     pub fn drain_picker(&mut self) {
-        let mut done = false;
-        if let Some(glue) = &mut self.picker {
-            if let Some(rx) = &glue.rx {
-                let mut items = Vec::new();
-                while let Ok(msg) = rx.try_recv() {
-                    match msg {
-                        PickerMsg::Items(batch) => items.extend(batch),
-                        PickerMsg::Error(e) => glue.picker.error = Some(e),
-                        PickerMsg::Done => done = true,
-                    }
-                }
-                let _ = &done;
-                if !items.is_empty() {
-                    glue.picker.append(items);
-                }
-            }
-            if done {
-                glue.picker.streaming = false;
-            }
+        loop {
+            let next = self
+                .picker
+                .as_ref()
+                .and_then(|glue| glue.rx.as_ref())
+                .and_then(|receiver| receiver.try_recv().ok());
+            let Some(message) = next else { break };
+            self.handle_picker_msg(message);
         }
         self.drain_previews();
     }
 
     /// One picker stream message (TUI forwards land here — 0018).
     pub(crate) fn handle_picker_msg(&mut self, msg: PickerMsg) {
+        trace::services::picker(&msg);
         if let Some(glue) = &mut self.picker {
             match msg {
                 PickerMsg::Items(batch) => glue.picker.append(batch),
@@ -61,6 +52,10 @@ impl Editor {
 
     /// One preview worker result → cached entry.
     pub(crate) fn handle_preview(&mut self, path: PathBuf, text: Option<String>) {
+        strop_trace::record_with(
+            strop_trace::EventKind::JobFinished,
+            || serde_json::json!({"service":"preview","path":path.to_string_lossy(),"bytes":text.as_ref().map(String::len),"available":text.is_some()}),
+        );
         self.preview_inflight.remove(&path);
         if let Some(text) = text {
             let rope = ropey::Rope::from_str(&text);

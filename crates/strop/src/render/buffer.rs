@@ -47,9 +47,11 @@ struct PaneView {
 /// got wrong in splits).
 pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -> Rect {
     let n = editor.panes.len();
-    let is_row = editor.layout == LayoutDir::Row;
     let total_w = area.width as usize;
-    let total_h = area.height as usize - 1; // statusline
+    // statusline takes the last row — height 0 (a resize can deliver
+    // it) must not underflow (0027 §2)
+    let total_h = area.height.saturating_sub(1) as usize;
+    let is_row = editor.layout == LayoutDir::Row;
     let dividers = n - 1;
     let (mut x, mut y) = (area.x, area.y);
     let mut active_rect = Rect {
@@ -124,6 +126,7 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
                         let cell = &mut frame.buffer_mut()[(dx, dy)];
                         cell.set_symbol("│");
                         cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                        cell.set_bg(BASE);
                     }
                 }
                 x = dx + 1;
@@ -134,6 +137,7 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
                         let cell = &mut frame.buffer_mut()[(dx, dy)];
                         cell.set_symbol("─");
                         cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                        cell.set_bg(BASE);
                     }
                 }
                 y = dy + 1;
@@ -447,11 +451,11 @@ struct RowStyle<'a> {
     preview: Vec<strop_core::Range>,
     flash: Option<strop_core::Range>,
     selection: Option<strop_core::Range>,
-    /// ctrl-v rectangle: (first line, last line, left cell, right cell)
-    /// — per-row byte ranges derive through LineLayout (0017).
-    block: Option<(usize, usize, u16, u16)>,
+    /// ctrl-v rectangle (0013 §4): cell columns through LineLayout
+    /// (0017) — per-row byte ranges derive from BlockRect.
+    block: Option<crate::editor::BlockRect>,
     search_hits: &'a [usize],
-    find: Option<(u8, bool)>,
+    find: Option<crate::editor::FindPending>,
     /// Diagnostic spans on this row: (col, end_col, severity) — the
     /// undercurl layer (0009 UX).
     diags: Vec<(usize, usize, u8)>,
@@ -535,11 +539,11 @@ fn content_spans(
                 .add_modifier(Modifier::UNDERLINED)
                 .underline_color(severity_color(*sev));
         }
-        let selected = if let Some((la, lh, cl, cr)) = style.block {
+        let selected = if let Some(b) = style.block {
             let line_idx = buf.line_of(pos);
-            (la..=lh).contains(&line_idx) && {
+            (b.first_line..=b.last_line).contains(&line_idx) && {
                 let cell = layout.cell_at_byte(pos - start);
-                cl <= cell && cell <= cr
+                b.left_cell <= cell && cell <= b.right_cell
             }
         } else {
             style.selection.is_some_and(|r| in_range(r, pos))
@@ -562,10 +566,10 @@ fn content_spans(
                 }
             }
         }
-        if let Some((_, backward)) = style.find {
+        if let Some(find) = style.find {
             // leap-style: candidates bold-accent on the pending side
             let on_line = buf.line_of(pos) == cur_line;
-            let ahead = if backward {
+            let ahead = if find.backward {
                 pos < view.cursor
             } else {
                 pos > view.cursor
@@ -589,7 +593,10 @@ fn content_spans(
             let w = span.map(|s| s.width as usize).unwrap_or(1);
             spans.push(Span::styled(" ".repeat(w), cell));
         } else {
-            spans.push(Span::styled(ch.to_string(), cell));
+            spans.push(Span::styled(
+                strop_core::layout::printable_grapheme(ch).to_string(),
+                cell,
+            ));
         }
         chars += 1;
     }
@@ -610,129 +617,5 @@ fn content_spans(
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::editor::Editor;
-    use strop_core::Buffer;
-
-    #[test]
-    fn cursor_line_shows_eol_diagnostic() {
-        let mut e = Editor::new(Buffer::from_text("let x = 1;\n"));
-        let rel = "strop-eol-diag-test.rs";
-        e.buf_mut().path = Some(rel.into());
-        let abs = e.cwd.join(rel);
-        e.diags.insert(
-            abs,
-            vec![strop_lsp::Diag {
-                line: 0,
-                col: 4,
-                severity: 1,
-                end_line: 0,
-                end_col: 8,
-                message: "mismatched types".into(),
-            }],
-        );
-        let frame = crate::headless::frame_string(&mut e, 60, 10);
-        assert!(frame.contains("●"), "gutter sign: {frame}");
-        assert!(frame.contains("▍ mismatched types"), "eol note: {frame}");
-    }
-
-    #[test]
-    fn switching_buffers_leaves_no_stale_cells() {
-        // invariant: every pane row is written full-width, so ratatui's
-        // double-buffer can never resurrect two-frames-old glyphs on a
-        // buffer switch (the user-reported "lingering >" symptom class)
-        let dir = tempfile::tempdir().unwrap();
-        let wide = dir.path().join("wide.txt");
-        let narrow = dir.path().join("narrow.txt");
-        let junk = format!("{}\n", ">".repeat(60)).repeat(30);
-        std::fs::write(&wide, &junk).unwrap();
-        std::fs::write(&narrow, "hi\n").unwrap();
-        let mut e = Editor::new(Buffer::from_text(""));
-        e.open_buffer(&wide).unwrap();
-        e.open_buffer(&narrow).unwrap();
-        // same terminal, two frames: ratatui TestBackend diffing is the
-        // real path, so drive both frames through one terminal
-        let backend = ratatui::backend::TestBackend::new(40, 12);
-        let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        let draw =
-            |e: &mut Editor, terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>| {
-                terminal.draw(|f| crate::render::render(e, f)).unwrap();
-                let buf = terminal.backend().buffer();
-                (0..12)
-                    .map(|y| {
-                        (0..40)
-                            .map(|x| buf[(x, y)].symbol().to_string())
-                            .collect::<String>()
-                    })
-                    .collect::<Vec<_>>()
-            };
-        let wide_id = e
-            .mru
-            .iter()
-            .copied()
-            .find(|&id| {
-                e.doc(id)
-                    .buf
-                    .path
-                    .as_deref()
-                    .is_some_and(|p| p.ends_with("wide.txt"))
-            })
-            .unwrap();
-        e.view_mut().doc = wide_id;
-        let wide_frame = draw(&mut e, &mut terminal);
-        assert!(
-            wide_frame[0].contains(">>>"),
-            "wide buffer rendered: {}",
-            wide_frame[0]
-        );
-        let narrow_id = e
-            .mru
-            .iter()
-            .copied()
-            .find(|&id| {
-                e.doc(id)
-                    .buf
-                    .path
-                    .as_deref()
-                    .is_some_and(|p| p.ends_with("narrow.txt"))
-            })
-            .unwrap();
-        e.view_mut().doc = narrow_id; // narrow
-                                      // ratatui double-buffers: stale cells surface one swap later,
-                                      // on the SECOND narrow frame
-        let _ = draw(&mut e, &mut terminal);
-        let narrow_frame = draw(&mut e, &mut terminal);
-        let leftover = narrow_frame.iter().filter(|row| row.contains('>')).count();
-        assert_eq!(leftover, 0, "stale cells: {}", narrow_frame.join("\n"));
-    }
-    #[test]
-    fn block_mode_highlights_the_rectangle() {
-        // ctrl-v lj selects cells 0-1 on rows 0-1 — the SELECT_BG must
-        // land on exactly those cells (0017: the rect, not the bytes)
-        let mut e = Editor::new(Buffer::from_text("aabb\nccdd\n"));
-        e.feed_text("<c-v>lj");
-        let backend = ratatui::backend::TestBackend::new(30, 6);
-        let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
-        let buf = terminal.backend().buffer();
-        let bg = |x: u16, y: u16| buf[(x, y)].bg;
-        // text starts after the 5-cell gutter ("▎  1 ")
-        let sel = crate::render::SELECT_BG;
-        assert_eq!(bg(5, 0), sel, "block corner");
-        assert_eq!(bg(6, 0), sel, "block col 2 row 0");
-        assert_eq!(bg(5, 1), sel, "block row 1");
-        assert_ne!(bg(7, 0), sel, "outside the rectangle");
-        assert_ne!(bg(5, 2), sel, "past the rectangle's last row");
-    }
-
-    #[test]
-    fn cursor_cell_tracks_wide_chars() {
-        // 0017: l through a wide char lands on the next char, and the
-        // caret's display CELL tracks layout, not byte columns
-        let mut e = Editor::new(Buffer::from_text("a界b\n"));
-        e.feed_text("l"); // onto 界
-        assert_eq!(e.buf().cell_col_of(e.head()), 1); // 界 starts at cell 1
-        e.feed_text("l"); // onto b (byte 4)
-        assert_eq!(e.buf().cell_col_of(e.head()), 3); // b at cell 3
-    }
-}
+#[path = "buffer_tests.rs"]
+mod tests;

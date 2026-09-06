@@ -50,8 +50,12 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
                 height: area.height.saturating_sub(1),
             }
         } else {
-            let width = (area.width * 84 / 100).clamp(50, area.width.saturating_sub(2));
-            let height = (area.height * 70 / 100).clamp(12, area.height.saturating_sub(2));
+            let width = ((u32::from(area.width) * 84 / 100) as u16)
+                .max(50)
+                .min(area.width.saturating_sub(2));
+            let height = ((u32::from(area.height) * 70 / 100) as u16)
+                .max(12)
+                .min(area.height.saturating_sub(2));
             Rect {
                 x: (area.width - width) / 2,
                 y: (area.height - height) / 2,
@@ -201,7 +205,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         render_results(frame, cols[0], &rows_data, selected);
     }
     // border-column scrollbar for the results list (0003 §5.5)
-    if rows_data.len() > cols[0].height as usize && !rows_data.is_empty() {
+    if !cols[0].is_empty() && rows_data.len() > cols[0].height as usize && !rows_data.is_empty() {
         let track_x = cols[0].x + cols[0].width - 1;
         let track_h = cols[0].height as usize;
         let frac = selected as f32 / rows_data.len().max(1) as f32;
@@ -228,7 +232,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     };
     let caret_x = rows[0].x + caret_len as u16;
     if caret_x < rows[0].x + rows[0].width {
-        frame.set_cursor_position((caret_x, rows[0].y + caret_row));
+        crate::editor::trace::frame::place_cursor(frame, (caret_x, rows[0].y + caret_row));
     }
 }
 

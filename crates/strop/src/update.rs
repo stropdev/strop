@@ -148,8 +148,11 @@ pub fn update(check_only: bool) -> Result<(), String> {
     let base = "https://github.com/stropdev/strop/releases/download";
     let archive = format!("strop-{version}-{triple}.tar.gz");
 
-    let tmp = std::env::temp_dir().join(format!("strop-update-{version}"));
-    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let staging = tempfile::Builder::new()
+        .prefix("strop-update-")
+        .tempdir()
+        .map_err(|error| format!("private update staging: {error}"))?;
+    let tmp = staging.path();
 
     let pb = stage(&format!("downloading {archive}…"));
     curl_to(&format!("{base}/v{version}/{archive}"), &tmp.join(&archive))?;
@@ -159,13 +162,13 @@ pub fn update(check_only: bool) -> Result<(), String> {
     std::fs::write(&sha_path, &sha).map_err(|e| e.to_string())?;
     let ok = Command::new("sha256sum")
         .args(["-c", &format!("{archive}.sha256")])
-        .current_dir(&tmp)
+        .current_dir(tmp)
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
         || Command::new("shasum")
             .args(["-a", "256", "-c", &format!("{archive}.sha256")])
-            .current_dir(&tmp)
+            .current_dir(tmp)
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
@@ -178,7 +181,7 @@ pub fn update(check_only: bool) -> Result<(), String> {
     let pb = stage("extracting…");
     let out = Command::new("tar")
         .args(["-xzf", &archive])
-        .current_dir(&tmp)
+        .current_dir(tmp)
         .output()
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
@@ -189,20 +192,28 @@ pub fn update(check_only: bool) -> Result<(), String> {
 
     let pb = stage("installing over current binary…");
     // staged write + atomic rename over self (rootle 0017)
-    let staged = exe.with_extension("strop-new");
-    std::fs::copy(&new_bin, &staged).map_err(|e| format!("stage: {e}"))?;
+    let parent = exe.parent().ok_or("executable has no parent directory")?;
+    let mut staged =
+        tempfile::NamedTempFile::new_in(parent).map_err(|error| format!("stage: {error}"))?;
+    let mut source =
+        std::fs::File::open(&new_bin).map_err(|error| format!("extracted binary: {error}"))?;
+    std::io::copy(&mut source, staged.as_file_mut()).map_err(|error| format!("stage: {error}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&staged)
-            .map_err(|e| e.to_string())?
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&staged, perms).map_err(|e| e.to_string())?;
+        staged
+            .as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o755))
+            .map_err(|error| format!("permissions: {error}"))?;
     }
-    std::fs::rename(&staged, &exe).map_err(|e| format!("replace {}: {e}", exe.display()))?;
+    staged
+        .as_file()
+        .sync_all()
+        .map_err(|error| format!("sync staged binary: {error}"))?;
+    staged
+        .persist(&exe)
+        .map_err(|error| format!("replace {}: {}", exe.display(), error.error))?;
     done(&pb, &format!("installed to {}", exe.display()));
-    let _ = std::fs::remove_dir_all(&tmp);
 
     println!("strop {current} → {version}");
     Ok(())
