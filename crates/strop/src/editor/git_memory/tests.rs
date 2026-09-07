@@ -27,22 +27,42 @@ fn fixture() -> (tempfile::TempDir, Editor) {
     let mut e = Editor::new(Buffer::open(root.join("f.rs").to_str().unwrap()).unwrap());
     e.cwd = root.to_path_buf();
     e.discover_git();
+    settle(&mut e, |editor| editor.git.is_some());
     (dir, e)
 }
 
-fn pump(e: &mut Editor) {
-    // let job threads deliver (bounded, like headless settle)
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-    loop {
+/// Drain async work until `done` or the deadline (real threads need
+/// real pumping — the event loop's shape).
+fn settle(e: &mut Editor, done: impl Fn(&Editor) -> bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !done(e) {
+        if e.io_pending() {
+            e.wait_io().unwrap();
+        }
         e.drain_git_jobs();
-        let loaded = e.surface().is_some_and(
-            |s| matches!(s, crate::editor::Surface::CommitLog { rows, .. } if !rows.is_empty()),
-        );
-        if loaded || std::time::Instant::now() > deadline {
+        if done(e) {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let event = e
+            .git_rx
+            .as_ref()
+            .unwrap()
+            .recv_timeout(remaining)
+            .expect("git job completes");
+        e.handle_git_job(event);
     }
+}
+
+/// Settle discovery, then the open log surface's rows.
+fn pump(e: &mut Editor) {
+    settle(e, |e| e.git.is_some());
+    settle(e, |e| {
+        matches!(
+            e.surface(),
+            Some(Surface::CommitLog { rows, .. }) if !rows.is_empty()
+        )
+    });
 }
 
 #[test]
@@ -50,17 +70,20 @@ fn commit_browser_dives_to_delta() {
     let (_d, mut e) = fixture();
     e.open_log(false);
     pump(&mut e);
-    let text = e.buf().rope.to_string();
+    let text = e.buf().text().to_string();
     assert!(text.contains("add b"), "{text}");
     assert!(text.contains("first"), "{text}");
     assert!(e.buf().readonly, "browser is a readonly real buffer");
 
     // motions work on the surface
     e.feed_text("j");
-    // Enter on a commit row → changed files
+    // Enter on a commit row → changed files (the dive fetches async)
     e.feed_text("k");
     e.feed(Key::Enter);
-    let text = e.buf().rope.to_string();
+    settle(&mut e, |e| {
+        matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
+    });
+    let text = e.buf().text().to_string();
     assert!(text.contains("commit"), "{text}");
     assert!(text.contains("f.rs"), "{text}");
     assert!(matches!(e.surface(), Some(Surface::ChangedFiles { .. })));
@@ -69,7 +92,10 @@ fn commit_browser_dives_to_delta() {
     e.feed_text("j");
     e.feed_text("j");
     e.feed(Key::Enter);
-    let text = e.buf().rope.to_string();
+    settle(&mut e, |e| {
+        matches!(e.surface(), Some(Surface::Diff { .. }))
+    });
+    let text = e.buf().text().to_string();
     assert!(text.contains("fn b() {}"), "{text}");
     assert!(text.starts_with("f.rs +1 -0\n"), "{text}");
     assert!(!text.contains("diff --git"), "no raw patch noise: {text}");
@@ -89,8 +115,14 @@ fn diff_surface_rows_carry_line_numbers() {
     pump(&mut e);
     e.feed_text("k"); // newest commit is row 0? feed j then k lands on 0
     e.feed(Key::Enter);
+    settle(&mut e, |e| {
+        matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
+    });
     e.feed_text("jj");
     e.feed(Key::Enter);
+    settle(&mut e, |e| {
+        matches!(e.surface(), Some(Surface::Diff { .. }))
+    });
     let Some(Surface::Diff { hunks, .. }) = e.surface() else {
         panic!("not a diff surface");
     };
@@ -112,13 +144,10 @@ fn diff_surface_rows_carry_line_numbers() {
 #[test]
 fn blame_card_shows_commit() {
     let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
     e.feed_text("j"); // line 2 (fn b)
     e.blame_line();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-    while e.blame_card.is_none() && std::time::Instant::now() < deadline {
-        e.drain_git_jobs();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    settle(&mut e, |e| e.blame_card.is_some());
     let card = e.blame_card.as_ref().expect("blame card");
     assert_eq!(card.summary, "add b");
     assert_eq!(card.author, "t");
@@ -126,7 +155,8 @@ fn blame_card_shows_commit() {
 
 #[test]
 fn permalink_needs_remote() {
-    let (_d, e) = fixture();
+    let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
     // no remote configured → honest refusal
     assert_eq!(e.build_permalink().unwrap_err(), "no remote configured");
 }
@@ -134,6 +164,7 @@ fn permalink_needs_remote() {
 #[test]
 fn permalink_resolves_sha_and_ssh_remote() {
     let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
     let root = e.cwd.clone();
     Command::new("git")
         .args([
@@ -146,7 +177,11 @@ fn permalink_resolves_sha_and_ssh_remote() {
         ])
         .output()
         .unwrap();
+    // an explicit discovery refreshes the cached context's remotes
     e.discover_git();
+    settle(&mut e, |e| {
+        e.git.as_ref().is_some_and(|c| !c.remotes.is_empty())
+    });
     e.feed_text("j"); // line 2
     let url = e.build_permalink().expect("permalink");
     assert!(
@@ -156,7 +191,7 @@ fn permalink_resolves_sha_and_ssh_remote() {
     assert!(url.ends_with("/f.rs#L2"), "{url}");
     assert!(!url.contains("/main/"), "branch must resolve to SHA: {url}");
     e.yank_permalink();
-    assert_eq!(e.register(None).0, url);
+    assert_eq!(e.register(None).text, url);
     assert!(e.osc52.is_some(), "OSC52 payload staged for the TUI");
 }
 
@@ -174,11 +209,7 @@ fn git_out(root: &std::path::Path, args: &[&str]) -> String {
 }
 
 fn pump_ready(e: &mut Editor, ready: impl Fn(&Editor) -> bool) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-    while !ready(e) && std::time::Instant::now() < deadline {
-        e.drain_git_jobs();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    settle(e, ready);
 }
 
 /// `Space g b` toggles a per-buffer gutter; Enter dives into the
@@ -187,6 +218,7 @@ fn pump_ready(e: &mut Editor, ready: impl Fn(&Editor) -> bool) {
 fn blame_gutter_toggles_and_dives() {
     let (dir, mut e) = fixture();
     let root = dir.path().to_path_buf();
+    settle(&mut e, |e| e.git.is_some());
     e.feed_text(" gb");
     assert_eq!(e.blame_gutters.len(), 1, "gutter on for the buffer");
     pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
@@ -203,9 +235,8 @@ fn blame_gutter_toggles_and_dives() {
     // cursor on line 1 → Enter dives into "first", landing on its row
     e.feed(Key::Enter);
     pump_ready(&mut e, |e| {
-        e.surface().is_some_and(
-            |s| matches!(s, crate::editor::Surface::CommitLog { rows, .. } if !rows.is_empty()),
-        )
+        e.surface()
+            .is_some_and(|s| matches!(s, Surface::CommitLog { rows, .. } if !rows.is_empty()))
     });
     assert!(
         matches!(e.surface(), Some(Surface::CommitLog { .. })),
@@ -217,7 +248,7 @@ fn blame_gutter_toggles_and_dives() {
         "cursor on the first-commit row"
     );
     assert_eq!(e.view_top(), 1, "view positioned at the focused sha");
-    let text = e.buf().rope.to_string();
+    let text = e.buf().text().to_string();
     assert!(text.contains("first"), "{text}");
 
     // q returns; the gutter survives; toggle off removes it
@@ -237,35 +268,40 @@ fn blame_gutter_toggles_and_dives() {
 #[test]
 fn stale_gutter_falls_back_to_card() {
     let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
     e.feed_text(" gb");
-    // settle both spawned jobs (gutter + interim card): a sentinel
-    // through the same FIFO channel proves everything before it
-    // was delivered
-    e.git_tx.send(GitJob::Error("\u{0}settled".into())).unwrap();
-    pump_ready(&mut e, |e| e.message.contains('\u{0}'));
+    // settle the gutter AND the interim card request: both must be
+    // terminal before the edit voids the pairing
+    pump_ready(&mut e, |e| {
+        e.blame_gutter_for(e.first_doc()).is_some() && e.card_request.is_none()
+    });
     e.message.clear();
     e.blame_card = None;
-    // edit the buffer: line count changes, epoch bumps. Save so
+    // edit the buffer: line count changes, revision bumps. Save so
     // the disk-blame card can speak about the new line at all
     e.feed_text("o");
     e.feed_text("fn c() {}");
     e.feed(Key::Esc);
     e.feed_text(":w<cr>");
+    pump_ready(&mut e, |e| !e.doc(e.first_doc()).buf.dirty);
     assert!(
         e.blame_gutter_for(e.first_doc()).is_none(),
         "edits void the line↔blame pairing"
     );
     e.blame_card = None;
+    assert_eq!(
+        e.buf().line_of(e.head()),
+        1,
+        "the inserted line remains current after saving"
+    );
     e.feed(Key::Enter);
     assert!(
         !matches!(e.surface(), Some(Surface::CommitLog { .. })),
         "no dive from stale data"
     );
     // the card is the fallback: it blames the cursor's own line
-    // (wait for the *new* card — the toggle's line-1 card may
-    // still be in flight)
     pump_ready(&mut e, |e| {
-        e.blame_card.as_ref().is_some_and(|c| c.line == 3)
+        e.blame_card.as_ref().is_some_and(|c| c.line == 2)
     });
 }
 
@@ -275,13 +311,14 @@ fn stale_gutter_falls_back_to_card() {
 fn return_point_restores_when_origin_not_current() {
     let (dir, mut e) = fixture();
     let root = dir.path();
+    settle(&mut e, |e| e.git.is_some());
     e.feed_text("j$"); // line 2, end
     let want = e.head();
     e.open_log(false);
     pump(&mut e);
     std::fs::write(root.join("g.rs"), "other\n").unwrap();
     let origin = e.first_doc();
-    e.open_buffer(&root.join("g.rs")).unwrap();
+    e.open_fixture(&root.join("g.rs")).unwrap();
     assert_ne!(e.current(), origin, "switched away from the log's origin");
     let log_surface = e.mru.iter().copied().find(|&id| {
         e.doc(id)
@@ -299,35 +336,33 @@ fn return_point_restores_when_origin_not_current() {
 }
 
 /// A log result for a dead surface cannot land in the buffer that
-/// recycled its index (0011 §2).
+/// recycled its index (0011 §2) — the request registry is the gate.
 #[test]
 fn stale_log_results_are_dropped() {
     let (_d, mut e) = fixture();
     e.open_log(false);
-    pump(&mut e);
-    let stale = e.generation;
     let dead_surface = e.current(); // the log surface's id
-    e.feed_text("q"); // closes the surface; generation moves on
-    assert_ne!(stale, e.generation);
-    e.git_tx
-        .send(GitJob::Log {
-            buffer: dead_surface,
-            generation: stale,
-            rows: vec![LogRow {
-                text: "POISON ROW".into(),
-                sha: None,
-            }],
-        })
-        .unwrap();
-    e.drain_git_jobs();
+    let stale_ticket = e
+        .log_requests
+        .get(&dead_surface)
+        .cloned()
+        .expect("request registered");
+    e.feed_text("q"); // closes the surface
+    e.handle_git_job(GitJob::Log(strop_core::worker::Completion {
+        ticket: stale_ticket,
+        outcome: strop_core::worker::Outcome::Success(vec![LogRow {
+            text: "POISON ROW".into(),
+            sha: None,
+        }]),
+    }));
     for (i, (_, d)) in e.docs.iter().enumerate() {
-        let text = d.buf.rope.to_string();
+        let text = d.buf.text().to_string();
         assert!(!text.contains("POISON"), "document {i} clobbered: {text}");
     }
     // the live path still delivers
     e.open_log(false);
     pump(&mut e);
-    assert!(e.buf().rope.to_string().contains("add b"));
+    assert!(e.buf().text().to_string().contains("add b"));
 }
 
 /// A late gutter result for a toggled-off buffer is dropped: the
@@ -336,22 +371,24 @@ fn stale_log_results_are_dropped() {
 fn gutter_result_dropped_after_toggle_off() {
     let (dir, mut e) = fixture();
     let key = dir.path().join("f.rs").canonicalize().unwrap();
+    settle(&mut e, |e| e.git.is_some());
     e.feed_text(" gb"); // on (job in flight)
-    e.feed_text(" gb"); // off
+    let ticket = e
+        .blame_gutters
+        .get(&key)
+        .and_then(|g| g.request.clone())
+        .expect("gutter owns its request");
+    e.feed_text(" gb"); // off: entry removed, request cancelled
     assert!(e.blame_gutters.is_empty());
-    e.git_tx
-        .send(GitJob::Gutter {
-            path: key,
-            generation: e.generation, // even a current generation
-            lines: vec![strop_git::memory::BlameLine {
-                sha: "deadbeef".into(),
-                author: "nobody".into(),
-                age: "1m".into(),
-                ts: 0,
-            }],
-        })
-        .unwrap();
-    e.drain_git_jobs();
+    e.handle_git_job(GitJob::Gutter(strop_core::worker::Completion {
+        ticket,
+        outcome: strop_core::worker::Outcome::Success(vec![strop_git::memory::BlameLine {
+            sha: "deadbeef".into(),
+            author: "nobody".into(),
+            age: "1m".into(),
+            ts: 0,
+        }]),
+    }));
     assert!(
         e.blame_gutters.is_empty(),
         "a late job must not re-open a closed gutter"
@@ -382,6 +419,7 @@ fn multi_file_fixture() -> (tempfile::TempDir, Editor) {
     let mut e = Editor::new(Buffer::open(root.join("a.rs").to_str().unwrap()).unwrap());
     e.cwd = root.to_path_buf();
     e.discover_git();
+    settle(&mut e, |editor| editor.git.is_some());
     (dir, e)
 }
 
@@ -393,8 +431,20 @@ fn commit_file_nav_walks_files() {
     e.open_log(false);
     pump(&mut e);
     e.feed(Key::Enter); // newest commit → changed files
+    settle(&mut e, |e| {
+        matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
+    });
     e.feed_text("jj");
     e.feed(Key::Enter); // a.rs → delta
+    settle(&mut e, |e| {
+        matches!(
+            e.surface(),
+            Some(Surface::Diff {
+                commit: Some(_),
+                ..
+            })
+        )
+    });
     let (label, files) = match e.surface() {
         Some(Surface::Diff {
             label,
@@ -407,24 +457,24 @@ fn commit_file_nav_walks_files() {
     assert_eq!(files, 2, "the sidebar's data rides the surface");
 
     e.feed_text("]f");
-    match e.surface() {
-        Some(Surface::Diff { label, .. }) => assert_eq!(label, "b.rs"),
-        other => panic!("surface lost: {other:?}"),
-    }
-    let text = e.buf().rope.to_string();
+    settle(
+        &mut e,
+        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+    );
+    let text = e.buf().text().to_string();
     assert!(text.starts_with("b.rs +1 -0\n"), "{text}");
     assert!(text.contains("dos"), "{text}");
     assert!(e.message.contains("b.rs · 2/2"), "{}", e.message);
 
     e.feed_text("[f");
-    assert!(
-        matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "a.rs"),
-        "back to the first file"
+    settle(
+        &mut e,
+        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "a.rs"),
     );
     e.feed_text("[f"); // wraparound
-    assert!(
-        matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
-        "wraparound to the last file"
+    settle(
+        &mut e,
+        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
     );
     assert_eq!(
         e.docs.len(),
@@ -441,16 +491,28 @@ fn tab_cycles_focus_between_sidebar_and_diff() {
     e.open_log(false);
     pump(&mut e);
     e.feed(Key::Enter); // changed files
+    settle(&mut e, |e| {
+        matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
+    });
     e.feed_text("jj");
     e.feed(Key::Enter); // a.rs delta
+    settle(&mut e, |e| {
+        matches!(
+            e.surface(),
+            Some(Surface::Diff {
+                commit: Some(_),
+                ..
+            })
+        )
+    });
     assert!(!e.sidebar_focused());
 
     e.feed(crate::editor::Key::Tab);
     assert!(e.sidebar_focused(), "tab focuses the sidebar");
     e.feed_text("j"); // focused j steps to the next file
-    assert!(
-        matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
-        "j stepped to b.rs"
+    settle(
+        &mut e,
+        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
     );
     assert!(e.sidebar_focused(), "focus survives the file step");
     e.feed(crate::editor::Key::Enter);
@@ -488,9 +550,10 @@ fn q_in_split_closes_pane_then_buffer() {
 fn gutters_and_sidebar_render() {
     let (dir, mut e) = fixture();
     let root = dir.path().to_path_buf();
+    settle(&mut e, |e| e.git.is_some());
     e.feed_text(" gb");
     pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
-    let frame = crate::headless::frame_string(&mut e, 100, 10);
+    let frame = crate::headless::frame_string(&mut e, 100, 10).unwrap();
     let first_sha = git_out(&root, &["rev-parse", "HEAD~1"]);
     assert!(
         frame.contains(&format!("{} t ", &first_sha[..7])),
@@ -505,13 +568,29 @@ fn gutters_and_sidebar_render() {
     e.open_log(false);
     pump(&mut e);
     e.feed(Key::Enter);
+    settle(&mut e, |e| {
+        matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
+    });
     e.feed_text("jj");
     e.feed(Key::Enter); // a.rs delta
-    let frame = crate::headless::frame_string(&mut e, 100, 12);
+    settle(&mut e, |e| {
+        matches!(
+            e.surface(),
+            Some(Surface::Diff {
+                commit: Some(_),
+                ..
+            })
+        )
+    });
+    let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
     assert!(frame.contains("▌a.rs"), "current file marked: {frame}");
     assert!(frame.contains(" b.rs"), "sibling files listed: {frame}");
     e.feed_text("]f");
-    let frame = crate::headless::frame_string(&mut e, 100, 12);
+    settle(
+        &mut e,
+        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+    );
+    let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
     assert!(frame.contains("▌b.rs"), "marker follows ]f: {frame}");
 }
 
@@ -519,27 +598,26 @@ fn gutters_and_sidebar_render() {
 fn hunk_discard_undoes_byte_exact() {
     // 0020 §7: discard creates a committed undo step; u restores the
     // exact pre-discard worktree text
-    let (dir, mut e) = fixture();
-    let root = dir.path().to_path_buf();
+    let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
     // the edit happens IN the editor (live buffer = the worktree state)
     e.feed_text("Gofn c() {}");
     e.feed(crate::editor::Key::Esc);
-    let before = e.buf().rope.to_string();
-    let _ = &root;
+    let before = e.buf().text().to_string();
     e.refresh_hunks();
-    // the gutter is async (0021): pump the job like the event loop
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-    while e.hunks_in_flight && std::time::Instant::now() < deadline {
-        e.drain_git_jobs();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    // the gutter is async: pump the job like the event loop
+    settle(&mut e, |e| {
+        !matches!(e.hunk_load, strop_core::worker::Load::Running(_))
+    });
     assert!(!e.hunks.is_empty(), "the worktree edit shows as a hunk");
     e.undo_hunk();
-    assert_eq!(e.buf().rope.to_string(), "fn a() {}\nfn b() {}\n");
+    assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
     // u restores the exact pre-discard text
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), before);
+    assert_eq!(e.buf().text().to_string(), before);
     // and redo discards again
     e.feed(crate::editor::Key::CtrlR);
-    assert_eq!(e.buf().rope.to_string(), "fn a() {}\nfn b() {}\n");
+    assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
 }
+
+mod ownership;

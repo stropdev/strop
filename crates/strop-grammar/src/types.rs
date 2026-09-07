@@ -1,6 +1,7 @@
 //! The vocabulary: operators, motions, objects, commands.
 //! Pure data — resolution lives in `resolve`, parsing in `parse`.
 
+use crate::query::{CompiledQuery, QueryError};
 use strop_core::Range;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,10 +75,12 @@ pub enum Motion {
         till: bool,
         backward: bool,
     },
-    /// `/pat⏎` — the pattern without the terminator.
-    Search(String),
+    /// `/pat⏎` — the pattern without the terminator, compiled at parse
+    /// time; unsupported syntax is a typed `Parse::QueryError`, never
+    /// a literal read.
+    Search(CompiledQuery),
     /// `?pat⏎` — backward search.
-    SearchBackward(String),
+    SearchBackward(CompiledQuery),
     /// W / B / E — WORD motions (whitespace-delimited).
     BigWordForward,
     BigWordBackward,
@@ -136,11 +139,14 @@ pub struct Command {
     /// The keys that produced this command (dot-repeat, flash, spec footer).
     pub keys: String,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Parse {
     Incomplete,
     Invalid,
+    /// The search pattern did not compile — the typed refusal
+    /// (unsupported dialect, malformed repetition, …). Shown on the
+    /// `/` line; never falls back to a literal search.
+    QueryError(QueryError),
     Complete(Command),
 }
 

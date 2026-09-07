@@ -25,7 +25,10 @@ pub struct Document {
 
 impl Document {
     pub fn new(buf: Buffer) -> Self {
-        let highlighter = buf.path.as_deref().and_then(Highlighter::for_path);
+        let highlighter = buf
+            .path
+            .as_deref()
+            .and_then(|path| Highlighter::for_path(path, buf.text()));
         Self {
             buf,
             highlighter,
@@ -96,18 +99,16 @@ impl Editor {
             .expect("invariant: current document is live")
     }
 
-    pub fn cur_mut(&mut self) -> &mut Document {
-        self.docs
-            .get_mut(self.current())
-            .expect("invariant: current document is live")
+    pub(crate) fn cur_mut(&mut self) -> super::transact::DocumentEdit<'_> {
+        self.doc_mut(self.current())
     }
 
     pub fn buf(&self) -> &Buffer {
         &self.cur().buf
     }
 
-    pub fn buf_mut(&mut self) -> &mut Buffer {
-        &mut self.cur_mut().buf
+    pub(crate) fn buf_mut(&mut self) -> super::transact::BufferEdit<'_> {
+        super::transact::BufferEdit::new(self.cur_mut())
     }
 
     /// One document by id — stale ids panic: an id outliving its
@@ -117,8 +118,11 @@ impl Editor {
         self.docs.get(id).expect("stale document id")
     }
 
-    pub fn doc_mut(&mut self, id: strop_core::id::DocumentId) -> &mut Document {
-        self.docs.get_mut(id).expect("stale document id")
+    pub(crate) fn doc_mut(
+        &mut self,
+        id: strop_core::id::DocumentId,
+    ) -> super::transact::DocumentEdit<'_> {
+        super::transact::DocumentEdit::new(self, id)
     }
 
     /// Tests: the first live document's id (the "buffers[0]" of the
@@ -152,47 +156,24 @@ impl Editor {
         let Some(scratch) = scratch else {
             return;
         };
+        if self
+            .pending
+            .prompt()
+            .is_some_and(|prompt| prompt.origin().pane.doc == scratch)
+        {
+            self.cancel_pending();
+        }
         for pane in &mut self.panes {
             if pane.doc == scratch {
                 pane.doc = replacement;
             }
         }
+        self.lsp_close_document(scratch);
         self.docs.remove(scratch);
         self.mru.retain(|&x| x != scratch);
         if self.view().doc == scratch {
             self.view_mut().doc = replacement;
         }
-    }
-
-    /// Open without switching (splits): the document exists, the active
-    /// view stays. Returns the id.
-    pub fn open_document(
-        &mut self,
-        path: &std::path::Path,
-    ) -> std::io::Result<strop_core::id::DocumentId> {
-        let canon = std::path::Path::new(path)
-            .canonicalize()
-            .unwrap_or_else(|_| self.cwd.join(path));
-        if let Some((id, _)) = self.docs.iter().find(|(_, d)| {
-            d.buf
-                .path
-                .as_deref()
-                .and_then(|p| std::path::Path::new(p).canonicalize().ok())
-                == Some(canon.clone())
-        }) {
-            return Ok(id);
-        }
-        // fallible I/O BEFORE any ownership change (0020 §11): a failed
-        // open used to drop the scratch buffer and strand the pane
-        let buf = Buffer::open(path)?;
-        let id = self.docs.insert(Document::new(buf));
-        self.drop_stale_scratch(id);
-        if self.docs.len() == 1 {
-            self.mru.clear();
-        }
-        self.generation += 1;
-        self.mru.push(id);
-        Ok(id)
     }
 
     /// The active document (derived: the active view's document).
@@ -203,6 +184,8 @@ impl Editor {
 
     /// Switch the active view to a document.
     pub fn switch_to(&mut self, id: strop_core::id::DocumentId) {
+        self.cancel_pending();
+        self.focus_epoch += 1;
         self.view_mut().doc = id;
         self.touch_mru(id);
     }
@@ -229,46 +212,6 @@ impl Editor {
         self.view().view_top
     }
 
-    /// Open a file into a new document and switch to it (`:e`).
-    pub fn open_buffer(&mut self, path: &std::path::Path) -> std::io::Result<()> {
-        // vim semantics: :e on an open file switches to its buffer —
-        // checked before ANY I/O or state change (0020 §11)
-        let canon = std::path::Path::new(path)
-            .canonicalize()
-            .unwrap_or_else(|_| self.cwd.join(path));
-        let existing = self
-            .docs
-            .iter()
-            .find(|(_, d)| {
-                d.buf
-                    .path
-                    .as_deref()
-                    .and_then(|p| std::path::Path::new(p).canonicalize().ok())
-                    == Some(canon.clone())
-            })
-            .map(|(id, _)| id);
-        if let Some(id) = existing {
-            self.switch_to(id);
-            return Ok(());
-        }
-        // fallible I/O before any ownership change: a failed :e used to
-        // drop the scratch and strand the pane's document id
-        let buf = Buffer::open(path)?;
-        let id = self.docs.insert(Document::new(buf));
-        self.drop_stale_scratch(id);
-        if self.docs.len() == 1 {
-            // the scratch was dropped under us
-            self.mru.clear();
-        }
-        self.generation += 1; // document set changed: old jobs are stale (0011 §2)
-        self.switch_to(id);
-        self.set_head(0);
-        self.view_mut().view_top = 0;
-        self.discover_git();
-        self.lsp_maybe_attach();
-        Ok(())
-    }
-
     /// Close the current document; quits when the last one closes.
     /// Returns false when unsaved changes block the close. Generational
     /// ids mean no reindexing anywhere (0014 wave 2).
@@ -277,13 +220,21 @@ impl Editor {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }
+        self.cancel_pending();
+        if self.docs.len() == 1 {
+            self.request_session_save();
+        }
         let closed = self.current();
+        self.lsp_close_document(closed);
+        self.shell_document_closed(closed);
+        self.revoke_git_requests_for(closed);
         let closed_surface = self.docs.remove(closed).and_then(|d| match d.source {
             DocumentSource::Surface(s) => Some(s),
             _ => None,
         });
         if self.docs.is_empty() {
-            crate::session::save(self);
+            self.panes.clear();
+            self.active_pane = 0;
             self.should_quit = true;
         } else {
             self.mru.retain(|&x| x != closed);
@@ -295,9 +246,19 @@ impl Editor {
                     .map(|(id, _)| id)
                     .expect("docs non-empty")
             });
+            for pane in &mut self.panes {
+                if pane.doc == closed {
+                    pane.doc = next;
+                    pane.sels = Default::default();
+                    pane.view_top = 0;
+                    pane.hscroll = strop_core::id::DisplayColumn::new(0);
+                    pane.desired_column = None;
+                }
+            }
             self.switch_to(next);
             self.set_head(0);
             self.view_mut().view_top = 0;
+            self.view_mut().hscroll = strop_core::id::DisplayColumn::new(0);
             // a closing surface hands the cursor and view back to the
             // document it opened from — by id, no index math (0011 §1)
             if let Some(surface) = closed_surface {
@@ -309,6 +270,7 @@ impl Editor {
                         }
                         self.set_head(ret.cursor.min(self.buf().len_bytes()));
                         self.view_mut().view_top = ret.view_top;
+                        self.view_mut().hscroll = ret.hscroll;
                     }
                 }
             }
@@ -330,6 +292,20 @@ impl Editor {
         self.message = "unsaved changes — ctrl-c again to force-quit".into();
         false
     }
+
+    /// Fixture convenience exercises the production request and completion path.
+    #[cfg(test)]
+    pub(crate) fn open_fixture(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<strop_core::id::DocumentId, String> {
+        self.request_open(
+            path.to_owned(),
+            super::io::OpenIntent::Switch { readonly: false },
+        );
+        self.wait_io()?;
+        Ok(self.current())
+    }
 }
 
 #[cfg(test)]
@@ -344,12 +320,13 @@ mod pathbuf_tests {
         let path = dir.path().join(std::ffi::OsStr::from_bytes(b"\xff\xfe.rs"));
         std::fs::write(&path, "fn main() {}\n").unwrap();
         let mut e = Editor::new(Buffer::from_text("x\n"));
-        let id = e.open_document(&path).expect("opens by bytes");
+        let id = e.open_fixture(&path).expect("opens by bytes");
         e.switch_to(id);
         // extension detection works through the OsStr, not a lossy str
         assert!(e.cur().highlighter.is_some());
         e.feed_text("dd"); // delete the line
         e.feed_text(":w\r");
+        e.wait_io().unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
     }
 }

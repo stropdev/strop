@@ -1,6 +1,7 @@
 # 0029 — Diagnostic session traces
 
-Status: implemented for 0.14.0; supersedes the interrupted draft.
+Status: diagnostic capture shipped in 0.14.1; schema-2 full replay and bounded
+metadata export are implemented for 0.15.0 under 0031.
 
 ## Contract
 
@@ -21,7 +22,7 @@ project-directory changes. Log creation errors fail startup visibly.
 The shared `strop-trace` workspace crate owns storage. Its public surface is:
 
 - `start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceError>`;
-  `TraceOptions { content: ContentPolicy }`, with `Metadata` and `Full` policies.
+  `TraceOptions { content: ContentPolicy, limits: Limits }`.
 - `enabled() -> bool`, `capture_content() -> bool`.
 - `record<T: Serialize>(kind: EventKind, fields: &T)` and lazy
   `record_with(kind, || fields)`; disabled logging does not construct fields.
@@ -30,7 +31,8 @@ The shared `strop-trace` workspace crate owns storage. Its public surface is:
   joins the writer outside input dispatch. Drop also closes the writer.
 - `EventKind` is a closed vocabulary: `SessionStart`, `SessionEnd`, `Input`,
   `Paste`, `State`, `Document`, `Mutation`, `History`, `Render`, `Resize`,
-  `JobStarted`, `JobFinished`, `JobRejected`, `LspMessage`, `Error`, `Panic`.
+  `JobStarted`, `JobFinished`, `JobRejected`, `LspMessage`, `Replay`, `TraceEnd`,
+  `Error`, `Panic`.
 
 Each envelope contains `schema_version`, `seq`, `elapsed_us`, `event`, `fields`.
 The writer owns monotonically ordered sequence numbers. A bounded queue uses
@@ -39,6 +41,10 @@ result, and where possible a terminal error record. It never silently produces
 an apparently complete trace. JSON encoding is guarded by the enabled check;
 only the writer thread touches the file. Flush each batch, not merely on quit.
 Unix trace files are created with mode 0600 using exclusive creation.
+
+Schema 2 reserves a terminal `TraceEnd` record. Hard limits are 64 MiB total,
+100,000 records and 256 KiB per record. A cap, queue failure or writer failure
+cannot masquerade as a complete capture; full replay rejects incomplete input.
 
 Event payloads have explicit units and retain document slot AND generation
 alongside a buffer-incarnation identity. Service receipts and rejection reasons
@@ -76,11 +82,18 @@ policy). Metadata frame records contain dimensions, cursor and a cell/style hash
 Error previews may be length-bounded; that is NOT redaction. All payloads are
 JSON-escaped and files are private by default.
 
-Full-content traces include initial document snapshots and exact external keys /
-pastes for headless reproduction; metadata traces identify source paths and
-revisions instead. An input replay is not claimed to reproduce external LSP,
-git, shell results or timing by itself. Logs retain those results' identities,
-acceptance decisions and errors so diagnosis does not require guessing.
+Full-content captures contain a closed forensic stream: the initial seed, external
+actions, owned requests, service events, logical observations and an explicit end.
+`--replay TRACE` reconstructs it without native file reads, shell commands, Git
+operations or LSP traffic. State and terminal observations must agree at each
+recorded boundary. Cell observations use row runs, retaining symbols, colors,
+underline colors, modifiers and skipped-cell state.
+
+`--export-metadata TRACE` is a positive projection containing only sequence
+numbers and the closed event categories. Keys, paths, native path bytes, content,
+commands, messages, errors and arbitrary nested fields do not survive. This
+export is not replayable. Neither the default diagnostic policy nor length limits
+are described as automatic redaction.
 
 ## Acceptance
 
@@ -92,22 +105,24 @@ parallel producers yield ordered parseable JSONL. Drive a real TUI session with
 tracing and inspect the terminal and saved log. Verify non-UTF-8 operands remain
 Path-native. Every claimed event category must have a real producer.
 
-The separate prevention/hardening proposal is plan 0030; it is planning only,
-not authorization to execute that broader redesign.
+Plan 0030's broader P1/P2 work was subsequently activated by 0031.
 
 ## Usage and exercised evidence
 
 ```sh
 strop --log-file issue.jsonl path/to/file.rs
 strop --headless steps.keys path/to/file.rs --log-file issue-full.jsonl --log-content
+strop --replay issue-full.jsonl
+strop --export-metadata issue-full.jsonl > issue-metadata.jsonl
 strop --replay-script issue-full.jsonl > replay.keys
 # Inspect replay.keys before running it: recorded commands may write files/run shells.
 strop --headless replay.keys
 ```
 
-The extractor creates a scratch-buffer input reproducer, not an external-world
-replay. It checks schema/sequence continuity, excludes macro/synthetic expansion,
-preserves literal Unicode/angle-bracket keys, and warns on incomplete session ends.
+`--replay-script` remains the explicitly input-only extractor, not the forensic
+replay engine. It checks schema/sequence continuity, excludes macro/synthetic
+expansion and preserves literal Unicode/angle-bracket keys. Executing that script
+can repeat native side effects; full replay cannot.
 
 Process-isolated CLI regressions exercise full-capture extraction, metadata paste
 privacy, existing-file refusal and a quit that removes the last document. Shared

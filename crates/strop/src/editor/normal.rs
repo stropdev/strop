@@ -1,7 +1,7 @@
 //! Normal mode (0016): the machine walks keys to typed actions; this
 //! module dispatches them. Siblings by responsibility: `execute` (the
 //! operator engine + editing entries), `search`, `preview`, `pending`
-//! (the modal text lines), `ex` (the `:` line), `motions`.
+//! (the prompt effects), `ex` (the `:` line), `motions`.
 
 mod ex;
 mod execute;
@@ -37,13 +37,10 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
 
 impl Editor {
     pub(crate) fn feed_normal(&mut self, key: Key) {
-        // readonly surfaces (git browser/blame/etc.): q closes, Enter
-        // dives, motions and yank fall through, edits refuse (0001 §3)
+        // readonly surfaces (git browser/blame/etc.) share the Walker;
+        // their surface-specific keys live in feed_readonly (0001 §3)
         if self.buf().readonly {
             return self.feed_readonly(key);
-        }
-        if !self.pending.is_empty() {
-            return self.feed_pending(key);
         }
         // Esc is a mode-level key: collapse to the primary cursor and
         // ground the machine (0013 §3) — it never walks the trie
@@ -53,16 +50,21 @@ impl Editor {
             return;
         }
         // every other key event walks the one machine (0016)
-        match self.walker.feed(key) {
+        self.feed_command(key);
+    }
+
+    /// Shared Walker dispatch: normal mode, readonly surfaces, and any
+    /// surface mid-composition all reduce typed actions here.
+    pub(crate) fn feed_command(&mut self, key: Key) {
+        let action = self.walker.feed(key);
+        match action {
             super::input::Action::Pending => {}
             super::input::Action::Invalid(keys) => {
                 self.message = format!("not an editor command: {keys}")
             }
-            super::input::Action::EnterText(sigil) => self.begin_text_line(sigil),
-            super::input::Action::Grammar(cmd) => match cmd.op {
-                None => self.move_cursor(&cmd),
-                Some(_) => self.execute(&cmd),
-            },
+            super::input::Action::QueryError(error) => self.message = error.to_string(),
+            super::input::Action::EnterText { sigil, state } => self.begin_text_line(sigil, state),
+            super::input::Action::Grammar(command) => self.dispatch_grammar(&command),
             super::input::Action::Row {
                 row,
                 count,
@@ -70,6 +72,21 @@ impl Editor {
                 arg,
                 key,
             } => self.dispatch_row(row, count, register, arg, key),
+            super::input::Action::VisualSurround(_) => {
+                unreachable!("normal Walker cannot emit visual actions")
+            }
+        }
+    }
+
+    /// A grammar command: motions move, yanks survive readonly, edits
+    /// refuse there. The one grammar entrypoint — prompts, aliases and
+    /// the Walker all land here.
+    pub(crate) fn dispatch_grammar(&mut self, command: &grammar::Command) {
+        match command.op {
+            None => self.move_cursor(command),
+            Some(grammar::Op::Yank) if self.buf().readonly => self.yank_only(command),
+            Some(_) if self.buf().readonly => self.message = "readonly buffer".into(),
+            Some(_) => self.execute(command),
         }
     }
 
@@ -86,6 +103,46 @@ impl Editor {
         key: char,
     ) {
         use crate::keymap::Handler;
+        if self.buf().readonly {
+            // dispatch capability check on existing stable command ids,
+            // not a second grammar: git handlers act on their stamped
+            // source targets; navigation/yank/visual stay shared
+            let allowed = match row.handler {
+                Handler::Alias(_) => true, // resolved typed op is checked by dispatch_grammar
+                Handler::Leaf(_) => {
+                    row.section == "git"
+                        || matches!(
+                            row.id,
+                            "search-next"
+                                | "search-prev"
+                                | "visual-enter"
+                                | "visual-block"
+                                | "pane-nav"
+                                | "pane-split"
+                                | "pane-close"
+                                | "hunk-nav"
+                                | "clip-yank"
+                                | "redraw"
+                                | "view-place"
+                                | "visible-jumps"
+                                | "scroll-pages"
+                                | "enter"
+                                | "jumplist"
+                                | "jump-forward"
+                        )
+                }
+                Handler::AbsorbChar(
+                    crate::keymap::AbsorbKind::Find
+                    | crate::keymap::AbsorbKind::MarkSet
+                    | crate::keymap::AbsorbKind::MarkJump,
+                ) => true,
+                _ => false,
+            };
+            if !allowed {
+                self.message = "readonly buffer".into();
+                return;
+            }
+        }
         let n = count.unwrap_or(1);
         match row.handler {
             Handler::Leaf(f) => {
@@ -96,9 +153,14 @@ impl Editor {
                         self.insert_count = n;
                         f(self, last);
                     }
-                    "paste" if register.is_some() => self.paste_named(register, last == 'P'),
-                    "paste" => self.paste_n(n, last == 'P'),
+                    "paste" => self.paste_named(register, n, last == 'P'),
                     "scroll-pages" => self.scroll_counted(last, n),
+                    // Space y: the clipboard yank is typed operator
+                    // state in the Walker — `2 yw` yanks two words to
+                    // `+`, no synthetic grammar text (R7)
+                    "clip-yank" => self
+                        .walker
+                        .begin_operator(grammar::Op::Yank, Some('+'), count),
                     _ => {
                         for _ in 0..n {
                             f(self, last);
@@ -111,14 +173,11 @@ impl Editor {
             // in — nothing replays through input
             Handler::Alias(expansion) => {
                 if let Parse::Complete(mut cmd) = grammar::parse(expansion) {
-                    cmd.count = Some(n * cmd.count.unwrap_or(1));
+                    cmd.count = Some(n.saturating_mul(cmd.count.unwrap_or(1)));
                     if register.is_some() {
                         cmd.register = register;
                     }
-                    match cmd.op {
-                        None => self.move_cursor(&cmd),
-                        Some(_) => self.execute(&cmd),
-                    }
+                    self.dispatch_grammar(&cmd);
                 }
             }
             Handler::AbsorbChar(kind) => {
@@ -159,8 +218,8 @@ impl Editor {
         self.repeat_find(reverse);
     }
     /// "p P" row: the completing key picks before/after.
-    pub(crate) fn paste_named_pub(&mut self, name: Option<char>, before: bool) {
-        self.paste_named(name, before);
+    pub(crate) fn paste_named_pub(&mut self, name: Option<char>, count: usize, before: bool) {
+        self.paste_named(name, count, before);
     }
     /// "J ." row: the completing key picks the command.
     pub(crate) fn join_or_repeat(&mut self, key: char) {
@@ -185,14 +244,5 @@ impl Editor {
     /// "v V" row.
     pub(crate) fn enter_visual_pub(&mut self, key: char) {
         self.enter_visual(key == 'V');
-    }
-}
-
-mod dbg3 {
-    #[test]
-    fn editor_3x() {
-        let mut e = crate::editor::Editor::new(strop_core::Buffer::from_text("abcde\n"));
-        e.feed_text("3x");
-        eprintln!("text {:?} msg {:?}", e.buf().rope.to_string(), e.message);
     }
 }

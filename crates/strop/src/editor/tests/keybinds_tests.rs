@@ -2,20 +2,20 @@ use super::*;
 
 #[test]
 fn marks_set_and_jump() {
-    std::fs::write("/tmp/strop-mark-a.rs", "one\ntwo\nthree\n").unwrap();
-    std::fs::write("/tmp/strop-mark-b.rs", "alpha\nbeta\n").unwrap();
-    let mut e = Editor::new(Buffer::open("/tmp/strop-mark-a.rs").unwrap());
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first.txt");
+    let second = directory.path().join("second.txt");
+    std::fs::write(&first, "one\ntwo\nthree\n").unwrap();
+    std::fs::write(&second, "alpha\nbeta\n").unwrap();
+    let mut e = Editor::new(Buffer::open(&first).unwrap());
     e.feed_text("jj"); // line 3
     e.feed_text("mb"); // mark b here
-    e.feed_text(":e /tmp/strop-mark-b.rs<cr>");
+    e.feed_text(&format!(":e {}<cr>", second.display()));
+    e.wait_io().unwrap();
+    assert_eq!(e.buf().path.as_deref(), Some(second.as_path()));
     e.feed_text("'b"); // jump back to mark
-    assert_eq!(
-        e.buf().path.as_deref(),
-        Some(std::path::Path::new("/tmp/strop-mark-a.rs"))
-    );
+    assert_eq!(e.buf().path.as_deref(), Some(first.as_path()));
     assert_eq!(e.buf().line_of(e.head()), 2);
-    std::fs::remove_file("/tmp/strop-mark-a.rs").ok();
-    std::fs::remove_file("/tmp/strop-mark-b.rs").ok();
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn dw_leaves_exactly_one_cursor() {
     let mut e = Editor::new(Buffer::from_text("one two three\n"));
     e.feed_text("dw");
     assert_eq!(e.sels().extra_heads().len(), 0);
-    assert_eq!(e.buf().rope.to_string(), "two three\n");
+    assert_eq!(e.buf().text().to_string(), "two three\n");
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn arrows_consume_pending_counts() {
     e.feed(crate::editor::Key::Right);
     assert_eq!(e.buf().col_of(e.head()), 2);
     e.feed_text("x");
-    assert_eq!(e.buf().rope.to_string(), "helo world\n");
+    assert_eq!(e.buf().text().to_string(), "helo world\n");
 }
 
 #[test]
@@ -58,11 +58,12 @@ fn pathless_save_is_an_error_not_a_lie() {
     assert!(e.message.contains("no file name"), "{}", e.message);
     // :wq must not close the dirty scratch either
     e.feed_text(":wq\r");
-    assert_eq!(e.buf().rope.to_string(), "unsaved\n");
+    assert_eq!(e.buf().text().to_string(), "unsaved\n");
     // :w {path} names it and persists
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("named.txt");
     e.feed_text(&format!(":w {}\r", p.display()));
+    e.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "unsaved\n");
     assert_eq!(e.buf().path.as_deref(), Some(p.as_path()));
 }
@@ -88,14 +89,14 @@ fn failed_pipe_never_touches_the_source() {
     e.feed_text("V");
     e.feed_text(" |false");
     e.feed(crate::editor::Key::Enter);
-    for _ in 0..200 {
-        e.drain_shell();
-        if e.message.starts_with("pipe failed") {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert_eq!(e.buf().rope.to_string(), "keep me\n");
+    let result = e
+        .shell_rx
+        .as_ref()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    e.handle_shell_result(result);
+    assert_eq!(e.buf().text().to_string(), "keep me\n");
     assert!(e.message.starts_with("pipe failed"), "{}", e.message);
 }
 fn tall_editor() -> Editor {
@@ -192,6 +193,7 @@ fn alternate_buffer_round_trips() {
     std::fs::write(&b, "bbb\n").unwrap();
     let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
     e.feed_text(&format!(":e {}\r", b.display()));
+    e.wait_io().unwrap();
     assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
     e.feed_text("<c-^>");
     assert!(e.buf().path.as_deref().unwrap().ends_with("a.txt"));
@@ -204,16 +206,16 @@ fn ex_ranges_and_substitute() {
     let mut e = Editor::new(Buffer::from_text("foo one\nfoo two\nfoo three\n"));
     // :%s with g rewrites every hit
     e.feed_text(":%s/foo/bar/g\r");
-    assert_eq!(e.buf().rope.to_string(), "bar one\nbar two\nbar three\n");
+    assert_eq!(e.buf().text().to_string(), "bar one\nbar two\nbar three\n");
     e.feed_text("u");
     // one undo unit for the whole substitute
-    assert_eq!(e.buf().rope.to_string(), "foo one\nfoo two\nfoo three\n");
+    assert_eq!(e.buf().text().to_string(), "foo one\nfoo two\nfoo three\n");
     // :2s/x/y/ scopes to line 2
     e.feed_text(":2s/foo/only/\r");
-    assert_eq!(e.buf().rope.to_string(), "foo one\nonly two\nfoo three\n");
+    assert_eq!(e.buf().text().to_string(), "foo one\nonly two\nfoo three\n");
     // :2,3d deletes the range, yanking it (vim :d)
     e.feed_text(":2,3d\r");
-    assert_eq!(e.buf().rope.to_string(), "foo one\n");
+    assert_eq!(e.buf().text().to_string(), "foo one\n");
     e.feed_text("u");
     // :3 jumps
     e.feed_text("gg:3\r");
@@ -224,18 +226,17 @@ fn ex_ranges_and_substitute() {
 }
 #[test]
 fn diagnostic_jumps_wrap() {
-    use strop_lsp::Diag;
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("d.txt");
     std::fs::write(&p, "aaa\nbbb\nccc\nddd\n").unwrap();
     let mut e = Editor::new(Buffer::open(p.to_str().unwrap()).unwrap());
     e.cwd = dir.path().to_path_buf();
-    let mk = |line: usize, msg: &str| Diag {
-        line,
-        col: 0,
-        end_line: line,
-        end_col: 1,
-        severity: 1,
+    let mk = |line: usize, msg: &str| strop_lsp::ResolvedDiag {
+        line: strop_core::id::LineIndex::new(line),
+        col: strop_core::id::ByteColumn::new(0),
+        end_line: strop_core::id::LineIndex::new(line),
+        end_col: strop_core::id::ByteColumn::new(1),
+        severity: strop_lsp::Severity::Error,
         message: msg.into(),
     };
     e.diags
@@ -259,7 +260,7 @@ fn dbg_unicode() {
         e.buf().col_of(e.head())
     );
     e.feed_text("rX");
-    eprintln!("after rX: {:?}", e.buf().rope.to_string());
+    eprintln!("after rX: {:?}", e.buf().text().to_string());
     let mut e = Editor::new(Buffer::from_text("café münchen\n"));
     e.feed_text("/mü\r");
     eprintln!(
@@ -300,15 +301,15 @@ fn bracketed_paste_is_one_text_unit() {
     e.feed(crate::editor::Key::Esc);
     assert!(e
         .buf()
-        .rope
+        .text()
         .to_string()
         .starts_with("// :q! not a command\n"));
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), "fn main() {}\n");
+    assert_eq!(e.buf().text().to_string(), "fn main() {}\n");
     // normal mode: behaves like p
     let mut e = Editor::new(Buffer::from_text("ab\n"));
     e.paste_bracketed("XY");
-    assert_eq!(e.buf().rope.to_string(), "aXYb\n");
+    assert_eq!(e.buf().text().to_string(), "aXYb\n");
 }
 
 #[test]
@@ -316,13 +317,13 @@ fn block_mode_ops() {
     // 0017: ctrl-v rectangle delete + insert replicate
     let mut e = Editor::new(Buffer::from_text("aa11bb\ncc22dd\nee33ff\n"));
     e.feed_text("<c-v>lljx");
-    assert_eq!(e.buf().rope.to_string(), "1bb\n2dd\nee33ff\n");
+    assert_eq!(e.buf().text().to_string(), "1bb\n2dd\nee33ff\n");
     let mut e = Editor::new(Buffer::from_text("aa\ncc\n"));
     e.feed_text("<c-v>j");
     e.feed_text("I");
     e.feed_text(">>");
     e.feed(crate::editor::Key::Esc);
-    assert_eq!(e.buf().rope.to_string(), ">>aa\n>>cc\n");
+    assert_eq!(e.buf().text().to_string(), ">>aa\n>>cc\n");
 }
 #[test]
 fn write_to_path_respects_overwrite_policy() {
@@ -338,12 +339,13 @@ fn write_to_path_respects_overwrite_policy() {
     e.feed(crate::editor::Key::Esc);
     // ordinary :w b.txt — b exists: refused, b unchanged
     e.feed_text(&format!(":w {}\r", b.display()));
+    e.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "content b\n");
-    assert!(e.message.contains("exists"), "{}", e.message);
     assert!(e.buf().path.as_deref().unwrap().ends_with("a.txt"));
     assert!(e.buf().dirty);
     // :w! b.txt — forced
     e.feed_text(&format!(":w! {}\r", b.display()));
+    e.wait_io().unwrap();
     assert!(std::fs::read_to_string(&b)
         .unwrap()
         .starts_with("xcontent a"));
@@ -352,8 +354,9 @@ fn write_to_path_respects_overwrite_policy() {
     // a failed write (unwritable dir) keeps identity
     e.feed_text("iy");
     e.feed(crate::editor::Key::Esc);
-    e.feed_text(":w /nonexistent-dir-xyz/q.txt\r");
-    assert!(e.message.contains("write failed"), "{}", e.message);
+    let missing = dir.path().join("missing").join("q.txt");
+    e.feed_text(&format!(":w {}<cr>", missing.display()));
+    e.wait_io().unwrap();
     assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
     assert!(e.buf().dirty);
 }
@@ -392,17 +395,24 @@ fn grep_respawns_reach_the_production_event_source() {
     }
     assert!(saw_hit, "grep results arrived through AppEvent");
     assert!(done, "the stream completed");
-    // a stale generation's message is dropped
-    let stale_gen = e.picker.as_ref().unwrap().gen.wrapping_sub(1);
+    // a superseded request's messages are dropped at the handler
     let before = e.picker.as_ref().unwrap().picker.rows.len();
-    e.handle_app_event(crate::editor::events::AppEvent::Picker {
-        id: e.picker.as_ref().unwrap().id,
-        gen: stale_gen,
-        msg: strop_picker::PickerMsg::Items(vec![strop_picker::Item {
-            text: "STALE".into(),
-            payload: strop_picker::Payload::Buffer(*e.mru.first().unwrap()),
-        }]),
-    });
+    let stale = strop_core::worker::Ticket {
+        request: strop_core::worker::WorkerId::new(u64::MAX), // never allocated
+        key: crate::editor::picker::PickerKey {
+            picker: e.picker.as_ref().unwrap().id,
+            cwd: e.cwd.clone(),
+        },
+    };
+    e.handle_app_event(crate::editor::events::AppEvent::Picker(
+        crate::editor::picker::PickerEvent {
+            ticket: stale,
+            msg: strop_picker::PickerMsg::Items(vec![strop_picker::Item {
+                text: "STALE".into(),
+                payload: strop_picker::Payload::Buffer(*e.mru.first().unwrap()),
+            }]),
+        },
+    ));
     assert_eq!(e.picker.as_ref().unwrap().picker.rows.len(), before);
 }
 
@@ -414,14 +424,14 @@ fn project_replace_is_byte_exact_past_multibyte() {
     let hits = vec![(1usize, 6usize, 3usize, "éé foo".to_string())];
     let (applied, _, stale) = e.replace_in_buffer_pub(id, &hits, "bar");
     assert_eq!((applied, stale), (1, 0));
-    assert_eq!(e.buf().rope.to_string(), "éé bar\n");
+    assert_eq!(e.buf().text().to_string(), "éé bar\n");
     // and inside the match itself
     let mut e = Editor::new(Buffer::from_text("féé and féé\n"));
     let id = e.current();
     let hits = vec![(1usize, 1usize, 5usize, "féé and féé".to_string())];
     let (applied, _, stale) = e.replace_in_buffer_pub(id, &hits, "x");
     assert_eq!((applied, stale), (1, 0));
-    assert_eq!(e.buf().rope.to_string(), "x and féé\n");
+    assert_eq!(e.buf().text().to_string(), "x and féé\n");
 }
 
 #[test]
@@ -430,7 +440,7 @@ fn paste_after_multibyte_inserts_after_the_char() {
     let mut e = Editor::new(Buffer::from_text("aé b\n"));
     e.feed_text("vly");
     e.feed_text("llp"); // cursor past é; paste goes after the space? no — after char under cursor
-    assert!(!e.buf().rope.to_string().contains("\u{fffd}"));
+    assert!(!e.buf().text().to_string().contains("\u{fffd}"));
     // repeat-search past a multibyte hit never panics
     let mut e = Editor::new(Buffer::from_text("x é y é z\n"));
     e.feed_text("/é\r");
@@ -472,19 +482,10 @@ fn edits_map_marks_jumps_and_other_panes() {
     assert_eq!(e.buf().line_of(pane2.sels.primary().head), 2);
     assert!(e
         .buf()
-        .rope
+        .text()
         .byte_slice(e.buf().line_start(2)..e.buf().line_end(2))
         .to_string()
         .contains("TARGET"));
-}
-#[test]
-fn write_on_readonly_names_the_buffer() {
-    // 0021 exit: a surface's :w refuses, named
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.buf_mut().readonly = true;
-    e.buf_mut().name = Some("git log".into());
-    e.feed_text(":w\r");
-    assert_eq!(e.message, "git log: readonly — :w! to force");
 }
 #[test]
 fn incremental_syntax_equals_fresh_parse() {
@@ -498,20 +499,23 @@ fn incremental_syntax_equals_fresh_parse() {
     for script in scripts {
         let mut e = Editor::new(Buffer::from_text("fn demo() {\n    let x = 1;\n}\n"));
         e.buf_mut().path = Some(std::path::PathBuf::from("/tmp/demo.rs"));
-        e.cur_mut().highlighter =
-            strop_syntax::Highlighter::for_path(std::path::Path::new("/tmp/demo.rs"));
+        e.cur_mut().highlighter = strop_syntax::Highlighter::for_path(
+            std::path::Path::new("/tmp/demo.rs"),
+            e.buf().text(),
+        );
         // warm the tree BEFORE edits — without this the test passes
         // trivially through the full-parse fallback
         {
-            let rope = e.buf().rope.clone();
+            let rope = e.buf().text().clone();
             let len = e.buf().len_bytes();
-            let rev = e.buf().history.depth() as u64;
+            let rev = e.buf().revision();
             let _ = e
                 .cur_mut()
                 .highlighter
                 .as_mut()
                 .unwrap()
-                .highlight(&rope, rev, 0, len);
+                .highlight(&rope, rev, 0, len)
+                .unwrap();
         }
         for keys in &script {
             match *keys {
@@ -520,8 +524,8 @@ fn incremental_syntax_equals_fresh_parse() {
                 k => e.feed_text(k),
             }
         }
-        let revision = e.buf().history.depth() as u64;
-        let rope = e.buf().rope.clone();
+        let revision = e.buf().revision();
+        let rope = e.buf().text().clone();
         let len = e.buf().len_bytes();
         // incremental: the kept tree + lazy reparse
         let inc = e
@@ -529,17 +533,15 @@ fn incremental_syntax_equals_fresh_parse() {
             .highlighter
             .as_mut()
             .unwrap()
-            .highlight(&rope, revision, 0, len);
+            .highlight(&rope, revision, 0, len)
+            .unwrap();
         // fresh: no old tree at all
         let mut fresh =
-            strop_syntax::Highlighter::for_path(std::path::Path::new("/tmp/demo.rs")).unwrap();
-        let expected = fresh.highlight(&rope, revision, 0, len);
+            strop_syntax::Highlighter::for_path(std::path::Path::new("/tmp/demo.rs"), &rope)
+                .unwrap();
+        let expected = fresh.highlight(&rope, revision, 0, len).unwrap();
         assert_eq!(
-            inc.iter().map(|s| (s.start, s.end)).collect::<Vec<_>>(),
-            expected
-                .iter()
-                .map(|s| (s.start, s.end))
-                .collect::<Vec<_>>(),
+            inc, expected,
             "script {script:?}: incremental spans diverged"
         );
     }

@@ -483,7 +483,7 @@ pub const BINDINGS: &[Binding] = &[
         section: "normal",
         live: true,
         id: "paste",
-        handler: Handler::Leaf(|e, k| e.paste_named_pub(None, k == 'P')),
+        handler: Handler::Leaf(|e, k| e.paste_named_pub(None, 1, k == 'P')),
     },
     Binding {
         keys: "r<c>",

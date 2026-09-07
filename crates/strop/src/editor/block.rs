@@ -1,222 +1,329 @@
-//! Visual block mode (0017): `ctrl-v` selects a rectangle. The
-//! selection stays one primary (anchor/head are the corners); the
-//! rectangle derives from CELL columns — wide chars and tabs measure
-//! the same on every row because LineLayout is the single seam.
+//! Visual rectangles share streamed cell geometry with rendering. Partial wide
+//! clusters become spaces; complete tabs retain their bytes in the register.
+use super::transact::ChangeSet;
+use super::{BlockRect, Editor, Mode, Register};
+use strop_core::id::DisplayColumn;
+use strop_core::layout::RopeGraphemes;
+use strop_core::{Range, Replacement};
 
-use super::{BlockRect, Editor, Mode};
+pub(crate) struct BlockInsertState {
+    rows: Vec<usize>,
+    column: DisplayColumn,
+    pad: bool,
+}
+struct RowPart {
+    range: Option<Range>,
+    selected: String,
+    remaining: String,
+}
 
 impl Editor {
-    /// `ctrl-v`: enter block mode with an empty rectangle at the cursor.
     pub fn enter_block_pub(&mut self) {
         if self.buf().readonly {
             self.message = "readonly buffer".into();
             return;
         }
-        let h = self.head();
-        self.sels_mut().stretch_primary(h, h);
+        let head = self.head();
+        self.sels_mut().stretch_primary(head, head);
+        self.view_mut().desired_column = None;
         self.mode = Mode::VisualBlock;
     }
-
     pub fn block_rect_pub(&self) -> Option<BlockRect> {
         self.block_rect()
     }
 
-    /// The rectangle. Cell columns come from the SAME LineLayout on
-    /// every row — a tab or wide char can't skew the columns apart.
+    fn cluster_cells(&self, byte: usize) -> (DisplayColumn, DisplayColumn) {
+        let line = self.buf().line_of(byte);
+        let start = self.buf().line_start(line);
+        let slice = self
+            .buf()
+            .text()
+            .byte_slice(start..self.buf().line_end(line));
+        let relative = byte.saturating_sub(start);
+        let mut end = DisplayColumn::new(0);
+        for (span, cluster) in RopeGraphemes::new(slice, self.config.tab_size) {
+            end = span.cell + span.width;
+            if relative < span.byte + cluster.len() {
+                return (span.cell, span.cell + span.width.max(1));
+            }
+        }
+        (end, end + 1)
+    }
+
     pub(crate) fn block_rect(&self) -> Option<BlockRect> {
         if self.mode != Mode::VisualBlock {
             return None;
         }
-        let (a, h) = (self.anchor(), self.head());
-        let (la, lh) = (self.buf().line_of(a), self.buf().line_of(h));
-        let (ca, ch) = (self.buf().cell_col_of(a), self.buf().cell_col_of(h));
+        let (anchor, head) = (self.anchor(), self.head());
+        let (a, a_end) = self.cluster_cells(anchor);
+        let (h, h_end) = self.cluster_cells(head);
         Some(BlockRect {
-            first_line: la.min(lh),
-            last_line: la.max(lh),
-            left_cell: ca.min(ch),
-            right_cell: ca.max(ch),
+            first_line: self.buf().line_of(anchor).min(self.buf().line_of(head)),
+            last_line: self.buf().line_of(anchor).max(self.buf().line_of(head)),
+            left_cell: a.min(h),
+            right_cell: a_end.max(h_end) - 1,
         })
     }
 
-    /// One rect row's byte range on `line` — None when the line is too
-    /// short to reach the rectangle (vim skips short lines on y/d, pads
-    /// on I/A... we skip: padding is surprising with real text).
-    fn rect_line_bytes(&self, line: usize, cl: u16, cr: u16) -> Option<(usize, usize)> {
-        let (s, e) = (self.buf().line_start(line), self.buf().line_end(line));
-        let text = self
+    /// Block vertical movement preserves the requested display column through
+    /// short rows and clusters; byte columns cannot express that intent.
+    pub(crate) fn block_vertical(&mut self, command: &strop_grammar::Command) -> bool {
+        if self.mode != Mode::VisualBlock {
+            return false;
+        }
+        let down = match command.target {
+            strop_grammar::Target::Motion(strop_grammar::Motion::Down) => true,
+            strop_grammar::Target::Motion(strop_grammar::Motion::Up) => false,
+            _ => return false,
+        };
+        let desired = self
+            .view()
+            .desired_column
+            .unwrap_or_else(|| self.cluster_cells(self.head()).1 - 1);
+        let line = self.buf().line_of(self.head());
+        let count = command.count.unwrap_or(1).max(1);
+        let target = if down {
+            line.saturating_add(count)
+                .min(self.buf().last_content_line())
+        } else {
+            line.saturating_sub(count)
+        };
+        self.land_at_cell(target, desired);
+        self.view_mut().desired_column = Some(desired);
+        true
+    }
+
+    fn row_part(&self, line: usize, left: DisplayColumn, right: DisplayColumn) -> RowPart {
+        let start = self.buf().line_start(line);
+        let slice = self
             .buf()
-            .rope
-            .byte_slice(s..e)
-            .to_string()
-            .trim_end_matches('\n')
-            .to_string();
-        let layout = strop_core::layout::LineLayout::build(&text, 8);
-        if layout.width < cl {
+            .text()
+            .byte_slice(start..self.buf().line_end(line));
+        let mut first = None;
+        let mut last = start;
+        let mut selected = String::new();
+        let mut remaining = String::new();
+        for (span, text) in RopeGraphemes::new(slice, self.config.tab_size) {
+            let end = span.cell + span.width;
+            if end <= left || span.cell >= right || span.width == 0 {
+                continue;
+            }
+            first.get_or_insert(start + span.byte);
+            last = start + span.byte + text.len();
+            let lo = span.cell.max(left);
+            let hi = end.min(right);
+            if lo == span.cell && hi == end {
+                selected.push_str(&text);
+            } else {
+                selected.push_str(&" ".repeat(hi - lo));
+                remaining.push_str(&" ".repeat(lo - span.cell));
+                remaining.push_str(&" ".repeat(end - hi));
+            }
+        }
+        if first.is_none() {
+            selected = " ".repeat(right - left);
+        }
+        RowPart {
+            range: first.map(|first| Range::charwise(first, last)),
+            selected,
+            remaining,
+        }
+    }
+
+    fn land_at_cell(&mut self, line: usize, column: DisplayColumn) {
+        let start = self.buf().line_start(line);
+        let end = self.buf().line_end(line);
+        let byte = RopeGraphemes::new(
+            self.buf().text().byte_slice(start..end),
+            self.config.tab_size,
+        )
+        .find_map(|(span, _)| (span.cell + span.width > column).then_some(start + span.byte))
+        .unwrap_or(end);
+        self.set_head(byte);
+        self.clamp_cursor();
+    }
+
+    pub(crate) fn block_yank(&mut self) {
+        let Some(rect) = self.block_rect() else {
+            return;
+        };
+        let rows: Vec<_> = (rect.first_line..=rect.last_line)
+            .map(|line| {
+                self.row_part(line, rect.left_cell, rect.right_cell + 1)
+                    .selected
+            })
+            .collect();
+        self.set_register(
+            None,
+            Register::blockwise(
+                rows.join("\n"),
+                DisplayColumn::new(rect.right_cell - rect.left_cell + 1),
+            ),
+        );
+        self.mode = Mode::Normal;
+        self.land_at_cell(rect.first_line, rect.left_cell);
+    }
+    pub(crate) fn block_delete(&mut self) {
+        self.block_edit(false);
+    }
+    pub(crate) fn block_change(&mut self) {
+        self.block_edit(true);
+    }
+    fn block_edit(&mut self, insert: bool) {
+        let Some(rect) = self.block_rect() else {
+            return;
+        };
+        let mut rows = Vec::new();
+        let mut selected = Vec::new();
+        let mut edits = Vec::new();
+        for line in rect.first_line..=rect.last_line {
+            let part = self.row_part(line, rect.left_cell, rect.right_cell + 1);
+            selected.push(part.selected);
+            if let Some(range) = part.range {
+                if line != rect.first_line {
+                    rows.push(line);
+                }
+                edits.push(Replacement::new(range, part.remaining));
+            }
+        }
+        if let Err(error) = self.apply(
+            self.current(),
+            self.buf().revision(),
+            ChangeSet {
+                edits,
+                undo_open: insert,
+            },
+        ) {
+            self.message = error.to_string();
+            return;
+        }
+        self.set_register(
+            None,
+            Register::blockwise(
+                selected.join("\n"),
+                DisplayColumn::new(rect.right_cell - rect.left_cell + 1),
+            ),
+        );
+        self.mode = if insert { Mode::Insert } else { Mode::Normal };
+        self.land_at_cell(rect.first_line, rect.left_cell);
+        if insert {
+            self.block_insert_state = Some(BlockInsertState {
+                rows,
+                column: rect.left_cell,
+                pad: false,
+            });
+            self.enter_insert_from("<c-v>c");
+        }
+    }
+
+    /// Inserting within a tab/wide cluster preserves both outside portions as
+    /// cells. A pads short lines; I and c skip rows that never reached the column.
+    fn insertion(
+        &self,
+        line: usize,
+        column: DisplayColumn,
+        text: &str,
+        pad: bool,
+    ) -> Option<Replacement> {
+        let start = self.buf().line_start(line);
+        let end = self.buf().line_end(line);
+        let mut width = DisplayColumn::new(0);
+        for (span, cluster) in RopeGraphemes::new(
+            self.buf().text().byte_slice(start..end),
+            self.config.tab_size,
+        ) {
+            if span.cell == column {
+                return Some(Replacement::new(
+                    Range::charwise(start + span.byte, start + span.byte),
+                    text,
+                ));
+            }
+            width = span.cell + span.width;
+            if span.cell < column && column < width {
+                return Some(Replacement::new(
+                    Range::charwise(start + span.byte, start + span.byte + cluster.len()),
+                    format!(
+                        "{}{}{}",
+                        " ".repeat(column - span.cell),
+                        text,
+                        " ".repeat(width - column)
+                    ),
+                ));
+            }
+        }
+        if column > width && !pad {
             return None;
         }
-        let start = s + layout.byte_at_cell(cl);
-        let end = s + layout.byte_at_cell(cr + 1).min(layout.len_bytes);
-        let end = if cr as usize >= layout.width as usize {
-            e.min(s + layout.len_bytes)
+        Some(Replacement::new(
+            Range::charwise(end, end),
+            format!(
+                "{}{text}",
+                " ".repeat(column.get().saturating_sub(width.get()))
+            ),
+        ))
+    }
+
+    pub(crate) fn block_insert(&mut self, right: bool) {
+        let Some(rect) = self.block_rect() else {
+            return;
+        };
+        let column = if right {
+            rect.right_cell + 1
         } else {
-            end
+            rect.left_cell
         };
-        Some((start, end.max(start)))
-    }
-
-    /// `x`/`d` on the rectangle: per-line delete, one undo unit.
-    pub(crate) fn block_delete(&mut self) {
-        let Some(BlockRect {
-            first_line: la,
-            last_line: lh,
-            left_cell: cl,
-            right_cell: cr,
-        }) = self.block_rect()
-        else {
-            return;
-        };
-        let mut killed = Vec::new();
-        self.tx_begin();
-        // descend: earlier byte ranges stay valid as later lines edit
-        for line in (la..=lh).rev() {
-            if let Some((s, e)) = self.rect_line_bytes(line, cl, cr) {
-                if e > s {
-                    killed.push(self.buf().rope.byte_slice(s..e).to_string());
-                    self.buf_mut().delete(strop_core::Range::charwise(s, e));
-                }
-            }
-        }
-        self.tx_commit();
-        killed.reverse();
-        self.set_register(None, killed.join(""), false);
-        let s = self
-            .buf()
-            .line_start(la.min(self.buf().last_content_line()));
-        self.set_head(self.buf().clamp_boundary(s));
-        self.after_visual_op();
-    }
-
-    /// `y` on the rectangle: join the cell-span text of every row.
-    pub(crate) fn block_yank(&mut self) {
-        let Some(BlockRect {
-            first_line: la,
-            last_line: lh,
-            left_cell: cl,
-            right_cell: cr,
-        }) = self.block_rect()
-        else {
-            return;
-        };
-        let mut parts = Vec::new();
-        for line in la..=lh {
-            if let Some((s, e)) = self.rect_line_bytes(line, cl, cr) {
-                parts.push(self.buf().rope.byte_slice(s..e).to_string());
-            }
-        }
-        self.set_register(None, parts.join("\n"), false);
-        self.message = format!("{} lines yanked (block)", lh - la + 1);
-        self.after_visual_op();
-    }
-
-    /// `c` on the rectangle: delete it, insert on every row (the typed
-    /// text replicates at Esc — vim's block change).
-    pub(crate) fn block_change(&mut self) {
-        let Some(BlockRect {
-            first_line: la,
-            last_line: lh,
-            left_cell: cl,
-            right_cell: _,
-        }) = self.block_rect()
-        else {
-            return;
-        };
-        self.block_delete_pending = Some((la, lh, cl));
-        self.tx_begin();
-        for line in (la..=lh).rev() {
-            if let Some((s, e)) = self.rect_line_bytes(
-                line,
-                cl,
-                self.block_rect().map(|r| r.right_cell).unwrap_or(cl),
+        let rows = (rect.first_line + 1..=rect.last_line)
+            .filter(|&line| self.insertion(line, column, "", right).is_some())
+            .collect();
+        if let Some(edit) = self.insertion(rect.first_line, column, "", true) {
+            if let Err(error) = self.apply(
+                self.current(),
+                self.buf().revision(),
+                ChangeSet {
+                    edits: vec![edit],
+                    undo_open: true,
+                },
             ) {
-                if e > s {
-                    self.buf_mut().delete(strop_core::Range::charwise(s, e));
-                }
+                self.message = error.to_string();
+                return;
             }
         }
-        self.tx_commit();
-        let s = self.buf().line_start(la);
-        let text = self
-            .buf()
-            .rope
-            .byte_slice(s..self.buf().line_end(la))
-            .to_string()
-            .trim_end_matches('\n')
-            .to_string();
-        let layout = strop_core::layout::LineLayout::build(&text, 8);
-        self.set_head(s + layout.byte_at_cell(cl).min(layout.len_bytes));
-        self.enter_insert_from("<c-v>c");
-    }
-
-    /// `I`/`A` on the rectangle: insert at the left/right edge, text
-    /// replicating per row at Esc.
-    pub(crate) fn block_insert(&mut self, right_edge: bool) {
-        let Some(BlockRect {
-            first_line: la,
-            last_line: lh,
-            left_cell: cl,
-            right_cell: cr,
-        }) = self.block_rect()
-        else {
-            return;
-        };
-        let cell = if right_edge { cr + 1 } else { cl };
-        self.block_delete_pending = Some((la, lh, cell));
-        let s = self.buf().line_start(la);
-        let text = self
-            .buf()
-            .rope
-            .byte_slice(s..self.buf().line_end(la))
-            .to_string()
-            .trim_end_matches('\n')
-            .to_string();
-        let layout = strop_core::layout::LineLayout::build(&text, 8);
-        self.set_head(s + layout.byte_at_cell(cell).min(layout.len_bytes));
+        self.mode = Mode::Insert;
+        self.land_at_cell(rect.first_line, column);
+        self.block_insert_state = Some(BlockInsertState {
+            rows,
+            column,
+            pad: right,
+        });
         self.enter_insert_from("<c-v>I");
     }
 
-    /// Esc from a block insert/change: the typed text lands on every
-    /// rect row at its cell (vim). Called from the insert Esc path.
     pub(crate) fn block_replicate(&mut self, typed: &str) {
-        let Some((la, lh, cell)) = self.block_delete_pending.take() else {
+        let Some(state) = self.block_insert_state.take() else {
             return;
         };
         if typed.is_empty() {
             return;
         }
-        self.tx_begin();
-        for line in (la + 1..=lh).rev() {
-            if line > self.buf().last_content_line() {
-                continue;
-            }
-            let s = self.buf().line_start(line);
-            let e = self.buf().line_end(line);
-            let text = self
-                .buf()
-                .rope
-                .byte_slice(s..e)
-                .to_string()
-                .trim_end_matches('\n')
-                .to_string();
-            let layout = strop_core::layout::LineLayout::build(&text, 8);
-            let at = s + layout.byte_at_cell(cell).min(layout.len_bytes);
-            self.buf_mut().insert(at, typed);
+        let edits = state
+            .rows
+            .into_iter()
+            .filter_map(|line| {
+                if line > self.buf().last_content_line() {
+                    return None;
+                }
+                self.insertion(line, state.column, typed, state.pad)
+            })
+            .collect();
+        if let Err(error) = self.apply(
+            self.current(),
+            self.buf().revision(),
+            ChangeSet {
+                edits,
+                undo_open: true,
+            },
+        ) {
+            self.message = error.to_string();
         }
-        self.tx_commit();
-    }
-
-    /// Shared exit after a block op: normal mode, collapse.
-    fn after_visual_op(&mut self) {
-        self.mode = Mode::Normal;
-        self.clamp_cursor();
     }
 }

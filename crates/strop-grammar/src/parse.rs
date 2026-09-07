@@ -163,6 +163,7 @@ pub fn parse(keys: &str) -> Parse {
                     }
                     Parse::Incomplete => return Parse::Incomplete,
                     Parse::Invalid => return Parse::Invalid,
+                    Parse::QueryError(e) => return Parse::QueryError(e),
                 }
             }
             _ => {}
@@ -243,17 +244,20 @@ pub fn parse(keys: &str) -> Parse {
                 if pat.is_empty() {
                     Parse::Invalid
                 } else {
-                    Parse::Complete(Command {
-                        op,
-                        register,
-                        count,
-                        target: Target::Motion(if backward {
-                            Motion::SearchBackward(pat)
-                        } else {
-                            Motion::Search(pat)
+                    match crate::CompiledQuery::compile(&pat, false) {
+                        Err(e) => Parse::QueryError(e),
+                        Ok(q) => Parse::Complete(Command {
+                            op,
+                            register,
+                            count,
+                            target: Target::Motion(if backward {
+                                Motion::SearchBackward(q)
+                            } else {
+                                Motion::Search(q)
+                            }),
+                            keys: keys.into(),
                         }),
-                        keys: keys.into(),
-                    })
+                    }
                 }
             }
             _ => Parse::Invalid,

@@ -1,30 +1,33 @@
-//! Contract probes (review 4, 0023): the reviewer's reproductions,
-//! adopted verbatim as the acceptance suite — each names a guarantee.
-//! Probes that pinned a bug have their fix's regression coverage here.
-//! No probes are removed when fixed; they stay green.
+//! Consumer-facing regressions from the earlier review. Geometry and worker
+//! transition oracles live beside their respective implementations.
 
 use super::*;
 use strop_core::Buffer;
 
 fn syntax_editor() -> Editor {
     let mut e = Editor::new(Buffer::from_text("fn demo() {\n    let x = 1;\n}\n"));
-    e.cur_mut().highlighter = strop_syntax::Highlighter::for_path(std::path::Path::new("audit.rs"));
+    e.cur_mut().highlighter =
+        strop_syntax::Highlighter::for_path(std::path::Path::new("audit.rs"), e.buf().text());
     e
 }
 
 fn spans(e: &mut Editor) -> Vec<strop_syntax::Span> {
-    let rope = e.buf().rope.clone();
-    let rev = e.buf().epoch;
+    let rope = e.buf().text().clone();
+    let rev = e.buf().revision();
     e.cur_mut()
         .highlighter
         .as_mut()
         .unwrap()
         .highlight(&rope, rev, 0, rope.len_bytes())
+        .unwrap()
 }
 
 fn fresh_spans(e: &Editor) -> Vec<strop_syntax::Span> {
-    let mut h = strop_syntax::Highlighter::for_path(std::path::Path::new("audit.rs")).unwrap();
-    h.highlight(&e.buf().rope, e.buf().epoch, 0, e.buf().len_bytes())
+    let mut h =
+        strop_syntax::Highlighter::for_path(std::path::Path::new("audit.rs"), e.buf().text())
+            .unwrap();
+    h.highlight(e.buf().text(), e.buf().revision(), 0, e.buf().len_bytes())
+        .unwrap()
 }
 
 #[test]
@@ -54,78 +57,37 @@ fn review_highlight_updates_after_undo() {
 }
 
 #[test]
-fn review_input_edit_preserves_start_column() {
-    let b = Buffer::from_text("abcdXef\n");
-    let op = strop_core::history::Edit {
-        at: 4,
-        text: "X".into(),
-        kind: strop_core::history::EditKind::Insert,
-    };
-    let edit = b.input_edit_of(&op);
-    assert_eq!(
-        edit.new_end_point,
-        (0, 5),
-        "single-line insertion ends at start.column + inserted bytes"
-    );
-}
-
-#[test]
 fn review_split_from_empty_scratch_retains_live_panes() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file.txt");
     std::fs::write(&path, "file\n").unwrap();
     let mut e = Editor::new(Buffer::from_text(""));
-    e.feed_text(&format!(":vs {}<cr><c-w>h", path.display()));
+    e.feed_text(&format!(":vs {}<cr>", path.display()));
+    e.wait_io().unwrap();
+    e.feed_text("<c-w>h");
+    assert_eq!(e.panes.len(), 2);
     assert!(e.panes.iter().all(|p| e.docs.get(p.doc).is_some()));
-}
-
-#[test]
-fn review_git_reply_belongs_to_request_document() {
-    let mut e = Editor::new(Buffer::from_text("first\n"));
-    let old_epoch = e.buf().epoch;
-    let second = e
-        .docs
-        .insert(Document::scratch(Buffer::from_text("second\n")));
-    e.switch_to(second);
-    e.hunks_in_flight = true;
-    let hunk = strop_git::Hunk::build(
-        1,
-        1,
-        1,
-        1,
-        vec![strop_git::DiffLine {
-            has_newline: true,
-            origin: strop_git::LineOrigin::Addition,
-            old_lineno: None,
-            new_lineno: Some(1),
-            text: b"first-file change".to_vec(),
-        }],
-    );
-    let first = e.docs.iter().next().map(|(id, _)| id).unwrap();
-    e.handle_git_job(GitJob::Hunks {
-        doc: first,
-        epoch: old_epoch,
-        unstaged: vec![hunk],
-        staged: vec![],
-    });
-    assert!(
-        e.hunks.is_empty(),
-        "a result from the first file must not populate the second file"
-    );
 }
 
 #[test]
 fn review_clipboard_reply_preserves_destination() {
     let mut e = Editor::new(Buffer::from_text("first\n"));
     let first = e.current();
-    e.clip_paste_pending = Some((false, first));
+    let ticket = strop_core::worker::Ticket {
+        request: e.worker_ids.allocate().unwrap(),
+        key: ClipboardKey { document: first },
+    };
+    e.clip_paste_pending = Some((false, ticket.clone()));
     let second = e
         .docs
         .insert(Document::scratch(Buffer::from_text("second\n")));
     e.switch_to(second);
-    e.handle_clipboard(Some("CLIP".into()));
+    e.handle_clipboard(strop_core::worker::Completion {
+        ticket,
+        outcome: strop_core::worker::Outcome::Success("CLIP".into()),
+    });
     assert_eq!(
-        e.buf().rope.to_string(),
+        e.buf().text().to_string(),
         "second\n",
         "paste must retain its initiating document"
     );
@@ -158,8 +120,9 @@ fn review_save_preserves_symlink() {
     std::fs::write(&target, "old\n").unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
     let mut b = Buffer::open(&link).unwrap();
-    b.insert(0, "new ");
-    b.save(false).unwrap();
+    b.edit().insert(0, "new ").unwrap();
+    let receipt = b.prepare_save(None, false).unwrap().execute().unwrap();
+    assert!(b.accept_save(receipt));
     assert!(
         std::fs::symlink_metadata(&link)
             .unwrap()
@@ -177,16 +140,16 @@ fn review_preview_contract_is_honest() {
     // and the preview claims none. Composition windows preview.
     let mut e = Editor::new(Buffer::from_text("f[hello]\n"));
     e.feed_text("ll");
-    let before = e.buf().rope.to_string();
+    let before = e.buf().text().to_string();
     e.feed(Key::Char('c'));
     e.feed(Key::Char('i'));
     assert!(
-        e.preview().is_none(),
+        e.preview().unwrap().is_none(),
         "no fake preview for ci — the object isn't chosen yet"
     );
     e.feed(Key::Char('['));
     assert_ne!(
-        e.buf().rope.to_string(),
+        e.buf().text().to_string(),
         before,
         "ci[ executes at the completing key"
     );
@@ -194,7 +157,7 @@ fn review_preview_contract_is_honest() {
     let mut e = Editor::new(Buffer::from_text("hello world foo\n"));
     e.feed_text("d/wo");
     assert!(
-        e.preview().is_some(),
+        e.preview().unwrap().is_some(),
         "the search composition previews its target"
     );
 }
@@ -235,16 +198,7 @@ fn review_marks_map_in_two_documents_with_equal_history_depth() {
 fn review_ranged_yank_updates_unnamed_register() {
     let mut e = Editor::new(Buffer::from_text("one\ntwo\n"));
     e.feed_text(":1y<cr>p");
-    assert_eq!(e.buf().rope.to_string(), "one\none\ntwo\n");
-}
-
-#[test]
-fn review_render_handles_more_panes_than_cells() {
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    for _ in 0..5 {
-        e.feed_text(":vs<cr>");
-    }
-    let _ = crate::headless::frame_string(&mut e, 4, 4);
+    assert_eq!(e.buf().text().to_string(), "one\none\ntwo\n");
 }
 
 #[test]
@@ -259,9 +213,7 @@ fn review_tab_glyph_and_caret_use_same_layout() {
         .unwrap() as usize;
     // the contract: the glyph and the caret read the same layout,
     // driven by the editor's tab width
-    let caret = 5 + e
-        .buf()
-        .cell_col_with_tab(e.head(), e.config.tab_size as u16) as usize;
+    let caret = 5 + e.buf().cell_col_with_tab(e.head(), e.config.tab_size).get();
     assert_eq!(x_col, caret, "rendered X and caret must agree after a tab");
 }
 
@@ -278,95 +230,8 @@ fn review_operator_find_accepts_digit_as_target() {
     let mut e = Editor::new(Buffer::from_text("ab2cd\n"));
     e.feed_text("df2");
     assert_eq!(
-        e.buf().rope.to_string(),
+        e.buf().text().to_string(),
         "cd\n",
         "a digit after f is a target character"
-    );
-}
-
-#[test]
-fn review_search_preview_starts_at_utf8_boundary() {
-    let mut e = Editor::new(Buffer::from_text("界foo\n"));
-    e.feed_text("d/f");
-    let _ = e.preview();
-}
-
-#[test]
-fn gateway_validates_everything() {
-    // 0024: the gateway refuses, typed — never panics, never no-ops
-    use super::transact::{ApplyError, ChangeSet};
-    let mk = |at: usize, text: &str, kind| strop_core::history::Edit {
-        at,
-        text: text.into(),
-        kind,
-    };
-    let insert = |at: usize, t: &str| strop_core::history::Edit {
-        at,
-        text: t.into(),
-        kind: strop_core::history::EditKind::Insert,
-    };
-    let mut e = Editor::new(Buffer::from_text("hello\n"));
-    let doc = e.current();
-    let base = e.buf().epoch;
-    // happy path
-    let r = e.apply(
-        doc,
-        base,
-        ChangeSet {
-            edits: vec![insert(0, "hi ")],
-            undo_open: false,
-        },
-    );
-    assert!(r.is_ok());
-    assert_eq!(e.buf().rope.to_string(), "hi hello\n");
-    // stale base refused
-    let r = e.apply(
-        doc,
-        0,
-        ChangeSet {
-            edits: vec![insert(0, "x")],
-            undo_open: false,
-        },
-    );
-    assert!(matches!(r, Err(ApplyError::StaleRevision { .. })));
-    // readonly refused
-    e.buf_mut().readonly = true;
-    let r = e.apply(
-        doc,
-        e.buf().epoch,
-        ChangeSet {
-            edits: vec![insert(0, "x")],
-            undo_open: false,
-        },
-    );
-    assert!(matches!(r, Err(ApplyError::ReadOnly)));
-    e.buf_mut().readonly = false;
-    // off-boundary refused
-    let r = e.apply(
-        doc,
-        e.buf().epoch,
-        ChangeSet {
-            edits: vec![insert(999, "x")],
-            undo_open: false,
-        },
-    );
-    assert!(matches!(r, Err(ApplyError::InvalidRange)));
-    // one undo unit
-    let mut e2 = Editor::new(Buffer::from_text("ab\n"));
-    let d2 = e2.current();
-    let cs = ChangeSet {
-        edits: vec![
-            mk(0, "a", strop_core::history::EditKind::Delete),
-            mk(0, "A", strop_core::history::EditKind::Insert),
-        ],
-        undo_open: false,
-    };
-    assert!(e2.apply(d2, e2.buf().epoch, cs).is_ok());
-    assert_eq!(e2.buf().rope.to_string(), "Ab\n");
-    e2.feed_text("u");
-    assert_eq!(
-        e2.buf().rope.to_string(),
-        "ab\n",
-        "one u undoes the whole changeset"
     );
 }

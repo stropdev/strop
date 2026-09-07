@@ -1,288 +1,262 @@
-//! client/api.rs — the editor-facing surface: document sync
-//! (didOpen/didChange) and the requests (hover, goto, locations,
-//! clangd's switchSourceHeader).
+//! Request admission and the common launcher. Every admitted request
+//! ends in exactly one terminal event (R9) — success, empty, error or
+//! cancellation — carrying its ORIGINAL stamp and negotiated encoding
+//! (R1); nothing is silently dropped on an `Err`/`None` branch.
+use async_lsp::lsp_types as lt;
+use strop_core::id::LineIndex;
 
-use std::path::Path;
-
-use async_lsp::lsp_types::notification::{DidChangeTextDocument, DidOpenTextDocument};
-use async_lsp::lsp_types::request::{GotoDefinition, HoverRequest};
-use async_lsp::lsp_types::{
-    DidChangeTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams, HoverParams,
-    Position, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
-    VersionedTextDocumentIdentifier, WorkDoneProgressParams,
-};
-
-use crate::convert::hover_text;
-use crate::protocol::{LocKind, LspEvent, PendingRequest, PositionEncoding, QueuedRequest};
-
-use super::wire::{is_content_modified, request_locations};
+use super::queue::{WireEnv, WireJob, RETRY_DELAY};
+use super::sync;
+use super::wire::{self, is_content_modified};
 use super::{Client, SwitchSourceHeader};
+use crate::convert::hover_text;
+use crate::protocol::*;
 
 impl Client {
-    /// didOpen — full text, full sync (simplest correct; incremental sync
-    /// is the perf follow-up, noted in 0009 §3).
-    pub fn did_open(&self, path: &Path, language_id: &str, text: &str) {
-        // initialize must hit the wire first — queue until it has
-        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
-            self.pending_opens.lock().push((
-                path.to_path_buf(),
-                language_id.to_string(),
-                text.to_string(),
-            ));
-            return;
+    /// Admit a request against the current open state without sending
+    /// anything: the pure half of the replay tape's `lsp.prepare`.
+    /// `Ok` carries the owning stamp and captured input; `Err` means
+    /// nothing was sent and nothing will arrive.
+    pub fn prepare_request(&self, input: RequestInput) -> Result<PendingRequest, RequestRefusal> {
+        let state = self.sync.lock();
+        let Some(open) = state.documents.get(&input.path) else {
+            return Err(RequestRefusal::NotOpen);
+        };
+        if open.document != input.document || open.revision != input.revision {
+            return Err(RequestRefusal::StaleRevision);
         }
-        let Some(uri) = self.uri(path) else { return };
-        self.versions.lock().insert(path.to_path_buf(), 1);
-        let socket = self.socket.clone();
-        let item = TextDocumentItem {
-            uri,
-            language_id: language_id.to_string(),
-            version: 1,
-            text: text.to_string(),
-        };
-        let _ = socket.notify::<DidOpenTextDocument>(DidOpenTextDocumentParams {
-            text_document: item,
-        });
-    }
-
-    /// The negotiated column encoding — callers convert at the boundary.
-    pub fn encoding(&self) -> PositionEncoding {
-        self.caps.encoding()
-    }
-
-    /// didChange — full document replacement (TextDocumentSyncKind::Full).
-    /// The protocol version this client last sent for a path (0020 §6:
-    /// diagnostics are fresh when their version is at least this —
-    /// the buffer's edit epoch is a DIFFERENT clock and must never be
-    /// compared against it).
-    pub fn sent_version(&self, path: &Path) -> Option<i32> {
-        self.versions.lock().get(path).copied()
-    }
-
-    pub fn did_change(&self, path: &Path, text: &str) {
-        let Some(uri) = self.uri(path) else { return };
-        let socket = self.socket.clone();
-        // strictly increasing per the spec — "full sync doesn't care"
-        // was wrong: pyright rejects stale versions (0014)
-        let version = {
-            let mut m = self.versions.lock();
-            let v = m.entry(path.to_path_buf()).or_insert(1);
-            *v += 1;
-            *v
-        };
-        let params = DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri, version },
-            content_changes: vec![async_lsp::lsp_types::TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: text.to_string(),
-            }],
-        };
-        let _ = socket.notify::<DidChangeTextDocument>(params);
-    }
-
-    /// Hover at (line, col) — UTF-8 converted at the boundary. The
-    /// response posts onto the channel as HoverText (or nothing).
-    /// Quiet no-op when the server doesn't advertise hover (0009 §2.5).
-    pub fn hover(&self, path: &Path, line: usize, col: usize) {
-        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
-            self.pending_requests.lock().push(PendingRequest {
-                path: path.to_path_buf(),
-                line,
-                col,
-                req_revision: 0,
-                kind: QueuedRequest::Hover,
-            });
-            return;
+        if state.ready && !self.caps.supports(input.kind) {
+            return Err(RequestRefusal::Unsupported);
         }
-        if !self.caps.hover() {
-            return;
-        }
-        let Some(uri) = self.uri(path) else { return };
-        let sock = self.socket.clone();
-        let tx = self.tx.clone();
-        let params = HoverParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri },
-                position: Position {
-                    line: line as u32,
-                    character: col as u32,
-                },
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
+        let request = match self.next_request.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |n| n.checked_add(1),
+        ) {
+            Ok(value) => value,
+            Err(_) => panic!("LSP request identity exhausted"),
         };
-        self.handle.spawn(async move {
-            // -32801 "content modified": servers reject during their
-            // initial index — one retry after a beat (helix does the same
-            // class of dance)
-            let mut resp = sock.request::<HoverRequest>(params.clone()).await;
-            if is_content_modified(&resp) {
-                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                resp = sock.request::<HoverRequest>(params).await;
+        let stamp = RequestStamp {
+            request: RequestId::new(request),
+            server: self.id,
+            document: input.document,
+            revision: input.revision,
+        };
+        Ok(PendingRequest { stamp, input })
+    }
+
+    /// Launch an admitted request: onto the ordered wire when ready,
+    /// else the pre-init queue flushed by `finish_initialize`.
+    pub fn launch_request(&self, request: PendingRequest) {
+        let mut state = self.sync.lock();
+        if state.ready {
+            self.queue.send(WireJob::Request(request));
+        } else {
+            state.pending_requests.push(request);
+        }
+    }
+
+    /// Prepare and launch in one step for callers outside the tape
+    /// seam (the probe example).
+    pub fn request(&self, input: RequestInput) -> Result<RequestStamp, RequestRefusal> {
+        let request = self.prepare_request(input)?;
+        let stamp = request.stamp;
+        self.launch_request(request);
+        Ok(stamp)
+    }
+}
+
+/// Launch one admitted request on the wire worker. Called in admission
+/// order, so every earlier frame is already on the wire.
+pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
+    let kind = request.input.kind;
+    let path = request.input.path.clone();
+    let stamp = request.stamp;
+    let encoding = env.caps.encoding();
+    let context = ReplyContext {
+        stamp,
+        encoding,
+        kind,
+    };
+    if !env.caps.supports(kind) {
+        return note(
+            env,
+            context,
+            format!("{} is not supported by this language server", kind.label()),
+        );
+    }
+    let Some(uri) = uri_for(&env.root, &request.input.path) else {
+        return note(
+            env,
+            context,
+            "cannot map the document path onto a file URI".into(),
+        );
+    };
+    let Ok(line) = u32::try_from(request.input.line.get()) else {
+        return note(env, context, "line is out of protocol range".into());
+    };
+    let server_col = to_server_col(&request.input.line_text, request.input.byte_col, encoding);
+    let Ok(character) = u32::try_from(server_col.get()) else {
+        return note(env, context, "column is out of protocol range".into());
+    };
+    let tdp = lt::TextDocumentPositionParams {
+        text_document: lt::TextDocumentIdentifier { uri },
+        position: lt::Position { line, character },
+    };
+    let handle = env.handle.clone();
+    let env = env.clone();
+    handle.spawn(async move {
+        if !sync::owns(&env, &stamp, &path) {
+            return note(
+                &env,
+                context,
+                "cancelled — the document changed or closed".into(),
+            );
+        }
+        match kind {
+            RequestKind::Hover => hover(env, tdp, context, path).await,
+            RequestKind::Goto => goto(env, tdp, context, path).await,
+            RequestKind::Locations(kind) => {
+                wire::request_locations(&env, kind, tdp, context, path).await
             }
-            if let Ok(Some(hover)) = resp {
-                let text = hover_text(&hover);
-                if !text.is_empty() {
-                    let _ = tx.send(LspEvent::HoverText { text });
+            RequestKind::SwitchHeader => switch_header(env, tdp, context).await,
+        }
+    });
+}
+
+/// Map a buffer path onto a file URI, anchoring relative paths at the
+/// workspace root.
+fn uri_for(root: &std::path::Path, path: &std::path::Path) -> Option<lt::Url> {
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    };
+    lt::Url::from_file_path(abs).ok()
+}
+
+fn note(env: &WireEnv, context: ReplyContext, text: String) {
+    let _ = env.tx.send(LspEvent::Note { context, text });
+}
+
+async fn hover(
+    env: WireEnv,
+    tdp: lt::TextDocumentPositionParams,
+    context: ReplyContext,
+    path: std::path::PathBuf,
+) {
+    let params = lt::HoverParams {
+        text_document_position_params: tdp,
+        work_done_progress_params: Default::default(),
+    };
+    let mut response = env
+        .socket
+        .request::<lt::request::HoverRequest>(params.clone())
+        .await;
+    if is_content_modified(&response) {
+        tokio::time::sleep(RETRY_DELAY).await;
+        if !sync::owns(&env, &context.stamp, &path) {
+            return note(
+                &env,
+                context,
+                "cancelled — the document changed or closed".into(),
+            );
+        }
+        response = env
+            .socket
+            .request::<lt::request::HoverRequest>(params)
+            .await;
+    }
+    match response {
+        Ok(Some(hover)) => {
+            let text = hover_text(&hover);
+            if text.is_empty() {
+                note(&env, context, "no hover information at the cursor".into());
+            } else {
+                let _ = env.tx.send(LspEvent::HoverText { context, text });
+            }
+        }
+        Ok(None) => note(&env, context, "no hover information at the cursor".into()),
+        Err(error) => note(&env, context, format!("hover failed: {error}")),
+    }
+}
+
+async fn goto(
+    env: WireEnv,
+    tdp: lt::TextDocumentPositionParams,
+    context: ReplyContext,
+    path: std::path::PathBuf,
+) {
+    let params = lt::GotoDefinitionParams {
+        text_document_position_params: tdp,
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
+    };
+    let mut response = env
+        .socket
+        .request::<lt::request::GotoDefinition>(params.clone())
+        .await;
+    if is_content_modified(&response) {
+        tokio::time::sleep(RETRY_DELAY).await;
+        if !sync::owns(&env, &context.stamp, &path) {
+            return note(
+                &env,
+                context,
+                "cancelled — the document changed or closed".into(),
+            );
+        }
+        response = env
+            .socket
+            .request::<lt::request::GotoDefinition>(params)
+            .await;
+    }
+    match response {
+        Ok(Some(response)) => match wire::first_location(response) {
+            Some(location) => match wire::to_server_location(location) {
+                Ok(location) => {
+                    let _ = env.tx.send(LspEvent::GotoLocation { context, location });
                 }
-            }
-        });
-    }
-
-    /// Goto-definition; response posts as GotoLocation. Quiet no-op when
-    /// the server doesn't advertise definitions (0009 §2.5).
-    pub fn goto_definition(&self, path: &Path, line: usize, col: usize, req_revision: u64) {
-        // pre-init: caps unknown ≠ unsupported — queue, flush on
-        // Initialized (gd right after opening a project used to die
-        // silently here)
-        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
-            self.pending_requests.lock().push(PendingRequest {
-                path: path.to_path_buf(),
-                line,
-                col,
-                req_revision,
-                kind: QueuedRequest::Goto,
-            });
-            return;
-        }
-        if !self.caps.goto_definition() {
-            return;
-        }
-        let Some(uri) = self.uri(path) else { return };
-        let sock = self.socket.clone();
-        let tx = self.tx.clone();
-        let params = GotoDefinitionParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri },
-                position: Position {
-                    line: line as u32,
-                    character: col as u32,
-                },
+                Err(uri) => note(
+                    &env,
+                    context,
+                    format!("definition target is not a local file: {uri}"),
+                ),
             },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: Default::default(),
-        };
-        self.handle.spawn(async move {
-            let mut resp = sock.request::<GotoDefinition>(params.clone()).await;
-            if is_content_modified(&resp) {
-                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                resp = sock.request::<GotoDefinition>(params).await;
-            }
-            if let Ok(Some(resp)) = resp {
-                use async_lsp::lsp_types::GotoDefinitionResponse as R;
-                let loc = match resp {
-                    R::Scalar(l) => Some(l),
-                    R::Array(v) => v.into_iter().next(),
-                    R::Link(v) => v
-                        .into_iter()
-                        .next()
-                        .map(|l| async_lsp::lsp_types::Location {
-                            uri: l.target_uri,
-                            range: l.target_selection_range,
-                        }),
+            None => note(&env, context, "no definition found".into()),
+        },
+        Ok(None) => note(&env, context, "no definition found".into()),
+        Err(error) => note(&env, context, format!("goto definition failed: {error}")),
+    }
+}
+
+async fn switch_header(env: WireEnv, tdp: lt::TextDocumentPositionParams, context: ReplyContext) {
+    match env
+        .socket
+        .request::<SwitchSourceHeader>(tdp.text_document)
+        .await
+    {
+        Ok(Some(uri)) => match uri.to_file_path() {
+            Ok(path) => {
+                let location = ServerLocation {
+                    path,
+                    position: ServerPosition {
+                        line: LineIndex::new(0),
+                        column: ServerColumn::new(0),
+                    },
                 };
-                if let Some(l) = loc {
-                    if let Ok(path) = l.uri.to_file_path() {
-                        let _ = tx.send(LspEvent::GotoLocation {
-                            path,
-                            line: l.range.start.line as usize,
-                            col: l.range.start.character as usize,
-                            req_revision,
-                        });
-                    }
-                }
+                let _ = env.tx.send(LspEvent::GotoLocation { context, location });
             }
-        });
-    }
-
-    /// references / implementation / type-definition / declaration:
-    /// one shape, four LSP methods; the response posts as Locations.
-    pub fn locations(
-        &self,
-        kind: LocKind,
-        path: &Path,
-        line: usize,
-        col: usize,
-        req_revision: u64,
-    ) {
-        // pre-init: caps unknown ≠ unsupported — queue like gd (0015)
-        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
-            self.pending_requests.lock().push(PendingRequest {
-                path: path.to_path_buf(),
-                line,
-                col,
-                req_revision,
-                kind: QueuedRequest::Locations(kind),
-            });
-            return;
-        }
-        let supported = match kind {
-            LocKind::References => self.caps.references(),
-            LocKind::Implementation => self.caps.implementation(),
-            LocKind::TypeDefinition => self.caps.type_definition(),
-            LocKind::Declaration => self.caps.declaration(),
-        };
-        if !supported {
-            return; // quiet no-op like gd (0009 §2.5)
-        }
-        let Some(uri) = self.uri(path) else { return };
-        let sock = self.socket.clone();
-        let tx = self.tx.clone();
-        let tdp = TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier { uri },
-            position: Position {
-                line: line as u32,
-                character: col as u32,
-            },
-        };
-        self.handle
-            .spawn(request_locations(sock, tx, kind, tdp, req_revision));
-    }
-
-    /// clangd's `textDocument/switchSourceHeader` (a clangd extension,
-    /// absent from lsp-types' request set): the .cpp ↔ .h jump. The
-    /// counterpart posts as GotoLocation at its top; "no counterpart"
-    /// and unsupported servers surface as a Note, never an error.
-    pub fn switch_source_header(&self, path: &Path) {
-        if !self.initialized.load(std::sync::atomic::Ordering::Relaxed) {
-            self.pending_requests.lock().push(PendingRequest {
-                path: path.to_path_buf(),
-                line: 0,
-                col: 0,
-                req_revision: 0,
-                kind: QueuedRequest::SwitchHeader,
-            });
-            return;
-        }
-        let Some(uri) = self.uri(path) else { return };
-        let sock = self.socket.clone();
-        let tx = self.tx.clone();
-        self.handle.spawn(async move {
-            match sock
-                .request::<SwitchSourceHeader>(TextDocumentIdentifier { uri })
-                .await
-            {
-                Ok(Some(target)) => {
-                    if let Ok(path) = target.to_file_path() {
-                        let _ = tx.send(LspEvent::GotoLocation {
-                            path,
-                            line: 0,
-                            col: 0,
-                            req_revision: 0, // gs is a jump command, not a position answer
-                        });
-                    }
-                }
-                Ok(None) => {
-                    let _ = tx.send(LspEvent::Note {
-                        text: "no header/source counterpart".into(),
-                    });
-                }
-                Err(e) => {
-                    let _ = tx.send(LspEvent::Note {
-                        text: format!("switch source/header unsupported: {e}"),
-                    });
-                }
-            }
-        });
+            Err(()) => note(
+                &env,
+                context,
+                format!("header/source counterpart is not a local file: {uri}"),
+            ),
+        },
+        Ok(None) => note(&env, context, "no header/source counterpart".into()),
+        Err(error) => note(
+            &env,
+            context,
+            format!("switch source/header failed: {error}"),
+        ),
     }
 }

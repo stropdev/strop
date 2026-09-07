@@ -9,7 +9,7 @@ fn first_open_replaces_the_scratch_buffer() {
     let f = dir.path().join("scratch-test.rs");
     std::fs::write(&f, "fn a() {}\n").unwrap();
     let mut e = Editor::new(Buffer::from_text(""));
-    e.open_buffer(&f).unwrap();
+    e.open_fixture(&f).unwrap();
     assert_eq!(e.docs.len(), 1, "scratch replaced, not stacked");
     assert_eq!(e.buf().path.as_deref(), Some(f.as_path()));
     e.feed_text(":q\r");
@@ -23,7 +23,7 @@ fn view_marks_readonly_and_edits_refuse() {
     e.feed_text(":view\r");
     assert!(e.buf().readonly);
     e.feed_text("x");
-    assert_eq!(e.buf().rope.to_string(), "one\ntwo\n", "no edit landed");
+    assert_eq!(e.buf().text().to_string(), "one\ntwo\n", "no edit landed");
     assert!(e.message.contains("readonly"));
 }
 
@@ -35,6 +35,6 @@ fn edited_scratch_survives() {
     let dir = tempfile::tempdir().unwrap();
     let f = dir.path().join("scratch-test.rs");
     std::fs::write(&f, "fn a() {}\n").unwrap();
-    e.open_buffer(&f).unwrap();
+    e.open_fixture(&f).unwrap();
     assert_eq!(e.docs.len(), 2, "edited scratch is real work");
 }

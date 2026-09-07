@@ -1,43 +1,66 @@
 //! Shell escapes: `:!cmd` runs and displays, `|cmd` pipes a range
 //! through and replaces it (helix's pipe is the better `!`). Every
-//! spawn is a job posting onto the event loop (0001 §3) — the input
-//! path never waits on a shell.
+//! spawn is an owned worker posting one terminal result onto the
+//! event loop (0001 §3, R9 §4/§5) — the input path never waits on a
+//! shell, no result mutates a buffer without owning the exact
+//! request/document/revision it was admitted against, and a failed
+//! or cancelled command never touches user text.
 
-use strop_core::Buffer;
+mod jobs;
+mod process;
+#[cfg(test)]
+mod tests;
+
+use strop_core::worker::{self, CancelReason, Outcome, Ticket};
 
 use super::trace;
-use super::{Document, Editor, ShellResult};
+use super::{Document, Editor};
+#[cfg(test)]
+pub use jobs::ProcessOutput;
+pub use jobs::{ShellIntent, ShellKey, ShellResult};
 
 impl Editor {
-    /// `:!cmd`: run `sh -c cmd` in a job; the output buffer opens when
-    /// the job lands.
+    /// `:!cmd`: run `sh -c cmd` in a job; the output buffer opens
+    /// when the job lands — automatically only if nothing else
+    /// happened since (any input revokes the switch; the output
+    /// itself always survives in the background).
     pub(crate) fn shell_run(&mut self, cmd: &str) {
         let cmd = cmd.trim().to_string();
         if cmd.is_empty() {
             self.message = ":! needs a command".into();
             return;
         }
-        let tx = self.shell_tx.clone();
-        let cwd = self.cwd.clone();
-        let job_cmd = cmd.clone();
-        strop_trace::record_with(
-            strop_trace::EventKind::JobStarted,
-            || serde_json::json!({"service":"shell","command":cmd,"cwd":cwd.to_string_lossy()}),
-        );
-        std::thread::spawn(move || {
-            let proc = run_shell(&job_cmd, &cwd, None);
-            // the display buffer shows both streams like a terminal
-            let output = if proc.stderr.is_empty() {
-                proc.stdout
-            } else {
-                format!("{}\n--- stderr ---\n{}", proc.stdout, proc.stderr)
-            };
-            let _ = tx.send(ShellResult::Display {
-                cmd: job_cmd,
-                output,
-            });
+        let request = match self.worker_ids.allocate() {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = error.message;
+                return;
+            }
+        };
+        // the display's focus token is this request: only the newest
+        // display job may still switch the view when it lands
+        let intent = ShellIntent {
+            ticket: Ticket {
+                request,
+                key: ShellKey::Display {
+                    origin: self.current(),
+                    revision: self.buf().revision(),
+                    focus: request,
+                },
+            },
+            command: cmd.clone(),
+            cwd: self.cwd.clone(),
+            original: None,
+        };
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"shell","request":request.get(),
+                "command":cmd,"cwd":self.cwd.to_string_lossy(),
+            })
         });
+        self.shell_focus = Some(request);
         self.message = format!("sh: {cmd} …");
+        self.launch_shell(intent, None);
     }
 
     /// `|cmd` (visual) or `|cmd` on a normal line: pipe the range
@@ -48,230 +71,291 @@ impl Editor {
             self.message = "pipe: needs a command".into();
             return;
         }
-        let buffer = self.current();
-        let s = start.min(end).min(self.buf().len_bytes());
-        let e = end.max(start).min(self.buf().len_bytes());
-        let original = self.buf().rope.byte_slice(s..e).to_string();
-        let tx = self.shell_tx.clone();
-        let cwd = self.cwd.clone();
-        let job_cmd = cmd.clone();
-        strop_trace::record_with(
-            strop_trace::EventKind::JobStarted,
-            || serde_json::json!({"service":"pipe","command":cmd,"start_byte":s,"end_byte":e,"revision":self.buf().epoch}),
-        );
-        std::thread::spawn(move || {
-            let proc = run_shell(&job_cmd, &cwd, Some(&original));
-            let _ = tx.send(ShellResult::Pipe {
-                buffer,
-                start,
-                end,
-                original,
-                output: proc.stdout,
-                ok: proc.ok,
-                err: proc.stderr,
-            });
+        // normalize, clamp to the document, then to char boundaries:
+        // the captured range is exactly what delivery validates —
+        // never the raw arguments (multibyte offsets must not slice)
+        let document = self.current();
+        let len = self.buf().len_bytes();
+        let raw_start = start.min(end).min(len);
+        let raw_end = end.max(start).min(len);
+        let buf = self.buf();
+        let s = buf.clamp_boundary(raw_start);
+        let e = buf.clamp_boundary(raw_end);
+        let original = buf.text().byte_slice(s..e).to_string();
+        let revision = buf.revision();
+        let request = match self.worker_ids.allocate() {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = error.message;
+                return;
+            }
+        };
+        let intent = ShellIntent {
+            ticket: Ticket {
+                request,
+                key: ShellKey::Pipe {
+                    document,
+                    revision,
+                    start: s,
+                    end: e,
+                },
+            },
+            command: cmd.clone(),
+            cwd: self.cwd.clone(),
+            original: Some(original),
+        };
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"pipe","request":request.get(),"command":cmd,
+                "start_byte":s,"end_byte":e,"revision":revision.get(),
+            })
         });
         self.message = format!("| {cmd} …");
+        let input = intent.original.clone();
+        self.launch_shell(intent, input);
     }
 
-    /// Collect shell results (event-loop tick + headless settle).
-    pub fn drain_shell(&mut self) {
-        if self.docs.is_empty() {
-            return;
+    /// Register the intent, then launch the worker against its exact
+    /// ticket — registration before launch, one terminal result per
+    /// request, panic and thread-start failures included.
+    fn launch_shell(&mut self, intent: ShellIntent, input: Option<String>) {
+        let request = intent.ticket.request;
+        let command = intent.command.clone();
+        let cwd = intent.cwd.clone();
+        let ticket = intent.ticket.clone();
+        self.shell_requests.insert(request, intent);
+        let operation = match ticket.key {
+            ShellKey::Display { .. } => "shell.display",
+            ShellKey::Pipe { .. } => "shell.pipe",
+        };
+        match self.tape.request(operation, &self.shell_requests[&request]) {
+            Ok(false) => return,
+            Ok(true) => {}
+            Err(error) => {
+                self.handle_shell_result(ShellResult {
+                    ticket,
+                    outcome: Outcome::failed(
+                        strop_core::worker::FailureKind::Protocol,
+                        error.to_string(),
+                    ),
+                });
+                return;
+            }
         }
-        loop {
-            let next = self.shell_rx.as_ref().and_then(|rx| rx.try_recv().ok());
-            match next {
-                Some(result) => {
-                    self.handle_shell_result(result);
+        let tx = self.shell_tx.clone();
+        let handle = worker::spawn(
+            "strop-shell",
+            move |outcome| {
+                let _ = tx.send(ShellResult { ticket, outcome });
+            },
+            move |token| {
+                if token.is_cancelled() {
+                    return Outcome::Cancelled(CancelReason::OwnerClosed);
                 }
-                None => break,
+                process::run_shell(&command, &cwd, input, &token)
+            },
+        );
+        self.worker_handles.insert(request, handle);
+    }
+
+    /// Any subsequent user input revokes a pending display switch —
+    /// the output buffer still lands, but in the background (Main
+    /// calls this at `feed_inner` entry; the `:!`/`|` dispatch that
+    /// wants the switch registers afterwards and re-arms it).
+    pub(crate) fn revoke_shell_focus(&mut self) {
+        self.shell_focus = None;
+    }
+
+    /// A closed document invalidates its pipe owners (a reused arena
+    /// slot must never receive a stale replacement) and any display
+    /// focus aimed at it. Display output requests survive — their
+    /// buffers are editor-owned. Main calls this from the document
+    /// close path before removal.
+    pub(crate) fn shell_document_closed(&mut self, document: strop_core::id::DocumentId) {
+        if let Some(focus) = self.shell_focus {
+            let origin_lost = self
+                .shell_requests
+                .get(&focus)
+                .is_some_and(|intent| {
+                    matches!(&intent.ticket.key, ShellKey::Display { origin, .. } if *origin == document)
+                });
+            if origin_lost {
+                self.shell_focus = None;
+            }
+        }
+        let stale: Vec<_> = self
+            .shell_requests
+            .values()
+            .filter(|intent| {
+                matches!(&intent.ticket.key, ShellKey::Pipe { document: d, .. } if *d == document)
+            })
+            .map(|intent| intent.ticket.request)
+            .collect();
+        for request in stale {
+            self.shell_requests.remove(&request);
+            if let Some(handle) = self.worker_handles.remove(&request) {
+                handle.cancel(CancelReason::OwnerClosed);
             }
         }
     }
 
     /// One shell job result (TUI events land here directly — 0018).
+    /// The registry is the gate: only the exact admitted ticket may
+    /// publish, exactly once; duplicates and stale results only trace
+    /// their rejection.
     pub(crate) fn handle_shell_result(&mut self, result: ShellResult) {
         trace::services::shell(&result);
+        let request = result.ticket.request;
+        if !self
+            .shell_requests
+            .get(&request)
+            .is_some_and(|intent| intent.ticket == result.ticket)
+        {
+            trace::services::rejected("shell", "request already settled or cancelled");
+            return;
+        }
+        let Some(intent) = self.shell_requests.remove(&request) else {
+            return;
+        };
+        self.worker_handles.remove(&request);
         if self.docs.is_empty() {
             return;
         }
-        {
-            match result {
-                ShellResult::Display { cmd, output } => {
-                    let mut buf = Buffer::from_text(&output);
-                    buf.name = Some(format!("sh: {cmd}"));
-                    let id = self.docs.insert(Document::output(buf));
-                    self.switch_to(id);
+        match intent.ticket.key {
+            ShellKey::Display {
+                origin,
+                revision,
+                focus,
+            } => {
+                let may_focus = self.shell_focus == Some(focus)
+                    && self.current() == origin
+                    && self
+                        .docs
+                        .get(origin)
+                        .is_some_and(|d| d.buf.revision() == revision);
+                if self.shell_focus == Some(focus) {
+                    self.shell_focus = None;
+                }
+                let output = match result.outcome {
+                    Outcome::Success(output) => output,
+                    Outcome::Failed { failure, partial } => {
+                        // a failed command's output is still shown —
+                        // failure explains itself in the stderr section
+                        let mut output = partial.unwrap_or_default();
+                        if output.stderr.is_empty() {
+                            output.stderr = failure.message;
+                        }
+                        output
+                    }
+                    // cancellation revoked publication: no buffer, no switch
+                    Outcome::Cancelled(_) => return,
+                };
+                let text = if output.stderr.is_empty() {
+                    output.stdout
+                } else {
+                    format!("{}\n--- stderr ---\n{}", output.stdout, output.stderr)
+                };
+                let mut buffer = strop_core::Buffer::from_text(&text);
+                buffer.name = Some(format!("sh: {}", intent.command));
+                let doc = self.docs.insert(Document::output(buffer));
+                self.generation += 1;
+                self.mru.push(doc);
+                if may_focus {
+                    self.switch_to(doc);
                     self.set_head(0);
                     self.view_mut().view_top = 0;
-                    self.message = format!("sh: {cmd} — q closes");
+                    self.message = format!("sh: {} — q closes", intent.command);
                 }
-                ShellResult::Pipe {
-                    buffer,
-                    start,
-                    end,
-                    original,
-                    output,
-                    ok,
-                    err,
-                } => {
-                    // a failed command never touches the source — its
-                    // stderr explains itself in the message line
-                    if !ok {
-                        self.message = format!("pipe failed: {}", err.trim());
-                        trace::services::rejected("shell", &self.message);
-                        return;
-                    }
-                    let Some(buf) = self.docs.get_mut(buffer).map(|d| &mut d.buf) else {
-                        self.message = "pipe: buffer is gone".into();
-                        trace::services::rejected("shell", &self.message);
-                        return;
-                    };
-                    if buf.readonly {
-                        self.message = "pipe: readonly buffer".into();
-                        trace::services::rejected("shell", &self.message);
-                        return;
-                    }
-                    // never clobber: the range must still hold what we piped
-                    let (s, e) = (start.min(end), end.max(start));
-                    if e > buf.len_bytes()
-                        || !buf.is_boundary(s)
-                        || !buf.is_boundary(e)
-                        || buf.rope.byte_slice(s..e) != original
-                    {
+            }
+            ShellKey::Pipe {
+                document,
+                revision,
+                start,
+                end,
+            } => {
+                let Some(doc) = self.docs.get(document) else {
+                    trace::services::rejected("shell", "pipe document closed");
+                    return;
+                };
+                if doc.buf.revision() != revision {
+                    if self.current() == document {
                         self.message = "pipe: text changed under the job — skipped".into();
-                        trace::services::rejected("shell", &self.message);
+                    }
+                    trace::services::rejected("shell", "pipe revision changed");
+                    return;
+                }
+                if doc.buf.readonly {
+                    if self.current() == document {
+                        self.message = "pipe: readonly buffer".into();
+                    }
+                    trace::services::rejected("shell", "pipe readonly buffer");
+                    return;
+                }
+                let output = match result.outcome {
+                    Outcome::Success(output) => output.stdout,
+                    Outcome::Failed { failure, partial } => {
+                        // a failed command never touches the source —
+                        // its stderr explains itself in the message line
+                        if self.current() == document {
+                            let detail = partial
+                                .as_ref()
+                                .map(|partial| partial.stderr.trim())
+                                .filter(|stderr| !stderr.is_empty())
+                                .unwrap_or(&failure.message);
+                            self.message = format!("pipe failed: {detail}");
+                        }
+                        trace::services::rejected("shell", "pipe command failed");
                         return;
                     }
-                    // linewise ranges keep their newline; charwise gets
-                    // the command's trailing newline trimmed
-                    let out = if original.ends_with('\n') {
-                        output
-                    } else {
-                        output.strip_suffix('\n').unwrap_or(&output).to_string()
-                    };
-                    let base = buf.epoch;
-                    let changes = super::transact::ChangeSet {
-                        edits: vec![
-                            strop_core::history::Edit {
-                                at: s,
-                                text: original,
-                                kind: strop_core::history::EditKind::Delete,
-                            },
-                            strop_core::history::Edit {
-                                at: s,
-                                text: out,
-                                kind: strop_core::history::EditKind::Insert,
-                            },
-                        ],
-                        undo_open: false,
-                    };
-                    if let Err(error) = self.apply(buffer, base, changes) {
+                    Outcome::Cancelled(_) => return,
+                };
+                let Some(original) = intent.original else {
+                    trace::services::rejected("shell", "pipe intent lost its captured text");
+                    return;
+                };
+                // never clobber: the range must still hold what we piped
+                let buf = &doc.buf;
+                if end > buf.len_bytes()
+                    || !buf.is_boundary(start)
+                    || !buf.is_boundary(end)
+                    || buf.text().byte_slice(start..end) != original.as_str()
+                {
+                    if self.current() == document {
+                        self.message = "pipe: text changed under the job — skipped".into();
+                    }
+                    trace::services::rejected("shell", "pipe range changed");
+                    return;
+                }
+                // linewise ranges keep their newline; charwise gets
+                // the command's trailing newline trimmed
+                let replacement = if original.ends_with('\n') {
+                    output
+                } else {
+                    output.strip_suffix('\n').unwrap_or(&output).to_owned()
+                };
+                // one atomic range replacement against the captured
+                // revision — one undo unit for the whole pipe
+                let changes = super::transact::ChangeSet {
+                    edits: vec![strop_core::Replacement::new(
+                        strop_core::Range::charwise(start, end),
+                        replacement,
+                    )],
+                    undo_open: false,
+                };
+                if let Err(error) = self.apply(document, revision, changes) {
+                    if self.current() == document {
                         self.message = format!("pipe: {error}");
-                        trace::services::rejected("shell", &self.message);
-                        return;
                     }
-                    if buffer == self.current() {
-                        self.set_head(self.buf().clamp_boundary(s));
-                        self.clamp_cursor();
-                        self.flash(strop_core::Range::charwise(self.head(), self.head()));
-                    }
+                    trace::services::rejected("shell", "pipe replacement rejected");
+                    return;
+                }
+                if document == self.current() {
+                    self.set_head(self.buf().clamp_boundary(start));
+                    self.clamp_cursor();
+                    self.flash(strop_core::Range::charwise(self.head(), self.head()));
                     self.message = "piped".into();
                 }
             }
         }
-    }
-}
-
-/// What a shell job produced — status stays structured so pipe
-/// results can refuse to clobber on failure (0015).
-struct ProcResult {
-    ok: bool,
-    stdout: String,
-    stderr: String,
-}
-
-/// Run `sh -c cmd` with optional stdin; returns stdout + stderr (a
-/// failed spawn reports itself as output — jobs never panic the loop).
-fn run_shell(cmd: &str, cwd: &std::path::Path, stdin_text: Option<&str>) -> ProcResult {
-    let mut child = match std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .current_dir(cwd)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return ProcResult {
-                ok: false,
-                stdout: String::new(),
-                stderr: format!("spawn failed: {e}"),
-            }
-        }
-    };
-    if let Some(text) = stdin_text {
-        use std::io::Write;
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(text.as_bytes());
-        }
-    }
-    match child.wait_with_output() {
-        Ok(out) => ProcResult {
-            ok: out.status.success(),
-            stdout: String::from_utf8_lossy(&out.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-        },
-        Err(e) => ProcResult {
-            ok: false,
-            stdout: String::new(),
-            stderr: format!("wait failed: {e}"),
-        },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bang_opens_output_buffer() {
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.feed_text(":!echo hello\r");
-        // the job is async; deliver it the way the loop would
-        for _ in 0..100 {
-            e.drain_shell();
-            if e.buf().name.as_deref() == Some("sh: echo hello") {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert_eq!(e.buf().name.as_deref(), Some("sh: echo hello"));
-        assert!(e.buf().rope.to_string().contains("hello"));
-        assert!(e.buf().readonly);
-        e.feed_text("q"); // closes like any readonly buffer
-        assert_eq!(e.buf().name.as_deref(), None);
-    }
-
-    #[test]
-    fn visual_pipe_replaces_selection() {
-        let mut e = Editor::new(Buffer::from_text("beta\nalpha\n"));
-        e.feed_text("Vj"); // select both lines
-        e.feed_text(" |sort"); // Space | pipes the selection (0014)
-        e.feed(crate::editor::Key::Enter);
-        for _ in 0..100 {
-            e.drain_shell();
-            if e.buf().rope == "alpha\nbeta\n" {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert_eq!(e.buf().rope.to_string(), "alpha\nbeta\n");
-        // one undo unit for the whole pipe
-        e.feed_text("u");
-        assert_eq!(e.buf().rope.to_string(), "beta\nalpha\n");
     }
 }

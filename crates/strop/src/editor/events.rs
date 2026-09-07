@@ -8,35 +8,32 @@
 //! headless harness keeps the raw channels (no forwarders) and drives
 //! the same per-event handlers through the drains.
 
-use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
-
-use strop_picker::PickerMsg;
 
 use super::{Editor, Key, ShellResult};
 
 /// One app event. Terminal input is already translated to editor keys
 /// by the reader thread.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub enum AppEvent {
     Terminal(Key),
     /// Terminal resized — a redraw is owed even with no input (0020 §12).
-    Resize,
+    Resize {
+        columns: u16,
+        rows: u16,
+    },
     /// Bracketed paste: one text payload, never a key stream.
     Paste(String),
     /// ctrl-c: the quit intent (0015's policy lives in the editor).
     QuitIntent,
-    Lsp(strop_lsp::PositionEncoding, strop_lsp::LspEvent),
+    Lsp(strop_lsp::LspEvent),
+    LspAttach(super::lsp::attach::AttachRecord),
     Shell(ShellResult),
+    Io(super::io::IoEvent),
     Git(super::GitJob),
-    Picker {
-        /// Which picker instance and which query generation produced
-        /// this message — stale streams die at the handler (0020 §2).
-        id: u64,
-        gen: u64,
-        msg: PickerMsg,
-    },
-    Preview(PathBuf, Option<String>),
-    Clipboard(Option<String>),
+    Picker(super::picker::PickerEvent),
+    Preview(super::picker::PreviewResult),
+    Clipboard(super::ClipboardResult),
 }
 
 /// A forwarder: move every item of a job channel onto the app channel.
@@ -59,6 +56,9 @@ impl Editor {
     /// (TUI only — headless keeps the raw channels for its drains).
     /// Late-attaching LSP servers forward through the retained sender.
     pub fn connect_events(&mut self, tx: Sender<AppEvent>) {
+        if let Some(rx) = self.io.rx.take() {
+            forward(rx, tx.clone(), AppEvent::Io);
+        }
         if let Some(rx) = self.shell_rx.take() {
             forward(rx, tx.clone(), AppEvent::Shell);
         }
@@ -69,19 +69,15 @@ impl Editor {
             forward(rx, tx.clone(), AppEvent::Clipboard);
         }
         if let Some(rx) = self.preview_rx.take() {
-            forward(rx, tx.clone(), |(p, c)| AppEvent::Preview(p, c));
+            forward(rx, tx.clone(), AppEvent::Preview);
         }
-        if let Some(glue) = &mut self.picker {
-            if let Some(rx) = glue.take_rx() {
-                let (id, gen) = (glue.id, glue.gen);
-                forward(rx, tx.clone(), move |msg| AppEvent::Picker { id, gen, msg });
-            }
-        }
+        self.connect_picker_stream(&tx);
         for srv in &mut self.lsp_servers {
-            let enc = srv.client.encoding();
             let rx = std::mem::replace(&mut srv.rx, std::sync::mpsc::channel().1);
-            forward(rx, tx.clone(), move |ev| AppEvent::Lsp(enc, ev));
+            forward(rx, tx.clone(), AppEvent::Lsp);
         }
+        let rx = self.lsp_state.attach.take_rx();
+        forward(rx, tx.clone(), AppEvent::LspAttach);
         self.app_tx = Some(tx);
     }
 
@@ -90,7 +86,7 @@ impl Editor {
     pub fn handle_app_event(&mut self, ev: AppEvent) {
         match ev {
             AppEvent::Terminal(key) => self.feed(key),
-            AppEvent::Resize => {} // the loop redraws after every event
+            AppEvent::Resize { .. } => {} // the loop redraws after every event
             AppEvent::Paste(text) => {
                 strop_trace::record_with(strop_trace::EventKind::Paste, || {
                     serde_json::json!({
@@ -108,26 +104,65 @@ impl Editor {
                     self.should_quit = true;
                 }
             }
-            AppEvent::Lsp(enc, ev) => self.handle_lsp_event(enc, ev),
+            AppEvent::Lsp(event) => self.handle_lsp_event(event),
+            AppEvent::LspAttach(record) => self.handle_lsp_attach(record),
             AppEvent::Shell(r) => self.handle_shell_result(r),
+            AppEvent::Io(event) => self.handle_io(event),
             AppEvent::Git(job) => self.handle_git_job(job),
-            AppEvent::Picker { id, gen, msg } => {
-                // stale generation or dead picker: ignore
-                if self
-                    .picker
-                    .as_ref()
-                    .is_some_and(|g| g.id == id && g.gen == gen)
-                {
-                    self.handle_picker_msg(msg);
-                } else {
-                    super::trace::services::rejected(
-                        "picker",
-                        "picker identity or query generation changed",
-                    );
-                }
-            }
-            AppEvent::Preview(path, content) => self.handle_preview(path, content),
+            AppEvent::Picker(event) => self.handle_picker_event(event),
+            AppEvent::Preview(result) => self.handle_preview(result),
             AppEvent::Clipboard(content) => self.handle_clipboard(content),
+        }
+    }
+}
+
+impl Editor {
+    /// Outstanding finite work, independent of whether channels are forwarded.
+    pub(crate) fn async_pending(&self) -> bool {
+        use strop_core::worker::Load;
+        self.io_pending()
+            || !self.shell_requests.is_empty()
+            || self.clip_paste_pending.is_some()
+            || self
+                .picker
+                .as_ref()
+                .is_some_and(|glue| glue.picker.streaming)
+            || self
+                .preview_loads
+                .values()
+                .any(|load| matches!(load, Load::Running(_)))
+            || matches!(self.git_discovery, Load::Running(_))
+            || matches!(self.hunk_load, Load::Running(_))
+            || !self.log_requests.is_empty()
+            || !self.dive_requests.is_empty()
+            || self.card_request.is_some()
+            || self.git_mutation.is_some()
+            || !self.git_mutations.is_empty()
+            || self
+                .blame_gutters
+                .values()
+                .any(|gutter| gutter.request.is_some())
+            || !self.lsp_state.attach.pending.is_empty()
+    }
+
+    /// Finish is an explicit action in both modes. Preserve accepted writes;
+    /// cancel observational work so shutdown cannot depend on a slow reader.
+    pub(crate) fn finish_background_work(&mut self) {
+        self.finishing = true;
+        self.lsp_state.attach.enabled = false;
+        self.close_picker();
+        self.git_mutations.clear();
+        self.request_session_save();
+        let cancel: Vec<_> = self
+            .worker_handles
+            .keys()
+            .copied()
+            .filter(|id| !self.io_write_pending(*id))
+            .collect();
+        for request in cancel {
+            if let Some(handle) = self.worker_handles.remove(&request) {
+                handle.cancel(strop_core::worker::CancelReason::Shutdown);
+            }
         }
     }
 }

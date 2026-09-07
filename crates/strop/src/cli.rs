@@ -16,6 +16,16 @@ pub enum Command {
     Replay {
         trace: PathBuf,
     },
+    /// `--replay TRACE`: full forensic replay of a complete full-content
+    /// capture (R11). Distinct from `--replay-script` input extraction.
+    ReplayFull {
+        trace: PathBuf,
+    },
+    /// `--export-metadata TRACE`: positive-projection privacy export;
+    /// explicitly not replayable.
+    ExportMetadata {
+        trace: PathBuf,
+    },
     Help,
     Version,
     Compat,
@@ -106,6 +116,25 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     );
                     continue;
                 }
+                "--replay" => {
+                    let trace = args.next().ok_or("--replay requires a trace file")?.into();
+                    if command.is_some() || replay.is_some() || headless {
+                        return Err("--replay conflicts with other launch modes".into());
+                    }
+                    command = Some(Command::ReplayFull { trace });
+                    continue;
+                }
+                "--export-metadata" => {
+                    let trace = args
+                        .next()
+                        .ok_or("--export-metadata requires a trace file")?
+                        .into();
+                    if command.is_some() || replay.is_some() || headless {
+                        return Err("--export-metadata conflicts with other launch modes".into());
+                    }
+                    command = Some(Command::ExportMetadata { trace });
+                    continue;
+                }
                 "--bench" => {
                     let scenario = args
                         .next()
@@ -145,6 +174,17 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     }
     if content == ContentPolicy::Full && trace_path.is_none() {
         return Err("--log-content requires --log or STROP_LOG".into());
+    }
+    // Replay/export consume exactly one trace file and never record one.
+    if matches!(
+        &command,
+        Some(Command::ReplayFull { .. } | Command::ExportMetadata { .. })
+    ) && (trace_path.is_some() || content == ContentPolicy::Full || operand.is_some())
+    {
+        return Err(
+            "--replay/--export-metadata take exactly one trace and record no log; unset STROP_LOG"
+                .into(),
+        );
     }
     let command = match (command, replay, headless) {
         (Some(command), None, false) => command,

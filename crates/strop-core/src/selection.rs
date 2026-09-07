@@ -5,7 +5,7 @@
 
 /// One selection: the anchor sits, the head moves. Collapsed (equal) is
 /// a cursor. Byte offsets, always char boundaries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Selection {
     pub anchor: usize,
     pub head: usize,
@@ -32,7 +32,7 @@ impl Selection {
 /// The editor's selections: a primary plus zero or more extras.
 /// Invariants (enforced by `normalize`): extras sorted, deduped, none
 /// equal to the primary's head.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SelectionSet {
     primary: Selection,
     extras: Vec<Selection>,
@@ -119,6 +119,17 @@ impl SelectionSet {
     /// planted by Q on purpose, 0013 §3).
     pub fn set_extras(&mut self, heads: impl IntoIterator<Item = usize>) {
         self.extras = heads.into_iter().map(Selection::cursor).collect();
+        self.normalize();
+    }
+
+    /// Map every endpoint in place, preserving selection direction and capacity.
+    pub fn map_positions(&mut self, mut map: impl FnMut(usize) -> usize) {
+        self.primary.anchor = map(self.primary.anchor);
+        self.primary.head = map(self.primary.head);
+        for selection in &mut self.extras {
+            selection.anchor = map(selection.anchor);
+            selection.head = map(selection.head);
+        }
         self.normalize();
     }
 

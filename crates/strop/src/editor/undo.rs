@@ -23,7 +23,8 @@ impl Editor {
             self.message = "readonly buffer".into();
             return;
         }
-        let rows = self.buf().history.tree_rows();
+        self.cancel_pending();
+        let rows = self.buf().history().tree_rows();
         if rows.is_empty() {
             self.message = "no undo history".into();
             return;
@@ -53,6 +54,7 @@ impl Editor {
         self.switch_to(id);
         self.set_head(0);
         self.view_mut().view_top = 0;
+        self.view_mut().hscroll = strop_core::id::DisplayColumn::new(0);
         // land on the current revision's row
         if let Some(line) = rows.iter().position(|r| r.is_current) {
             self.set_head(self.buf().line_start(line + 1));
@@ -73,15 +75,24 @@ impl Editor {
             return;
         };
         let (browser, origin) = (ub.browser, ub.origin);
-        let ops = self.doc_mut(origin).buf.history.ops_to(rev);
+        if self.docs.get(origin).is_none() {
+            self.message = "undo origin is closed".into();
+            return;
+        }
+        let result = self.doc_mut(origin).buf.restore_revision(rev);
+        let moved = match result {
+            Ok(Some(moved)) => moved,
+            Ok(None) => return,
+            Err(error) => {
+                self.message = error.to_string();
+                return;
+            }
+        };
         self.undo_browser = None;
         self.view_mut().doc = browser;
         self.close_buffer(true); // browser closes; origin keeps its id
         self.view_mut().doc = origin;
-        let Some(ops) = ops else { return };
-        let at = ops.iter().map(|e| e.at).min().unwrap_or(0);
-        self.buf_mut().apply_history(ops.clone());
-        self.bridge_applied_ops(&ops);
+        let at = moved.start.get();
         self.set_head(self.buf().clamp_boundary(at.min(self.buf().len_bytes())));
         self.clamp_cursor();
         self.flash(Range::charwise(self.head(), self.head()));
@@ -116,210 +127,31 @@ impl Editor {
 }
 
 impl Editor {
-    /// One undo unit per command (change ops hold the transaction open
-    /// through the insert session — vim groups `ci[foo<esc>` as one `u`).
-    pub(crate) fn tx_begin(&mut self) {
-        self.buf_mut().history.begin();
-    }
-
-    pub(crate) fn tx_commit(&mut self) {
-        self.buf_mut().history.commit();
-        self.bridge_edits_to_tree();
-        // 0020 §14 + 0023: every anchor of this document maps through the
-        // transaction — marks, jumplists, and the OTHER panes' cursors.
-        // The active pane's selections are each command's own business.
-        let Some(all_ops) = self.buf().history.last_committed_ops() else {
-            return;
-        };
-        // the watermark keys on (document, history node) — one op maps
-        // anchors EXACTLY once, even when a revision spans several
-        // commits (o/O's opening newline + the insert session), and
-        // equal depths across documents never collide
-        let mark = (self.current(), self.buf().history.depth());
-        let skip = match self.anchor_map_mark {
-            Some(((d, depth), n)) if (d, depth) == mark => n.min(all_ops.len()),
-            _ => 0,
-        };
-        if skip == all_ops.len() {
-            return;
-        }
-        self.anchor_map_mark = Some((mark, all_ops.len()));
-        strop_trace::record_with(strop_trace::EventKind::History, || {
-            serde_json::json!({
-                "operation":"commit", "buffer":self.buf().trace_id(),
-                "document":{"slot":self.current().index(),"generation":self.current().generation()},
-                "revision":self.buf().epoch,"history_node":mark.1,"new_edits":all_ops.len() - skip,
-            })
-        });
-        self.map_anchors_for_current(&all_ops, skip);
-    }
-
-    /// Map this document's anchors through a committed op set. Called by
-    /// tx_commit (with the watermark's skip) and by undo/redo (inverse
-    /// ops map anchors the same way — 0023).
-    fn map_anchors_for_current(&mut self, ops: &[strop_core::history::Edit], skip: usize) {
-        let ops = ops.iter().skip(skip);
-        let doc = self.current();
-        let map_one = |mut pos: usize| -> usize {
-            for op in ops.clone() {
-                let len = op.text.len();
-                match op.kind {
-                    strop_core::history::EditKind::Insert => {
-                        // Persistent anchors follow the original text, including
-                        // insertions at their exact byte boundary.
-                        if pos >= op.at {
-                            pos += len;
-                        }
-                    }
-                    strop_core::history::EditKind::Delete => {
-                        if pos > op.at + len {
-                            pos -= len;
-                        } else if pos > op.at {
-                            pos = op.at;
-                        }
-                    }
-                }
-            }
-            pos
-        };
-        for (d, m) in self.marks.values_mut() {
-            if *d == doc {
-                *m = map_one(*m);
-            }
-        }
-        for (d, j) in self
-            .jumplist_past
-            .iter_mut()
-            .chain(self.jumplist_future.iter_mut())
-        {
-            if *d == doc {
-                *j = map_one(*j);
-            }
-        }
-        let active = self.active_pane;
-        for (i, pane) in self.panes.iter_mut().enumerate() {
-            if pane.doc != doc || i == active {
-                continue;
-            }
-            let primary = pane.sels.primary();
-            pane.sels
-                .stretch_primary(map_one(primary.anchor), map_one(primary.head));
-            let extras: Vec<usize> = pane
-                .sels
-                .extra_heads()
-                .iter()
-                .map(|s| map_one(s.head))
-                .collect();
-            pane.sels.set_extras(extras);
-        }
-    }
-
-    /// 0022 §1: the parse tree tracks each committed edit — the bridge
-    /// is a cheap pointer walk at commit time; the reparse stays lazy.
-    fn bridge_edits_to_tree(&mut self) {
-        let doc = self.cur_mut();
-        if let (Some(h), Some(ops)) = (
-            doc.highlighter.as_mut(),
-            doc.buf.history.last_committed_ops(),
-        ) {
-            let revision = doc.buf.epoch;
-            h.apply_edits(&Self::ts_edits(&doc.buf, &ops), revision);
-        }
-    }
-
-    /// Drop the kept tree when exact coordinates aren't computable.
-    pub(crate) fn invalidate_syntax_tree(&mut self) {
-        if let Some(h) = self.cur_mut().highlighter.as_mut() {
-            h.invalidate();
-        }
-    }
-
-    /// Bridge the last-applied ops (undo/redo included) to the tree.
-    pub(crate) fn bridge_applied_ops(&mut self, ops: &[strop_core::history::Edit]) {
-        let doc = self.cur_mut();
-        if let Some(h) = doc.highlighter.as_mut() {
-            let revision = doc.buf.epoch;
-            h.apply_edits(&Self::ts_edits(&doc.buf, ops), revision);
-        }
-    }
-
-    fn ts_edits(
-        buf: &strop_core::Buffer,
-        ops: &[strop_core::history::Edit],
-    ) -> Vec<tree_sitter::InputEdit> {
-        ops.iter()
-            .map(|op| {
-                let e = buf.input_edit_of(op);
-                tree_sitter::InputEdit {
-                    start_byte: e.start_byte,
-                    old_end_byte: e.old_end_byte,
-                    new_end_byte: e.new_end_byte,
-                    start_position: tree_sitter::Point {
-                        row: e.start_point.0,
-                        column: e.start_point.1,
-                    },
-                    old_end_position: tree_sitter::Point {
-                        row: e.old_end_point.0,
-                        column: e.old_end_point.1,
-                    },
-                    new_end_position: tree_sitter::Point {
-                        row: e.new_end_point.0,
-                        column: e.new_end_point.1,
-                    },
-                }
-            })
-            .collect()
-    }
-
     /// `u`: undo one revision. Readonly buffers never record.
     pub(crate) fn undo(&mut self) {
-        if self.buf().readonly {
-            self.message = "readonly buffer".into();
-            return;
-        }
-        match self.buf_mut().history.undo_ops() {
-            Some(ops) => {
-                // vim lands the cursor at the *start* of the undone
-                // change; undo ops replay in reverse record order, so
-                // first() is the tail of the change — take the minimum
-                let start = ops.iter().map(|e| e.at).min().unwrap_or(0);
-                self.buf_mut().apply_history(ops.clone());
-                self.bridge_applied_ops(&ops);
-                // undo moves anchors too (0023: marks follow their text)
-                self.map_anchors_for_current(&ops, 0);
-                self.set_head(start);
+        let result = self.buf_mut().undo();
+        match result {
+            Ok(Some(moved)) => {
+                self.set_head(moved.start.get());
                 self.clamp_cursor();
-                self.flash(strop_core::Range::charwise(self.head(), self.head()));
+                self.flash(Range::charwise(self.head(), self.head()));
             }
-            None => self.message = "already at oldest change".into(),
+            Ok(None) => self.message = "already at oldest change".into(),
+            Err(error) => self.message = error.to_string(),
         }
     }
 
     /// `ctrl-r`: redo along the last-visited branch.
     pub(crate) fn redo(&mut self) {
-        if self.buf().readonly {
-            self.message = "readonly buffer".into();
-            return;
-        }
-        match self.buf_mut().history.redo_ops() {
-            Some(ops) => {
-                // cursor after the redone text for inserts, at the start
-                // of the redone deletion for deletes
-                let at = ops
-                    .last()
-                    .map(|e| match e.kind {
-                        strop_core::history::EditKind::Insert => e.at + e.text.len(),
-                        strop_core::history::EditKind::Delete => e.at,
-                    })
-                    .unwrap_or(0);
-                self.buf_mut().apply_history(ops.clone());
-                self.bridge_applied_ops(&ops);
-                self.map_anchors_for_current(&ops, 0);
-                self.set_head(at);
+        let result = self.buf_mut().redo();
+        match result {
+            Ok(Some(moved)) => {
+                self.set_head(moved.end.get());
                 self.clamp_cursor();
-                self.flash(strop_core::Range::charwise(self.head(), self.head()));
+                self.flash(Range::charwise(self.head(), self.head()));
             }
-            None => self.message = "nothing to redo".into(),
+            Ok(None) => self.message = "nothing to redo".into(),
+            Err(error) => self.message = error.to_string(),
         }
     }
 }
@@ -343,10 +175,10 @@ mod tests {
         e.feed_text("j"); // down to revision 1 (the "b" branch)
         e.feed(crate::editor::Key::Enter);
         assert_eq!(e.buf().name.as_deref(), None, "back on the file");
-        assert_eq!(e.buf().rope.to_string(), "a\nb\n");
+        assert_eq!(e.buf().text().to_string(), "a\nb\n");
         // and the restored state keeps its history: u walks back to "a"
         e.feed_text("u");
-        assert_eq!(e.buf().rope.to_string(), "a\n");
+        assert_eq!(e.buf().text().to_string(), "a\n");
     }
 
     #[test]
@@ -357,6 +189,6 @@ mod tests {
         assert!(e.undo_browser.is_some());
         e.feed_text("q");
         assert_eq!(e.buf().name.as_deref(), None);
-        assert_eq!(e.buf().rope.to_string(), "a\nb\n");
+        assert_eq!(e.buf().text().to_string(), "a\nb\n");
     }
 }

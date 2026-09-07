@@ -30,6 +30,17 @@ fn main() -> ExitCode {
 fn launch() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     let options = cli::parse(arguments.clone())?;
+    match &options.command {
+        cli::Command::ReplayFull { trace } => {
+            return replay::run_full(trace, &mut io::stdout().lock()).map_err(Into::into);
+        }
+        cli::Command::ExportMetadata { trace } => {
+            let source = io::BufReader::new(std::fs::File::open(trace)?);
+            strop_trace::export::metadata(source, &mut io::stdout().lock())?;
+            return Ok(());
+        }
+        _ => {}
+    }
     let trace_session = options
         .trace_path
         .as_deref()
@@ -38,6 +49,7 @@ fn launch() -> Result<(), Box<dyn Error>> {
                 path,
                 TraceOptions {
                     content: options.content,
+                    ..TraceOptions::default()
                 },
             )
         })
@@ -95,6 +107,9 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
         cli::Command::Update { check_only } => update::update(check_only)?,
         cli::Command::Bench { scenario } => bench::run(&scenario),
         cli::Command::Replay { trace } => replay::write_script(&trace, &mut io::stdout().lock())?,
+        cli::Command::ReplayFull { .. } | cli::Command::ExportMetadata { .. } => {
+            return Err("replay/export must run outside live startup".into());
+        }
         cli::Command::Headless { script, path } => {
             let script = std::fs::read_to_string(script)?;
             let buffer = path
@@ -129,16 +144,26 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
                         .map(|home| std::path::PathBuf::from(home).join(".local/state"))
                 });
             if path.is_none() {
-                session::restore(&mut editor);
-            }
-            if directory.is_some() {
-                editor.open_picker(strop_picker::Kind::Files);
+                if let Err(error) = session::restore(&mut editor) {
+                    editor.message = format!("session restore failed: {error}");
+                }
             }
             editor.trace_state();
-            editor.lsp_maybe_attach();
             if let Some(error) = error {
                 editor.message = error;
             }
+            if editor.tape.observes() {
+                editor
+                    .tape
+                    .seed(&editor::trace::seed::Seed::capture(&editor)?)?;
+            }
+            let tick = editor.tape.sample_tick();
+            editor.recorded_action(
+                editor::trace::drive::Action::Start {
+                    directory_picker: directory.is_some(),
+                },
+                tick,
+            )?;
             terminal::run(editor)?;
         }
     }

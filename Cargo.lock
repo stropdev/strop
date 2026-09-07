@@ -1112,22 +1112,25 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-core"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
+ "parking_lot",
  "ropey",
  "serde",
  "strop-trace",
  "tempfile",
+ "thiserror",
  "unicode-segmentation",
  "unicode-width 0.2.0",
 ]
 
 [[package]]
 name = "strop-editor"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "crossterm",
  "indicatif",
+ "libc",
  "parking_lot",
  "ratatui",
  "ropey",
@@ -1141,6 +1144,7 @@ dependencies = [
  "strop-syntax",
  "strop-trace",
  "tempfile",
+ "thiserror",
  "toml",
  "tree-sitter",
  "unicode-segmentation",
@@ -1149,15 +1153,18 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "git2",
+ "serde",
+ "serde_json",
+ "strop-core",
  "tempfile",
 ]
 
 [[package]]
 name = "strop-grammar"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "ropey",
  "strop-core",
@@ -1165,12 +1172,14 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "async-lsp",
  "parking_lot",
+ "ropey",
  "serde",
  "serde_json",
+ "strop-core",
  "strop-trace",
  "tokio",
  "tokio-util",
@@ -1179,20 +1188,22 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "ignore",
  "nucleo-matcher",
+ "serde",
  "serde_json",
  "strop-core",
 ]
 
 [[package]]
 name = "strop-syntax"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "ropey",
  "streaming-iterator",
+ "strop-core",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
@@ -1210,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "parking_lot",
  "serde",

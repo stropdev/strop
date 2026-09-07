@@ -1,9 +1,12 @@
 //! Conformance harness (0024): a reference model (plain String) and the
 //! real editor driven by the SAME generated operation streams through
 //! the production headless path. Every step asserts text equality plus
-//! the protocol invariants the TLA+ spec proves at the model level
-//! (panes reference live docs, the clock never goes back, anchors stay
-//! inside the text).
+//! the protocol invariants the TLA+ spec proves at the model level:
+//! panes reference live docs (NoStalePane), the revision never goes
+//! back (RevisionTracksPublications — the epoch counts publications,
+//! undo included), anchors stay inside the text on char boundaries.
+//! The transaction/ticket boundary itself has its own oracle module:
+//! transaction_conformance.rs (R12).
 //!
 //! Deterministic: a seeded xorshift, no wall clock, no I/O.
 
@@ -101,6 +104,9 @@ fn run_stream(seed: u64, ops: usize) {
     let mut e = Editor::new(Buffer::from_text(""));
     e.feed(Key::Esc); // dismiss the welcome card (first key is a card key)
     e.feed_text("i");
+    // the epoch counts publications (typing, undo moves included): it
+    // never goes back within a document's life (RevisionTracksPublications)
+    let mut last_revision = e.buf().revision().get();
     for step in 0..ops {
         let choice = rng.below(100);
         if choice < 40 {
@@ -130,8 +136,8 @@ fn run_stream(seed: u64, ops: usize) {
             e.feed(Key::Char(c));
         }
         let _ = step;
-        // text equality
-        let got = e.buf().rope.to_string();
+        // text equality — through the public accessor, never the field
+        let got = e.buf().text().to_string();
         assert_eq!(
             got, model.text,
             "seed {seed} step {step}: editor and model diverged"
@@ -140,6 +146,13 @@ fn run_stream(seed: u64, ops: usize) {
         let h = e.head();
         assert!(h <= e.buf().len_bytes(), "cursor past the text");
         assert!(e.buf().is_boundary(h), "cursor mid-char");
+        // the revision is the publication count: monotonic, never back
+        let revision = e.buf().revision().get();
+        assert!(
+            revision >= last_revision,
+            "seed {seed} step {step}: revision went back ({last_revision} -> {revision})"
+        );
+        last_revision = revision;
         // every pane references a live document (NoStalePane)
         for p in &e.panes {
             assert!(e.docs.get(p.doc).is_some(), "pane holds a stale doc id");

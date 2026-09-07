@@ -1,6 +1,7 @@
 # 0028 — Editor review and prioritized roadmap
 
-Status: review for 0.14.0. Deferred means not implemented in this change.
+Status: P1/P2 implemented for 0.15.0 under 0031. The findings below preserve the
+0.14 review baseline; they are not a list of still-open P1/P2 bugs.
 Priority is impact, not module size. P0 = demonstrated data loss/security emergency;
 P1 = correctness/privacy/daily editing; P2 = structural/performance quality;
 P3 = optional capability or polish. No unresolved P0 was demonstrated in this round.
@@ -16,11 +17,11 @@ CR from moving the physical terminal cursor; a gateway cannot protect callers
 that bypass it. Plans and comments sometimes describe a stronger system than
 source implements. That mismatch should be treated as a correctness defect.
 
-The best next investment is enforcing ownership and testing transitions across
-boundaries, not another broad feature wave. Plan 0030 proposes that work for
-review; it is not executed here.
+The ownership and transition work is implemented in 0031. The next separate pass
+is UI polish, particularly the modeline and commit surfaces; optional capability
+expansion remains P3.
 
-## Closed in this change
+## Closed in 0.14.1
 
 | Finding | Fix / evidence |
 |---|---|
@@ -37,7 +38,25 @@ review; it is not executed here.
 | Release dependency predicates can be ineffective | Explicit rejection branch, parsed macOS dependency rows, no negated-pipeline errexit assumption. |
 | Interrupted edits dropped coverage / input tokens | Smart-indent module registration and `<space>` / `<c-o>` restored; shared streaming token decoder. |
 
-## P1 — next correctness/privacy tranche
+## P1/P2 delivery in 0.15.0
+
+| Item | Implementation / evidence |
+|---|---|
+| R1 | Response-owned LSP request/server/document/revision/encoding; reordered, epoch-zero and equal-revision document regressions. |
+| R2 | Per-incarnation didOpen/didClose and reply invalidation; external-change/reopen coverage. |
+| R3 | Exclusive private atomic session/trust writes; creation-mode, symlink and partial-write failure regressions. |
+| R4 | Versioned native-path serialization; non-UTF-8 and existing lossy-alias restoration coverage. |
+| R5 | Compiled bounded Vim regex, actual match ranges, counted search, configured-tab blocks and CRLF editing; Neovim-derived corpus and edit/undo regressions. |
+| R6 | Per-pane display-cell scroll and asynchronous open/save/native work; cursor/overlay and late-result ownership regressions plus runtime/benchmark checks. |
+| R7 | One pending-input owner and reducer; full-origin selections restored on cancellation. |
+| R8 | Private rope/history mutation, validated whole batches and pre-edit change journals; rejection and publication oracles. |
+| R9 | Ticket-owned terminal results and process cancellation; failures/stale deliveries cannot clear newer owners, and subsequent requests progress. |
+| R10 | Immutable once-built index over the existing command listing; dispatch/help contracts unchanged. |
+| R11 | Native-free full forensic replay with state/cell comparison; explicit caps and payload-free metadata export. |
+| R12 | Blocking terminal-event delivery rather than polling sleeps in changed tests; generated transition shrinking/replay and a targeted protocol mutant gate. |
+| R13 | Named severity, revisions, request IDs, coordinate domains and register shape; private loop indices remain ordinary integers. |
+
+## Resolved P1 findings — 0.14 baseline
 
 ### R1. Correlated LSP request envelopes
 
@@ -112,7 +131,7 @@ Acceptance: navigating beyond the right edge keeps the cursor/text visible;
 slow filesystem/job scenarios do not freeze input, with explicit loading/saving
 states and unchanged error/overwrite policy. Measure on the existing bench path.
 
-## P2 — structural reliability and measured cost
+## Resolved P2 findings — 0.14 baseline
 
 - **R7. Pending command ownership.** `pending: String`, `pending_cursor`,
   `pending_normal`, search origin and walker state can disagree. Clipboard yank
@@ -149,15 +168,15 @@ states and unchanged error/overwrite policy. Measure on the existing bench path.
 
 ## P3 — after correctness
 
-- Search-history UX, richer diagnostics presentation, horizontal scrolling polish,
-  optional log rotation/export tooling after real usage evidence.
+- Modeline, commit/diff surfaces and general UI polish are the next requested pass.
+- Search-history UX and richer diagnostics presentation remain optional P3 work.
 - Debugger/plugin expansion stays behind the correctness work (0019/0020).
 - Package/release workflow should derive a real topological publishing order,
   not merely sort by direct internal-dependency count when the graph grows.
 
 ## Verification status
 
-Targeted source/physical-terminal tests and actual headless/LSP/TUI trace smokes
-were exercised during implementation. Docker/hosted CI and release evidence are
-reported with the release, not inferred from this static review. No claim is made
-that all editor bugs are eliminated or that all P1 items have shipped.
+Source, differential, physical-terminal and actual replay/UI evidence are collected
+under 0031. Docker/hosted CI and release evidence are reported with the release,
+not inferred from this review. Completing the named roadmap does not claim that
+all possible editor defects or service schedules have been exhausted.

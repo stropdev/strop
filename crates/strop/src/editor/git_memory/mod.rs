@@ -2,17 +2,28 @@
 //! dive, diff view, blame card, permalinks. Every surface is a real
 //! readonly buffer (0001 §3: motions, /, yank work); jobs post onto the
 //! event loop (0001 §5.6: no blocking the input path on shell git).
+//! R9/R6: every job owns a ticket; results land through
+//! `git_memory::jobs` handlers which validate ownership first.
+
+mod jobs;
+mod types;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
-use strop_core::Buffer;
-use strop_git::memory::{self, BlameCard, BlameLine, ChangedFile, LogRow};
+use strop_core::id::{BufferRevision, DocumentId};
+use strop_core::worker::{CancelReason, FailureKind, Outcome, Ticket};
+use strop_git::memory::{self, BlameLine};
 use strop_git::{Hunk, LineOrigin};
 
 use super::document::{ReturnPoint, Surface};
-use super::trace;
-use super::{Document, Editor, Key, Mode};
+use super::{trace, Editor, Key};
+
+pub(crate) use jobs::{git_failure, repo_or_unavailable};
+pub use types::{
+    BlameKey, CardKey, ContextKey, DiveData, DiveKey, DiveTarget, GitJob, GitMutation, HunkData,
+    HunkKey, LogKey, MutationKey, MutationKind, MutationOp,
+};
 
 /// The commit a Diff surface's file belongs to, with the commit's full
 /// changed-file list — the sidebar's data (typed numstat rows, the same
@@ -20,60 +31,35 @@ use super::{Document, Editor, Key, Mode};
 #[derive(Debug, Clone)]
 pub struct CommitFiles {
     pub sha: String,
-    pub files: Vec<ChangedFile>,
+    pub files: Vec<memory::ChangedFile>,
 }
 
 /// Where a hunk preview came from: the buffer it undoes/stages in, at
-/// the edit epoch it was captured. Edits since then invalidate it —
+/// the revision it was captured. Edits since then invalidate it —
 /// applying a stale region would cut the wrong lines.
 #[derive(Debug, Clone)]
 pub struct HunkOrigin {
-    pub buffer: strop_core::id::DocumentId,
-    pub epoch: u64,
+    pub buffer: DocumentId,
+    pub revision: BufferRevision,
+    /// The origin was untracked when captured: undo refuses (there is
+    /// no HEAD content to restore from).
+    pub untracked: bool,
 }
 
 /// Per-buffer blame gutter state (0011 §3), keyed by canonical path —
 /// no parallel vector to keep aligned, and index churn can never pair
-/// one buffer with another's blame. Valid only while the buffer's edit
-/// epoch and line count still match the capture.
+/// one buffer with another's blame. Valid only while the buffer's
+/// revision and line count still match the capture.
 #[derive(Debug, Clone)]
 pub struct BlameGutter {
     pub lines: Vec<BlameLine>,
-    /// Buffer edit epoch when the blame was captured; any edit since
+    /// Buffer revision when the blame was captured; any edit since
     /// invalidates the line↔buffer-line pairing.
-    pub epoch: u64,
-}
-
-/// Jobs post results here; the event loop drains (never blocks input).
-/// Index-carrying jobs carry the buffer-list `generation` they were
-/// spawned under — a dead surface cannot be resurrected by index reuse
-/// (0011 §2).
-pub enum GitJob {
-    Log {
-        buffer: strop_core::id::DocumentId,
-        generation: u64,
-        rows: Vec<LogRow>,
-    },
-    Card {
-        generation: u64,
-        card: Box<BlameCard>,
-    },
-    Gutter {
-        path: PathBuf,
-        generation: u64,
-        lines: Vec<BlameLine>,
-    },
-    Error(String),
-    /// The gutter snapshot (0021): diff computed off the render path
-    /// against an immutable rope clone.
-    Hunks {
-        /// The requesting document (0023: two documents share epochs) +
-        /// its text clock at request time.
-        doc: strop_core::id::DocumentId,
-        epoch: u64,
-        unstaged: Vec<strop_git::Hunk>,
-        staged: Vec<strop_git::Hunk>,
-    },
+    pub revision: BufferRevision,
+    /// The pending request while the gutter loads; `None` once loaded.
+    /// A late result for a removed request is rejected by ticket, so
+    /// toggle-off/on at the same path can never cross-pollinate.
+    pub request: Option<Ticket<BlameKey>>,
 }
 
 impl Editor {
@@ -92,13 +78,14 @@ impl Editor {
                 buffer: self.current(),
                 cursor: self.head(),
                 view_top: self.view_top(),
+                hscroll: self.view().hscroll,
             });
         }
-        let mut buf = Buffer::from_text(text);
+        let mut buf = strop_core::Buffer::from_text(text);
         buf.name = name.map(|n| n.to_string());
         // surfaces render via delta/plain rules: no tree-sitter;
         // readonly derives from the source (0021 §4)
-        let id = self.docs.insert(Document::surface(buf, surface));
+        let id = self.docs.insert(super::Document::surface(buf, surface));
         self.drop_stale_scratch(id);
         self.push_jump(); // opening a surface is a jumplist entry
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
@@ -147,9 +134,12 @@ impl Editor {
         );
         // syntax highlighting under the origin tint (delta's look):
         // the label is the file path for commit deltas; "hunk" and
-        // friends resolve to None and keep origin colors
-        if let Some(hl) = strop_syntax::Highlighter::for_path(std::path::Path::new(label)) {
-            self.cur_mut().highlighter = Some(hl);
+        // friends resolve to None and keep origin colors. The pure
+        // detector reads the surface's own rope — no extra build.
+        let hl =
+            strop_syntax::Highlighter::for_path(std::path::Path::new(label), self.buf().text());
+        if hl.is_some() {
+            self.cur_mut().highlighter = hl;
         }
     }
 
@@ -176,11 +166,11 @@ impl Editor {
         focus: Option<String>,
         range: Option<(usize, usize)>,
     ) {
-        let Some(repo) = &self.git else {
+        let Some(context) = self.git.clone() else {
             self.message = "not a git repo".into();
             return;
         };
-        let workdir = repo.workdir().to_path_buf();
+        let workdir = context.workdir().to_path_buf();
         let file = if file_scoped {
             self.buf().path.as_deref().and_then(|p| {
                 let abs = if Path::new(p).is_absolute() {
@@ -208,184 +198,139 @@ impl Editor {
                 return_to: None,
             },
         );
-        let idx = self.current();
-        let generation = self.generation;
-        let tx = self.git_tx.clone();
+        // the new surface document owns its request; registration
+        // happens before launch (replay contract)
+        let doc = self.current();
+        let key = LogKey {
+            document: doc,
+            revision: self.buf().revision(),
+        };
+        let Some(ticket) = self.git_ticket(key) else {
+            return;
+        };
+        self.log_requests.insert(doc, ticket.clone());
+        let revision = self.buf().revision().get();
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
-                "service":"git","request":"log","document":{"slot":idx.index(),"generation":idx.generation()},
-                "generation":generation,"path":file.as_ref().map(|p|p.to_string_lossy()),
+                "service":"git","request":"log",
+                "document":{"slot":doc.index(),"generation":doc.generation()},
+                "revision":revision,
+                "path":file.as_ref().map(|p|p.to_string_lossy()),
             })
         });
-        std::thread::spawn(move || {
-            let msg = match memory::log_graph_range(&workdir, 200, file.as_deref(), range) {
-                Ok(rows) => GitJob::Log {
-                    buffer: idx,
-                    generation,
-                    rows,
-                },
-                Err(e) => GitJob::Error(e),
-            };
-            let _ = tx.send(msg);
-        });
+        let args = (
+            ticket.clone(),
+            trace::services::NativePath(workdir.clone()),
+            file.clone().map(trace::services::NativePath),
+            range,
+        );
+        self.launch_git_job(
+            "git-log",
+            "git.log",
+            ticket,
+            &args,
+            GitJob::Log,
+            move |cancel| {
+                if cancel.is_cancelled() {
+                    return Outcome::Cancelled(CancelReason::Superseded);
+                }
+                match memory::log_graph_range(&workdir, 200, file.as_deref(), range) {
+                    Ok(rows) => Outcome::Success(rows),
+                    Err(message) => Outcome::failed(FailureKind::Exit, message),
+                }
+            },
+        );
     }
 
     // ---- surface interaction -------------------------------------------
 
     /// Keys for readonly surface buffers (0001 §3): q closes, Enter
-    /// dives, and everything else goes through the shared grammar
-    /// resolver — motions and yank resolve, mutations refuse. The
-    /// resolver is the source of truth, not a hand-maintained motion
-    /// whitelist (0010 §6).
+    /// dives, and everything else flows through the shared Walker
+    /// command path — motions and yank resolve, mutations refuse
+    /// (0010 §6). The Walker owns the pending state, so `: / ?` and
+    /// multi-key sequences behave exactly as in normal mode.
     pub(crate) fn feed_readonly(&mut self, key: Key) {
-        if !self.pending.is_empty() {
-            return self.feed_pending_readonly(key);
+        if key == Key::Esc {
+            self.walker.clear();
+            return;
+        }
+        if self.walker.at_prefix(&["ctrl-w"]) && key == Key::Char('q') {
+            self.walker.clear();
+            self.close_surface();
+            return;
+        }
+        if key == Key::Char('f') && (self.walker.at_prefix(&["]"]) || self.walker.at_prefix(&["["]))
+        {
+            let forward = self.walker.at_prefix(&["]"]);
+            let n = self.walker.state.count().unwrap_or(1);
+            self.walker.clear();
+            for _ in 0..n {
+                self.commit_file_step(forward);
+            }
+            return;
+        }
+        if !self.walker.is_ground() {
+            return self.feed_command(key);
         }
         match key {
-            Key::Char(sigil @ (':' | '/' | '?')) => self.begin_text_line(sigil),
+            Key::Char('q') => self.close_surface(),
             Key::CtrlL => self.needs_repaint = true,
-            Key::Char('q') => {
-                self.close_surface();
-            }
-            // C-w works from surfaces too: splits are core grammar
-            Key::CtrlW => self.pending = "\x17".into(),
             Key::CtrlO => self.jump_back(),
-            // tuicr's tab: focus hops between the file sidebar and the
-            // diff content; everywhere else Tab walks the jumplist
             Key::Tab | Key::Backtab => {
-                let has_sidebar = matches!(
+                if matches!(
                     self.surface(),
                     Some(Surface::Diff {
                         commit: Some(_),
                         ..
                     })
-                );
-                if has_sidebar {
+                ) {
                     self.toggle_sidebar_focus();
                 } else {
                     self.jump_forward();
                 }
             }
-            Key::Char('j') if self.sidebar_focused() => self.commit_file_step(true),
-            Key::Char('k') if self.sidebar_focused() => self.commit_file_step(false),
+            Key::Char('j') | Key::Down if self.sidebar_focused() => self.commit_file_step(true),
+            Key::Char('k') | Key::Up if self.sidebar_focused() => self.commit_file_step(false),
             Key::Enter if self.sidebar_focused() => self.toggle_sidebar_focus(),
             Key::Enter => self.dive(),
-            // arrows speak hjkl on surfaces too (sidebar-aware)
-            Key::Up => {
-                if self.sidebar_focused() {
-                    self.commit_file_step(false);
-                } else {
-                    self.run_motion("k");
-                }
-            }
-            Key::Down => {
-                if self.sidebar_focused() {
-                    self.commit_file_step(true);
-                } else {
-                    self.run_motion("j");
-                }
-            }
-            Key::Left => self.run_motion("h"),
-            Key::Right => self.run_motion("l"),
-            // searches repeat on surfaces too (diff preview power tools)
-            Key::Char('n') => self.repeat_search(false),
-            Key::Char('N') => self.repeat_search(true),
-            Key::Char('v') => {
-                self.mode = Mode::Visual;
-                let h = self.head();
-                self.sels_mut().stretch_primary(h, h);
-            }
-            Key::Char(c) => {
-                // multi-char heads wait for their second key; the rest
-                // parse immediately (Invalid clears, Incomplete waits)
-                self.pending.push(c);
-                if !matches!(c, ' ' | ':' | 'g' | 'y' | ']' | '[') {
-                    self.resolve_pending_readonly();
-                }
-            }
-            _ => {}
+            _ => self.feed_command(key),
         }
     }
 
-    fn feed_pending_readonly(&mut self, key: Key) {
-        if self.pending_sigil().is_some() {
-            return self.feed_pending(key);
-        }
-        match key {
-            Key::Esc => self.pending.clear(),
-            Key::Enter => {
-                if self.pending.contains(['/', '?']) {
-                    self.pending.push('\r');
-                    self.resolve_pending_readonly();
-                } else {
-                    self.pending.clear();
-                }
+    /// Yank the plan's target ranges (shared with normal mode's
+    /// dispatch: one implementation, one behavior).
+    pub(crate) fn yank_only(&mut self, command: &strop_grammar::Command) {
+        let plan = match strop_grammar::plan(self.buf(), &self.all_cursors(), command) {
+            Ok(Some(plan)) => plan,
+            Ok(None) => {
+                self.message = "no target".into();
+                return;
             }
-            Key::Char(c) => {
-                // leader namespaces still work from a surface
-                if self.pending == " " {
-                    self.pending.clear();
-                    if c == 'g' {
-                        self.pending = " g".into();
-                    }
-                    return;
-                }
-                // window commands (C-w): h l j k w move, v s split,
-                // q closes the pane-or-surface (0011 §1)
-                if self.pending == "\x17" {
-                    self.pending.clear();
-                    return match c {
-                        'h' | 'l' | 'j' | 'k' | 'w' => self.pane_move(c),
-                        'v' => self.split(true, None),
-                        's' => self.split(false, None),
-                        'q' => self.close_surface(),
-                        _ => self.message = "C-w: h l j k w move · v s split · q close".into(),
-                    };
-                }
-                if self.pending == " g" {
-                    return self.feed_git_pending(c);
-                }
-                if (self.pending == "]" || self.pending == "[") && (c == 'c' || c == 'f') {
-                    let forward = self.pending == "]";
-                    self.pending.clear();
-                    return if c == 'c' {
-                        self.jump_hunk(forward)
-                    } else {
-                        self.commit_file_step(forward)
-                    };
-                }
-                self.pending.push(c);
-                self.resolve_pending_readonly();
+            Err(error) => {
+                self.message = error.to_string();
+                return;
             }
-            _ => {}
-        }
-    }
-
-    /// Motions and yank resolve; mutations refuse with a message.
-    fn resolve_pending_readonly(&mut self) {
-        match strop_grammar::parse(&self.pending) {
-            strop_grammar::Parse::Incomplete => {}
-            strop_grammar::Parse::Invalid => {
-                self.pending.clear();
-                self.message = "readonly — q closes, enter dives".into();
-            }
-            strop_grammar::Parse::Complete(cmd) => {
-                self.pending.clear();
-                match cmd.op {
-                    None => self.move_cursor(&cmd),
-                    Some(strop_grammar::Op::Yank) => self.yank_only(&cmd),
-                    Some(_) => self.message = "readonly buffer".into(),
-                }
-            }
-        }
-    }
-
-    fn yank_only(&mut self, cmd: &strop_grammar::Command) {
-        if let Some(r) = strop_grammar::resolve(self.buf(), self.head(), cmd) {
-            let text = self.buf().slice_string(r.range);
-            self.set_register(cmd.register, text, r.range.is_linewise());
-            self.flash(r.range);
-        }
+        };
+        let Some(first) = plan.targets.first() else {
+            return;
+        };
+        let range = first.range;
+        let text = plan
+            .targets
+            .iter()
+            .map(|target| self.buf().slice_string(target.range))
+            .collect::<Vec<_>>()
+            .join("\n");
+        self.set_register(
+            command.register,
+            if range.is_linewise() {
+                super::Register::linewise(text)
+            } else {
+                super::Register::characterwise(text)
+            },
+        );
+        self.note_search(command);
+        self.flash(range);
     }
 
     /// `q`: pop one surface (0011 §1). In a split the *pane* closes —
@@ -397,115 +342,6 @@ impl Editor {
         let doc = self.current();
         if let Some(pane) = self.panes.get_mut(self.active_pane) {
             pane.doc = doc; // the pane follows the successor
-        }
-    }
-
-    // ---- job drain ------------------------------------------------------
-
-    pub fn drain_git_jobs(&mut self) {
-        loop {
-            let next = self.git_rx.as_ref().and_then(|rx| rx.try_recv().ok());
-            match next {
-                Some(job) => {
-                    self.handle_git_job(job);
-                }
-                None => break,
-            }
-        }
-    }
-
-    /// One git job result (TUI events land here directly — 0018).
-    pub(crate) fn handle_git_job(&mut self, job: GitJob) {
-        trace::services::git(&job);
-        {
-            match job {
-                GitJob::Log {
-                    buffer,
-                    generation,
-                    rows,
-                } => {
-                    // a closed surface's index may be recycled by the
-                    // next buffer: only same-generation results land
-                    // (0011 §2)
-                    if generation != self.generation || self.docs.get(buffer).is_none() {
-                        trace::services::rejected("git", "log document or generation changed");
-                        return;
-                    }
-                    let text = rows
-                        .iter()
-                        .map(|r| r.text.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                        + "\n";
-                    self.doc_mut(buffer).buf.replace_all_system(&text);
-                    let mut focus_row = None;
-                    if let Some(Some(Surface::CommitLog {
-                        rows: slot, focus, ..
-                    })) = self.docs.get_mut(buffer).map(|d| d.surface_payload_mut())
-                    {
-                        focus_row = focus.take().and_then(|sha| {
-                            rows.iter().position(|r| r.sha.as_deref() == Some(&sha))
-                        });
-                        *slot = rows;
-                    }
-                    if let Some(row) = focus_row {
-                        // the blame dive asked for this commit: land on
-                        // it (only when the browser is still what's
-                        // being driven)
-                        if self.current() == buffer {
-                            self.set_head(self.doc(buffer).buf.line_start(row));
-                            self.view_mut().view_top = row;
-                        }
-                    }
-                }
-                GitJob::Card { generation, card } => {
-                    if generation == self.generation {
-                        self.blame_card = Some(*card);
-                    }
-                }
-                GitJob::Gutter {
-                    path,
-                    generation,
-                    lines,
-                } => {
-                    // toggled off meanwhile → the entry is gone → drop
-                    if generation != self.generation {
-                        trace::services::rejected("git", "gutter generation changed");
-                        return;
-                    }
-                    if let Some(gutter) = self.blame_gutters.get_mut(&path) {
-                        gutter.lines = lines;
-                        // the gutter supersedes the card that covered
-                        // the load for this buffer
-                        if self
-                            .buf()
-                            .path
-                            .as_deref()
-                            .is_some_and(|p| self.blame_key_of(p) == path)
-                        {
-                            self.blame_card = None;
-                        }
-                    }
-                }
-                GitJob::Error(e) => self.message = e,
-                GitJob::Hunks {
-                    doc,
-                    epoch,
-                    unstaged,
-                    staged,
-                } => {
-                    // the snapshot applies to the document that asked,
-                    // at that epoch — nothing else (0023 probe)
-                    self.hunks_in_flight = false;
-                    if doc == self.current() && epoch == self.buf().epoch {
-                        self.hunks = unstaged;
-                        self.staged_hunks = staged;
-                    } else {
-                        self.hunks_epoch = u64::MAX;
-                        trace::services::rejected("git", "hunks document or revision changed");
-                    }
-                }
-            }
         }
     }
 }

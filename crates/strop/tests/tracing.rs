@@ -52,8 +52,8 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     ));
     let captured = events(&trace);
     assert_eq!(captured.first().unwrap()["event"], "session_start");
-    assert_eq!(captured.last().unwrap()["event"], "session_end");
-    assert_eq!(captured.last().unwrap()["fields"]["success"], true);
+    assert_eq!(captured.last().unwrap()["event"], "trace_end");
+    assert_eq!(captured.last().unwrap()["fields"]["complete"], true);
     let first_edit = captured
         .iter()
         .position(|event| event["event"] == "mutation")
@@ -98,7 +98,8 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     assert!(quit
         .iter()
         .any(|event| event["event"] == "state" && event["fields"]["should_quit"] == true));
-    assert_eq!(quit.last().unwrap()["event"], "session_end");
+    assert_eq!(quit.last().unwrap()["event"], "trace_end");
+    assert_eq!(quit.last().unwrap()["fields"]["complete"], true);
 }
 
 #[test]

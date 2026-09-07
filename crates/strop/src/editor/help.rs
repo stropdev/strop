@@ -65,7 +65,7 @@ mod tests {
         e.feed_text(":help\r");
         assert_eq!(e.buf().name.as_deref(), Some("help"));
         assert!(e.buf().readonly);
-        let text = e.buf().rope.to_string();
+        let text = e.buf().text().to_string();
         for section in crate::keymap::SECTIONS {
             assert!(text.contains(&format!("[{section}]")), "missing {section}");
         }

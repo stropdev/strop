@@ -78,4 +78,20 @@ impl ServerCaps {
             _ => PositionEncoding::Utf16,
         }
     }
+
+    /// Does the negotiated capability set admit this request kind?
+    /// Unknown capabilities (pre-initialize) count as no — requests
+    /// never race server startup.
+    pub(crate) fn supports(&self, kind: crate::protocol::RequestKind) -> bool {
+        use crate::protocol::{LocKind, RequestKind};
+        match kind {
+            RequestKind::Hover => self.hover(),
+            RequestKind::Goto => self.goto_definition(),
+            RequestKind::SwitchHeader => true,
+            RequestKind::Locations(LocKind::References) => self.references(),
+            RequestKind::Locations(LocKind::Implementation) => self.implementation(),
+            RequestKind::Locations(LocKind::TypeDefinition) => self.type_definition(),
+            RequestKind::Locations(LocKind::Declaration) => self.declaration(),
+        }
+    }
 }

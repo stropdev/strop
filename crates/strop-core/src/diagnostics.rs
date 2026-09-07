@@ -16,17 +16,9 @@ impl BufferTraceId {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum MutationSource {
-    User,
-    System,
-}
-
-#[derive(Serialize)]
 struct Mutation<'a> {
     buffer: BufferTraceId,
-    path: Option<&'a std::path::Path>,
-    source: MutationSource,
+    source: crate::ChangeOrigin,
     revision: u64,
     start_byte: usize,
     removed_bytes: usize,
@@ -42,7 +34,7 @@ impl Buffer {
 
     pub(crate) fn trace_edit(
         &self,
-        source: MutationSource,
+        source: crate::ChangeOrigin,
         start_byte: usize,
         removed_bytes: usize,
         inserted: &str,
@@ -50,16 +42,12 @@ impl Buffer {
         if !enabled() {
             return;
         }
-        // Path's serde conversion rejects non-UTF8 paths; preserve display plus
-        // byte identity in the editor's document record instead of failing here.
-        let path = self.path.as_deref().filter(|p| p.to_str().is_some());
         record(
             EventKind::Mutation,
             &Mutation {
                 buffer: self.trace_id(),
-                path,
                 source,
-                revision: self.epoch,
+                revision: self.revision().get(),
                 start_byte,
                 removed_bytes,
                 inserted_bytes: inserted.len(),
@@ -90,7 +78,7 @@ impl Buffer {
             EventKind::History,
             &AppliedHistory {
                 buffer: self.trace_id(),
-                revision: self.epoch,
+                revision: self.revision().get(),
                 edits: edits
                     .iter()
                     .map(|edit| HistoryEdit {

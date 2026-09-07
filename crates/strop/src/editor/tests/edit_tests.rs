@@ -1,3 +1,5 @@
+use strop_core::worker::{Completion, FailureKind, Outcome};
+
 use super::*;
 
 fn editor_with(text: &str) -> Editor {
@@ -5,7 +7,7 @@ fn editor_with(text: &str) -> Editor {
 }
 
 fn text(e: &Editor) -> String {
-    e.buf().rope.to_string()
+    e.buf().text().to_string()
 }
 
 #[test]
@@ -13,19 +15,19 @@ fn named_registers_yank_and_paste() {
     let mut e = editor_with("alpha\nbeta\ngamma\n");
 
     e.feed_text("\"ayy"); // yank line into register a
-    assert_eq!(e.register(Some('a')).0, "alpha\n");
+    assert_eq!(e.register(Some('a')).text, "alpha\n");
     e.feed_text("j");
     e.feed_text("\"ap"); // paste a below beta
     assert_eq!(text(&e), "alpha\nbeta\nalpha\ngamma\n");
     // unnamed register untouched
-    assert!(e.register(None).0.is_empty());
+    assert!(e.register(None).text.is_empty());
 }
 
 #[test]
 fn space_y_yanks_motion_to_system_register() {
     let mut e = Editor::new(Buffer::from_text("hello world\n"));
     e.feed_text(" yw");
-    assert_eq!(e.register(Some('+')).0, "hello ");
+    assert_eq!(e.register(Some('+')).text, "hello ");
     assert!(e.osc52.is_some(), "OSC52 payload staged for the TUI");
 }
 
@@ -33,27 +35,71 @@ fn space_y_yanks_motion_to_system_register() {
 fn visual_space_y_yanks_selection_to_system_register() {
     let mut e = Editor::new(Buffer::from_text("hello world\n"));
     e.feed_text("vl y");
-    assert_eq!(e.register(Some('+')).0, "he");
+    assert_eq!(e.register(Some('+')).text, "he");
     assert!(e.osc52.is_some());
 }
 
 #[test]
 fn clipboard_paste_inserts_read_result() {
     let mut e = Editor::new(Buffer::from_text("ab\n"));
-    e.clip_paste_pending = Some((false, e.current()));
-    e.clip_tx.send(Some("XY".into())).unwrap();
+    let ticket = clipboard_ticket(&mut e);
+    e.clip_paste_pending = Some((false, ticket.clone()));
+    e.clip_tx
+        .send(Completion {
+            ticket,
+            outcome: Outcome::Success("XY".into()),
+        })
+        .unwrap();
     e.drain_clipboard();
-    assert_eq!(e.buf().rope.to_string(), "aXYb\n");
+    assert_eq!(e.buf().text().to_string(), "aXYb\n");
 }
 
 #[test]
 fn clipboard_paste_reports_missing_provider() {
     let mut e = Editor::new(Buffer::from_text("ab\n"));
-    e.clip_paste_pending = Some((false, e.current()));
-    e.clip_tx.send(None).unwrap();
+    let ticket = clipboard_ticket(&mut e);
+    e.clip_paste_pending = Some((false, ticket.clone()));
+    e.clip_tx
+        .send(Completion {
+            ticket,
+            outcome: Outcome::failed(FailureKind::Unavailable, "no clipboard provider succeeded"),
+        })
+        .unwrap();
     e.drain_clipboard();
     assert!(e.message.contains("clipboard"));
-    assert_eq!(e.buf().rope.to_string(), "ab\n");
+    assert_eq!(e.buf().text().to_string(), "ab\n");
+}
+
+#[test]
+fn clipboard_stale_ticket_never_pastes_into_newer_request() {
+    let mut e = Editor::new(Buffer::from_text("ab\n"));
+    let stale = clipboard_ticket(&mut e);
+    e.clip_paste_pending = Some((false, stale.clone()));
+    // a newer request superseded it before the stale result landed
+    let fresh = clipboard_ticket(&mut e);
+    e.clip_paste_pending = Some((false, fresh));
+    e.clip_tx
+        .send(Completion {
+            ticket: stale,
+            outcome: Outcome::Success("POISON".into()),
+        })
+        .unwrap();
+    e.drain_clipboard();
+    assert_eq!(
+        e.buf().text().to_string(),
+        "ab\n",
+        "stale clipboard result must not paste over a newer request"
+    );
+    assert!(e.clip_paste_pending.is_some(), "newer request survives");
+}
+
+fn clipboard_ticket(e: &mut Editor) -> strop_core::worker::Ticket<crate::editor::ClipboardKey> {
+    strop_core::worker::Ticket {
+        request: e.worker_ids.allocate().unwrap(),
+        key: crate::editor::ClipboardKey {
+            document: e.current(),
+        },
+    }
 }
 
 #[test]
@@ -63,7 +109,7 @@ fn alias_verbs() {
     assert_eq!(text(&e), "let \n");
     let mut e = editor_with("let x = 1;\n");
     e.feed_text("0wY"); // yy
-    assert_eq!(e.register(None).0, "let x = 1;\n");
+    assert_eq!(e.register(None).text, "let x = 1;\n");
     let mut e = editor_with("abc\n");
     e.feed_text("sZ"); // cl + insert Z
     e.feed(crate::editor::Key::Esc);
@@ -102,7 +148,10 @@ fn visual_line_deletes_whole_lines() {
     let mut e = editor_with("a\nb\nc\nd\n");
     e.feed_text("Vjd");
     assert_eq!(text(&e), "c\nd\n");
-    assert!(e.register(None).1); // linewise
+    assert_eq!(
+        e.register(None).shape,
+        crate::editor::registers::RegisterShape::Linewise
+    );
     e.feed_text("P");
     assert_eq!(text(&e), "a\nb\nc\nd\n"); // paste linewise above
 }
@@ -115,9 +164,9 @@ fn paste_is_one_undo_unit() {
     e.feed_text("yiw"); // yank "hello"
     e.feed_text("ep"); // paste after the word: "hellohello world"
 
-    assert_eq!(e.buf().rope.to_string(), "hellohello world\n");
+    assert_eq!(e.buf().text().to_string(), "hellohello world\n");
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), "hello world\n");
+    assert_eq!(e.buf().text().to_string(), "hello world\n");
 }
 
 #[test]
@@ -166,12 +215,12 @@ fn count_motions_and_ex_line_jump() {
 fn visual_indent_and_dedent() {
     let mut e = Editor::new(Buffer::from_text("a\nb\nc\n"));
     e.feed_text("Vj>");
-    assert_eq!(e.buf().rope.to_string(), "    a\n    b\nc\n");
+    assert_eq!(e.buf().text().to_string(), "    a\n    b\nc\n");
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), "a\nb\nc\n");
+    assert_eq!(e.buf().text().to_string(), "a\nb\nc\n");
     e.feed_text("Vj>");
     e.feed_text("Vj<");
-    assert_eq!(e.buf().rope.to_string(), "a\nb\nc\n");
+    assert_eq!(e.buf().text().to_string(), "a\nb\nc\n");
 }
 
 #[test]
@@ -187,16 +236,16 @@ fn noh_clears_search_highlight() {
 fn dot_repeats_delete_and_change() {
     let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
     e.feed_text("dd");
-    assert_eq!(e.buf().rope.to_string(), "two\nthree\n");
+    assert_eq!(e.buf().text().to_string(), "two\nthree\n");
     e.feed_text(".");
-    assert_eq!(e.buf().rope.to_string(), "three\n");
+    assert_eq!(e.buf().text().to_string(), "three\n");
     let mut e = Editor::new(Buffer::from_text("aa bb\ncc dd\n"));
     e.feed_text("cwX");
     e.feed(crate::editor::Key::Esc);
-    assert_eq!(e.buf().rope.to_string(), "X bb\ncc dd\n");
+    assert_eq!(e.buf().text().to_string(), "X bb\ncc dd\n");
     e.feed_text("j"); // to line 2 — repeat there
     e.feed_text(".");
-    assert_eq!(e.buf().rope.to_string(), "X bb\nX dd\n");
+    assert_eq!(e.buf().text().to_string(), "X bb\nX dd\n");
 }
 
 #[test]
@@ -205,8 +254,8 @@ fn last_search_highlights_persistently() {
     e.feed_text("/foo\r");
     // committed: no pending pattern, but hits must still compute
     assert!(e.search_pattern().is_none());
-    assert_eq!(e.last_search.as_ref().unwrap().pattern, "foo");
-    let frame = crate::headless::frame_string(&mut e, 40, 8);
+    assert_eq!(e.last_search.as_ref().unwrap().query.source(), "foo");
+    let frame = crate::headless::frame_string(&mut e, 40, 8).unwrap();
     assert!(frame.contains("foo bar foo"));
 }
 
@@ -232,9 +281,9 @@ fn x_on_multibyte_char_deletes_the_whole_char() {
     // split the char and ropey panicked (unicode crash)
     let mut e = Editor::new(Buffer::from_text("héllo\n"));
     e.feed_text("lx"); // onto é, delete it whole
-    assert_eq!(e.buf().rope.to_string(), "hllo\n");
+    assert_eq!(e.buf().text().to_string(), "hllo\n");
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), "héllo\n");
+    assert_eq!(e.buf().text().to_string(), "héllo\n");
     e.feed_text("a"); // append lands past the char, not mid-char
     assert!(e.buf().is_boundary(e.head()));
 }
@@ -265,20 +314,30 @@ fn wq_never_closes_a_failed_save() {
     e.feed_text("ix");
     e.feed(crate::editor::Key::Esc);
     std::fs::write(&f, "external\n").unwrap(); // someone else writes
+    std::fs::File::options()
+        .write(true)
+        .open(&f)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(123))
+        .unwrap();
     e.feed_text(":wq\r");
+    e.wait_io().unwrap();
     assert!(!e.should_quit, "failed save must not close");
     assert!(e.buf().dirty, "still dirty");
-    assert!(e.message.contains("changed on disk"));
     assert_eq!(std::fs::read_to_string(&f).unwrap(), "external\n");
     e.feed_text(":wq!\r");
+    e.wait_io().unwrap();
     assert!(e.should_quit, "forced write quits");
     assert_eq!(std::fs::read_to_string(&f).unwrap(), "xone\n");
 }
 #[test]
 fn ex_open_and_close_buffers() {
-    std::fs::write("/tmp/strop-test-b.rs", "second\n").unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("second.txt");
+    std::fs::write(&path, "second\n").unwrap();
     let mut e = editor_with("first\n");
-    e.feed_text(":e /tmp/strop-test-b.rs<cr>");
+    e.feed_text(&format!(":e {}<cr>", path.display()));
+    e.wait_io().unwrap();
 
     assert_eq!(e.docs.len(), 2);
     assert_eq!(text(&e), "second\n");

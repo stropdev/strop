@@ -9,7 +9,7 @@ mod repo;
 mod revision;
 
 pub use diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin, Sign};
-pub use repo::Repo;
+pub use repo::{GitContext, GitError, Repo};
 pub use revision::{GitRevision, SourceLocation};
 
 #[cfg(test)]
@@ -44,14 +44,14 @@ mod tests {
     fn clean_buffer_has_no_hunks() {
         let (_d, repo, path) = fixture();
         let content = repo.head_content(&path).unwrap();
-        assert!(repo.hunks(&path, &content).is_empty());
+        assert!(repo.hunks(&path, &content).unwrap().is_empty());
     }
 
     #[test]
     fn change_and_add_and_delete() {
         let (_d, repo, path) = fixture();
         let edited = "fn a() {}\nfn b2() {}\nfn c() {}\nfn d() {}\n";
-        let hunks = repo.hunks(&path, edited);
+        let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].kind, HunkKind::Change);
         assert!(hunks[0].covers(2, 4));
@@ -69,7 +69,7 @@ mod tests {
     fn line_numbers_track_both_sides() {
         let (_d, repo, path) = fixture();
         let edited = "fn a() {}\nfn b2() {}\nfn c() {}\nfn d() {}\n";
-        let hunks = repo.hunks(&path, edited);
+        let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         let h = &hunks[0];
         let ctx = h
@@ -100,7 +100,7 @@ mod tests {
     fn pure_delete_marks_following_line() {
         let (_d, repo, path) = fixture();
         let edited = "fn a() {}\nfn c() {}\n";
-        let hunks = repo.hunks(&path, edited);
+        let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].kind, HunkKind::Delete);
         assert!(hunks[0].covers(2, 4)); // sign on the line after the gap
@@ -110,7 +110,7 @@ mod tests {
     fn stage_hunk_applies_to_index() {
         let (_d, repo, path) = fixture();
         let edited = "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n";
-        let hunks = repo.hunks(&path, edited);
+        let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].kind, HunkKind::Add);
         let root = repo.workdir.clone();
@@ -137,7 +137,7 @@ mod tests {
     fn stage_hunk_is_byte_precise() {
         let (_d, repo, path) = fixture();
         let edited = "fn a() {}\nfn b2() {}\nfn c() {}\n";
-        let hunks = repo.hunks(&path, edited);
+        let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         repo.stage_hunk(Path::new("f.rs"), &hunks[0]).unwrap();
         // the index now holds the edited text; HEAD is untouched
@@ -150,7 +150,7 @@ mod tests {
             Some("fn a() {}\nfn b() {}\nfn c() {}\n")
         );
         // and unstaging the same hunk restores the index to HEAD
-        let staged = repo.staged_hunks(&path);
+        let staged = repo.staged_hunks(&path).unwrap();
         assert_eq!(staged.len(), 1);
         repo.unstage_hunk(Path::new("f.rs"), &staged[0]).unwrap();
         assert_eq!(
@@ -164,10 +164,10 @@ mod tests {
         let (_d, repo, path) = fixture();
         // the worktree file drops its trailing newline
         let edited = "fn a() {}\nfn b() {}\nfn c() {}";
-        let hunks = repo.hunks(&path, edited);
+        let hunks = repo.hunks(&path, edited).unwrap();
         repo.stage_hunk(Path::new("f.rs"), &hunks[0]).unwrap();
         assert_eq!(repo.index_content(&path).as_deref(), Some(edited));
-        let staged = repo.staged_hunks(&path);
+        let staged = repo.staged_hunks(&path).unwrap();
         repo.unstage_hunk(Path::new("f.rs"), &staged[0]).unwrap();
         assert_eq!(
             repo.index_content(&path).as_deref(),
@@ -225,5 +225,80 @@ mod tests {
             .hunks
             .iter()
             .all(|h| h.lines.iter().all(|l| l.old_lineno.is_none())));
+    }
+
+    /// R9: a path outside the workdir is a typed refusal, not an
+    /// empty Vec masquerading as "no hunks".
+    #[test]
+    fn outside_workdir_is_typed_not_empty() {
+        let (_d, repo, _path) = fixture();
+        let outside = std::env::temp_dir().join("strop-outside-f.rs");
+        assert!(matches!(
+            repo.hunks(&outside, "x\n"),
+            Err(GitError::OutsideWorkdir)
+        ));
+        assert!(matches!(
+            repo.unstaged_hunks(&outside, "x\n"),
+            Err(GitError::OutsideWorkdir)
+        ));
+        assert!(matches!(
+            repo.staged_hunks(&outside),
+            Err(GitError::OutsideWorkdir)
+        ));
+    }
+
+    /// An untracked file's unstaged set is one all-add hunk against
+    /// empty — a useful case, distinct from failure; is_untracked
+    /// says so without touching content.
+    #[test]
+    fn untracked_file_is_all_add_not_failure() {
+        let (d, repo, _path) = fixture();
+        let untracked = d.path().join("new.rs");
+        std::fs::write(&untracked, "fn n() {}\n").unwrap();
+        assert!(repo.is_untracked(&untracked).unwrap());
+        let hunks = repo.unstaged_hunks(&untracked, "fn n() {}\n").unwrap();
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].kind, HunkKind::Add);
+        assert_eq!(hunks[0].old_count, 0);
+        // an empty untracked buffer is an honest empty set
+        assert!(repo.unstaged_hunks(&untracked, "").unwrap().is_empty());
+        // the committed file is tracked: empty diff, not all-add
+        assert!(!repo.is_untracked(&_path).unwrap());
+    }
+
+    /// An unborn HEAD (fresh init, no commits) still diffs: staging a
+    /// new file yields an all-add staged set against empty.
+    #[test]
+    fn unborn_head_stages_all_add() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        let repo = Repo::discover(root).unwrap();
+        std::fs::write(root.join("f.rs"), "fn a() {}\n").unwrap();
+        git(root, &["add", "f.rs"]);
+        let staged = repo.staged_hunks(&root.join("f.rs")).unwrap();
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].kind, HunkKind::Add);
+        // context snapshot: head_sha absent until the first commit
+        let ctx = repo.context();
+        assert_eq!(ctx.head_sha, None);
+        assert_eq!(ctx.workdir, root.to_path_buf());
+    }
+
+    /// The pure context round-trips through serde (replay tapes carry
+    /// it) and equality tracks the repository state it captured.
+    #[test]
+    fn git_context_serde_and_equality() {
+        let (d, repo, _path) = fixture();
+        let ctx = repo.context();
+        let wire = serde_json::to_string(&ctx).unwrap();
+        assert_eq!(serde_json::from_str::<GitContext>(&wire).unwrap(), ctx);
+        assert!(ctx.head_sha.is_some());
+        // a new commit changes HEAD: the context is no longer equal —
+        // cached diffs built against it are stale
+        std::fs::write(d.path().join("f.rs"), "fn a() {}\nfn z() {}\n").unwrap();
+        git(d.path(), &["commit", "-qam", "z"]);
+        let repo2 = Repo::discover(d.path()).unwrap();
+        assert_ne!(repo2.context(), ctx);
     }
 }

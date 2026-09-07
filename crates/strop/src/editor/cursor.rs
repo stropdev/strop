@@ -1,8 +1,6 @@
 //! Selection-facing helpers (0014 wave 2): head/anchor accessors,
 //! clamps, the multicursor cascade bookkeeping, scroll, flash.
 
-use std::time::Instant;
-
 use strop_core::Range;
 
 use super::{Editor, Mode, FLASH_FOR};
@@ -15,8 +13,9 @@ impl Editor {
     }
 
     #[inline]
-    pub fn set_head(&mut self, pos: usize) {
-        self.sels_mut().set_head(pos);
+    pub fn set_head(&mut self, pos: impl Into<strop_core::id::ByteOffset>) {
+        self.view_mut().desired_column = None;
+        self.sels_mut().set_head(pos.into().get());
     }
 
     /// The visual anchor (== head when not in visual mode).
@@ -31,12 +30,15 @@ impl Editor {
     }
 
     pub(crate) fn flash(&mut self, range: Range) {
-        self.flash = Some((range, Instant::now()));
+        self.flash = Some((range, self.tape.now()));
     }
 
     pub fn flash_range(&self) -> Option<Range> {
-        self.flash
-            .and_then(|(r, at)| (at.elapsed() < FLASH_FOR).then_some(r))
+        self.flash.and_then(|(range, at)| {
+            (self.tape.now().monotonic_ms.saturating_sub(at.monotonic_ms)
+                < FLASH_FOR.as_millis() as u64)
+                .then_some(range)
+        })
     }
 
     pub fn clamp_cursor(&mut self) {

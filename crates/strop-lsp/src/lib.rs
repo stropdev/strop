@@ -15,33 +15,27 @@ pub use protocol::*;
 
 #[cfg(test)]
 mod tests {
-    use super::{to_byte_col, to_server_col, PositionEncoding, ServerCaps};
+    use super::{to_byte_col, to_server_col, PositionEncoding, ServerCaps, ServerColumn};
     use async_lsp::lsp_types::{
         DefinitionOptions, HoverProviderCapability, OneOf, ServerCapabilities,
     };
+    use strop_core::id::ByteColumn;
 
     #[test]
     fn capabilities_gate_hover_and_goto() {
         let caps = ServerCaps::default();
-        // pre-initialize: capabilities unknown → requests must not race
-        // server startup
+        // Pre-initialize: capabilities unknown, requests must not race startup.
         assert!(!caps.hover());
         assert!(!caps.goto_definition());
-
-        // initialized, nothing advertised → both gated
         caps.set(ServerCapabilities::default());
         assert!(!caps.hover());
         assert!(!caps.goto_definition());
-
-        // definition only → hover stays dropped
         caps.set(ServerCapabilities {
             definition_provider: Some(OneOf::Left(true)),
             ..Default::default()
         });
         assert!(!caps.hover());
         assert!(caps.goto_definition());
-
-        // hover on, definition explicitly off
         caps.set(ServerCapabilities {
             hover_provider: Some(HoverProviderCapability::Simple(true)),
             definition_provider: Some(OneOf::Left(false)),
@@ -67,22 +61,61 @@ mod tests {
 
     #[test]
     fn column_encoding_roundtrips_unicode() {
-        // the LSP wire is UTF-16 unless negotiated; strop is byte-native
         let line = "aé🦀b"; // bytes: 1+2+4+1, utf16: 1+1+2+1
-                            // byte col of 'b' = 7; utf-16 col = 4
-        assert_eq!(to_server_col(line, 7, PositionEncoding::Utf16), 4);
-        assert_eq!(to_byte_col(line, 4, PositionEncoding::Utf16), 7);
-        assert_eq!(to_server_col(line, 7, PositionEncoding::Utf8), 7);
-        assert_eq!(to_byte_col(line, 7, PositionEncoding::Utf8), 7);
-        // inside the emoji (byte 3..7): utf16 col 2..4
-        assert_eq!(to_server_col(line, 3, PositionEncoding::Utf16), 2);
-        assert_eq!(to_server_col(line, 7, PositionEncoding::Utf16), 4);
-        assert_eq!(to_byte_col(line, 2, PositionEncoding::Utf16), 3);
-        // past-the-end clamps
-        assert_eq!(to_byte_col(line, 99, PositionEncoding::Utf16), line.len());
-        // combining marks: e + U+0301 is 3 bytes, 2 utf-16 units
+        assert_eq!(
+            to_server_col(line, ByteColumn::new(7), PositionEncoding::Utf16).get(),
+            4
+        );
+        assert_eq!(
+            to_byte_col(line, ServerColumn::new(4), PositionEncoding::Utf16).get(),
+            7
+        );
+        assert_eq!(
+            to_server_col(line, ByteColumn::new(7), PositionEncoding::Utf8).get(),
+            7
+        );
+        assert_eq!(
+            to_byte_col(line, ServerColumn::new(7), PositionEncoding::Utf8).get(),
+            7
+        );
+        assert_eq!(
+            to_server_col(line, ByteColumn::new(3), PositionEncoding::Utf16).get(),
+            2
+        );
+        assert_eq!(
+            to_byte_col(line, ServerColumn::new(2), PositionEncoding::Utf16).get(),
+            3
+        );
+        assert_eq!(
+            to_byte_col(line, ServerColumn::new(99), PositionEncoding::Utf16).get(),
+            line.len()
+        );
         let comb = "e\u{0301}x";
-        assert_eq!(to_server_col(comb, 3, PositionEncoding::Utf16), 2);
-        assert_eq!(to_byte_col(comb, 2, PositionEncoding::Utf16), 3);
+        assert_eq!(
+            to_server_col(comb, ByteColumn::new(3), PositionEncoding::Utf16).get(),
+            2
+        );
+        assert_eq!(
+            to_byte_col(comb, ServerColumn::new(2), PositionEncoding::Utf16).get(),
+            3
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn server_location_trace_round_trips_native_path_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+        let location = super::ServerLocation {
+            path: std::path::PathBuf::from(std::ffi::OsString::from_vec(
+                b"/workspace/a\xff.rs".to_vec(),
+            )),
+            position: super::ServerPosition {
+                line: strop_core::id::LineIndex::new(2),
+                column: super::ServerColumn::new(5),
+            },
+        };
+        let encoded = serde_json::to_vec(&location).unwrap();
+        let decoded: super::ServerLocation = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, location);
     }
 }

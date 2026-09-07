@@ -5,6 +5,49 @@ use std::path::{Path, PathBuf};
 
 use crate::diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin};
 
+/// Why a repository operation failed — typed, not a string and not an
+/// empty Vec standing in for "something went wrong" (R9).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GitError {
+    /// libgit2 failed underneath (corrupt index, blob read, config…).
+    Native(String),
+    /// The path is not inside the repository workdir — the caller's
+    /// buffer cannot take part in this repository's edges at all.
+    OutsideWorkdir,
+}
+
+impl std::fmt::Display for GitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Native(message) => write!(f, "{message}"),
+            Self::OutsideWorkdir => write!(f, "path is outside the repository workdir"),
+        }
+    }
+}
+
+/// The pure cached view of a repository (R6): no libgit2 handle, no
+/// locks, no IO to read — render and command decisions consult this,
+/// while every native read runs on a worker. Equality is meaningful:
+/// an unchanged context (same HEAD, branch, remotes) means cached
+/// diffs stay valid.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GitContext {
+    #[serde(with = "strop_core::path_serde")]
+    pub workdir: PathBuf,
+    pub head_sha: Option<String>,
+    pub head_branch: Option<String>,
+    /// (name, url) pairs; permalink selection is a pure fold over them.
+    pub remotes: Vec<(String, String)>,
+}
+
+impl GitContext {
+    /// Call-shape compatibility with `Repo::workdir` — readers that
+    /// only need the repository root work against either.
+    pub fn workdir(&self) -> &Path {
+        &self.workdir
+    }
+}
+
 pub struct Repo {
     inner: git2::Repository,
     pub(crate) workdir: PathBuf,
@@ -60,6 +103,18 @@ impl Repo {
             .and_then(|h| h.shorthand().map(String::from))
     }
 
+    /// The pure cached view (R6): snapshot HEAD, branch and remotes
+    /// once — on a worker — and let render/decisions consult it with
+    /// zero native work. An equal context means nothing changed.
+    pub fn context(&self) -> GitContext {
+        GitContext {
+            workdir: self.workdir.clone(),
+            head_sha: self.head_sha(),
+            head_branch: self.head_branch(),
+            remotes: self.remotes(),
+        }
+    }
+
     /// Repo-relative path for a buffer path (diff keys are relative).
     fn rel_path(&self, path: &Path) -> Option<PathBuf> {
         let abs = if path.is_absolute() {
@@ -111,49 +166,96 @@ impl Repo {
     }
 
     pub fn head_content(&self, path: &Path) -> Option<String> {
-        let rel = self.rel_path(path)?;
-        let head = self.inner.head().ok()?.peel_to_tree().ok()?;
-        let entry = head.get_path(&rel).ok()?;
-        let blob = self.inner.find_blob(entry.id()).ok()?;
-        String::from_utf8(blob.content().to_vec()).ok()
+        self.head_content_res(path).ok().flatten()
+    }
+
+    /// HEAD's content for `path`, distinguishing "not in HEAD's tree"
+    /// (Ok(None) — untracked or unborn) from a native failure.
+    fn head_content_res(&self, path: &Path) -> Result<Option<String>, GitError> {
+        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
+        let head = match self.inner.head() {
+            Ok(reference) => reference
+                .peel_to_tree()
+                .map_err(|e| GitError::Native(format!("read HEAD: {e}")))?,
+            // an unborn branch has no commits: HEAD knows nothing —
+            // the file is new, not failed
+            Err(error) if error.code() == git2::ErrorCode::UnbornBranch => {
+                return Ok(None);
+            }
+            Err(error) => return Err(GitError::Native(format!("read HEAD: {error}"))),
+        };
+        match head.get_path(&rel) {
+            // not in HEAD's tree: untracked — the file is new
+            Err(_) => Ok(None),
+            Ok(entry) => self.blob_utf8(entry.id(), "HEAD").map(Some),
+        }
     }
 
     /// The index's content for `path` (the staged version), if any.
     pub fn index_content(&self, path: &Path) -> Option<String> {
-        let rel = self.rel_path(path)?;
-        // the shell write path (git apply --cached) owns the on-disk
-        // index — reload before reading or we serve a cached snapshot
-        let mut index = self.inner.index().ok()?;
-        index.read(true).ok()?;
-        let entry = index.get_path(&rel, 0)?;
-        let blob = self.inner.find_blob(entry.id).ok()?;
-        String::from_utf8(blob.content().to_vec()).ok()
+        self.index_content_res(path).ok().flatten()
+    }
+
+    /// The index's content distinguishing "nothing staged" (Ok(None))
+    /// from a native failure. Reloads — never a stale snapshot.
+    fn index_content_res(&self, path: &Path) -> Result<Option<String>, GitError> {
+        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
+        let mut index = self
+            .inner
+            .index()
+            .map_err(|e| GitError::Native(format!("open index: {e}")))?;
+        index
+            .read(true)
+            .map_err(|e| GitError::Native(format!("reload index: {e}")))?;
+        match index.get_path(&rel, 0) {
+            Some(entry) => self.blob_utf8(entry.id, "index").map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// One blob's content as UTF-8; the caller names the edge in the
+    /// error so failures read "index blob: …", never anonymous.
+    fn blob_utf8(&self, id: git2::Oid, edge: &str) -> Result<String, GitError> {
+        let blob = self
+            .inner
+            .find_blob(id)
+            .map_err(|e| GitError::Native(format!("{edge} blob: {e}")))?;
+        String::from_utf8(blob.content().to_vec())
+            .map_err(|_| GitError::Native(format!("{edge} blob is not UTF-8")))
+    }
+
+    /// True when neither the index nor HEAD knows `path` — the buffer
+    /// is untracked, so hunk undo has nothing to restore from.
+    pub fn is_untracked(&self, path: &Path) -> Result<bool, GitError> {
+        Ok(self.index_content_res(path)?.is_none() && self.head_content_res(path)?.is_none())
     }
 
     /// Hunks between HEAD and the index — the STAGED set (0014 wave 4:
     /// the four states are HEAD → index → worktree → live document, and
-    /// every command names its edge).
-    pub fn staged_hunks(&self, path: &Path) -> Vec<Hunk> {
-        let Some(rel) = self.rel_path(path) else {
-            return vec![];
+    /// every command names its edge). Nothing staged is an honest
+    /// empty set; an unborn HEAD diffs the index against empty.
+    pub fn staged_hunks(&self, path: &Path) -> Result<Vec<Hunk>, GitError> {
+        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
+        let Some(index) = self.index_content_res(path)? else {
+            return Ok(vec![]);
         };
-        let (Some(head), Some(index)) = (self.head_content(path), self.index_content(path)) else {
-            return vec![];
-        };
+        let head = self.head_content_res(path)?.unwrap_or_default();
         self.diff_strings(&head, &index, &rel)
     }
 
     /// Hunks between the index and `content` — the UNSTAGED set (what
     /// the gutter shows while you edit). When nothing is staged this
-    /// equals HEAD↔content, matching pre-0.5 behavior.
-    pub fn unstaged_hunks(&self, path: &Path, content: &str) -> Vec<Hunk> {
-        let Some(rel) = self.rel_path(path) else {
-            return vec![];
+    /// equals HEAD↔content, matching pre-0.5 behavior. An untracked
+    /// file reports one all-add hunk against empty.
+    pub fn unstaged_hunks(&self, path: &Path, content: &str) -> Result<Vec<Hunk>, GitError> {
+        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
+        let base = match self.index_content_res(path)? {
+            Some(index) => Some(index),
+            None => self.head_content_res(path)?,
         };
-        let base = self.index_content(path).or_else(|| self.head_content(path));
         match base {
-            None => self.hunks(path, content), // untracked: all-add
             Some(base) => self.diff_strings(&base, content, &rel),
+            None => self.hunks(path, content),
         }
     }
 
@@ -169,54 +271,28 @@ impl Repo {
     }
 
     /// Hunks between HEAD and `content` for `path`. Untracked files
-    /// report a single all-Add hunk.
-    pub fn hunks(&self, path: &Path, content: &str) -> Vec<Hunk> {
-        let Some(rel) = self.rel_path(path) else {
-            return vec![];
-        };
-        let old = self.head_content(path);
-        match old {
-            None => {
-                let count = content.lines().count();
-                if count == 0 {
-                    return vec![];
-                }
-                vec![Hunk {
-                    kind: HunkKind::Add,
-                    new_start: 1,
-                    new_count: count,
-                    old_start: 0,
-                    old_count: 0,
-                    lines: split_lines_bytes(content.as_bytes())
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, (text, has_newline))| DiffLine {
-                            origin: LineOrigin::Addition,
-                            old_lineno: None,
-                            new_lineno: Some(i + 1),
-                            text,
-                            has_newline,
-                        })
-                        .collect(),
-                }]
-            }
+    /// report a single all-Add hunk — a useful empty-history case, not
+    /// a failure. Native failures are typed, never empty.
+    pub fn hunks(&self, path: &Path, content: &str) -> Result<Vec<Hunk>, GitError> {
+        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
+        match self.head_content_res(path)? {
             Some(old) => self.diff_strings(&old, content, &rel),
+            None => Ok(all_add_hunk(content)),
         }
     }
 
-    fn diff_strings(&self, old: &str, new: &str, rel: &Path) -> Vec<Hunk> {
+    fn diff_strings(&self, old: &str, new: &str, rel: &Path) -> Result<Vec<Hunk>, GitError> {
         let mut opts = git2::DiffOptions::new();
         opts.context_lines(3);
-        let Ok(patch) = git2::Patch::from_buffers(
+        let patch = git2::Patch::from_buffers(
             old.as_bytes(),
             Some(rel),
             new.as_bytes(),
             Some(rel),
             Some(&mut opts),
-        ) else {
-            return vec![];
-        };
-        hunks_from_patch(&patch)
+        )
+        .map_err(|e| GitError::Native(format!("diff {rel:?}: {e}")))?;
+        Ok(hunks_from_patch(&patch))
     }
 
     /// One file's diff at `sha` vs its first parent, as structured
@@ -345,6 +421,33 @@ impl Repo {
     }
 }
 
+/// The untracked-file hunk: everything added, against nothing. Empty
+/// content is an honest empty set.
+fn all_add_hunk(content: &str) -> Vec<Hunk> {
+    let count = content.lines().count();
+    if count == 0 {
+        return vec![];
+    }
+    vec![Hunk {
+        kind: HunkKind::Add,
+        new_start: 1,
+        new_count: count,
+        old_start: 0,
+        old_count: 0,
+        lines: split_lines_bytes(content.as_bytes())
+            .into_iter()
+            .enumerate()
+            .map(|(i, (text, has_newline))| DiffLine {
+                origin: LineOrigin::Addition,
+                old_lineno: None,
+                new_lineno: Some(i + 1),
+                text,
+                has_newline,
+            })
+            .collect(),
+    }]
+}
+
 /// Byte-precise line split: (content-without-terminator, had-newline)
 /// pairs. Unlike str::lines, the final unterminated line keeps its
 /// identity — staging round-trips a missing trailing newline (0018).
@@ -452,7 +555,9 @@ mod head_tests {
         let (_d, repo, path) = fixture();
         // worktree edit, stage it, then edit again (live-only)
         std::fs::write(&path, "fn a() {}\nfn STAGED() {}\nfn c() {}\n").unwrap();
-        let staged = repo.unstaged_hunks(&path, &std::fs::read_to_string(&path).unwrap());
+        let staged = repo
+            .unstaged_hunks(&path, &std::fs::read_to_string(&path).unwrap())
+            .unwrap();
         assert_eq!(staged.len(), 1);
         let hunk = staged.into_iter().next().unwrap();
         repo.stage_hunk(Path::new("f.rs"), &hunk).unwrap();
@@ -462,22 +567,26 @@ mod head_tests {
         let head = repo.head_content(&path).unwrap();
         assert!(!head.contains("STAGED"));
         // staged set: HEAD↔index has the hunk; unstaged (index↔same content) is empty
-        assert_eq!(repo.staged_hunks(&path).len(), 1);
+        assert_eq!(repo.staged_hunks(&path).unwrap().len(), 1);
         let wt = std::fs::read_to_string(&path).unwrap();
-        assert!(repo.unstaged_hunks(&path, &wt).is_empty());
+        assert!(repo.unstaged_hunks(&path, &wt).unwrap().is_empty());
         // a further live-only edit shows in the unstaged set only
         let live = "fn a() {}\nfn STAGED() {}\nfn c() {}\nfn live()\n";
-        let unstaged = repo.unstaged_hunks(&path, live);
+        let unstaged = repo.unstaged_hunks(&path, live).unwrap();
         assert_eq!(unstaged.len(), 1);
         assert!(unstaged[0]
             .lines
             .iter()
             .any(|l| l.text.starts_with(b"fn live")));
-        assert_eq!(repo.staged_hunks(&path).len(), 1, "staged untouched");
+        assert_eq!(
+            repo.staged_hunks(&path).unwrap().len(),
+            1,
+            "staged untouched"
+        );
         // unstage reverses the edge
-        let staged = repo.staged_hunks(&path);
+        let staged = repo.staged_hunks(&path).unwrap();
         repo.unstage_hunk(Path::new("f.rs"), &staged[0]).unwrap();
-        assert!(repo.staged_hunks(&path).is_empty());
+        assert!(repo.staged_hunks(&path).unwrap().is_empty());
         assert!(!repo.index_content(&path).unwrap().contains("STAGED"));
     }
 }

@@ -9,7 +9,7 @@ mod tests {
     use strop_core::Buffer;
 
     fn text(e: &Editor) -> String {
-        e.buf().rope.to_string()
+        e.buf().text().to_string()
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
     fn extra_cursors_render_without_panicking() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
         e.feed_text(" c");
-        let frame = crate::headless::frame_string(&mut e, 40, 10);
+        let frame = crate::headless::frame_string(&mut e, 40, 10).unwrap();
         assert!(frame.contains("one") && frame.contains("two"));
     }
 
@@ -164,7 +164,7 @@ mod tests {
                 }
             }
             // a frame render must never panic either (cursor invariants)
-            let _ = crate::headless::frame_string(&mut e, 80, 24);
+            let _ = crate::headless::frame_string(&mut e, 80, 24).unwrap();
         }
     }
 }

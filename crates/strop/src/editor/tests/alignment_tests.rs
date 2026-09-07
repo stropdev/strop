@@ -11,7 +11,7 @@ fn document_set_stays_honest() {
     std::fs::write(&a, "a\n").unwrap();
     std::fs::write(&b, "b\n").unwrap();
     let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
-    e.open_buffer(&b).unwrap();
+    e.open_fixture(&b).unwrap();
     assert_eq!(e.docs.len(), 2);
     e.open_diff_surface("delta", "f.rs", vec![], None);
     assert_eq!(e.docs.len(), 3);

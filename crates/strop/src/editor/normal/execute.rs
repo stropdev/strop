@@ -5,14 +5,32 @@ use strop_grammar::{self as grammar, Command, Op};
 
 use crate::editor::{Editor, Key, Mode};
 
+use crate::editor::Register;
+
 impl Editor {
     /// ds" / cs"' / ysiw" (sandwich lineage). Returns Some when the
     /// command was a surround op and got handled.
     fn execute_surround(&mut self, cmd: &Command) -> Option<()> {
-        let r = grammar::resolve(self.buf(), self.head(), cmd)?;
+        if !matches!(
+            cmd.target,
+            grammar::Target::SurroundDelete(_)
+                | grammar::Target::SurroundChange { .. }
+                | grammar::Target::SurroundAdd { .. }
+        ) {
+            return None;
+        }
+        // resolve is typed (R5): a refused query surfaces its error —
+        // surround never guesses past one
+        let r = match grammar::resolve(self.buf(), self.head(), cmd) {
+            Ok(Some(resolved)) => resolved,
+            Ok(None) => return None,
+            Err(error) => {
+                self.message = error.to_string();
+                return None;
+            }
+        };
         let pair = |ch: char| match ch {
             'b' | '(' | ')' => ('(', ')'),
-            'B' | '{' | '}' => ('{', '}'),
             'r' | '[' | ']' => ('[', ']'),
             'a' | '<' | '>' => ('<', '>'),
             q => (q, q),
@@ -76,9 +94,18 @@ impl Editor {
         }
         // the cascade (0013 §3) IS the plan (0014 §3): preview renders
         // these same targets — one object, no preview/execute drift
-        let Some(plan) = grammar::plan(self.buf(), &self.all_cursors(), cmd) else {
-            self.message = "no target".into();
-            return;
+        let plan = match grammar::plan(self.buf(), &self.all_cursors(), cmd) {
+            Ok(Some(plan)) => plan,
+            Ok(None) => {
+                self.message = "no target".into();
+                return;
+            }
+            // a refused query is typed (R5) — it surfaces, never
+            // masquerades as "no target"
+            Err(error) => {
+                self.message = error.to_string();
+                return;
+            }
         };
         let kept: Vec<(usize, Range, bool)> = plan
             .targets
@@ -92,8 +119,13 @@ impl Editor {
                     .iter()
                     .map(|(_, r, _)| self.buf().slice_string(*r))
                     .collect();
-                let linewise = kept.first().is_some_and(|t| t.2);
-                self.set_register(cmd.register, texts.join("\n"), linewise);
+                let text = texts.join("\n");
+                let register = if kept.first().is_some_and(|t| t.2) {
+                    Register::linewise(text)
+                } else {
+                    Register::characterwise(text)
+                };
+                self.set_register(cmd.register, register);
                 self.flash(kept[0].1);
             }
             Op::Indent | Op::Dedent => {
@@ -124,13 +156,19 @@ impl Editor {
                 for (_, r, _) in kept.iter().rev() {
                     self.buf_mut().delete(*r);
                 }
-                self.set_register(cmd.register, texts.join("\n"), linewise);
+                let text = texts.join("\n");
+                let register = if linewise {
+                    Register::linewise(text)
+                } else {
+                    Register::characterwise(text)
+                };
+                self.set_register(cmd.register, register);
                 // landings: each range start minus what lower deletes
                 // already removed (deletes applied bottom-up above)
                 let mut shift = 0usize;
                 let mut landings: Vec<(bool, usize)> = Vec::with_capacity(kept.len());
                 for (c, r, _) in &kept {
-                    landings.push((*c == self.head(), r.start - shift));
+                    landings.push((*c == self.head(), r.start.get() - shift));
                     shift += r.end - r.start;
                 }
                 self.set_head(
@@ -170,6 +208,7 @@ impl Editor {
     /// keep the line and its indent, open insert at the indent. The
     /// register gets the full lines (with newlines), linewise.
     fn change_lines(&mut self, cmd: &Command, kept: &[(usize, strop_core::Range, bool)]) {
+        let newline = self.newline_str();
         // texts + indents read top-down before any edit lands
         let texts: Vec<String> = kept
             .iter()
@@ -178,7 +217,7 @@ impl Editor {
                 let last = self.buf().line_of(r.end.saturating_sub(1));
                 let s = self.buf().line_start(first);
                 let e = self.buf().line_start(last + 1).min(self.buf().len_bytes());
-                self.buf().rope.byte_slice(s..e).to_string()
+                self.buf().text().byte_slice(s..e).to_string()
             })
             .collect();
         let indents: Vec<String> = kept
@@ -211,7 +250,7 @@ impl Editor {
                 // N lines collapse into one fresh line
                 let end = self.buf().line_start(last + 1).min(self.buf().len_bytes());
                 self.buf_mut().delete(Range::charwise(start, end));
-                self.buf_mut().insert(start, &format!("{indent}\n"));
+                self.buf_mut().insert(start, &format!("{indent}{newline}"));
             }
             let net = self.buf().len_bytes() as isize - before;
             entries.push((*c == self.head(), start + indent.len(), net));
@@ -226,7 +265,7 @@ impl Editor {
                 (*p, (*at as isize + shift).max(0) as usize)
             })
             .collect();
-        self.set_register(cmd.register, texts.join(""), true);
+        self.set_register(cmd.register, Register::linewise(texts.join("")));
         self.set_head(
             landings
                 .iter()
@@ -276,7 +315,7 @@ impl Editor {
         // count is CHARS (0017) — a byte count splits multibyte text
         let line = self.buf().line_of(self.head());
         let (s, e) = (self.buf().line_start(line), self.buf().line_end(line));
-        let text_line = self.buf().rope.byte_slice(s..e).to_string();
+        let text_line = self.buf().text().byte_slice(s..e).to_string();
         let col = self.head().saturating_sub(s);
         let end = text_line
             .trim_end_matches('\n')
@@ -294,7 +333,7 @@ impl Editor {
         let cursor = self.head();
         let n_chars = self
             .buf()
-            .rope
+            .text()
             .byte_slice(cursor..end)
             .to_string()
             .chars()
@@ -414,21 +453,20 @@ impl Editor {
             self.tx_begin();
             let range = Range::charwise(self.head(), end);
             let text = self.buf_mut().delete(range);
-            self.tx_commit();
-            self.set_register(None, text, false);
+            self.set_register(None, Register::characterwise(text));
             self.flash(range);
             self.last_cmd_keys = "x".into();
             self.last_insert = None;
         }
     }
 
-    /// `p` / `P`: paste the register after/before (dot-repeatable).
-    pub(crate) fn paste_named(&mut self, name: Option<char>, before: bool) {
-        self.paste(name, before);
+    /// `p` / `P` (dot-repeatable): paste the register after/before
+    /// (vim `2p` lands it count times — a block repeats horizontally).
+    pub(crate) fn paste_named(&mut self, name: Option<char>, count: usize, before: bool) {
+        self.paste(name, count, before);
         self.last_cmd_keys = if before { "P".into() } else { "p".into() };
         self.last_insert = None;
     }
-
     /// `a`: append after the char under the cursor (multibyte-honest).
     pub(crate) fn append(&mut self) {
         self.set_head(
@@ -450,7 +488,7 @@ impl Editor {
     pub(crate) fn open_below(&mut self) {
         let indent = self.auto_indent_full_line();
         let end = self.buf().line_end(self.buf().line_of(self.head()));
-        let text = format!("\n{indent}");
+        let text = format!("{}{indent}", self.newline_str());
         self.insert_open = Some(text.clone());
         self.buf_mut().insert(end, &text);
         self.set_head(end + text.len());
@@ -461,7 +499,7 @@ impl Editor {
     pub(crate) fn open_above(&mut self) {
         let indent = self.auto_indent_full_line();
         let start = self.buf().line_start(self.buf().line_of(self.head()));
-        let text = format!("{indent}\n");
+        let text = format!("{indent}{}", self.newline_str());
         self.insert_open = Some(text.clone());
         self.buf_mut().insert(start, &text);
         self.set_head(start + indent.len());

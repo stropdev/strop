@@ -52,7 +52,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
                     EventKind::Resize,
                     || serde_json::json!({"columns":columns,"rows":rows}),
                 );
-                AppEvent::Resize
+                AppEvent::Resize { columns, rows }
             }
             Ok(_) => continue,
             Err(error) => {
@@ -89,7 +89,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
         if std::mem::take(&mut editor.needs_repaint) {
             terminal.clear()?;
         }
-        terminal.draw(|frame| editor::trace::frame::draw(&mut editor, frame))?;
+        terminal.draw(|frame| editor::trace::frame::draw(&mut editor, frame, true))?;
         let event = if editor.flash_range().is_some() {
             match receiver.recv_timeout(Duration::from_millis(16)) {
                 Ok(event) => Some(event),
@@ -100,10 +100,12 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             receiver.recv().ok()
         };
         let Some(event) = event else { continue };
-        editor.handle_app_event(event);
-        editor.lsp_sync_changed();
+        editor.recorded_action(
+            editor::trace::drive::Action::Event(event),
+            editor.tape.sample_tick(),
+        )?;
         editor.trace_state();
-        if let Some(payload) = editor.osc52.take() {
+        for payload in std::mem::take(&mut editor.terminal_output) {
             write!(
                 terminal.backend_mut(),
                 "\x1b]52;c;{}\x07",
@@ -112,7 +114,23 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             terminal.backend_mut().flush()?;
         }
     }
-    crate::session::save(&editor);
+    editor.recorded_action(
+        editor::trace::drive::Action::Finish,
+        editor.tape.sample_tick(),
+    )?;
+    while editor.async_pending() {
+        let event = receiver
+            .recv_timeout(Duration::from_secs(30))
+            .map_err(io::Error::other)?;
+        editor.recorded_action(
+            editor::trace::drive::Action::Event(event),
+            editor.tape.sample_tick(),
+        )?;
+    }
+    editor.tape.finish()?;
+    if let Some(error) = editor.io.session_error.take() {
+        return Err(io::Error::other(error));
+    }
     Ok(())
 }
 

@@ -1,8 +1,8 @@
 # 0030 — Make broken transitions difficult to express
 
-Status: **proposal for discussion only. Not executed.**
-Requested separately from tracing; no approval to perform this redesign is
-implied by landing 0027/0029. Priorities refer to roadmap 0028.
+Status: the P1/P2 proposals were subsequently accepted and implemented under
+0031 for 0.15.0. This document preserves the original design rationale;
+0031 is the execution and acceptance contract.
 
 ## 1. Diagnosis
 
@@ -196,5 +196,6 @@ input path, or broad plugin/debugger work is part of this proposal.
   curated reproducer export that omits secrets and requires supplied fixtures?
   Do not promise automatic redaction of arbitrary source/diagnostic text.
 
-These are questions for the next conversation, not blocked implementation items
-in the current release and not changes executed by this plan.
+These questions were resolved in 0031: exact-origin cancellation, all-cursor live
+search, journal-backed typed system mutations, and native-free full forensic replay
+with a separate payload-free metadata export.

@@ -49,25 +49,44 @@ for thirteen languages (bash/fish/lua/sql included, shebang detection too), git 
 blame + commit dive chains, SHA-resolved permalinks over OSC52, and helix-flavored
 `.strop/languages.toml` LSP config.
 
+Search supports a bounded Vim-magic regex dialect (and `\v` very magic), including
+collections, groups, alternation, repetition and backreferences. Unsupported
+constructs report an error instead of being treated as literals. Search previews
+and Enter use the same counted resolver. Horizontal views, block selection and
+carets share display-cell geometry; new edits preserve the buffer's line endings.
+
+File/native work runs on owned jobs rather than blocking keystrokes. Sessions
+use private atomic files and lossless native paths, including undo history.
+
 ## Reporting a bug
 
 ```sh
 strop --log-file issue.jsonl path/to/file.rs
-# Or capture file/paste text and cell grids for a self-contained input reproducer:
+# Include sensitive documents, service results and terminal observations:
 strop --log-file issue-full.jsonl --log-content path/to/file.rs
 strop --headless steps.keys path/to/file.rs --log-file headless.jsonl
+strop --replay issue-full.jsonl
+strop --export-metadata issue-full.jsonl > issue-metadata.jsonl
+# Optional input-only extraction; inspect before executing:
 strop --replay-script issue-full.jsonl > replay.keys
 ```
 
 Attach the JSONL file with the observed and expected behavior. Logs contain keys,
 commands, paths and diagnostic messages; full-content logs also contain documents,
-pastes and rendered cells. **Inspect before sharing.** Existing files are never
-overwritten. The extracted script replays inputs from a scratch snapshot, not
-external service results or filesystem state; inspect it before executing it.
+pastes, service results and rendered cells. **Inspect before sharing.** Existing
+files are never overwritten. Use the recording version of strop for full replay:
+it requires a complete capture and does not repeat native side effects.
+The input-only script is different: it can
+run commands again and does not reproduce external service results.
+
+Captures are bounded to 64 MiB, 100,000 events and 256 KiB per record. Hitting a
+limit is explicit and an incomplete trace is refused for full replay. Metadata
+export retains only event categories and sequence numbers, not arbitrary payloads;
+the export is deliberately not replayable.
 
 See [tracing design](plans/0029-session-tracing.md), the
 [prioritized review/roadmap](plans/0028-roadmap-and-review.md), and the
-[hardening proposal (not implemented)](plans/0030-correctness-hardening.md).
+[P1/P2 execution contract](plans/0031-p1-p2-execution.md).
 
 ## Links
 

@@ -9,7 +9,7 @@ fn vi_paren_selects_inner() {
     assert_eq!(e.buf().slice_string(r), "a, b");
     // and operators consume it
     e.feed_text("d");
-    assert_eq!(e.buf().rope.to_string(), "call()\n");
+    assert_eq!(e.buf().text().to_string(), "call()\n");
 }
 
 #[test]

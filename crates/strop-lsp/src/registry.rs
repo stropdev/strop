@@ -112,17 +112,23 @@ pub(crate) fn is_embedded(name: &str) -> bool {
 
 /// File extension (with dot) → language name — the keys users write in
 /// `[language.NAME]` and the registry's language vocabulary.
-pub fn language_for_extension(ext: &str) -> Option<&'static str> {
+pub fn language_for_extension(ext_with_dot: &str) -> Option<&'static str> {
+    language_for_extension_name(ext_with_dot.strip_prefix('.')?)
+}
+
+/// Bare extension (no dot) → language name. Pure table lookup, safe on
+/// any keystroke path.
+pub fn language_for_extension_name(ext: &str) -> Option<&'static str> {
     Some(match ext {
-        ".rs" => "rust",
-        ".c" | ".h" => "c",
-        ".cpp" | ".cc" | ".cxx" | ".hpp" | ".hh" => "cpp",
-        ".py" | ".pyi" => "python",
-        ".go" => "go",
-        ".js" | ".jsx" | ".mjs" | ".cjs" => "javascript",
-        ".ts" | ".tsx" => "typescript",
-        ".json" => "json",
-        ".sh" | ".bash" => "shellscript",
+        "rs" => "rust",
+        "c" | "h" => "c",
+        "cpp" | "cc" | "cxx" | "hpp" | "hh" => "cpp",
+        "py" | "pyi" => "python",
+        "go" => "go",
+        "js" | "jsx" | "mjs" | "cjs" => "javascript",
+        "ts" | "tsx" => "typescript",
+        "json" => "json",
+        "sh" | "bash" => "shellscript",
         _ => return None,
     })
 }

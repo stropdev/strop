@@ -5,11 +5,11 @@ fn insert_session_undoes_as_one_unit() {
     let mut e = Editor::new(Buffer::from_text("hello\n"));
     e.feed_text("A world"); // append " world" at EOL
     e.feed(crate::editor::Key::Esc);
-    assert_eq!(e.buf().rope.to_string(), "hello world\n");
+    assert_eq!(e.buf().text().to_string(), "hello world\n");
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), "hello\n");
+    assert_eq!(e.buf().text().to_string(), "hello\n");
     e.feed(crate::editor::Key::CtrlR);
-    assert_eq!(e.buf().rope.to_string(), "hello world\n");
+    assert_eq!(e.buf().text().to_string(), "hello world\n");
 }
 
 #[test]
@@ -19,9 +19,9 @@ fn change_op_holds_one_undo_unit() {
     e.feed_text("ci["); // change inside brackets
     e.feed_text("new");
     e.feed(crate::editor::Key::Esc);
-    assert_eq!(e.buf().rope.to_string(), "say [new] now\n");
+    assert_eq!(e.buf().text().to_string(), "say [new] now\n");
     e.feed_text("u"); // ONE undo restores the whole change
-    assert_eq!(e.buf().rope.to_string(), "say [old] now\n");
+    assert_eq!(e.buf().text().to_string(), "say [old] now\n");
 }
 
 #[test]
@@ -43,10 +43,10 @@ fn edit_after_undo_forks_and_ctrlr_redoes_last_branch() {
     e.feed_text("ry"); // fork: replace a with y
     e.feed_text("u"); // back to ab
     e.feed(crate::editor::Key::CtrlR); // redo the last-visited branch
-    assert_eq!(e.buf().rope.to_string(), "yb\n");
+    assert_eq!(e.buf().text().to_string(), "yb\n");
     // redo once more: nothing (the fork tip is current)
     e.feed(crate::editor::Key::CtrlR);
-    assert_eq!(e.buf().rope.to_string(), "yb\n");
+    assert_eq!(e.buf().text().to_string(), "yb\n");
 }
 
 #[test]
@@ -55,5 +55,5 @@ fn readonly_buffers_refuse_undo() {
     e.buf_mut().readonly = true;
     e.feed_text("u");
     assert!(e.message.contains("readonly"));
-    assert_eq!(e.buf().rope.to_string(), "x\n");
+    assert_eq!(e.buf().text().to_string(), "x\n");
 }

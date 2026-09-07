@@ -1,473 +1,514 @@
-//! LSP glue (0009): the editor drains typed events; tokio never touches
-//! the input path. Diagnostics merge into the git gutter (severity wins),
-//! Space d is the diagnostics picker, Space k hover, gd goto-definition.
+//! Editor-side LSP event handling and asynchronous navigation.
+use crate::editor::lsp::attach::AttachRecord;
 
-use super::trace;
+use super::{trace, Editor};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 
-use strop_lsp::languages::Languages;
-use strop_lsp::registry::{self, ServerSpec};
-use strop_lsp::{Client, LspEvent};
+use strop_lsp::protocol::ResolvedDiag;
+use strop_lsp::registry;
+use strop_lsp::{LspEvent, ServerId};
 
-use super::Editor;
+pub(crate) mod attach;
+pub(crate) mod state;
+#[cfg(test)]
+mod tests;
 
-/// One pooled server connection (0014 wave 2): the pool keys on
-/// (workspace root, server name) so a polyglot session runs rust-analyzer
-/// and clangd and pyright side by side.
 pub(crate) struct LspServer {
-    pub key: (PathBuf, String),
-    pub client: strop_lsp::Client,
-    pub rx: Receiver<strop_lsp::LspEvent>,
+    pub id: ServerId,
+    /// None for replayed servers: identity and replies come from the
+    /// injected record/event stream — never a fake client.
+    pub client: Option<strop_lsp::Client>,
+    pub rx: Receiver<LspEvent>,
 }
 
 impl Editor {
-    /// Spawn a server for the current buffer if the merged languages
-    /// config (0012: project > XDG > embedded) resolves one. One client
-    /// per workspace root; buffers did_open on it.
+    /// Try to attach a language server for the current buffer. The
+    /// synchronous part only touches in-memory state; discovery
+    /// (config, root, trust, probe) is owned worker work behind the
+    /// replay gate.
+    /// The LSP half of the startup "start services" action: enable
+    /// attach, then attach for the current buffer. A pure state
+    /// transition performed identically live and replayed — the tape
+    /// gates the native discovery inside `lsp_maybe_attach`.
+    pub fn lsp_start_services(&mut self) {
+        self.lsp_state.attach.enabled = true;
+        self.lsp_maybe_attach();
+    }
+
     pub(crate) fn lsp_maybe_attach(&mut self) {
-        if cfg!(test) {
-            return; // hermetic test builds never spawn servers
+        if !self.lsp_state.attach.enabled {
+            return;
         }
         let Some(path) = self.buf().path.clone() else {
             return;
         };
-        let ext = Path::new(&path)
+        let Some(ext) = path
             .extension()
-            .map(|e| format!(".{}", e.to_string_lossy()));
-        let Some(ext) = ext else { return };
-        let abs = if Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
-        let languages: &Languages = self.languages_for(&abs);
-        let warn = languages.warnings();
-        let Some(spec) = registry::for_extension(&ext, languages) else {
-            if !warn.is_empty() {
-                self.message = format!("languages.toml: {}", warn.join("; "));
-            }
+            .map(|e| format!(".{}", e.to_string_lossy()))
+        else {
             return;
         };
-        // 0020 §15: a project layer supplying the command/args is
-        // executable content — gate on remembered trust
-        if spec.project_executable {
-            let root = registry::workspace_root(&abs, &self.cwd);
-            if !crate::session::is_trusted(self.state_dir.as_deref(), &root) {
-                self.message = format!(
-                    "project config wants to run `{}` — :trust to allow (once)",
-                    spec.command
-                );
-                return;
-            }
-        }
-        // already pooled for this (root, server)? just did_open — the
-        // root resolve repeats the languages/git walk, cheap and rare
-        let root_known = self.lsp_server_root(&abs, languages);
-        let key = (root_known, spec.name.to_string());
-        if self.lsp_servers.iter().any(|s| s.key == key) {
+        let Some(language) = registry::language_for_extension(&ext) else {
+            return;
+        };
+        let abs = self.cwd.join(&path);
+        if self.lsp_server_for(&abs, language).is_some() {
             self.lsp_did_open_current();
             return;
         }
-        // PATH probe only for bare command names — a config-provided
-        // absolute path is its own existence check (0012 §5)
-        if !spec.absolute_command()
-            && std::process::Command::new(spec.command)
-                .arg("--version")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .is_err()
-        {
-            self.lsp_hint_once(spec);
+        match self.lsp_state.attach.refused.get(language) {
+            // Trust decisions change (`:trust`); re-discover those.
+            Some(attach::AttachDecision::TrustRequired { .. })
+            | Some(attach::AttachDecision::TrustError { .. }) => {}
+            // Everything else was reported once and stays refused.
+            Some(_) => return,
+            None => {}
+        }
+        if self.lsp_state.attach.pending.contains_key(language) {
             return;
         }
-        let (tx, rx) = channel();
-        match Client::spawn(&spec, &key.0.clone(), tx) {
-            Some(client) => {
-                // the TUI forwards each event as it lands (0018); the
-                // headless harness drains the channel instead
-                if let Some(app_tx) = &self.app_tx {
-                    let enc = client.encoding();
-                    let tx = app_tx.clone();
-                    std::thread::spawn(move || {
-                        while let Ok(ev) = rx.recv() {
-                            if tx.send(super::events::AppEvent::Lsp(enc, ev)).is_err() {
-                                break;
-                            }
+        let ticket = match self.worker_ids.allocate() {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                self.message = error.message;
+                return;
+            }
+        };
+        self.lsp_state
+            .attach
+            .pending
+            .insert(language.to_string(), ticket);
+        let args = attach::AttachArgs {
+            ticket,
+            path: abs.clone(),
+            language: language.to_string(),
+        };
+        // Replay gate: no native config/trust/probe before this
+        // registration (R11).
+        match self.tape.request("lsp.attach", &args) {
+            Ok(true) => self.lsp_spawn_discovery(ticket, abs, ext, language),
+            Ok(false) => {}
+            Err(error) => {
+                self.lsp_state.attach.pending.remove(language);
+                self.message = format!("lsp attach diverged from trace: {error}");
+            }
+        }
+    }
+
+    fn lsp_spawn_discovery(
+        &mut self,
+        ticket: strop_core::worker::WorkerId,
+        abs: PathBuf,
+        ext: String,
+        language: &'static str,
+    ) {
+        let input = attach::DiscoverInput {
+            ticket,
+            abs,
+            ext,
+            language,
+            cwd: self.cwd.clone(),
+            git_workdir: self.git.as_ref().map(|g| g.workdir().to_path_buf()),
+            state_dir: self.state_dir.clone(),
+            transport: self.lsp_state.attach.transport.clone(),
+        };
+        let done = self.lsp_state.attach.attach_channel();
+        let spawned = std::thread::Builder::new()
+            .name("strop-lsp-attach".into())
+            .spawn(move || {
+                let _ = done.send(attach::discover(input));
+            });
+        if spawned.is_err() {
+            self.lsp_state.attach.pending.remove(language);
+            self.message = "lsp: cannot start attach discovery".into();
+        }
+    }
+
+    /// The server placement for a buffer, if one is attached: exact
+    /// language match, longest covering root wins.
+    pub(crate) fn lsp_server_for(
+        &self,
+        abs: &Path,
+        language: &'static str,
+    ) -> Option<(ServerId, PathBuf)> {
+        let attach = &self.lsp_state.attach;
+        let best = attach
+            .attached
+            .iter()
+            .filter(|a| a.language == language && abs.starts_with(&a.root))
+            .max_by_key(|a| a.root.as_os_str().len())?;
+        Some((best.server, best.root.clone()))
+    }
+
+    pub(crate) fn handle_lsp_attach(&mut self, record: AttachRecord) {
+        let language_key = record.language.clone();
+        // Stale completion: a newer attempt owns this language now.
+        if self.lsp_state.attach.pending.get(&language_key) != Some(&record.ticket) {
+            trace::services::rejected("lsp", "attach completion superseded");
+            return;
+        }
+        self.lsp_state.attach.pending.remove(&language_key);
+        let attach::AttachRecord {
+            ticket: _,
+            server,
+            language,
+            name,
+            root,
+            outcome,
+        } = record;
+        match outcome {
+            attach::AttachDecision::Attached => {
+                let Some(server) = server else { return };
+                self.lsp_state
+                    .attach
+                    .attached
+                    .retain(|a| !(a.language == language && a.root == root));
+                // The placement exists before any didOpen resolves
+                // against it — live and replayed alike.
+                self.lsp_state.attach.attached.push(attach::Attachment {
+                    language: language.clone(),
+                    root: root.clone(),
+                    server,
+                });
+                let transport = self
+                    .lsp_state
+                    .attach
+                    .transport
+                    .lock()
+                    .ok()
+                    .and_then(|mut table| table.remove(&server));
+                match transport {
+                    Some(attach::LiveTransport { client, rx }) => {
+                        // TUI: forward like every late-attaching server.
+                        if let Some(app_tx) = &self.app_tx {
+                            let tx = app_tx.clone();
+                            std::thread::spawn(move || {
+                                while let Ok(event) = rx.recv() {
+                                    if tx.send(super::events::AppEvent::Lsp(event)).is_err() {
+                                        break;
+                                    }
+                                }
+                            });
+                            let (_, empty) = channel();
+                            self.lsp_servers.push(LspServer {
+                                id: server,
+                                client: Some(client),
+                                rx: empty,
+                            });
+                        } else {
+                            self.lsp_servers.push(LspServer {
+                                id: server,
+                                client: Some(client),
+                                rx,
+                            });
                         }
-                    });
-                    // keep a never-yielding channel in the slot
-                    let (_, rx) = channel();
-                    self.lsp_servers.push(LspServer { key, client, rx });
-                } else {
-                    self.lsp_servers.push(LspServer { key, client, rx });
+                        self.message = format!("lsp: {name} starting");
+                        self.lsp_did_open_current();
+                    }
+                    None => {
+                        // Replayed server: identity only, replies arrive
+                        // through the injected event stream.
+                        self.lsp_servers.push(LspServer {
+                            id: server,
+                            client: None,
+                            rx: channel().1,
+                        });
+                    }
                 }
-                self.message = format!("lsp: {} starting", spec.name);
-                if !warn.is_empty() {
-                    self.message
-                        .push_str(&format!(" — languages.toml: {}", warn.join("; ")));
-                }
-                self.lsp_did_open_current();
             }
-            None => self.lsp_hint_once(spec),
-        }
-    }
-
-    fn lsp_hint_once(&mut self, spec: ServerSpec<'static>) {
-        if self.lsp_hints_shown.insert(spec.name) {
-            let hint = spec
-                .install_hint
-                .unwrap_or("install it or fix the command in languages.toml");
-            self.message = format!("lsp: {} not available — {}", spec.name, hint);
-        }
-    }
-
-    /// The buffer's workspace root (project layer, git walk, cwd).
-    fn lsp_server_root(&self, abs: &Path, languages: &Languages) -> PathBuf {
-        languages
-            .project_root
-            .as_deref()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| {
-                let fallback = self
-                    .git
-                    .as_ref()
-                    .map(|g| g.workdir().to_path_buf())
-                    .unwrap_or_else(|| self.cwd.clone());
-                registry::workspace_root(abs, &fallback)
-            })
-    }
-
-    /// The pooled server for the current buffer, resolved through its
-    /// extension + root (None when nothing serves this file).
-    fn lsp_current(&mut self) -> Option<&LspServer> {
-        let path = self.buf().path.as_deref()?;
-        let abs = if Path::new(path).is_absolute() {
-            PathBuf::from(path)
-        } else {
-            self.cwd.join(path)
-        };
-        let ext = format!(".{}", abs.extension()?.to_string_lossy());
-        let languages: &Languages = self.languages_for(&abs);
-        let spec = registry::for_extension(&ext, languages)?;
-        let root = self.lsp_server_root(&abs, languages);
-        let key = (root, spec.name.to_string());
-        self.lsp_servers.iter().find(|s| s.key == key)
-    }
-
-    fn lsp_did_open_current(&mut self) {
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
-        let abs = if std::path::Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
-        if !self.lsp_opened.insert(abs.clone()) {
-            return;
-        }
-        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
-            return;
-        };
-        let lang = lang_id(&abs);
-        client.did_open(&abs, lang, &self.buf().rope.to_string());
-    }
-
-    /// didChange when the buffer epoch moved (debounced by epoch — one
-    /// full sync per edit burst; incremental sync is the perf follow-up).
-    pub fn lsp_sync_changed(&mut self) {
-        // buffers can be empty post-quit (the TUI breaks first, but
-        // scripted/headless callers may drain past the last :q)
-        let Some(buf) = self.docs.get(self.current()).map(|d| &d.buf) else {
-            return;
-        };
-        let Some(path) = buf.path.clone() else {
-            return;
-        };
-        let abs = if std::path::Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
-        let epoch = buf.epoch;
-        if self.lsp_sent_epochs.get(&abs) == Some(&epoch) {
-            return;
-        }
-        self.lsp_sent_epochs.insert(abs.clone(), epoch);
-        let text = buf.rope.to_string();
-        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
-            return;
-        };
-        client.did_change(&abs, &text);
-    }
-
-    /// Drain server events (headless settle; the TUI forwards each
-    /// event as it lands — 0018).
-    pub fn drain_lsp(&mut self) {
-        let mut events = Vec::new();
-        for server in &self.lsp_servers {
-            while let Ok(event) = server.rx.try_recv() {
-                events.push((server.client.encoding(), event));
+            decision => {
+                let sticky = !matches!(
+                    decision,
+                    attach::AttachDecision::TrustRequired { .. }
+                        | attach::AttachDecision::TrustError { .. }
+                );
+                let first = self
+                    .lsp_state
+                    .attach
+                    .refused
+                    .insert(language.clone(), decision.clone())
+                    .is_none();
+                if sticky && !first {
+                    return;
+                }
+                self.message = match decision {
+                    attach::AttachDecision::NoServer => format!("no language server for {name}"),
+                    attach::AttachDecision::TrustRequired { command } => {
+                        format!("project config wants to run `{command}` — :trust to allow (once)")
+                    }
+                    attach::AttachDecision::TrustError { error } => {
+                        format!("project trust: {error}")
+                    }
+                    attach::AttachDecision::NotExecutable { hint } => {
+                        format!("lsp: {name} not available — {hint}")
+                    }
+                    attach::AttachDecision::SpawnFailed => format!("lsp: {name} could not start"),
+                    attach::AttachDecision::Attached => unreachable!("matched above"),
+                };
             }
         }
-        for (encoding, event) in events {
-            self.handle_lsp_event(encoding, event);
-        }
     }
 
-    /// One server event, handled with that server's encoding.
-    pub(crate) fn handle_lsp_event(&mut self, enc: strop_lsp::PositionEncoding, event: LspEvent) {
+    pub(crate) fn handle_lsp_event(&mut self, event: LspEvent) {
         trace::services::lsp(&event);
-        {
-            match event {
-                LspEvent::Diagnostics {
-                    path,
-                    mut diags,
-                    version,
-                } => {
-                    // reject batches older than the last version WE sent
-                    // — their positions were computed against text the
-                    // server hadn't seen yet (0020 §6: the comparison is
-                    // against the server's own version clock, not the
-                    // buffer's edit epoch — different counters)
-                    let stale = self
-                        .lsp_servers
-                        .iter()
-                        .find(|srv| path.starts_with(&srv.key.0))
-                        .and_then(|srv| srv.client.sent_version(&path))
-                        .is_some_and(|sent| version.is_some_and(|v| v < sent));
-                    if stale {
-                        trace::services::rejected(
-                            "lsp",
-                            "diagnostic version precedes sent version",
-                        );
-                        return;
-                    }
-                    // server columns → byte columns against the open
-                    // buffer's text (unopened files keep wire values)
-                    {
-                        if let Some(buf) = self.buffer_for_path(&path) {
-                            for d in &mut diags {
-                                let line = buf.line_text(d.line);
-                                d.col = strop_lsp::to_byte_col(&line, d.col, enc);
-                                let end_line = buf.line_text(d.end_line);
-                                d.end_col = strop_lsp::to_byte_col(&end_line, d.end_col, enc);
-                            }
-                        }
-                    }
-                    self.diags.insert(path, diags);
+        match event {
+            LspEvent::Ready { server, name } => {
+                if self.lsp_servers.iter().any(|s| s.id == server) {
+                    self.message = format!("lsp: {name} ready");
                 }
-                LspEvent::Ready { server } => {
-                    self.message = format!("lsp: {server} ready");
+            }
+            LspEvent::Failed { server, name, hint } => {
+                if self.lsp_servers.iter().any(|s| s.id == server) {
+                    self.lsp_failed(server);
+                    self.message = format!("lsp: {name} failed — {hint}");
                 }
-                LspEvent::Failed { server, hint } => {
-                    self.message = format!("lsp: {server} failed — {hint}");
-                }
-                LspEvent::Note { text } => self.message = text,
-                LspEvent::HoverText { text } => {
-                    // 0018: a hover answers the document state that
-                    // ASKED — an edit since makes the answer stale
-                    let stale = self.hover_request.is_some_and(|(doc, depth)| {
-                        doc != self.current() || self.buf().epoch != depth
+            }
+            LspEvent::Diagnostics {
+                context,
+                path,
+                diags,
+            } => {
+                let valid = self
+                    .lsp_state
+                    .bindings
+                    .get(&context.document)
+                    .is_some_and(|b| {
+                        b.server == context.server
+                            && b.path == path
+                            && b.revision == context.revision
                     });
-                    if !stale {
-                        self.hover_card = Some(text);
-                    } else {
-                        trace::services::rejected(
-                            "lsp",
-                            "hover requester document/revision changed",
-                        );
-                    }
-                }
-                LspEvent::Locations { req_revision, .. }
-                    if req_revision != 0 && !self.lsp_nav_fresh(req_revision) =>
-                {
-                    // stale asker — drop
+                let Some(doc) = self
+                    .docs
+                    .get(context.document)
+                    .filter(|d| valid && d.buf.revision() == context.revision)
+                else {
+                    trace::services::rejected("lsp", "diagnostic owner/revision changed");
+                    return;
+                };
+                let buffer = &doc.buf;
+                let resolved: Vec<ResolvedDiag> = diags
+                    .into_iter()
+                    .map(|d| d.resolve(context.encoding, buffer))
+                    .collect();
+                self.diags.insert(path, resolved);
+            }
+            LspEvent::HoverText { context, text } => {
+                if !self.lsp_reply_fresh(&context) {
                     trace::services::rejected(
                         "lsp",
-                        "locations requester document/revision changed",
+                        "hover request/server/document/revision changed",
                     );
+                    return;
                 }
-                LspEvent::Locations { kind, items, .. } => match items.len() {
-                    0 => self.message = format!("lsp: no {}", kind.label()),
+                self.lsp_state.hover = None;
+                self.hover_card = Some(text);
+            }
+            LspEvent::Note { context, text } => {
+                if !self.lsp_reply_fresh(&context) {
+                    trace::services::rejected(
+                        "lsp",
+                        "navigation request/server/document/revision changed",
+                    );
+                    return;
+                }
+                self.lsp_state.navigation = None;
+                self.message = text;
+            }
+            LspEvent::GotoLocation { context, location } => {
+                if !self.lsp_reply_fresh(&context) {
+                    trace::services::rejected(
+                        "lsp",
+                        "navigation request/server/document/revision changed",
+                    );
+                    return;
+                }
+                self.jump_to_location(location, context);
+            }
+            LspEvent::Locations {
+                context,
+                kind,
+                items,
+            } => {
+                if !self.lsp_reply_fresh(&context) {
+                    trace::services::rejected(
+                        "lsp",
+                        "locations request/server/document/revision changed",
+                    );
+                    return;
+                }
+                match items.len() {
+                    0 => {
+                        self.lsp_state.navigation = None;
+                        self.message = format!("lsp: no {}", kind.label());
+                    }
                     1 => {
-                        let (path, line, col) = items.into_iter().next().unwrap();
-                        self.jump_to_location(path, line, col, enc);
+                        if let Some(location) = items.into_iter().next() {
+                            self.jump_to_location(location, context);
+                        }
                     }
                     n => {
                         use strop_picker::{Item, Kind, Payload};
-                        let label = kind.label();
-                        let items: Vec<Item> = items
+                        let items = items
                             .into_iter()
-                            .map(|(path, line, col)| Item {
-                                text: format!("{}:{}:{}", path.display(), line + 1, col + 1),
-                                payload: Payload::Grep {
-                                    path,
-                                    line: line + 1,
-                                    col: col + 1,
-                                    match_len: 1,
-                                    line_text: String::new(),
-                                },
+                            .map(|location| {
+                                let line = location.position.line.get() + 1;
+                                let col = location.position.column.get() + 1;
+                                Item {
+                                    text: format!("{}:{}:{}", location.path.display(), line, col),
+                                    payload: Payload::Grep {
+                                        path: location.path,
+                                        line,
+                                        col,
+                                        match_len: 1,
+                                        line_text: String::new(),
+                                    },
+                                }
                             })
                             .collect();
-                        let picker = strop_picker::Picker::new(Kind::Locations, items, false);
-                        self.set_picker(crate::editor::PickerGlue::diagnostics(picker));
-                        self.message = format!("{n} {label}");
+                        let mut glue = super::PickerGlue::diagnostics(strop_picker::Picker::new(
+                            Kind::Locations,
+                            items,
+                            false,
+                        ));
+                        glue.lsp_context = Some(context);
+                        self.set_picker(glue);
+                        self.message = format!("{n} {}", kind.label());
                     }
-                },
-                LspEvent::GotoLocation {
-                    path,
-                    line,
-                    col,
-                    req_revision,
-                } => {
-                    // 0021 §2: the answer is only valid against the
-                    // document state that asked
-                    if req_revision != 0 && !self.lsp_nav_fresh(req_revision) {
-                        trace::services::rejected(
-                            "lsp",
-                            "navigation requester document/revision changed",
-                        );
-                        return;
-                    }
-                    self.jump_to_location(path, line, col, enc);
                 }
             }
         }
     }
 
-    /// Open the target and land on the position (server col → byte
-    /// col against the target line).
-    fn jump_to_location(
+    pub(crate) fn jump_to_location(
         &mut self,
-        path: PathBuf,
-        line: usize,
-        col: usize,
-        enc: strop_lsp::PositionEncoding,
+        location: strop_lsp::ServerLocation,
+        context: strop_lsp::ReplyContext,
     ) {
-        // gd/gr are jumps: record the origin BEFORE the buffer switch or
-        // ctrl-o has nothing to come back to
-        self.push_jump();
-        // no display() roundtrip on the open path (0026): non-UTF-8
-        // filenames must survive a gd
-        let path_s = path.display().to_string();
-        if let Err(e) = self.open_buffer(&path) {
-            self.message = format!("open {path_s}: {e}");
+        if !self.lsp_reply_fresh(&context) {
             return;
         }
-        // IntelliJ's external-libraries rule without a list: following a
-        // definition OUT of the workspace is reading, not editing —
-        // the buffer opens readonly (0009's mutation boundary enforces
-        // it); `:set noro` unlocks deliberately.
-        // workspace_root takes a FILE path (walks from its parent) —
-        // cwd/x's parent is the cwd itself
-        let probe = self.cwd.join("x");
-        let root = registry::workspace_root(&probe, &self.cwd);
-        if !path.starts_with(&root) && !self.buf().readonly {
-            self.buf_mut().readonly = true;
-            self.message = format!("{path_s} [readonly — outside workspace; :set noro to edit]");
+        self.request_open(
+            location.path,
+            super::io::OpenIntent::LspLocation {
+                context,
+                position: location.position,
+            },
+        );
+    }
+
+    pub(crate) fn finish_lsp_jump(
+        &mut self,
+        target: strop_core::id::DocumentId,
+        position: strop_lsp::ServerPosition,
+        context: strop_lsp::ReplyContext,
+    ) {
+        if !self.lsp_reply_fresh(&context) {
+            trace::services::rejected("lsp", "navigation changed while target was loading");
+            return;
         }
-        let col = {
-            let line_idx = line.min(self.buf().len_lines().saturating_sub(1));
-            let text = self.buf().line_text(line_idx);
-            strop_lsp::to_byte_col(&text, col, enc)
+        let Some(target_doc) = self.docs.get(target) else {
+            return;
         };
-        let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
-        self.set_head(self.buf().clamp_boundary(start + col));
+        let Some(binding) = self.lsp_state.bindings.get(&context.stamp.document) else {
+            return;
+        };
+        let outside = target_doc
+            .buf
+            .path
+            .as_ref()
+            .is_some_and(|path| !self.cwd.join(path).starts_with(&binding.root));
+        let line = position
+            .line
+            .get()
+            .min(target_doc.buf.len_lines().saturating_sub(1));
+        let text = target_doc.buf.line_text(line);
+        let col = strop_lsp::to_byte_col(&text, position.column, context.encoding).get();
+        let head = target_doc
+            .buf
+            .clamp_boundary(target_doc.buf.line_start(line).saturating_add(col));
+        self.push_jump();
+        self.lsp_state.navigation = None;
+        self.switch_to(target);
+        if outside && !self.buf().readonly {
+            self.buf_mut().readonly = true;
+            self.message = "readonly — outside workspace (:set noro to edit)".into();
+        }
+        self.set_head(head);
         self.clamp_cursor();
         self.scroll_to_cursor(self.view_rows());
+        self.lsp_maybe_attach();
     }
 
-    /// gr / gI / gy / gD: references, implementation, type definition,
-    /// declaration — one request shape, four LSP methods.
     pub(crate) fn lsp_locations(&mut self, kind: strop_lsp::LocKind) {
-        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
-            self.message = "no language server — install it or fix languages.toml".into();
-            return;
-        };
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
-        let abs = if std::path::Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
-        let line = self.buf().line_of(self.head());
-        let col = self.server_col(&client, self.buf().col_of(self.head()));
-        let label = kind.label();
-        self.lsp_nav_request = Some((self.current(), self.buf().epoch));
-        client.locations(kind, &abs, line, col, self.buf().epoch);
-        self.message = format!("lsp: {label} …");
+        self.lsp_request(strop_lsp::RequestKind::Locations(kind));
+    }
+    pub(crate) fn lsp_hover(&mut self) {
+        self.lsp_request(strop_lsp::RequestKind::Hover);
+    }
+    pub(crate) fn lsp_goto_definition(&mut self) {
+        self.lsp_request(strop_lsp::RequestKind::Goto);
+    }
+    pub(crate) fn lsp_switch_source_header(&mut self) {
+        self.lsp_request(strop_lsp::RequestKind::SwitchHeader);
     }
 
-    /// `]d` / `[d`: jump to the next/previous diagnostic in this
-    /// buffer, wrapping (vim's diagnostic traversal).
     pub(crate) fn jump_diagnostic(&mut self, forward: bool) {
         let Some(path) = self.buf().path.clone() else {
             return;
         };
-        let abs = if std::path::Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
+        let abs = self.cwd.join(path);
         let Some(diags) = self.diags.get(&abs).filter(|d| !d.is_empty()) else {
             self.message = "no diagnostics".into();
             return;
         };
         let cur = self.buf().line_of(self.head());
-        // diags arrive sorted by position from the server; wrap at ends
+        let col = self.buf().col_of(self.head());
         let target = if forward {
             diags
                 .iter()
-                .find(|d| d.line > cur || (d.line == cur && d.col > self.buf().col_of(self.head())))
+                .find(|d| d.line.get() > cur || (d.line.get() == cur && d.col.get() > col))
                 .or(diags.first())
         } else {
             diags
                 .iter()
                 .rev()
-                .find(|d| d.line < cur || (d.line == cur && d.col < self.buf().col_of(self.head())))
+                .find(|d| d.line.get() < cur || (d.line.get() == cur && d.col.get() < col))
                 .or(diags.last())
         };
-        let Some(d) = target else { return };
-        let (line, col, msg) = (d.line, d.col, d.message.clone());
-        let start = self.buf().line_start(line.min(self.buf().len_lines() - 1));
+        let Some(d) = target else {
+            return;
+        };
+        let (line, col, msg) = (d.line.get(), d.col.get(), d.message.clone());
+        let start = self
+            .buf()
+            .line_start(line.min(self.buf().len_lines().saturating_sub(1)));
         self.set_head(self.buf().clamp_boundary(start + col));
         self.clamp_cursor();
         self.scroll_to_cursor(self.view_rows());
         self.message = msg;
     }
 
-    /// Is a navigation answer still current? The asking document must
-    /// be current AND at the same revision (0021 §2).
-    fn lsp_nav_fresh(&self, req_revision: u64) -> bool {
-        self.lsp_nav_request.is_some_and(|(doc, rev)| {
-            doc == self.current() && rev == self.buf().epoch && rev == req_revision
-        })
-    }
-
-    /// `Space d`: diagnostics picker over the current buffer's diags.
     pub(crate) fn open_diagnostics_picker(&mut self) {
         use strop_picker::{Item, Kind, Payload};
-        let items: Vec<Item> = self
-            .diags
-            .iter()
+        // Deterministic row order across hash seeds (R11).
+        let mut by_path: Vec<(&PathBuf, &Vec<ResolvedDiag>)> = self.diags.iter().collect();
+        by_path.sort_by(|a, b| a.0.cmp(b.0));
+        let items: Vec<Item> = by_path
+            .into_iter()
             .flat_map(|(path, diags)| {
                 diags.iter().map(move |d| Item {
                     text: format!(
                         "{}:{} {} {}",
                         path.display(),
-                        d.line + 1,
+                        d.line.get() + 1,
                         d.severity_char(),
                         d.message
                     ),
                     payload: Payload::Grep {
                         path: path.clone(),
-                        line: d.line + 1,
-                        col: d.col + 1,
+                        line: d.line.get() + 1,
+                        col: d.col.get() + 1,
                         match_len: 1,
                         line_text: d.message.clone(),
                     },
@@ -478,135 +519,13 @@ impl Editor {
             self.message = "no diagnostics".into();
             return;
         }
-        let picker = strop_picker::Picker::new(Kind::Diagnostics, items, false);
-        self.set_picker(crate::editor::PickerGlue::diagnostics(picker));
+        self.set_picker(super::PickerGlue::diagnostics(strop_picker::Picker::new(
+            Kind::Diagnostics,
+            items,
+            false,
+        )));
     }
 
-    /// `Space k`: hover at the cursor.
-    pub(crate) fn lsp_hover(&mut self) {
-        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
-            self.message = "no language server — install it or fix languages.toml".into();
-            return;
-        };
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
-        let abs = if std::path::Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
-        let line = self.buf().line_of(self.head());
-        let col = self.buf().col_of(self.head());
-        let col = self.server_col(&client, col);
-        // the request's identity: which doc + which edit state asked
-        self.hover_request = Some((self.current(), self.buf().epoch));
-        client.hover(&abs, line, col);
-    }
-
-    /// The open buffer backing an absolute path, if any.
-    fn buffer_for_path(&self, abs: &std::path::Path) -> Option<&strop_core::Buffer> {
-        self.docs.iter().map(|(_, d)| &d.buf).find(|b| {
-            b.path.as_deref().is_some_and(|p| {
-                let p = std::path::Path::new(p);
-                let buf_abs = if p.is_absolute() {
-                    p.to_path_buf()
-                } else {
-                    self.cwd.join(p)
-                };
-                buf_abs == abs || buf_abs.canonicalize().ok().as_deref() == Some(abs)
-            })
-        })
-    }
-
-    /// byte col → the server's negotiated column for the current line.
-    fn server_col(&self, client: &strop_lsp::Client, byte_col: usize) -> usize {
-        let line = self.buf().line_of(self.head());
-        let text = self.buf().line_text(line);
-        strop_lsp::to_server_col(&text, byte_col, client.encoding())
-    }
-
-    /// `gd`: goto definition at the cursor.
-    pub(crate) fn lsp_goto_definition(&mut self) {
-        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
-            self.message = "no language server — install it or fix languages.toml".into();
-            return;
-        };
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
-        let abs = if std::path::Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
-        let line = self.buf().line_of(self.head());
-        let col = self.buf().col_of(self.head());
-        let col = self.server_col(&client, col);
-        self.lsp_nav_request = Some((self.current(), self.buf().epoch));
-        client.goto_definition(&abs, line, col, self.buf().epoch);
-    }
-
-    /// `gs`: switch between source and header (clangd's extension).
-    pub(crate) fn lsp_switch_source_header(&mut self) {
-        let Some(client) = self.lsp_current().map(|s| s.client.clone()) else {
-            self.message = "no language server — install it or fix languages.toml".into();
-            return;
-        };
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
-        let abs = if std::path::Path::new(&path).is_absolute() {
-            PathBuf::from(&path)
-        } else {
-            self.cwd.join(&path)
-        };
-        client.switch_source_header(&abs);
-    }
-}
-
-/// Per-workspace merged languages.toml (0018): a process-global
-/// OnceLock meant a second project's attach read the FIRST project's
-/// config. Keyed by workspace root; loads once per root, never on the
-/// input path.
-impl Editor {
-    /// Configs are load-once by design; the per-root leak gives them
-    /// the 'static lifetime the spawn path (threads) requires — bounded
-    /// by the number of projects one session touches.
-    fn languages_for(&mut self, buffer: &Path) -> &'static Languages {
-        let root = registry::workspace_root(buffer, &self.cwd);
-        if !self.langs_by_root.contains_key(&root) {
-            let xdg = strop_lsp::languages::xdg_path();
-            let project = strop_lsp::languages::project_path(buffer);
-            let loaded: &'static Languages = Box::leak(Box::new(Languages::load(
-                xdg.as_deref(),
-                project.as_deref(),
-            )));
-            self.langs_by_root.insert(root.clone(), loaded);
-        }
-        self.langs_by_root[&root]
-    }
-}
-
-/// LSP language id for a path (the registry's languages, lsp-named).
-fn lang_id(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => "rust",
-        Some("py") | Some("pyi") => "python",
-        Some("go") => "go",
-        Some("js") | Some("jsx") | Some("mjs") | Some("cjs") => "javascript",
-        Some("ts") => "typescript",
-        Some("tsx") => "typescriptreact",
-        Some("json") => "json",
-        Some("sh") | Some("bash") => "shellscript",
-        Some("c") | Some("h") => "c",
-        Some("cpp") | Some("cc") | Some("cxx") | Some("hpp") | Some("hh") => "cpp",
-        _ => "plaintext",
-    }
-}
-
-impl Editor {
-    /// Table shims (0008 stage 2).
     pub(crate) fn lsp_goto_definition_pub(&mut self) {
         self.lsp_goto_definition();
     }
@@ -619,28 +538,31 @@ impl Editor {
     pub fn lsp_locations_pub(&mut self, kind: strop_lsp::LocKind) {
         self.lsp_locations(kind);
     }
-
     pub fn jump_diagnostic_pub(&mut self, forward: bool) {
         self.jump_diagnostic(forward);
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use strop_core::Buffer;
+/// The LSP language for a path, from the embedded extension table —
+/// pure, in-memory, safe on every keystroke.
+pub(crate) fn lsp_language(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?;
+    registry::language_for_extension_name(ext)
+}
 
-    #[test]
-    fn goto_definition_records_the_origin_as_a_jump() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("disk_reader.cpp");
-        std::fs::write(&path, "std::optional<int> x;\n").unwrap();
-        let mut e = Editor::new(Buffer::from_text("auto v = read();\n"));
-        e.feed_text("$");
-        let origin = e.head();
-        e.jump_to_location(path, 0, 4, strop_lsp::PositionEncoding::Utf16);
-        assert_ne!(e.head(), origin); // landed in the target
-        e.jump_back();
-        assert_eq!(e.head(), origin, "ctrl-o returns to the gd origin");
+/// The didOpen languageId sent to servers.
+pub(crate) fn lang_id(path: &Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("rs") => "rust",
+        Some("py") | Some("pyi") => "python",
+        Some("go") => "go",
+        Some("js") | Some("jsx") | Some("mjs") | Some("cjs") => "javascript",
+        Some("ts") => "typescript",
+        Some("tsx") => "typescriptreact",
+        Some("json") => "json",
+        Some("sh") | Some("bash") => "shellscript",
+        Some("c") | Some("h") => "c",
+        Some("cpp") | Some("cc") | Some("cxx") | Some("hpp") | Some("hh") => "cpp",
+        _ => "plaintext",
     }
 }

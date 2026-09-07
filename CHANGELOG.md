@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.15.0 — 2026-09-07
+
+The complete P1/P2 correctness roadmap (0031).
+
+### Fixed
+
+- LSP replies carry their initiating request, server, document incarnation,
+  revision and negotiated encoding. Reordered replies and revision zero cannot
+  bypass ownership checks; closing and reopening a file starts a fresh lifecycle.
+- Session and trust updates use private exclusive staging and atomic replacement.
+  Failures preserve the old snapshot and are reported. Native filenames round-trip
+  without opening a lossy Unicode alias; ambiguous legacy paths are rejected.
+- Counted incremental searches retain every cursor's original selection and view.
+  Prompt edits, acceptance and cancellation share one reducer. Block selection,
+  yank and paste use configured tab/display-cell geometry; edits preserve CRLF.
+- Search uses a bounded Vim-magic regex dialect with explicit unsupported-syntax
+  errors and actual match ranges. Unicode collections retain complete ranges.
+- File opens, saves, session persistence and native Git work run off input dispatch.
+  Delayed results cannot steal focus, overwrite newer edits or mark them saved.
+  Each pane keeps its own horizontal display-cell viewport and aligned overlays.
+- Every worker result is owned and terminal, including failure, panic and
+  cancellation. Failed or cancelled previews no longer masquerade as empty files
+  or perpetually loading content. Git index mutations are serialized.
+- Hunk discard replaces the matching full old/new extent without duplicating context.
+  File saves retain cursor placement while unrelated anchors follow the edit journal.
+
+### Added
+
+- `--replay TRACE` reconstructs a complete full-content capture and injects recorded
+  service events without repeating filesystem reads, shell commands or LSP traffic.
+  Logical state and run-length-encoded terminal cell/style observations must agree.
+- `--export-metadata TRACE` emits only event categories and sequence numbers:
+  no keys, paths, content, commands, messages or arbitrary payloads. It is explicitly
+  not replayable. Capture caps produce a visible terminal/incomplete marker.
+- Stateful transaction/service oracles generate, shrink and replay failing recipes;
+  the protocol gate checks the clean model and its deliberately stale-delivery mutant.
+
+### Changed
+
+- Rope/history mutation is sealed behind validated transactions with pre-edit
+  coordinates, typed revision checks and whole-batch overlap validation.
+- Diagnostic severity, byte/line/display/server coordinates, request identities
+  and register shape use named domains at the boundaries.
+- Command-table lookup is compiled once. Query parsing/emission, Git job types,
+  test delivery helpers and conformance streams are split by responsibility.
+- Changed async regressions receive terminal events instead of sleeping or sharing
+  fixed `/tmp` files. Fixture-only drain paths are absent from production builds.
+
 ## 0.14.1 — 2026-09-07
 
 Search/terminal correctness, diagnostic session traces, and a safety review

@@ -1,14 +1,22 @@
-//! Literal matching streams rope chunks; file contents are never materialized.
-use std::ops::ControlFlow;
+//! Search entry points. The literal fast path streams rope chunks
+//! (file contents are never materialized); everything else runs the
+//! bounded engine in `query::exec`. One seam, two speeds — same
+//! semantics, decided by the compiled program itself.
+
+use strop_core::id::ByteOffset;
 use strop_core::Buffer;
 
+use crate::query::exec::{all_matches, first_from, Matcher};
+use crate::query::{CompiledQuery, QueryError, SearchMatch};
+
+/// KMP over rope chunks for a plain byte needle (the program is a
+/// case-sensitive literal — the common `/word` search).
 fn visit(
     buf: &Buffer,
-    pattern: &str,
+    needle: &[u8],
     from: usize,
-    mut matched: impl FnMut(usize) -> ControlFlow<()>,
+    mut matched: impl FnMut(usize) -> std::ops::ControlFlow<()>,
 ) {
-    let needle = pattern.as_bytes();
     if needle.is_empty() {
         return;
     }
@@ -26,7 +34,7 @@ fn visit(
     }
     let mut length = 0;
     let mut offset = 0;
-    for chunk in buf.rope.chunks() {
+    for chunk in buf.text().chunks() {
         for &byte in chunk.as_bytes() {
             offset += 1;
             if offset <= from {
@@ -48,54 +56,101 @@ fn visit(
     }
 }
 
-/// First match starting at/after `from`, clamped to a UTF-8 boundary.
-pub fn search_forward(buf: &Buffer, from: usize, pattern: &str) -> Option<usize> {
-    let mut found = None;
-    visit(buf, pattern, from, |offset| {
-        found = Some(offset);
-        ControlFlow::Break(())
-    });
-    found
+fn literal_hit(needle: &[u8], at: usize) -> SearchMatch {
+    SearchMatch {
+        start: ByteOffset::new(at),
+        end: ByteOffset::new(at + needle.len()),
+    }
 }
 
-/// Last match whose start precedes `from`, even if its end crosses the cursor.
-pub fn search_backward(buf: &Buffer, from: usize, pattern: &str) -> Option<usize> {
+pub(crate) fn forward(
+    buf: &Buffer,
+    from: usize,
+    query: &CompiledQuery,
+) -> Result<Option<SearchMatch>, QueryError> {
+    let prog = query.program();
+    if let Some(needle) = &prog.literal {
+        let mut found = None;
+        visit(buf, needle, from, |offset| {
+            found = Some(literal_hit(needle, offset));
+            std::ops::ControlFlow::Break(())
+        });
+        return Ok(found);
+    }
+    let matcher = Matcher::new(buf.text());
+    let from = buf.ceil_boundary(from.min(buf.len_bytes()));
+    first_from(&matcher, prog, from).map_err(QueryError::from)
+}
+
+pub(crate) fn backward(
+    buf: &Buffer,
+    from: usize,
+    query: &CompiledQuery,
+) -> Result<Option<SearchMatch>, QueryError> {
     let from = from.min(buf.len_bytes());
-    let mut found = None;
-    visit(buf, pattern, 0, |offset| {
-        if offset >= from {
-            return ControlFlow::Break(());
-        }
-        found = Some(offset);
-        ControlFlow::Continue(())
-    });
-    found
+    let prog = query.program();
+    if let Some(needle) = &prog.literal {
+        let mut found = None;
+        visit(buf, needle, 0, |offset| {
+            if offset < from {
+                found = Some(literal_hit(needle, offset));
+            }
+            std::ops::ControlFlow::Continue(())
+        });
+        return Ok(found);
+    }
+    // last match whose start precedes `from`, even if its end crosses
+    // the cursor — the `?pat` contract the resolver's tests pin
+    let matcher = Matcher::new(buf.text());
+    Ok(all_matches(&matcher, prog)?
+        .into_iter()
+        .rfind(|hit| hit.start.get() < from))
 }
 
-/// Nonoverlapping display hits (the historical `match_indices` contract).
-pub fn search_all(buf: &Buffer, pattern: &str) -> Vec<usize> {
-    let mut hits = Vec::new();
-    let mut next = 0;
-    visit(buf, pattern, 0, |offset| {
-        if offset >= next {
-            hits.push(offset);
-            next = offset + pattern.len();
-        }
-        ControlFlow::Continue(())
-    });
-    hits
+pub(crate) fn all(buf: &Buffer, query: &CompiledQuery) -> Result<Vec<SearchMatch>, QueryError> {
+    let prog = query.program();
+    if let Some(needle) = &prog.literal {
+        let mut hits = Vec::new();
+        visit(buf, needle, 0, |offset| {
+            hits.push(literal_hit(needle, offset));
+            std::ops::ControlFlow::Continue(())
+        });
+        return Ok(hits);
+    }
+    let matcher = Matcher::new(buf.text());
+    all_matches(&matcher, prog).map_err(QueryError::from)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hits(buf: &Buffer, pat: &str) -> Vec<(usize, usize)> {
+        let q = CompiledQuery::compile(pat, false).expect("compiles");
+        all(buf, &q)
+            .expect("runs")
+            .into_iter()
+            .map(|m| (m.start.get(), m.end.get()))
+            .collect()
+    }
+
     #[test]
-    fn unicode_origins_and_chunk_crossing_match_without_slicing_panics() {
-        let text = format!("{}éneedle{}", "a".repeat(1023), "b".repeat(1024));
-        let buffer = Buffer::from_text(&text);
-        assert_eq!(search_forward(&buffer, 1024, "needle"), Some(1025));
-        assert_eq!(search_forward(&buffer, usize::MAX, "needle"), None);
-        assert_eq!(search_backward(&buffer, 1027, "needle"), Some(1025));
-        assert_eq!(search_all(&Buffer::from_text("aaaa"), "aa"), vec![0, 2]);
+    fn literal_hits_carry_explicit_ends() {
+        let buf = Buffer::from_text("ab cd ab\n");
+        assert_eq!(hits(&buf, "ab"), vec![(0, 2), (6, 8)]);
+    }
+
+    #[test]
+    fn regex_hits_carry_explicit_ends() {
+        let buf = Buffer::from_text("a ab abc\n");
+        assert_eq!(hits(&buf, "a\\+"), vec![(0, 1), (2, 3), (5, 6)]);
+    }
+
+    #[test]
+    fn empty_matches_walk_but_never_past_eof() {
+        // vim counts 3 matches for x* on "aaa": one per position, none
+        // after the final char
+        let buf = Buffer::from_text("bbb\n");
+        assert_eq!(hits(&buf, "x*"), vec![(0, 0), (1, 1), (2, 2), (3, 3)]);
     }
 }

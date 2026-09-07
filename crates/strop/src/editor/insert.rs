@@ -1,9 +1,30 @@
 //! Insert mode: text in, Esc out. Every session is recorded so
 //! dot-repeat can replay both the command and the inserted text.
+//! Newlines preserve the buffer's line-ending style (0031 R5): Enter
+//! and replay both insert the document's own break, CRLF or LF.
 
 use super::{Editor, Key, Mode};
 
 impl Editor {
+    /// The buffer's line-ending for NEW lines: the first line's break
+    /// decides (vim's fileformat rule on one buffer) — `\r\n` when
+    /// line 0 ends CRLF, `\n` otherwise. A break-less buffer defaults
+    /// to LF.
+    pub(crate) fn newline_str(&self) -> &'static str {
+        let buf = self.buf();
+        if buf.len_bytes() == 0 {
+            return "\n";
+        }
+        // line_end(0) is the content end: the byte at it is the break
+        // (or the \r of a CRLF pair) when the file has a first break
+        let e = buf.line_end(0);
+        match buf.byte_at(e) {
+            Some(b'\r') if buf.byte_at(e + 1) == Some(b'\n') => "\r\n",
+            Some(b'\n') => "\n",
+            _ => "\n",
+        }
+    }
+
     /// One-level dedent when the line so far is whitespace-only (called
     /// before inserting a closer). No-op when there is real text or no
     /// indent to give back.
@@ -126,19 +147,28 @@ impl Editor {
                         let open = self.insert_open.take();
                         for _ in 1..count {
                             if let Some(o) = &open {
-                                // o/O: the opened line repeats too
+                                // o/O: the opened line repeats too — the
+                                // stored text already carries the EOL style
+                                // it was opened with
                                 let at = (self.head() + 1).min(self.buf().len_bytes());
                                 self.buf_mut().insert(at, o);
                                 self.set_head(at + o.len().saturating_sub(1));
                             }
                             for ch in rec.chars() {
+                                // a recorded newline replays as the
+                                // buffer's own break (CRLF stays CRLF)
+                                let piece = if ch == '\n' {
+                                    self.newline_str().to_string()
+                                } else {
+                                    ch.to_string()
+                                };
                                 let at = (self.head() + 1).min(self.buf().len_bytes());
-                                self.buf_mut().insert(at, &ch.to_string());
-                                self.set_head(at + ch.len_utf8().saturating_sub(1));
+                                self.buf_mut().insert(at, &piece);
+                                self.set_head(at + piece.len().saturating_sub(1));
                             }
                         }
                     }
-                    if self.block_delete_pending.is_some() {
+                    if self.block_insert_state.is_some() {
                         self.block_replicate(&rec);
                     }
                     self.last_insert = Some(rec);
@@ -169,7 +199,7 @@ impl Editor {
             }
             Key::Enter => {
                 let indent = self.auto_indent();
-                let text = format!("\n{indent}");
+                let text = format!("{}{indent}", self.newline_str());
                 let mut positions = self.all_cursors();
                 positions.sort_unstable();
                 positions.dedup(); // stacked cursors edit once
@@ -227,26 +257,12 @@ impl Editor {
                     self.dedent_for_closer();
                 }
                 let mut tmp = [0u8; 4];
-                let encoded = c.encode_utf8(&mut tmp).to_string();
+                let encoded = c.encode_utf8(&mut tmp);
                 let mut positions = self.all_cursors();
                 positions.sort_unstable();
                 positions.dedup(); // stacked cursors edit once
                 for &pos in positions.iter().rev() {
-                    self.buf_mut().insert(pos, &encoded);
-                }
-                // the parse tree tracks every keystroke, not just the
-                // session commit — mid-session renders read a live tree
-                // (0023 probe: insert-mode highlighting went stale).
-                // single cursor: exact bridge; multicursor: invalidate
-                // (per-op points across stacked inserts lie otherwise)
-                if positions.len() == 1 {
-                    self.bridge_applied_ops(&[strop_core::history::Edit {
-                        at: positions[0],
-                        text: encoded.clone(),
-                        kind: strop_core::history::EditKind::Insert,
-                    }]);
-                } else {
-                    self.invalidate_syntax_tree();
+                    self.buf_mut().insert(pos, encoded);
                 }
                 self.remap_after_mirrored_edit(&positions, c.len_utf8() as isize);
                 if let Some(rec) = &mut self.recording_insert {

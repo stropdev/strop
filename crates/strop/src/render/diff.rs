@@ -44,7 +44,7 @@ pub(crate) fn origin_bg(origin: LineOrigin) -> Option<Color> {
 /// per hunk a header row followed by its content rows.
 pub(crate) enum DiffRow<'a> {
     Stats,
-    HunkHeader,
+    HunkHeader(&'a strop_git::Hunk),
     Line(&'a DiffLine),
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn diff_row<'a>(surface: Option<&'a Surface>, row: usize) -> Option<D
     let mut row = row - 1;
     for hunk in hunks {
         if row == 0 {
-            return Some(DiffRow::HunkHeader);
+            return Some(DiffRow::HunkHeader(hunk));
         }
         row -= 1;
         if row < hunk.lines.len() {
@@ -224,21 +224,11 @@ pub(crate) fn diff_gutter(
     ]
 }
 
-/// Stats and hunk-header rows: a quiet band across the full width —
-/// label/stats left, nothing loud (0010 §4). `width` pads the band
-/// past the text so it reads as a full row.
-pub(crate) fn structural_row(surface: &Surface, row: usize, width: u16) -> Line<'static> {
-    let mut line = structural_row_inner(surface, row);
-    let used: usize = line.spans.iter().map(|s| s.content.len()).sum();
-    let pad = (width as usize).saturating_sub(used + 1);
-    if pad > 0 {
-        line.spans
-            .push(Span::styled(" ".repeat(pad), Style::default().bg(BAND_BG)));
-    }
-    line
-}
-
-fn structural_row_inner(surface: &Surface, row: usize) -> Line<'static> {
+/// Stats and hunk-header rows: a quiet band, label/stats left, nothing
+/// loud (0010 §4). No width padding here — the row is ordinary content
+/// that scrolls horizontally and gets its band from RowStyle.row_bg;
+/// the caller prepends the fixed number-gutter cells.
+pub(crate) fn structural_row(surface: &Surface, row: usize) -> Line<'static> {
     match (surface, row) {
         (
             Surface::Diff {
@@ -250,7 +240,7 @@ fn structural_row_inner(surface: &Surface, row: usize) -> Line<'static> {
             0,
         ) => Line::from(vec![
             Span::styled(
-                format!(" {label}"),
+                label.clone(),
                 Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -263,41 +253,30 @@ fn structural_row_inner(surface: &Surface, row: usize) -> Line<'static> {
             ),
         ])
         .style(Style::default().bg(BAND_BG)),
-        (Surface::Diff { hunks, .. }, _) => match hunk_header_at(hunks, row) {
-            Some(header) => Line::from(Span::styled(
-                format!(" {header}"),
-                Style::default().fg(MUTED),
-            ))
-            .style(Style::default().bg(BAND_BG)),
-            None => Line::default(),
-        },
+        (Surface::Diff { .. }, _) => diff_row(Some(surface), row)
+            .and_then(|row| match row {
+                DiffRow::HunkHeader(hunk) => Some(hunk.header()),
+                _ => None,
+            })
+            .map(|header| {
+                Line::from(Span::styled(header, Style::default().fg(MUTED)))
+                    .style(Style::default().bg(BAND_BG))
+            })
+            .unwrap_or_default(),
         _ => Line::default(),
     }
 }
 
-/// The hunk whose header sits at `row` (row 1 + hunk offsets).
-fn hunk_header_at(hunks: &[strop_git::Hunk], row: usize) -> Option<String> {
-    let mut row = row.checked_sub(1)?;
-    for hunk in hunks {
-        if row == 0 {
-            return Some(hunk.header());
-        }
-        row -= 1;
-        if row < hunk.lines.len() {
-            return None;
-        }
-        row -= hunk.lines.len();
-    }
-    None
-}
-
 /// Commit-log and changed-files rows, decorated from their typed data
-/// (0010 §5): graph runes dim, sha accent; paths with right-aligned
-/// colored stats. Returns None for rows that render as normal text.
+/// (0010 §5): graph runes dim, sha accent; paths left with the stats
+/// after them. Decoration text keeps the buffer line's exact byte
+/// prefix (the path); the stats are virtual EOL content. Returns None
+/// for rows that render as normal text.
 pub(crate) fn surface_content_spans(
     surface: Option<&Surface>,
     line_idx: usize,
-    width: u16,
+    width: usize,
+    tab: usize,
 ) -> Option<Vec<Span<'static>>> {
     match surface? {
         Surface::CommitLog { rows, .. } => {
@@ -312,7 +291,7 @@ pub(crate) fn surface_content_spans(
                     Style::default().fg(ACCENT),
                 ),
             ]),
-            1 => Some(vec![]),
+            1 => Some(Vec::new()),
             _ => {
                 let file = files.get(line_idx - 2)?;
                 Some(file_row_spans(
@@ -320,6 +299,7 @@ pub(crate) fn surface_content_spans(
                     file.added,
                     file.deleted,
                     width,
+                    tab,
                 ))
             }
         },
@@ -388,16 +368,22 @@ fn graph_spans(prefix: &str) -> Vec<Span<'static>> {
         })
         .collect()
 }
-/// path left, ` +N -M` right-aligned to the row width.
-fn file_row_spans(path: &str, added: usize, deleted: usize, width: u16) -> Vec<Span<'static>> {
-    let stats_len = added.to_string().len() + deleted.to_string().len() + 4;
-    let gutter = gutter_width(None);
-    let room = (width as usize).saturating_sub(gutter + 1 + stats_len);
-    let shown: String = path.chars().take(room).collect();
-    let pad = room.saturating_sub(path.chars().count());
+/// path left, then ` +N -M` after at least one space — the stats are
+/// virtual EOL content (the buffer row holds only the path), so the
+/// caret and the path stay byte-aligned no matter how wide the stats.
+fn file_row_spans(
+    path: &str,
+    added: usize,
+    deleted: usize,
+    width: usize,
+    tab: usize,
+) -> Vec<Span<'static>> {
+    let stats = format!("+{added} -{deleted}");
+    let path_width = strop_core::layout::LineLayout::build(path, tab).width.get();
+    let pad = width.saturating_sub(path_width + stats.len()).max(1);
     vec![
-        Span::styled(format!(" {shown}"), Style::default().fg(TEXT)),
-        Span::styled(" ".repeat(pad + 1), Style::default()),
+        Span::styled(path.to_string(), Style::default().fg(TEXT)),
+        Span::raw(" ".repeat(pad)),
         Span::styled(
             format!("+{added} "),
             Style::default().fg(ADD_FG).add_modifier(Modifier::BOLD),
@@ -421,9 +407,9 @@ const RECENT_SECS: i64 = 30 * 86400;
 /// The blame cell for one buffer line: `sha7 author9 age3`, muted for
 /// old commits, accent for recent ones and uncommitted lines
 /// (`0000000 you now`).
-pub(crate) fn blame_spans(line: &strop_git::memory::BlameLine) -> Span<'static> {
+pub(crate) fn blame_spans(line: &strop_git::memory::BlameLine, now: i64) -> Span<'static> {
     let uncommitted = line.is_uncommitted();
-    let recent = line.ts > 0 && unix_now() - line.ts < RECENT_SECS;
+    let recent = line.ts > 0 && now.saturating_sub(line.ts) < RECENT_SECS;
     let fg = if uncommitted || recent { ACCENT } else { MUTED };
     let sha: String = if uncommitted {
         "0".repeat(7)
@@ -561,13 +547,27 @@ pub(crate) fn sidebar_spans(
     spans
 }
 
+/// The number gutter for a pane's buffer: diff surfaces keep their
+/// two-sided gutter; ordinary buffers size to the largest line number
+/// (a fixed 5-cell gutter misaligned the caret past line 999).
+pub(crate) fn number_gutter_width(editor: &Editor, doc: strop_core::id::DocumentId) -> usize {
+    let buffer = editor.doc(doc);
+    let surface = buffer.surface_payload();
+    if matches!(surface, Some(Surface::Diff { .. })) {
+        return gutter_width(surface);
+    }
+    let number = buffer.buf.last_content_line() + 1;
+    let digits = number.ilog10() as usize + 1;
+    2 + digits.max(3)
+}
+
 /// Total left inset before a pane's content: file sidebar + blame
 /// column + the surface's number gutter. Cursor placement and the
 /// inactive-pane caret both derive from here — one composition, no
 /// per-surface drift (0011 §3/§4).
 pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) -> usize {
     let surface = editor.docs.get(buffer).and_then(|d| d.surface_payload());
-    let mut inset = gutter_width(surface);
+    let mut inset = number_gutter_width(editor, buffer);
     if editor.blame_gutter_for(buffer).is_some() {
         inset += BLAME_W;
     }
@@ -578,13 +578,6 @@ pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) ->
         inset += sidebar_width(&cf.files) + 1;
     }
     inset
-}
-
-fn unix_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 /// `s` clipped to `n` chars with a trailing `…` when it had more.

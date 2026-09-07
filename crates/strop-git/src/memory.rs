@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::Repo;
 
 /// One log line from `git log --graph`, with the commit hash extracted.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LogRow {
     /// The rendered graph+summary line (what the buffer shows).
     pub text: String,
@@ -77,7 +77,7 @@ pub fn log_graph_range(
 }
 
 /// A blame card for one line (0001 pillar 3.3).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BlameCard {
     pub sha: String,
     pub short_sha: String,
@@ -140,7 +140,7 @@ pub fn blame_line(workdir: &Path, rel: &Path, line: usize) -> Result<BlameCard, 
 /// One line of a whole-file blame (0001 pillar 3.3, the toggleable
 /// column). `age` is rendered at parse time; `ts` keeps "recent"
 /// honest for the caller's coloring.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BlameLine {
     pub sha: String,
     pub author: String,
@@ -221,8 +221,9 @@ pub fn blame_file(workdir: &Path, rel: &Path) -> Result<Vec<BlameLine>, String> 
 }
 
 /// Files changed by a commit: `path | +N -M` rows for the dive view.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChangedFile {
+    #[serde(with = "strop_core::path_serde")]
     pub path: PathBuf,
     pub added: usize,
     pub deleted: usize,
@@ -348,7 +349,13 @@ fn parse_ssh_alias(config: &str, alias: &str) -> Option<String> {
 
 /// Pick the permalink remote: upstream > origin > first remaining.
 pub fn pick_remote(repo: &Repo) -> Option<Remote> {
-    let remotes = repo.remotes();
+    pick_remote_from(&repo.remotes())
+}
+
+/// The pure fold over cached remotes (R6): permalink selection needs
+/// no repository handle, only the (name, url) pairs a `GitContext`
+/// already carries.
+pub fn pick_remote_from(remotes: &[(String, String)]) -> Option<Remote> {
     for name in ["upstream", "origin"] {
         if let Some(url) = remotes.iter().find(|(n, _)| n == name).map(|(_, u)| u) {
             if let Some(r) = normalize_remote(url) {
@@ -364,16 +371,30 @@ pub fn pick_remote(repo: &Repo) -> Option<Remote> {
 /// The URL for a revisioned location (0014): pinned to the location's
 /// revision — a commit surface links that commit, not HEAD.
 pub fn permalink(repo: &Repo, loc: &crate::SourceLocation) -> Option<String> {
-    let remote = pick_remote(repo)?;
+    permalink_with(
+        &repo.remotes(),
+        &|revision| match revision {
+            crate::GitRevision::Head | crate::GitRevision::Index | crate::GitRevision::Worktree => {
+                repo.head_sha()
+            }
+            crate::GitRevision::Commit(sha) => Some(sha.clone()),
+            crate::GitRevision::MergeBase(a, b) => repo.merge_base(a, b),
+        },
+        loc,
+    )
+}
+
+/// The pure permalink builder (R6): cached remotes plus a revision
+/// resolver — no repository handle, no native work on the caller's
+/// thread.
+pub fn permalink_with(
+    remotes: &[(String, String)],
+    resolve: &dyn Fn(&crate::GitRevision) -> Option<String>,
+    loc: &crate::SourceLocation,
+) -> Option<String> {
+    let remote = pick_remote_from(remotes)?;
     let (start_line, end_line) = loc.lines.unwrap_or((1, 1));
-    let sha = match &loc.revision {
-        crate::GitRevision::Head => repo.head_sha()?,
-        crate::GitRevision::Commit(sha) => sha.clone(),
-        // permalinks pin to an immutable commit — the index/worktree
-        // resolve through HEAD (their content is already local state)
-        crate::GitRevision::Index | crate::GitRevision::Worktree => repo.head_sha()?,
-        crate::GitRevision::MergeBase(a, b) => repo.merge_base(a, b)?,
-    };
+    let sha = resolve(&loc.revision)?;
     let frag = if start_line == end_line {
         format!("#L{start_line}")
     } else {

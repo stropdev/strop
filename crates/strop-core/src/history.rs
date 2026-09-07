@@ -5,6 +5,8 @@
 //! branch; the tree keeps the old one (0001 pillar 4: Neovim users
 //! expect branches).
 
+mod validate;
+pub use validate::HistoryError;
 /// One buffer mutation as seen by history. Both directions are stored so
 /// redo replays exactly what undo undid — no re-derivation.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -70,6 +72,68 @@ pub struct RevisionRow {
     /// True when the revision's parent isn't depth-1 above it in display
     /// order — the browser draws a branch marker.
     pub branches: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum HistoryAction {
+    Undo,
+    Redo,
+    Jump(usize),
+}
+
+impl History {
+    /// Count a move without changing the tree, so revision capacity is checked
+    /// before publishing history navigation or committing an open undo group.
+    pub(crate) fn movement_cost(&self, action: HistoryAction) -> Option<usize> {
+        let pending = self.pending.as_ref().map_or(0, |(undo, _)| undo.len());
+        match action {
+            HistoryAction::Undo if pending > 0 => Some(pending),
+            HistoryAction::Undo => {
+                (self.current != 0).then(|| self.revisions[self.current].undo.len())
+            }
+            HistoryAction::Redo if pending > 0 => None,
+            HistoryAction::Redo => self.revisions[self.current]
+                .last_child
+                .map(|child| self.revisions[child].redo.len()),
+            HistoryAction::Jump(target) => {
+                if target >= self.revisions.len() {
+                    return None;
+                }
+                let depth = |mut at: usize| {
+                    let mut depth = 0;
+                    while at != 0 {
+                        depth += 1;
+                        at = self.revisions[at].parent;
+                    }
+                    depth
+                };
+                let (mut from, mut to) = (self.current, target);
+                let (mut left, mut right) = (depth(from), depth(to));
+                let mut count = pending;
+                while from != to {
+                    if left >= right {
+                        count += self.revisions[from].undo.len();
+                        from = self.revisions[from].parent;
+                        left -= 1;
+                    } else {
+                        count += self.revisions[to].redo.len();
+                        to = self.revisions[to].parent;
+                        right -= 1;
+                    }
+                }
+                Some(count)
+            }
+        }
+    }
+
+    pub(crate) fn navigate(&mut self, action: HistoryAction) -> Option<Vec<Edit>> {
+        self.commit();
+        match action {
+            HistoryAction::Undo => self.undo_ops(),
+            HistoryAction::Redo => self.redo_ops(),
+            HistoryAction::Jump(target) => self.ops_to(target),
+        }
+    }
 }
 
 impl History {
@@ -277,38 +341,54 @@ impl History {
         self.revisions.len()
     }
 
-    /// Cap the tree at `cap` revisions: keep the ancestor chain of
-    /// `current` (branches past it fall off — in-memory trees keep
-    /// branches; the cap is about bounded state).
-    pub fn cap(&mut self, cap: usize) {
-        if self.revisions.len() <= cap {
-            return;
-        }
-        // collect the ancestor chain from current to root
+    /// Persist only the newest linear undo path, bounded before cloning text.
+    /// Branches remain in memory. If the newest transaction exceeds the byte
+    /// limit, no history is retained: skipping it would make older edits invalid.
+    pub fn snapshot(&self, revisions: usize, text_bytes: usize) -> Self {
         let mut chain = Vec::new();
+        let mut bytes = 0usize;
+        let mut retain = |undo: &Vec<Edit>, redo: &Vec<Edit>| {
+            let size = undo
+                .iter()
+                .chain(redo)
+                .try_fold(0usize, |n, e| n.checked_add(e.text.len()));
+            let Some(next) = size.and_then(|size| bytes.checked_add(size)) else {
+                return false;
+            };
+            if chain.len() >= revisions || next > text_bytes {
+                return false;
+            }
+            bytes = next;
+            chain.push((undo.clone(), redo.clone()));
+            true
+        };
+        if let Some((undo, redo)) = &self.pending {
+            if !undo.is_empty() && !retain(undo, redo) {
+                return Self::default();
+            }
+        }
         let mut at = self.current;
-        loop {
-            chain.push(at);
-            if at == 0 {
+        while at != 0 {
+            let revision = &self.revisions[at];
+            if !retain(&revision.undo, &revision.redo) {
                 break;
             }
-            at = self.revisions[at].parent;
+            at = revision.parent;
         }
-        chain.reverse();
-        if chain.len() > cap {
-            chain = chain[chain.len() - cap..].to_vec();
+        let mut snapshot = Self::default();
+        for (undo, redo) in chain.into_iter().rev() {
+            let parent = snapshot.current;
+            let index = snapshot.revisions.len();
+            snapshot.revisions[parent].last_child = Some(index);
+            snapshot.revisions.push(Revision {
+                parent,
+                last_child: None,
+                undo,
+                redo,
+            });
+            snapshot.current = index;
         }
-        let mut remap = std::collections::HashMap::new();
-        let mut new_revisions = Vec::with_capacity(chain.len());
-        for (new_idx, &old_idx) in chain.iter().enumerate() {
-            remap.insert(old_idx, new_idx);
-            let mut rev = self.revisions[old_idx].clone();
-            rev.parent = if new_idx == 0 { 0 } else { new_idx - 1 };
-            rev.last_child = rev.last_child.and_then(|c| remap.get(&c).copied());
-            new_revisions.push(rev);
-        }
-        self.revisions = new_revisions;
-        self.current = *remap.get(&self.current).unwrap_or(&0);
+        snapshot
     }
 }
 

@@ -371,26 +371,46 @@ fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
 
     let lines: Vec<Line> = match source {
         PreviewSource::Buffer(i) => {
-            let d = editor.doc_mut(i);
-            let rope = d.buf.rope.clone();
-            let spans = d
+            let mut document = editor.doc_mut(i);
+            let rope = document.buf.snapshot();
+            let revision = document.buf.revision();
+            match document
                 .highlighter
                 .as_mut()
-                .map(|hl| hl.highlight(&rope, 0, 0, rope.len_bytes()));
-            highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible)
+                .map(|highlighter| highlighter.highlight(&rope, revision, 0, rope.len_bytes()))
+                .transpose()
+            {
+                Ok(spans) => highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible),
+                Err(error) => vec![Line::from(format!("syntax: {error}"))],
+            }
         }
         PreviewSource::Cached(entry) => {
             let rope = entry.rope.clone();
-            let spans = entry
+            match entry
                 .hl
                 .as_mut()
-                .map(|hl| hl.highlight(&entry.rope, 0, 0, entry.rope.len_bytes()));
-            highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible)
+                .map(|highlighter| {
+                    highlighter.highlight(
+                        &rope,
+                        strop_core::id::BufferRevision::new(0),
+                        0,
+                        rope.len_bytes(),
+                    )
+                })
+                .transpose()
+            {
+                Ok(spans) => highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible),
+                Err(error) => vec![Line::from(format!("syntax: {error}"))],
+            }
         }
         PreviewSource::Loading => vec![Line::from(Span::styled(
             " loading…",
             Style::default().fg(MUTED),
         ))],
+        PreviewSource::Failed(error) => vec![Line::from(format!("preview: {error}"))],
+        PreviewSource::Cancelled(reason) => {
+            vec![Line::from(format!("preview cancelled: {reason:?}"))]
+        }
     };
 
     let block = Block::default()

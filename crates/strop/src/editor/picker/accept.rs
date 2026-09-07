@@ -1,19 +1,19 @@
-//! Picker acceptance: what landing on a row DOES (open the file,
-//! record the jump, surface errors as messages).
-
+//! Picker acceptance: open the selected file and preserve coordinate domains.
+use super::super::Editor;
 use strop_picker::Payload;
 
-use super::super::Editor;
-
 impl Editor {
-    pub(crate) fn accept_picker(&mut self, payload: Payload) {
+    pub(crate) fn accept_picker(
+        &mut self,
+        payload: Payload,
+        context: Option<strop_lsp::ReplyContext>,
+    ) {
         match payload {
             Payload::File(rel) => {
-                let path = self.cwd.join(&rel);
-                match self.open_buffer(&path) {
-                    Ok(()) => {}
-                    Err(e) => self.message = format!("open {}: {e}", rel.display()),
-                }
+                self.request_open(
+                    rel,
+                    super::super::io::OpenIntent::Switch { readonly: false },
+                );
             }
             Payload::Buffer(i) => {
                 if self.docs.get(i).is_some() {
@@ -25,24 +25,26 @@ impl Editor {
             Payload::Grep {
                 path, line, col, ..
             } => {
-                // accepting a search/locations hit is a jump — same as gd
-                self.push_jump();
-                let full = self.cwd.join(&path);
-                if let Err(e) = self.open_buffer(&full) {
-                    self.message = format!("open {}: {e}", path.display());
+                if let Some(context) = context {
+                    self.jump_to_location(
+                        strop_lsp::ServerLocation {
+                            path,
+                            position: strop_lsp::ServerPosition {
+                                line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
+                                column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
+                            },
+                        },
+                        context,
+                    );
                     return;
                 }
-                // same rule as LSP jumps: search hits outside the
-                // workspace are reading, not editing
-                let probe = self.cwd.join("x");
-                let root = strop_lsp::registry::workspace_root(&probe, &self.cwd);
-                if !full.starts_with(&root) && !self.buf().readonly {
-                    self.buf_mut().readonly = true;
-                    self.message = "readonly — outside workspace (:set noro to edit)".into();
-                }
-                let start = self.buf().line_start(line.saturating_sub(1));
-                self.set_head(self.buf().clamp_boundary(start + col.saturating_sub(1)));
-                self.clamp_cursor();
+                self.request_open(
+                    path,
+                    super::super::io::OpenIntent::Grep {
+                        line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
+                        column: strop_core::id::ByteColumn::new(col.saturating_sub(1)),
+                    },
+                );
             }
         }
     }

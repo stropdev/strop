@@ -1,13 +1,22 @@
-//! Editor-specific producers. Storage and ordering belong to strop-trace.
+//! Editor-specific producers and the forensic replay driver. Storage and
+//! ordering belong to strop-trace.
+pub(crate) mod drive;
 pub mod frame;
+#[cfg(test)]
+pub(crate) mod model;
+pub(crate) mod seed;
 pub mod services;
 mod snapshot;
+
+#[cfg(test)]
+mod generated;
+#[cfg(test)]
+mod tests;
 
 use super::{Editor, Key};
 use serde::Serialize;
 use std::cell::Cell;
 use strop_trace::{enabled, record, EventKind};
-
 thread_local! { static INPUT_DEPTH: Cell<usize> = const { Cell::new(0) }; }
 
 pub struct InputScope;

@@ -29,14 +29,8 @@ pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
     if editor.picker_open() {
         return;
     }
-    // the walker owns the prefix now (0008 stage 2); pending only for
-    // the free-text lines
     let prefix = editor.walker.prefix_display();
-    let pending = if prefix.is_empty() {
-        editor.pending.as_str()
-    } else {
-        &prefix
-    };
+    let pending = prefix.as_str();
     let Some(&(_, title)) = PREFIXES.iter().find(|(p, _)| *p == pending) else {
         return;
     };
@@ -105,7 +99,7 @@ mod tests {
     fn space_card_lists_table_children() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(" ");
-        let frame = crate::headless::frame_string(&mut e, 80, 24);
+        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
         for present in [
             "file finder",
             "buffers (MRU)",
@@ -128,7 +122,7 @@ mod tests {
     fn git_card_lists_verbs() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(" g");
-        let frame = crate::headless::frame_string(&mut e, 80, 24);
+        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
         for verb in [
             "commit browser",
             "file history",
@@ -149,7 +143,7 @@ mod tests {
     fn visual_space_card_only_y() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text("v ");
-        let frame = crate::headless::frame_string(&mut e, 80, 24);
+        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
         assert!(frame.contains("yank selection → clipboard"));
         assert!(!frame.contains("file finder"));
     }

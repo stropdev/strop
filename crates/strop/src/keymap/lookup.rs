@@ -1,28 +1,23 @@
-//! keymap/lookup.rs — the table's query engine: sequence
-//! expansion, trie lookup (exact row / prefix child), which-key
-//! hints, and the generated vim-compat report. The table in
-//! `mod.rs` is data; this file is the only code that walks it.
+//! Table-derived dispatch trie and which-key index, compiled once.
+//! Querying dispatch never expands notation or allocates key sequences.
+
+use std::sync::LazyLock;
 
 use super::{Binding, BINDINGS, SECTIONS};
 
-/// Expand a row's `keys` into its sequences (see the notation above).
-/// Dispatch lookup: the sequence (walker's tokens) → its row.
-/// `<c>`/`<a>` in a row's keys match any char (parameterized rows).
+/// Expand a row's notation into sequences of table tokens.
 pub fn expand(keys: &str) -> Vec<Vec<&str>> {
     let toks: Vec<&str> = keys.split(' ').filter(|t| !t.is_empty()).collect();
     let mut seqs: Vec<Vec<&str>> = Vec::new();
     let mut i = 0;
     while i < toks.len() {
         match toks[i] {
-            // a leading bare `/` is the search-forward key
             "/" if seqs.is_empty() => seqs.push(vec!["/"]),
-            // alternatives replace the previous sequence's last key and
-            // run to the row's end
             "/" => {
-                let base: Vec<&str> = seqs
-                    .last()
-                    .map(|s| s[..s.len() - 1].to_vec())
-                    .unwrap_or_default();
+                let base = match seqs.last() {
+                    Some(s) => s[..s.len() - 1].to_vec(),
+                    None => Vec::new(),
+                };
                 for alt in &toks[i + 1..] {
                     if *alt != "/" {
                         let mut seq = base.clone();
@@ -32,18 +27,16 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
                 }
                 break;
             }
-            // the leader: its sequence runs to the row's end — or the
-            // first `/` with keys after it (a trailing `/` is the
-            // grep key: "space /" is one sequence)
             "space" => {
-                let end = (i + 1..toks.len())
-                    .find(|&j| toks[j] == "/" && j + 1 < toks.len())
-                    .unwrap_or(toks.len());
+                let end = match (i + 1..toks.len()).find(|&j| toks[j] == "/" && j + 1 < toks.len())
+                {
+                    Some(end) => end,
+                    None => toks.len(),
+                };
                 seqs.push(toks[i..end].to_vec());
                 i = end;
                 continue;
             }
-            // window commands take exactly one key
             "ctrl-w" => {
                 if let Some(k) = toks.get(i + 1) {
                     seqs.push(vec!["ctrl-w", k]);
@@ -61,34 +54,21 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
     seqs
 }
 
-/// A row's sequences at PER-KEY granularity (0016: the machine's trie
-/// walks keys, not row tokens): "gg" is ["g","g"], "ctrl-w h" is
-/// ["ctrl-w","h"], placeholders ("<a>") stay whole and match any key.
-pub fn key_seqs(row: &Binding) -> Vec<Vec<String>> {
-    expand(row.keys)
-        .iter()
-        .map(|seq| {
-            let mut out: Vec<String> = Vec::new();
-            for t in seq {
-                if t.len() > 1 && !t.starts_with('<') && !t.starts_with(':') && !NAMED.contains(t) {
-                    if let Some(i) = t.find('<') {
-                        // "r<c>": the key chars, then the placeholder whole
-                        for c in t[..i].chars() {
-                            out.push(c.to_string());
-                        }
-                        out.push(t[i..].to_string());
-                    } else {
-                        for c in t.chars() {
-                            out.push(c.to_string());
-                        }
-                    }
-                } else {
-                    out.push(t.to_string());
-                }
+fn per_key(seq: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for &t in seq {
+        if t.len() > 1 && !t.starts_with('<') && !t.starts_with(':') && !NAMED.contains(&t) {
+            if let Some(i) = t.find('<') {
+                out.extend(t[..i].chars().map(|c| c.to_string()));
+                out.push(t[i..].to_string());
+            } else {
+                out.extend(t.chars().map(|c| c.to_string()));
             }
-            out
-        })
-        .collect()
+        } else {
+            out.push(t.to_string());
+        }
+    }
+    out
 }
 
 pub(crate) const NAMED: &[&str] = &[
@@ -116,41 +96,176 @@ pub(crate) const NAMED: &[&str] = &[
     "ctrl-l",
 ];
 
-/// A placeholder token ("<a>") matches any key; the operator "<" is
-/// a literal (len-1) and must not.
+/// The single-key operator `<` is literal, not a placeholder.
 fn is_placeholder(k: &str) -> bool {
     k.len() > 1 && k.starts_with('<')
 }
 
-fn seq_matches(seq: &[String], path: &[String]) -> bool {
-    seq.len() == path.len()
-        && seq
-            .iter()
-            .zip(path)
-            .all(|(k, t)| is_placeholder(k) || k == t)
+#[derive(Clone, Copy)]
+struct NodeId(usize);
+
+const ROOT: NodeId = NodeId(0);
+
+#[derive(Default)]
+struct Node {
+    literals: Vec<(String, NodeId)>,
+    wildcard: Option<NodeId>,
+    row: Option<usize>,
+    // Strict descendants, not the node's own terminal row.
+    live_child: bool,
 }
 
-fn seq_has_prefix(seq: &[String], path: &[String]) -> bool {
-    seq.len() > path.len()
-        && seq
-            .iter()
-            .zip(path)
-            .all(|(k, t)| is_placeholder(k) || k == t)
+struct HintSequence {
+    row: usize,
+    tokens: Vec<&'static str>,
+    flat: String,
+    bounds: Vec<usize>,
+    char_len: usize,
+    weight: usize,
 }
 
-/// The row a key path completes exactly (the machine's trie lookup).
+impl HintSequence {
+    fn new(row: usize, tokens: Vec<&'static str>) -> Self {
+        let mut flat = String::new();
+        let mut bounds = Vec::new();
+        let mut weight = 0;
+        for &t in &tokens {
+            bounds.push(flat.len());
+            let text = if t == "space" { " " } else { t };
+            flat.push_str(text);
+            weight += text.len();
+        }
+        let char_len = flat.chars().count();
+        Self {
+            row,
+            tokens,
+            flat,
+            bounds,
+            char_len,
+            weight,
+        }
+    }
+
+    // Preserve table-token hint boundaries (m<a> -> <a>, gg -> g),
+    // rather than displaying dispatch's per-key representation.
+    fn child_key(&self, prefix: &str, plen: usize) -> Option<String> {
+        if plen == 0 || !self.flat.starts_with(prefix) || self.char_len <= plen {
+            return None;
+        }
+        match self.bounds.iter().position(|&b| b == plen) {
+            Some(i) => Some(self.tokens[i].to_string()),
+            None => {
+                let i = self.bounds.iter().rposition(|&b| b < plen)?;
+                Some(self.tokens[i].chars().skip(plen - self.bounds[i]).collect())
+            }
+        }
+    }
+}
+
+struct Index {
+    nodes: Vec<Node>,
+    hints: Vec<HintSequence>,
+}
+
+static INDEX: LazyLock<Index> = LazyLock::new(Index::compile);
+
+impl Index {
+    fn compile() -> Self {
+        let mut index = Self {
+            nodes: vec![Node::default()],
+            hints: Vec::new(),
+        };
+        for (row, binding) in BINDINGS.iter().enumerate() {
+            for tokens in expand(binding.keys) {
+                if binding.live {
+                    index.insert(row, per_key(&tokens));
+                }
+                index.hints.push(HintSequence::new(row, tokens));
+            }
+        }
+        // Stable sorting preserves row and alternative order for equal weights.
+        index.hints.sort_by_key(|seq| seq.weight);
+        index
+    }
+
+    fn insert(&mut self, row: usize, keys: Vec<String>) {
+        let mut at = ROOT;
+        for key in keys {
+            self.nodes[at.0].live_child = true;
+            let wildcard = is_placeholder(&key);
+            let existing = if wildcard {
+                self.nodes[at.0].wildcard
+            } else {
+                self.nodes[at.0]
+                    .literals
+                    .iter()
+                    .find(|(literal, _)| literal == &key)
+                    .map(|(_, id)| *id)
+            };
+            at = match existing {
+                Some(id) => id,
+                None => {
+                    let id = NodeId(self.nodes.len());
+                    self.nodes.push(Node::default());
+                    if wildcard {
+                        self.nodes[at.0].wildcard = Some(id);
+                    } else {
+                        self.nodes[at.0].literals.push((key, id));
+                    }
+                    id
+                }
+            };
+        }
+        // Compilation follows table order, so the first terminal wins.
+        if self.nodes[at.0].row.is_none() {
+            self.nodes[at.0].row = Some(row);
+        }
+    }
+
+    fn literal_child(&self, at: NodeId, key: &str) -> Option<NodeId> {
+        self.nodes[at.0]
+            .literals
+            .iter()
+            .find(|(literal, _)| literal == key)
+            .map(|(_, id)| *id)
+    }
+
+    fn find(&self, at: NodeId, path: &[String]) -> Option<usize> {
+        let Some((key, rest)) = path.split_first() else {
+            return self.nodes[at.0].row;
+        };
+        let literal = self
+            .literal_child(at, key)
+            .and_then(|id| self.find(id, rest));
+        let wildcard = self.nodes[at.0].wildcard.and_then(|id| self.find(id, rest));
+        // A literal must not automatically outrank an earlier placeholder row.
+        match (literal, wildcard) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, b) => b,
+        }
+    }
+
+    fn has_child(&self, at: NodeId, path: &[String]) -> bool {
+        let Some((key, rest)) = path.split_first() else {
+            return self.nodes[at.0].live_child;
+        };
+        self.literal_child(at, key)
+            .is_some_and(|id| self.has_child(id, rest))
+            || self.nodes[at.0]
+                .wildcard
+                .is_some_and(|id| self.has_child(id, rest))
+    }
+}
+
+/// The first live table row completed by this path, including placeholders.
 pub fn find_row(path: &[String]) -> Option<&'static Binding> {
-    BINDINGS
-        .iter()
-        .find(|b| b.live && key_seqs(b).iter().any(|seq| seq_matches(seq, path)))
+    INDEX.find(ROOT, path).map(|row| &BINDINGS[row])
 }
 
-/// Any live row whose sequence EXTENDS this path (trie prefix check —
-/// the machine's prefixes derive from the table, never a list).
+/// Whether a live sequence strictly extends this path.
 pub fn any_child(path: &[String]) -> bool {
-    BINDINGS
-        .iter()
-        .any(|b| b.live && key_seqs(b).iter().any(|seq| seq_has_prefix(seq, path)))
+    INDEX.has_child(ROOT, path)
 }
 
 /// One which-key hint row: the next key after a pending prefix.
@@ -160,12 +275,8 @@ pub struct Hint {
     pub live: bool,
 }
 
-/// The which-key card for a pending `prefix` in `mode`: every binding
-/// that continues the prefix, keyed by the immediately-next key. When
-/// several rows share a next key (the `space g` verbs under `space`),
-/// the shortest sequence wins — the prefix's own row, not its first
-/// verb. Only mode-appropriate sections feed the card: visual mode
-/// never shows normal-mode leader verbs it can't run.
+/// Mode-appropriate hints, including planned rows. Shortest sequences win;
+/// table order and then alternative order break ties.
 pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
     use crate::editor::Mode;
     let sections: &[&str] = match mode {
@@ -173,61 +284,27 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
         Mode::Visual | Mode::VisualLine | Mode::VisualBlock => &["visual"],
         Mode::Insert => &[],
     };
-    let mut cands: Vec<(usize, Hint)> = Vec::new();
-    for b in BINDINGS.iter().filter(|b| sections.contains(&b.section)) {
-        for seq in expand(b.keys) {
-            if let Some(key) = child_key(&seq, prefix) {
-                let len: usize = seq
-                    .iter()
-                    .map(|t| if *t == "space" { 1 } else { t.len() })
-                    .sum();
-                cands.push((
-                    len,
-                    Hint {
-                        key,
-                        desc: b.desc,
-                        live: b.live,
-                    },
-                ));
-            }
-        }
-    }
-    cands.sort_by_key(|(len, _)| *len); // shortest wins; table order breaks ties
     let mut out: Vec<Hint> = Vec::new();
-    for (_, h) in cands {
-        if !out.iter().any(|x| x.key == h.key) {
-            out.push(h);
+    let plen = prefix.chars().count();
+    for seq in &INDEX.hints {
+        let b = &BINDINGS[seq.row];
+        if !sections.contains(&b.section) {
+            continue;
+        }
+        if let Some(key) = seq.child_key(prefix, plen) {
+            if !out.iter().any(|hint| hint.key == key) {
+                out.push(Hint {
+                    key,
+                    desc: b.desc,
+                    live: b.live,
+                });
+            }
         }
     }
     out
 }
 
-/// The next key of `seq` under pending `prefix`: the whole token when
-/// the prefix ends on a token boundary, else the rest of the partial
-/// token (pending `g` vs `gg` → `g`; pending `m` vs `m<a>` → `<a>`).
-fn child_key(seq: &[&str], prefix: &str) -> Option<String> {
-    let mut flat = String::new();
-    let mut bounds = Vec::new();
-    for t in seq {
-        bounds.push(flat.len());
-        flat.push_str(if *t == "space" { " " } else { t });
-    }
-    let plen = prefix.chars().count();
-    if plen == 0 || !flat.starts_with(prefix) || flat.chars().count() <= plen {
-        return None;
-    }
-    match bounds.iter().position(|b| *b == plen) {
-        Some(i) => Some(seq[i].to_string()),
-        None => {
-            let i = bounds.iter().rposition(|b| *b < plen)?;
-            Some(seq[i].chars().skip(plen - bounds[i]).collect())
-        }
-    }
-}
-
-/// The vim-compatibility report (0016): generated from this table —
-/// docs can never drift from dispatch. Checked into docs/vim-compat.md;
-/// the test pins freshness (STROP_REGEN=1 cargo test regenerates).
+/// The vim-compatibility report, generated from the single binding table.
 pub fn compat_report() -> String {
     let mut out = String::from(
         "# Vim compatibility\n\nGenerated from the command table (`cargo test` pins freshness; \
@@ -242,4 +319,41 @@ pub fn compat_report() -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    #[test]
+    fn table_precedence_wins_over_literal_specificity() {
+        let mut index = Index {
+            nodes: vec![Node::default()],
+            hints: Vec::new(),
+        };
+        index.insert(1, vec!["g".into(), "<c>".into()]);
+        index.insert(3, vec!["g".into(), "x".into()]);
+        assert_eq!(index.find(ROOT, &["g".into(), "x".into()]), Some(1));
+        assert_eq!(index.find(ROOT, &["g".into(), "z".into()]), Some(1));
+        assert!(index.has_child(ROOT, &["g".into()]));
+        assert!(!index.has_child(ROOT, &["g".into(), "x".into()]));
+    }
+
+    #[test]
+    fn literals_and_longer_paths_keep_independent_terminals() {
+        let mut index = Index {
+            nodes: vec![Node::default()],
+            hints: Vec::new(),
+        };
+        index.insert(0, vec!["g".into(), "x".into()]);
+        index.insert(2, vec!["g".into(), "<c>".into()]);
+        index.insert(4, vec!["g".into(), "x".into(), "y".into()]);
+        assert_eq!(index.find(ROOT, &["g".into(), "x".into()]), Some(0));
+        assert_eq!(index.find(ROOT, &["g".into(), "z".into()]), Some(2));
+        assert!(index.has_child(ROOT, &["g".into(), "x".into()]));
+        assert_eq!(
+            index.find(ROOT, &["g".into(), "x".into(), "y".into()]),
+            Some(4)
+        );
+    }
 }

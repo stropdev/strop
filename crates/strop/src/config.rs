@@ -13,7 +13,7 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Config {
     /// Indent unit in spaces (`>>`, auto-indent). Tabs land with 0005's

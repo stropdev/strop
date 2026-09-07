@@ -1,6 +1,6 @@
 //! Commands → byte ranges. THE function: execute and preview both
-//! consume `resolve`. Plus the plain-substring search helpers (prototype;
-//! 0001 §2.5's transpiled regex lands with the real search layer).
+//! consume `resolve`. Search runs through the compiled query engine
+//! (`crate::query`) — bounded, typed errors, explicit match ranges.
 
 use strop_core::{Buffer, Range};
 
@@ -8,17 +8,35 @@ use crate::types::*;
 
 mod motions;
 mod objects;
-mod search;
+pub(crate) mod search;
 
 use motions::*;
 use objects::*;
 
+use crate::query::{search_backward, search_forward};
 pub use objects::match_pair;
-pub use search::{search_all, search_backward, search_forward};
+
+/// Unwrap an Option helper's None into the command resolving to
+/// nothing (Ok(None)) — the body keeps its `?` shape where helpers
+/// return Option, while query errors propagate as Err.
+macro_rules! none {
+    ($e:expr) => {
+        match $e {
+            Some(v) => v,
+            None => return Ok(None),
+        }
+    };
+}
 
 /// Resolve a complete command against the buffer at `cursor`.
 /// This is THE function: execute and preview both consume it.
-pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
+/// Err carries a query failure (the engine's step budget); Ok(None)
+/// means the command finds nothing here.
+pub fn resolve(
+    buf: &Buffer,
+    cursor: usize,
+    cmd: &Command,
+) -> Result<Option<Resolved>, crate::query::QueryError> {
     let count = cmd.count.unwrap_or(1);
     let mut motion_target = None;
     let (range, inclusive, mut spec) = match &cmd.target {
@@ -40,7 +58,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
         Target::Object { inner, obj } => {
             let (s, e, spec) = match obj {
                 Object::Word => {
-                    let (s, e) = inner_word(buf, cursor)?;
+                    let (s, e) = none!(inner_word(buf, cursor));
                     (
                         s,
                         e,
@@ -52,7 +70,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     )
                 }
                 Object::Quote(q) => {
-                    let (o, c) = quote_pair(buf, cursor, *q)?;
+                    let (o, c) = none!(quote_pair(buf, cursor, *q));
                     let spec = format!("{} {}", if *inner { "inner" } else { "around" }, *q);
                     if *inner {
                         (o + 1, c, spec)
@@ -61,7 +79,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     }
                 }
                 Object::Bracket { open, close } => {
-                    let (o, c) = bracket_pair(buf, cursor, *open, *close)?;
+                    let (o, c) = none!(bracket_pair(buf, cursor, *open, *close));
                     let spec = format!("{} {}", if *inner { "inner" } else { "around" }, *open);
                     if *inner {
                         (o + 1, c, spec)
@@ -73,11 +91,11 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
             (Range::charwise(s, e), true, spec)
         }
         Target::SurroundDelete(ch) | Target::SurroundChange { from: ch, .. } => {
-            let (open, close) = surround_pair(*ch)?;
+            let (open, close) = none!(surround_pair(*ch));
             let (o, c) = if open == close {
-                quote_pair(buf, cursor, open)?
+                none!(quote_pair(buf, cursor, open))
             } else {
-                bracket_pair(buf, cursor, open, close)?
+                none!(bracket_pair(buf, cursor, open, close))
             };
             (Range::charwise(o, c + 1), true, format!("surround {}", *ch))
         }
@@ -90,7 +108,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 target: (**inner).clone(),
                 keys: String::new(),
             };
-            let r = resolve(buf, cursor, &sub)?;
+            let r = none!(resolve(buf, cursor, &sub)?);
             (
                 r.range,
                 r.range.inclusive(),
@@ -297,7 +315,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 )
             }
             Motion::MatchPair => {
-                let target = match_pair(buf, cursor)?;
+                let target = none!(match_pair(buf, cursor));
                 let (s, e) = if target >= cursor {
                     (cursor, target + 1)
                 } else {
@@ -413,7 +431,7 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                         }
                     }
                 }
-                let target = found?;
+                let target = none!(found);
                 // till lands one before/after the char
                 let land = if *till {
                     if *backward {
@@ -437,17 +455,26 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                     format!("{verb} '{}'", *ch),
                 )
             }
-            Motion::Search(pat) | Motion::SearchBackward(pat) => {
+            Motion::Search(q) | Motion::SearchBackward(q) => {
                 let backward = matches!(m, Motion::SearchBackward(_));
                 let mut target = cursor;
                 for _ in 0..count {
-                    target = if backward {
-                        search_backward(buf, target, pat)
-                            .or_else(|| search_backward(buf, buf.len_bytes(), pat))?
+                    // wrap at the file edge like `n`/`N`; query errors
+                    // (step budget) propagate as Err
+                    let hit = if backward {
+                        match search_backward(buf, target, q)? {
+                            Some(h) => Some(h),
+                            None => search_backward(buf, buf.len_bytes(), q)?,
+                        }
                     } else {
-                        search_forward(buf, buf.ceil_boundary(target.saturating_add(1)), pat)
-                            .or_else(|| search_forward(buf, 0, pat))?
+                        match search_forward(buf, buf.ceil_boundary(target.saturating_add(1)), q)? {
+                            Some(h) => Some(h),
+                            None => search_forward(buf, 0, q)?,
+                        }
                     };
+                    // the landing is the match start — an explicit
+                    // range, never pattern-length math
+                    target = none!(hit).start.get();
                 }
                 motion_target = Some(target);
                 let range = if target < cursor {
@@ -458,13 +485,13 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
                 (
                     range,
                     false,
-                    format!("search {}{pat}", if backward { '?' } else { '/' }),
+                    format!("search {}{}", if backward { '?' } else { '/' }, q.source()),
                 )
             }
         },
     };
     if range.is_empty() && cmd.op.is_some() {
-        return None;
+        return Ok(None);
     }
     if let Some(op) = cmd.op {
         spec = format!(
@@ -480,11 +507,11 @@ pub fn resolve(buf: &Buffer, cursor: usize, cmd: &Command) -> Option<Resolved> {
             if inclusive { "inclusive" } else { "exclusive" }
         );
     }
-    Some(Resolved {
+    Ok(Some(Resolved {
         range: range.with_inclusive(inclusive),
         motion_target,
         spec,
-    })
+    }))
 }
 
 /// Where the cursor lands after a resolved motion command.
@@ -493,22 +520,22 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
         return target;
     }
     match &cmd.target {
-        Target::Motion(Motion::Down | Motion::Up) => r.range.start,
-        Target::Motion(Motion::WordBackward | Motion::LineStart) => r.range.start,
+        Target::Motion(Motion::Down | Motion::Up) => r.range.start.get(),
+        Target::Motion(Motion::WordBackward | Motion::LineStart) => r.range.start.get(),
         Target::Motion(Motion::FirstNonBlank | Motion::Column) => {
             // ^ lands on the non-blank — whichever side of the cursor
             // that is (the range is (min, max) of cursor and target)
-            if _cursor <= r.range.start {
-                r.range.end
+            if _cursor <= r.range.start.get() {
+                r.range.end.get()
             } else {
-                r.range.start
+                r.range.start.get()
             }
         }
         Target::Motion(Motion::WordForward | Motion::BigWordForward) => {
-            r.range.end.min(buf.len_bytes().saturating_sub(1))
+            r.range.end.get().min(buf.len_bytes().saturating_sub(1))
         }
         Target::Motion(Motion::WordEnd | Motion::BigWordEnd | Motion::LineEnd) => {
-            r.range.end.saturating_sub(1)
+            r.range.end.get().saturating_sub(1)
         }
         Target::Motion(Motion::FirstLine | Motion::LastLine) => {
             let line = if matches!(cmd.target, Target::Motion(Motion::FirstLine)) {
@@ -523,30 +550,28 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
         }
         Target::Motion(Motion::FindChar { backward, .. }) => {
             if *backward {
-                r.range.start
+                r.range.start.get()
             } else {
-                r.range.end.saturating_sub(1)
+                r.range.end.get().saturating_sub(1)
             }
         }
         Target::Motion(Motion::MatchPair) => {
             // bare %: cursor lands on the mate (the far end)
             if r.range.end - 1 == _cursor {
-                r.range.start
+                r.range.start.get()
             } else {
-                r.range.end - 1
+                r.range.end.get() - 1
             }
         }
-        Target::Motion(Motion::Search(_)) => r.range.end,
-        Target::Motion(Motion::SearchBackward(pat)) => {
-            // land on the match start: range is (target+1, cursor) exclusive
-            r.range.start.saturating_sub(pat.len().min(1))
+        Target::Motion(Motion::Search(_) | Motion::SearchBackward(_)) => {
+            unreachable!("search carries motion_target; returned above")
         }
-        Target::Motion(Motion::Right) => r.range.end,
-        Target::Motion(Motion::ParagraphForward) => r.range.end,
+        Target::Motion(Motion::Right) => r.range.end.get(),
+        Target::Motion(Motion::ParagraphForward) => r.range.end.get(),
         Target::Motion(
             Motion::ParagraphBackward | Motion::WordEndBackward | Motion::BigWordEndBackward,
-        ) => r.range.start,
-        _ => r.range.start,
+        ) => r.range.start.get(),
+        _ => r.range.start.get(),
     }
 }
 
@@ -567,19 +592,24 @@ pub struct PlannedTarget {
     pub range: Range,
 }
 
-/// Resolve one command over every cursor; None when nothing resolves.
-pub fn plan(buf: &Buffer, cursors: &[usize], cmd: &Command) -> Option<ActionPlan> {
-    let mut targets: Vec<PlannedTarget> = cursors
-        .iter()
-        .filter_map(|&c| {
-            resolve(buf, c, cmd).map(|r| PlannedTarget {
+/// Resolve one command over every cursor; Ok(None) when nothing
+/// resolves; Err carries a query failure from any cursor's attempt.
+pub fn plan(
+    buf: &Buffer,
+    cursors: &[usize],
+    cmd: &Command,
+) -> Result<Option<ActionPlan>, crate::query::QueryError> {
+    let mut targets: Vec<PlannedTarget> = Vec::with_capacity(cursors.len());
+    for &c in cursors {
+        if let Some(r) = resolve(buf, c, cmd)? {
+            targets.push(PlannedTarget {
                 cursor: c,
                 range: r.range,
-            })
-        })
-        .collect();
+            });
+        }
+    }
     if targets.is_empty() {
-        return None;
+        return Ok(None);
     }
     targets.sort_by_key(|t| t.range.start);
     targets.dedup_by_key(|t| (t.range.start, t.range.end));
@@ -589,5 +619,17 @@ pub fn plan(buf: &Buffer, cursors: &[usize], cmd: &Command) -> Option<ActionPlan
             kept.push(t);
         }
     }
-    Some(ActionPlan { targets: kept })
+    Ok(Some(ActionPlan { targets: kept }))
+}
+
+/// The same command resolved at every cursor, independently — no
+/// overlap dedup (that is plan()'s shape for edits). Cursor movement
+/// and incsearch consume this: every cursor seeks from its own
+/// position with the exact command semantics.
+pub fn resolve_many(
+    buf: &Buffer,
+    cursors: &[usize],
+    cmd: &Command,
+) -> Result<Vec<Option<Resolved>>, crate::query::QueryError> {
+    cursors.iter().map(|&c| resolve(buf, c, cmd)).collect()
 }

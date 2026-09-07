@@ -1,23 +1,32 @@
 //! The buffer: a rope, byte-offset positions, edit ops, persistence.
 //! No UI, no modes, no grammar — the thing everything else edits.
 
-use crate::diagnostics::{BufferTraceId, MutationSource};
-use crate::history::{Edit, EditKind, History};
+mod io;
+pub use io::{SaveReceipt, SaveRequest};
+mod seed;
+pub use seed::BufferSeed;
+mod mutation;
+use crate::diagnostics::BufferTraceId;
+use crate::history::History;
 use crate::range::Range;
 use crate::{id, layout};
+pub use mutation::{
+    Change, ChangeOrigin, EditError, HistoryMove, PreparedReplacements, Replacement, SystemEdit,
+    UserEdit,
+};
 use ropey::Rope;
 
 /// A text buffer. Positions are UTF-8 byte offsets, everywhere (0001 §5.1).
 pub struct Buffer {
     pub(crate) trace_identity: BufferTraceId,
-    pub rope: Rope,
+    rope: Rope,
     /// Filesystem identity (0021 §3: Unix filenames aren't UTF-8 — a
     /// String path makes the filesystem model a UI model). Display via
     /// to_string_lossy at the edge only.
     pub path: Option<std::path::PathBuf>,
     pub dirty: bool,
     /// Monotonic edit counter; async readers (git gutter) diff lazily.
-    pub epoch: u64,
+    epoch: u64,
     /// Read-only views (git surfaces): motions/yank work, edits refuse.
     pub readonly: bool,
     /// Display name for virtual buffers (statusline shows "[scratch]"
@@ -25,14 +34,39 @@ pub struct Buffer {
     pub name: Option<String>,
     /// Undo history (helix-style revision tree). Readonly buffers never
     /// record (their content is owned by jobs, not the user).
-    pub history: History,
-    /// Suppresses recording while applying undo/redo ops.
-    pub replaying: bool,
+    history: History,
+    changes: Vec<Change>,
     /// Disk mtime at load/last save — overwrite protection for `:w`.
     disk_stamp: Option<std::time::SystemTime>,
+    file_identity: Option<std::path::PathBuf>,
 }
 
 impl Buffer {
+    pub fn text(&self) -> &Rope {
+        &self.rope
+    }
+    pub fn snapshot(&self) -> Rope {
+        self.rope.clone()
+    }
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+    pub fn revision(&self) -> id::BufferRevision {
+        id::BufferRevision::new(self.epoch)
+    }
+    pub fn file_identity(&self) -> Option<&std::path::Path> {
+        self.file_identity.as_deref()
+    }
+
+    pub fn restore_history(
+        &mut self,
+        history: History,
+    ) -> Result<(), crate::history::HistoryError> {
+        history.validate_for(&self.rope)?;
+        self.history = history;
+        Ok(())
+    }
+
     pub fn from_text(text: &str) -> Self {
         Self {
             trace_identity: BufferTraceId::next(),
@@ -43,8 +77,9 @@ impl Buffer {
             readonly: false,
             name: None,
             history: History::default(),
-            replaying: false,
+            changes: Vec::new(),
             disk_stamp: None,
+            file_identity: None,
         }
     }
 
@@ -52,98 +87,51 @@ impl Buffer {
     /// (vim semantics — `:w` creates it). Real I/O errors still error.
     pub fn open(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
         let path = path.as_ref();
-        let text = match std::fs::read_to_string(path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        let (rope, disk_stamp) = match std::fs::File::open(path) {
+            Ok(file) => {
+                let stamp = file.metadata()?.modified()?;
+                (Rope::from_reader(file)?, Some(stamp))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Rope::new(), None),
             Err(e) => return Err(e),
         };
-        let disk_stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         Ok(Self {
             trace_identity: BufferTraceId::next(),
-            rope: Rope::from_str(&text),
+            rope,
             path: Some(path.to_path_buf()),
             dirty: false,
             epoch: 0,
             readonly: false,
             name: None,
             history: History::default(),
-            replaying: false,
+            changes: Vec::new(),
             disk_stamp,
+            file_identity: Some(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())),
         })
     }
 
-    /// `:w` — atomic (temp + rename in the same dir), refuses to
-    /// overwrite a file another process touched since we loaded it.
-    /// `force` is `:w!`.
-    pub fn save(&mut self, force: bool) -> std::io::Result<()> {
-        let Some(path) = self.path.clone() else {
-            // a pathless buffer has nothing to persist to — "written"
-            // would be a lie (0015)
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no file name — :w {path} to name it",
-            ));
-        };
-        // write THROUGH links (0023: replacing a symlink with a regular
-        // file silently breaks the link — vim preserves it)
-        let path = std::fs::canonicalize(&path).unwrap_or(path);
-        let current = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-        if !force && current.is_some() && current != self.disk_stamp {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "file changed on disk — :w! to force",
-            ));
-        }
-        write_atomic(std::path::Path::new(&path), &self.rope.to_string(), true)?;
-        self.disk_stamp = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-        self.dirty = false;
-        Ok(())
-    }
-
-    /// `:w {path}` — persist under a new name and adopt it (the buffer
-    /// becomes that file). The identity changes only after a SUCCESSFUL
-    /// write (0020 §1): an existing target needs `force`, and a failed
-    /// write leaves path, baseline and dirty state untouched.
-    pub fn save_as(
-        &mut self,
-        path: impl AsRef<std::path::Path>,
-        force: bool,
-    ) -> std::io::Result<()> {
-        let target = path.as_ref();
-        if !force && target.exists() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "file exists — :w! to overwrite",
-            ));
-        }
-        write_atomic(target, &self.rope.to_string(), force)?;
-        // success: adopt the identity
-        self.path = Some(target.to_path_buf());
-        self.disk_stamp = std::fs::metadata(target).and_then(|m| m.modified()).ok();
-        self.dirty = false;
-        Ok(())
-    }
-    /// Display CELL of an offset within its line (0017): cursor
-    /// placement and overlays need terminal cells, not byte cols —
-    /// wide chars and tabs make the difference. The LineLayout is the
-    /// single translation seam.
-    pub fn cell_col_of(&self, offset: impl Into<id::ByteOffset>) -> u16 {
-        self.cell_col_with_tab(offset, 8)
-    }
-
-    /// The cell col under a caller's tab stop (0023: the caret and the
-    /// tab glyph must read the same width — render config drives both).
-    pub fn cell_col_with_tab(&self, offset: impl Into<id::ByteOffset>, tab: u16) -> u16 {
-        let offset = offset.into().get();
-        if self.len_bytes() == 0 {
-            return 0;
-        }
+    /// Display CELL of an offset within its line (0017/R6): cursor placement
+    /// and overlays need terminal cells, not byte columns — wide chars and
+    /// tabs make the difference. Streams through the containing cluster only:
+    /// no whole-line String, no layout vector, no u16 saturation.
+    pub fn cell_col_with_tab(
+        &self,
+        offset: impl Into<id::ByteOffset>,
+        tab: usize,
+    ) -> id::DisplayColumn {
+        let offset = offset.into().get().min(self.len_bytes());
         let line = self.line_of(offset);
-        let (s, e) = (self.line_start(line), self.line_end(line));
-        let text = self.rope.byte_slice(s..e).to_string();
-        let col = offset.saturating_sub(s);
-        let layout = layout::LineLayout::build(text.trim_end_matches('\n'), tab.max(1));
-        layout.cell_at_byte(col.min(layout.len_bytes))
+        let start = self.line_start(line);
+        let text = self.text().byte_slice(start..self.line_end(line));
+        let byte = offset.saturating_sub(start).min(text.len_bytes());
+        let mut end = id::DisplayColumn::new(0);
+        for (span, cluster) in layout::RopeGraphemes::new(text, tab) {
+            if byte < span.byte + cluster.len() {
+                return span.cell;
+            }
+            end = span.cell + span.width;
+        }
+        end
     }
 
     pub fn len_bytes(&self) -> usize {
@@ -261,119 +249,9 @@ impl Buffer {
     /// Slice as String — for register/paste paths, never for per-frame render.
     /// Stale ranges clamp (fuzz-driven cascades hand these around).
     pub fn slice_string(&self, range: Range) -> String {
-        let start = range.start.min(self.len_bytes());
-        let end = range.end.min(self.len_bytes());
+        let start = self.clamp_boundary(range.start);
+        let end = self.clamp_boundary(range.end);
         self.rope.byte_slice(start..end.max(start)).to_string()
-    }
-
-    /// Apply history edits (undo/redo replay — never recorded).
-    pub fn apply_history(&mut self, ops: Vec<Edit>) {
-        self.replaying = true;
-        for op in &ops {
-            match op.kind {
-                EditKind::Insert => {
-                    let at = self.clamp_boundary(op.at.min(self.len_bytes()));
-                    self.rope.insert(self.rope.byte_to_char(at), &op.text);
-                }
-                EditKind::Delete => {
-                    // both bounds must land on char boundaries — a stale
-                    // replay against drifted text panics ropey otherwise
-                    let end = self.clamp_boundary((op.at + op.text.len()).min(self.len_bytes()));
-                    let start = self.clamp_boundary(op.at.min(end));
-                    if start < end {
-                        self.rope
-                            .remove(self.rope.byte_to_char(start)..self.rope.byte_to_char(end));
-                    }
-                }
-            }
-        }
-        self.replaying = false;
-        self.dirty = true;
-        self.epoch += 1;
-        self.trace_history(&ops);
-    }
-
-    /// Replace the whole contents (user-facing path). Refuses on
-    /// readonly buffers — the owning subsystem uses
-    /// `replace_all_system`.
-    pub fn replace_all(&mut self, text: &str) {
-        if self.readonly {
-            return;
-        }
-        self.replace_all_system(text);
-    }
-
-    /// The privileged replace for generated surfaces: their content is
-    /// owned by jobs (git/LSP/shell), refreshed under the user's feet —
-    /// the readonly guard is about *user* edits, not the owner.
-    pub fn replace_all_system(&mut self, text: &str) {
-        let removed_bytes = self.len_bytes();
-        self.rope = Rope::from_str(text);
-        self.epoch += 1;
-        self.trace_edit(MutationSource::System, 0, removed_bytes, text);
-    }
-
-    /// Returns the deleted text (register payoff). Refuses on readonly
-    /// buffers: the input layer checks first, but the mutation boundary
-    /// enforces — no caller-remembered guard (0014).
-    pub fn delete(&mut self, range: Range) -> String {
-        if self.readonly && !self.replaying {
-            return String::new();
-        }
-        // stale ranges (fuzz-driven cascades, replay drift) clamp, not panic
-        let start = self.clamp_boundary(range.start.min(self.len_bytes()));
-        let end = self.clamp_boundary(range.end.min(self.len_bytes()));
-        if start >= end {
-            return String::new();
-        }
-        let text = self.rope.byte_slice(start..end).to_string();
-        // ropey mutates by CHAR index; our offsets are bytes
-        let cstart = self.rope.byte_to_char(start);
-        let cend = self.rope.byte_to_char(end);
-        self.rope.remove(cstart..cend);
-        self.dirty = true;
-        self.epoch += 1;
-        self.trace_edit(MutationSource::User, start, end - start, "");
-        if !self.replaying && !self.readonly {
-            self.history.record(
-                Edit {
-                    at: start,
-                    text: text.clone(),
-                    kind: EditKind::Insert,
-                },
-                Edit {
-                    at: start,
-                    text: text.clone(),
-                    kind: EditKind::Delete,
-                },
-            );
-        }
-        text
-    }
-
-    pub fn insert(&mut self, at: impl Into<id::ByteOffset>, text: &str) {
-        if self.readonly && !self.replaying {
-            return;
-        }
-        let at = self.clamp_boundary(at);
-        self.rope.insert(self.rope.byte_to_char(at), text);
-        self.dirty = true;
-        self.epoch += 1;
-        self.trace_edit(MutationSource::User, at, 0, text);
-        if !self.replaying && !self.readonly {
-            self.history.record(
-                Edit {
-                    at,
-                    text: text.into(),
-                    kind: EditKind::Delete,
-                },
-                Edit {
-                    at,
-                    text: text.into(),
-                    kind: EditKind::Insert,
-                },
-            );
-        }
     }
 
     pub fn line_text(&self, line: impl Into<id::LineIndex>) -> String {
@@ -384,35 +262,7 @@ impl Buffer {
     }
 }
 
-/// Same-directory temp + rename, preserving the target's permissions —
-/// the ONE atomic writer (0020 §8: no third copy of this logic).
-fn write_atomic(target: &std::path::Path, contents: &str, overwrite: bool) -> std::io::Result<()> {
-    use std::io::Write;
-    let parent = target
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    match std::fs::metadata(target) {
-        Ok(metadata) => temporary
-            .as_file()
-            .set_permissions(metadata.permissions())?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    temporary.write_all(contents.as_bytes())?;
-    temporary.as_file().sync_all()?;
-    let result = if overwrite {
-        temporary.persist(target)
-    } else {
-        temporary.persist_noclobber(target)
-    };
-    result.map(|_| ()).map_err(|error| error.error)
-}
-
-/// One edit in tree-sitter's terms (0022 §1): byte range + point
-/// positions, computed from the op itself at commit time — no old text
-/// needed (the point extents derive from the op's own content).
+/// Pre-edit and post-edit geometry recorded at the instant text changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputEdit {
     pub start_byte: usize,
@@ -440,41 +290,6 @@ impl Buffer {
         };
         (lines, col)
     }
-
-    /// Bridge one recorded history op to tree-sitter's InputEdit.
-    /// Call against the post-edit buffer (the transaction has landed).
-    pub fn input_edit_of(&self, op: &crate::history::Edit) -> InputEdit {
-        let start_point = self.point_of(op.at);
-        let extent = Self::point_extent(&op.text);
-        match op.kind {
-            EditKind::Insert => InputEdit {
-                start_byte: op.at,
-                old_end_byte: op.at,
-                new_end_byte: op.at + op.text.len(),
-                start_point,
-                old_end_point: start_point,
-                // a single-line insert ends at start.column + len — the
-                // extent's col is relative, not absolute (0023 probe)
-                new_end_point: if extent.0 == 0 {
-                    (start_point.0, start_point.1 + extent.1)
-                } else {
-                    (start_point.0 + extent.0, extent.1)
-                },
-            },
-            EditKind::Delete => InputEdit {
-                start_byte: op.at,
-                old_end_byte: op.at + op.text.len(),
-                new_end_byte: op.at,
-                start_point,
-                old_end_point: if extent.0 == 0 {
-                    (start_point.0, start_point.1 + extent.1)
-                } else {
-                    (start_point.0 + extent.0, extent.1)
-                },
-                new_end_point: start_point,
-            },
-        }
-    }
 }
 
 #[cfg(test)]
@@ -487,14 +302,20 @@ mod safety_tests {
         let f = dir.path().join("f.txt");
         std::fs::write(&f, "original\n").unwrap();
         let mut b = Buffer::open(f.to_str().unwrap()).unwrap();
-        b.insert(id::ByteOffset::new(0), "mine ");
+        b.edit().insert(id::ByteOffset::new(0), "mine ").unwrap();
         // another process touches the file
-        std::thread::sleep(std::time::Duration::from_millis(5));
         std::fs::write(&f, "theirs\n").unwrap();
-        let err = b.save(false).unwrap_err();
-        assert!(err.to_string().contains("changed on disk"));
+        std::fs::File::options()
+            .write(true)
+            .open(&f)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(123))
+            .unwrap();
+        let err = b.prepare_save(None, false).unwrap().execute().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "theirs\n");
-        b.save(true).unwrap(); // :w!
+        let receipt = b.prepare_save(None, true).unwrap().execute().unwrap();
+        assert!(b.accept_save(receipt));
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "mine original\n");
         assert!(!b.dirty);
     }
@@ -507,8 +328,12 @@ mod safety_tests {
         std::fs::write(&f, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o750)).unwrap();
         let mut b = Buffer::open(f.to_str().unwrap()).unwrap();
-        b.insert(id::ByteOffset::new(b.len_bytes()), "echo hi\n");
-        b.save(false).unwrap();
+        let end = b.len_bytes();
+        b.edit()
+            .insert(id::ByteOffset::new(end), "echo hi\n")
+            .unwrap();
+        let receipt = b.prepare_save(None, false).unwrap().execute().unwrap();
+        assert!(b.accept_save(receipt));
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "#!/bin/sh\necho hi\n");
         let mode = std::fs::metadata(&f).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o750, "permissions survive the swap");
@@ -521,12 +346,14 @@ mod safety_tests {
         // 0014: the guard lives in Buffer, not in every caller's memory
         let mut b = Buffer::from_text("abc\n");
         b.readonly = true;
-        b.insert(id::ByteOffset::new(0), "nope");
-        let gone = b.delete(Range::charwise(0, 2));
-        assert_eq!(gone, "");
+        assert_eq!(b.edit().insert(0, "nope"), Err(EditError::ReadOnly));
+        assert_eq!(
+            b.edit().delete(Range::charwise(0, 2)),
+            Err(EditError::ReadOnly)
+        );
         assert_eq!(b.rope.to_string(), "abc\n", "untouched");
         // the owner path still works (job-generated surfaces)
-        b.replace_all_system("gen\n");
+        b.system_edit().replace_all("gen\n").unwrap();
         assert_eq!(b.rope.to_string(), "gen\n");
     }
     #[test]
@@ -541,8 +368,12 @@ mod safety_tests {
         std::fs::write(&weird, "fn main() {}\n").unwrap();
         let mut b = Buffer::open(&weird).unwrap();
         assert_eq!(b.path.as_deref(), Some(weird.as_path()));
-        b.insert(0, "// x\n");
-        b.save(false).unwrap();
-        assert!(std::fs::read_to_string(&weird).unwrap().starts_with("// x"));
+        b.edit().insert(0, "// x\n").unwrap();
+        let receipt = b.prepare_save(None, false).unwrap().execute().unwrap();
+        assert!(b.accept_save(receipt));
+        assert_eq!(
+            std::fs::read_to_string(&weird).unwrap(),
+            "// x\nfn main() {}\n"
+        );
     }
 }

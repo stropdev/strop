@@ -4,9 +4,9 @@ use super::*;
 fn undo_after_visual_delete() {
     let mut e = Editor::new(Buffer::from_text("say \"hi\" now\n"));
     e.feed_text("ved"); // vim: deletes "say", the space stays
-    assert_eq!(e.buf().rope.to_string(), " \"hi\" now\n");
+    assert_eq!(e.buf().text().to_string(), " \"hi\" now\n");
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), "say \"hi\" now\n");
+    assert_eq!(e.buf().text().to_string(), "say \"hi\" now\n");
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn undo_lands_cursor_at_change_start() {
     e.feed(crate::editor::Key::Esc);
     e.feed_text("0"); // move away from the change
     e.feed_text("u");
-    assert_eq!(e.buf().rope.to_string(), "hello\n");
+    assert_eq!(e.buf().text().to_string(), "hello\n");
     // the change started at byte 5 (" world"); normal-mode clamp
     // pulls 5 onto the last char of the line
     assert_eq!(e.head(), 4);

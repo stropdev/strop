@@ -6,10 +6,15 @@ pub mod diagnostics;
 pub mod history;
 pub mod id;
 pub mod layout;
+pub mod path_serde;
 mod range;
 pub mod selection;
+pub mod worker;
 
-pub use buffer::{Buffer, InputEdit};
+pub use buffer::{
+    Buffer, BufferSeed, Change, ChangeOrigin, EditError, HistoryMove, InputEdit,
+    PreparedReplacements, Replacement, SaveReceipt, SaveRequest, SystemEdit, UserEdit,
+};
 pub use range::{MotionShape, Range};
 
 #[cfg(test)]

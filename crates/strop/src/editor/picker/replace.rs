@@ -1,7 +1,7 @@
 //! Global replace (0007 §4): apply accepted hits bottom-up, one undo
 //! revision per touched buffer, drifted lines skipped and counted.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use strop_picker::Payload;
@@ -13,11 +13,11 @@ impl Editor {
     /// per touched buffer (0007 §4); lines that drifted since the search
     /// are skipped and counted, never silently rewritten.
     pub(crate) fn apply_replace(&mut self) {
-        let Some(glue) = self.picker.take() else {
+        let Some(glue) = self.picker.as_ref() else {
             return;
         };
         let replacement = glue.picker.replace_input.text.clone();
-        let mut by_path: HashMap<PathBuf, Vec<(usize, usize, usize, String)>> = HashMap::new();
+        let mut by_path: BTreeMap<PathBuf, Vec<(usize, usize, usize, String)>> = BTreeMap::new();
         for it in glue.picker.accepted() {
             if let Payload::Grep {
                 path,
@@ -35,6 +35,7 @@ impl Editor {
                 ));
             }
         }
+        self.close_picker();
         if by_path.is_empty() {
             self.message = "replace: no matches".into();
             return;
@@ -51,22 +52,14 @@ impl Editor {
             let (f, a, s) = match self.buffer_index_of(&full) {
                 Some(bi) => self.replace_in_buffer(bi, &hits, &replacement),
                 None => {
-                    match self.open_buffer(&full) {
-                        Ok(()) => {
-                            let bi = self.current();
-                            let (f, a, s) = self.replace_in_buffer(bi, &hits, &replacement);
-                            if a > 0 {
-                                // persist through the buffer's own atomic
-                                // writer (mode preserved, baseline set)
-                                let r = self.buf_mut().save(true);
-                                if let Err(err) = r {
-                                    self.message = format!("write {}: {err}", full.display());
-                                }
-                            }
-                            (f, a, s)
-                        }
-                        Err(_) => (0, 0, hits.len()),
-                    }
+                    self.request_open(
+                        full,
+                        super::super::io::OpenIntent::Replace {
+                            hits,
+                            replacement: replacement.clone(),
+                        },
+                    );
+                    continue;
                 }
             };
             files += f;
@@ -84,25 +77,10 @@ impl Editor {
 
     /// Open-buffer index for an absolute path, if loaded.
     fn buffer_index_of(&self, abs: &std::path::Path) -> Option<strop_core::id::DocumentId> {
-        self.docs
-            .iter()
-            .find(|(_, d)| {
-                let b = &d.buf;
-                b.path
-                    .as_deref()
-                    .map(|p| {
-                        let p = std::path::Path::new(p);
-                        let buf_abs = if p.is_absolute() {
-                            p.to_path_buf()
-                        } else {
-                            self.cwd.join(p)
-                        };
-                        buf_abs == abs
-                            || buf_abs.canonicalize().ok().as_ref() == Some(&abs.to_path_buf())
-                    })
-                    .unwrap_or(false)
-            })
-            .map(|(id, _)| id)
+        self.docs.iter().find_map(|(id, document)| {
+            (document.buf.path.as_deref() == Some(abs) || document.buf.file_identity() == Some(abs))
+                .then_some(id)
+        })
     }
 
     /// Verified, bottom-up replacement in an open buffer: one history
@@ -117,7 +95,7 @@ impl Editor {
         self.replace_in_buffer(bi, hits, replacement)
     }
 
-    fn replace_in_buffer(
+    pub(crate) fn replace_in_buffer(
         &mut self,
         bi: strop_core::id::DocumentId,
         hits: &[(usize, usize, usize, String)],
@@ -135,6 +113,10 @@ impl Editor {
         // go through the gateway as one validated changeset (0024)
         let mut edits = Vec::new();
         for (line, col, match_len, expected) in hits {
+            if *line == 0 || *line > self.doc(bi).buf.len_lines() {
+                stale += 1;
+                continue;
+            }
             let (s, e) = strop_picker::replace_span(expected, *col, *match_len);
             let (ls, len) = (
                 self.doc(bi).buf.line_start(line - 1),
@@ -148,35 +130,21 @@ impl Editor {
                 self.doc(bi).buf.is_boundary(abs_s) && self.doc(bi).buf.is_boundary(abs_e);
             let matches = aligned
                 && abs_s <= abs_e
-                && self
-                    .doc(bi)
-                    .buf
-                    .rope
-                    .byte_slice(abs_s..abs_e)
-                    .to_string()
-                    .as_bytes()
-                    == &expected.as_bytes()[s..e];
-            if *line == 0 || *line > self.doc(bi).buf.len_lines() || !matches {
+                && self.doc(bi).buf.text().byte_slice(abs_s..abs_e) == expected[s..e];
+            if !matches {
                 stale += 1;
                 continue;
             }
-            // delete+insert as one edit pair (delete first)
-            edits.push(strop_core::history::Edit {
-                at: abs_s,
-                text: self.doc(bi).buf.rope.byte_slice(abs_s..abs_e).to_string(),
-                kind: strop_core::history::EditKind::Delete,
-            });
-            edits.push(strop_core::history::Edit {
-                at: abs_s,
-                text: replacement.to_string(),
-                kind: strop_core::history::EditKind::Insert,
-            });
+            edits.push(strop_core::Replacement::new(
+                strop_core::Range::charwise(abs_s, abs_e),
+                replacement,
+            ));
             applied += 1;
         }
         if edits.is_empty() {
             return (0, 0, stale);
         }
-        let base = self.doc(bi).buf.epoch;
+        let base = self.doc(bi).buf.revision();
         match self.apply(
             bi,
             base,
@@ -212,10 +180,10 @@ mod tests {
         ];
         let (touched, applied, stale) = e.replace_in_buffer(e.first_doc(), &hits, "baz");
         assert_eq!((touched, applied, stale), (1, 2, 1));
-        assert_eq!(e.buf().rope.to_string(), "baz bar baz\n");
+        assert_eq!(e.buf().text().to_string(), "baz bar baz\n");
         // one undo revision for the whole apply (0007 §4)
         e.undo();
-        assert_eq!(e.buf().rope.to_string(), "foo bar foo\n");
+        assert_eq!(e.buf().text().to_string(), "foo bar foo\n");
     }
 
     #[test]
@@ -233,14 +201,15 @@ mod tests {
             hit(1, 7, 3, "alpha foo"),
             hit(3, 1, 5, "drifted"),
         ];
-        e.open_buffer(&file).unwrap();
+        e.open_fixture(&file).unwrap();
         let bi = e.current();
         let (touched, applied, stale) = e.replace_in_buffer(bi, &hits, "bar");
         assert_eq!((touched, applied, stale), (1, 2, 1));
-        e.buf_mut().save(true).unwrap();
+        e.request_save(None, true, false);
+        e.wait_io().unwrap();
         // undo exists for the file-backed buffer too
         e.undo();
-        assert_eq!(e.buf().rope.to_string(), "alpha foo\nbeta foo\ngamma\n");
+        assert_eq!(e.buf().text().to_string(), "alpha foo\nbeta foo\ngamma\n");
         e.redo();
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
@@ -317,19 +286,13 @@ mod tests {
         e.open_picker(Kind::Replace);
 
         e.feed_text("alpha");
-        for _ in 0..300 {
-            e.drain_picker();
-            if !e.picker.as_ref().unwrap().picker.items.is_empty() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        e.wait_picker();
         assert!(
             !e.picker.as_ref().unwrap().picker.items.is_empty(),
             "rg delivered matches"
         );
         e.feed_text("b"); // respawn: items + rows both clear
-        let frame = crate::headless::frame_string(&mut e, 80, 20);
+        let frame = crate::headless::frame_string(&mut e, 80, 20).unwrap();
         assert!(frame.contains("replace"), "{frame}");
     }
 
@@ -345,14 +308,7 @@ mod tests {
         e.cwd = dir.path().to_path_buf();
         e.open_picker(Kind::Replace);
         e.feed_text("foo --glob !*.py");
-        for _ in 0..300 {
-            e.drain_picker();
-            let p = &e.picker.as_ref().unwrap().picker;
-            if !p.streaming && !p.items.is_empty() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        e.wait_picker();
         let p = &e.picker.as_ref().unwrap().picker;
         assert_eq!(p.items.len(), 2, "py excluded via --glob");
         assert!(p.items.iter().all(|i| !format!("{i:?}").contains("c.py")));
@@ -368,20 +324,14 @@ mod tests {
         e.cwd = dir.path().to_path_buf();
         e.open_picker(Kind::Replace);
         e.feed_text("foo --glob/**/bad[");
-        for _ in 0..300 {
-            e.drain_picker();
-            if e.picker.as_ref().unwrap().picker.error.is_some() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        e.wait_picker();
         let err = e.picker.as_ref().unwrap().picker.error.clone();
         assert!(err.is_some(), "rg error captured");
         // navigation, not a query edit: the error survives (a query
         // edit clears it — the new search might be valid)
         e.feed(crate::editor::Key::Esc); // field normal mode
         e.feed(crate::editor::Key::Char('j'));
-        let frame = crate::headless::frame_string(&mut e, 80, 20);
+        let frame = crate::headless::frame_string(&mut e, 80, 20).unwrap();
         assert!(
             frame.contains("unclosed character class"),
             "error in the card: {frame}"

@@ -1,151 +1,311 @@
-//! Picker glue: the editor side of strop-picker. Workers post onto the
-//! event loop (0001 §5.6); the editor drains them between keystrokes.
+//! Picker glue: workers post onto the editor event loop, every stream
+//! owned by an exact ticket (R9): registration precedes launch, every
+//! request settles exactly once, and stale streams die at the handler
+//! instead of against the model (0020 §2).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
+use strop_core::worker::{CancelHandle, CancelReason, Load, Ticket, WorkerId};
 use strop_picker::{spawn_files, GrepWorker, Item, Kind, Payload, Picker, PickerMsg};
 use strop_syntax::Highlighter;
 
+use super::events::AppEvent;
 use super::{Editor, Key};
 
 mod accept;
 mod drain;
 mod preview;
 mod replace;
+#[cfg(test)]
 mod tests;
 
-impl PickerGlue {
-    /// Take the streaming channel (the TUI's forwarder owns it — 0018).
-    pub(crate) fn take_rx(&mut self) -> Option<Receiver<PickerMsg>> {
-        self.rx.take()
-    }
+/// One picker instance's identity, allocated from the editor's worker
+/// id pool when the picker opens. Every streaming request and preview
+/// read binds to it — closing the picker invalidates them all at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct PickerId(pub WorkerId);
 
-    /// Hand the stream channel to the app event forwarder (0018),
-    /// tagged with this picker's identity and generation (0020 §2).
-    pub(crate) fn forward_stream(&mut self, tx: &Sender<super::events::AppEvent>) {
-        if let Some(rx) = self.rx.take() {
-            let (id, gen) = (self.id, self.gen);
-            let tx = tx.clone();
-            std::thread::spawn(move || {
-                while let Ok(msg) = rx.recv() {
-                    if tx
-                        .send(super::events::AppEvent::Picker { id, gen, msg })
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            });
-        }
-    }
+/// What one streaming picker request owns: which instance, against
+/// which working directory.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PickerKey {
+    pub picker: PickerId,
+    #[serde(with = "strop_core::path_serde")]
+    pub cwd: PathBuf,
+}
 
-    /// A picker over editor-computed items (diagnostics; 0009 §3 Space d).
-    pub fn diagnostics(picker: Picker) -> Self {
-        Self {
-            id: 0,
-            gen: 0,
-            picker,
-            tx: None,
-            rx: None,
-            grep_worker: None,
+/// A worker message stamped with the request that produced it. Both
+/// the TUI's forwarded events and the headless drain deliver these;
+/// only the owning ticket may touch the model.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PickerEvent {
+    pub ticket: Ticket<PickerKey>,
+    pub msg: PickerMsg,
+}
+
+/// One supervised preview read: the picker instance it serves and the
+/// native path being read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PreviewKey {
+    pub picker: PickerId,
+    #[serde(with = "strop_core::path_serde")]
+    pub path: PathBuf,
+}
+
+/// The terminal result of a preview request.
+pub type PreviewResult = strop_core::worker::Completion<PreviewKey, String>;
+
+/// The live worker behind a streaming request.
+pub(crate) enum PickerWorker {
+    Files(CancelHandle),
+    Grep(GrepWorker),
+}
+
+impl PickerWorker {
+    pub(crate) fn cancel(self, reason: CancelReason) {
+        match self {
+            PickerWorker::Files(handle) => handle.cancel(reason),
+            PickerWorker::Grep(worker) => worker.cancel(reason),
         }
     }
 }
 
 pub struct PickerGlue {
     pub picker: Picker,
-    /// This instance's identity (streams tag their messages with it).
-    pub id: u64,
-    /// The current query generation — bumped per respawn (0020 §2).
-    pub gen: u64,
-    /// Sender stays alive for grep respawns (kill + respawn per keystroke).
-    tx: Option<Sender<PickerMsg>>,
-    rx: Option<Receiver<PickerMsg>>,
-    grep_worker: Option<GrepWorker>,
+    pub id: PickerId,
+    /// The request owning the stream: set at launch, cleared by its
+    /// terminal Finished event or by cancellation.
+    pub(crate) active: Option<Ticket<PickerKey>>,
+    /// Headless only: the active request's raw stream (the TUI gets a
+    /// ticket-stamping bridge at launch instead).
+    pub(crate) rx: Option<(Ticket<PickerKey>, Receiver<PickerMsg>)>,
+    pub(crate) worker: Option<PickerWorker>,
+    pub(crate) lsp_context: Option<strop_lsp::ReplyContext>,
+}
+
+impl PickerGlue {
+    /// A picker with no request yet: `Editor::set_picker` allocates the
+    /// instance identity before the glue is installed; Files/grep
+    /// requests are launched afterwards by `Editor::open_picker` and
+    /// `picker_input_changed`. (LSP location lists never launch one.)
+    pub fn diagnostics(picker: Picker) -> Self {
+        Self {
+            picker,
+            id: PickerId(WorkerId::new(0)), // replaced on install
+            active: None,
+            rx: None,
+            worker: None,
+            lsp_context: None,
+        }
+    }
+
+    /// Revoke the active request without touching the model: cancel
+    /// the worker (a queued terminal event is rejected later — it
+    /// cannot regain authority) and drop the raw stream.
+    fn revoke(&mut self, reason: CancelReason) {
+        self.rx = None;
+        if self.active.take().is_some() {
+            if let Some(worker) = self.worker.take() {
+                worker.cancel(reason);
+            }
+        }
+    }
 }
 
 impl Editor {
-    /// Assign a picker; a live stream forwards onto the app channel
-    /// when the TUI is connected (0018).
+    /// Install a picker: tears down any previous instance (revoking
+    /// its streams and previews) and allocates a fresh identity from
+    /// the worker id pool.
     pub(crate) fn set_picker(&mut self, mut glue: PickerGlue) {
-        glue.id = self.next_picker_id;
-        self.next_picker_id += 1;
+        self.cancel_pending();
+        self.close_picker();
+        let id = match self.worker_ids.allocate() {
+            Ok(id) => id,
+            Err(error) => {
+                self.message = error.message;
+                return;
+            }
+        };
+        glue.id = PickerId(id);
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
-                "service":"picker","id":glue.id,"generation":glue.gen,"streaming":glue.picker.streaming,
+                "service":"picker","id":id.get(),
+                "kind":glue.picker.kind.title().trim(),"streaming":glue.picker.streaming,
             })
         });
-        if let Some(tx) = &self.app_tx {
-            glue.forward_stream(tx);
-        }
         self.picker = Some(glue);
     }
 
     pub fn open_picker(&mut self, kind: Kind) {
-        let (tx, rx) = channel();
-        let mut tx = Some(tx);
-        let (items, streaming, rx) = match kind {
-            Kind::Buffers => {
-                // MRU-ordered (0003 §2): most-recent *other* buffer first,
-                // vim's alternate-file instinct.
-                let items = self
-                    .mru
-                    .iter()
-                    .map(|&i| {
-                        let name = self
-                            .doc(i)
-                            .buf
-                            .path
-                            .as_ref()
-                            .map(|p| p.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "[scratch]".into());
-                        Item {
-                            text: name,
-                            payload: Payload::Buffer(i),
-                        }
-                    })
-                    .collect();
-                (items, false, None)
-            }
-            Kind::Files => {
-                spawn_files(self.cwd.clone(), tx.take().expect("fresh channel"));
-                (vec![], true, Some(rx))
-            }
-            Kind::Grep | Kind::Replace => (vec![], false, Some(rx)),
+        let items = match kind {
+            Kind::Buffers => self
+                .mru
+                .iter()
+                .map(|&i| {
+                    let name = match self.doc(i).buf.path.as_ref() {
+                        Some(path) => path.to_string_lossy().into_owned(),
+                        None => "[scratch]".into(),
+                    };
+                    Item {
+                        text: name,
+                        payload: Payload::Buffer(i),
+                    }
+                })
+                .collect(),
+            // Grep/Replace stream only once input registers a request;
+            // Files launches its walk right after install.
+            Kind::Files | Kind::Grep | Kind::Replace => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
             }
         };
-        let picker = Picker::new(kind, items, streaming);
-        self.set_picker(PickerGlue {
-            id: 0,
-            gen: 0,
-            picker,
-            tx,
-            rx,
-            grep_worker: None,
-        });
+        self.set_picker(PickerGlue::diagnostics(Picker::new(kind, items, false)));
+        if kind == Kind::Files {
+            self.launch_files_request();
+        }
     }
 
+    /// The files walk as an owned request. Registration precedes
+    /// launch: the worker can only post onto its stream, and nothing
+    /// reaches the model until the ticket is the active owner. Replay
+    /// mode stops after registration (Main's service seam).
+    fn launch_files_request(&mut self) {
+        let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
+            return;
+        };
+        let request = match self.worker_ids.allocate() {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = error.message;
+                return;
+            }
+        };
+        let ticket = Ticket {
+            request,
+            key: PickerKey {
+                picker,
+                cwd: self.cwd.clone(),
+            },
+        };
+        if let Some(glue) = self.picker.as_mut() {
+            glue.active = Some(ticket.clone());
+            glue.picker.streaming = true;
+        }
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"picker","source":"files","id":picker.0.get(),
+                "request":request.get(),"cwd":self.cwd.to_string_lossy(),
+            })
+        });
+        match self
+            .tape
+            .request("picker-files", &serde_json::json!({"ticket":ticket}))
+        {
+            Ok(false) => return,
+            Ok(true) => {}
+            Err(error) => {
+                self.handle_picker_event(PickerEvent {
+                    ticket,
+                    msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
+                        strop_core::worker::FailureKind::Protocol,
+                        error.to_string(),
+                    )),
+                });
+                return;
+            }
+        }
+        let (tx, rx) = channel();
+        let worker = spawn_files(self.cwd.clone(), tx);
+        if let Some(glue) = self.picker.as_mut() {
+            glue.worker = Some(PickerWorker::Files(worker));
+        }
+        self.attach_picker_stream(ticket, rx);
+    }
+
+    /// Hand a launched request's stream to the app event loop (TUI) or
+    /// keep it for the headless drain.
+    fn attach_picker_stream(&mut self, ticket: Ticket<PickerKey>, rx: Receiver<PickerMsg>) {
+        let Some(app_tx) = self.app_tx.clone() else {
+            if let Some(glue) = self.picker.as_mut() {
+                glue.rx = Some((ticket, rx));
+            }
+            return;
+        };
+        if let Err(error) = drain::forward_picker_stream(rx, ticket.clone(), app_tx) {
+            // the bridge thread could not start: settle the request now
+            self.handle_picker_event(PickerEvent {
+                ticket,
+                msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
+                    strop_core::worker::FailureKind::ThreadStart,
+                    format!("picker bridge: {error}"),
+                )),
+            });
+        }
+    }
+
+    /// Connect-time: hand any already-registered headless stream to
+    /// the app channel (normally requests attach at launch).
+    pub(crate) fn connect_picker_stream(&mut self, tx: &Sender<AppEvent>) {
+        if let Some(glue) = &mut self.picker {
+            if let Some((ticket, rx)) = glue.rx.take() {
+                let _ = drain::forward_picker_stream(rx, ticket, tx.clone());
+            }
+        }
+    }
+
+    /// Close the picker: revoke its active request, stop its worker,
+    /// and cancel/forget the previews it owns (failed reads become
+    /// retryable on reopen; successful caches survive).
     pub fn close_picker(&mut self) {
-        self.picker = None;
+        let Some(mut glue) = self.picker.take() else {
+            return;
+        };
+        glue.revoke(CancelReason::OwnerClosed);
+        self.revoke_picker_previews(glue.id);
     }
 
     pub fn picker_open(&self) -> bool {
         self.picker.is_some()
     }
 
-    /// Keystrokes while a picker is open. The input line is insert-mode
-    /// semantics (0003 §1); nav is arrows / ctrl-n,p / tab.
+    /// Cancel/forget every preview this picker instance owns. Running
+    /// requests are cancelled; Failed/Cancelled loads and their blank
+    /// cache entries are removed so an explicit reopen retries; Ready
+    /// caches stay (a successful read is still a successful read).
+    fn revoke_picker_previews(&mut self, picker: PickerId) {
+        let mut cancelled = Vec::new();
+        let mut forgotten = Vec::new();
+        self.preview_loads.retain(|path, load| match load {
+            Load::Running(ticket) if ticket.key.picker == picker => {
+                cancelled.push(ticket.request);
+                false
+            }
+            Load::Failed { key, .. } | Load::Cancelled { key, .. } if key.picker == picker => {
+                forgotten.push(path.clone());
+                false
+            }
+            _ => true,
+        });
+        for request in cancelled {
+            if let Some(handle) = self.worker_handles.remove(&request) {
+                handle.cancel(CancelReason::OwnerClosed);
+            }
+        }
+        for path in forgotten {
+            self.previews.remove(&path);
+        }
+    }
+
     pub(crate) fn feed_picker(&mut self, key: Key) {
-        let Some(glue) = &mut self.picker else { return };
+        let Some(glue) = &mut self.picker else {
+            return;
+        };
         let replace = glue.picker.kind == Kind::Replace;
         match key {
             Key::Esc => {
-                // rootle's input boxes: Esc enters vim normal mode on the
-                // field; Esc again closes the picker
                 if glue.picker.input_normal() {
                     self.close_picker();
                 } else {
@@ -155,13 +315,12 @@ impl Editor {
             Key::Enter if replace => self.apply_replace(),
             Key::Enter => {
                 let payload = glue.picker.current().map(|i| i.payload.clone());
-                self.picker = None;
-                if let Some(p) = payload {
-                    self.accept_picker(p);
+                let context = glue.lsp_context;
+                self.close_picker();
+                if let Some(payload) = payload {
+                    self.accept_picker(payload, context);
                 }
             }
-            // 0007 §2: Tab cycles the two fields; results nav is
-            // arrows / ctrl-n,p while a field has focus
             Key::Tab | Key::Backtab if replace => glue.picker.toggle_field(),
             Key::CtrlX if replace => glue.picker.toggle_excluded(),
             Key::CtrlD if replace => glue.picker.toggle_file_excluded(),
@@ -169,7 +328,7 @@ impl Editor {
             Key::CtrlX | Key::CtrlO => {}
             Key::Backspace => {
                 if glue.picker.input_normal() {
-                    glue.picker.normal_key('h'); // vim: bs in normal = h
+                    glue.picker.normal_key('h');
                 } else if replace && glue.picker.field == strop_picker::Field::Replace {
                     glue.picker.pop_replace_char();
                 } else {
@@ -177,25 +336,19 @@ impl Editor {
                     self.picker_input_changed();
                 }
             }
-            Key::CtrlL => self.needs_repaint = true, // desync recovery
+            Key::CtrlL => self.needs_repaint = true,
             Key::CtrlR | Key::CtrlW => {}
             Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
             Key::Up => glue.picker.move_by(-1),
             Key::Down => glue.picker.move_by(1),
             Key::Tab => glue.picker.move_by(1),
             Key::Backtab => glue.picker.move_by(-1),
-            // arrows: Up/Down walk results, Left/Right move the caret
             Key::Left => glue.picker.caret_left(),
             Key::Right => glue.picker.caret_right(),
-            // picker normal mode (Esc): the field is one line, so h/l
-            // own the caret and j/k walk the results — the muscle
-            // memory you bring from the buffer
             Key::Char('j') if glue.picker.input_normal() => glue.picker.move_by(1),
             Key::Char('k') if glue.picker.input_normal() => glue.picker.move_by(-1),
             Key::Char(c) => {
                 if glue.picker.input_normal() {
-                    // modal editing on the field (0003 §1); x/X change
-                    // the text → respawn
                     if glue.picker.normal_key(c) {
                         self.picker_input_changed();
                     }
@@ -209,52 +362,80 @@ impl Editor {
         }
     }
 
+    /// Grep/Replace: every input change is a new owned request — the
+    /// previous one is superseded, its items/rows/exclusions cleared,
+    /// and a fresh ticket + worker launched. Other kinds just refilter.
     fn picker_input_changed(&mut self) {
-        let Some(glue) = &mut self.picker else { return };
-        if matches!(glue.picker.kind, Kind::Grep | Kind::Replace) {
-            // rg filters; kill + respawn per keystroke (worker is cheap).
-            // A fresh channel per respawn: the old worker's messages (incl.
-            // its trailing Done) fail to send on the dropped receiver, so
-            // stale generations can't race the new one.
-            let pattern = glue.picker.input.text.clone();
-            let cwd = self.cwd.clone();
-            glue.picker.error = None;
-            glue.grep_worker = None; // drop kills the old rg
-            glue.picker.items.clear();
-            glue.picker.rows.clear(); // stale item indices must never render
-            glue.picker.excluded.clear(); // item indices die with the respawn
-            let (tx, rx) = channel();
-            glue.tx = Some(tx.clone());
-            glue.rx = Some(rx);
-            glue.grep_worker = GrepWorker::spawn(&pattern, &cwd, tx);
-            glue.picker.streaming = glue.grep_worker.is_some();
-            glue.gen += 1;
-            strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-                serde_json::json!({
-                    "service":"picker","id":glue.id,"generation":glue.gen,"query":pattern,"streaming":glue.picker.streaming,
-                })
-            });
-            // the respawn's channel must reach the SAME event source as
-            // the initial stream (0020 §2 — 0.9.0 silently dropped it)
-            if let Some(app_tx) = &self.app_tx {
-                let (id, gen) = (glue.id, glue.gen);
-                let atx = app_tx.clone();
-                if let Some(rx) = glue.rx.take() {
-                    std::thread::spawn(move || {
-                        while let Ok(msg) = rx.recv() {
-                            if atx
-                                .send(super::events::AppEvent::Picker { id, gen, msg })
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    });
-                }
+        let (query, picker) = {
+            let Some(glue) = &mut self.picker else {
+                return;
+            };
+            if !matches!(glue.picker.kind, Kind::Grep | Kind::Replace) {
+                glue.picker.refilter();
+                return;
             }
-        } else {
-            glue.picker.refilter();
+            let query = glue.picker.input.text.clone();
+            let picker = glue.id;
+            glue.revoke(CancelReason::Superseded);
+            glue.picker.error = None;
+            glue.picker.items.clear();
+            glue.picker.rows.clear();
+            glue.picker.excluded.clear();
+            (query, picker)
+        };
+        let request = match self.worker_ids.allocate() {
+            Ok(request) => request,
+            Err(error) => {
+                // no identity: settle as not streaming; the next
+                // keystroke retries with a fresh allocation
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.picker.streaming = false;
+                }
+                self.message = error.message;
+                return;
+            }
+        };
+        let ticket = Ticket {
+            request,
+            key: PickerKey {
+                picker,
+                cwd: self.cwd.clone(),
+            },
+        };
+        // registration precedes launch (replay stops here)
+        if let Some(glue) = self.picker.as_mut() {
+            glue.active = Some(ticket.clone());
+            glue.picker.streaming = true;
         }
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"picker","source":"grep","id":picker.0.get(),
+                "request":request.get(),"query":query,"streaming":true,
+            })
+        });
+        match self.tape.request(
+            "picker-grep",
+            &serde_json::json!({"ticket":ticket,"query":query}),
+        ) {
+            Ok(false) => return,
+            Ok(true) => {}
+            Err(error) => {
+                self.handle_picker_event(PickerEvent {
+                    ticket,
+                    msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
+                        strop_core::worker::FailureKind::Protocol,
+                        error.to_string(),
+                    )),
+                });
+                return;
+            }
+        }
+        let (tx, rx) = channel();
+        let worker = GrepWorker::spawn(&query, &self.cwd, tx);
+        if let Some(glue) = self.picker.as_mut() {
+            glue.worker = Some(PickerWorker::Grep(worker));
+        }
+        self.attach_picker_stream(ticket, rx);
     }
 }
 
@@ -264,12 +445,11 @@ pub struct PreviewEntry {
 }
 
 pub enum PreviewSource<'a> {
-    /// Live document, highlighted with its own highlighter.
     Buffer(strop_core::id::DocumentId),
     Cached(&'a mut PreviewEntry),
-    /// Worker read still in flight (or unreadable); render shows a
-    /// placeholder, never blocks.
     Loading,
+    Failed(String),
+    Cancelled(CancelReason),
 }
 
 pub type Previews = HashMap<PathBuf, PreviewEntry>;

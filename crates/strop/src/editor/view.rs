@@ -97,11 +97,8 @@ impl Editor {
     /// dirty; a failed save keeps everything open).
     pub(crate) fn write_quit(&mut self) {
         if self.buf().dirty {
-            if let Err(e) = self.buf_mut().save(false) {
-                self.message = format!("write failed: {e}");
-                return;
-            }
-            crate::session::save(self);
+            self.request_save(None, false, true);
+            return;
         }
         self.close_pane_or_buffer(false);
     }
@@ -154,7 +151,7 @@ impl Editor {
         // g; starts at the newest change and walks older; g, back
         // newer. A new commit invalidates the walk (the idx is only
         // meaningful against the depth it was taken at).
-        let depth = self.buf().history.depth();
+        let depth = self.buf().history().depth();
         let idx = match self.change_idx.filter(|(_, d)| *d == depth) {
             None => {
                 if back {
@@ -182,6 +179,6 @@ impl Editor {
 
     /// Ancestor-chain change positions, newest first.
     fn change_positions(&self) -> Vec<usize> {
-        self.buf().history.change_positions()
+        self.buf().history().change_positions()
     }
 }

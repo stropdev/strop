@@ -8,7 +8,7 @@ fn closer_dedents_on_indent_only_line() {
     assert_eq!(e.buf().line_text(1), "    ");
     e.feed_text("}"); // closer on the indent-only line → dedent first
                       // the new line sits at col 0; the file's own closing brace is untouched
-    assert_eq!(e.buf().rope.to_string(), "fn f() {\n}\n}\n");
+    assert_eq!(e.buf().text().to_string(), "fn f() {\n}\n}\n");
 }
 
 #[test]

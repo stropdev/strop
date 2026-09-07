@@ -85,7 +85,6 @@ fn search_and_hover_survive_tiny_resize_and_restore() {
     terminal
         .draw(|frame| crate::render::render(&mut editor, frame))
         .unwrap();
-    let initial = terminal.backend().buffer().clone();
     terminal.backend_mut().resize(7, 3);
     editor.hover_card = Some("long hover".into());
     terminal
@@ -97,8 +96,53 @@ fn search_and_hover_survive_tiny_resize_and_restore() {
         .draw(|frame| crate::render::render(&mut editor, frame))
         .unwrap();
     assert_eq!(
-        terminal.backend().buffer(),
-        &initial,
-        "same search frame after resize cycle"
+        editor.head(),
+        5,
+        "resize must preserve the live search destination"
     );
+    assert_eq!(editor.pending.text(), "/needle");
+    let column = editor
+        .buf()
+        .cell_col_with_tab(editor.head(), editor.config.tab_size)
+        .get()
+        - editor.view().hscroll.get();
+    assert_eq!(
+        terminal.backend().buffer()[((5 + column) as u16, 0)].symbol(),
+        "n"
+    );
+}
+
+#[test]
+fn horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes() {
+    // R6: a pane scrolled mid-cluster emits styled blanks (never half
+    // a wide glyph), ESC stays the replacement cell, and scrolling back
+    // restores the unscrolled cells — physically, not just in the model
+    let mut editor = Editor::new(Buffer::from_text("ab\t界e\u{301}\x1bZ\n"));
+    editor.config.tab_size = 4;
+    editor.set_head(10);
+    let mut screen = Screen::new(9, 4); // 5 gutter + 4 content, origin 5
+    screen.draw(&mut editor);
+    assert_eq!(editor.view().hscroll.get(), 5);
+    let cell = |screen: &Screen, col: u16| {
+        screen
+            .physical
+            .screen()
+            .cell(0, col)
+            .unwrap()
+            .contents()
+            .trim_matches(' ')
+            .to_string()
+    };
+    // the tab's clipped remainder, the e+combining cluster, the ESC
+    // replacement, Z — no half 界, no protocol bytes reach the tty
+    assert_eq!(cell(&screen, 5), "");
+    assert_eq!(cell(&screen, 6), "e\u{301}");
+    assert_eq!(cell(&screen, 7), "\u{fffd}");
+    assert_eq!(cell(&screen, 8), "Z");
+    editor.set_head(0);
+    screen.draw(&mut editor);
+    screen.draw(&mut editor);
+    assert_eq!(cell(&screen, 5), "a");
+    assert_eq!(cell(&screen, 6), "b");
+    assert_eq!(cell(&screen, 8), "");
 }

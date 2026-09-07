@@ -4,21 +4,43 @@
 //! selections and scroll are per-pane (0014: the pane OWNS them — no
 //! sync_to/from_pane copy-back, the active pane's state is the editor's).
 
+use strop_core::id::DisplayColumn;
 use strop_core::selection::SelectionSet;
 
 use super::Editor;
 
 /// One pane: the document it shows plus its own view state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Pane {
     pub doc: strop_core::id::DocumentId,
     pub sels: SelectionSet,
     pub view_top: usize,
+    /// Horizontal display-cell origin (0031 R6): glyphs, overlays and
+    /// every caret project through this; fixed left margins never do.
+    pub hscroll: DisplayColumn,
+    /// Desired cell retained while vertical motions cross short/wide rows.
+    pub desired_column: Option<DisplayColumn>,
+}
+
+impl Pane {
+    /// Minimal horizontal scrolling: preserve the origin unless the
+    /// caret leaves it. `width` is CONTENT width — every fixed left
+    /// margin (sidebar, blame, number gutter) is excluded.
+    pub(crate) fn reveal_column(&mut self, column: DisplayColumn, width: usize) {
+        if width == 0 {
+            return;
+        }
+        if column < self.hscroll {
+            self.hscroll = column;
+        } else if column.get() - self.hscroll.get() >= width {
+            self.hscroll = DisplayColumn::new(column.get() - (width - 1));
+        }
+    }
 }
 
 /// v1 is a flat layout: Row = vertical splits side by side,
 /// Column = horizontal splits stacked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LayoutDir {
     Row,
     Column,
@@ -39,23 +61,29 @@ impl Editor {
     /// Split the active pane. `vertical` = `:vs` (new pane to the right).
     /// Without a path the pane shows the same document (the split point).
     pub(crate) fn split(&mut self, vertical: bool, path: Option<&str>) {
-        let view = self.view().clone();
-        // with a path: the NEW pane shows it — the old pane keeps its doc
-        let doc = if let Some(p) = path {
-            match self.open_document(std::path::Path::new(p)) {
-                Ok(id) => id,
-                Err(e) => {
-                    self.message = format!("open {p}: {e}");
-                    return;
-                }
-            }
+        if let Some(path) = path {
+            self.request_open(path.into(), super::io::OpenIntent::Split { vertical });
         } else {
-            view.doc
-        };
-        self.panes.push(Pane {
-            doc,
-            sels: view.sels,
-            view_top: view.view_top,
+            self.split_document(vertical, self.current());
+        }
+    }
+    pub(crate) fn split_document(&mut self, vertical: bool, doc: strop_core::id::DocumentId) {
+        // a text prompt belongs to the pane/document it was opened on:
+        // splitting away cancels it (R7) before any view state moves
+        self.cancel_pending();
+        let view = self.view().clone();
+        // a same-document split keeps the whole view (hscroll included);
+        // a different document starts from a zero origin
+        self.panes.push(if doc == view.doc {
+            view
+        } else {
+            Pane {
+                doc,
+                sels: SelectionSet::default(),
+                view_top: 0,
+                hscroll: DisplayColumn::new(0),
+                desired_column: None,
+            }
         });
         self.layout = if vertical {
             LayoutDir::Row
@@ -63,6 +91,7 @@ impl Editor {
             LayoutDir::Column
         };
         self.active_pane = self.panes.len() - 1;
+        self.focus_epoch += 1;
         self.discover_git();
         self.lsp_maybe_attach();
     }
@@ -70,8 +99,10 @@ impl Editor {
     /// `:q` closes the pane; the last pane's close is document close.
     pub(crate) fn close_pane_or_buffer(&mut self, force: bool) {
         if self.panes.len() > 1 {
+            self.cancel_pending();
             self.panes.remove(self.active_pane);
             self.active_pane = self.active_pane.min(self.panes.len() - 1);
+            self.focus_epoch += 1;
             // the surviving pane's document may differ from the closed
             // pane's — git discovery follows the view, no copy-back
             self.discover_git();
@@ -95,7 +126,11 @@ impl Editor {
             (_, 'w') => (self.active_pane + 1) % n,
             _ => return,
         };
+        if next != self.active_pane {
+            self.cancel_pending();
+        }
         self.active_pane = next; // state is already per-pane: no sync
+        self.focus_epoch += 1;
         self.discover_git();
         self.clamp_cursor();
     }
@@ -152,6 +187,7 @@ mod tests {
         std::fs::write(&b, "fn b() {}\n").unwrap();
         let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
         e.feed_text(&format!(":vs {}<cr>", b.display()));
+        e.wait_io().unwrap();
         assert_eq!(e.panes.len(), 2);
         assert_eq!(e.buf().path.as_deref(), Some(b.as_path()));
         e.feed(crate::editor::Key::CtrlW);

@@ -13,15 +13,17 @@ pub use source::{spawn_files, GrepWorker, PickerMsg};
 
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Payload {
     /// A file path relative to the working directory.
+    #[serde(with = "strop_core::path_serde")]
     File(PathBuf),
     /// An open document (stable generational id, 0014 wave 2).
     Buffer(strop_core::id::DocumentId),
     /// A grep hit: path, 1-based line, 1-based col, matched-span length
     /// in bytes, the matched line.
     Grep {
+        #[serde(with = "strop_core::path_serde")]
         path: PathBuf,
         line: usize,
         col: usize,
@@ -30,7 +32,7 @@ pub enum Payload {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Item {
     /// What the results list renders.
     pub text: String,

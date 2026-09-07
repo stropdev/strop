@@ -15,8 +15,9 @@ fn predictable_staging_symlink_cannot_redirect_a_save() {
         .join(format!(".strop-tmp-{}-private.txt", std::process::id()));
     symlink(&sentinel, &planted).unwrap();
     let mut buffer = Buffer::open(&file).unwrap();
-    buffer.insert(0, "changed ");
-    buffer.save(false).unwrap();
+    buffer.edit().insert(0, "changed ").unwrap();
+    let receipt = buffer.prepare_save(None, false).unwrap().execute().unwrap();
+    assert!(buffer.accept_save(receipt));
     assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "untouched");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "changed secret\n");
     assert!(!std::fs::symlink_metadata(&file)

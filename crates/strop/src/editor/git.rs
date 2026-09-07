@@ -1,21 +1,30 @@
-//! Git working surface (M2, hunk preview reworked 0010): hunks between
-//! HEAD and the live buffer, refreshed on edit epochs; hunk nav and the
-//! hunk verbs.
+//! Git working surface (M2, reworked 0010/R6/R9): hunks between HEAD
+//! and the live buffer, refreshed through owned worker requests; hunk
+//! nav and the hunk verbs. No native git work runs on the input or
+//! render path — discovery, diffs and index mutations are worker jobs
+//! with terminal, ticket-owned results.
 
+use strop_core::worker::{CancelReason, Load, Outcome};
 use strop_git::{Hunk, HunkKind, Repo, Sign};
 
-use super::git_memory::{GitJob, HunkOrigin};
+use super::git_memory::{
+    git_failure, repo_or_unavailable, ContextKey, GitJob, GitMutation, HunkData, HunkKey,
+    MutationKey, MutationKind, MutationOp,
+};
+use super::transact::ChangeSet;
 use super::Editor;
 
 /// What a hunk verb (`Space g u`/`g s`) targets from the current view.
 enum HunkTarget {
     /// Not on a hunk surface: act on the cursor's own buffer.
     NotASurface,
-    /// A hunk preview whose origin buffer still matches the epoch it
-    /// was captured at.
+    /// A hunk preview whose origin buffer still matches the revision
+    /// it was captured at.
     Fresh {
         buffer: strop_core::id::DocumentId,
         hunk: Hunk,
+        /// The origin buffer was untracked when captured: undo refuses.
+        untracked: bool,
     },
     /// The origin buffer changed since the preview opened — applying
     /// the stored region would cut the wrong lines.
@@ -23,77 +32,181 @@ enum HunkTarget {
 }
 
 impl Editor {
-    /// Discover the repo for the current buffer (once per buffer switch).
+    /// Discover the repository for the current buffer. Native work
+    /// runs on a worker (R6); the pure cached context lands through
+    /// `GitJob::Context` and invalidates the git view only when it
+    /// actually changed.
     pub(crate) fn discover_git(&mut self) {
+        if self.docs.is_empty() || self.finishing {
+            return;
+        }
+        self.git_discovery.retry_failed();
         let from = self
             .buf()
             .path
             .as_deref()
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| self.cwd.clone());
-        self.git = Repo::discover(&from);
-        self.hunks.clear();
-        self.hunks_epoch = u64::MAX;
-    }
-
-    /// Mark the gutter stale when the buffer changed; a worker owns the
-    /// diff (0021: render never computes one). Ropey clones share, so
-    /// the snapshot text costs a pointer bump, not a copy.
-    pub fn refresh_hunks(&mut self) {
-        let Some(repo) = &self.git else {
+        // one request per origin while running; a resolved (Ready)
+        // discovery is re-derivable, so explicit switches refresh it
+        if matches!(&self.git_discovery, Load::Running(current) if current.key.from == from) {
+            return;
+        }
+        let running = match &self.git_discovery {
+            Load::Running(current) => Some(current.request),
+            _ => None,
+        };
+        if let Some(request) = running {
+            self.cancel_git_worker(request, CancelReason::Superseded);
+        }
+        let Some(ticket) = self.git_ticket(ContextKey { from: from.clone() }) else {
             return;
         };
-        let epoch = self.buf().epoch;
-        if epoch == self.hunks_epoch {
-            return; // the snapshot is current
-        }
-        if self.hunks_in_flight {
-            return; // a worker covers it; completion re-checks staleness
-        }
-        let Some(path) = self.buf().path.clone() else {
-            self.hunks.clear();
-            self.staged_hunks.clear();
-            self.hunks_epoch = epoch;
-            return;
-        };
-        self.hunks_in_flight = true;
-        self.hunks_epoch = epoch;
-        // stale signs paint WRONG lines after an edit — clear honestly
-        // for the one frame the diff takes, never lie
-        self.hunks.clear();
-        self.staged_hunks.clear();
-        let workdir = repo.workdir().to_path_buf();
-        let doc = self.current();
-        let text = self.buf().rope.clone();
-        let tx = self.git_tx.clone();
+        self.git_discovery = Load::Running(ticket.clone());
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
-                "service":"git","request":"hunks","document":{"slot":doc.index(),"generation":doc.generation()},
-                "revision":epoch,"path":path.to_string_lossy(),
+                "service":"git","request":"discover","from":from.to_string_lossy(),
             })
         });
-        std::thread::spawn(move || {
-            let result = std::panic::catch_unwind(move || {
-                let text = text.to_string();
-                let repo = Repo::discover(&workdir);
-                let unstaged = repo
-                    .as_ref()
-                    .map(|r| r.unstaged_hunks(std::path::Path::new(&path), &text))
-                    .unwrap_or_default();
-                let staged = repo
-                    .map(|r| r.staged_hunks(std::path::Path::new(&path)))
-                    .unwrap_or_default();
-                (unstaged, staged)
-            });
-            if let Ok((unstaged, staged)) = result {
-                let _ = tx.send(GitJob::Hunks {
-                    doc,
-                    epoch,
+        let args = ticket.clone();
+        self.launch_git_job(
+            "git-discover",
+            "git.discover",
+            ticket,
+            &args,
+            GitJob::Context,
+            move |cancel| {
+                if cancel.is_cancelled() {
+                    return Outcome::Cancelled(CancelReason::Superseded);
+                }
+                Outcome::Success(Repo::discover(&from).map(|repo| repo.context()))
+            },
+        );
+    }
+
+    /// Register the next gutter diff. Render-safe (R6): pure checks and
+    /// registration only — the diff itself runs on a worker against an
+    /// immutable text snapshot.
+    pub fn refresh_hunks(&mut self) {
+        if self.docs.is_empty() || self.finishing {
+            return;
+        }
+        let Some(context) = self.git.clone() else {
+            return; // discovery pending (or honestly not a repo)
+        };
+        let doc = self.current();
+        let Some(document) = self.docs.get(doc) else {
+            return;
+        };
+        let revision = document.buf.revision();
+        let Some(path) = document.buf.path.clone() else {
+            // a scratch buffer has no git identity: no owner, no vectors
+            self.cancel_hunk_owner();
+            self.hunks.clear();
+            self.staged_hunks.clear();
+            self.hunks_untracked = false;
+            return;
+        };
+        let workdir = context.workdir().to_path_buf();
+        let key = HunkKey {
+            document: doc,
+            revision,
+            path: path.clone(),
+            workdir: workdir.clone(),
+            git_view: self.git_view,
+        };
+        if self.hunk_load.covers(&key) {
+            return; // running for this key, or a settled snapshot for it
+        }
+        let snapshot = document.buf.snapshot();
+        // a different key supersedes the old owner synchronously; its
+        // late result is rejected by ticket
+        self.cancel_hunk_owner();
+        let Some(ticket) = self.git_ticket(key) else {
+            return;
+        };
+        self.hunk_load = Load::Running(ticket.clone());
+        // stale signs paint WRONG lines after an edit — clear honestly
+        // for the frames the diff takes, never lie
+        self.hunks.clear();
+        self.staged_hunks.clear();
+        self.hunks_untracked = false;
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"git","request":"hunks",
+                "document":{"slot":doc.index(),"generation":doc.generation()},
+                "revision":revision.get(),"path":path.to_string_lossy(),
+            })
+        });
+        let args = ticket.clone();
+        self.launch_git_job(
+            "git-hunks",
+            "git.hunks",
+            ticket,
+            &args,
+            GitJob::Hunks,
+            move |cancel| {
+                if cancel.is_cancelled() {
+                    return Outcome::Cancelled(CancelReason::Superseded);
+                }
+                let text = snapshot.to_string();
+                let repo = match repo_or_unavailable(&workdir) {
+                    Ok(repo) => repo,
+                    Err(failure) => {
+                        return Outcome::Failed {
+                            failure,
+                            partial: None,
+                        }
+                    }
+                };
+                let unstaged = match repo.unstaged_hunks(&path, &text) {
+                    Ok(hunks) => hunks,
+                    Err(error) => {
+                        return Outcome::Failed {
+                            failure: git_failure("diff index↔buffer", error),
+                            partial: None,
+                        }
+                    }
+                };
+                let staged = match repo.staged_hunks(&path) {
+                    Ok(hunks) => hunks,
+                    Err(error) => {
+                        return Outcome::Failed {
+                            failure: git_failure("diff HEAD↔index", error),
+                            partial: None,
+                        }
+                    }
+                };
+                let untracked = match repo.is_untracked(&path) {
+                    Ok(untracked) => untracked,
+                    Err(error) => {
+                        return Outcome::Failed {
+                            failure: git_failure("index lookup", error),
+                            partial: None,
+                        }
+                    }
+                };
+                Outcome::Success(HunkData {
                     unstaged,
                     staged,
-                });
-            }
-        });
+                    untracked,
+                })
+            },
+        );
+    }
+
+    /// Revoke the running hunk owner (if any) and return to Idle. The
+    /// worker's late result — success, failure or the synthetic
+    /// `Cancelled` — is rejected: it no longer owns the view.
+    fn cancel_hunk_owner(&mut self) {
+        let running = match &self.hunk_load {
+            Load::Running(ticket) => Some(ticket.request),
+            _ => None,
+        };
+        if let Some(request) = running {
+            self.cancel_git_worker(request, CancelReason::Superseded);
+        }
+        self.hunk_load = Load::Idle;
     }
 
     /// Gutter sign for a 1-based buffer line: `+` add, `~` change,
@@ -135,8 +248,10 @@ impl Editor {
         })
     }
 
-    /// `]c` / `[c`: jump to the next/previous changed line.
+    /// `]c` / `[c`: jump to the next/previous changed line. An explicit
+    /// command retries a previously failed diff; render never does.
     pub(crate) fn jump_hunk(&mut self, forward: bool) {
+        self.hunk_load.retry_failed();
         self.refresh_hunks();
         let cur = self.buf().line_of(self.head()) + 1;
         let total = self.buf().len_lines();
@@ -164,6 +279,7 @@ impl Editor {
 
     /// The hunk under the cursor, if any.
     fn hunk_under_cursor(&mut self) -> Option<Hunk> {
+        self.hunk_load.retry_failed();
         self.refresh_hunks();
         let line = self.buf().line_of(self.head()) + 1;
         let total = self.buf().len_lines();
@@ -171,23 +287,19 @@ impl Editor {
     }
 
     /// Apply `hunk`'s reverse to buffer `idx`: pure deletions reinsert,
-    /// pure additions drop, changes swap old content back. Returns
-    /// false when the buffer has no HEAD content to restore from.
-    fn restore_hunk_in(&mut self, idx: strop_core::id::DocumentId, hunk: &Hunk) -> bool {
-        let Some(path) = self.doc(idx).buf.path.clone() else {
-            return false;
-        };
-        let Some(repo) = &self.git else { return false };
-        // undo's edge is live/worktree ← index (discard UNSTAGED); with
-        // nothing staged the index IS HEAD (0014 wave 4)
-        let Some(head) = repo
-            .index_content(std::path::Path::new(&path))
-            .or_else(|| repo.head_content(std::path::Path::new(&path)))
-        else {
-            return false;
-        };
-        let _ = &head; // existence gate above; content comes from the hunk
-        let (new_first, new_count, _old_first, old_count) = hunk.changed_region();
+    /// pure additions drop, changes swap old content back — one
+    /// pre-edit Replacement through the gateway. `untracked` names an
+    /// origin with no HEAD content to restore from.
+    fn restore_hunk_in(
+        &mut self,
+        idx: strop_core::id::DocumentId,
+        hunk: &Hunk,
+        untracked: bool,
+    ) -> bool {
+        if self.doc(idx).buf.path.is_none() || untracked {
+            return false; // nothing in HEAD to restore from
+        }
+        let new_first = hunk.changed_region().0;
         // byte-precise restore text (0020 §7): the hunk's own old-side
         // lines carry CRLF and missing-final-newline exactly — the
         // str::lines + LF join it replaces could not
@@ -200,70 +312,58 @@ impl Editor {
             {
                 bytes.extend_from_slice(&l.bytes_with_terminator());
             }
-            String::from_utf8_lossy(&bytes).into_owned()
+            match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(error) => {
+                    self.message = format!("hunk contains non-UTF-8 text: {error}");
+                    return false;
+                }
+            }
         };
 
-        // one validated changeset through the gateway (0024) — the
-        // base-epoch check refuses a drifted hunk
-        let base = self.doc(idx).buf.epoch;
-        let doc_lines = self.doc(idx).buf.len_lines();
-        let cs = if new_count == 0 {
-            // pure deletion: reinsert the old lines at the gap
-            let (at, text) = if new_first > doc_lines {
-                (self.doc(idx).buf.len_bytes(), format!("\n{old}"))
-            } else {
-                (
-                    self.doc(idx).buf.line_start(new_first.saturating_sub(1)),
-                    format!("{old}\n"),
-                )
-            };
-            super::transact::ChangeSet {
-                edits: vec![strop_core::history::Edit {
-                    at,
-                    text,
-                    kind: strop_core::history::EditKind::Insert,
-                }],
-                undo_open: false,
-            }
+        // one validated replacement through the gateway (0024) — the
+        // base-revision check refuses a drifted hunk
+        let base = self.doc(idx).buf.revision();
+        // Header extents include context; the restored old side includes the
+        // same context. Mixing changed-only bounds with full text duplicates it.
+        let first = if hunk.new_count == 0 {
+            hunk.new_start
         } else {
-            let start = self.doc(idx).buf.line_start(new_first - 1);
-            let end = if old_count == 0 {
-                // pure addition: drop the added lines
-                let last = (new_first - 1 + new_count).min(doc_lines);
-                if last >= doc_lines {
-                    self.doc(idx).buf.len_bytes()
-                } else {
-                    self.doc(idx).buf.line_start(last)
-                }
-            } else {
-                self.doc(idx)
-                    .buf
-                    .line_end((new_first - 1 + new_count - 1).min(doc_lines - 1))
-            };
-            let current_text = self.doc(idx).buf.rope.byte_slice(start..end).to_string();
-            let mut edits = vec![strop_core::history::Edit {
-                at: start,
-                text: current_text,
-                kind: strop_core::history::EditKind::Delete,
-            }];
-            if old_count > 0 {
-                edits.push(strop_core::history::Edit {
-                    at: start,
-                    text: old.clone(),
-                    kind: strop_core::history::EditKind::Insert,
-                });
-            }
-            super::transact::ChangeSet {
-                edits,
-                undo_open: false,
-            }
+            hunk.new_start.saturating_sub(1)
         };
-        if self.apply(idx, base, cs).is_err() {
-            self.message = "buffer changed — reopen the hunk preview".into();
+        let start = self
+            .doc(idx)
+            .buf
+            .line_start(first)
+            .min(self.doc(idx).buf.len_bytes());
+        let end = if hunk.new_count == 0 {
+            start
+        } else {
+            self.doc(idx)
+                .buf
+                .line_start(first.saturating_add(hunk.new_count))
+                .min(self.doc(idx).buf.len_bytes())
+        };
+        let replacement =
+            strop_core::Replacement::new(strop_core::Range::charwise(start, end), old);
+        if let Err(error) = self.apply(
+            idx,
+            base,
+            ChangeSet {
+                edits: vec![replacement],
+                undo_open: false,
+            },
+        ) {
+            self.message = match error {
+                super::transact::ApplyError::Edit(strop_core::EditError::StaleRevision {
+                    ..
+                }) => "buffer changed — reopen the hunk preview".into(),
+                other => format!("hunk reset failed: {other}"),
+            };
             return false;
         }
-        // cursor placement (was interleaved with the edit): the target's
-        // own pane moves to the restored region
+        // cursor placement: the target's own pane moves to the
+        // restored region
         let land = self
             .doc(idx)
             .buf
@@ -275,21 +375,6 @@ impl Editor {
         } else if let Some(pane) = self.panes.iter_mut().find(|p| p.doc == idx) {
             pane.sels.collapse_primary(land);
         }
-
-        // the cursor field belongs to the driven pane; only the origin
-        // buffer's own view moves when it is current
-        if self.current() == idx {
-            self.clamp_cursor();
-            self.flash(strop_core::Range::charwise(self.head(), self.head()));
-        } else {
-            let at = {
-                let buf = &self.doc(idx).buf;
-                buf.line_start(buf.len_lines().saturating_sub(1))
-            };
-            if let Some(pane) = self.panes.iter_mut().find(|p| p.doc == idx) {
-                pane.sels.collapse_primary(at);
-            }
-        }
         true
     }
 
@@ -297,8 +382,12 @@ impl Editor {
     /// surface it restores the origin buffer's hunk (0010 §2).
     pub(crate) fn undo_hunk(&mut self) {
         match self.hunk_surface_target() {
-            HunkTarget::Fresh { buffer, hunk } => {
-                if self.restore_hunk_in(buffer, &hunk) {
+            HunkTarget::Fresh {
+                buffer,
+                hunk,
+                untracked,
+            } => {
+                if self.restore_hunk_in(buffer, &hunk, untracked) {
                     self.message = "hunk reset".into();
                 }
             }
@@ -308,18 +397,20 @@ impl Editor {
                     self.message = "no hunk here".into();
                     return;
                 };
-                if self.restore_hunk_in(self.current(), &hunk) {
+                let untracked = self.hunks_untracked;
+                if self.restore_hunk_in(self.current(), &hunk, untracked) {
                     self.message = "hunk reset".into();
                 }
             }
         }
     }
 
-    /// `Space g s`: stage a hunk (git apply --cached). From the hunk
-    /// surface it stages the origin buffer's hunk.
+    /// `Space g s`: stage a hunk (index ← worktree edge). The index
+    /// write runs on a worker, serialized FIFO with every other
+    /// mutation — the input path only validates and queues.
     pub(crate) fn stage_hunk(&mut self) {
         match self.hunk_surface_target() {
-            HunkTarget::Fresh { buffer, hunk } => self.stage_hunk_in(buffer, &hunk),
+            HunkTarget::Fresh { buffer, hunk, .. } => self.stage_hunk_in(buffer, &hunk),
             HunkTarget::Stale => self.message = "buffer changed — reopen the hunk preview".into(),
             HunkTarget::NotASurface => {
                 let Some(hunk) = self.hunk_under_cursor() else {
@@ -342,26 +433,34 @@ impl Editor {
             self.message = "unsaved changes — :w first, then stage".into();
             return;
         }
-        let Some(repo) = &self.git else { return };
+        let Some(context) = self.git.clone() else {
+            self.message = "not a git repo".into();
+            return;
+        };
         let Ok(rel) = std::path::Path::new(&path)
-            .strip_prefix(repo.workdir())
+            .strip_prefix(context.workdir())
             .map(|p| p.to_path_buf())
         else {
             self.message = "buffer not under workdir".into();
             return;
         };
-        match repo.stage_hunk(&rel, hunk) {
-            Ok(()) => {
-                self.hunks_epoch = u64::MAX;
-                self.message = "hunk staged".into();
-            }
-            Err(e) => self.message = format!("stage failed: {e}"),
-        }
+        let key = MutationKey {
+            document: idx,
+            revision: self.doc(idx).buf.revision(),
+            kind: MutationKind::Stage,
+            rel,
+            workdir: context.workdir().to_path_buf(),
+            git_view: self.git_view,
+        };
+        self.git_mutations.push_back(GitMutation {
+            key,
+            op: MutationOp::Stage { hunk: hunk.clone() },
+        });
+        self.pump_git_mutations();
     }
 
-    /// `Space g S`: unstage the hunk under the cursor — the
-    /// index→HEAD edge. Needs a staged hunk under the cursor (the
-    /// staged set's lines are index-numbered; find its hunk by line).
+    /// `Space g S`: unstage the hunk under the cursor — the index→HEAD
+    /// edge. Queued like staging; the index write never blocks input.
     pub(crate) fn unstage_hunk(&mut self) {
         if self.buf().dirty {
             self.message = "unsaved changes — :w first".into();
@@ -380,21 +479,30 @@ impl Editor {
         let Some(path) = self.buf().path.clone() else {
             return;
         };
-        let Some(repo) = &self.git else { return };
+        let Some(context) = self.git.clone() else {
+            self.message = "not a git repo".into();
+            return;
+        };
         let Ok(rel) = std::path::Path::new(&path)
-            .strip_prefix(repo.workdir())
+            .strip_prefix(context.workdir())
             .map(|p| p.to_path_buf())
         else {
             self.message = "buffer not under workdir".into();
             return;
         };
-        match repo.unstage_hunk(&rel, &hunk) {
-            Ok(()) => {
-                self.hunks_epoch = u64::MAX;
-                self.message = "hunk unstaged".into();
-            }
-            Err(e) => self.message = format!("unstage failed: {e}"),
-        }
+        let key = MutationKey {
+            document: self.current(),
+            revision: self.buf().revision(),
+            kind: MutationKind::Unstage,
+            rel,
+            workdir: context.workdir().to_path_buf(),
+            git_view: self.git_view,
+        };
+        self.git_mutations.push_back(GitMutation {
+            key,
+            op: MutationOp::Unstage { hunk },
+        });
+        self.pump_git_mutations();
     }
 
     /// `Space g p`: preview the hunk under the cursor as a diff surface
@@ -405,9 +513,10 @@ impl Editor {
             self.message = "no hunk here".into();
             return;
         };
-        let origin = HunkOrigin {
+        let origin = super::git_memory::HunkOrigin {
             buffer: self.current(),
-            epoch: self.cur().buf.epoch,
+            revision: self.cur().buf.revision(),
+            untracked: self.hunks_untracked,
         };
         self.open_diff_surface("hunk", "hunk", vec![hunk], Some(origin));
     }
@@ -426,259 +535,15 @@ impl Editor {
             return HunkTarget::NotASurface;
         };
         match self.docs.get(origin.buffer) {
-            Some(d) if d.buf.epoch == origin.epoch => HunkTarget::Fresh {
+            Some(d) if d.buf.revision() == origin.revision => HunkTarget::Fresh {
                 buffer: origin.buffer,
                 hunk: hunk.clone(),
+                untracked: origin.untracked,
             },
             _ => HunkTarget::Stale,
-        }
-    }
-
-    pub(crate) fn feed_git_pending(&mut self, c: char) {
-        self.pending.clear();
-        match c {
-            'u' => self.undo_hunk(),
-            's' => self.stage_hunk(),
-            // unstage: the index→HEAD edge (0014 wave 4 names edges)
-            'S' => self.unstage_hunk(),
-            'p' => self.preview_hunk(),
-            'l' => self.open_log(false),
-            'h' => self.open_log(true),
-            'b' => self.toggle_blame_gutter(),
-            'y' => self.yank_permalink(),
-            'o' => self.open_permalink(),
-            _ => {
-                self.message =
-                    "Space g: l log · h file history · b blame · y/o permalink · u/s/p hunk".into()
-            }
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    /// The gutter is async now (0021): refresh enqueues, then pump the
-    /// job to completion like the event loop would.
-    fn pump_hunks(e: &mut Editor) {
-        e.refresh_hunks();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        loop {
-            e.drain_git_jobs();
-            if !e.hunks_in_flight || std::time::Instant::now() > deadline {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        e.refresh_hunks(); // a stale drop re-enqueues; pump once more
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        loop {
-            e.drain_git_jobs();
-            if !e.hunks_in_flight || std::time::Instant::now() > deadline {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-    }
-
-    use std::process::Command;
-
-    use super::*;
-    use crate::editor::Key;
-    use crate::editor::Surface;
-    use strop_core::Buffer;
-
-    /// A git repo with one committed file, edited in-memory.
-    fn fixture() -> (tempfile::TempDir, Editor) {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        for args in [
-            vec!["init", "-q"],
-            vec!["config", "user.email", "t@t.t"],
-            vec!["config", "user.name", "t"],
-        ] {
-            Command::new("git")
-                .args(&args)
-                .current_dir(root)
-                .output()
-                .unwrap();
-        }
-        std::fs::write(root.join("f.rs"), "fn a() {}\nfn b() {}\n").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(root)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-qm", "init"])
-            .current_dir(root)
-            .output()
-            .unwrap();
-        let mut e = Editor::new(Buffer::open(root.join("f.rs").to_str().unwrap()).unwrap());
-        e.discover_git();
-        (dir, e)
-    }
-
-    #[test]
-    fn gutter_tracks_live_edits() {
-        let (_d, mut e) = fixture();
-        pump_hunks(&mut e);
-        assert_eq!(e.sign_at(1), None, "clean buffer has no signs");
-        e.feed_text("G");
-        e.feed_text("ofn c() {}");
-        e.feed_text("<esc>");
-        pump_hunks(&mut e);
-        assert_eq!(e.sign_at(3), Some('+'), "added line signs +");
-        assert_eq!(e.sign_at(1), None);
-    }
-
-    #[test]
-    fn hunk_nav_and_undo() {
-        let (_d, mut e) = fixture();
-        e.feed_text("Go");
-        e.feed_text("fn c() {}");
-        e.feed_text("<esc>");
-        e.feed_text("gg");
-        pump_hunks(&mut e);
-        e.jump_hunk(true);
-        assert_eq!(e.buf().line_of(e.head()) + 1, 3, "]c lands on the hunk");
-        e.undo_hunk();
-        assert_eq!(e.buf().rope.to_string(), "fn a() {}\nfn b() {}\n");
-    }
-
-    #[test]
-    fn space_g_namespace_dispatches() {
-        let (_d, mut e) = fixture();
-        e.feed_text("G");
-        e.feed_text("o");
-        for c in "fn new() {}".chars() {
-            e.feed(Key::Char(c));
-        }
-        e.feed(Key::Esc);
-        pump_hunks(&mut e);
-        e.feed_text(" gp"); // Space, g, p
-        assert!(
-            matches!(e.surface(), Some(Surface::Diff { .. })),
-            "Space g p opens the hunk surface (buffer: {})",
-            e.buf().rope
-        );
-    }
-
-    /// The hunk surface is a real readonly buffer you can move in, and
-    /// ` g u` from it restores the origin buffer (0010 §2).
-    #[test]
-    fn hunk_surface_moves_and_undoes() {
-        let (_d, mut e) = fixture();
-        e.feed_text("Go");
-        e.feed_text("fn c() {}");
-        e.feed_text("<esc>");
-        pump_hunks(&mut e);
-        e.feed_text("]c"); // like the tape: jump onto the hunk first
-        e.feed_text(" gp");
-        assert!(e.buf().readonly);
-        assert!(e.buf().rope.to_string().contains("fn c() {}"));
-        // motions work on the hunk surface
-        e.feed_text("j");
-        e.feed_text("j");
-        assert_eq!(e.buf().line_of(e.head()), 2);
-        // undo acts on the origin file buffer, not the surface
-        e.feed_text(" gu");
-        let text = e.doc(e.first_doc()).buf.rope.to_string();
-        assert_eq!(text, "fn a() {}\nfn b() {}\n", "hunk restored: {text}");
-        e.feed_text("q");
-        assert_eq!(e.current(), e.first_doc());
-    }
-
-    /// 0014 P0: staging must never silently write unrelated unsaved
-    /// edits — a dirty buffer refuses with a pointer to :w.
-    #[test]
-    fn stage_refuses_a_dirty_buffer() {
-        let (d, mut e) = fixture();
-        e.feed_text("Go");
-        e.feed_text("fn c() {}");
-        e.feed_text("<esc>gg");
-        pump_hunks(&mut e);
-        e.feed_text("]c");
-        e.feed_text(" gs");
-        assert!(
-            e.message.contains(":w first"),
-            "dirty stage refuses: {}",
-            e.message
-        );
-        let staged = Command::new("git")
-            .args(["diff", "--cached", "--stat"])
-            .current_dir(d.path())
-            .output()
-            .unwrap();
-        assert!(
-            staged.stdout.is_empty(),
-            "nothing reached the index: {}",
-            String::from_utf8_lossy(&staged.stdout)
-        );
-        // after an explicit save, staging works
-        e.feed_text(":w\r");
-        e.feed_text(" gs");
-        assert!(e.message.contains("staged"), "{}", e.message);
-    }
-
-    /// A stale preview refuses honestly: edits after opening it change
-    /// the epoch, and applying the stored region would cut wrong.
-    #[test]
-    fn stale_hunk_surface_refuses() {
-        let (_d, mut e) = fixture();
-        e.feed_text("Go");
-        e.feed_text("fn c() {}");
-        e.feed_text("<esc>");
-        pump_hunks(&mut e);
-        e.feed_text("gg]c gp");
-        // edit the origin document: the epoch moves, the preview goes stale
-        // (the active pane's document IS the current one — the surface —
-        // so point a second pane at the file for the cursor-keep branch)
-        e.panes.push(crate::editor::Pane {
-            doc: e.first_doc(),
-            sels: strop_core::selection::SelectionSet::default(),
-            view_top: 0,
-        });
-        pump_hunks(&mut e);
-        e.doc_mut(e.first_doc()).buf.insert(0, "// touched\n");
-        e.feed_text(" gu");
-        assert!(
-            e.message.contains("buffer changed"),
-            "stale preview must refuse: {}",
-            e.message
-        );
-    }
-
-    /// 0014 wave 4: the full edge dance by keys — edit, save, stage,
-    /// unstage; the index is the witness.
-    #[test]
-    fn stage_and_unstage_name_their_edges() {
-        let (d, mut e) = fixture();
-        e.feed_text("Gofn c() {}");
-        e.feed_text("<esc>");
-        e.feed_text(":w\r");
-        pump_hunks(&mut e);
-        e.feed_text("]c gs");
-        assert!(e.message.contains("staged"), "{}", e.message);
-        let staged = Command::new("git")
-            .args(["diff", "--cached", "--stat"])
-            .current_dir(d.path())
-            .output()
-            .unwrap();
-        assert!(!staged.stdout.is_empty(), "hunk in the index");
-        // staged set drives the gutter's committed-adjacent tint
-        pump_hunks(&mut e);
-        assert!(e.sign_at_staged(3), "staged line marked");
-        assert!(e.sign_at(3).is_none(), "not also unstaged");
-        e.feed_text(" gS");
-        assert!(e.message.contains("unstaged"), "{}", e.message);
-        let staged = Command::new("git")
-            .args(["diff", "--cached", "--stat"])
-            .current_dir(d.path())
-            .output()
-            .unwrap();
-        assert!(staged.stdout.is_empty(), "index back to HEAD");
-        // and now the same line reads as unstaged again
-        pump_hunks(&mut e);
-        assert_eq!(e.sign_at(3), Some('+'));
-    }
-}
+mod tests;

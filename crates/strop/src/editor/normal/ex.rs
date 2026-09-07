@@ -2,10 +2,12 @@
 
 use crate::editor::Editor;
 
+use crate::editor::Register;
+
 impl Editor {
     /// Ex-completion candidates for the pending prefix (name, doc).
     pub(crate) fn ex_candidates(&self) -> Vec<(&'static str, &'static str)> {
-        let Some(prefix) = self.pending.strip_prefix(':') else {
+        let Some(prefix) = self.pending.text().strip_prefix(':') else {
             return Vec::new();
         };
         if prefix.contains(' ') {
@@ -24,12 +26,14 @@ impl Editor {
         if cands.is_empty() {
             return;
         }
-        let prefix = self.pending.strip_prefix(':').unwrap_or("");
+        let prefix = self.pending.text().strip_prefix(':').unwrap_or("");
         let next = cands
             .iter()
             .position(|(name, _)| *name == prefix)
             .map_or(cands[0].0, |i| cands[(i + 1) % cands.len()].0);
-        self.pending = format!(":{next}");
+        self.feed_pending_event(crate::editor::pending::PendingEvent::CompleteEx(
+            next.to_owned(),
+        ));
     }
 
     /// Parse a leading ex range: `%`, `.`, `$`, `N`, `N,M`, with
@@ -138,8 +142,8 @@ impl Editor {
                 } else {
                     self.buf().len_bytes()
                 };
-                let text = self.buf().rope.byte_slice(s..e).to_string();
-                self.set_register(None, text, true);
+                let text = self.buf().text().byte_slice(s..e).to_string();
+                self.set_register(None, Register::linewise(text));
                 self.tx_begin();
                 self.buf_mut().delete(strop_core::Range::charwise(s, e));
                 self.tx_commit();
@@ -154,8 +158,8 @@ impl Editor {
                 } else {
                     self.buf().len_bytes()
                 };
-                let text = self.buf().rope.byte_slice(s..e).to_string();
-                self.set_register(None, text, true);
+                let text = self.buf().text().byte_slice(s..e).to_string();
+                self.set_register(None, Register::linewise(text));
                 self.message = format!("{} lines yanked", hi - lo + 1);
             }
             _ if rest.starts_with("s/") => self.substitute_range(lo, hi, &rest[2..]),
@@ -178,7 +182,7 @@ impl Editor {
         }
         let s0 = self.buf().line_start(lo);
         let e0 = self.buf().line_end(hi);
-        let text = self.buf().rope.byte_slice(s0..e0).to_string();
+        let text = self.buf().text().byte_slice(s0..e0).to_string();
         let mut out = String::with_capacity(text.len());
         let mut hits = 0usize;
         for (i, line) in text.split('\n').enumerate() {
@@ -204,7 +208,7 @@ impl Editor {
         }
         self.tx_begin();
         {
-            let b = self.buf_mut();
+            let mut b = self.buf_mut();
             b.delete(strop_core::Range::charwise(s0, e0));
             b.insert(s0, &out);
         }
@@ -216,21 +220,15 @@ impl Editor {
         self.message = format!("{hits} substitution{}", if hits == 1 { "" } else { "s" });
     }
 
-    pub(crate) fn run_ex(&mut self) {
-        let cmdline = self
-            .pending
-            .trim_start_matches(':')
-            .trim_end_matches('\r')
-            .to_string();
-        self.pending.clear();
+    pub(crate) fn run_ex(&mut self, cmdline: &str) {
         // vim ex ranges: [%, N, N.M, ., $, +/-offsets] prefix the
         // command. Bare :N is goto-line.
-        let (range, rest) = self.parse_ex_range(&cmdline);
-        if let Some((_, _)) = range {
-            self.run_ranged_ex(range.unwrap(), rest);
+        let (range, rest) = self.parse_ex_range(cmdline);
+        if let Some(range) = range {
+            self.run_ranged_ex(range, rest);
             return;
         }
-        let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline.as_str(), ""));
+        let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline, ""));
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
             "w" | "w!" => {
@@ -241,32 +239,10 @@ impl Editor {
                     self.message = format!("{name}: readonly — :w! to force");
                     return;
                 }
-                // vim: :w {file} writes under a new name and adopts it
-                let r = if arg.is_empty() {
-                    self.buf_mut().save(cmd == "w!")
-                } else {
-                    self.buf_mut().save_as(arg, cmd == "w!")
-                };
-                match r {
-                    Ok(()) => {
-                        crate::session::save(self);
-                        self.message = "written".into();
-                    }
-                    Err(e) => self.message = format!("write failed: {e}"),
-                }
+                self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "w!", false);
             }
             "wq" | "wq!" => {
-                // a failed save keeps the buffer open and dirty — never
-                // close into data loss (0014 wave 1)
-                match self.buf_mut().save(cmd == "wq!") {
-                    Ok(()) => {
-                        crate::session::save(self);
-                        // vim: :wq closes the WINDOW like :q — the shared
-                        // document lives on in other panes (0015)
-                        self.close_pane_or_buffer(false);
-                    }
-                    Err(e) => self.message = format!("write failed: {e}"),
-                }
+                self.request_save(None, cmd == "wq!", true);
             }
             "set" => {
                 // vim's option surface, narrowly: ro/noro only for now
@@ -288,10 +264,11 @@ impl Editor {
                 if arg.is_empty() {
                     self.buf_mut().readonly = true;
                     self.message = "readonly".into();
-                } else if let Err(e) = self.open_buffer(std::path::Path::new(arg)) {
-                    self.message = format!("view {arg}: {e}");
                 } else {
-                    self.buf_mut().readonly = true;
+                    self.request_open(
+                        arg.into(),
+                        super::super::io::OpenIntent::Switch { readonly: true },
+                    );
                 }
             }
             "q" => {
@@ -305,15 +282,7 @@ impl Editor {
                 let line = self.buf().line_of(self.head());
                 self.substitute_range(line, line, &cmdline[2..]);
             }
-            "trust" => {
-                // 0020 §15: allow this project's executable server
-                // config, once, remembered
-                let probe = self.cwd.join("x");
-                let root = strop_lsp::registry::workspace_root(&probe, &self.cwd);
-                crate::session::trust(self.state_dir.as_deref(), &root);
-                self.message = format!("trusted {}", root.display());
-                self.lsp_maybe_attach();
-            }
+            "trust" => self.request_trust(),
             "noh" => {
                 // nohlsearch: the persistent highlight drops (0001 §5.8)
                 self.last_search = None;
@@ -338,8 +307,11 @@ impl Editor {
                     self.message = ":e needs a path".into();
                 } else if self.buf().dirty && cmd == "e" {
                     self.message = "unsaved changes — :e! to force".into();
-                } else if let Err(e) = self.open_buffer(std::path::Path::new(arg)) {
-                    self.message = format!("open {arg}: {e}");
+                } else {
+                    self.request_open(
+                        arg.into(),
+                        super::super::io::OpenIntent::Switch { readonly: false },
+                    );
                 }
             }
             other => self.message = format!("unknown ex: :{other}"),

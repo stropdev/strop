@@ -1,4 +1,6 @@
-//! normal/search.rs — search: / ? * # n N and find candidates.
+//! normal/search.rs — search: / ? * # n N and find candidates. The
+//! query engine lives in strop-grammar (CompiledQuery); the prompt's
+//! live resolution lives in `pending` (one owner, R7).
 
 use strop_core::Range;
 use strop_grammar::{self as grammar, Command};
@@ -6,27 +8,21 @@ use strop_grammar::{self as grammar, Command};
 use crate::editor::{Editor, FindPending, LastSearch};
 
 impl Editor {
-    pub(super) fn note_search(&mut self, cmd: &Command) {
+    pub(crate) fn note_search(&mut self, cmd: &Command) {
         match &cmd.target {
-            strop_grammar::Target::Motion(strop_grammar::Motion::Search(p)) => {
+            grammar::Target::Motion(grammar::Motion::Search(query)) => {
                 self.last_search = Some(LastSearch {
-                    pattern: p.clone(),
+                    query: query.clone(),
                     backward: false,
-                    whole_word: false,
                 });
             }
-            strop_grammar::Target::Motion(strop_grammar::Motion::SearchBackward(p)) => {
+            grammar::Target::Motion(grammar::Motion::SearchBackward(query)) => {
                 self.last_search = Some(LastSearch {
-                    pattern: p.clone(),
+                    query: query.clone(),
                     backward: true,
-                    whole_word: false,
                 });
             }
-            strop_grammar::Target::Motion(strop_grammar::Motion::FindChar {
-                ch,
-                till,
-                backward,
-            }) => {
+            grammar::Target::Motion(grammar::Motion::FindChar { ch, till, backward }) => {
                 self.last_find = Some((*ch, *backward, *till));
             }
             _ => {}
@@ -94,80 +90,27 @@ impl Editor {
 
     /// `n` / `N`: repeat the armed search, wrapping at the file edges.
     /// Cascades: every cursor seeks from its own position (0013 §3).
+    /// The query is the one compiled engine — whole-word and the regex
+    /// dialect live inside it, never re-filtered here.
     pub(crate) fn repeat_search(&mut self, invert: bool) {
-        let Some(ls) = self.last_search.clone() else {
+        let Some(search) = self.last_search.clone() else {
             self.message = "no previous search".into();
             return;
         };
-        let backward = ls.backward ^ invert;
-        self.push_jump(); // n/N are jumplist entries
-                          // a whole-word match has non-word bytes (or the edge) on both
-                          // flanks — vim's \< \> without the regex layer
-        let word_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
-        let boundary_ok = |buf: &strop_core::Buffer, at: usize, len: usize| {
-            let before_ok = at == 0 || !word_char(buf.byte(at - 1));
-            let after_ok = at + len >= buf.len_bytes() || !word_char(buf.byte(at + len));
-            !ls.whole_word || (before_ok && after_ok)
+        let motion = if search.backward ^ invert {
+            grammar::Motion::SearchBackward(search.query.clone())
+        } else {
+            grammar::Motion::Search(search.query.clone())
         };
-        let seek = |buf: &strop_core::Buffer, from: usize| {
-            let len = ls.pattern.len();
-            let mut hit = if backward {
-                grammar::search_backward(buf, from, &ls.pattern)
-            } else {
-                // from+1 must be a char boundary (0020 §10 — a repeat
-                // from a multibyte hit panicked Ropey outright)
-                grammar::search_forward(buf, buf.ceil_boundary(from + 1), &ls.pattern)
-            };
-            // skip boundary-mismatched hits (whole-word searches)
-            let mut guard = 0;
-            while hit.is_some_and(|h| !boundary_ok(buf, h, len)) && guard < 64 {
-                let h = hit;
-                hit = if backward {
-                    grammar::search_backward(buf, h.unwrap_or(0), &ls.pattern)
-                } else {
-                    grammar::search_forward(buf, h.map(|x| x + 1).unwrap_or(0), &ls.pattern)
-                };
-                guard += 1;
-            }
-            // vim wraps around the file ends
-            hit.or_else(|| {
-                let mut h = if backward {
-                    grammar::search_backward(buf, buf.len_bytes(), &ls.pattern)
-                } else {
-                    grammar::search_forward(buf, 0, &ls.pattern)
-                };
-                let mut guard = 0;
-                while h.is_some_and(|x| !boundary_ok(buf, x, len)) && guard < 64 {
-                    let cur = h;
-                    h = if backward {
-                        grammar::search_backward(buf, cur.unwrap_or(0), &ls.pattern)
-                    } else {
-                        grammar::search_forward(buf, cur.map(|x| x + 1).unwrap_or(0), &ls.pattern)
-                    };
-                    guard += 1;
-                }
-                h
-            })
-        };
-        let extras: Vec<usize> = self
-            .extra_selections()
-            .iter()
-            .map(|s| {
-                seek(self.buf(), s.head)
-                    .map(|h| self.buf().clamp_boundary(h))
-                    .unwrap_or(s.head)
-            })
-            .collect();
-        self.sels_mut().set_extras(extras);
-        match seek(self.buf(), self.head()) {
-            Some(h) => {
-                self.set_head(self.buf().clamp_boundary(h));
-                self.clamp_cursor();
-                self.flash(Range::charwise(self.head(), self.head()));
-            }
-            None => self.message = format!("pattern not found: {}", ls.pattern),
-        }
-        self.normalize_cursors();
+        self.move_cursor(&grammar::Command {
+            op: None,
+            register: None,
+            count: None,
+            target: grammar::Target::Motion(motion),
+            keys: if invert { "N" } else { "n" }.into(),
+        });
+        // N reverses this movement, not the saved search's direction.
+        self.last_search = Some(search);
     }
 
     /// `*` / `#` (vim): search the word under the cursor — whole-word,
@@ -186,7 +129,7 @@ impl Editor {
             let line = self.buf().line_of(p);
             let (s, e) = (self.buf().line_start(line), self.buf().line_end(line));
             self.buf()
-                .rope
+                .text()
                 .byte_slice(s..e)
                 .to_string()
                 .trim_end_matches('\n')
@@ -217,12 +160,15 @@ impl Editor {
                 _ => break,
             }
         }
-        let pattern = self.buf().rope.byte_slice(start..end).to_string();
-        self.last_search = Some(LastSearch {
-            pattern,
-            backward,
-            whole_word: true,
-        });
+        let pattern = self.buf().text().byte_slice(start..end).to_string();
+        let query = match grammar::CompiledQuery::compile(&pattern, true) {
+            Ok(query) => query,
+            Err(error) => {
+                self.message = error.to_string();
+                return;
+            }
+        };
+        self.last_search = Some(LastSearch { query, backward });
         // `#` seeks from the word's start so the current word isn't its
         // own "previous" match (vim semantics)
         if backward {
@@ -244,53 +190,17 @@ impl Editor {
         })
     }
 
-    /// Close the `/`/`?` line without committing: the cursor returns
-    /// to the search origin (vim: aborting a search moves you back).
-    pub(super) fn abort_search_line(&mut self) {
-        if let Some(origin) = self.search_origin.take() {
-            self.set_head(origin);
-            self.clamp_cursor();
-        }
-    }
-
-    /// Live incsearch (vim parity, issue 13): while the `/`/`?` line is
-    /// open the cursor sits on the pattern's first match from the
-    /// fixed search origin — typing AND backspace re-resolve it.
-    /// Wraps like `n`/`N`; an empty pattern or no match parks at the
-    /// origin (vim keeps position and reports E486).
-    pub(super) fn incsearch_jump(&mut self) {
-        let Some(origin) = self.search_origin else {
-            return;
-        };
-        let Some(pat) = self.search_pattern() else {
-            self.set_head(origin);
-            self.clamp_cursor();
-            return;
-        };
-        let target = if self.pending.starts_with('?') {
-            grammar::Motion::SearchBackward(pat.to_string())
+    /// Every match the UI should highlight right now: the open
+    /// prompt's live pattern first, else the committed last search —
+    /// one compiled query, never re-filtered (render consumes this).
+    pub fn search_matches(&self) -> Result<Vec<grammar::SearchMatch>, grammar::QueryError> {
+        let query = if let Some(pattern) = self.search_pattern() {
+            grammar::CompiledQuery::compile(pattern, false)?
+        } else if let Some(ls) = &self.last_search {
+            ls.query.clone()
         } else {
-            grammar::Motion::Search(pat.to_string())
+            return Ok(Vec::new());
         };
-        let command = Command {
-            op: None,
-            register: None,
-            count: None,
-            target: grammar::Target::Motion(target),
-            keys: String::new(),
-        };
-        let destination = grammar::resolve(self.buf(), origin, &command)
-            .map(|resolved| grammar::cursor_after(self.buf(), origin, &command, &resolved))
-            .unwrap_or(origin);
-        self.set_head(destination);
-        self.clamp_cursor();
-    }
-
-    /// Pending search pattern (incsearch highlight), if any: the `/` or
-    /// `?` line's body. Pipes and ex bodies never misread as patterns
-    /// (the old `find('/')` matched `|sed s/a/b/`).
-    pub fn search_pattern(&self) -> Option<&str> {
-        let body = self.pending.strip_prefix(['/', '?'])?;
-        (!body.is_empty()).then_some(body)
+        grammar::search_all(self.buf(), &query)
     }
 }

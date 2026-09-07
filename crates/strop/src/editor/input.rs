@@ -35,11 +35,12 @@ impl ParserState {
             && self.count2.is_none()
     }
 
-    /// vim's count multiplication: 2d3w = count1 × count2.
+    /// vim's count multiplication: 2d3w = count1 × count2. Saturating:
+    /// adversarial counts must not overflow (0015).
     pub fn count(&self) -> Option<usize> {
         match (self.count1, self.count2) {
             (None, None) => None,
-            (a, b) => Some(a.unwrap_or(1) * b.unwrap_or(1)),
+            (a, b) => Some(a.unwrap_or(1).saturating_mul(b.unwrap_or(1))),
         }
     }
 }
@@ -59,8 +60,15 @@ pub enum Action {
     /// Operator composition resolved by the grammar from typed state
     /// (op/register/counts injected; only the motion text re-parses).
     Grammar(Box<Command>),
-    /// A free-text line opens (: / ? |) — the text layer owns later keys.
-    EnterText(char),
+    /// A free-text line opens (`: / ? |`) — the prompt layer owns
+    /// later keys; the typed entry state (count/register/operator)
+    /// rides along, so `2d/foo⏎` keeps the 2 and the d (R5/R7).
+    EnterText { sigil: char, state: ParserState },
+    /// The grammar rejected a query at parse time — a typed error,
+    /// never a silent literal reading of a regex the dialect lacks.
+    QueryError(strop_grammar::QueryError),
+    /// Visual `S<c>`: the completing char, dispatched by the visual layer.
+    VisualSurround(char),
     /// Dead sequence: neither table nor grammar — the editor says so
     /// (the unknown-key marker is a contract, not silence).
     Invalid(String),
@@ -159,8 +167,109 @@ impl Walker {
         s
     }
 
+    /// Ground state: nothing typed, nothing pending. The shared
+    /// dispatch predicate (surface handlers guard on it).
+    pub fn is_ground(&self) -> bool {
+        self.state.empty() && self.path.is_empty() && self.motion.is_empty()
+    }
+
+    /// The walk sits exactly on these table tokens (e.g. ["ctrl-w"]).
+    pub fn at_prefix(&self, tokens: &[&str]) -> bool {
+        self.motion.is_empty()
+            && self
+                .path
+                .iter()
+                .map(String::as_str)
+                .eq(tokens.iter().copied())
+    }
+
+    /// Enter operator composition from typed state (clipboard yank:
+    /// `+` register + Yank, counts multiply through the grammar).
+    pub fn begin_operator(&mut self, op: Op, register: Option<char>, count: Option<usize>) {
+        self.clear();
+        self.state.op = Some(op);
+        self.state.register = register;
+        self.state.count1 = count;
+    }
+
+    /// Hand the typed entry state to a text prompt and ground the walk.
+    fn enter_text(&mut self, sigil: char) -> Action {
+        let state = std::mem::take(&mut self.state);
+        self.clear();
+        Action::EnterText { sigil, state }
+    }
+
+    /// One visual-mode key: structural composition shares the same
+    /// typed state; `S<c>` is the visual-only surround absorber.
+    pub fn feed_visual(&mut self, key: Key) -> Action {
+        if key == Key::Esc {
+            self.clear();
+            return Action::Pending;
+        }
+        if self.at_prefix(&["S"]) {
+            self.clear();
+            return match key {
+                Key::Char(c) => Action::VisualSurround(c),
+                _ => Action::Pending,
+            };
+        }
+        // The ordinary table remains the authority for leader namespaces.
+        if self.path.first().is_some_and(|token| token == "space") {
+            return self.feed(key);
+        }
+        if self.motion.is_empty() {
+            match key {
+                Key::Char('S') => {
+                    self.path.push("S".into());
+                    return Action::Pending;
+                }
+                Key::Char(' ' | ':' | '/' | '?') => return self.feed(key),
+                Key::Char(c) if c.is_ascii_digit() => return self.feed(key),
+                _ => {}
+            }
+        }
+        // Visual i/a are grammar object prefixes, not insert rows;
+        // arrows speak hjkl at the key layer like everywhere else.
+        let c = match key {
+            Key::Char(c) => c,
+            Key::Up => 'k',
+            Key::Down => 'j',
+            Key::Left => 'h',
+            Key::Right => 'l',
+            _ => {
+                self.clear();
+                return Action::Pending;
+            }
+        };
+        self.motion.push(c);
+        match strop_grammar::parse(&self.motion) {
+            strop_grammar::Parse::Incomplete => Action::Pending,
+            strop_grammar::Parse::Invalid => {
+                let keys = self.display();
+                self.clear();
+                Action::Invalid(keys)
+            }
+            strop_grammar::Parse::QueryError(error) => {
+                self.clear();
+                Action::QueryError(error)
+            }
+            strop_grammar::Parse::Complete(mut command) => {
+                command.count = self.state.count();
+                command.register = self.state.register;
+                self.clear();
+                Action::Grammar(Box::new(command))
+            }
+        }
+    }
+
     /// One key event in, one typed step out.
     pub fn feed(&mut self, key: Key) -> Action {
+        // Esc/Backspace abort any structural composition (including
+        // clipboard yank) — Backspace never edits parser syntax
+        if matches!(key, Key::Esc | Key::Backspace) {
+            self.clear();
+            return Action::Pending;
+        }
         let token = key_token(key);
 
         // --- register selector absorbs one char — at GROUND only
@@ -183,6 +292,14 @@ impl Walker {
         // --- operator pending: digits extend count2 (contextual zero),
         // everything else is motion text for the grammar
         if self.state.op.is_some() {
+            // an operator awaiting its motion can take a SEARCH as the
+            // motion (d/foo⏎): the prompt opens carrying the typed
+            // state — counts/register/operator survive the crossing
+            if self.motion.is_empty() {
+                if let Key::Char(sigil @ ('/' | '?')) = key {
+                    return self.enter_text(sigil);
+                }
+            }
             // after f/F/t/T the next char is the TARGET — digits are
             // text there (0023: df2 deletes through "2")
             let is_find = matches!(self.motion.as_str(), "f" | "F" | "t" | "T");
@@ -216,6 +333,10 @@ impl Walker {
                 strop_grammar::Parse::Invalid => {
                     self.clear();
                     Action::Pending
+                }
+                strop_grammar::Parse::QueryError(error) => {
+                    self.clear();
+                    Action::QueryError(error)
                 }
             };
         }
@@ -263,6 +384,10 @@ impl Walker {
                             self.clear();
                             Action::Pending
                         }
+                        strop_grammar::Parse::QueryError(error) => {
+                            self.clear();
+                            Action::QueryError(error)
+                        }
                     }
                 }
                 Handler::AbsorbChar(AbsorbKind::Find) => {
@@ -273,6 +398,10 @@ impl Walker {
                             cmd.count = self.state.count();
                             self.clear();
                             Action::Grammar(Box::new(cmd))
+                        }
+                        strop_grammar::Parse::QueryError(error) => {
+                            self.clear();
+                            Action::QueryError(error)
                         }
                         _ => {
                             self.clear();
@@ -299,12 +428,14 @@ impl Walker {
                     }
                 }
                 Handler::TextLine => {
-                    self.clear();
                     // A leader can open a text line too ("space |"): the
                     // completing key is the sigil, not the first token's 's'.
                     match key {
-                        Key::Char(sigil @ (':' | '/' | '?' | '|')) => Action::EnterText(sigil),
-                        _ => Action::Invalid(path_str),
+                        Key::Char(sigil @ (':' | '/' | '?' | '|')) => self.enter_text(sigil),
+                        _ => {
+                            self.clear();
+                            Action::Invalid(path_str)
+                        }
                     }
                 }
                 Handler::Alias(_) | Handler::Leaf(_) => {
@@ -346,6 +477,10 @@ impl Walker {
                 strop_grammar::Parse::Invalid => {
                     self.clear();
                     Action::Invalid(path_str)
+                }
+                strop_grammar::Parse::QueryError(error) => {
+                    self.clear();
+                    Action::QueryError(error)
                 }
             }
         }

@@ -1,48 +1,81 @@
-//! Per-project sessions (0001 pillar 4): buffers, cursor positions, view
-//! offsets, and undo histories serialize to XDG state on save/quit and
-//! restore on open. Undo depth is capped (0001 §3: full trees bloat).
-//! Readonly surfaces and scratch buffers never persist.
+//! Owned per-project snapshots and transactional restoration.
+//! Scratch and readonly documents never persist. Trust storage is independent.
 
-use std::path::{Path, PathBuf};
-
+use crate::editor::{Document, Editor};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use strop_core::{history::History, Buffer};
 
-use crate::editor::Editor;
-use strop_core::history::History;
-use strop_core::Buffer;
+mod trust;
+pub use trust::{is_trusted, trust};
+mod persistence;
+#[cfg(test)]
+mod tests;
 
 const UNDO_CAP: usize = 200;
+const UNDO_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error("session I/O at {path:?}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("session JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("invalid session: {0}")]
+    Invalid(String),
+    #[error(transparent)]
+    History(#[from] strop_core::history::HistoryError),
+    #[error(transparent)]
+    Path(#[from] strop_core::path_serde::PathError),
+    #[error("{original}; temporary cleanup also failed: {cleanup}")]
+    Cleanup {
+        original: Box<SessionError>,
+        cleanup: Box<SessionError>,
+    },
+}
+
+fn io(path: &Path, source: std::io::Error) -> SessionError {
+    SessionError::Io {
+        path: path.to_owned(),
+        source,
+    }
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Session {
-    pub buffers: Vec<BufferState>,
-    pub current: usize,
+pub struct Session {
+    buffers: Vec<BufferState>,
+    current: usize,
+    #[serde(skip)]
+    captured: Vec<ropey::Rope>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct BufferState {
-    pub path: String,
-    pub line: usize,
-    pub col: usize,
-    pub view_top: usize,
-    /// Linear undo path (root→current, capped). Branches don't cross
-    /// sessions — the tree lives in-memory; the cap is the contract.
-    pub undo: Option<History>,
-    /// Hash of the text the undo path was captured against (0015): a
-    /// session may persist dirty state whose history assumes text the
-    /// disk never held — restore verifies before replaying.
+struct BufferState {
+    #[serde(with = "strop_core::path_serde")]
+    path: PathBuf,
+    line: usize,
+    col: usize,
+    view_top: usize,
+    undo: Option<History>,
     #[serde(default)]
-    pub undo_hash: u64,
+    undo_hash: u64,
 }
 
-/// `base_dir` is the resolved XDG state dir (None → sessions off).
-/// Tests pass their tempdir explicitly — process-global env never
-/// enters the write path (the 0.4.0 flake class).
+/// Fully owned work item: move this to a blocking persistence worker.
+#[derive(Debug)]
+pub struct SaveRequest {
+    path: PathBuf,
+    session: Session,
+}
+
 fn session_path(base_dir: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
-    let base = base_dir?.to_path_buf();
-    // stable per-project identity without leaking the path
+    let base = base_dir?;
     let mut hasher = std::hash::DefaultHasher::new();
-    std::hash::Hash::hash(&cwd, &mut hasher);
+    std::hash::Hash::hash(cwd, &mut hasher);
     let key = format!("{:016x}", std::hash::Hasher::finish(&hasher));
     Some(
         base.join("strop")
@@ -51,255 +84,197 @@ fn session_path(base_dir: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
     )
 }
 
-/// Snapshot the editor into a Session.
-pub(crate) fn capture(editor: &Editor) -> Option<Session> {
+/// Capture owns all paths and history; it never borrows the editor afterward.
+pub fn capture(editor: &Editor) -> Option<Session> {
     let mut buffers = Vec::new();
+    let mut current = 0;
+    let mut captured = Vec::new();
     for (id, doc) in editor.docs.iter() {
         let buf = &doc.buf;
-        if buf.readonly || buf.path.is_none() {
+        if buf.readonly {
             continue;
         }
-        let path = buf.path.clone()?;
-        let (undo, undo_hash) = if buf.history.depth() > 0 {
-            let mut h = buf.history.clone();
-            h.cap(UNDO_CAP);
-            (Some(h), content_hash(&buf.rope.to_string()))
+        let Some(path) = &buf.path else {
+            continue;
+        };
+        let active = id == editor.current();
+        if active {
+            current = buffers.len();
+        }
+        let (undo, undo_hash) = if buf.history().depth() > 0 {
+            let h = buf.history().snapshot(UNDO_CAP, UNDO_BYTES);
+            (Some(h), 0)
         } else {
             (None, 0)
         };
+        captured.push(buf.snapshot());
         buffers.push(BufferState {
-            path: path.to_string_lossy().into_owned(),
-            line: if id == editor.current() {
-                editor.buf().line_of(editor.head())
+            path: path.clone(),
+            line: if active {
+                buf.line_of(editor.head())
             } else {
                 0
             },
-            col: if id == editor.current() {
-                editor.buf().col_of(editor.head())
-            } else {
-                0
-            },
-            view_top: if id == editor.current() {
-                editor.view_top()
-            } else {
-                0
-            },
+            col: if active { buf.col_of(editor.head()) } else { 0 },
+            view_top: if active { editor.view_top() } else { 0 },
             undo,
             undo_hash,
         });
     }
     if buffers.is_empty() {
-        return None;
-    }
-    let current = buffers
-        .iter()
-        .position(|b| {
-            Some(&b.path)
-                == editor
-                    .cur()
-                    .buf
-                    .path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .as_ref()
+        None
+    } else {
+        Some(Session {
+            buffers,
+            current,
+            captured,
         })
-        .unwrap_or(0);
-    Some(Session { buffers, current })
+    }
 }
 
-/// Restore a session into the editor (replaces its initial buffer).
-/// FNV-1a over the full text — cheap, deterministic, and only ever
-/// compared within one machine's sessions.
-fn content_hash(text: &str) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for b in text.as_bytes() {
-        h ^= u64::from(*b);
+pub fn capture_save(editor: &Editor) -> Option<SaveRequest> {
+    let path = session_path(editor.state_dir.as_deref(), &editor.cwd)?;
+    Some(SaveRequest {
+        path,
+        session: capture(editor)?,
+    })
+}
+
+impl SaveRequest {
+    /// Blocking I/O; schedule on a worker, not the async executor thread.
+    pub fn persist(mut self) -> Result<(), SessionError> {
+        self.session.finish_capture();
+        self.session.validate()?;
+        persistence::write(&self.path, &self.session)
+    }
+}
+
+fn content_hash(text: &ropey::Rope) -> u64 {
+    let mut h = 0xcbf29ce484222325u64;
+    for b in text.chunks().flat_map(str::bytes) {
+        h ^= u64::from(b);
         h = h.wrapping_mul(0x100000001b3);
     }
     h
 }
 
-pub fn restore(editor: &mut Editor) -> bool {
-    let Some(path) = session_path(editor.state_dir.as_deref(), &editor.cwd) else {
-        return false;
-    };
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return false;
-    };
-    let Ok(session) = serde_json::from_str::<Session>(&text) else {
-        return false;
-    };
-    if session.buffers.is_empty() {
-        return false;
+impl Session {
+    fn finish_capture(&mut self) {
+        for (buffer, text) in self.buffers.iter_mut().zip(self.captured.drain(..)) {
+            buffer.undo_hash = content_hash(&text);
+        }
     }
-    editor.docs.clear();
-    for b in &session.buffers {
-        let mut buf = Buffer::open(&b.path).unwrap_or_else(|_| Buffer::from_text(""));
-        if let Some(h) = &b.undo {
-            // the history only speaks for the text it was captured
-            // against — a mismatch (the session saved dirty state the
-            // disk never held) drops it, never replays (0015)
-            if content_hash(&buf.rope.to_string()) == b.undo_hash {
-                buf.history = h.clone();
-            } else {
-                editor.message =
-                    format!("{}: changed since capture — undo history dropped", b.path);
+}
+
+/// Read/decode without an editor, suitable for a blocking worker.
+/// Missing state and disabled persistence are ordinary absence, not errors.
+pub fn load(base_dir: Option<&Path>, cwd: &Path) -> Result<Option<Session>, SessionError> {
+    let Some(path) = session_path(base_dir, cwd) else {
+        return Ok(None);
+    };
+    let bytes = match persistence::read(&path) {
+        Ok(bytes) => bytes,
+        Err(SessionError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None)
+        }
+        Err(e) => return Err(e),
+    };
+    let session: Session = serde_json::from_slice(&bytes)?;
+    session.validate()?;
+    Ok(Some(session))
+}
+
+impl Session {
+    fn validate(&self) -> Result<(), SessionError> {
+        if self.buffers.is_empty() || self.current >= self.buffers.len() {
+            return Err(SessionError::Invalid(
+                "empty buffers or invalid current index".into(),
+            ));
+        }
+        for b in &self.buffers {
+            strop_core::path_serde::validate(&b.path)?;
+            if let Some(h) = &b.undo {
+                h.validate()?;
             }
         }
-        editor.docs.insert(crate::editor::Document::new(buf));
+        Ok(())
     }
-    let nth = session.current.min(editor.docs.len().saturating_sub(1));
-    let cur_id = editor
-        .docs
-        .iter()
-        .nth(nth)
-        .map(|(id, _)| id)
-        .expect("docs non-empty");
-    editor.view_mut().doc = cur_id;
-    let b = &session.buffers[nth];
-    editor.view_mut().view_top = b.view_top;
-    let line_start = editor
-        .buf()
-        .line_start(b.line.min(editor.buf().len_lines() - 1));
-    editor.set_head(editor.buf().clamp_boundary(line_start + b.col));
-    editor.clamp_cursor();
-    editor.mru = editor.docs.iter().map(|(id, _)| id).collect();
-    editor.touch_mru(editor.current());
-    editor.discover_git();
-    true
+
+    /// Open and validate every buffer before changing any live editor state.
+    pub fn restore(mut self, editor: &mut Editor) -> Result<(), SessionError> {
+        self.finish_capture();
+        self.validate()?;
+        let mut documents = Vec::with_capacity(self.buffers.len());
+        let mut warning = None;
+        for b in &self.buffers {
+            let path = if b.path.is_absolute() {
+                b.path.clone()
+            } else {
+                editor.cwd.join(&b.path)
+            };
+            let mut buf = Buffer::open(&path).map_err(|e| io(&path, e))?;
+            if let Some(h) = &b.undo {
+                if content_hash(buf.text()) == b.undo_hash {
+                    buf.restore_history(h.clone())?;
+                } else {
+                    warning = Some(format!(
+                        "{}: changed since capture — undo history dropped",
+                        b.path.display()
+                    ));
+                }
+            }
+            documents.push(Document::new(buf));
+        }
+        let b = &self.buffers[self.current];
+        let selected = &documents[self.current].buf;
+        let last_line = selected.len_lines().saturating_sub(1);
+        let line = b.line.min(last_line);
+        let start = selected.line_start(line);
+        let end = if line < last_line {
+            selected.line_start(line + 1).saturating_sub(1)
+        } else {
+            selected.len_bytes()
+        };
+        let head = selected.clamp_boundary(start.saturating_add(b.col).min(end));
+        let top = b.view_top.min(last_line);
+        // All fallible work is complete. Insert first, then remove old IDs, so
+        // arena generations cannot accidentally alias an outstanding old ID.
+        let old: Vec<_> = editor.docs.iter().map(|(id, _)| id).collect();
+        for &id in &old {
+            editor.lsp_close_document(id);
+        }
+        let mut ids = Vec::with_capacity(documents.len());
+        for doc in documents {
+            ids.push(editor.docs.insert(doc));
+        }
+        let current = ids[self.current];
+        for pane in &mut editor.panes {
+            pane.doc = current;
+            pane.view_top = 0;
+            pane.sels = Default::default();
+        }
+        editor.view_mut().doc = current;
+        for id in old {
+            editor.docs.remove(id);
+        }
+        editor.mru = ids;
+        editor.touch_mru(current);
+        editor.set_head(head);
+        editor.view_mut().view_top = top;
+        editor.clamp_cursor();
+        editor.generation += 1;
+        editor.focus_epoch += 1;
+        if let Some(message) = warning {
+            editor.message = message;
+        }
+        Ok(())
+    }
 }
 
-/// Save the editor's session for the project (called on :w/:q paths).
-pub fn save(editor: &Editor) {
-    let Some(path) = session_path(editor.state_dir.as_deref(), &editor.cwd) else {
-        return;
+pub fn restore(editor: &mut Editor) -> Result<bool, SessionError> {
+    let Some(session) = load(editor.state_dir.as_deref(), &editor.cwd)? else {
+        return Ok(false);
     };
-    let Some(session) = capture(editor) else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(path, serde_json::to_string(&session).unwrap_or_default());
-}
-
-/// Project trust (0020 §15): a project's languages.toml can name an
-/// executable server command — running it needs a one-time "yes" per
-/// project root, remembered here.
-fn trust_path(base_dir: Option<&Path>) -> Option<PathBuf> {
-    base_dir.map(|b| b.join("strop").join("trusted-projects"))
-}
-
-pub fn is_trusted(base_dir: Option<&Path>, root: &Path) -> bool {
-    let Some(path) = trust_path(base_dir) else {
-        return false;
-    };
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return false;
-    };
-    let want = root.to_string_lossy().to_string();
-    text.lines().any(|l| l == want)
-}
-
-pub fn trust(base_dir: Option<&Path>, root: &Path) {
-    let Some(path) = trust_path(base_dir) else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
-        let _ = writeln!(f, "{}", root.to_string_lossy());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::process::Command;
-
-    #[test]
-    fn roundtrip_restores_buffers_and_position() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        std::fs::write(root.join("a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
-        let mut e = Editor::new(Buffer::open(root.join("a.rs").to_str().unwrap()).unwrap());
-        e.cwd = root.to_path_buf();
-        e.state_dir = Some(root.join("state"));
-        e.feed_text("jl"); // line 2, col 2
-        e.feed_text("ix"); // dirty edit (recorded in undo history)
-        e.feed(crate::editor::Key::Esc);
-        save(&e);
-        let mut e2 = Editor::new(Buffer::from_text(""));
-        e2.cwd = root.to_path_buf();
-        e2.state_dir = Some(root.join("state"));
-        assert!(restore(&mut e2));
-        assert_eq!(e2.buf().path.as_deref(), Some(root.join("a.rs").as_path()));
-        assert_eq!(e2.buf().line_of(e2.head()), 1);
-        assert_eq!(e2.buf().col_of(e2.head()), 1);
-        // the session captured DIRTY history; the disk text differs —
-        // the history must NOT cross (0015: replaying it against the
-        // wrong text corrupts). A clean save is what carries undo.
-        // (depth 1 = the root sentinel alone = a fresh history)
-        assert_eq!(
-            e2.buf().history.depth(),
-            1,
-            "dirty history must not replay against the disk version"
-        );
-        assert!(e2.message.contains("undo history dropped"));
-        let _ = Command::new("true").output();
-    }
-
-    #[test]
-    fn empty_or_readonly_never_persist() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut e = Editor::new(Buffer::from_text(""));
-        e.cwd = dir.path().to_path_buf();
-        e.state_dir = Some(dir.path().join("state"));
-        save(&e);
-        assert!(!dir.path().join("state").exists());
-    }
-    #[test]
-    fn undo_history_crosses_when_disk_matches() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
-        let mut e = Editor::new(Buffer::open(root.join("a.rs").to_str().unwrap()).unwrap());
-        e.cwd = root.to_path_buf();
-        e.state_dir = Some(root.join("state"));
-        e.feed_text("o// note");
-        e.feed(crate::editor::Key::Esc);
-        e.feed_text(":w\r"); // the disk now matches the capture
-        save(&e);
-        let mut e2 = Editor::new(Buffer::from_text(""));
-        e2.cwd = root.to_path_buf();
-        e2.state_dir = Some(root.join("state"));
-        assert!(restore(&mut e2));
-        assert!(
-            e2.buf().history.depth() > 1,
-            "history crosses when the text matches"
-        );
-        e2.feed_text("u");
-        assert_eq!(e2.buf().rope.to_string(), "fn a() {}\n");
-    }
-    #[test]
-    fn trust_store_remembers_projects() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = dir.path().join("state");
-        let root = std::path::Path::new("/tmp/proj-a");
-        assert!(!is_trusted(Some(&state), root));
-        trust(Some(&state), root);
-        assert!(is_trusted(Some(&state), root));
-        assert!(!is_trusted(
-            Some(&state),
-            std::path::Path::new("/tmp/proj-b")
-        ));
-        // absent state dir = untrusted (never silently trust)
-        assert!(!is_trusted(None, root));
-    }
+    session.restore(editor)?;
+    Ok(true)
 }

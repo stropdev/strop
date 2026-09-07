@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HunkKind {
     Add,
     Change,
@@ -12,7 +12,7 @@ pub enum HunkKind {
 
 /// Where a diff line comes from — addition/deletion carry which side's
 /// line number applies (0010 §1: typed origins, never `+`-sniffing).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LineOrigin {
     Context,
     Addition,
@@ -21,7 +21,7 @@ pub enum LineOrigin {
 
 /// One line of a hunk: content without prefix, plus the 1-based line
 /// number on each side that has one (absent side: `None`, never `0`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffLine {
     pub origin: LineOrigin,
     pub old_lineno: Option<usize>,
@@ -50,7 +50,7 @@ impl DiffLine {
 }
 
 /// One diff hunk between two versions of a file, in 1-based lines.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Hunk {
     pub kind: HunkKind,
     /// First affected line in the new version (1-based). For pure
@@ -63,8 +63,9 @@ pub struct Hunk {
 }
 
 /// One file's diff at a commit (vs its parent): the delta view's data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileDiff {
+    #[serde(with = "strop_core::path_serde")]
     pub path: PathBuf,
     pub hunks: Vec<Hunk>,
     pub added: usize,

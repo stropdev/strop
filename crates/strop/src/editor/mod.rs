@@ -21,6 +21,7 @@ mod git_memory;
 mod help;
 mod input;
 mod insert;
+pub(crate) mod io;
 mod jumps;
 pub(crate) mod keys;
 mod lsp;
@@ -29,6 +30,7 @@ pub mod macros;
 mod multicursor_tests;
 pub(crate) mod normal;
 mod panes;
+pub(crate) mod pending;
 mod permalink;
 mod picker;
 mod registers;
@@ -42,11 +44,13 @@ pub use document::Document;
 pub use document::Surface;
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use panes::{LayoutDir, Pane};
-pub use picker::{PickerGlue, PreviewSource, Previews};
+pub use picker::{PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews};
+pub use registers::{ClipboardKey, ClipboardResult, Register};
+pub use shell::{ShellIntent, ShellKey, ShellResult};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use strop_core::{Buffer, Range};
 
@@ -106,23 +110,34 @@ pub enum Key {
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
 
-/// One register cell: text + linewise flag (vim's unnamed register is `"`).
-pub type Registers = HashMap<char, (String, bool)>;
-
 pub struct Editor {
     pub docs: strop_core::id::Arena<strop_core::id::DocumentKind, Document>,
     pub(crate) trace_documents:
         HashMap<strop_core::id::DocumentId, strop_core::diagnostics::BufferTraceId>,
-    /// Modal input on the `:`/`/`/`|` line (rootle's boxes): Esc once
-    /// enters normal mode on the line, twice clears it.
-    pub pending_normal: bool,
-    pub pending_cursor: usize,
+    pub(crate) io: io::IoState,
+    pub(crate) worker_ids: strop_core::worker::WorkerIds,
+    pub(crate) worker_handles:
+        HashMap<strop_core::worker::WorkerId, strop_core::worker::CancelHandle>,
+    pub(crate) focus_epoch: u64,
+    pub(crate) finishing: bool,
+    pub(crate) tape: std::rc::Rc<strop_trace::replay::Tape>,
+    pub git_view: strop_core::worker::WorkerId,
+    pub git_discovery: strop_core::worker::Load<git_memory::ContextKey>,
+    pub hunk_load: strop_core::worker::Load<git_memory::HunkKey>,
+    pub hunks_untracked: bool,
+    pub log_requests:
+        HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::LogKey>>,
+    pub card_request: Option<strop_core::worker::Ticket<git_memory::CardKey>>,
+    pub dive_requests:
+        HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,
+    pub git_mutations: std::collections::VecDeque<git_memory::GitMutation>,
+    pub git_mutation: Option<strop_core::worker::Ticket<git_memory::MutationKey>>,
     /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks of
     /// (document, byte offset) (jumps.rs).
     pub jumplist_past: Vec<(strop_core::id::DocumentId, usize)>,
     pub jumplist_future: Vec<(strop_core::id::DocumentId, usize)>,
     pub mode: Mode,
-    pub pending: String,
+    pub(crate) pending: pending::PendingInput,
     /// The input walker (0008 stage 2): typed parser state for
     /// counts/registers/operators/prefixes — pending stays for the
     /// free-text lines only.
@@ -134,14 +149,10 @@ pub struct Editor {
     /// Armed by `/`/`?`/`*`/`#` searches. `n`/`N` replay it; the render
     /// highlights matches persistently (rootle: current match underlined).
     pub last_search: Option<LastSearch>,
-    /// Where the cursor sat when the `/`/`?` line opened: incsearch
-    /// jumps resolve from here (typing AND backspace), aborts restore
-    /// it (vim: the search origin is fixed until Enter commits).
-    pub search_origin: Option<usize>,
-    pub registers: Registers,
+    pub registers: HashMap<char, Register>,
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
     pub marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
-    pub flash: Option<(Range, Instant)>,
+    pub flash: Option<(Range, strop_trace::replay::Tick)>,
     pub message: String,
     pub should_quit: bool,
     /// ctrl-c is armed after the first warn (0015 quit policy).
@@ -161,27 +172,13 @@ pub struct Editor {
     /// The app event channel (0018): set by connect_events; late LSP
     /// attaches forward through it.
     pub app_tx: Option<std::sync::mpsc::Sender<events::AppEvent>>,
-    /// Anchor-map watermark ((doc, revision), ops mapped) — an op must
-    /// never shift an anchor twice, and equal depths across documents
-    /// never collide (0020 §14, per-doc in 0023).
-    pub anchor_map_mark: Option<((strop_core::id::DocumentId, usize), usize)>,
-    /// Picker instance identity for stream tagging (0020 §2).
-    pub next_picker_id: u64,
-    /// The outstanding hover request's identity (doc, history depth) —
-    /// a reply against another state is stale (0018).
-    pub hover_request: Option<(strop_core::id::DocumentId, u64)>,
-    /// The outstanding goto/locations request's identity (0021 §2).
-    pub lsp_nav_request: Option<(strop_core::id::DocumentId, u64)>,
-    /// Merged languages.toml per workspace root (0018 — the OnceLock
-    /// used to pin the FIRST project's config process-wide).
-    pub langs_by_root: std::collections::HashMap<PathBuf, &'static strop_lsp::languages::Languages>,
+    pub(crate) lsp_state: lsp::state::LspState,
     /// Recorded macros: register → key events.
     pub macros: std::collections::HashMap<char, Vec<Key>>,
     /// The last replayed macro register (@@).
     pub last_macro: Option<char>,
-    /// Block insert/change context (0017): (first line, last line,
-    /// edge cell) — the typed text replicates per row at Esc.
-    pub block_delete_pending: Option<(usize, usize, u16)>,
+    /// The rows and cell edge owned by an ongoing block insert/change.
+    pub(crate) block_insert_state: Option<block::BlockInsertState>,
     /// Macro self-replay depth guard.
     pub macro_depth: usize,
     pub picker: Option<PickerGlue>,
@@ -191,19 +188,16 @@ pub struct Editor {
     /// Picker preview file cache.
     pub previews: Previews,
     /// Git working surface state (M2).
-    pub git: Option<strop_git::Repo>,
+    pub git: Option<strop_git::GitContext>,
     /// Preview file reads run on worker threads (0001 §3); results and
     /// the in-flight set are drained in drain_picker.
-    pub preview_tx: std::sync::mpsc::Sender<(PathBuf, Option<String>)>,
-    pub preview_rx: Option<std::sync::mpsc::Receiver<(PathBuf, Option<String>)>>,
-    pub preview_inflight: std::collections::HashSet<PathBuf>,
+    pub preview_tx: std::sync::mpsc::Sender<PreviewResult>,
+    pub preview_rx: Option<std::sync::mpsc::Receiver<PreviewResult>>,
+    pub(crate) preview_loads: HashMap<PathBuf, strop_core::worker::Load<PreviewKey>>,
     pub hunks: Vec<strop_git::Hunk>,
     /// HEAD↔index — the staged set (0014 wave 4); rendered in the
     /// gutter's committed-adjacent color.
     pub staged_hunks: Vec<strop_git::Hunk>,
-    pub hunks_epoch: u64,
-    /// A gutter diff is in flight (0021: at most one per editor).
-    pub hunks_in_flight: bool,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
     pub blame_card: Option<strop_git::memory::BlameCard>,
@@ -217,28 +211,28 @@ pub struct Editor {
     pub git_tx: std::sync::mpsc::Sender<GitJob>,
     pub git_rx: Option<std::sync::mpsc::Receiver<GitJob>>,
     pub osc52: Option<String>,
+    pub(crate) terminal_output: Vec<String>,
     /// ctrl-l: the terminal desynced from the model — the draw loop
     /// answers with a full repaint (vim's redraw).
     pub needs_repaint: bool,
     /// System-clipboard reads (paste from `+`) run on a worker thread;
     /// `clip_paste_pending` remembers before/after AND the initiating
     /// document until the read lands (0023 §4).
-    pub clip_tx: std::sync::mpsc::Sender<Option<String>>,
-    pub clip_rx: Option<std::sync::mpsc::Receiver<Option<String>>>,
-    pub clip_paste_pending: Option<(bool, strop_core::id::DocumentId)>,
+    pub clip_tx: std::sync::mpsc::Sender<ClipboardResult>,
+    pub clip_rx: Option<std::sync::mpsc::Receiver<ClipboardResult>>,
+    pub clip_paste_pending: Option<(bool, strop_core::worker::Ticket<ClipboardKey>)>,
     /// LSP server pool (0014 wave 2): one client per (workspace root,
     /// server) — a rust file and a python file in one session get their
     /// own servers. Diagnostics by path, hover card, open bookkeeping.
     pub lsp_servers: Vec<crate::editor::lsp::LspServer>,
-    pub diags: std::collections::HashMap<PathBuf, Vec<strop_lsp::Diag>>,
+    pub diags: std::collections::HashMap<PathBuf, Vec<strop_lsp::ResolvedDiag>>,
     pub hover_card: Option<String>,
-    pub lsp_opened: std::collections::HashSet<PathBuf>,
-    pub lsp_sent_epochs: std::collections::HashMap<PathBuf, u64>,
-    pub lsp_hints_shown: std::collections::HashSet<&'static str>,
     /// Shell jobs (`:!cmd` output buffers, `|cmd` pipes): results land
     /// in drain_shell — never a subprocess on the input path (0001 §3).
     pub shell_tx: std::sync::mpsc::Sender<ShellResult>,
     pub shell_rx: Option<std::sync::mpsc::Receiver<ShellResult>>,
+    pub(crate) shell_requests: HashMap<strop_core::worker::WorkerId, ShellIntent>,
+    pub(crate) shell_focus: Option<strop_core::worker::WorkerId>,
     /// Splits: flat row/column of panes (v1; tree layout later).
     pub panes: Vec<Pane>,
     pub active_pane: usize,
@@ -260,13 +254,11 @@ pub struct Editor {
     pub(crate) insert_open: Option<String>,
 }
 
-/// A search to repeat and highlight: `/pat`, `?pat`, or `*`-style
-/// whole-word (`whole_word` filters matches to word boundaries).
+/// The compiled query owns matching semantics for repeat, preview and highlighting.
 #[derive(Debug, Clone)]
 pub struct LastSearch {
-    pub pattern: String,
+    pub query: strop_grammar::CompiledQuery,
     pub backward: bool,
-    pub whole_word: bool,
 }
 
 /// A pending `f/F/t/T` awaiting its target char — the leap-style
@@ -283,27 +275,8 @@ pub struct FindPending {
 pub struct BlockRect {
     pub first_line: usize,
     pub last_line: usize,
-    pub left_cell: u16,
-    pub right_cell: u16,
-}
-
-/// What a shell job produced (0009-adjacent plumbing): `:!` displays,
-/// `|` pipes through and replaces.
-pub enum ShellResult {
-    /// `:!cmd`: show stdout+stderr in a readonly output buffer.
-    Display { cmd: String, output: String },
-    /// `|cmd`: replace a range with stdout (verified before applying).
-    Pipe {
-        buffer: strop_core::id::DocumentId,
-        start: usize,
-        end: usize,
-        original: String,
-        output: String,
-        /// false when the command failed (nonzero exit or spawn error):
-        /// the source text is NEVER replaced (0015).
-        ok: bool,
-        err: String,
-    },
+    pub left_cell: strop_core::id::DisplayColumn,
+    pub right_cell: strop_core::id::DisplayColumn,
 }
 
 impl Editor {
@@ -311,6 +284,11 @@ impl Editor {
         // cwd is the process directory (project-wide): pickers walk it,
         // LSP/git resolve against it; a file's own dir is not the project.
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self::new_in(buf, cwd)
+    }
+
+    /// Pure construction. Native services start explicitly after forensic seeding.
+    pub fn new_in(buf: Buffer, cwd: PathBuf) -> Self {
         let (preview_tx, preview_rx) = std::sync::mpsc::channel();
         let (shell_tx, shell_rx) = std::sync::mpsc::channel();
         let (clip_tx, clip_rx) = std::sync::mpsc::channel();
@@ -323,12 +301,29 @@ impl Editor {
             Document::scratch(buf)
         };
         let current = docs.insert(doc);
-        let mut e = Self {
+        Self {
             docs,
             trace_documents: HashMap::new(),
+            io: io::IoState::default(),
+            worker_ids: strop_core::worker::WorkerIds::default(),
+            worker_handles: HashMap::new(),
+            focus_epoch: 0,
+            finishing: false,
+            tape: std::rc::Rc::new(strop_trace::replay::Tape::new()),
+            git_view: strop_core::worker::WorkerId::new(0),
+            git_discovery: strop_core::worker::Load::Idle,
+            hunk_load: strop_core::worker::Load::Idle,
+            hunks_untracked: false,
+            log_requests: HashMap::new(),
+            card_request: None,
+            dive_requests: HashMap::new(),
+            git_mutations: std::collections::VecDeque::new(),
+            git_mutation: None,
+            shell_requests: HashMap::new(),
+            shell_focus: None,
             mru: vec![current],
             mode: Mode::Normal,
-            pending: String::new(),
+            pending: pending::PendingInput::default(),
             walker: input::Walker::new(),
             last_search: None,
             undo_browser: None,
@@ -345,14 +340,10 @@ impl Editor {
             view_rows: 24,
             recording: None,
             app_tx: None,
-            langs_by_root: std::collections::HashMap::new(),
-            hover_request: None,
-            lsp_nav_request: None,
-            next_picker_id: 1,
-            anchor_map_mark: None,
+            lsp_state: lsp::state::LspState::default(),
             macros: std::collections::HashMap::new(),
             last_macro: None,
-            block_delete_pending: None,
+            block_insert_state: None,
             macro_depth: 0,
             last_change: None,
             last_cmd_keys: String::new(),
@@ -370,19 +361,15 @@ impl Editor {
             git: None,
             hunks: Vec::new(),
             staged_hunks: Vec::new(),
-            hunks_epoch: u64::MAX,
-            hunks_in_flight: false,
             blame_card: None,
             git_tx,
             git_rx: Some(git_rx),
             needs_repaint: false,
             osc52: None,
+            terminal_output: Vec::new(),
             preview_tx,
             preview_rx: Some(preview_rx),
-            preview_inflight: std::collections::HashSet::new(),
-            search_origin: None,
-            pending_normal: false,
-            pending_cursor: 0,
+            preview_loads: HashMap::new(),
             jumplist_past: Vec::new(),
             jumplist_future: Vec::new(),
             lsp_servers: Vec::new(),
@@ -391,21 +378,18 @@ impl Editor {
             clip_paste_pending: None,
             diags: HashMap::new(),
             hover_card: None,
-            lsp_opened: std::collections::HashSet::new(),
-            lsp_sent_epochs: HashMap::new(),
-            lsp_hints_shown: std::collections::HashSet::new(),
             panes: vec![Pane {
                 doc: current,
                 sels: strop_core::selection::SelectionSet::default(),
                 view_top: 0,
+                hscroll: strop_core::id::DisplayColumn::new(0),
+                desired_column: None,
             }],
             active_pane: 0,
             layout: LayoutDir::Row,
             config: crate::config::Config::default(),
             state_dir: None,
-        };
-        e.discover_git();
-        e
+        }
     }
 
     pub fn feed_text(&mut self, text: &str) {
@@ -418,24 +402,17 @@ impl Editor {
         let _trace_scope = trace::InputScope::enter(self, key);
         self.trace_state();
         self.feed_inner(key);
-        if self.pending.is_empty() {
-            self.pending_cursor = 0;
-            self.pending_normal = false;
-        }
         self.trace_state();
     }
 
     fn feed_inner(&mut self, key: Key) {
-        // the modal input line dies with the pending text (0003 §1)
-        if self.pending.is_empty() {
-            self.pending_normal = false;
-        }
+        self.revoke_shell_focus();
         self.message.clear();
         // macro recording (0016): q at ground stops and never reaches
         // the machine; everything else records BEFORE it runs, so
         // replay is exactly the live stream
         if let Some(reg) = self.recording {
-            let at_ground = self.walker.display().is_empty() && self.pending.is_empty();
+            let at_ground = self.walker.is_ground() && !self.pending.is_active();
             if at_ground && key == Key::Char('q') {
                 self.recording = None;
                 self.message = format!("recorded @{}", reg);
@@ -445,25 +422,20 @@ impl Editor {
                 buf.push(key);
             }
         }
+        if self.pending.is_active() {
+            return self.feed_pending(key);
+        }
         if self.hover_card.is_some() {
             self.hover_card = None;
             return;
         }
-        if self.blame_card.is_some() {
-            match key {
-                Key::Enter => {
-                    // dive into the browser *at* the card's commit,
-                    // not the newest row (0011 §3)
-                    let sha = self.blame_card.as_ref().map(|c| c.sha.clone());
-                    self.blame_card = None;
-                    match sha {
-                        Some(sha) => self.open_log_at(&sha),
-                        None => self.open_log(false),
-                    }
+        if self.blame_card.is_some() || self.card_request.is_some() {
+            if let Some(card) = self.dismiss_card_authority() {
+                if key == Key::Enter {
+                    self.open_log_at(&card.sha);
                 }
-                _ => self.blame_card = None,
+                return;
             }
-            return;
         }
         if self.picker_open() {
             return self.feed_picker(key);
@@ -481,7 +453,7 @@ impl Editor {
     /// True when a modal input field sits in normal mode (picker field
     /// or pending line) — the TUI draws the block cursor for it.
     pub fn input_normal(&self) -> bool {
-        self.pending_normal
+        self.pending.normal()
             || self
                 .picker
                 .as_ref()
@@ -493,10 +465,7 @@ impl Editor {
     /// shape, and pending dispatch all ask here (a `|sed s/a/b/` body
     /// is a pipe, not a search).
     pub fn pending_sigil(&self) -> Option<char> {
-        match self.pending.chars().next() {
-            Some(c @ (':' | '/' | '?' | '|')) => Some(c),
-            _ => None,
-        }
+        self.pending.sigil()
     }
 
     // ---- shared helpers -------------------------------------------------
@@ -530,14 +499,23 @@ impl Editor {
 }
 
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod transaction_conformance;
 
 impl Drop for Editor {
     fn drop(&mut self) {
         // One shutdown boundary, including headless errors and terminal failures.
+        for handle in std::mem::take(&mut self.worker_handles).into_values() {
+            handle.cancel(strop_core::worker::CancelReason::Shutdown);
+        }
         for server in std::mem::take(&mut self.lsp_servers) {
-            server.client.shutdown();
-            server.client.wait(Duration::from_millis(500));
+            if let Some(client) = server.client {
+                client.shutdown();
+                client.wait(Duration::from_millis(500));
+            }
         }
     }
 }

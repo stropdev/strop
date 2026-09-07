@@ -7,12 +7,20 @@
 //! - **Coordinates**: newtypes so byte offsets, line indexes, and the
 //!   three column kinds (bytes / UTF-16 / display) can't mix silently.
 
+mod seed;
+pub use seed::{ArenaSeed, ArenaSeedError};
+
 /// A generational-arena key: the index names the slot, the generation
 /// names the occupant. Stale keys fail lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(bound = "")]
 pub struct Id<K> {
+    #[serde(rename = "slot", alias = "index")]
     index: u32,
     generation: u32,
+    #[serde(skip)]
     _kind: std::marker::PhantomData<K>,
 }
 
@@ -27,11 +35,11 @@ impl<K> Id<K> {
 }
 
 /// Marker kinds for the arena's identities.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DocumentKind;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewKind;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PaneKind;
 
 pub type DocumentId = Id<DocumentKind>;
@@ -155,9 +163,22 @@ impl<K, T> Arena<K, T> {
 /// DisplayColumn). Copy, ordered, hashable; arithmetic is explicit.
 macro_rules! coordinate {
     ($name:ident, $unit:literal) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            Default,
+            serde::Serialize,
+            serde::Deserialize,
+        )]
         #[repr(transparent)]
-        pub struct $name(pub usize);
+        #[serde(transparent)]
+        pub struct $name(usize);
 
         impl $name {
             #[inline]
@@ -248,6 +269,47 @@ coordinate!(LineIndex, "L");
 coordinate!(ByteColumn, "col:B");
 coordinate!(Utf16Column, "col:u16");
 coordinate!(DisplayColumn, "col:dsp");
+
+/// A document's content clock, not an LSP version, request ID or history node.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct BufferRevision(u64);
+
+impl BufferRevision {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+    pub fn checked_next(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
+    }
+}
+
+impl std::fmt::Display for BufferRevision {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl From<u64> for BufferRevision {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
 
 // NOTE: full newtype wrappers (ByteOffset(usize), Utf16Column(u32), …)
 // are the target; the pragmatic cutover is to name the domains first

@@ -86,4 +86,5 @@ pub struct ReturnPoint {
     pub buffer: strop_core::id::DocumentId,
     pub cursor: usize,
     pub view_top: usize,
+    pub hscroll: strop_core::id::DisplayColumn,
 }

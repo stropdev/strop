@@ -6,7 +6,7 @@ use crate::id;
 /// How vim thinks about a range (0014): charwise ops carry the motion's
 /// inclusivity (dfx vs dtx differ by it); linewise is line-shaped.
 /// Blockwise lands with visual block — the enum is the extension point.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MotionShape {
     Characterwise { inclusive: bool },
     Linewise,
@@ -14,16 +14,16 @@ pub enum MotionShape {
 
 /// A half-open byte range `[start, end)` plus its vim shape. Fields are
 /// ByteOffset — the storage coordinate is typed end to end (0014).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Range {
-    pub start: usize,
-    pub end: usize,
+    pub start: id::ByteOffset,
+    pub end: id::ByteOffset,
     pub shape: MotionShape,
 }
 
 impl Range {
     pub fn charwise(start: impl Into<id::ByteOffset>, end: impl Into<id::ByteOffset>) -> Self {
-        let (start, end) = (start.into().get(), end.into().get());
+        let (start, end) = (start.into(), end.into());
         debug_assert!(start <= end);
         Self {
             start,
@@ -32,7 +32,7 @@ impl Range {
         }
     }
     pub fn linewise(start: impl Into<id::ByteOffset>, end: impl Into<id::ByteOffset>) -> Self {
-        let (start, end) = (start.into().get(), end.into().get());
+        let (start, end) = (start.into(), end.into());
         debug_assert!(start <= end);
         Self {
             start,

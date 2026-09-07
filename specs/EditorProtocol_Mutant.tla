@@ -1,174 +1,157 @@
----- MODULE EditorProtocol_Mutant_Mutant ----
+---- MODULE EditorProtocol_Mutant ----
 (***************************************************************************)
-(* KEPT MUTANT (0024): Deliver without the live+revision guard — a       *)
-(* cross-document apply. TLC must FAIL this with NoMisapply. If it ever  *)
-(* passes, the invariant lost its teeth.                                 *)
-(***************************************************************************)
-(***************************************************************************)
-(* The editor's document/service protocol (plan 0024) — the state the    *)
-(* 0023 probes pinned as failure classes, modeled as a protocol:         *)
+(* KEPT MUTANT (R12): Deliver without the freshness guard.                *)
 (*                                                                       *)
-(*   1. documents live in a store; panes reference documents by id       *)
-(*   2. edits run in transactions: Begin → Edit* → Commit (revision++)   *)
-(*      — a Crash inside a transaction discards it atomically            *)
-(*   3. closing a document rebinds or removes every referencing pane     *)
-(*      (the :vs scratch-strand crash)                                   *)
-(*   4. service requests carry (request id, document, revision-at-ask);  *)
-(*      a delivery applies only while the document lives and the         *)
-(*      revision matches (the cross-document hunk probe)                 *)
+(* The stale/dead branch does what the 0023 cross-document bug did: it   *)
+(* LANDS the ticket anyway and raises the misdelivery flag. TLC must     *)
+(* kill this module by EXACTLY the NoMisapply invariant:                 *)
+(* TypeOK, NoStalePane, NoWrongDocument, RevisionTracksPublications and  *)
+(* TicketOneShot must all still hold — the mutant misdelivers, it does   *)
+(* not corrupt types, panes, the journal, or the ticket machine. The     *)
+(* gate (specs/gate.sh) fails unless the mutant's ONLY violated          *)
+(* invariant is NoMisapply. If the mutant ever checks clean, NoMisapply  *)
+(* lost its teeth; if any other invariant dies, the mutant drifted from  *)
+(* the one bug it exists to embody.                                      *)
 (*                                                                       *)
-(* THE invariants, each named after the failure it forbids:              *)
-(*   NoStalePane     — every pane references a live document             *)
-(*   NoWrongDocument — a delivery applies only to its request's doc,     *)
-(*                     and only while the revision still matches         *)
-(*   MonotonicClock  — revisions never decrease                          *)
-(*   NoPartialCommit — a crash mid-transaction leaves either the whole   *)
-(*                     change or none of it                              *)
-(*                                                                       *)
-(* Not modeled: text content itself (positions/anchors are the Rust      *)
-(* conformance harness's job), liveness (progress is one crash-free      *)
-(* run, by construction), multi-server identity (req ids stand in).      *)
+(* Executability: the bug is reachable — Arm a ticket, PublishLocal (or  *)
+(* another Deliver) to move the revision, or CloseDoc the target, then   *)
+(* Deliver: Fresh(r) is FALSE and the mutant applies anyway. (The R12    *)
+(* repair: the old mutant bound misapplied' twice — once by the IF and   *)
+(* once by a contradictory UNCHANGED — which disabled exactly the       *)
+(* branch that carries the bug, so the mutant passed NoMisapply         *)
+(* vacuously. It also carried a wrong module name,                      *)
+(* EditorProtocol_Mutant_Mutant, which TLC cannot even load.)            *)
 (***************************************************************************)
 EXTENDS Integers, FiniteSets
 
-CONSTANTS DOCS,        \* document ids in play, e.g. {1, 2}
-          PANES,       \* pane ids, e.g. {1, 2}
-          REQS,        \* request ids, e.g. {1, 2}
-          MAXREV       \* revision cap (keeps the state space finite)
+CONSTANTS DOCS, PANES, REQS, MAXREV, MAXGEN
 
-VARIABLES live,        \* set of live document ids
-          paneOf,      \* pane id -> document id
-          rev,         \* document id -> revision
-          txn,         \* NONE | document id with an open transaction
-          pendReq,     \* request id -> [doc, rev] of outstanding asks
-          applied,     \* set of request ids whose results landed
-          misapplied   \* TRUE iff a delivery landed on a dead/stale doc
-                       \* (the 0023 cross-document bug class: with the
-                       \* guard this state is UNREACHABLE — the mutant
-                       \* without it is specs/EditorProtocol_Mutant_Mutant.tla)
+VARIABLES live, gen, rev, claims, paneOf, phase, ticket, landed, misapplied
 
 NONE == 0
+IDLE == 0
+ARMED == 1
+APPLIED == 2
+DROPPED == 3
 
 TypeOK ==
     /\ live \subseteq DOCS
-    /\ paneOf \in [PANES -> DOCS \union {NONE}]
+    /\ gen \in [DOCS -> 0..MAXGEN]
     /\ rev \in [DOCS -> 0..MAXREV]
-    /\ txn \in DOCS \union {NONE}
-    /\ pendReq \in [REQS -> [doc: DOCS \union {NONE}, rev: 0..MAXREV]]
-    /\ applied \subseteq REQS
-    /\ misapplied \in {TRUE, FALSE}
+    /\ claims \in [DOCS -> SUBSET (0..MAXREV)]
+    /\ paneOf \in [PANES -> DOCS \union {NONE}]
+    /\ phase \in [REQS -> {IDLE, ARMED, APPLIED, DROPPED}]
+    /\ ticket \in [REQS -> [doc: DOCS \union {NONE}, g: 0..MAXGEN, r: 0..MAXREV]]
+    /\ landed \in [REQS -> [doc: DOCS \union {NONE}, g: 0..MAXGEN, r: 0..MAXREV]]
+    /\ misapplied \in {FALSE, TRUE}
 
 Init ==
     /\ live = {}
-    /\ paneOf = [p \in PANES |-> NONE]
+    /\ gen = [d \in DOCS |-> 0]
     /\ rev = [d \in DOCS |-> 0]
-    /\ txn = NONE
-    /\ pendReq = [r \in REQS |-> [doc |-> NONE, rev |-> 0]]
-    /\ applied = {}
+    /\ claims = [d \in DOCS |-> {}]
+    /\ paneOf = [p \in PANES |-> NONE]
+    /\ phase = [r \in REQS |-> IDLE]
+    /\ ticket = [r \in REQS |-> [doc |-> NONE, g |-> 0, r |-> 0]]
+    /\ landed = [r \in REQS |-> [doc |-> NONE, g |-> 0, r |-> 0]]
     /\ misapplied = FALSE
 
-\* -- documents ------------------------------------------------------------
+\* Everything below this line is EditorProtocol.tla verbatim except the
+\* ELSE branch of Deliver — the single mutation.
 
 OpenDoc(d) ==
     /\ d \notin live
+    /\ gen[d] < MAXGEN
     /\ live' = live \union {d}
+    /\ gen' = [gen EXCEPT ![d] = @ + 1]
     /\ rev' = [rev EXCEPT ![d] = 0]
-    /\ UNCHANGED <<paneOf, txn, pendReq, applied, misapplied>>
+    /\ claims' = [claims EXCEPT ![d] = {}]
+    /\ UNCHANGED <<paneOf, phase, ticket, landed, misapplied>>
 
 CloseDoc(d) ==
     /\ d \in live
-    /\ txn /= d              \* never close under an open transaction
     /\ live' = live \ {d}
-    \* the fix under test: every pane on the dying document rebinds to a
-    \* survivor (or NONE when none) — never keeps the stale id
     /\ paneOf' = [p \in PANES |->
         IF paneOf[p] = d
         THEN IF live \ {d} = {} THEN NONE ELSE CHOOSE x \in live \ {d} : TRUE
         ELSE paneOf[p]]
-    /\ UNCHANGED <<rev, txn, pendReq, applied, misapplied>>
-
-\* -- panes -----------------------------------------------------------------
+    /\ UNCHANGED <<gen, rev, claims, phase, ticket, landed, misapplied>>
 
 SplitPane(p, d) ==
     /\ d \in live
     /\ paneOf' = [paneOf EXCEPT ![p] = d]
-    /\ UNCHANGED <<live, rev, txn, pendReq, applied, misapplied>>
+    /\ UNCHANGED <<live, gen, rev, claims, phase, ticket, landed, misapplied>>
 
-\* -- transactions ----------------------------------------------------------
-
-BeginTxn(d) ==
+PublishLocal(d) ==
     /\ d \in live
-    /\ txn = NONE
-    /\ txn' = d
-    /\ UNCHANGED <<live, paneOf, rev, pendReq, applied, misapplied>>
-
-CommitTxn(d) ==
-    /\ txn = d
     /\ rev[d] < MAXREV
     /\ rev' = [rev EXCEPT ![d] = @ + 1]
-    /\ txn' = NONE
-    /\ UNCHANGED <<live, paneOf, pendReq, applied, misapplied>>
+    /\ claims' = [claims EXCEPT ![d] = @ \union {rev[d]}]
+    /\ UNCHANGED <<live, gen, paneOf, phase, ticket, landed, misapplied>>
 
-CrashTxn ==
-    /\ txn /= NONE
-    /\ txn' = NONE                 \* the partial change is discarded
-    /\ UNCHANGED <<live, paneOf, rev, pendReq, applied, misapplied>>
-
-\* -- services ---------------------------------------------------------------
-
-Ask(r, d) ==
+Arm(r, d) ==
     /\ d \in live
-    /\ pendReq[r] = [doc |-> NONE, rev |-> 0]   \* id not already in flight
-    /\ pendReq' = [pendReq EXCEPT ![r] = [doc |-> d, rev |-> rev[d]]]
-    /\ UNCHANGED <<live, paneOf, rev, txn, applied, misapplied>>
+    /\ phase[r] = IDLE
+    /\ phase' = [phase EXCEPT ![r] = ARMED]
+    /\ ticket' = [ticket EXCEPT ![r] = [doc |-> d, g |-> gen[d], r |-> rev[d]]]
+    /\ UNCHANGED <<live, gen, rev, claims, paneOf, landed, misapplied>>
 
+Fresh(r) ==
+    /\ ticket[r].doc \in live
+    /\ ticket[r].g = gen[ticket[r].doc]
+    /\ ticket[r].r = rev[ticket[r].doc]
+    /\ rev[ticket[r].doc] < MAXREV
+
+\* THE MUTATION: the ELSE branch applies the stale/dead ticket anyway
+\* (and flags it) instead of dropping it. Everything else — including
+\* rev/claims, which a real misdelivery does NOT get to publish
+\* consistently — is the guarded spec.
 Deliver(r) ==
-    /\ pendReq[r].doc /= NONE
-    /\ LET req == pendReq[r] IN
-       \* a result applies only to its own document at its own revision —
-       \* anything else is dropped, never misplaced
-       applied' = applied \union {r}
-       /\ misapplied' = IF req.doc \in live /\ rev[req.doc] = req.rev
-                        THEN misapplied
-                        ELSE TRUE
-    /\ pendReq' = [pendReq EXCEPT ![r] = [doc |-> NONE, rev |-> 0]]
-    /\ UNCHANGED <<live, paneOf, rev, txn, misapplied>>
-
-\* -- the invariants ---------------------------------------------------------
+    /\ phase[r] = ARMED
+    /\ IF Fresh(r)
+       THEN /\ phase' = [phase EXCEPT ![r] = APPLIED]
+            /\ landed' = [landed EXCEPT ![r] = ticket[r]]
+            /\ rev' = [rev EXCEPT ![ticket[r].doc] = @ + 1]
+            /\ claims' = [claims EXCEPT ![ticket[r].doc] = @ \union {rev[ticket[r].doc]}]
+            /\ UNCHANGED <<live, gen, paneOf, ticket, misapplied>>
+       ELSE /\ misapplied' = TRUE
+            /\ phase' = [phase EXCEPT ![r] = APPLIED]
+            /\ landed' = [landed EXCEPT ![r] = ticket[r]]
+            /\ UNCHANGED <<live, gen, rev, claims, paneOf, ticket>>
 
 NoStalePane ==
     \A p \in PANES : paneOf[p] /= NONE => paneOf[p] \in live
 
 NoWrongDocument ==
-    \A r \in applied :
-        LET req == [doc |-> pendReq[r].doc, rev |-> pendReq[r].rev] IN
-        \* applied results were delivered while their doc lived at the
-        \* asking revision; pendReq is cleared on delivery, so assert
-        \* the record is gone (delivered) — the apply guard is structural
-        TRUE
+    \A r \in REQS :
+        (phase[r] = APPLIED) =>
+            /\ landed[r] = ticket[r]
+            /\ \/ landed[r].doc \notin live
+               \/ /\ landed[r].doc \in live
+                  /\ \/ /\ landed[r].g = gen[landed[r].doc]
+                        /\ landed[r].r < rev[landed[r].doc]
+                     \/ landed[r].g < gen[landed[r].doc]
 
-MonotonicClock == TRUE  \* rev only ever increments — structural in the actions
+RevisionTracksPublications ==
+    \A d \in DOCS :
+        /\ rev[d] = Cardinality(claims[d])
+        /\ \A c \in claims[d] : c < rev[d]
 
-NoPartialCommit ==
-    txn /= NONE => \A d \in live : TRUE  \* atomicity is structural: the
-    \* only revision mutation is CommitTxn's guarded step; CrashTxn
-    \* cannot touch rev. The invariant TLC actually hunts: rev never
-    \* moves while a txn is open without committing.
+TicketOneShot ==
+    \A r \in REQS :
+        /\ (phase[r] = IDLE) <=> (ticket[r].doc = NONE)
+        /\ (phase[r] = ARMED) => ticket[r].doc /= NONE
+        /\ (phase[r] = APPLIED) <=> (landed[r].doc /= NONE)
 
-NoMisapply ==
-    ~misapplied
+NoMisapply == ~misapplied
 
 Next ==
     \/ \E d \in DOCS : OpenDoc(d)
     \/ \E d \in DOCS : CloseDoc(d)
     \/ \E p \in PANES, d \in DOCS : SplitPane(p, d)
-    \/ \E d \in DOCS : BeginTxn(d)
-    \/ \E d \in DOCS : CommitTxn(d)
-    \/ CrashTxn
-    \/ \E r \in REQS, d \in DOCS : Ask(r, d)
+    \/ \E d \in DOCS : PublishLocal(d)
+    \/ \E r \in REQS, d \in DOCS : Arm(r, d)
     \/ \E r \in REQS : Deliver(r)
 
-Spec == Init /\ [][Next]_<<live, paneOf, rev, txn, pendReq, applied, misapplied>>
-
-THEOREM Spec => []TypeOK /\ []NoStalePane /\ []NoMisapply
+Spec == Init /\ [][Next]_<<live, gen, rev, claims, paneOf, phase, ticket, landed, misapplied>>
 =============================================================================

@@ -1,9 +1,19 @@
 //! One opt-in diagnostic sink for all strop crates. Producers never perform file
 //! I/O or wait for the writer; an incomplete trace is always reported as such.
+//!
+//! Capture is bounded (total bytes, total events, per-record bytes) and every
+//! finished file ends with an explicit terminal `TraceEnd` marker, so a capped
+//! or failed capture can never be mistaken for a complete one.
+mod bounded;
 mod event;
+pub mod export;
+pub mod replay;
 mod writer;
 
-pub use event::{preview, ContentPolicy, EventKind, TraceOptions, SCHEMA_VERSION};
+pub use event::{
+    preview, ContentPolicy, EventKind, Limits, TraceOptions, MAX_CAPTURE_BYTES, MAX_CAPTURE_EVENTS,
+    MAX_RECORD_BYTES, SCHEMA_VERSION, TERMINAL_RESERVE,
+};
 
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -15,7 +25,9 @@ use std::sync::{Arc, LazyLock};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
-const QUEUE_CAPACITY: usize = 4096;
+/// A full queue is a visible capture failure, never silent loss; the writer
+/// drains faster than producers admit, so this only trips on writer stalls.
+const QUEUE_CAPACITY: usize = 64;
 static ACTIVE: LazyLock<Mutex<Option<Arc<Recorder>>>> = LazyLock::new(|| Mutex::new(None));
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static CONTENT: AtomicBool = AtomicBool::new(false);
@@ -58,6 +70,7 @@ struct Recorder {
     sender: Mutex<Option<SyncSender<Record>>>,
     failure: Arc<Failure>,
     started: Instant,
+    max_record: usize,
 }
 
 /// Owning lifetime of a trace. Explicit finish reports errors; Drop still drains.
@@ -67,6 +80,9 @@ pub struct TraceSession {
 }
 
 pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceError> {
+    if !options.limits.valid() {
+        return Err(TraceError::Incomplete("invalid capture limits".into()));
+    }
     let mut active = ACTIVE.lock();
     if active.is_some() {
         return Err(TraceError::AlreadyActive);
@@ -85,14 +101,16 @@ pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceEr
     let (sender, receiver) = sync_channel(QUEUE_CAPACITY);
     let failure = Arc::new(Failure::default());
     let writer_failure = Arc::clone(&failure);
+    let limits = options.limits;
     let worker = std::thread::Builder::new()
         .name("strop-trace".into())
-        .spawn(move || writer::run(file, receiver, writer_failure))
+        .spawn(move || writer::run(file, receiver, writer_failure, limits))
         .map_err(TraceError::Spawn)?;
     let recorder = Arc::new(Recorder {
         sender: Mutex::new(Some(sender)),
         failure,
         started: Instant::now(),
+        max_record: limits.record_bytes,
     });
     *active = Some(Arc::clone(&recorder));
     CONTENT.store(options.content == ContentPolicy::Full, Ordering::Release);
@@ -126,30 +144,53 @@ pub fn record<T: Serialize>(kind: EventKind, fields: &T) {
     let Some(recorder) = ACTIVE.lock().clone() else {
         return;
     };
-    let fields = match serde_json::to_vec(fields) {
-        Ok(fields) => fields,
-        Err(error) => {
-            recorder
-                .failure
-                .set(|| format!("event serialization failed: {error}"));
-            return;
-        }
-    };
-    // This lock protects queue admission only, never disk writes. Stamping under
-    // the same lock makes timestamps nondecreasing in the writer's receive order.
-    let sender = recorder.sender.lock();
-    if let Some(sender) = sender.as_ref() {
-        let record = Record {
-            kind,
-            elapsed_us: recorder.started.elapsed().as_micros(),
-            fields,
-        };
-        if let Err(error) = sender.try_send(record) {
-            recorder
-                .failure
-                .set(|| format!("event queue admission failed: {error}"));
-        }
+    // This lock protects queue admission only, never disk writes. Stamping
+    // under it keeps timestamps nondecreasing in the writer's receive order,
+    // and serializing under it bounds simultaneous trace encodings.
+    let mut sender = recorder.sender.lock();
+    if sender.is_none() {
+        return;
     }
+    if recorder.failure.message.lock().is_some() {
+        sender.take();
+        return;
+    }
+    let mut bytes = bounded::Bytes::new(recorder.max_record);
+    if serde_json::to_writer(&mut bytes, fields).is_err() {
+        recorder
+            .failure
+            .set(|| "record exceeds cap or cannot serialize".into());
+        sender.take();
+        return;
+    }
+    let record = Record {
+        kind,
+        elapsed_us: recorder.started.elapsed().as_micros(),
+        fields: bytes.into_vec(),
+    };
+    if sender
+        .as_ref()
+        .expect("checked sender")
+        .try_send(record)
+        .is_err()
+    {
+        recorder
+            .failure
+            .set(|| "capture queue full or writer unavailable".into());
+        sender.take();
+    }
+}
+
+/// End the capture visibly (used when a forensic value exceeds its cap
+/// mid-session): no further records are admitted and the terminal marker
+/// reports the capture incomplete instead of silently shrinking.
+pub fn mark_incomplete(message: &'static str) {
+    let Some(recorder) = ACTIVE.lock().clone() else {
+        return;
+    };
+    recorder.failure.set(|| message.into());
+    recorder.sender.lock().take();
+    CONTENT.store(false, Ordering::Release);
 }
 
 /// Report once to the editor's status line; finish still returns the failure.

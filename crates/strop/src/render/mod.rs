@@ -10,8 +10,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use strop_core::Range;
-
 use crate::editor::{Editor, Mode};
 
 mod blame_card;
@@ -34,14 +32,15 @@ pub const PREVIEW_BG: Color = Color::Rgb(0x4a, 0x33, 0x1c); // accent, dimmed
 pub const FLASH_BG: Color = Color::Rgb(0x6b, 0x47, 0x22); // accent, stronger
 pub const SELECT_BG: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
 
-/// Diagnostic severity → color (LSP 1=error … 4=hint; one source for
+/// Diagnostic severity → color (LSP typed severity; one source for
 /// the gutter sign and the cursor-line end-of-line note).
-pub(crate) fn severity_color(sev: u8) -> Color {
+pub(crate) fn severity_color(sev: strop_lsp::Severity) -> Color {
+    use strop_lsp::Severity;
     match sev {
-        1 => Color::Rgb(0xe8, 0x67, 0x7a), // error red
-        2 => ACCENT,                       // warning amber
-        3 => Color::Rgb(0x7f, 0xb4, 0xca), // info blue
-        _ => MUTED,                        // hint
+        Severity::Error => Color::Rgb(0xe8, 0x67, 0x7a), // error red
+        Severity::Warning => ACCENT,                     // warning amber
+        Severity::Information => Color::Rgb(0x7f, 0xb4, 0xca), // info blue
+        Severity::Hint => MUTED,                         // hint
     }
 }
 
@@ -65,8 +64,9 @@ pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
 
 pub fn render(editor: &mut Editor, frame: &mut Frame) {
     let area = frame.area();
-    let text_rows = area.height.saturating_sub(1) as usize;
-    editor.scroll_to_cursor(text_rows);
+    // pane geometry (heights feed the vertical viewport, widths the
+    // horizontal origin) is decided per pane inside render_panes —
+    // the full-area numbers were wrong in splits (0031 R6)
     editor.refresh_hunks();
 
     let pane_area = buffer::render_panes(editor, frame, area);
@@ -112,10 +112,6 @@ pub(crate) fn dim_color(c: Color) -> Color {
     }
 }
 
-fn in_range(r: Range, pos: usize) -> bool {
-    pos >= r.start && pos < r.end
-}
-
 fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     if area.height == 0 {
         return; // a 0-height resize must not underflow (0027 §2)
@@ -134,7 +130,10 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     let dirty = if editor.buf().dirty { " ●" } else { "" };
     let line = editor.buf().line_of(editor.head()) + 1;
     let col = editor.buf().col_of(editor.head()) + 1;
-    let branch = editor.git.as_ref().and_then(|g| g.head_branch());
+    let branch = editor
+        .git
+        .as_ref()
+        .and_then(|git| git.head_branch.as_deref());
     let hunks_dirty = !editor.hunks.is_empty();
     let readonly = editor.buf().readonly;
     let (errors, warnings) = editor.diag_counts(editor.current());
@@ -142,14 +141,22 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     let total = editor.buf().len_lines().max(1);
     let pct = if total <= 1 { 100 } else { line * 100 / total };
 
-    let spec = if let Some((_, spec)) = editor.preview() {
-        format!("{spec}  ")
-    } else if !editor.pending.is_empty() && !cmd_card_active(editor) {
-        format!("{}  ", editor.pending.trim_end_matches('\r'))
+    // preview surfaces its own error (0031): Ok(None) falls through to
+    // the modeline's normal inputs, Err shows the failure
+    let spec = if let Some(spec) = match editor.preview() {
+        Ok(Some((_, spec))) => Some(format!("{spec}  ")),
+        Ok(None) => None,
+        Err(error) => Some(format!("{error}  ")),
+    } {
+        spec
+    } else if editor.pending.is_active() && !cmd_card_active(editor) {
+        format!("{}  ", editor.pending.text().trim_end_matches('\r'))
     } else if !editor.walker.prefix_display().is_empty() || !editor.walker.state.empty() {
         // structural input mid-flight (3d…, g…, space…): the modeline
         // shows the walker's typed state
         format!("{}  ", editor.walker.display())
+    } else if let Some(status) = editor.io_status() {
+        format!("{status}  ")
     } else if !editor.message.is_empty() {
         format!("{}  ", editor.message)
     } else {
@@ -196,13 +203,13 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
     if errors > 0 {
         right.push(Span::styled(
             format!(" ●{errors}"),
-            Style::default().fg(severity_color(1)),
+            Style::default().fg(severity_color(strop_lsp::Severity::Error)),
         ));
     }
     if warnings > 0 {
         right.push(Span::styled(
             format!(" ●{warnings}"),
-            Style::default().fg(severity_color(2)),
+            Style::default().fg(severity_color(strop_lsp::Severity::Warning)),
         ));
     }
     right.push(Span::styled(
@@ -239,18 +246,17 @@ fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
 }
 
 fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
-    let line = editor.buf().line_of(editor.head());
-    let row = line.saturating_sub(editor.view_top()) as u16;
-    // composed once: sidebar + blame column + the surface's number
-    // gutter (0011) — diff-wide gutters used to drift the caret
-    let col = diff::left_inset(editor, editor.current()) as u16
-        + editor
-            .buf()
-            .cell_col_with_tab(editor.head(), editor.config.tab_size as u16);
-    if row + 1 < area.height && col < area.width {
-        // pane-relative → absolute (0017: the caret followed neither
-        // the pane's x/y in splits nor wide chars on the line)
-        crate::editor::trace::frame::place_cursor(frame, (area.x + col, area.y + row));
+    // one projection shared with every painted caret: vertical top +
+    // horizontal origin + fixed inset, checked, narrowed once
+    if let Some(at) = buffer::caret_position(
+        editor,
+        area,
+        editor.current(),
+        editor.head(),
+        editor.view_top(),
+        editor.view().hscroll,
+    ) {
+        crate::editor::trace::frame::place_cursor(frame, at);
     }
 }
 
@@ -326,7 +332,8 @@ fn render_welcome(editor: &Editor, frame: &mut Frame) {
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// True when the floating command/search card owns the caret.
+/// True when the floating command/search/pipe card owns the caret
+/// (0031 R7: every sigil prompt — `:`, `/`, `?`, `|` — takes it).
 pub(crate) fn cmd_card_active(editor: &Editor) -> bool {
-    !editor.picker_open() && matches!(editor.pending_sigil(), Some(':' | '/' | '?'))
+    !editor.picker_open() && editor.pending_sigil().is_some()
 }

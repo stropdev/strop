@@ -7,8 +7,9 @@
 //!
 //! Detection for a file path goes: exact basename → extension → shebang
 //! (first line, only consulted when the extension is unknown or absent).
-//! `detect` is pure over `(path, first_line)` so callers own the one
-//! cheap read; `Highlighter::for_path` does exactly that.
+//! `detect` is pure over `(path, first_line)`; `Highlighter::for_path`
+//! supplies that first line from the rope itself — detection reads
+//! nothing.
 
 use std::path::Path;
 

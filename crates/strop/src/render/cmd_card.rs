@@ -8,8 +8,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use strop_grammar as grammar;
-
 use crate::editor::Editor;
 
 use super::{ACCENT, BASE, MUTED, TEXT};
@@ -20,13 +18,13 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     let Some(kind) = editor.pending_sigil() else {
         return;
     };
-    if !matches!(kind, ':' | '/' | '?') {
+    if !matches!(kind, ':' | '/' | '?' | '|') {
         return;
     }
     if editor.picker_open() {
         return;
     }
-    let pending = editor.pending.as_str();
+    let pending = editor.pending.text();
 
     let area = frame.area();
     // ex completion rides along: candidates under the input (0003 §1)
@@ -46,7 +44,11 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         height,
     };
     frame.render_widget(Clear, card);
-    let title = if kind == ':' { " command " } else { " search " };
+    let title = match kind {
+        ':' => " command ",
+        '|' => " pipe ",
+        _ => " search ",
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -72,13 +74,15 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
 
     // search rides with a live match count
     if matches!(kind, '/' | '?') {
-        if let Some(pat) = editor.search_pattern() {
-            let n = grammar::search_all(editor.buf(), pat).len();
-            spans.push(Span::styled(
-                format!("   {n} match{}", if n == 1 { "" } else { "es" }),
-                Style::default().fg(MUTED),
-            ));
-        }
+        let label = match editor.search_matches() {
+            Ok(matches) => format!(
+                "   {} match{}",
+                matches.len(),
+                if matches.len() == 1 { "" } else { "es" }
+            ),
+            Err(error) => format!("   {error}"),
+        };
+        spans.push(Span::styled(label, Style::default().fg(MUTED)));
     }
 
     let text_area = Rect {
@@ -119,13 +123,13 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     }
 
     // caret goes in the card, not the buffer
-    let caret_byte = editor.pending_cursor.saturating_sub(1).min(body.len());
-    let layout = strop_core::layout::LineLayout::build(body, 4);
-    let caret_x = text_area
-        .x
-        .saturating_add(2)
-        .saturating_add(layout.cell_at_byte(caret_byte));
-    if caret_x < text_area.x + text_area.width {
-        crate::editor::trace::frame::place_cursor(frame, (caret_x, text_area.y));
+    let caret_byte = editor.pending.cursor().saturating_sub(1).min(body.len());
+    let layout = strop_core::layout::LineLayout::build(body, editor.config.tab_size);
+    let caret_x = usize::from(text_area.x) + 2 + layout.cell_at_byte(caret_byte).get();
+    let right = usize::from(text_area.x) + usize::from(text_area.width);
+    if caret_x < right {
+        if let Ok(caret_x) = u16::try_from(caret_x) {
+            crate::editor::trace::frame::place_cursor(frame, (caret_x, text_area.y));
+        }
     }
 }
