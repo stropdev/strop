@@ -52,7 +52,7 @@ impl Document {
         Self {
             buf,
             highlighter: None,
-            source: DocumentSource::Surface(surface),
+            source: DocumentSource::Surface(Box::new(surface)),
         }
     }
 

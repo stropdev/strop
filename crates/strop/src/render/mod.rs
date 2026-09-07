@@ -1,13 +1,12 @@
 //! Rendering: the render tree's root. Panes and diff decoration live
-//! in `buffer`/`diff` (0010 §3); this module owns the palette, the
-//! statusline, the welcome card, and the cursor.
+//! in `buffer`/`diff` (0010 §3); `statusline` owns the modeline.
+//! This module owns the palette, welcome card, and cursor.
 //! Overlay precedence (0001 §5.8 subset): search/incsearch < operator
 //! preview < cursor. One accent color (0001 §4).
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::editor::{Editor, Mode};
@@ -19,8 +18,10 @@ mod diff;
 mod help;
 mod hover_card;
 mod picker_card;
+mod statusline;
 #[cfg(test)]
 mod terminal_tests;
+mod text;
 mod which_key;
 
 // strop default palette (plan 0004 site, --accent amber)
@@ -70,7 +71,7 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
     editor.refresh_hunks();
 
     let pane_area = buffer::render_panes(editor, frame, area);
-    render_statusline(editor, frame, area);
+    statusline::render(editor, frame, area);
     cmd_card::render_cmd_card(editor, frame);
     if !cmd_card_active(editor) {
         place_cursor(editor, frame, pane_area);
@@ -110,139 +111,6 @@ pub(crate) fn dim_color(c: Color) -> Color {
         Color::Rgb(r, g, b) => mix((r, g, b), BASE_RGB, 55),
         other => other,
     }
-}
-
-fn render_statusline(editor: &Editor, frame: &mut Frame, area: Rect) {
-    if area.height == 0 {
-        return; // a 0-height resize must not underflow (0027 §2)
-    }
-    let y = area.height - 1;
-    let mode = editor.mode.chip();
-    let binding = editor
-        .buf()
-        .path
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned());
-    let file = binding
-        .as_deref()
-        .or(editor.buf().name.as_deref())
-        .unwrap_or("[scratch]");
-    let dirty = if editor.buf().dirty { " ●" } else { "" };
-    let line = editor.buf().line_of(editor.head()) + 1;
-    let col = editor.buf().col_of(editor.head()) + 1;
-    let branch = editor
-        .git
-        .as_ref()
-        .and_then(|git| git.head_branch.as_deref());
-    let hunks_dirty = !editor.hunks.is_empty();
-    let readonly = editor.buf().readonly;
-    let (errors, warnings) = editor.diag_counts(editor.current());
-    let cursors = editor.sels().count();
-    let total = editor.buf().len_lines().max(1);
-    let pct = if total <= 1 { 100 } else { line * 100 / total };
-
-    // preview surfaces its own error (0031): Ok(None) falls through to
-    // the modeline's normal inputs, Err shows the failure
-    let spec = if let Some(spec) = match editor.preview() {
-        Ok(Some((_, spec))) => Some(format!("{spec}  ")),
-        Ok(None) => None,
-        Err(error) => Some(format!("{error}  ")),
-    } {
-        spec
-    } else if editor.pending.is_active() && !cmd_card_active(editor) {
-        format!("{}  ", editor.pending.text().trim_end_matches('\r'))
-    } else if !editor.walker.prefix_display().is_empty() || !editor.walker.state.empty() {
-        // structural input mid-flight (3d…, g…, space…): the modeline
-        // shows the walker's typed state
-        format!("{}  ", editor.walker.display())
-    } else if let Some(status) = editor.io_status() {
-        format!("{status}  ")
-    } else if !editor.message.is_empty() {
-        format!("{}  ", editor.message)
-    } else {
-        String::new()
-    };
-
-    // left: mode chip · branch (worktree-dirty marks it) · file · flags
-    let mut left: Vec<Span> = vec![
-        Span::styled("▌", Style::default().fg(mode_color(editor.mode))),
-        Span::styled(
-            format!(" {mode} "),
-            Style::default()
-                .fg(BASE)
-                .bg(mode_color(editor.mode))
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if let Some(b) = branch {
-        let dirty_mark = if hunks_dirty { "*" } else { "" };
-        left.push(Span::styled(
-            format!(" {b}{dirty_mark}"),
-            Style::default().fg(ACCENT),
-        ));
-    }
-    left.push(Span::styled(
-        format!(" {file}{dirty}"),
-        Style::default().fg(MUTED),
-    ));
-    if readonly {
-        left.push(Span::styled(
-            " [RO]",
-            Style::default().fg(Color::Rgb(0xe0, 0xaf, 0x68)),
-        ));
-    }
-    if cursors > 1 {
-        left.push(Span::styled(
-            format!(" {cursors}×"),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ));
-    }
-
-    // right: diag chips · position · percent
-    let mut right: Vec<Span> = Vec::new();
-    if errors > 0 {
-        right.push(Span::styled(
-            format!(" ●{errors}"),
-            Style::default().fg(severity_color(strop_lsp::Severity::Error)),
-        ));
-    }
-    if warnings > 0 {
-        right.push(Span::styled(
-            format!(" ●{warnings}"),
-            Style::default().fg(severity_color(strop_lsp::Severity::Warning)),
-        ));
-    }
-    right.push(Span::styled(
-        format!(" {line}:{col}"),
-        Style::default().fg(MUTED),
-    ));
-    right.push(Span::styled(
-        format!(" {pct}% "),
-        Style::default().fg(MUTED),
-    ));
-
-    let used: usize = left
-        .iter()
-        .map(|s| s.content.chars().count())
-        .sum::<usize>()
-        + spec.chars().count()
-        + right
-            .iter()
-            .map(|s| s.content.chars().count())
-            .sum::<usize>()
-        + 1;
-    let pad = (area.width as usize).saturating_sub(used);
-    let mut spans = left;
-    spans.push(Span::raw(" ".repeat(pad)));
-    spans.push(Span::styled(spec, Style::default().fg(ACCENT)));
-    spans.extend(right);
-    let row = Line::from(spans);
-    let rect = Rect {
-        y,
-        height: 1,
-        ..area
-    };
-    frame.render_widget(Paragraph::new(row).style(Style::default().bg(BASE)), rect);
 }
 
 fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {

@@ -168,7 +168,8 @@ states and unchanged error/overwrite policy. Measure on the existing bench path.
 
 ## P3 — after correctness
 
-- Modeline, commit/diff surfaces and general UI polish are the next requested pass.
+Modeline and commit/diff presentation polish shipped separately in 0.15.1 (0032).
+
 - Search-history UX and richer diagnostics presentation remain optional P3 work.
 - Debugger/plugin expansion stays behind the correctness work (0019/0020).
 - Package/release workflow should derive a real topological publishing order,

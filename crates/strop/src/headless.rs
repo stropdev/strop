@@ -31,12 +31,31 @@ pub fn frame_string(editor: &mut Editor, cols: u16, rows: u16) -> std::io::Resul
     let buf = terminal.backend().buffer();
     let mut out = String::new();
     for y in 0..rows {
-        for x in 0..cols {
-            out.push_str(buf[(x, y)].symbol());
+        for symbol in row_symbols(buf, y) {
+            out.push_str(symbol);
         }
         out.push('\n');
     }
     Ok(out)
+}
+
+/// TestBackend retains covered cells beneath wide glyphs. Those cells are
+/// not visible terminal text and must not leak into textual frame dumps.
+pub(super) fn row_symbols(
+    buffer: &ratatui::buffer::Buffer,
+    row: u16,
+) -> impl Iterator<Item = &str> {
+    let mut column = buffer.area.x;
+    let right = buffer.area.right();
+    std::iter::from_fn(move || {
+        if column >= right {
+            return None;
+        }
+        let symbol = buffer[(column, row)].symbol();
+        let covered = ratatui::text::Span::raw(symbol).width().max(1);
+        column += covered.min(usize::from(right - column)) as u16;
+        Some(symbol)
+    })
 }
 
 pub fn state_json(editor: &Editor) -> String {

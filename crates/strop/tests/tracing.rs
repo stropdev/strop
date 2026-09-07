@@ -38,7 +38,7 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     let script = root.join("input.keys");
     let trace = root.join("session.jsonl");
     std::fs::write(&file, "needle\n").unwrap();
-    std::fs::write(&script, "keys A<space>é<lt>x<gt><esc>\nframe\nstate\n").unwrap();
+    std::fs::write(&script, "keys A<space>é<lt>界x<gt><esc>\nframe\nstate\n").unwrap();
     let output = successful(run(
         root,
         &[
@@ -79,7 +79,7 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
         .unwrap()
     };
     assert_eq!(final_state(&replayed), final_state(&output));
-    assert!(output.contains("needle é<x>"));
+    assert!(output.contains("needle é<界x>"));
 
     let quit_script = root.join("quit.keys");
     let quit_trace = root.join("quit.jsonl");

@@ -620,4 +620,6 @@ fn hunk_discard_undoes_byte_exact() {
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
 }
 
+#[cfg(unix)]
+mod native_paths;
 mod ownership;

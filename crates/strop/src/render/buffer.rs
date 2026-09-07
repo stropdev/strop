@@ -275,20 +275,26 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     };
     // 0011 left-margin columns: the commit file sidebar (Diff surfaces
     // from the dive chain) and the blame gutter (file buffers) prepend
-    // to every row; content width shrinks by what they take
+    // to every row; content width shrinks by what they take. The tree
+    // is laid out ONCE per pane render (0032 §3); the current file is
+    // the commit's native `current` path, never the diff's display
+    // label
     let (sidebar, sidebar_focused) = match surface {
         Some(crate::editor::Surface::Diff {
             commit: Some(cf),
-            label,
             sidebar_focus,
             ..
-        }) => (Some((cf.files.as_slice(), label.as_str())), *sidebar_focus),
+        }) => (
+            Some((diff::Sidebar::build(&cf.files), cf.current.as_path())),
+            *sidebar_focus,
+        ),
         _ => (None, false),
     };
-    let sidebar_w = sidebar.map_or(0, |(files, _)| diff::sidebar_width(files) + 1);
+    let sidebar_w = sidebar.as_ref().map_or(0, |(tree, _)| tree.outer_width());
     let blame = editor.blame_gutter_for(view.doc);
-    let width = usize::from(area.width).saturating_sub(diff::left_inset(editor, view.doc));
     let number_width = diff::number_gutter_width(editor, view.doc);
+    let inset = sidebar_w + blame.map_or(0, |_| diff::BLAME_W) + number_width;
+    let width = usize::from(area.width).saturating_sub(inset);
     // :help rows color by the section they sit under (render/help.rs)
     let mut help_section = String::new();
     let mut lines: Vec<Line> = Vec::with_capacity(rows);
@@ -298,9 +304,9 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         // cell (or blank past the buffer's lines) — fitted to their
         // assigned width so wide/control text cannot move the inset
         let mut left: Vec<Span> = Vec::new();
-        if let Some((files, label)) = sidebar {
+        if let Some((tree, current)) = &sidebar {
             left.extend(fixed_spans(
-                diff::sidebar_spans(files, label, line_idx, sidebar_focused),
+                tree.row_spans(current, line_idx, sidebar_focused),
                 sidebar_w,
                 editor.config.tab_size,
             ));
@@ -385,10 +391,13 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                     format!("{:>digits$} ", line_idx + 1, digits = number_width - 2),
                     num_style,
                 ));
-                if let Some(spans) =
-                    diff::surface_content_spans(surface, line_idx, width, editor.config.tab_size)
+                if let Some(row) =
+                    diff::surface_list_row(surface, line_idx, width, line_idx == cur_line)
                 {
-                    style.decorations = spans;
+                    // the quiet cursor-row band rides under overlays
+                    // (search/visual/flash still override per cell)
+                    style.decorations = row.spans;
+                    style.row_bg = row.row_bg;
                 } else if buf.name.as_deref() == Some("help") {
                     // the :help buffer gets house-style color
                     // (render/help.rs)

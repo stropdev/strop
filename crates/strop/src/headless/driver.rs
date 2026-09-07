@@ -155,8 +155,8 @@ pub fn run_script(
                 buffer.area.width, buffer.area.height
             )?;
             for y in 0..buffer.area.height {
-                for x in 0..buffer.area.width {
-                    write!(out, "{}", buffer[(x, y)].symbol())?;
+                for symbol in super::row_symbols(buffer, y) {
+                    write!(out, "{symbol}")?;
                 }
                 writeln!(out)?;
             }

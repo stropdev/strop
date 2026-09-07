@@ -27,6 +27,20 @@ pub fn printable_grapheme(grapheme: &str) -> &str {
     }
 }
 
+/// Printable metadata with the same grapheme policy as buffer emission.
+/// Preserve an already-owned label without copying when no control needs replacing.
+pub fn printable_text<'a>(text: impl Into<Cow<'a, str>>) -> Cow<'a, str> {
+    let text = text.into();
+    if !text.chars().any(char::is_control) {
+        return text;
+    }
+    let mut output = String::with_capacity(text.len());
+    for grapheme in text.graphemes(true) {
+        output.push_str(printable_grapheme(grapheme));
+    }
+    Cow::Owned(output)
+}
+
 /// One cluster's width: tabs expand to their stop from the ABSOLUTE cell;
 /// everything else is the printable form's terminal width.
 fn grapheme_width(text: &str, cell: DisplayColumn, tab: usize) -> usize {

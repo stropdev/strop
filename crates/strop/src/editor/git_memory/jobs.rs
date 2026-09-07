@@ -599,9 +599,12 @@ impl Editor {
                 };
                 let mut text = format!("commit {}\n\n", &sha[..10.min(sha.len())]);
                 for f in &files {
-                    text.push_str(&f.path.display().to_string());
+                    text.push_str(&strop_core::layout::printable_text(
+                        f.path.to_string_lossy(),
+                    ));
                     text.push('\n');
                 }
+                self.message.clear();
                 self.push_surface(
                     Some("commit files"),
                     &text,
@@ -613,12 +616,17 @@ impl Editor {
                 );
             }
             (DiveLanding::Files { sha, files }, Outcome::Success(DiveData::Delta(diff))) => {
-                let commit = CommitFiles { sha, files };
                 let path = match &key.target {
                     DiveTarget::FileDelta { path, .. } => path.clone(),
                     _ => return,
                 };
-                let label = path.display().to_string();
+                let commit = CommitFiles {
+                    sha,
+                    files,
+                    current: path.clone(),
+                };
+                let label = strop_core::layout::printable_text(path.to_string_lossy()).into_owned();
+                self.message.clear();
                 self.open_delta("delta", &label, diff.hunks, None, Some(commit));
             }
             (DiveLanding::Delta { cf, path }, Outcome::Success(DiveData::Delta(diff))) => {

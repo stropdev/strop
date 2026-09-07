@@ -5,6 +5,7 @@
 pub mod memory;
 
 mod diff;
+mod numstat;
 mod repo;
 mod revision;
 

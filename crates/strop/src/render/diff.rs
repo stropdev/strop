@@ -1,18 +1,24 @@
 //! Diff surface rendering (0010 §4/§5): gutters, row backgrounds,
-//! structural rows — plus the 0011 left-margin columns (blame gutter,
-//! commit file sidebar). All decoration comes from typed hunk data —
+//! structural rows. All decoration comes from typed hunk data —
 //! never from sniffing `+`/`-` in the text. Anatomy borrowed from
 //! tuicr (`[sign][old][new][content]`, quiet bands for structural
-//! rows), tuned to the strop palette.
+//! rows), tuned to the strop palette. Log/file row decoration lives
+//! in `diff/list`; the blame column and commit file sidebar in
+//! `diff/margins` (0011/0032).
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::editor::{Editor, Surface};
-use strop_git::memory::ChangedFile;
 use strop_git::{DiffLine, LineOrigin};
 
-use super::{ACCENT, MUTED, SELECT_BG, TEXT};
+use super::{ACCENT, MUTED, TEXT};
+
+mod list;
+mod margins;
+
+pub(crate) use list::surface_list_row;
+pub(crate) use margins::{blame_blank, blame_spans, Sidebar, BLAME_W};
 
 pub(crate) const ADD_FG: Color = Color::Rgb(0xa9, 0xc4, 0x7c);
 pub(crate) const DEL_FG: Color = Color::Rgb(0xe8, 0x67, 0x7a);
@@ -255,296 +261,33 @@ pub(crate) fn structural_row(surface: &Surface, row: usize) -> Line<'static> {
         .style(Style::default().bg(BAND_BG)),
         (Surface::Diff { .. }, _) => diff_row(Some(surface), row)
             .and_then(|row| match row {
-                DiffRow::HunkHeader(hunk) => Some(hunk.header()),
+                DiffRow::HunkHeader(hunk) => Some(hunk_header_spans(hunk)),
                 _ => None,
             })
-            .map(|header| {
-                Line::from(Span::styled(header, Style::default().fg(MUTED)))
-                    .style(Style::default().bg(BAND_BG))
-            })
+            .map(|spans| Line::from(spans).style(Style::default().bg(BAND_BG)))
             .unwrap_or_default(),
         _ => Line::default(),
     }
 }
 
-/// Commit-log and changed-files rows, decorated from their typed data
-/// (0010 §5): graph runes dim, sha accent; paths left with the stats
-/// after them. Decoration text keeps the buffer line's exact byte
-/// prefix (the path); the stats are virtual EOL content. Returns None
-/// for rows that render as normal text.
-pub(crate) fn surface_content_spans(
-    surface: Option<&Surface>,
-    line_idx: usize,
-    width: usize,
-    tab: usize,
-) -> Option<Vec<Span<'static>>> {
-    match surface? {
-        Surface::CommitLog { rows, .. } => {
-            let row = rows.get(line_idx)?;
-            Some(log_row_spans(&row.text))
-        }
-        Surface::ChangedFiles { sha, files, .. } => match line_idx {
-            0 => Some(vec![
-                Span::styled("commit ", Style::default().fg(MUTED)),
-                Span::styled(
-                    sha.chars().take(10).collect::<String>(),
-                    Style::default().fg(ACCENT),
-                ),
-            ]),
-            1 => Some(Vec::new()),
-            _ => {
-                let file = files.get(line_idx - 2)?;
-                Some(file_row_spans(
-                    &file.path.display().to_string(),
-                    file.added,
-                    file.deleted,
-                    width,
-                    tab,
-                ))
-            }
-        },
-        _ => None,
-    }
-}
-
-/// `* 51b63a8 t · 35 seconds ago · subject` → lane-colored graph runes,
-/// sha accent bold, `·` separators dim, the rest text.
-fn log_row_spans(text: &str) -> Vec<Span<'static>> {
-    let graph_len = text
-        .chars()
-        .take_while(|c| "*|/\\<>-_ ".contains(*c))
-        .count();
-    let rest = &text[graph_len..];
-    let sha_len = rest
-        .chars()
-        .take_while(|c| c.is_ascii_hexdigit())
-        .map(|c| c.len_utf8())
-        .sum::<usize>();
-    let mut spans = graph_spans(&text[..graph_len]);
-
-    if sha_len > 0 {
-        spans.push(Span::styled(
-            rest[..sha_len].to_string(),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ));
-    }
-    for (i, part) in rest[sha_len..].split(" · ").enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" · ", Style::default().fg(MUTED)));
-        }
-        if !part.is_empty() {
-            spans.push(Span::styled(part.to_string(), Style::default().fg(TEXT)));
-        }
-    }
-    spans
-}
-
-/// Lane-colored graph art: each two-column lane cycles the palette, the
-/// commit node `*` is bold in its lane's color (gitui/lazygit lesson —
-/// lane color is how the eye tracks a branch through merges).
-fn graph_spans(prefix: &str) -> Vec<Span<'static>> {
-    const LANES: [Color; 6] = [
-        ACCENT,                       // amber
-        Color::Rgb(0x9e, 0xce, 0x6a), // green
-        Color::Rgb(0x7a, 0xa2, 0xf7), // blue
-        Color::Rgb(0xbb, 0x9a, 0xf7), // purple
-        Color::Rgb(0x7d, 0xcf, 0xff), // cyan
-        Color::Rgb(0xe0, 0xaf, 0x68), // yellow
-    ];
-    prefix
-        .chars()
-        .enumerate()
-        .map(|(i, c)| {
-            if c == ' ' {
-                return Span::styled(" ", Style::default());
-            }
-            let color = LANES[(i / 2) % LANES.len()];
-            let style = if c == '*' {
-                Style::default().fg(color).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(color)
-            };
-            Span::styled(c.to_string(), style)
-        })
-        .collect()
-}
-/// path left, then ` +N -M` after at least one space — the stats are
-/// virtual EOL content (the buffer row holds only the path), so the
-/// caret and the path stay byte-aligned no matter how wide the stats.
-fn file_row_spans(
-    path: &str,
-    added: usize,
-    deleted: usize,
-    width: usize,
-    tab: usize,
-) -> Vec<Span<'static>> {
-    let stats = format!("+{added} -{deleted}");
-    let path_width = strop_core::layout::LineLayout::build(path, tab).width.get();
-    let pad = width.saturating_sub(path_width + stats.len()).max(1);
+/// The hunk-header band: `@@` quiet, the old side in the deletion
+/// color, the new side in the addition color — the range reads
+/// structurally without shouting. The spans concatenate to exactly
+/// `Hunk::header()`, the string the buffer row holds.
+fn hunk_header_spans(hunk: &strop_git::Hunk) -> Vec<Span<'static>> {
     vec![
-        Span::styled(path.to_string(), Style::default().fg(TEXT)),
-        Span::raw(" ".repeat(pad)),
+        Span::styled("@@ ", Style::default().fg(MUTED)),
         Span::styled(
-            format!("+{added} "),
-            Style::default().fg(ADD_FG).add_modifier(Modifier::BOLD),
+            format!("-{},{}", hunk.old_start, hunk.old_count),
+            Style::default().fg(DEL_FG),
         ),
+        Span::styled(" ", Style::default().fg(MUTED)),
         Span::styled(
-            format!("-{deleted}"),
-            Style::default().fg(DEL_FG).add_modifier(Modifier::BOLD),
+            format!("+{},{}", hunk.new_start, hunk.new_count),
+            Style::default().fg(ADD_FG),
         ),
+        Span::styled(" @@", Style::default().fg(MUTED)),
     ]
-}
-
-// ---- left-margin columns (0011) -----------------------------------------
-
-/// Blame gutter width: `sha˟7 author˟9 age˟3` + separators.
-pub(crate) const BLAME_W: usize = 22;
-/// Pane-divider color — the sidebar's rule matches it.
-const RULE: Color = Color::Rgb(0x3a, 0x3d, 0x4d);
-/// Younger than this counts as "recent" → accent (0011 §3).
-const RECENT_SECS: i64 = 30 * 86400;
-
-/// The blame cell for one buffer line: `sha7 author9 age3`, muted for
-/// old commits, accent for recent ones and uncommitted lines
-/// (`0000000 you now`).
-pub(crate) fn blame_spans(line: &strop_git::memory::BlameLine, now: i64) -> Span<'static> {
-    let uncommitted = line.is_uncommitted();
-    let recent = line.ts > 0 && now.saturating_sub(line.ts) < RECENT_SECS;
-    let fg = if uncommitted || recent { ACCENT } else { MUTED };
-    let sha: String = if uncommitted {
-        "0".repeat(7)
-    } else {
-        line.sha.chars().take(7).collect()
-    };
-    let author = ellipsize(&line.author, 9);
-    let age: String = line.age.chars().take(3).collect();
-    Span::styled(
-        format!("{sha} {author:<9} {age:>3} "),
-        Style::default().fg(fg),
-    )
-}
-
-/// A blank blame cell (filler rows past the buffer end).
-pub(crate) fn blame_blank() -> Span<'static> {
-    Span::styled(" ".repeat(BLAME_W), Style::default())
-}
-/// Sidebar width fits the commit's longest path (clamped 12–24) — a
-/// two-file commit shouldn't pay a 28-column pane.
-/// One sidebar row in tree form (zed-lite: always-expanded, directories
-/// as dim header rows, files indented by depth — the hierarchy reads
-/// at a glance).
-pub(crate) enum SidebarRow {
-    Dir(String),
-    File { index: usize, depth: usize },
-}
-
-/// Flat sorted file list → tree rows: a directory row appears the first
-/// time its path prefix shows up.
-pub(crate) fn sidebar_tree(files: &[ChangedFile]) -> Vec<SidebarRow> {
-    let mut paths: Vec<String> = files.iter().map(|f| f.path.display().to_string()).collect();
-    paths.sort();
-    let mut rows: Vec<SidebarRow> = Vec::new();
-    let mut seen_dirs: Vec<String> = Vec::new();
-    for (i, p) in paths.iter().enumerate() {
-        let parts: Vec<&str> = p.split('/').collect();
-        // every ancestor dir of this file, in order
-        for d in 1..parts.len() {
-            let dir = parts[..d].join("/") + "/";
-            if !seen_dirs.contains(&dir) {
-                seen_dirs.push(dir.clone());
-                rows.push(SidebarRow::Dir(dir));
-            }
-        }
-        // the file index is its position in `files` (path lookup)
-        let index = files
-            .iter()
-            .position(|f| f.path.display().to_string() == *p)
-            .unwrap_or(i);
-        rows.push(SidebarRow::File {
-            index,
-            depth: parts.len() - 1,
-        });
-    }
-    rows
-}
-
-pub(crate) fn sidebar_width(files: &[ChangedFile]) -> usize {
-    let longest = sidebar_tree(files)
-        .iter()
-        .map(|r| match r {
-            SidebarRow::Dir(d) => d.chars().count() + 1,
-            SidebarRow::File { index, depth } => {
-                let name = files[*index].path.display().to_string();
-                let base = name.rsplit('/').next().unwrap_or(&name);
-                base.chars().count() + 2 * depth
-            }
-        })
-        .max()
-        .unwrap_or(0);
-    (longest + 2).clamp(12, 24)
-}
-
-/// One sidebar row: the commit's changed files as a simple tree (dirs
-/// dim, files indented by depth), current one marked `▌`/`▸` (tuicr's
-/// focus rule) on the selection background, plus the dividing rule.
-/// Rows past the tree stay blank so the column reads as one surface.
-pub(crate) fn sidebar_spans(
-    files: &[ChangedFile],
-    current: &str,
-    row: usize,
-    focused: bool,
-) -> Vec<Span<'static>> {
-    let w = sidebar_width(files);
-    let rows = sidebar_tree(files);
-    let cell = match rows.get(row) {
-        Some(SidebarRow::Dir(d)) => {
-            let shown = ellipsize(d, w - 1);
-            let pad = w - 1 - shown.chars().count();
-            vec![
-                Span::styled(format!(" {shown}"), Style::default().fg(MUTED)),
-                Span::styled(" ".repeat(pad), Style::default()),
-            ]
-        }
-        Some(SidebarRow::File { index, depth }) => {
-            let f = &files[*index];
-            let path = f.path.display().to_string();
-            let base = path.rsplit('/').next().unwrap_or(&path);
-            let indent = "  ".repeat(*depth);
-            let cur = path == current;
-            let marker = if cur {
-                if focused {
-                    "▸"
-                } else {
-                    "▌"
-                }
-            } else {
-                " "
-            };
-            let shown = ellipsize(&format!("{indent}{base}"), w - 2);
-            let pad = w - 1 - shown.chars().count();
-            if cur {
-                vec![
-                    Span::styled(
-                        format!("{marker}{shown}"),
-                        Style::default().fg(ACCENT).bg(SELECT_BG),
-                    ),
-                    Span::styled(" ".repeat(pad), Style::default().bg(SELECT_BG)),
-                ]
-            } else {
-                vec![
-                    Span::styled(format!("{marker}{shown}"), Style::default().fg(TEXT)),
-                    Span::styled(" ".repeat(pad), Style::default()),
-                ]
-            }
-        }
-        None => vec![Span::styled(" ".repeat(w), Style::default())],
-    };
-    let mut spans = cell;
-    spans.push(Span::styled(
-        "│",
-        Style::default().fg(if focused { ACCENT } else { RULE }),
-    ));
-    spans
 }
 
 /// The number gutter for a pane's buffer: diff surfaces keep their
@@ -564,7 +307,9 @@ pub(crate) fn number_gutter_width(editor: &Editor, doc: strop_core::id::Document
 /// Total left inset before a pane's content: file sidebar + blame
 /// column + the surface's number gutter. Cursor placement and the
 /// inactive-pane caret both derive from here — one composition, no
-/// per-surface drift (0011 §3/§4).
+/// per-surface drift (0011 §3/§4). The sidebar contributes exactly
+/// what its emission draws (`Sidebar::outer_width`), so the caret and
+/// the tree can never disagree (0032 §3).
 pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) -> usize {
     let surface = editor.docs.get(buffer).and_then(|d| d.surface_payload());
     let mut inset = number_gutter_width(editor, buffer);
@@ -575,37 +320,14 @@ pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) ->
         commit: Some(cf), ..
     }) = surface
     {
-        inset += sidebar_width(&cf.files) + 1;
+        inset += Sidebar::measured_width(&cf.files);
     }
     inset
-}
-
-/// `s` clipped to `n` chars with a trailing `…` when it had more.
-fn ellipsize(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let cut: String = s.chars().take(n - 1).collect();
-        format!("{cut}…")
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn graph_lanes_get_distinct_colors() {
-        // a two-lane merge row: `*` in lane 0, `|` in lane 1
-        let spans = log_row_spans("* | 3a9eeec t · 1s ago · merge");
-        let star = spans.iter().find(|s| s.content == "*").unwrap();
-        let bar = spans.iter().find(|s| s.content == "|").unwrap();
-        assert_ne!(star.style.fg, bar.style.fg, "lanes must differ");
-        assert_eq!(star.style.fg, Some(ACCENT));
-        assert!(spans
-            .iter()
-            .any(|s| s.content == "3a9eeec" && s.style.add_modifier.contains(Modifier::BOLD)));
-    }
 
     #[test]
     fn emphasis_trims_shared_affixes() {
@@ -622,7 +344,6 @@ mod tests {
 
     #[test]
     fn hunk_pairs_deletions_with_additions() {
-        use strop_git::{DiffLine, LineOrigin};
         let line = |origin, old, new, text: &str| DiffLine {
             has_newline: true,
             origin,
@@ -654,51 +375,37 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_tree_groups_by_directory() {
-        let files = vec![
-            ChangedFile {
-                path: "src/api/handlers.rs".into(),
-                added: 1,
-                deleted: 0,
-            },
-            ChangedFile {
-                path: "README.md".into(),
-                added: 1,
-                deleted: 0,
-            },
-            ChangedFile {
-                path: "src/main.rs".into(),
-                added: 1,
-                deleted: 0,
-            },
-            ChangedFile {
-                path: "src/api/mod.rs".into(),
-                added: 1,
-                deleted: 0,
-            },
-        ];
-        let rows = sidebar_tree(&files);
-        let shape: Vec<String> = rows
-            .iter()
-            .map(|r| match r {
-                SidebarRow::Dir(d) => format!("D{d}"),
-                SidebarRow::File { index, depth } => {
-                    format!("F{}{}", "  ".repeat(*depth), files[*index].path.display())
-                }
-            })
-            .collect();
+    fn hunk_header_spans_keep_the_buffer_rows_bytes() {
+        let hunk = strop_git::Hunk {
+            kind: strop_git::HunkKind::Change,
+            new_start: 41,
+            new_count: 7,
+            old_start: 40,
+            old_count: 6,
+            lines: Vec::new(),
+        };
+        let spans = hunk_header_spans(&hunk);
+        let joined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        // the buffer row IS Hunk::header(): byte equality keeps the
+        // caret, search and yank aligned with what is on screen
+        assert_eq!(joined, hunk.header());
         assert_eq!(
-            shape,
-            [
-                "FREADME.md", // root file, no dir row
-                "Dsrc/",
-                "Dsrc/api/",
-                "F    src/api/handlers.rs",
-                "F    src/api/mod.rs",
-                "F  src/main.rs",
-            ]
+            spans
+                .iter()
+                .find(|s| s.content == "-40,6")
+                .unwrap()
+                .style
+                .fg,
+            Some(DEL_FG)
         );
-        // sorted: README.md (root) first, then src tree
-        assert!(matches!(rows[0], SidebarRow::File { depth: 0, .. }));
+        assert_eq!(
+            spans
+                .iter()
+                .find(|s| s.content == "+41,7")
+                .unwrap()
+                .style
+                .fg,
+            Some(ADD_FG)
+        );
     }
 }

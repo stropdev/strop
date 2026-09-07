@@ -42,6 +42,8 @@ mod visual;
 
 pub use document::Document;
 pub use document::Surface;
+#[cfg(test)]
+pub use git_memory::CommitFiles;
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews};

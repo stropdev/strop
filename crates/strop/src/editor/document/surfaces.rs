@@ -16,7 +16,7 @@ pub enum DocumentSource {
     /// The [No Name] scratch buffer.
     Scratch,
     /// A git-memory surface: job-owned content, readonly.
-    Surface(Surface),
+    Surface(Box<Surface>),
     /// `:!cmd` output / help: named virtual content, readonly.
     Output,
 }

@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.15.1 — 2026-09-07
+
+Modeline and Git-surface polish, separately from the 0.15.0 correctness release
+(plan 0032).
+
+### Changed
+
+- A quieter, segmented modeline with workspace-relative directory context,
+  prominent filenames and display-cell-aware priorities. Long paths no longer
+  crowd out live preview/status or position; the last content line reads 100%.
+- Historical Git views identify their commit and actual file, not today's branch.
+  Commit subjects carry the emphasis, author/age metadata is quieter, and the
+  current log/file row has a restrained highlight below search/selection overlays.
+- Diff headers distinguish old/new ranges; the sidebar has clearer hierarchy,
+  stronger current-file/focus cues and grapheme-safe label clipping.
+- Sidebar structure is built once per pane render. Geometry measurements do not
+  build trees, and native file indices replace lossy display-string lookups.
+
+### Fixed
+
+- Git changed-file paths use NUL-delimited native records, including Unicode,
+  non-UTF-8 Unix names and rename destinations. Binary-file rows remain visible.
+- Commit deltas treat their path as a literal filename, not a glob. Native
+  selection survives identical lossy labels; control-bearing filenames remain
+  one printable buffer row while navigation retains the real path.
+- Completed Git dives no longer leave a stale loading status, and admission
+  failures cannot be overwritten by that status.
+- Headless frame text skips cells covered by wide glyphs instead of printing
+  stale hidden characters or duplicate glyphs from TestBackend.
+
+### Verification
+
+- In the 240-file review fixture, median traced debug-frame rendering fell from
+  106.9 ms to 5.8 ms (12 frames, same workstation). This is measured fixture
+  behavior, not a portable timing guarantee.
+- Layout, native-path navigation, control/Unicode labels and frame-text round trips
+  have behavioral regressions; grammar and keybindings remain unchanged.
+
 ## 0.15.0 — 2026-09-07
 
 The complete P1/P2 correctness roadmap (0031).

@@ -522,3 +522,62 @@ fn unattached_combining_cluster_cannot_rewrite_the_gutter() {
         0
     );
 }
+
+#[test]
+fn sidebar_emission_matches_the_inset_the_caret_uses() {
+    let mut e = Editor::new(Buffer::from_text("scratch\n"));
+    let hunk = strop_git::Hunk {
+        kind: strop_git::HunkKind::Add,
+        new_start: 1,
+        new_count: 1,
+        old_start: 0,
+        old_count: 0,
+        lines: vec![strop_git::DiffLine {
+            origin: strop_git::LineOrigin::Addition,
+            old_lineno: None,
+            new_lineno: Some(1),
+            text: b"one".to_vec(),
+            has_newline: true,
+        }],
+    };
+    let commit = crate::editor::CommitFiles {
+        sha: "0123456789abcdef".into(),
+        files: vec![strop_git::memory::ChangedFile {
+            path: "src/verylongfilename.rs".into(),
+            added: 1,
+            deleted: 0,
+        }],
+        current: "src/verylongfilename.rs".into(),
+    };
+    e.open_delta(
+        "delta",
+        "src/verylongfilename.rs",
+        vec![hunk],
+        None,
+        Some(commit),
+    );
+    let doc = e.current();
+    let projected = super::diff::left_inset(&e, doc);
+    let mut terminal = viewport_terminal(50, 6);
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    let grid = terminal.backend().buffer();
+    // the tree: a dim dir row beside the stats line, the current file
+    // (native path, quiet marker — the sidebar is not focused) beside
+    // the hunk header
+    assert_eq!(row_symbols(grid, 0, 0, 5), [" ", "s", "r", "c", "/"]);
+    let divider = (0..50).find(|&x| grid[(x, 0)].symbol() == "│").unwrap();
+    assert_eq!(grid[(0, 1)].symbol(), "▌");
+    let content = (divider + 1..50)
+        .find(|&x| grid[(x, 0)].symbol() != " ")
+        .unwrap();
+    assert_eq!(
+        row_symbols(grid, content, 0, 7),
+        ["s", "r", "c", "/", "v", "e", "r"]
+    );
+    assert_eq!(
+        projected,
+        usize::from(content),
+        "measured inset matches the rendered boundary"
+    );
+    terminal.backend_mut().assert_cursor_position((content, 0));
+}

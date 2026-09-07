@@ -58,6 +58,10 @@ carets share display-cell geometry; new edits preserve the buffer's line endings
 File/native work runs on owned jobs rather than blocking keystrokes. Sessions
 use private atomic files and lossless native paths, including undo history.
 
+The modeline keeps filenames, live status and position legible at narrow widths.
+Git history uses quieter metadata, clear file hierarchy and native-path-safe
+navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
+
 ## Reporting a bug
 
 ```sh

@@ -32,6 +32,8 @@ pub use types::{
 pub struct CommitFiles {
     pub sha: String,
     pub files: Vec<memory::ChangedFile>,
+    /// Selected file identity; display labels are not reversible native paths.
+    pub current: PathBuf,
 }
 
 /// Where a hunk preview came from: the buffer it undoes/stages in, at

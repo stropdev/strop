@@ -77,12 +77,12 @@ impl Editor {
             self.message = "not a git repo".into();
             return;
         };
+        self.message = "loading…".into();
         self.register_dive(DiveKey {
             document: doc,
             workdir: context.workdir().to_path_buf(),
             target,
         });
-        self.message = "loading…".into();
     }
 
     /// `]f` / `[f`: next/previous file of the same commit (0011 §4).
@@ -91,9 +91,7 @@ impl Editor {
     /// for the same surface.
     pub(crate) fn commit_file_step(&mut self, forward: bool) {
         let Some(Surface::Diff {
-            commit: Some(cf),
-            label,
-            ..
+            commit: Some(cf), ..
         }) = self.surface().cloned()
         else {
             self.message = "]f/[f: file navigation needs a commit diff".into();
@@ -103,11 +101,7 @@ impl Editor {
             self.message = "single-file commit".into();
             return;
         }
-        let Some(cur) = cf
-            .files
-            .iter()
-            .position(|f| f.path.display().to_string() == label)
-        else {
+        let Some(cur) = cf.files.iter().position(|file| file.path == cf.current) else {
             self.message = "current file not in commit".into();
             return;
         };
@@ -122,6 +116,7 @@ impl Editor {
             self.message = "not a git repo".into();
             return;
         };
+        self.message = format!("loading {}…", file.path.display());
         self.register_dive(DiveKey {
             document: self.current(),
             workdir: context.workdir().to_path_buf(),
@@ -130,7 +125,6 @@ impl Editor {
                 path: file.path.clone(),
             },
         });
-        self.message = format!("loading {}…", file.path.display());
     }
 
     /// Register one dive request for a surface document, superseding
@@ -232,7 +226,7 @@ impl Editor {
     /// commit: surface data and buffer text in place, cursor to top.
     pub(crate) fn load_commit_delta(&mut self, cf: &CommitFiles, path: &Path, hunks: Vec<Hunk>) {
         let (added, deleted) = hunk_stats(&hunks);
-        let label = path.display().to_string();
+        let label = strop_core::layout::printable_text(path.to_string_lossy()).into_owned();
         let text = diff_surface_text(&label, &hunks);
         let idx = self.current();
         if let Err(error) = self.replace_system(idx, &text) {
@@ -245,6 +239,7 @@ impl Editor {
             hunks: hunk_slot,
             added: add_slot,
             deleted: del_slot,
+            commit: Some(commit),
             ..
         })) = self.docs.get_mut(idx).map(|d| d.surface_payload_mut())
         {
@@ -252,13 +247,11 @@ impl Editor {
             *hunk_slot = hunks;
             *add_slot = added;
             *del_slot = deleted;
+            commit.current = path.to_path_buf();
         }
         // the highlighter follows the file the surface now shows (the
         // pure detector reads the rewritten surface's own rope)
-        let hl = strop_syntax::Highlighter::for_path(
-            std::path::Path::new(&label),
-            self.doc(idx).buf.text(),
-        );
+        let hl = strop_syntax::Highlighter::for_path(path, self.doc(idx).buf.text());
         self.doc_mut(idx).highlighter = hl;
         self.set_head(0);
         self.view_mut().view_top = 0;

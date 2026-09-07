@@ -312,6 +312,7 @@ impl Repo {
         let mut opts = git2::DiffOptions::new();
         opts.context_lines(3)
             .pathspec(path)
+            .disable_pathspec_match(true)
             .include_unmodified(false);
         let diff = self
             .inner
