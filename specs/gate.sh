@@ -33,4 +33,5 @@ if [ "$violations" != "$expected" ]; then
     exit 1
 fi
 
-echo "model gate: clean (protocol proven; freshness mutant killed)"
+echo "editor model gate: bounded checks clean; freshness mutant rejected"
+sh specs/ssh-gate.sh

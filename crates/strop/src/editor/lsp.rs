@@ -25,7 +25,7 @@ pub(crate) struct LspServer {
 impl Editor {
     /// Try to attach a language server for the current buffer. The
     /// synchronous part only touches in-memory state; discovery
-    /// (config, root, trust, probe) is owned worker work behind the
+    /// (config, root, trust, executability) is owned worker work behind the
     /// replay gate.
     /// The LSP half of the startup "start services" action: enable
     /// attach, then attach for the current buffer. A pure state
@@ -84,7 +84,7 @@ impl Editor {
             path: abs.clone(),
             language: language.to_string(),
         };
-        // Replay gate: no native config/trust/probe before this
+        // Replay gate: no native config/trust/executability before this
         // registration (R11).
         match self.tape.request("lsp.attach", &args) {
             Ok(true) => self.lsp_spawn_discovery(ticket, abs, ext, language),
@@ -111,6 +111,7 @@ impl Editor {
             cwd: self.cwd.clone(),
             git_workdir: self.git.as_ref().map(|g| g.workdir().to_path_buf()),
             state_dir: self.state_dir.clone(),
+            xdg: strop_lsp::languages::xdg_path(),
             transport: self.lsp_state.attach.transport.clone(),
         };
         let done = self.lsp_state.attach.attach_channel();
@@ -142,10 +143,12 @@ impl Editor {
     }
 
     pub(crate) fn handle_lsp_attach(&mut self, record: AttachRecord) {
+        trace_attach(&record);
         let language_key = record.language.clone();
         // Stale completion: a newer attempt owns this language now.
         if self.lsp_state.attach.pending.get(&language_key) != Some(&record.ticket) {
             trace::services::rejected("lsp", "attach completion superseded");
+            self.retire_superseded_transport(record.server);
             return;
         }
         self.lsp_state.attach.pending.remove(&language_key);
@@ -156,7 +159,12 @@ impl Editor {
             name,
             root,
             outcome,
+            layers,
         } = record;
+        // Malformed layers are diagnosed whatever the outcome (0033
+        // §2): a healthy fallback server must not erase them.
+        self.record_layer_diagnostics(&layers);
+        let warning = layer_suffix(&layers);
         match outcome {
             attach::AttachDecision::Attached => {
                 let Some(server) = server else { return };
@@ -171,6 +179,10 @@ impl Editor {
                     root: root.clone(),
                     server,
                 });
+                match warning {
+                    Some(warning) => self.message = format!("lsp: {warning}"),
+                    None => self.message = format!("lsp: {name} starting"),
+                }
                 let transport = self
                     .lsp_state
                     .attach
@@ -203,7 +215,6 @@ impl Editor {
                                 rx,
                             });
                         }
-                        self.message = format!("lsp: {name} starting");
                         self.lsp_did_open_current();
                     }
                     None => {
@@ -240,13 +251,62 @@ impl Editor {
                     attach::AttachDecision::TrustError { error } => {
                         format!("project trust: {error}")
                     }
-                    attach::AttachDecision::NotExecutable { hint } => {
-                        format!("lsp: {name} not available — {hint}")
+                    attach::AttachDecision::NotExecutable {
+                        command,
+                        reason,
+                        hint,
+                    } => {
+                        format!("lsp: {command} {reason} — {hint}")
                     }
-                    attach::AttachDecision::SpawnFailed => format!("lsp: {name} could not start"),
+                    attach::AttachDecision::SpawnFailed { reason } => {
+                        format!("lsp: {name} could not start — {reason}")
+                    }
                     attach::AttachDecision::Attached => unreachable!("matched above"),
                 };
+                if let Some(warning) = warning {
+                    self.message = format!("{} — {}", self.message, warning);
+                }
             }
+        }
+    }
+
+    /// Record newly reported malformed-layer diagnostics (0033 §2),
+    /// deduped: every later attach for the same layers is already
+    /// covered.
+    fn record_layer_diagnostics(&mut self, layers: &[strop_lsp::languages::LayerDiagnostic]) {
+        for diagnostic in layers {
+            let state = &mut self.lsp_state.attach;
+            if !state.layer_diagnostics.contains(diagnostic) {
+                state.layer_diagnostics.push(diagnostic.clone());
+            }
+        }
+    }
+
+    /// The first recorded layer diagnostic, when any — readiness and
+    /// later messages must not erase it (0033 §2).
+    fn layer_warning(&self) -> Option<String> {
+        layer_suffix(&self.lsp_state.attach.layer_diagnostics)
+    }
+
+    /// A superseded discovery may already have published a live
+    /// transport for its server: retire it so the attempt leaves no
+    /// orphan process and no undrained event stream.
+    fn retire_superseded_transport(&mut self, server: Option<ServerId>) {
+        let Some(server) = server else { return };
+        let transport = self
+            .lsp_state
+            .attach
+            .transport
+            .lock()
+            .ok()
+            .and_then(|mut table| table.remove(&server));
+        if let Some(attach::LiveTransport { client, .. }) = transport {
+            // Joining never blocks the input thread (same policy as
+            // lsp_failed).
+            std::thread::spawn(move || {
+                client.shutdown();
+                client.wait(std::time::Duration::from_secs(2));
+            });
         }
     }
 
@@ -255,13 +315,20 @@ impl Editor {
         match event {
             LspEvent::Ready { server, name } => {
                 if self.lsp_servers.iter().any(|s| s.id == server) {
-                    self.message = format!("lsp: {name} ready");
+                    // Success must not erase a configuration warning
+                    // (0033 §2): readiness is reported alongside it.
+                    self.message = match self.layer_warning() {
+                        Some(warning) => format!("lsp: {name} ready — {warning}"),
+                        None => format!("lsp: {name} ready"),
+                    };
                 }
             }
             LspEvent::Failed { server, name, hint } => {
                 if self.lsp_servers.iter().any(|s| s.id == server) {
                     self.lsp_failed(server);
                     self.message = format!("lsp: {name} failed — {hint}");
+                } else {
+                    trace::services::rejected("lsp", "failure for an unowned server");
                 }
             }
             LspEvent::Diagnostics {
@@ -541,6 +608,52 @@ impl Editor {
     pub fn jump_diagnostic_pub(&mut self, forward: bool) {
         self.jump_diagnostic(forward);
     }
+}
+
+/// Modeline suffix for malformed layers: the first diagnostic's exact
+/// path, plus a count when more follow (0033 §2).
+fn layer_suffix(layers: &[strop_lsp::languages::LayerDiagnostic]) -> Option<String> {
+    let first = layers.first()?;
+    Some(if layers.len() == 1 {
+        first.display()
+    } else {
+        format!("{} (+{} more)", first.display(), layers.len() - 1)
+    })
+}
+
+/// Attach completions reach the structured trace with their outcome
+/// and any malformed-layer diagnostics (0033 §2/§3) — silence is not a
+/// report. Runs at handler entry, before ownership decisions.
+fn trace_attach(record: &attach::AttachRecord) {
+    use strop_trace::{record_with, EventKind};
+    record_with(EventKind::JobFinished, || {
+        let mut value = serde_json::json!({
+            "service": "lsp",
+            "result": "attach",
+            "outcome": record.outcome.label(),
+            "language": record.language,
+            "name": record.name,
+            "server": record.server,
+            "root": trace::services::NativePath(record.root.clone()),
+            "layers": &record.layers,
+        });
+        match &record.outcome {
+            attach::AttachDecision::NotExecutable {
+                command,
+                reason,
+                hint,
+            } => {
+                value["command"] = serde_json::json!(command);
+                value["reason"] = serde_json::json!(reason);
+                value["hint"] = serde_json::json!(hint);
+            }
+            attach::AttachDecision::SpawnFailed { reason } => {
+                value["reason"] = serde_json::json!(reason);
+            }
+            _ => {}
+        }
+        value
+    });
 }
 
 /// The LSP language for a path, from the embedded extension table —

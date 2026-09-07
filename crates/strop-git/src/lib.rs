@@ -3,6 +3,8 @@
 //! (not the disk file), so gutter signs track unsaved edits.
 
 pub mod memory;
+pub mod permalink;
+pub mod ssh;
 
 mod diff;
 mod numstat;

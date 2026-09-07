@@ -15,6 +15,8 @@ pub enum DocumentSource {
     File,
     /// The [No Name] scratch buffer.
     Scratch,
+    /// An in-memory SSH snapshot; never a local path or writable file.
+    Remote(strop_remote::RemoteFile),
     /// A git-memory surface: job-owned content, readonly.
     Surface(Box<Surface>),
     /// `:!cmd` output / help: named virtual content, readonly.

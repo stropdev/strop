@@ -185,7 +185,8 @@ mod quit_tests {
         let mut e =
             crate::editor::Editor::new_in(strop_core::Buffer::from_text("x\n"), "/recorded".into());
         let mut out = Vec::new();
-        crate::headless::run_script(&mut e, "keys :q!<cr>\nframe\n", 60, 10, &mut out).unwrap();
+        crate::headless::run_script(&mut e, "keys :q!<cr>\nframe\n", 60, 10, &mut out, None)
+            .unwrap();
         assert!(e.should_quit);
     }
 }

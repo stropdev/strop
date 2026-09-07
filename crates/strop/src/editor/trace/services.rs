@@ -119,11 +119,12 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
             return json!({"service":"lsp", "event":event});
         }
         match event {
-            LspEvent::Ready { server, .. } => {
-                json!({"service":"lsp","result":"ready","server":server})
+            LspEvent::Ready { server, name } => {
+                json!({"service":"lsp","result":"ready","server":server,"name":name})
             }
-            LspEvent::Failed { server, .. } => {
-                json!({"service":"lsp","result":"failed","server":server})
+            LspEvent::Failed { server, name, hint } => {
+                // The hint carries the executable and the fix (0033 §3)
+                json!({"service":"lsp","result":"failed","server":server,"name":name,"hint":hint})
             }
             LspEvent::Diagnostics { context, diags, .. } => json!({
                 "service":"lsp","result":"diagnostics","context":context,"count":diags.len(),

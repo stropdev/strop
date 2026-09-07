@@ -227,6 +227,21 @@ const CASES: &[Case] = &[
         text: "ab\n",
         keys: "3i!<esc>",
     },
+    Case {
+        name: "first nonblank insert macro records one command",
+        text: "  text\n",
+        keys: "qaIX<esc>q@a",
+    },
+    Case {
+        name: "whole line substitute preserves next line",
+        text: "one\ntwo\nthree\n",
+        keys: "jSX<esc>",
+    },
+    Case {
+        name: "case toggle advances after each character",
+        text: "aBc\n",
+        keys: "~~",
+    },
 ];
 
 /// Cases where strop deliberately differs — each with the doctrine reason.

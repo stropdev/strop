@@ -62,6 +62,28 @@ The modeline keeps filenames, live status and position legible at narrow widths.
 Git history uses quieter metadata, clear file hierarchy and native-path-safe
 navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
 
+## SSH log buffers
+
+```sh
+strop +120 ssh://user@devbox/var/log/app.log
+```
+
+Open the same URI with `:e` or `:view`. It becomes a real read-only buffer:
+normal motions, `/`/`?`, visual selection, yank and splits work unchanged.
+Escape cancels an in-flight open; `:e!` refreshes the current remote snapshot.
+OpenSSH supplies your aliases, keys, agent and ProxyJump configuration. Host keys
+must already be trusted; authentication is noninteractive. Paths are absolute;
+percent-encode reserved bytes (`%20`, `%23`, `%25`). Native Unix filename bytes
+stay intact. Snapshots are bounded to 256 MiB and must be valid UTF-8 text.
+
+The standalone `strop-remote` crate owns transport/identity; editor glue owns views
+and replay. No local LSP/Git service attaches to a remote snapshot. See the
+[SSH contract and model evidence](plans/0034-ssh-log-buffers.md),
+[full remote workflow roadmap](plans/0035-remote-workflow-roadmap.md), and
+[Dev Containers design](plans/0037-devcontainers-and-workspace-contexts.md).
+Tail/follow, directory browsing and remote workspace services are the separately
+tracked [next delivery](plans/0036-remote-workspace-execution.md).
+
 ## Reporting a bug
 
 ```sh

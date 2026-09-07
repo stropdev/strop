@@ -85,8 +85,20 @@ fn i_caret_tilde_s_work() {
 }
 
 #[test]
-fn unknown_bare_keys_say_so() {
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.feed_text("="); // not implemented
-    assert!(e.message.contains("not an editor command"));
+fn rejected_commands_report_and_leave_input_reusable() {
+    for keys in ["=", "gZ", "dZ"] {
+        let mut editor = Editor::new(Buffer::from_text("abc\n"));
+        editor.feed_text(keys);
+        assert!(
+            !editor.message.is_empty(),
+            "{keys} must report its rejection"
+        );
+        assert!(
+            editor.walker.is_ground(),
+            "{keys} must release input ownership"
+        );
+        assert_eq!(editor.buf().text(), "abc\n");
+        editor.feed_text("l");
+        assert_eq!(editor.head(), 1, "a command after {keys} still executes");
+    }
 }

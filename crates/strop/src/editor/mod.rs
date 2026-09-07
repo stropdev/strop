@@ -410,6 +410,12 @@ impl Editor {
     fn feed_inner(&mut self, key: Key) {
         self.revoke_shell_focus();
         self.message.clear();
+        if key == Key::Esc
+            && !self.pending.is_active()
+            && self.cancel_open(strop_core::worker::CancelReason::Dismissed)
+        {
+            self.message = "open cancelled".into();
+        }
         // macro recording (0016): q at ground stops and never reaches
         // the machine; everything else records BEFORE it runs, so
         // replay is exactly the live stream

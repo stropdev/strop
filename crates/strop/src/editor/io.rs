@@ -1,7 +1,11 @@
 //! File I/O is owned work. Only matching completions may publish into a view.
 mod codec;
-mod native;
+pub(super) mod native;
+mod remote;
+#[cfg(test)]
+mod remote_tests;
 use super::{Document, Editor};
+use crate::files::FileTarget;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -17,6 +21,10 @@ pub enum OpenIntent {
     Split {
         vertical: bool,
     },
+    AtLine {
+        line: LineIndex,
+    },
+    Refresh,
     Grep {
         line: LineIndex,
         column: ByteColumn,
@@ -33,8 +41,7 @@ pub enum OpenIntent {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OpenKey {
-    #[serde(with = "strop_core::path_serde")]
-    pub path: PathBuf,
+    pub path: FileTarget,
     pub origin: DocumentId,
     pub revision: BufferRevision,
     pub focus: u64,
@@ -43,7 +50,7 @@ pub struct OpenKey {
 
 pub struct Opened {
     pub document: Document,
-    pub canonical: PathBuf,
+    pub canonical: FileTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -99,12 +106,22 @@ impl Default for IoState {
 
 impl Editor {
     pub fn request_open(&mut self, path: PathBuf, intent: OpenIntent) {
-        let path = self.cwd.join(path);
+        self.request_target(FileTarget::Local(path), intent);
+    }
+
+    pub fn request_target(&mut self, target: FileTarget, intent: OpenIntent) {
+        let path = match target {
+            FileTarget::Local(path) => FileTarget::Local(self.cwd.join(path)),
+            remote => remote,
+        };
+        if !matches!(intent, OpenIntent::Replace { .. }) {
+            self.cancel_open(worker::CancelReason::Superseded);
+        }
         let existing = self
             .docs
             .iter()
-            .find_map(|(id, document)| (document.buf.path.as_ref() == Some(&path)).then_some(id));
-        if let Some(id) = existing {
+            .find_map(|(id, document)| document.matches_target(&path).then_some(id));
+        if let Some(id) = existing.filter(|_| !matches!(intent, OpenIntent::Refresh)) {
             self.finish_open(id, intent);
             return;
         }
@@ -123,15 +140,10 @@ impl Editor {
             intent,
         };
         if !matches!(key.intent, OpenIntent::Replace { .. }) {
-            if let Some(old) = self.io.navigation.replace(request) {
-                self.io.open.remove(&old);
-                if let Some(handle) = self.worker_handles.remove(&old) {
-                    handle.cancel(worker::CancelReason::Superseded);
-                }
-            }
+            self.io.navigation = Some(request);
         }
         self.io.open.insert(request, key.clone());
-        self.message = format!("loading {}", path.display());
+        self.message = format!("loading {path}");
         let tx = self.io.tx.clone();
         let ticket = Ticket { request, key };
         match self.tape.request("io.open", &ticket) {
@@ -150,17 +162,29 @@ impl Editor {
             move |outcome| {
                 let _ = tx.send(IoEvent::Open(Box::new(Completion { ticket, outcome })));
             },
-            move |_| match Buffer::open(&path) {
-                Ok(buffer) => {
-                    let canonical = buffer
-                        .file_identity()
-                        .map_or_else(|| path.clone(), ToOwned::to_owned);
-                    Outcome::Success(Opened {
-                        document: Document::new(buffer),
-                        canonical,
-                    })
-                }
-                Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
+            move |cancel| match path {
+                FileTarget::Local(path) => match Buffer::open(&path) {
+                    Ok(buffer) => {
+                        let canonical = buffer
+                            .file_identity()
+                            .map_or_else(|| path.clone(), ToOwned::to_owned);
+                        Outcome::Success(Opened {
+                            document: Document::new(buffer),
+                            canonical: FileTarget::Local(canonical),
+                        })
+                    }
+                    Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
+                },
+                FileTarget::Remote(file) => match strop_remote::read(&file, &cancel) {
+                    Ok(buffer) => Outcome::Success(Opened {
+                        document: Document::remote(buffer, file.clone()),
+                        canonical: FileTarget::Remote(file),
+                    }),
+                    Err(error) if error.is_cancellation() => {
+                        Outcome::Cancelled(worker::CancelReason::OwnerClosed)
+                    }
+                    Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
+                },
             },
         );
         self.worker_handles.insert(request, handle);
@@ -203,6 +227,13 @@ impl Editor {
                 self.view_mut().view_top = 0;
                 match intent {
                     OpenIntent::Switch { readonly: true } => self.buf_mut().readonly = true,
+                    OpenIntent::AtLine { line } => {
+                        self.set_head(
+                            self.buf()
+                                .line_start(line.get().min(self.buf().last_content_line())),
+                        );
+                        self.run_motion("^");
+                    }
                     OpenIntent::Grep { line, column } => {
                         let line = line.get().min(self.buf().last_content_line());
                         let offset = self
@@ -231,6 +262,14 @@ impl Editor {
         force: bool,
         close: bool,
     ) {
+        if self
+            .docs
+            .get(document)
+            .is_some_and(|doc| matches!(doc.source, super::document::DocumentSource::Remote(_)))
+        {
+            self.message = "remote snapshots are read-only; remote writes are not supported".into();
+            return;
+        }
         if self.io.saves.contains_key(&document) {
             self.message = "write already in progress".into();
             return;
@@ -359,9 +398,12 @@ impl Editor {
                 }
                 match completion.outcome {
                     Outcome::Success(opened) => {
+                        if matches!(key.intent, OpenIntent::Refresh) {
+                            self.finish_remote_refresh(key.origin, opened.document);
+                            return;
+                        }
                         let existing = self.docs.iter().find_map(|(id, document)| {
-                            (document.buf.file_identity() == Some(opened.canonical.as_path()))
-                                .then_some(id)
+                            document.matches_target(&opened.canonical).then_some(id)
                         });
                         let id = existing.unwrap_or_else(|| {
                             let id = self.docs.insert(opened.document);
@@ -374,7 +416,7 @@ impl Editor {
                         self.finish_open(id, key.intent);
                     }
                     Outcome::Failed { failure, .. } => {
-                        self.message = format!("open {}: {}", key.path.display(), failure.message)
+                        self.message = format!("open {}: {}", key.path, failure.message)
                     }
                     Outcome::Cancelled(_) => {}
                 }
@@ -470,5 +512,20 @@ impl Editor {
         } else {
             None
         }
+    }
+}
+
+impl IoState {
+    /// In-flight native tickets — tests answer a tape-suppressed
+    /// launch by feeding `handle_io` a crafted completion.
+    #[cfg(test)]
+    pub(crate) fn native_tickets(&self) -> Vec<Ticket<native::NativeKey>> {
+        self.native
+            .iter()
+            .map(|(request, key)| Ticket {
+                request: *request,
+                key: key.clone(),
+            })
+            .collect()
     }
 }

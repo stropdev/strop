@@ -172,8 +172,12 @@ Modeline and commit/diff presentation polish shipped separately in 0.15.1 (0032)
 
 - Search-history UX and richer diagnostics presentation remain optional P3 work.
 - Debugger/plugin expansion stays behind the correctness work (0019/0020).
-- Package/release workflow should derive a real topological publishing order,
-  not merely sort by direct internal-dependency count when the graph grows.
+- Crate publication now derives a real dependency topological order (0034).
+- The full TRAMP-style capability roadmap is [0035](0035-remote-workflow-roadmap.md).
+  Its P2 slices plus read-only directory browsing, remote LSP and remote Git are the
+  accepted next delivery in [0036](0036-remote-workspace-execution.md).
+- Dev Container provisioning complements the same workspace/transport interfaces;
+  the researched later-stage plan is [0037](0037-devcontainers-and-workspace-contexts.md).
 
 ## Verification status
 

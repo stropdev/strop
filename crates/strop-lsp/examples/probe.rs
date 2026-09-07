@@ -10,9 +10,12 @@ fn main() {
         return;
     };
     let root = std::path::Path::new("/tmp/lsp-proj");
-    let Some(client) = strop_lsp::Client::spawn(&spec, root, tx) else {
-        println!("spawn failed");
-        return;
+    let client = match strop_lsp::Client::spawn(&spec, root, tx) {
+        Ok(client) => client,
+        Err(error) => {
+            println!("spawn failed: {error}");
+            return;
+        }
     };
     let path = root.join("src/main.rs");
     let text = match std::fs::read_to_string(&path) {

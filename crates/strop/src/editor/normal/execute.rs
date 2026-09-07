@@ -74,13 +74,6 @@ impl Editor {
         Some(())
     }
 
-    /// Alias keys (D → d$, …): execute the expansion, remember the alias
-    /// so dot-repeat replays through the same path.
-    pub(crate) fn alias(&mut self, alias_key: &str, expansion: &str) {
-        self.feed_text(expansion);
-        self.last_cmd_keys = alias_key.into();
-    }
-
     pub(super) fn execute(&mut self, cmd: &Command) {
         // semantic dot-repeat (0014): `.` re-resolves this command from
         // the new position — it never replays a stale key string through

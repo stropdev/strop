@@ -62,7 +62,7 @@ impl Editor {
     /// Without a path the pane shows the same document (the split point).
     pub(crate) fn split(&mut self, vertical: bool, path: Option<&str>) {
         if let Some(path) = path {
-            self.request_open(path.into(), super::io::OpenIntent::Split { vertical });
+            self.request_user_open(path, super::io::OpenIntent::Split { vertical });
         } else {
             self.split_document(vertical, self.current());
         }
@@ -71,6 +71,7 @@ impl Editor {
         // a text prompt belongs to the pane/document it was opened on:
         // splitting away cancels it (R7) before any view state moves
         self.cancel_pending();
+        self.cancel_open(strop_core::worker::CancelReason::Superseded);
         let view = self.view().clone();
         // a same-document split keeps the whole view (hscroll included);
         // a different document starts from a zero origin
@@ -103,6 +104,7 @@ impl Editor {
             self.panes.remove(self.active_pane);
             self.active_pane = self.active_pane.min(self.panes.len() - 1);
             self.focus_epoch += 1;
+            self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
             // the surviving pane's document may differ from the closed
             // pane's — git discovery follows the view, no copy-back
             self.discover_git();
@@ -131,6 +133,7 @@ impl Editor {
         }
         self.active_pane = next; // state is already per-pane: no sync
         self.focus_epoch += 1;
+        self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.discover_git();
         self.clamp_cursor();
     }

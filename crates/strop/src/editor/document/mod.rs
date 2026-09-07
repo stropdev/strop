@@ -67,6 +67,33 @@ impl Document {
         }
     }
 
+    pub fn remote(mut buf: Buffer, file: strop_remote::RemoteFile) -> Self {
+        debug_assert!(
+            buf.path.is_none(),
+            "remote identity cannot become a local path"
+        );
+        buf.name = Some(file.to_string());
+        buf.readonly = true;
+        Self {
+            buf,
+            highlighter: None,
+            source: DocumentSource::Remote(file),
+        }
+    }
+
+    pub fn matches_target(&self, target: &crate::files::FileTarget) -> bool {
+        match (&self.source, target) {
+            (DocumentSource::Remote(file), crate::files::FileTarget::Remote(other)) => {
+                file == other
+            }
+            (DocumentSource::File, crate::files::FileTarget::Local(path)) => {
+                self.buf.path.as_ref() == Some(path)
+                    || self.buf.file_identity() == Some(path.as_path())
+            }
+            _ => false,
+        }
+    }
+
     /// The surface payload, when this document is one.
     pub fn surface_payload(&self) -> Option<&Surface> {
         match &self.source {
@@ -185,6 +212,7 @@ impl Editor {
     /// Switch the active view to a document.
     pub fn switch_to(&mut self, id: strop_core::id::DocumentId) {
         self.cancel_pending();
+        self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.focus_epoch += 1;
         self.view_mut().doc = id;
         self.touch_mru(id);
@@ -221,6 +249,7 @@ impl Editor {
             return false;
         }
         self.cancel_pending();
+        self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
         if self.docs.len() == 1 {
             self.request_session_save();
         }

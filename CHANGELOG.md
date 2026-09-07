@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.16.0 — 2026-09-07
+
+Trustworthy diagnostics and the first verified SSH log-reading milestone
+(plans 0033/0034). The broader remote workspace work is tracked separately in 0036.
+
+### Added
+
+- `strop-remote`, an independent crate for validated remote identities and owned
+  read-only SSH/SFTP transport. Open `ssh://[user@]host[:port]/absolute/path` from
+  the CLI, `:e`, `:view` or a path-bearing split.
+- Real remote buffers support existing search/navigation/selection/yank. Escape
+  cancels a pending read; `:e!` refreshes a snapshot without losing split positions.
+  Authentication uses existing OpenSSH configuration noninteractively, with strict
+  host-key checking. Native Unix path bytes survive the wire; snapshots are bounded.
+- `+LINE FILE` and local `FILE:LINE` CLI locations, with checked line numbers and
+  `--` for literal colon-suffixed filenames.
+- Bounded SFTP/lifecycle TLA+ models, fairness-qualified progress checks,
+  non-vacuity witnesses and deliberate fault variants, tied to Rust and real SSH
+  interoperability checks. This is not an unbounded proof of the implementation.
+
+### Fixed
+
+- Permalinks retain full hosts, schemes, ports and nested repository paths.
+  OpenSSH evaluates aliases (including dotted aliases); unresolved failures cannot
+  copy guessed URLs. Native source paths remain separate from display labels.
+- Malformed language configuration reaches both modeline and structured trace.
+  Missing executables report their command and a useful installation/configuration
+  hint; startup no longer leaves orphaned version-probe processes.
+- Invalid completed normal input no longer disappears into pending state.
+  First-nonblank insert retains one command identity for macro/repeat behavior.
+- Closing the last read-only surface no longer reads a dead current document.
+- Full replay preserves remote provenance rather than decoding an SSH URI as a
+  legacy local path. Release publication follows actual workspace dependencies.
+
 ## 0.15.1 — 2026-09-07
 
 Modeline and Git-surface polish, separately from the 0.15.0 correctness release

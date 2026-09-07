@@ -17,6 +17,13 @@ pub enum Operation {
     Browser {
         url: String,
     },
+    /// Resolve an SSH alias to its effective hostname via OpenSSH
+    /// (`ssh -G`, 0033 finding 1). The pending permalink rides along
+    /// as frozen pure data; completion builds the URL or reports the
+    /// failure — nothing is copied until OpenSSH answers.
+    SshHost {
+        pending: super::super::permalink::PendingPermalink,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeKey {
@@ -28,6 +35,8 @@ pub struct NativeKey {
 pub enum NativeResult {
     Trusted(#[serde(with = "strop_core::path_serde")] PathBuf),
     BrowserRequested,
+    /// OpenSSH's effective hostname for the alias in the request.
+    SshHost(String),
 }
 
 impl Editor {
@@ -55,6 +64,12 @@ impl Editor {
     pub(crate) fn request_browser(&mut self, url: String) {
         self.request_native(Operation::Browser { url });
     }
+    /// Queue OpenSSH evaluation of a permalink's SSH alias (0033
+    /// finding 1): `ssh -G` runs on this worker; completion rebuilds
+    /// the URL purely or reports — nothing is copied meanwhile.
+    pub(crate) fn request_ssh_host(&mut self, pending: super::super::permalink::PendingPermalink) {
+        self.request_native(Operation::SshHost { pending });
+    }
 
     fn request_native(&mut self, operation: Operation) {
         let request = match self.worker_ids.allocate() {
@@ -73,11 +88,11 @@ impl Editor {
             },
         };
         self.io.native.insert(request, ticket.key.clone());
-        self.message = match ticket.key.operation {
-            Operation::Trust { .. } => "saving trust",
-            Operation::Browser { .. } => "opening browser",
-        }
-        .into();
+        self.message = match &ticket.key.operation {
+            Operation::Trust { .. } => "saving trust".into(),
+            Operation::Browser { .. } => "opening browser".into(),
+            Operation::SshHost { pending } => format!("resolving ssh host {}", pending.host),
+        };
         match self.tape.request("io.native", &ticket) {
             Ok(false) => return,
             Ok(true) => {}
@@ -113,6 +128,23 @@ impl Editor {
                         }
                     }
                     Operation::Browser { url } => launch_browser(&url),
+                    Operation::SshHost { pending } => {
+                        let Some(strop_git::permalink::SelectedRemote::Alias(remote)) =
+                            strop_git::permalink::pick_remote(&pending.remotes)
+                        else {
+                            return Outcome::failed(
+                                FailureKind::InvalidInput,
+                                "SSH permalink target unavailable",
+                            );
+                        };
+                        match strop_git::ssh::effective_host(&remote, &cancel) {
+                            Ok(hostname) => Outcome::Success(NativeResult::SshHost(hostname)),
+                            Err(error) => Outcome::failed(
+                                FailureKind::Exit,
+                                format!("ssh alias \"{}\": {error}", pending.host),
+                            ),
+                        }
+                    }
                 }
             },
         );
@@ -136,6 +168,11 @@ impl Editor {
             }
             Outcome::Success(NativeResult::BrowserRequested) => {
                 self.message = "browser launch requested".into()
+            }
+            Outcome::Success(NativeResult::SshHost(hostname)) => {
+                if let Operation::SshHost { pending } = key.operation {
+                    self.complete_ssh_permalink(pending, hostname);
+                }
             }
             Outcome::Failed { failure, .. } => self.message = failure.message,
             Outcome::Cancelled(_) => {}

@@ -1,10 +1,9 @@
-//! Git memory (M3, 0001 pillar 3.2/3.3): log graph, blame, permalinks.
-//! Reads via shell `git` (matches user config; not hot-path), permalinks
-//! via libgit2 config (no spawn).
+//! Git memory (M3, 0001 pillar 3.2/3.3): log graph, blame, changed-file
+//! stats. Reads via shell `git` (matches user config; not hot-path).
+//! Permalinks and remote normalization live in `permalink`/`ssh`
+//! (0033 finding 1).
 
 use std::path::{Path, PathBuf};
-
-use crate::Repo;
 
 /// One log line from `git log --graph`, with the commit hash extracted.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -243,156 +242,6 @@ pub fn show_stat(workdir: &Path, sha: &str) -> Result<Vec<ChangedFile>, String> 
     crate::numstat::parse_numstat(&out.stdout)
 }
 
-// ---- permalinks ----------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Host {
-    GitHub,
-    GitLab,
-    Bitbucket,
-    Gitea,
-    /// Unknown host: emit whatever HTTPS we can normalize to.
-    Other,
-}
-
-pub struct Remote {
-    pub host: Host,
-    pub owner_repo: String, // "org/repo"
-    pub base: String,       // "https://github.com"
-}
-
-/// Normalize a remote URL (SSH or HTTPS) to a web base. Priority
-/// upstream > origin > rest is the caller's job (0001 pillar 3.3).
-pub fn normalize_remote(url: &str) -> Option<Remote> {
-    let url = url.trim().trim_end_matches(".git");
-    let (base, path) = if let Some(rest) = url.strip_prefix("git@") {
-        // git@host:org/repo
-        let (host, path) = rest.split_once(':')?;
-        (format!("https://{host}"), path.to_string())
-    } else if let Some(rest) = url.strip_prefix("ssh://git@") {
-        // ssh://git@host/org/repo
-        let rest = rest.split('/').collect::<Vec<_>>();
-        let host = rest.first()?;
-        (format!("https://{host}"), rest[1..].join("/"))
-    } else if url.starts_with("https://") || url.starts_with("http://") {
-        let stripped = url
-            .strip_prefix("https://")
-            .or_else(|| url.strip_prefix("http://"))?;
-        let (host, path) = stripped.split_once('/')?;
-        (format!("https://{host}"), path.to_string())
-    } else if let Some((host, path)) = url.split_once(':') {
-        // scp syntax without user@: bare hostname or an ssh host alias
-        // (`bbgithub:org/repo` — ~/.ssh/config supplies the real host)
-        if host.contains('@') || host.contains('/') {
-            return None;
-        }
-        let host = resolve_ssh_alias(host).unwrap_or_else(|| host.to_string());
-        (format!("https://{host}"), path.to_string())
-    } else {
-        return None;
-    };
-    let host = match base.as_str() {
-        "https://github.com" => Host::GitHub,
-        "https://gitlab.com" => Host::GitLab,
-        "https://bitbucket.org" => Host::Bitbucket,
-        b if b.contains("gitea") => Host::Gitea,
-        _ => Host::Other,
-    };
-    Some(Remote {
-        host,
-        owner_repo: path,
-        base,
-    })
-}
-
-/// Resolve an ssh host alias via `~/.ssh/config` Host blocks (exact
-/// matches; wildcard blocks skipped). Enterprise GitHub setups live on
-/// these — the alias exists so the hostname isn't repeated per clone.
-fn resolve_ssh_alias(alias: &str) -> Option<String> {
-    let home = std::env::var_os("HOME")?;
-    let config = std::fs::read_to_string(PathBuf::from(home).join(".ssh").join("config")).ok()?;
-    parse_ssh_alias(&config, alias)
-}
-
-fn parse_ssh_alias(config: &str, alias: &str) -> Option<String> {
-    let mut in_block = false;
-    for line in config.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let mut parts = line.split_whitespace();
-        match parts.next().map(|k| k.to_ascii_lowercase()).as_deref() {
-            Some("host") => in_block = parts.any(|h| h == alias),
-            Some("hostname") if in_block => return parts.next().map(|h| h.to_string()),
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Pick the permalink remote: upstream > origin > first remaining.
-pub fn pick_remote(repo: &Repo) -> Option<Remote> {
-    pick_remote_from(&repo.remotes())
-}
-
-/// The pure fold over cached remotes (R6): permalink selection needs
-/// no repository handle, only the (name, url) pairs a `GitContext`
-/// already carries.
-pub fn pick_remote_from(remotes: &[(String, String)]) -> Option<Remote> {
-    for name in ["upstream", "origin"] {
-        if let Some(url) = remotes.iter().find(|(n, _)| n == name).map(|(_, u)| u) {
-            if let Some(r) = normalize_remote(url) {
-                return Some(r);
-            }
-        }
-    }
-    remotes.iter().find_map(|(_, u)| normalize_remote(u))
-}
-
-/// Build the immutable permalink for a file at 1-based lines. Branch is
-/// always resolved to a commit SHA (0001 pillar 3.3).
-/// The URL for a revisioned location (0014): pinned to the location's
-/// revision — a commit surface links that commit, not HEAD.
-pub fn permalink(repo: &Repo, loc: &crate::SourceLocation) -> Option<String> {
-    permalink_with(
-        &repo.remotes(),
-        &|revision| match revision {
-            crate::GitRevision::Head | crate::GitRevision::Index | crate::GitRevision::Worktree => {
-                repo.head_sha()
-            }
-            crate::GitRevision::Commit(sha) => Some(sha.clone()),
-            crate::GitRevision::MergeBase(a, b) => repo.merge_base(a, b),
-        },
-        loc,
-    )
-}
-
-/// The pure permalink builder (R6): cached remotes plus a revision
-/// resolver — no repository handle, no native work on the caller's
-/// thread.
-pub fn permalink_with(
-    remotes: &[(String, String)],
-    resolve: &dyn Fn(&crate::GitRevision) -> Option<String>,
-    loc: &crate::SourceLocation,
-) -> Option<String> {
-    let remote = pick_remote_from(remotes)?;
-    let (start_line, end_line) = loc.lines.unwrap_or((1, 1));
-    let sha = resolve(&loc.revision)?;
-    let frag = if start_line == end_line {
-        format!("#L{start_line}")
-    } else {
-        format!("#L{start_line}-L{end_line}")
-    };
-    Some(format!(
-        "{}/{}/blob/{}/{}{frag}",
-        remote.base,
-        remote.owner_repo,
-        sha,
-        loc.path.display()
-    ))
-}
-
 /// Relative age, human short form ("3h", "2d", "5mo").
 fn rel_age(ts: i64) -> String {
     let now = std::time::SystemTime::now()
@@ -412,60 +261,7 @@ fn rel_age(ts: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ssh_alias_resolves_via_config() {
-        let config = "# comment\nHost bbgithub\n  HostName bbgithub.dev.bloomberg.com\n  User git\nHost *\n  ServerAliveInterval 30\n";
-        assert_eq!(
-            parse_ssh_alias(config, "bbgithub").as_deref(),
-            Some("bbgithub.dev.bloomberg.com")
-        );
-        assert_eq!(parse_ssh_alias(config, "other"), None);
-        // wildcard-only blocks don't claim aliases
-        assert_eq!(parse_ssh_alias("Host *\n  HostName x", "bbgithub"), None);
-    }
-
-    #[test]
-    fn scp_without_user_parses_as_bare_host() {
-        // unresolved alias falls back to the bare name (matches what git
-        // itself would attempt) — but with a config entry it resolves
-        let r = normalize_remote("bbgithub:acme/demo.git");
-        assert!(r.is_some(), "alias form parses");
-    }
-
-    #[test]
-    fn reviewer_table() {
-        // the first-week report's remote table, verbatim
-        for url in [
-            "https://github.com/acme/demo.git",
-            "ssh://git@github.com/acme/demo.git",
-            "git@github.com:acme/demo",
-            "git@bbgithub.dev.bloomberg.com:acme/demo.git",
-            "https://bbgithub.dev.bloomberg.com/acme/demo.git",
-        ] {
-            let r = normalize_remote(url);
-            assert!(r.is_some(), "should parse: {url}");
-        }
-        // the ssh host-alias form parses (bare-host fallback; resolves
-        // via ~/.ssh/config when an entry exists)
-        assert!(normalize_remote("bbgithub:acme/demo.git").is_some());
-    }
-
-    #[test]
-    fn normalizes_ssh_and_https() {
-        let r = normalize_remote("git@github.com:stropdev/strop.git").unwrap();
-        assert_eq!(
-            (r.base.as_str(), r.owner_repo.as_str()),
-            ("https://github.com", "stropdev/strop")
-        );
-        assert_eq!(r.host, Host::GitHub);
-        let r = normalize_remote("https://gitlab.com/org/proj").unwrap();
-        assert_eq!(r.host, Host::GitLab);
-        assert_eq!(r.owner_repo, "org/proj");
-        let r = normalize_remote("ssh://git@bitbucket.org/team/repo.git").unwrap();
-        assert_eq!(r.host, Host::Bitbucket);
-        assert!(normalize_remote("not a url").is_none());
-    }
+    use crate::Repo;
 
     /// Repo with two commits (f.rs grows a line), then a dirty edit —
     /// blame_file must attribute committed lines and flag dirty ones.

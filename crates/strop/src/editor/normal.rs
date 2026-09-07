@@ -171,15 +171,19 @@ impl Editor {
             // aliases are semantic (0016): the expansion parses ONCE
             // into a grammar Command; the walker's count/register merge
             // in — nothing replays through input
-            Handler::Alias(expansion) => {
-                if let Parse::Complete(mut cmd) = grammar::parse(expansion) {
+            Handler::Alias(expansion) => match grammar::parse(expansion) {
+                Parse::Complete(mut cmd) => {
                     cmd.count = Some(n.saturating_mul(cmd.count.unwrap_or(1)));
                     if register.is_some() {
                         cmd.register = register;
                     }
                     self.dispatch_grammar(&cmd);
                 }
-            }
+                Parse::QueryError(error) => self.message = error.to_string(),
+                Parse::Incomplete | Parse::Invalid => {
+                    self.message = format!("not an editor command: {key}");
+                }
+            },
             Handler::AbsorbChar(kind) => {
                 let c = arg.unwrap_or('\0');
                 use crate::keymap::AbsorbKind;
@@ -237,7 +241,10 @@ impl Editor {
             'A' => self.append_eol(),
             'o' => self.open_below(),
             'O' => self.open_above(),
-            'I' => self.alias("I", "^i"),
+            'I' => {
+                self.run_motion("^");
+                self.enter_insert_from("I");
+            }
             _ => {}
         }
     }

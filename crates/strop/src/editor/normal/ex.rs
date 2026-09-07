@@ -232,6 +232,11 @@ impl Editor {
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
             "w" | "w!" => {
+                if self.remote_file().is_some() {
+                    self.message =
+                        "remote snapshots are read-only; remote writes are not supported".into();
+                    return;
+                }
                 // vim: readonly buffers refuse plain :w (surfaces, :view);
                 // :w! forces through the mutation boundary's rule
                 if self.buf().readonly && cmd != "w!" {
@@ -252,8 +257,12 @@ impl Editor {
                         self.message = "readonly".into();
                     }
                     "noro" | "noreadonly" => {
-                        self.buf_mut().readonly = false;
-                        self.message = "writable".into();
+                        if self.remote_file().is_some() {
+                            self.message = "remote snapshots are read-only".into();
+                        } else {
+                            self.buf_mut().readonly = false;
+                            self.message = "writable".into();
+                        }
                     }
                     _ => self.message = format!("unknown option: {arg}"),
                 }
@@ -265,8 +274,8 @@ impl Editor {
                     self.buf_mut().readonly = true;
                     self.message = "readonly".into();
                 } else {
-                    self.request_open(
-                        arg.into(),
+                    self.request_user_open(
+                        arg,
                         super::super::io::OpenIntent::Switch { readonly: true },
                     );
                 }
@@ -303,13 +312,16 @@ impl Editor {
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "help" | "h" => self.open_help(),
             "e" | "e!" => {
+                if arg.is_empty() && cmd == "e!" && self.refresh_remote() {
+                    return;
+                }
                 if arg.is_empty() {
                     self.message = ":e needs a path".into();
                 } else if self.buf().dirty && cmd == "e" {
                     self.message = "unsaved changes — :e! to force".into();
                 } else {
-                    self.request_open(
-                        arg.into(),
+                    self.request_user_open(
+                        arg,
                         super::super::io::OpenIntent::Switch { readonly: false },
                     );
                 }

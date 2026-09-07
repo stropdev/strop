@@ -13,8 +13,11 @@ mod spawn;
 mod sync;
 #[cfg(test)]
 mod tests;
+
 mod trace_io;
 mod wire;
+
+pub use spawn::SpawnError;
 
 /// Clones share one connection, its wire queue and runtime thread.
 /// Shutdown is idempotent; wait joins once, never underneath another

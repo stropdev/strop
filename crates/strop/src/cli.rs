@@ -3,15 +3,18 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use strop_trace::ContentPolicy;
 
+mod location;
+pub(crate) use location::FileLocation;
+
 #[derive(Debug)]
 pub enum Command {
     Edit {
-        path: Option<PathBuf>,
+        path: Option<FileLocation>,
         readonly: bool,
     },
     Headless {
         script: PathBuf,
-        path: Option<PathBuf>,
+        path: Option<FileLocation>,
     },
     Replay {
         trace: PathBuf,
@@ -51,6 +54,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         .map(PathBuf::from);
     let mut content = ContentPolicy::Metadata;
     let mut readonly = false;
+    let mut initial_line = None;
     let mut headless = false;
     let mut script = None;
     let mut replay = None;
@@ -60,6 +64,13 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     while let Some(argument) = args.next() {
         let text = argument.to_string_lossy();
         if !positional {
+            if let Some(line) = text.strip_prefix('+') {
+                if initial_line.is_some() {
+                    return Err(location::LocationError::DuplicateLine.to_string());
+                }
+                initial_line = Some(location::parse_line(line).map_err(|error| error.to_string())?);
+                continue;
+            }
             match text.as_ref() {
                 "--" => {
                     positional = true;
@@ -168,10 +179,16 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 return Err(format!("unknown option: {text}"));
             }
         }
-        if operand.replace(PathBuf::from(argument)).is_some() {
+        let file = FileLocation::parse(argument, positional).map_err(|error| error.to_string())?;
+        if operand.replace(file).is_some() {
             return Err("only one file or directory operand is supported".into());
         }
     }
+    let operand = match (operand, initial_line) {
+        (Some(file), line) => Some(file.with_line(line).map_err(|error| error.to_string())?),
+        (None, Some(_)) => return Err(location::LocationError::MissingPath.to_string()),
+        (None, None) => None,
+    };
     if content == ContentPolicy::Full && trace_path.is_none() {
         return Err("--log-content requires --log or STROP_LOG".into());
     }

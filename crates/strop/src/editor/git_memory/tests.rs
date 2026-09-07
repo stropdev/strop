@@ -1,9 +1,14 @@
 use std::process::Command;
 
+use crate::editor::io::native::{NativeResult, Operation};
+use crate::editor::io::IoEvent;
+use crate::editor::permalink::{PermalinkIntent, PermalinkOutcome};
 use crate::editor::{Editor, GitJob, Key, Surface};
+use strop_core::worker::{Completion, FailureKind, Outcome};
 use strop_core::Buffer;
 use strop_git::memory::LogRow;
 use strop_git::LineOrigin;
+use strop_trace::replay::Tape;
 
 /// Repo with two commits; second adds a line to f.rs.
 fn fixture() -> (tempfile::TempDir, Editor) {
@@ -158,41 +163,188 @@ fn permalink_needs_remote() {
     let (_d, mut e) = fixture();
     settle(&mut e, |e| e.git.is_some());
     // no remote configured → honest refusal
-    assert_eq!(e.build_permalink().unwrap_err(), "no remote configured");
+    assert_eq!(
+        e.build_permalink(PermalinkIntent::Yank).unwrap_err(),
+        "no remote configured"
+    );
 }
 
-#[test]
-fn permalink_resolves_sha_and_ssh_remote() {
-    let (_d, mut e) = fixture();
-    settle(&mut e, |e| e.git.is_some());
-    let root = e.cwd.clone();
+/// Configure a remote, then refresh the cached context so the pure
+/// builder sees it.
+fn set_remote(e: &mut Editor, root: &std::path::Path, name: &str, url: &str) {
     Command::new("git")
         .args([
             "-C",
             &root.display().to_string(),
             "remote",
             "add",
-            "origin",
-            "git@github.com:stropdev/strop.git",
+            name,
+            url,
         ])
         .output()
         .unwrap();
     // an explicit discovery refreshes the cached context's remotes
     e.discover_git();
-    settle(&mut e, |e| {
-        e.git.as_ref().is_some_and(|c| !c.remotes.is_empty())
+    settle(e, |e| {
+        e.git
+            .as_ref()
+            .is_some_and(|c| c.remotes.iter().any(|(n, _)| n == name))
     });
-    e.feed_text("j"); // line 2
-    let url = e.build_permalink().expect("permalink");
-    assert!(
-        url.starts_with("https://github.com/stropdev/strop/blob/"),
-        "{url}"
+}
+
+/// A fixture tape suppresses native launches (hermetic: no real ssh,
+/// no real HOME, no network) while recording the request, so tests
+/// answer with a crafted completion through the production handler.
+fn suppress_native(e: &mut Editor) {
+    e.tape = std::rc::Rc::new(Tape::fixture(|_, _| {
+        Err(std::io::Error::other("unexpected native observation"))
+    }));
+}
+
+fn ready_url(e: &Editor) -> String {
+    match e.build_permalink(PermalinkIntent::Yank) {
+        Ok(PermalinkOutcome::Url(url)) => url,
+        Ok(PermalinkOutcome::Alias(_)) => panic!("expected a ready URL, got an alias"),
+        Err(message) => panic!("expected a permalink: {message}"),
+    }
+}
+
+/// The reviewer's defect (0033 finding 1): the whole FQDN authority
+/// and the nested repository path must reach the link verbatim.
+#[test]
+fn permalink_preserves_fqdn_authority_and_nested_repo_path() {
+    let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
+    let root = e.cwd.clone();
+    set_remote(
+        &mut e,
+        &root,
+        "origin",
+        "https://bbgithub.dev.bloomberg.com/acme/nested/demo.git",
     );
-    assert!(url.ends_with("/f.rs#L2"), "{url}");
+    e.feed_text("j"); // line 2
+    let sha = git_out(&root, &["rev-parse", "HEAD"]);
+    let expected =
+        format!("https://bbgithub.dev.bloomberg.com/acme/nested/demo/blob/{sha}/f.rs#L2");
+    assert_eq!(ready_url(&e), expected);
+    e.yank_permalink();
+    assert_eq!(e.register(None).text, expected);
+    assert_eq!(e.osc52.as_deref(), Some(expected.as_str()));
+}
+
+#[test]
+fn permalink_pins_sha_and_yanks() {
+    let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
+    let root = e.cwd.clone();
+    set_remote(
+        &mut e,
+        &root,
+        "origin",
+        "https://github.com/stropdev/strop.git",
+    );
+    e.feed_text("j"); // line 2
+    let sha = git_out(&root, &["rev-parse", "HEAD"]);
+    let url = ready_url(&e);
+    assert_eq!(
+        url,
+        format!("https://github.com/stropdev/strop/blob/{sha}/f.rs#L2")
+    );
     assert!(!url.contains("/main/"), "branch must resolve to SHA: {url}");
     e.yank_permalink();
     assert_eq!(e.register(None).text, url);
     assert!(e.osc52.is_some(), "OSC52 payload staged for the TUI");
+}
+
+/// An SSH alias remote resolves through the IO worker: OpenSSH
+/// answers, and only then does the copy happen — exactly once, with
+/// the alias's effective host.
+#[test]
+fn permalink_ssh_alias_resolves_on_io_worker() {
+    let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
+    let root = e.cwd.clone();
+    set_remote(&mut e, &root, "origin", "git@bbgithub.alias:acme/demo.git");
+    e.feed_text("j"); // line 2
+
+    suppress_native(&mut e);
+    e.yank_permalink();
+    assert!(
+        e.register(None).text.is_empty(),
+        "nothing is copied before OpenSSH answers"
+    );
+    assert!(
+        e.osc52.is_none(),
+        "no clipboard payload before OpenSSH answers"
+    );
+
+    let tickets = e.io.native_tickets();
+    assert_eq!(tickets.len(), 1, "one ssh -G evaluation in flight");
+    let sha = git_out(&root, &["rev-parse", "HEAD"]);
+    e.handle_io(IoEvent::Native(Completion {
+        ticket: tickets.into_iter().next().unwrap(),
+        outcome: Outcome::Success(NativeResult::SshHost("bbgithub.dev.bloomberg.com".into())),
+    }));
+    let expected = format!("https://bbgithub.dev.bloomberg.com/acme/demo/blob/{sha}/f.rs#L2");
+    assert_eq!(e.register(None).text, expected);
+    assert_eq!(e.osc52.as_deref(), Some(expected.as_str()));
+}
+
+/// A failed or unresolved alias publishes nothing — no guessed URL in
+/// the register, no clipboard payload — and the failure says which
+/// alias and why.
+#[test]
+fn permalink_alias_failure_publishes_nothing() {
+    let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
+    let root = e.cwd.clone();
+    set_remote(&mut e, &root, "origin", "git@bbgithub:acme/demo.git");
+    e.feed_text("j");
+
+    suppress_native(&mut e);
+    e.yank_permalink();
+    let ticket = e.io.native_tickets().pop().unwrap();
+    e.handle_io(IoEvent::Native(Completion {
+        ticket,
+        outcome: Outcome::failed(
+            FailureKind::Exit,
+            "ssh alias \"bbgithub\": cannot run ssh: not found",
+        ),
+    }));
+    assert!(e.message.contains("bbgithub"), "{}", e.message);
+    assert!(e.message.contains("ssh"), "{}", e.message);
+    assert!(e.register(None).text.is_empty(), "no guessed URL is copied");
+    assert!(e.osc52.is_none(), "no clipboard payload on failure");
+}
+
+/// `space g o` on an alias: the browser is only requested after
+/// OpenSSH answers, and open never touches the register.
+#[test]
+fn permalink_alias_open_waits_for_resolution() {
+    let (_d, mut e) = fixture();
+    settle(&mut e, |e| e.git.is_some());
+    let root = e.cwd.clone();
+    set_remote(&mut e, &root, "origin", "git@bbgithub:acme/demo.git");
+    e.feed_text("j");
+
+    suppress_native(&mut e);
+    e.open_permalink();
+    let ticket = e.io.native_tickets().pop().unwrap();
+    e.handle_io(IoEvent::Native(Completion {
+        ticket,
+        outcome: Outcome::Success(NativeResult::SshHost("bbgithub.dev.bloomberg.com".into())),
+    }));
+    assert!(
+        e.io.native_tickets()
+            .iter()
+            .any(|ticket| matches!(ticket.key.operation, Operation::Browser { .. })),
+        "the opener request follows the resolved URL"
+    );
+    assert!(
+        e.register(None).text.is_empty(),
+        "open never touches the register"
+    );
+    assert!(e.osc52.is_none(), "open never stages a clipboard payload");
 }
 
 fn git_out(root: &std::path::Path, args: &[&str]) -> String {

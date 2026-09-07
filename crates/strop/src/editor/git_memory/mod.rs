@@ -294,7 +294,7 @@ impl Editor {
             Key::Char('j') | Key::Down if self.sidebar_focused() => self.commit_file_step(true),
             Key::Char('k') | Key::Up if self.sidebar_focused() => self.commit_file_step(false),
             Key::Enter if self.sidebar_focused() => self.toggle_sidebar_focus(),
-            Key::Enter => self.dive(),
+            Key::Enter if self.surface().is_some() => self.dive(),
             _ => self.feed_command(key),
         }
     }
@@ -341,10 +341,6 @@ impl Editor {
     /// restore.
     fn close_surface(&mut self) {
         self.close_pane_or_buffer(true);
-        let doc = self.current();
-        if let Some(pane) = self.panes.get_mut(self.active_pane) {
-            pane.doc = doc; // the pane follows the successor
-        }
     }
 }
 

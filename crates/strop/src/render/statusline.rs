@@ -110,6 +110,10 @@ impl Modeline {
         let commit = historical_commit(editor);
         let git_context = match commit {
             Some(sha) => format!("@{}", sha.get(..8).unwrap_or(sha)),
+            None if editor.remote_file().is_some() => editor
+                .remote_file()
+                .map(|file| format!("ssh:{}", file.host()))
+                .unwrap_or_default(),
             None => editor
                 .git
                 .as_ref()
@@ -480,6 +484,19 @@ fn historical_commit(editor: &Editor) -> Option<&str> {
 /// absolute form. Virtual buffers keep their display name; a pathless,
 /// nameless buffer is the scratch.
 fn file_display(editor: &Editor) -> (String, String) {
+    if let Some(file) = editor.remote_file() {
+        let directory = file
+            .path()
+            .parent()
+            .map_or_else(String::new, |parent| format!("{}/", parent.display()));
+        let name = file
+            .path()
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        return (directory, name);
+    }
     let buf = editor.buf();
     let path = match editor.surface() {
         Some(crate::editor::Surface::Diff {

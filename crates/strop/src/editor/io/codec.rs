@@ -1,16 +1,15 @@
 //! Only pure buffer data crosses the forensic boundary, never a live parser.
 use super::Opened;
 use crate::editor::Document;
+use crate::files::FileTarget;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 impl Serialize for Opened {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Record<'a> {
             buffer: strop_core::BufferSeed,
-            #[serde(with = "strop_core::path_serde")]
-            canonical: &'a PathBuf,
+            canonical: &'a FileTarget,
         }
         Record {
             buffer: self.document.buf.seed(),
@@ -24,8 +23,7 @@ impl<'de> Deserialize<'de> for Opened {
         #[derive(Deserialize)]
         struct Record {
             buffer: strop_core::BufferSeed,
-            #[serde(with = "strop_core::path_serde")]
-            canonical: PathBuf,
+            canonical: FileTarget,
         }
         let record = Record::deserialize(deserializer)?;
         let buffer = record
@@ -33,7 +31,10 @@ impl<'de> Deserialize<'de> for Opened {
             .into_buffer()
             .map_err(serde::de::Error::custom)?;
         Ok(Self {
-            document: Document::new(buffer),
+            document: match &record.canonical {
+                FileTarget::Local(_) => Document::new(buffer),
+                FileTarget::Remote(file) => Document::remote(buffer, file.clone()),
+            },
             canonical: record.canonical,
         })
     }

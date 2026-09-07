@@ -11,6 +11,12 @@ use crate::editor::events::AppEvent;
 use crate::editor::Editor;
 use strop_trace::replay::Tick;
 
+#[derive(Serialize, Deserialize)]
+pub struct StartupOpen {
+    pub target: crate::files::FileTarget,
+    pub line: Option<strop_core::id::LineIndex>,
+}
+
 /// Every external step a replay reproduces. `Event` carries the shared
 /// typed `AppEvent` (terminal input, paste, resize, quit intent, and every
 /// completed worker/service result), so the live handler and the replayed
@@ -19,7 +25,11 @@ use strop_trace::replay::Tick;
 pub enum Action {
     /// The explicit start-services step after the seed: git discovery
     /// registration, the optional directory picker, LSP start state.
-    Start { directory_picker: bool },
+    Start {
+        directory_picker: bool,
+        #[serde(default)]
+        open: Option<StartupOpen>,
+    },
     /// One external delivery, recorded at handler entry — before stale
     /// filters or acceptance decisions, so rejected results replay too.
     Event(AppEvent),
@@ -43,13 +53,24 @@ impl Editor {
     pub(crate) fn apply_recorded(&mut self, action: Action) -> io::Result<()> {
         let frame = matches!(action, Action::Frame { .. });
         match action {
-            Action::Start { directory_picker } => {
+            Action::Start {
+                directory_picker,
+                open,
+            } => {
                 let startup_message = self.message.clone();
-                self.discover_git();
-                if directory_picker {
-                    self.open_picker(strop_picker::Kind::Files);
+                if let Some(open) = open {
+                    let intent = open.line.map_or(
+                        super::super::io::OpenIntent::Switch { readonly: true },
+                        |line| super::super::io::OpenIntent::AtLine { line },
+                    );
+                    self.request_target(open.target, intent);
+                } else {
+                    self.discover_git();
+                    if directory_picker {
+                        self.open_picker(strop_picker::Kind::Files);
+                    }
+                    self.lsp_start_services();
                 }
-                self.lsp_start_services();
                 if !startup_message.is_empty() {
                     self.message = startup_message;
                 }

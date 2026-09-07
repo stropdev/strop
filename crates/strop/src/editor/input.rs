@@ -99,6 +99,13 @@ impl Walker {
         self.motion.clear();
     }
 
+    /// A rejected complete sequence must remain observable after grounding.
+    fn invalid(&mut self) -> Action {
+        let keys = self.display();
+        self.clear();
+        Action::Invalid(keys)
+    }
+
     /// Checked digit accumulation: counts cap instead of wrapping or
     /// panicking (0015 — adversarial input is "99999…" forever).
     pub const MAX_COUNT: usize = 99_999;
@@ -315,10 +322,7 @@ impl Walker {
             let motion_char = match key {
                 Key::Char(c) => c.to_string(),
                 Key::Enter => "\r".into(),
-                _ => {
-                    self.clear();
-                    return Action::Pending;
-                }
+                _ => return self.invalid(),
             };
             let _ = token;
             self.motion.push_str(&motion_char);
@@ -330,10 +334,7 @@ impl Walker {
                     Action::Grammar(Box::new(cmd))
                 }
                 strop_grammar::Parse::Incomplete => Action::Pending,
-                strop_grammar::Parse::Invalid => {
-                    self.clear();
-                    Action::Pending
-                }
+                strop_grammar::Parse::Invalid => self.invalid(),
                 strop_grammar::Parse::QueryError(error) => {
                     self.clear();
                     Action::QueryError(error)
@@ -380,10 +381,7 @@ impl Walker {
                             Action::Grammar(Box::new(cmd))
                         }
                         strop_grammar::Parse::Incomplete => Action::Pending,
-                        strop_grammar::Parse::Invalid => {
-                            self.clear();
-                            Action::Pending
-                        }
+                        strop_grammar::Parse::Invalid => self.invalid(),
                         strop_grammar::Parse::QueryError(error) => {
                             self.clear();
                             Action::QueryError(error)
@@ -456,10 +454,7 @@ impl Walker {
                         key,
                     }
                 }
-                Handler::AbsorbRegister | Handler::Soon => {
-                    self.clear();
-                    Action::Pending
-                }
+                Handler::AbsorbRegister | Handler::Soon => self.invalid(),
             }
         } else if keymap::any_child(&self.path) {
             Action::Pending
@@ -550,6 +545,13 @@ mod tests {
                         "ctrl-^" => out.push(Key::CtrlCaret),
                         "ctrl-v" => out.push(Key::CtrlV),
                         "tab" => out.push(Key::Tab),
+                        "s-tab" => out.push(Key::Backtab),
+                        "up" => out.push(Key::Up),
+                        "down" => out.push(Key::Down),
+                        "left" => out.push(Key::Left),
+                        "right" => out.push(Key::Right),
+                        "ctrl-x" => out.push(Key::CtrlX),
+                        "ctrl-l" => out.push(Key::CtrlL),
                         "enter" => out.push(Key::Enter),
                         t if t.contains('<') => {
                             let i = t.find('<').unwrap();

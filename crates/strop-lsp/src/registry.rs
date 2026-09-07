@@ -28,11 +28,73 @@ pub struct ServerSpec<'a> {
 }
 
 impl ServerSpec<'_> {
-    /// A config-provided command may be absolute (0012 §5) — the PATH
-    /// probe is skipped then; the spawn itself checks existence.
+    /// A config-provided command may be absolute (0012 §5) — the
+    /// metadata check stats it directly instead of scanning PATH.
     pub fn absolute_command(&self) -> bool {
         Path::new(self.command).is_absolute()
     }
+}
+
+/// Pre-spawn executability of a spec's command, settled by metadata
+/// alone (0033 §3): nothing is executed before the trust decision and
+/// no orphan probe process can exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandStatus {
+    /// Resolves to an executable regular file.
+    Executable,
+    /// Cannot run; the reason names the fix ("no such file",
+    /// "not executable", "not found on PATH").
+    Unrunnable(&'static str),
+}
+
+/// Check the command the spawn would run: absolute or slash-relative
+/// commands stat against `root` (the spawn's working directory); bare
+/// names scan `path` with execvp's rules, an empty segment meaning
+/// `root`. A missing `path` finds nothing.
+pub fn command_status(
+    spec: &ServerSpec<'_>,
+    root: &Path,
+    path: Option<&std::ffi::OsStr>,
+) -> CommandStatus {
+    let command = spec.command;
+    if spec.absolute_command() || command.contains(std::path::is_separator) {
+        return file_status(&root.join(command));
+    }
+    let Some(path) = path else {
+        return CommandStatus::Unrunnable("not found on PATH");
+    };
+    for dir in std::env::split_paths(path) {
+        let candidate = if dir.as_os_str().is_empty() {
+            root.join(command)
+        } else {
+            dir.join(command)
+        };
+        if let CommandStatus::Executable = file_status(&candidate) {
+            return CommandStatus::Executable;
+        }
+    }
+    CommandStatus::Unrunnable("not found on PATH")
+}
+
+fn file_status(path: &Path) -> CommandStatus {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() && executable(&metadata) => CommandStatus::Executable,
+        Ok(_) => CommandStatus::Unrunnable("not executable"),
+        Err(_) => CommandStatus::Unrunnable("no such file"),
+    }
+}
+
+/// The exec permission bits execvp would require; non-unix targets have
+/// no portable bit, so existence is the strongest metadata check there.
+#[cfg(unix)]
+fn executable(metadata: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn executable(_metadata: &std::fs::Metadata) -> bool {
+    true
 }
 
 struct EmbeddedServer {
@@ -185,7 +247,11 @@ fn server_by_name<'a>(cfg: &'a Languages, name: &str) -> Option<ServerSpec<'a>> 
             .as_deref()
             .or(emb.map(|e| e.args.as_slice()))
             .unwrap_or(&[]),
-        install_hint: emb.map(|e| e.hint),
+        install_hint: if def.command.is_none() {
+            emb.map(|e| e.hint)
+        } else {
+            None
+        },
         init_options: def.config.as_ref(),
         project_executable,
     })
@@ -223,18 +289,100 @@ mod tests {
         assert!(for_extension(".xyz", &cfg).is_none());
     }
 
+    /// 0033 §3: the pre-spawn check inspects metadata only — nothing is
+    /// executed, so an untrusted project command is never run before
+    /// the trust gate and no probe process is orphaned.
     #[test]
-    fn embedded_specs_carry_their_arguments() {
-        let cfg = Languages::default();
-        let pyright = for_extension(".py", &cfg).unwrap();
-        assert_eq!(pyright.name, "pyright");
-        assert_eq!(pyright.command, "pyright-langserver");
-        assert_eq!(pyright.args.first().map(String::as_str), Some("--stdio"));
-        assert_eq!(pyright.install_hint, Some("npm i -g pyright"));
-        assert!(pyright.init_options.is_none());
-        // embedded commands are PATH-probed, never absolute
-        assert!(!pyright.absolute_command());
+    fn command_status_is_a_pure_metadata_check() {
+        let fixture = tempfile::tempdir().unwrap();
+        let dir = fixture.path();
+        let root = dir.join("root");
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+
+        fn status_for(command: &str, root: &Path, path: Option<&std::ffi::OsStr>) -> CommandStatus {
+            let merged = Languages::merge(
+                None,
+                Some(
+                    toml::from_str(&format!(
+                        "[language-server.custom]\ncommand = \"{command}\"\n\
+                         \n[language.python]\nlanguage-servers = [\"custom\"]\n"
+                    ))
+                    .unwrap(),
+                ),
+            );
+            let spec = for_extension(".py", &merged).unwrap();
+            command_status(&spec, root, path)
+        }
+
+        // absolute, missing
+        assert_eq!(
+            status_for("/nonexistent/custom-lsp", &root, None),
+            CommandStatus::Unrunnable("no such file")
+        );
+        // absolute, present: the exec bit decides (existence on non-unix)
+        let tool = dir.join("tool");
+        std::fs::write(&tool, b"#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                status_for(tool.to_str().unwrap(), &root, None),
+                CommandStatus::Unrunnable("not executable")
+            );
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(
+            status_for(tool.to_str().unwrap(), &root, None),
+            CommandStatus::Executable
+        );
+        // slash-relative commands resolve against the spawn's root
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let rel = root.join("sub/rel-lsp");
+        std::fs::write(&rel, b"#!/bin/sh\n").unwrap();
+        make_executable(&rel);
+        assert_eq!(
+            status_for("sub/rel-lsp", &root, None),
+            CommandStatus::Executable
+        );
+        // bare names scan the provided PATH, never the process's own
+        let onpath = bin.join("onpath-lsp");
+        std::fs::write(&onpath, b"#!/bin/sh\n").unwrap();
+        make_executable(&onpath);
+        assert_eq!(
+            status_for("onpath-lsp", &root, Some(bin.as_os_str())),
+            CommandStatus::Executable
+        );
+        assert_eq!(
+            status_for("nowhere-lsp", &root, Some(bin.as_os_str())),
+            CommandStatus::Unrunnable("not found on PATH")
+        );
+        assert_eq!(
+            status_for("onpath-lsp", &root, None),
+            CommandStatus::Unrunnable("not found on PATH")
+        );
+        // execvp treats an empty PATH segment as the current directory
+        // — the spawn's working directory, i.e. the root
+        let incwd = root.join("incwd-lsp");
+        std::fs::write(&incwd, b"#!/bin/sh\n").unwrap();
+        make_executable(&incwd);
+        assert_eq!(
+            status_for("incwd-lsp", &root, Some(std::ffi::OsStr::new(""))),
+            CommandStatus::Executable
+        );
     }
+
+    #[cfg(unix)]
+    fn make_executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).unwrap();
+    }
+
+    #[cfg(not(unix))]
+    fn make_executable(_path: &Path) {}
 
     #[test]
     fn root_walks_to_git() {

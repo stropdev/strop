@@ -3,6 +3,7 @@ mod bench;
 mod cli;
 mod config;
 mod editor;
+mod files;
 mod headless;
 mod keymap;
 mod render;
@@ -113,6 +114,8 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
         cli::Command::Headless { script, path } => {
             let script = std::fs::read_to_string(script)?;
             let buffer = path
+                .as_ref()
+                .and_then(|location| location.path.local_path())
                 .map(Buffer::open)
                 .transpose()?
                 .unwrap_or_else(|| Buffer::from_text(""));
@@ -122,14 +125,40 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             if let Some(error) = error {
                 editor.message = error;
             }
-            headless::run_script(&mut editor, &script, 100, 30, &mut io::stdout().lock())?;
+            apply_initial_line(
+                &mut editor,
+                path.as_ref().and_then(|location| location.line),
+            );
+            headless::run_script(
+                &mut editor,
+                &script,
+                100,
+                30,
+                &mut io::stdout().lock(),
+                remote_start(&path),
+            )?;
         }
         cli::Command::Edit { path, readonly } => {
-            let directory = path.as_ref().filter(|path| path.is_dir()).cloned();
+            let directory = path
+                .as_ref()
+                .and_then(|location| location.path.local_path())
+                .filter(|path| path.is_dir())
+                .map(std::path::Path::to_owned);
+            if directory.is_some()
+                && path
+                    .as_ref()
+                    .is_some_and(|location| location.line.is_some())
+            {
+                return Err("a line location requires a file, not a directory".into());
+            }
             if let Some(directory) = &directory {
                 std::env::set_current_dir(directory)?;
             }
-            let buffer = match path.as_ref().filter(|_| directory.is_none()) {
+            let buffer = match path
+                .as_ref()
+                .and_then(|location| location.path.local_path())
+                .filter(|_| directory.is_none())
+            {
                 Some(path) => Buffer::open(path)?,
                 None => Buffer::from_text(""),
             };
@@ -148,6 +177,10 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
                     editor.message = format!("session restore failed: {error}");
                 }
             }
+            apply_initial_line(
+                &mut editor,
+                path.as_ref().and_then(|location| location.line),
+            );
             editor.trace_state();
             if let Some(error) = error {
                 editor.message = error;
@@ -161,6 +194,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             editor.recorded_action(
                 editor::trace::drive::Action::Start {
                     directory_picker: directory.is_some(),
+                    open: remote_start(&path),
                 },
                 tick,
             )?;
@@ -170,16 +204,35 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
     io::stdout().flush()?;
     Ok(())
 }
+fn remote_start(location: &Option<cli::FileLocation>) -> Option<editor::trace::drive::StartupOpen> {
+    let location = location.as_ref()?;
+    matches!(location.path, files::FileTarget::Remote(_)).then(|| {
+        editor::trace::drive::StartupOpen {
+            target: location.path.clone(),
+            line: location.line,
+        }
+    })
+}
+
+fn apply_initial_line(editor: &mut editor::Editor, line: Option<strop_core::id::LineIndex>) {
+    if let Some(line) = line {
+        let line = line.get().min(editor.buf().last_content_line());
+        editor.set_head(editor.buf().line_start(line));
+        editor.run_motion("^");
+    }
+}
 
 fn print_help() {
     println!(
         "strop {} — see the cut before you make it\n\n\
-USAGE:\n  strop [file|dir]              terminal editor (-R: readonly)\n\
+USAGE:\n  strop [+LINE] [file[:LINE]|dir] terminal editor (-R: readonly)\n\
   strop --headless SCRIPT [FILE]  scripted driver\n\
   strop --script SCRIPT [FILE]    same scripted driver\n\
   strop --replay-script TRACE     extract a headless reproduction script\n\
   strop update [--check]          self-update\n\
   strop config | --version | --dump-compat\n\n\
+  strop -- FILE:3                open a literal colon-suffixed filename\n\n\
+  strop [+LINE] ssh://[user@]host[:port]/absolute/path  read-only SSH snapshot\n\
 TRACING:\n  --log / --log=ALL              all diagnostic categories to strop-log.jsonl\n\
   --log=PATH / --log-file PATH    create a new private JSONL file\n\
   STROP_LOG=PATH                 environment alternative (flag wins)\n\

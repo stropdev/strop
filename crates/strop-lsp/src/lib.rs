@@ -10,7 +10,7 @@ pub mod protocol;
 pub mod registry;
 
 pub use caps::ServerCaps;
-pub use client::Client;
+pub use client::{Client, SpawnError};
 pub use protocol::*;
 
 #[cfg(test)]

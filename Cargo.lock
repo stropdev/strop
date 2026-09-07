@@ -1112,8 +1112,9 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-core"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
+ "libc",
  "parking_lot",
  "ropey",
  "serde",
@@ -1126,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "crossterm",
  "indicatif",
@@ -1141,6 +1142,7 @@ dependencies = [
  "strop-grammar",
  "strop-lsp",
  "strop-picker",
+ "strop-remote",
  "strop-syntax",
  "strop-trace",
  "tempfile",
@@ -1153,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "git2",
  "serde",
@@ -1164,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "ropey",
  "strop-core",
@@ -1172,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "async-lsp",
  "parking_lot",
@@ -1181,6 +1183,7 @@ dependencies = [
  "serde_json",
  "strop-core",
  "strop-trace",
+ "tempfile",
  "tokio",
  "tokio-util",
  "toml",
@@ -1188,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "ignore",
  "nucleo-matcher",
@@ -1198,8 +1201,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "strop-remote"
+version = "0.16.0"
+dependencies = [
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "strop-core",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "strop-syntax"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "ropey",
  "streaming-iterator",
@@ -1221,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "parking_lot",
  "serde",

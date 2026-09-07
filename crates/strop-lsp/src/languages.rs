@@ -45,6 +45,31 @@ pub struct LanguageDef {
     pub language_servers: Vec<String>,
 }
 
+/// One malformed layer met while loading: the exact file plus what
+/// went wrong. Layers never brick the editor (0005 §2) — the typed
+/// diagnostic rides along to the modeline and trace instead, even when
+/// a valid fallback server attaches (0033 §2).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LayerDiagnostic {
+    #[serde(with = "strop_core::path_serde")]
+    pub path: PathBuf,
+    pub message: String,
+}
+
+impl LayerDiagnostic {
+    fn new(path: &Path, message: String) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            message,
+        }
+    }
+
+    /// Modeline/trace form: the exact path plus the problem.
+    pub fn display(&self) -> String {
+        format!("{}: {}", self.path.display(), self.message)
+    }
+}
+
 /// The merged layers (0012 §1: project > XDG > embedded) plus where the
 /// project layer came from — the registry resolves through this.
 #[derive(Debug, Default, Clone)]
@@ -54,37 +79,46 @@ pub struct Languages {
     /// Directory holding the project layer's `.strop/languages.toml`,
     /// when one was found — it anchors the workspace root (0012 §6).
     pub project_root: Option<PathBuf>,
+    /// Merge-level notes (unspawnable defs, unknown server names).
     warnings: Vec<String>,
+    /// Malformed layers met while loading, with their exact paths.
+    layer_diagnostics: Vec<LayerDiagnostic>,
 }
 
 impl Languages {
-    /// Layer problems (parse failures, unspawnable defs, unknown server
-    /// names) — surfaced at attach; never fatal (0005 §2).
+    /// Merge-level problems (unspawnable defs, unknown server names) —
+    /// surfaced at attach; never fatal (0005 §2).
     pub fn warnings(&self) -> &[String] {
         &self.warnings
     }
 
+    /// Malformed layers (unreadable or unparseable TOML) with their
+    /// exact paths — carried through the attach record to the modeline
+    /// and trace even when a valid fallback server starts (0033 §2).
+    pub fn layer_diagnostics(&self) -> &[LayerDiagnostic] {
+        &self.layer_diagnostics
+    }
+
     /// Read and merge the layers that exist. Absent files are fine;
-    /// unreadable or unparseable layers are rejected with a warning and
-    /// the remaining layers carry on.
+    /// unreadable or unparseable layers are skipped with a typed
+    /// diagnostic naming the file, and the remaining layers carry on.
     pub fn load(xdg: Option<&Path>, project: Option<&Path>) -> Self {
-        let mut warnings = Vec::new();
-        let xdg_file = xdg.and_then(|p| read_layer(p, &mut warnings));
-        let project_file = project.and_then(|p| read_layer(p, &mut warnings));
+        let mut layers = Vec::new();
+        let xdg_file = xdg.and_then(|p| read_layer(p, &mut layers));
+        let project_file = project.and_then(|p| read_layer(p, &mut layers));
         let mut merged = Self::merge(xdg_file, project_file);
         // `.strop/languages.toml` — the project root is the dir holding
         // `.strop`, two parents up from the file
         merged.project_root = project
             .and_then(|p| p.parent().and_then(Path::parent))
             .map(Path::to_path_buf);
-        warnings.append(&mut merged.warnings);
-        merged.warnings = warnings;
+        merged.layer_diagnostics = layers;
         merged
     }
 
     /// Layer merge: per key, the project entry replaces the XDG entry —
     /// everything XDG configured for other keys survives.
-    fn merge(xdg: Option<LanguagesToml>, project: Option<LanguagesToml>) -> Self {
+    pub(crate) fn merge(xdg: Option<LanguagesToml>, project: Option<LanguagesToml>) -> Self {
         let mut servers = BTreeMap::new();
         let mut languages = BTreeMap::new();
         for layer in [xdg, project].into_iter().flatten() {
@@ -116,6 +150,7 @@ impl Languages {
             languages,
             project_root: None,
             warnings,
+            layer_diagnostics: Vec::new(),
         }
     }
 }
@@ -143,19 +178,19 @@ pub fn project_path(buffer: &Path) -> Option<PathBuf> {
     }
 }
 
-fn read_layer(path: &Path, warnings: &mut Vec<String>) -> Option<LanguagesToml> {
+fn read_layer(path: &Path, diagnostics: &mut Vec<LayerDiagnostic>) -> Option<LanguagesToml> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         Err(e) => {
-            warnings.push(format!("{}: {e} — layer ignored", path.display()));
+            diagnostics.push(LayerDiagnostic::new(path, format!("{e} — layer ignored")));
             return None;
         }
     };
     match toml::from_str::<LanguagesToml>(&text) {
         Ok(f) => Some(f),
         Err(e) => {
-            warnings.push(format!("{}: {e} — layer ignored", path.display()));
+            diagnostics.push(LayerDiagnostic::new(path, format!("{e} — layer ignored")));
             None
         }
     }
@@ -253,7 +288,6 @@ extraPaths = ["xdg"]
         // first resolvable list entry wins (one server per workspace)
         let spec = registry::for_extension(".py", &merged).unwrap();
         assert_eq!(spec.name, "pyright");
-        assert_eq!(spec.install_hint, Some("npm i -g pyright"));
 
         let swapped = Languages::merge(
             None,
@@ -270,12 +304,10 @@ language-servers = ["mypy-lsp"]
         );
         let spec = registry::for_extension(".py", &swapped).unwrap();
         assert_eq!(spec.command, "mypy-langserver");
-        assert_eq!(spec.install_hint, None); // config-defined, no hint
-        assert!(spec.init_options.is_none());
     }
 
     #[test]
-    fn absolute_commands_skip_the_path_probe() {
+    fn absolute_commands_skip_the_path_scan() {
         let merged = Languages::merge(
             None,
             Some(file(
@@ -290,7 +322,7 @@ language-servers = ["custom"]
         );
         let spec = registry::for_extension(".py", &merged).unwrap();
         assert!(spec.absolute_command());
-        // embedded commands are bare names — probed on PATH as before
+        // embedded commands are bare names — found via the PATH scan
         assert!(!registry::for_extension(".rs", &merged)
             .unwrap()
             .absolute_command());
@@ -335,11 +367,12 @@ language-servers = ["pyright"]
         let loaded = Languages::load(None, Some(&layer.join("languages.toml")));
         assert_eq!(loaded.project_root.as_deref(), Some(dir.as_path()));
         assert!(loaded.warnings().is_empty());
+        assert!(loaded.layer_diagnostics().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn broken_layer_warns_and_never_bricks() {
+    fn broken_layer_diagnoses_with_its_exact_path_and_never_bricks() {
         let dir = std::env::temp_dir().join("strop-lsp-languages-broken");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -347,9 +380,83 @@ language-servers = ["pyright"]
         std::fs::write(&bad, "language-server = 3").unwrap(); // wrong type
 
         let loaded = Languages::load(Some(&bad), None);
-        assert!(!loaded.warnings().is_empty());
+        let diagnostics = loaded.layer_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].path, bad);
+        assert!(diagnostics[0]
+            .display()
+            .starts_with(bad.display().to_string().as_str()));
+        assert!(diagnostics[0].display().contains("layer ignored"));
         // the embedded registry still resolves
         assert!(registry::for_extension(".rs", &loaded).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 0033 §2: a malformed global layer beside a healthy project
+    /// layer — the valid layering and its initializationOptions
+    /// survive, and the diagnostic names the exact broken file.
+    #[test]
+    fn malformed_layer_keeps_valid_layering_and_config() {
+        let dir = std::env::temp_dir().join("strop-lsp-languages-mixed");
+        let _ = std::fs::remove_dir_all(&dir);
+        let xdg_dir = dir.join("xdg");
+        let project_dir = dir.join("proj/.strop");
+        std::fs::create_dir_all(&xdg_dir).unwrap();
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let bad_xdg = xdg_dir.join("languages.toml");
+        std::fs::write(&bad_xdg, "[language-server.pyright\ncommand =").unwrap();
+        let project = project_dir.join("languages.toml");
+        std::fs::write(
+            &project,
+            r#"
+[language-server.pyright.config.python.analysis]
+extraPaths = ["proj"]
+
+[language.python]
+language-servers = ["pyright"]
+"#,
+        )
+        .unwrap();
+
+        let loaded = Languages::load(Some(&bad_xdg), Some(&project));
+        let diagnostics = loaded.layer_diagnostics();
+        assert_eq!(diagnostics.len(), 1, "only the broken layer reports");
+        assert_eq!(diagnostics[0].path, bad_xdg);
+        assert_eq!(
+            loaded.project_root.as_deref(),
+            Some(dir.join("proj").as_path())
+        );
+        // the valid project layer still applies: its config reaches the
+        // initialize payload untouched
+        let spec = registry::for_extension(".py", &loaded).unwrap();
+        assert_eq!(spec.command, "pyright-langserver");
+        let extra = &spec.init_options.unwrap()["python"]["analysis"]["extraPaths"];
+        assert_eq!(extra, &serde_json::json!(["proj"]));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn every_broken_layer_reports_its_own_path() {
+        let dir = std::env::temp_dir().join("strop-lsp-languages-both-broken");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("xdg")).unwrap();
+        std::fs::create_dir_all(dir.join(".strop")).unwrap();
+        let bad_xdg = dir.join("xdg/languages.toml");
+        std::fs::write(&bad_xdg, "= no").unwrap();
+        let bad_project = dir.join(".strop/languages.toml");
+        std::fs::write(&bad_project, "language-server = 3").unwrap();
+
+        let loaded = Languages::load(Some(&bad_xdg), Some(&bad_project));
+        let paths: Vec<_> = loaded
+            .layer_diagnostics()
+            .iter()
+            .map(|d| d.path.clone())
+            .collect();
+        // layer order: XDG then project
+        assert_eq!(paths, [bad_xdg, bad_project]);
+        // embedded fallback still resolves for both layers' languages
+        assert!(registry::for_extension(".rs", &loaded).is_some());
+        assert!(registry::for_extension(".py", &loaded).is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

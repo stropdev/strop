@@ -78,6 +78,7 @@ pub fn run_script(
     cols: u16,
     rows: u16,
     out: &mut dyn Write,
+    open: Option<crate::editor::trace::drive::StartupOpen>,
 ) -> io::Result<()> {
     let mut steps = script
         .lines()
@@ -103,6 +104,7 @@ pub fn run_script(
     };
     driver.apply(Action::Start {
         directory_picker: false,
+        open,
     })?;
     driver.draw()?;
     for line in steps {

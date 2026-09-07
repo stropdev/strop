@@ -32,122 +32,15 @@ pub(super) fn run_shell(
 #[cfg(unix)]
 mod unix {
     use super::*;
-    use parking_lot::Mutex;
     use std::io::{self, Read, Write};
-    use std::os::unix::process::CommandExt;
-    use std::process::{Child, Command, ExitStatus, Stdio};
-    use std::sync::{
-        mpsc::{channel, RecvTimeoutError},
-        Arc,
-    };
+    use std::process::{Command, ExitStatus, Stdio};
+    use std::sync::mpsc::{channel, RecvTimeoutError};
     use std::time::Duration;
+    use strop_core::process::OwnedProcess;
     use strop_core::worker::{self, CancelReason, Failure};
 
     const POLL: Duration = Duration::from_millis(20);
     const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
-
-    #[derive(Default)]
-    struct Group {
-        pid: Option<libc::pid_t>,
-        cancelled: bool,
-    }
-    impl Group {
-        // Called only under the capability mutex. The child owner cannot reap
-        // until it has removed pid under this same mutex.
-        fn signal(&self) -> Result<(), Failure> {
-            if let Some(pid) = self.pid {
-                // SAFETY: pid is a positive, owned, unreaped child PID whose
-                // group was created by process_group(0). Negation targets only
-                // that group. std has no process-group signalling operation.
-                if unsafe { libc::kill(-pid, libc::SIGKILL) } == -1 {
-                    let error = io::Error::last_os_error();
-                    if error.raw_os_error() != Some(libc::ESRCH) {
-                        return Err(Failure::new(
-                            FailureKind::Io,
-                            format!("kill shell group: {error}"),
-                        ));
-                    }
-                }
-            }
-            Ok(())
-        }
-        fn cancel(&mut self) -> Result<(), Failure> {
-            self.cancelled = true;
-            self.signal()
-        }
-    }
-
-    struct OwnedChild {
-        child: Child,
-        group: Arc<Mutex<Group>>,
-        reaped: bool,
-    }
-    impl OwnedChild {
-        fn kill(&mut self) -> Result<(), Failure> {
-            self.group.lock().signal()
-        }
-
-        fn exited(&self) -> Result<bool, Failure> {
-            // SAFETY: zero is a valid initial siginfo_t representation; waitid
-            // writes it before access. P_PID selects our child, WNOWAIT retains
-            // the zombie/PID reservation, and WNOHANG never blocks. Unlike
-            // Child::try_wait, this does NOT reap. Linux and macOS document
-            // si_pid == 0 when no requested state change is available.
-            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-            loop {
-                let result = unsafe {
-                    libc::waitid(
-                        libc::P_PID,
-                        self.child.id() as libc::id_t,
-                        &mut info,
-                        libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-                    )
-                };
-                if result == 0 {
-                    // SAFETY: successful waitid initialized the siginfo layout.
-                    return Ok(unsafe { info.si_pid() } != 0);
-                }
-                let error = io::Error::last_os_error();
-                if error.kind() != io::ErrorKind::Interrupted {
-                    return Err(Failure::new(
-                        FailureKind::Wait,
-                        format!("observe shell exit: {error}"),
-                    ));
-                }
-            }
-        }
-        fn wait(&mut self) -> Result<ExitStatus, Failure> {
-            // Revoke before reaping. A detached cancellation callback may run
-            // afterwards but will see None, never a recycled process-group ID.
-            self.group.lock().pid = None;
-            loop {
-                match self.child.wait() {
-                    Ok(status) => {
-                        self.reaped = true;
-                        return Ok(status);
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(error) => return Err(Failure::new(FailureKind::Wait, error.to_string())),
-                }
-            }
-        }
-    }
-    impl Drop for OwnedChild {
-        fn drop(&mut self) {
-            if !self.reaped {
-                let _ = self.kill();
-                // Safe direct-child fallback if group signalling failed.
-                let _ = self.child.kill();
-                let _ = self.wait();
-            }
-        }
-    }
-    struct Hook<'a>(&'a CancelToken);
-    impl Drop for Hook<'_> {
-        fn drop(&mut self) {
-            self.0.clear_cancel_resource();
-        }
-    }
 
     enum IoDone {
         Input(Outcome<()>),
@@ -266,67 +159,34 @@ mod unix {
     }
 
     pub(super) fn run(
-        command: &str,
+        command_text: &str,
         cwd: &std::path::Path,
         input: Option<String>,
         token: &CancelToken,
     ) -> Outcome<ProcessOutput> {
-        let group = Arc::new(Mutex::new(Group::default()));
-        let callback_group = group.clone();
-        if let Err(failure) = token.register_cancel_resource(move || callback_group.lock().cancel())
-        {
-            return Outcome::Failed {
-                failure,
-                partial: None,
-            };
-        }
-        // Declared first: child RAII cleanup precedes hook removal on every exit.
-        let _hook = Hook(token);
-        if token.is_cancelled() {
-            return Outcome::Cancelled(CancelReason::OwnerClosed);
-        }
-        let spawned = Command::new("sh")
+        let mut command = Command::new("sh");
+        command
             .arg("-c")
-            .arg(command)
+            .arg(command_text)
             .current_dir(cwd)
-            .process_group(0)
             .stdin(if input.is_some() {
                 Stdio::piped()
             } else {
                 Stdio::null()
             })
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
-        let child = match spawned {
-            Ok(child) => child,
-            Err(error) => {
-                return Outcome::failed(FailureKind::Spawn, format!("spawn failed: {error}"))
+            .stderr(Stdio::piped());
+        let mut process = match OwnedProcess::spawn(&mut command, token) {
+            Ok(process) => process,
+            Err(failure) => {
+                return Outcome::Failed {
+                    failure,
+                    partial: None,
+                }
             }
         };
-        let mut process = OwnedChild {
-            child,
-            group,
-            reaped: false,
-        };
-        let publish = {
-            let mut group = process.group.lock();
-            group.pid = Some(process.child.id() as libc::pid_t);
-            // Covers cancellation before/during spawn and before publication.
-            if group.cancelled || token.is_cancelled() {
-                group.cancel()
-            } else {
-                Ok(())
-            }
-        };
-        if let Err(failure) = publish {
-            return Outcome::Failed {
-                failure,
-                partial: None,
-            };
-        }
         if token.is_cancelled() {
-            if let Err(failure) = process.kill() {
+            if let Err(failure) = process.terminate() {
                 return Outcome::Failed {
                     failure,
                     partial: None,
@@ -334,10 +194,10 @@ mod unix {
             }
             return Outcome::Cancelled(CancelReason::OwnerClosed);
         }
-        let Some(stdout) = process.child.stdout.take() else {
+        let Some(stdout) = process.take_stdout() else {
             return Outcome::failed(FailureKind::Protocol, "missing shell stdout");
         };
-        let Some(stderr) = process.child.stderr.take() else {
+        let Some(stderr) = process.take_stderr() else {
             return Outcome::failed(FailureKind::Protocol, "missing shell stderr");
         };
         let (tx, rx) = channel();
@@ -354,7 +214,7 @@ mod unix {
             }
         });
         let writer = if let Some(text) = input {
-            let Some(mut stdin) = process.child.stdin.take() else {
+            let Some(mut stdin) = process.take_stdin() else {
                 return Outcome::failed(FailureKind::Protocol, "missing shell stdin");
             };
             Some(worker::spawn(
@@ -389,7 +249,7 @@ mod unix {
         let mut signalled = false;
         loop {
             if !exited {
-                match process.exited() {
+                match process.has_exited() {
                     Ok(value) => exited = value,
                     Err(failure) => {
                         drain.failure.get_or_insert(failure);
@@ -400,7 +260,7 @@ mod unix {
             // A finished leader must not leave background children holding the
             // readers forever. Its zombie still reserves the PGID here.
             if !signalled && (exited || drain.failure.is_some() || token.is_cancelled()) {
-                if let Err(failure) = process.kill() {
+                if let Err(failure) = process.terminate() {
                     drain.failure.get_or_insert(failure);
                     break;
                 }
@@ -416,7 +276,7 @@ mod unix {
                     // Pipes can close before the process exits. Avoid spinning
                     // on a disconnected receiver; this wait is supervisor-only.
                     if !exited {
-                        match process.exited() {
+                        match process.has_exited() {
                             Ok(true) => exited = true,
                             Ok(false) => {
                                 // Keep cancellation capability until exit is
@@ -438,7 +298,7 @@ mod unix {
                 }
             }
         }
-        if let Err(failure) = process.kill() {
+        if let Err(failure) = process.terminate() {
             drain.failure.get_or_insert(failure);
         }
         let status = match process.wait() {

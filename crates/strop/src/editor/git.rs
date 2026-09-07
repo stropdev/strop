@@ -40,6 +40,18 @@ impl Editor {
         if self.docs.is_empty() || self.finishing {
             return;
         }
+        if self.remote_file().is_some() {
+            if let Load::Running(ticket) = &self.git_discovery {
+                self.cancel_git_worker(ticket.request, CancelReason::Superseded);
+            }
+            self.cancel_hunk_owner();
+            self.git = None;
+            self.git_discovery = Load::Idle;
+            self.hunks = Default::default();
+            self.staged_hunks.clear();
+            self.hunks_untracked = false;
+            return;
+        }
         self.git_discovery.retry_failed();
         let from = self
             .buf()
