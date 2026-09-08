@@ -56,6 +56,25 @@ impl Buffer {
         );
     }
 
+    pub(crate) fn trace_snapshot(&self, removed_bytes: usize) {
+        if !enabled() {
+            return;
+        }
+        let text = capture_content().then(|| self.text().to_string());
+        record(
+            EventKind::Mutation,
+            &Mutation {
+                buffer: self.trace_id(),
+                source: crate::ChangeOrigin::System,
+                revision: self.revision().get(),
+                start_byte: 0,
+                removed_bytes,
+                inserted_bytes: self.len_bytes(),
+                inserted_text: text.as_deref(),
+            },
+        );
+    }
+
     pub(crate) fn trace_history(&self, edits: &[crate::history::Edit]) {
         if !enabled() {
             return;

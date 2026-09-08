@@ -7,17 +7,18 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::editor::document::DocumentSource;
+use crate::files::FileTarget;
 use strop_core::id::DocumentId;
 use strop_core::worker::{
     self, CancelReason, Completion, Failure, FailureKind, Load, Outcome, Ticket, WorkerId,
 };
 
-use strop_git::memory::{BlameCard, BlameLine, LogRow};
-use strop_git::{GitContext, GitError};
-
 use super::types::*;
-use super::CommitFiles;
-use crate::editor::{trace, Editor, Surface};
+use super::{CommitFiles, Surface};
+use crate::editor::{trace, Editor};
+use strop_git::memory::{BlameCard, BlameLine, LogRow};
+use strop_git::{GitContext, GitError, RepoTarget};
 
 /// What the dive's origin surface turned out to be at completion
 /// time — copied out of the document before any mutation, so the
@@ -226,15 +227,24 @@ impl Editor {
         self.hunk_load = Load::Idle;
         let key = completion.ticket.key;
         // the snapshot applies only to the document that asked, at
-        // that revision, in that git view — nothing else
+        // that revision, in that git view, still showing the same file
+        // identity — local path or remote file — nothing else
         let valid = !self.docs.is_empty()
             && self.current() == key.document
             && self.docs.get(key.document).is_some_and(|d| {
-                d.buf.revision() == key.revision && d.buf.path.as_ref() == Some(&key.path)
+                d.buf.revision() == key.revision
+                    && match &key.file {
+                        FileTarget::Local(path) => d.buf.path.as_deref() == Some(path.as_path()),
+                        FileTarget::Remote(file) => matches!(
+                            &d.source,
+                            DocumentSource::Remote(current) if file.absolute_file() == Some(&current.file)
+                        ),
+                    }
+                    && self.git.as_ref().is_some_and(|c| c.repo == key.repo)
             })
             && self.git_view == key.git_view;
         if !valid {
-            trace::services::rejected("git", "hunk document, revision or view changed");
+            trace::services::rejected("git", "hunk document, revision or repository changed");
             return;
         }
         match completion.outcome {
@@ -264,15 +274,22 @@ impl Editor {
             let Some(mutation) = self.git_mutations.pop_front() else {
                 return;
             };
-            // pure re-validation at launch: the buffer and the view
-            // the command targeted must still be current
+            // pure re-validation at launch: the buffer, the view the
+            // command targeted, and a LOCAL repository target — remote
+            // repositories are read-only (RW4) and a stale queue entry
+            // for one is refused here, never executed
             let valid = self.git_view == mutation.key.git_view
+                && matches!(mutation.key.repo, RepoTarget::Local { .. })
                 && self
                     .docs
                     .get(mutation.key.document)
                     .is_some_and(|d| d.buf.revision() == mutation.key.revision);
             if !valid {
-                trace::services::rejected("git", "mutation superseded before launch");
+                if mutation.key.repo.is_remote() {
+                    trace::services::rejected("git", "remote repositories are read-only (RW4)");
+                } else {
+                    trace::services::rejected("git", "mutation superseded before launch");
+                }
                 continue;
             }
             let Some(ticket) = self.git_ticket(mutation.key.clone()) else {
@@ -287,7 +304,7 @@ impl Editor {
                 })
             });
             let args = (ticket.clone(), mutation.op.clone());
-            let workdir = ticket.key.workdir.clone();
+            let workdir = ticket.key.repo.workdir().to_path_buf();
             let rel = ticket.key.rel.clone();
             let kind = ticket.key.kind;
             let op = mutation.op;
@@ -457,7 +474,7 @@ impl Editor {
         &mut self,
         completion: Completion<BlameKey, Vec<BlameLine>>,
     ) {
-        let path = completion.ticket.key.path.clone();
+        let path = completion.ticket.key.document;
         if !self
             .blame_gutters
             .get(&path)
@@ -472,11 +489,7 @@ impl Editor {
         self.worker_handles.remove(&completion.ticket.request);
         let key = completion.ticket.key;
         let valid = self.docs.get(key.document).is_some_and(|d| {
-            d.buf.revision() == key.revision
-                && d.buf
-                    .path
-                    .as_deref()
-                    .is_some_and(|p| self.blame_key_of(p) == key.path)
+            d.buf.revision() == key.revision && d.file_target(&self.cwd).as_ref() == Some(&key.file)
         });
         match completion.outcome {
             Outcome::Success(lines) => {
@@ -532,7 +545,8 @@ impl Editor {
         let valid = !self.docs.is_empty()
             && self.current() == key.origin.document
             && self.buf().revision() == key.origin.revision
-            && self.buf().line_of(self.head()) + 1 == key.line;
+            && self.buf().line_of(self.head()) + 1 == key.line
+            && self.cur().file_target(&self.cwd).as_ref() == Some(&key.origin.file);
         if !valid {
             trace::services::rejected("git", "card origin changed");
             return;
@@ -558,6 +572,16 @@ impl Editor {
         let outcome = completion.outcome;
         // read the surface NOW, copy out what the landing needs, then
         // drop the borrow before any editor mutation
+        if self.docs.is_empty()
+            || self.current() != doc
+            || self
+                .doc(doc)
+                .git_context()
+                .is_none_or(|context| context.repo != key.repo)
+        {
+            trace::services::rejected("git", "dive surface owner changed");
+            return;
+        }
         let landing = self
             .docs
             .get(doc)
@@ -621,6 +645,7 @@ impl Editor {
                     _ => return,
                 };
                 let commit = CommitFiles {
+                    repo: key.repo.clone(),
                     sha,
                     files,
                     current: path.clone(),

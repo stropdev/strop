@@ -225,6 +225,12 @@ impl Buffer {
         if !text.is_empty() {
             self.rope.insert(start, text);
         }
+        self.publish_change(edit, origin);
+        self.trace_edit(origin, start_byte, range.len(), text);
+    }
+
+    fn publish_change(&mut self, edit: InputEdit, origin: ChangeOrigin) {
+        debug_assert!(self.epoch < u64::MAX);
         self.epoch += 1;
         self.dirty |= origin != ChangeOrigin::System;
         self.changes.push(Change {
@@ -232,7 +238,6 @@ impl Buffer {
             origin,
             edit,
         });
-        self.trace_edit(origin, start_byte, range.len(), text);
     }
 }
 
@@ -281,6 +286,35 @@ impl SystemEdit<'_> {
             ChangeOrigin::System,
         );
         self.buffer.history = Default::default();
+        Ok(())
+    }
+
+    /// Publish worker-built text without flattening or rebuilding a rope on the
+    /// event loop. Identity, readonly policy and monotonic revision stay local.
+    pub fn replace_rope(&mut self, rope: ropey::Rope) -> Result<(), EditError> {
+        self.buffer
+            .epoch
+            .checked_add(1)
+            .ok_or(EditError::RevisionExhausted)?;
+        let old_end_byte = self.buffer.len_bytes();
+        let old_end_point = self.buffer.point_of(old_end_byte);
+        let new_end_byte = rope.len_bytes();
+        let line = rope.byte_to_line(new_end_byte);
+        let new_end_point = (line, new_end_byte - rope.line_to_byte(line));
+        self.buffer.rope = rope;
+        self.buffer.publish_change(
+            InputEdit {
+                start_byte: 0,
+                old_end_byte,
+                new_end_byte,
+                start_point: (0, 0),
+                old_end_point,
+                new_end_point,
+            },
+            ChangeOrigin::System,
+        );
+        self.buffer.history = Default::default();
+        self.buffer.trace_snapshot(old_end_byte);
         Ok(())
     }
 }

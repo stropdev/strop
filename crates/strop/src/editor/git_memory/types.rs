@@ -1,29 +1,39 @@
 //! Request ownership and terminal results for native Git operations.
+//!
+//! Every key carries its [`RepoTarget`] (0036 RW8): the repository a
+//! request runs against is the one it was launched with — local or
+//! remote — and every completion validates against that target, so a
+//! cached context for one machine can never satisfy a request owned by
+//! another.
 use std::path::PathBuf;
+
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{Completion, WorkerId};
 use strop_git::memory::{BlameCard, BlameLine, LogRow};
-use strop_git::{FileDiff, GitContext, Hunk};
+use strop_git::{FileDiff, GitContext, Hunk, RepoTarget};
 
-/// What a discovery request resolves from — the buffer path or cwd.
+use crate::files::FileTarget;
+
+/// What a discovery request resolves from — the buffer's file target
+/// (local path or remote file) or, for local scratch buffers, the cwd.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContextKey {
-    #[serde(with = "strop_core::path_serde")]
-    pub from: PathBuf,
+    pub from: FileTarget,
 }
 
 /// The identity of one gutter-diff request: the document, its text
-/// revision, the file, the repository, and the git view (the index
+/// revision, the file (local path or remote file identity), the
+/// repository target it runs against, and the git view (the index
 /// state the diff was computed against). Any change to any of these
 /// makes a completion stale.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HunkKey {
     pub document: DocumentId,
     pub revision: BufferRevision,
-    #[serde(with = "strop_core::path_serde")]
-    pub path: PathBuf,
-    #[serde(with = "strop_core::path_serde")]
-    pub workdir: PathBuf,
+    /// The buffer's file identity — a remote buffer names its remote
+    /// file, never a local path spelling of one.
+    pub file: FileTarget,
+    pub repo: RepoTarget,
     pub git_view: WorkerId,
 }
 
@@ -61,8 +71,7 @@ pub struct MutationKey {
     pub kind: MutationKind,
     #[serde(with = "strop_core::path_serde")]
     pub rel: PathBuf,
-    #[serde(with = "strop_core::path_serde")]
-    pub workdir: PathBuf,
+    pub repo: RepoTarget,
     pub git_view: WorkerId,
 }
 
@@ -82,24 +91,22 @@ pub struct GitMutation {
     pub op: MutationOp,
 }
 
-/// One log surface's request: the surface document and the revision
-/// its buffer was created at.
+/// One log surface's request: the surface document, the revision its
+/// buffer was created at, and the repository the log runs against.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LogKey {
     pub document: DocumentId,
     pub revision: BufferRevision,
+    pub repo: RepoTarget,
 }
 
-/// A blame request's origin: document, revision, canonical path,
-/// repository workdir.
+/// Frozen document, file and repository identity for a blame request.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BlameKey {
     pub document: DocumentId,
     pub revision: BufferRevision,
-    #[serde(with = "strop_core::path_serde")]
-    pub path: PathBuf,
-    #[serde(with = "strop_core::path_serde")]
-    pub workdir: PathBuf,
+    pub file: FileTarget,
+    pub repo: RepoTarget,
 }
 
 /// The single-line card: a blame origin plus the 1-based line.
@@ -123,12 +130,12 @@ pub enum DiveTarget {
     },
 }
 
-/// A dive request: the surface document asking and what it asked for.
+/// A dive request: the surface document asking, the repository the
+/// fetch runs against, and what it asked for.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiveKey {
     pub document: DocumentId,
-    #[serde(with = "strop_core::path_serde")]
-    pub workdir: PathBuf,
+    pub repo: RepoTarget,
     pub target: DiveTarget,
 }
 

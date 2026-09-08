@@ -1,13 +1,12 @@
 # 0035 — Remote workflow roadmap: the full TRAMP-style capability inventory
 
-Status: planning. This is the user-requested whole-vision roadmap for remote work in
-strop, researched against the current TRAMP manual (2.8.2.31.1). It orders capability
-growth into slices with dependency gates and observable acceptance. It sets no dates,
-promises no per-release transport bundle, and changes nothing about the shipped-scope
-boundary that 0034 defines: read-only SFTP snapshots over a strict, noninteractive
-OpenSSH config path, no remote writes, no remote LSP/process execution, no automatic
-cache or session restoration. 0034 is foundation work in progress, not a verified
-shipped release; nothing here upgrades that claim.
+Status: roadmap with implemented milestones. 0034 shipped the read-only SSH snapshot
+reader in 0.16.0; 0036 delivers ranges/follow, addressing/completion, pooled connection
+ownership, read-only directory browsing, supervised execution and remote LSP/Git in
+0.17.0. This inventory orders the remaining TRAMP-style capabilities with dependency
+gates and observable acceptance; it sets no dates or blanket parity promise. Remote
+writes, arbitrary shell jobs, additional transports and automatic content restoration
+remain outside the delivered scope.
 
 ## Method and sources
 
@@ -44,10 +43,10 @@ reported as design facts, never as measurements of strop.
 
 ## Doctrine: what stays fixed while the capability grows
 
-1. **One static binary, zero required setup (0002).** The only remote dependency today
-   is a local `ssh`. Future slices may use *optional external providers* (`rsync`,
-   `docker`, `kubectl`, `rclone`, …) exactly the way TRAMP does — detected at runtime,
-   never bundled, never required. A capability whose provider is absent fails with a
+1. **One static binary, zero required setup (0002).** SFTP reading needs local OpenSSH;
+   optional remote Git/LSP need a POSIX remote, `python3` and their respective tools.
+   Future slices may use optional providers (`rsync`, `docker`, `kubectl`, `rclone`,
+   …), detected at runtime, never bundled or required for local editing. An absent provider fails with a
    typed error naming the missing executable and the feature that wanted it. Absent
    capability never degrades into guessed behavior (no scp-shorthand guessing, no
    silent fallback transport, no partial success).
@@ -81,14 +80,14 @@ reported as design facts, never as measurements of strop.
 
 ## Capability matrix
 
-TRAMP capability (paraphrased from the manual) → strop disposition. "0034" = in the
-foundation tranche now in progress; "RW*n*" = slice below; "non-goal" = excluded with
-reason, revisit only through a new plan.
+TRAMP capability (paraphrased from the manual) → strop disposition. "0034" names the
+0.16 snapshot foundation; "0036" names the 0.17 read-only workspace delivery. "RW*n*"
+is the slice below; "non-goal" is excluded, revisitable only through a new plan.
 
 | TRAMP capability | What TRAMP does | Strop disposition |
 |---|---|---|
-| Remote file name syntax `/method:user@host#port:/path` | One syntax spans all methods; parts optional with defaults | `ssh://[user@]host[:port]/abs/path` (0034): one provider, absolute paths only, no passwords in URIs. Multi-method syntax waits for a second provider |
-| Editing and saving remote files | Buffer saves back over the same connection | Read-only snapshots (0034); write path is RW4, safety-gated |
+| Remote file name syntax `/method:user@host#port:/path` | One syntax spans all methods; parts optional with defaults | `ssh://[user@]host[:port]/abs/path` plus negotiated `~/` and `~user/` homes (0036); no passwords in URIs. Multi-method syntax waits for a second provider |
+| Editing and saving remote files | Buffer saves back over the same connection | Read-only workspaces (0036); write path is RW4, safety-gated |
 | Inline transfer (`mimencode`/`uuencode`/perl fallback over the login shell) | File contents tunneled through the shell connection; compression above a size threshold | Non-goal: strop's SFTP channel is binary-clean; shell-tunneled encodings reintroduce quoting/robustness problems TRAMP needed for dumb hosts |
 | External transfer (`scp`, `rsync`, `pscp`, `rcp`, `nc`, `fcp`) | Dedicated transfer program per copy; small files stay inline below a size limit | `rsync`/`scp` as optional providers for bulk/dir sync (RW11); `rcp`/`nc`/`fcp` non-goals (legacy/obsolete) |
 | `sftp` GVFS method, `psftp` | SFTP via GVFS/PuTTY | Native bounded SFTP v3 codec (0034) is strop's equivalent, without GVFS/D-Bus or PuTTY |
@@ -103,15 +102,15 @@ reason, revisit only through a new plan.
 | Firewalls (HTTP CONNECT tunnels) | ProxyCommand with netcat; PuTTY built-in proxy | ssh config territory, same as above; strop adds nothing |
 | Passwords: auth-source, memory cache/expiry, save-on-success | Reuse credentials across connections | RW9 integration with SSH agent/askpass and provider/system credential stores; no plaintext editor password database or secrets in traces |
 | Connection property persistence | Cache remote facts across sessions | RW12 opt-in persistence with endpoint/incarnation provenance and invalidation |
-| Host/user completion from config, known_hosts and history | Complete without surprise connections | RW2 local candidate enumeration and READDIR on an already authorized connection; ssh -G is not an enumerator |
-| `~`/`~user` home expansion | Method-specific expansion | RW2 negotiated expand-path@openssh.com; REALPATH alone does not expand tilde, so unsupported expansion is refused |
-| Directory browsing (`dired`), two-argument file ops (`copy-file`, `rename-file`) across local/remote | Transparent directory editing and mixed operations | RW5/RW6: file-tree buffer (0001 pillar 2) as a remote surface; mixed ops with confirmation |
+| Host/user completion from config, known_hosts and history | Complete without surprise connections | RW2 implemented (0036): local candidate enumeration and READDIR on an authorized connection; ssh -G is not an enumerator |
+| `~`/`~user` home expansion | Method-specific expansion | RW2 implemented (0036): negotiated expand-path@openssh.com; unsupported expansion is refused |
+| Directory browsing (`dired`), two-argument file ops (`copy-file`, `rename-file`) across local/remote | Transparent directory editing and mixed operations | Read-only browsing/search/filter implemented (0036); mutation and mixed operations remain RW5/RW6 |
 | Direct remote-to-remote copying (`scp -R/-3` under strict conditions) | Avoid the local relay hop when host keys and auth permit | RW6, opt-in with TRAMP's preconditions made explicit checks |
 | Remote processes (`shell`, `eshell`, `compile`, `gdb`, `grep`; `INSIDE_EMACS`; direct-async mode) | Commands run where `default-directory` points; direct-async trades interactivity for startup cost; no signals/remote-pid in that mode | RW7/RW8: remote shell jobs, remote grep→picker, build/formatter/LSP/debugger. Every remote command is user-issued and owned; no command is assembled from a filename. Direct-async-style dedicated channels keep 0034's noninteractive rule |
 | Remote program discovery (`ls`, `test`, `find`, `cat` required; `perl`/`grep` accelerators; `getconf PATH`) | Probe and cache the remote environment | RW7: minimal probing, cached per connection incarnation (RW3), honest failure when a needed tool is missing |
 | Auto-save, file locks, backups; root-file backup exposure warnings | Configurable per connection; warns when root-owned files would land user-readable | RW12: no remote backups/locks by default; the TRAMP-documented exposure (root file → user-owned backup elsewhere) is the reason. Local staging of remote content, if ever added, is explicit and private |
 | Renaming remote buffers (`tramp-rename-files`) | Rehome buffers to another host when networks change | RW3/RW12: reconnect isolation first; explicit rehome command only if field use asks |
-| Cleanup (`tramp-cleanup-*`) | Flush connections, caches, passwords, buffers | RW3: `:remote` lifecycle subcommands; closing the last buffer of a host tears down its children |
+| Cleanup (`tramp-cleanup-*`) | Flush connections, caches, passwords, buffers | RW3 implemented (0036): `:remote` lifecycle subcommands; last document/job/explicit pin releases its owned connection |
 | Encryption of remote trees (`encfs`, experimental upstream) | Content/name encryption | RW15 planned encryption integration with an established external tool; no home-grown crypto or plaintext staging |
 | Archive file names | Browse archives as directories | RW15 planned archive resource contexts, with decompression limits, safe member paths and explicit local/remote extraction ownership; not automatically supplied by READDIR |
 | Adding methods/operations (ELPA extension packages, `tramp-add-external-operation`) | Third-party method and operation injection | RW13: no plugin runtime (0001). The rootle [provider-protocol](https://rootle.dev/docs/provider-protocol.html) shape — a declared adapter contract with documented lifecycle assumptions — is the precedent for *if/when* strop declares a provider interface; introducing the abstraction now, with one provider, is premature |
@@ -125,6 +124,8 @@ Independent slices may proceed concurrently against agreed interfaces. Each publ
 capability needs observable CLI/TUI behavior and its own real fixture/model evidence.
 
 ### RW1 — Tail, range reads, follow with rotation (P2; carries 0034's P2 label)
+
+Implemented in 0036 / 0.17.0.
 
 Bounded SFTP offset/length reads handle logs beyond the snapshot cap. Follow reopens
 the pathname and compares bounded overlap/content before claiming append continuity.
@@ -140,6 +141,8 @@ scripted fixture.
 
 ### RW2 — Addressing and completion UX (P2)
 
+Implemented in 0036 / 0.17.0.
+
 Use negotiated expand-path@openssh.com for `~`/`~user`; REALPATH is not a tilde
 expander. Enumerate literal host candidates from config/Include/known_hosts/history
 on workers without executing Match exec. Path completion uses an existing authorized
@@ -148,6 +151,8 @@ Accept: no hidden auth from Tab, no stale prompt overwrite, byte-native paths, u
 unsupported-extension errors, and candidate ordering independent of display aliases.
 
 ### RW3 — Connection lifecycle: pooling, cleanup, reconnect isolation (P2)
+
+Implemented in 0036 / 0.17.0. Explicit connection pins also count as owners.
 
 One owned connection per (user,host,port) incarnation shared by buffers and jobs;
 explicit cleanup subcommands (flush one host / all); last-buffer-close tears down
@@ -180,6 +185,9 @@ fault-injected oracles on the real transport. This gate is the precedent for RW5
 
 ### RW5 — Remote directory surface and file operations (read-only: 0036; mutations: P3 after RW4)
 
+Read-only entry/parent navigation, search and filtering are implemented in 0036 /
+0.17.0. The mutation and metadata-column acceptance below remains P3, after RW4.
+
 The file-tree buffer (0001 pillar 2) over SFTP READDIR/STAT: motions, `/`, filter;
 edit-the-line rename, `dd` delete, yank/paste copy with confirmation; attribute
 columns (owner, mode, size, mtime) with honest errors where the server hides them.
@@ -201,6 +209,11 @@ blocking UI.
 
 ### RW7 — Remote process execution (P3; execution gate, depends on RW3)
 
+The owned, native-argv process boundary and Git/LSP use are implemented in 0036 /
+0.17.0. Arbitrary shells, grep, builds and formatters below remain P3; they are
+explicitly refused rather than executed locally. Cleanup covers owned groups after
+disconnect detection, not escaped sessions, indefinite partitions or supervisor death.
+
 Remote shell jobs (`ssh host -- cmd` on a dedicated channel, never a filename-derived
 command), remote grep feeding the picker, build/formatter jobs whose output lands in
 owned buffers. Environment scrubbing and history suppression follow TRAMP's lessons
@@ -212,17 +225,18 @@ error naming the tool; job output cannot publish into closed/superseded surfaces
 Verification: process-ownership model extended to remote channels; fault-injection on
 channel teardown.
 
-### RW8 — Remote LSP and remote Git semantics (P3; depends on RW7)
-Language servers spawned on the remote host with stdio piped over the owned channel,
-diagnostics/hover/completion routed through the existing LSP machinery (0009
-boundaries: response-owned requests still apply); remote git operations via explicit
-`git -C` shell jobs (never local libgit2 on remote paths); the debugger surface
-(0019) driving remote debuggers over the same channel ownership. Local Git/LSP still
-never attach to remote URIs by default.
-Acceptance: diagnostics for a remote file arrive owned and revision-checked; a
-dropped connection invalidates server state visibly; remote `git log` renders in the
-existing commit-browser surfaces with no local path assumption; a remote debugging
-session is cancellable with children reaped like local jobs.
+### RW8 — Remote services (read-oriented LSP/Git: 0036; remaining integrations: P3)
+
+Implemented in 0036 / 0.17.0: full-file diagnostics, hover, definition/references,
+source/header navigation, Git context/status, staged/unstaged diffs, log, blame,
+commit/file navigation and source links. Services run on their endpoint; project
+trust includes endpoint/root, and last-workspace closure retires its language server.
+Partial/follow windows refuse full-document language services. Source links pin
+commit rows; deleted/header rows and partial-file coordinates cannot fabricate URLs.
+
+Still P3: remote debugger integration (0019), later language-service capabilities
+not implemented locally, and Git mutations after RW4. Each needs owned replies,
+disconnect invalidation, cancellation and real remote fixture evidence.
 
 ### RW9 — Interactive authentication, MFA, credential privacy (P3; credential gate)
 

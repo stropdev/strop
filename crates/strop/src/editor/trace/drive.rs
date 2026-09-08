@@ -15,6 +15,7 @@ use strop_trace::replay::Tick;
 pub struct StartupOpen {
     pub target: crate::files::FileTarget,
     pub line: Option<strop_core::id::LineIndex>,
+    pub view: super::super::remote::RemoteView,
 }
 
 /// Every external step a replay reproduces. `Event` carries the shared
@@ -59,10 +60,11 @@ impl Editor {
             } => {
                 let startup_message = self.message.clone();
                 if let Some(open) = open {
-                    let intent = open.line.map_or(
-                        super::super::io::OpenIntent::Switch { readonly: true },
-                        |line| super::super::io::OpenIntent::AtLine { line },
-                    );
+                    self.lsp_start_services();
+                    let intent = super::super::io::OpenIntent::RemoteView {
+                        view: open.view,
+                        line: open.line,
+                    };
                     self.request_target(open.target, intent);
                 } else {
                     self.discover_git();

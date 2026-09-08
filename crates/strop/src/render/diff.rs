@@ -9,7 +9,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::editor::{Editor, Surface};
+use crate::editor::{DiffRow, Editor, Surface};
 use strop_git::{DiffLine, LineOrigin};
 
 use super::{ACCENT, MUTED, TEXT};
@@ -44,35 +44,6 @@ pub(crate) fn origin_bg(origin: LineOrigin) -> Option<Color> {
         LineOrigin::Deletion => Some(DEL_BG),
         LineOrigin::Context => None,
     }
-}
-
-/// What row `row` of a Diff surface is. Row 0 is the stats line; then
-/// per hunk a header row followed by its content rows.
-pub(crate) enum DiffRow<'a> {
-    Stats,
-    HunkHeader(&'a strop_git::Hunk),
-    Line(&'a DiffLine),
-}
-
-pub(crate) fn diff_row<'a>(surface: Option<&'a Surface>, row: usize) -> Option<DiffRow<'a>> {
-    let Some(Surface::Diff { hunks, .. }) = surface else {
-        return None;
-    };
-    if row == 0 {
-        return Some(DiffRow::Stats);
-    }
-    let mut row = row - 1;
-    for hunk in hunks {
-        if row == 0 {
-            return Some(DiffRow::HunkHeader(hunk));
-        }
-        row -= 1;
-        if row < hunk.lines.len() {
-            return Some(DiffRow::Line(&hunk.lines[row]));
-        }
-        row -= hunk.lines.len();
-    }
-    None
 }
 
 /// Brighter backgrounds for the intra-line changed spans (delta's
@@ -259,7 +230,8 @@ pub(crate) fn structural_row(surface: &Surface, row: usize) -> Line<'static> {
             ),
         ])
         .style(Style::default().bg(BAND_BG)),
-        (Surface::Diff { .. }, _) => diff_row(Some(surface), row)
+        (Surface::Diff { .. }, _) => surface
+            .diff_row(row)
             .and_then(|row| match row {
                 DiffRow::HunkHeader(hunk) => Some(hunk_header_spans(hunk)),
                 _ => None,

@@ -1,21 +1,21 @@
 //! Application open targets. Remote URIs and native local paths are distinct identities.
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use strop_remote::{AddressError, RemoteFile};
+use strop_remote::{AddressError, RemoteLocation};
 
 /// Local paths keep their existing native-byte wire representation; remote targets
 /// have an explicit remote envelope, never an ambiguous legacy local-path string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileTarget {
     Local(PathBuf),
-    Remote(RemoteFile),
+    Remote(RemoteLocation),
 }
 
 impl Serialize for FileTarget {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct RemoteRecord<'a> {
-            remote: &'a RemoteFile,
+            remote: &'a RemoteLocation,
         }
         match self {
             Self::Local(path) => strop_core::path_serde::serialize(path, serializer),
@@ -28,7 +28,7 @@ impl<'de> Deserialize<'de> for FileTarget {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Record {
-            Remote { remote: RemoteFile },
+            Remote { remote: RemoteLocation },
             Local(#[serde(with = "strop_core::path_serde")] PathBuf),
         }
         Ok(match Record::deserialize(deserializer)? {
@@ -42,7 +42,7 @@ impl FileTarget {
     /// callers construct Local directly, including filenames containing `ssh:`.
     pub fn parse(value: PathBuf) -> Result<Self, AddressError> {
         match value.to_str().filter(|text| text.starts_with("ssh://")) {
-            Some(uri) => RemoteFile::parse(uri).map(Self::Remote),
+            Some(uri) => RemoteLocation::parse(uri).map(Self::Remote),
             None => Ok(Self::Local(value)),
         }
     }

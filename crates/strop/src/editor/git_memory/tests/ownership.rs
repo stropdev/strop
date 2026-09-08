@@ -1,6 +1,6 @@
 use super::*;
 use crate::editor::git_memory::{
-    BlameKey, CardKey, DiveKey, DiveTarget, GitMutation, HunkData, HunkKey, LogKey, MutationKey,
+    BlameKey, CardKey, DiveKey, DiveTarget, GitMutation, HunkData, HunkKey, MutationKey,
     MutationKind, MutationOp,
 };
 use strop_core::worker::{Completion, Failure, FailureKind, Load, Outcome, Ticket};
@@ -14,7 +14,9 @@ fn editor_with_context() -> (tempfile::TempDir, Editor) {
     let mut e = Editor::new(Buffer::open(dir.path().join("f.rs").to_str().unwrap()).unwrap());
     e.cwd = dir.path().to_path_buf();
     e.git = Some(strop_git::GitContext {
-        workdir: dir.path().to_path_buf(),
+        repo: strop_git::RepoTarget::Local {
+            workdir: dir.path().to_path_buf(),
+        },
         head_sha: Some("0123456789abcdef0123456789abcdef01234567".into()),
         head_branch: Some("main".into()),
         remotes: vec![],
@@ -26,8 +28,10 @@ fn hunk_key(e: &Editor, view: strop_core::worker::WorkerId) -> HunkKey {
     HunkKey {
         document: e.current(),
         revision: e.buf().revision(),
-        path: e.buf().path.clone().unwrap_or_default(),
-        workdir: e.cwd.clone(),
+        file: crate::files::FileTarget::Local(e.buf().path.clone().unwrap_or_default()),
+        repo: strop_git::RepoTarget::Local {
+            workdir: e.cwd.clone(),
+        },
         git_view: view,
     }
 }
@@ -155,7 +159,9 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
         revision: e.buf().revision(),
         kind: MutationKind::Stage,
         rel: "f.rs".into(),
-        workdir: e.cwd.clone(),
+        repo: strop_git::RepoTarget::Local {
+            workdir: e.cwd.clone(),
+        },
         git_view: view,
     };
     let mutation_ticket = e.git_ticket(key).unwrap();
@@ -189,18 +195,20 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
 /// failure passes the baton, a success invalidates the view and
 /// the follow-up (computed against the old view) is refused.
 #[test]
-fn mutation_queue_is_serialized_fifo() {
-    let (_d, mut e) = editor_with_context();
-    let view = e.git_view;
+fn queued_mutations_are_serial_and_failure_keeps_the_queue_live() {
+    let (_directory, mut e) = editor_with_context();
     let document = e.current();
     let revision = e.buf().revision();
     let workdir = e.cwd.clone();
+    let view = e.git_view;
     let key = |kind| MutationKey {
         document,
         revision,
         kind,
         rel: "f.rs".into(),
-        workdir: workdir.clone(),
+        repo: strop_git::RepoTarget::Local {
+            workdir: workdir.clone(),
+        },
         git_view: view,
     };
     let op = MutationOp::Stage {
@@ -259,16 +267,13 @@ fn mutation_queue_is_serialized_fifo() {
 /// superseded or foreign tickets change nothing.
 #[test]
 fn log_results_need_the_registered_request() {
-    let (_d, mut e) = editor_with_context();
+    let (_directory, mut e) = editor_with_context();
     e.open_log(false);
     let doc = e.current();
-    let real = e.log_requests.get(&doc).cloned().expect("registered");
+    let real = e.log_requests[&doc].clone();
     let owner = Ticket {
         request: e.worker_ids.allocate().unwrap(),
-        key: LogKey {
-            document: doc,
-            revision: e.buf().revision(),
-        },
+        key: real.key.clone(),
     };
     e.log_requests.insert(doc, owner.clone());
     // the superseded request's rows must not land
@@ -315,7 +320,7 @@ fn log_results_need_the_registered_request() {
 fn gutter_incarnations_are_ticket_owned() {
     let (_d, mut e) = editor_with_context();
     e.toggle_blame_gutter();
-    let path = e.blame_key();
+    let path = e.current();
     let first = e
         .blame_gutters
         .get(&path)
@@ -394,8 +399,10 @@ fn card_results_follow_their_line_and_dismissal() {
             origin: BlameKey {
                 document: e.current(),
                 revision: e.buf().revision(),
-                path: e.blame_key(),
-                workdir: e.cwd.clone(),
+                file: e.cur().file_target(&e.cwd).unwrap(),
+                repo: strop_git::RepoTarget::Local {
+                    workdir: e.cwd.clone(),
+                },
             },
             line: 2, // not the cursor's line
         },
@@ -470,7 +477,9 @@ fn dive_results_need_their_surface() {
         request: e.worker_ids.allocate().unwrap(),
         key: DiveKey {
             document: doc,
-            workdir: e.cwd.clone(),
+            repo: strop_git::RepoTarget::Local {
+                workdir: e.cwd.clone(),
+            },
             target: DiveTarget::CommitFiles {
                 sha: "0123456789abcdef0123456789abcdef01234567".into(),
             },
@@ -479,7 +488,9 @@ fn dive_results_need_their_surface() {
     let owner = e
         .git_ticket(DiveKey {
             document: doc,
-            workdir: e.cwd.clone(),
+            repo: strop_git::RepoTarget::Local {
+                workdir: e.cwd.clone(),
+            },
             target: DiveTarget::CommitFiles {
                 sha: "0123456789abcdef0123456789abcdef01234567".into(),
             },

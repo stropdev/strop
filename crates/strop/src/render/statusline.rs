@@ -112,7 +112,7 @@ impl Modeline {
             Some(sha) => format!("@{}", sha.get(..8).unwrap_or(sha)),
             None if editor.remote_file().is_some() => editor
                 .remote_file()
-                .map(|file| format!("ssh:{}", file.host()))
+                .map(|file| format!("ssh:{}", file.endpoint().host()))
                 .unwrap_or_default(),
             None => editor
                 .git
@@ -485,16 +485,35 @@ fn historical_commit(editor: &Editor) -> Option<&str> {
 /// nameless buffer is the scratch.
 fn file_display(editor: &Editor) -> (String, String) {
     if let Some(file) = editor.remote_file() {
-        let directory = file
-            .path()
-            .parent()
-            .map_or_else(String::new, |parent| format!("{}/", parent.display()));
-        let name = file
+        let directory = file.path().parent().map_or_else(String::new, |parent| {
+            let mut directory = parent.display().to_string();
+            if !directory.ends_with('/') {
+                directory.push('/');
+            }
+            directory
+        });
+        let mut name = file
             .path()
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+        if let Some(source) = editor.cur().remote_metadata() {
+            if !source.window.is_complete() || editor.remote_following(editor.current()) {
+                let window = source.window;
+                name = format!(
+                    "[{}{}..{}/{} B] {name}",
+                    if editor.remote_following(editor.current()) {
+                        "follow "
+                    } else {
+                        ""
+                    },
+                    window.start().get(),
+                    window.start().get() + window.length().get(),
+                    window.file_size().get()
+                );
+            }
+        }
         return (directory, name);
     }
     let buf = editor.buf();

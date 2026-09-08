@@ -25,13 +25,17 @@ pub(crate) enum PermalinkIntent {
 }
 
 /// Frozen pure data for a permalink whose SSH host alias is still
-/// unresolved: OpenSSH's answer plus these fields rebuild the URL with
-/// no repository handle, no IO, and no state that moved meanwhile.
+/// unresolved: the alias's answer plus these fields rebuild the URL
+/// with no repository handle, no IO, and no state that moved
+/// meanwhile. The captured repository determines which machine and
+/// working directory own the OpenSSH configuration (0036 RW8).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PendingPermalink {
     pub intent: PermalinkIntent,
     /// The alias exactly as the winning remote spells it.
     pub host: String,
+    /// Repository identity owns both the endpoint and remote working directory.
+    pub repo: strop_git::RepoTarget,
     /// The (name, url) pairs the selection folded over — completion
     /// re-runs the same pure fold against this frozen copy.
     pub remotes: Vec<(String, String)>,
@@ -107,17 +111,24 @@ impl Editor {
         self.finish_permalink(pending.intent, url);
     }
 
-    /// Pure: every input (workdir, remotes, HEAD sha) is cached git
-    /// context — no libgit2 handle, no IO, no spawn (R6). An alias
-    /// remote comes back unresolved: evaluation is IO-worker work.
+    /// Pure: every input (repository target, remotes, HEAD sha) is
+    /// cached git context — no libgit2 handle, no IO, no spawn (R6).
+    /// An alias remote comes back unresolved: evaluation is owned
+    /// worker work — on the repository's own endpoint when that
+    /// repository is remote (0036 RW8), locally otherwise.
     pub(crate) fn build_permalink(
         &self,
         intent: PermalinkIntent,
     ) -> Result<PermalinkOutcome, String> {
-        let Some(context) = self.git.as_ref() else {
+        let Some(context) = self.git_context() else {
             return Err("not a git repository".into());
         };
-        let file = match self.surface() {
+        // the repo-relative file: a commit delta carries it directly;
+        // a hunk preview names its origin buffer; otherwise the
+        // current buffer. Every branch resolves through the context's
+        // typed target, so a remote file can only produce a path
+        // relative to the REMOTE workdir.
+        let rel = match self.surface() {
             Some(Surface::Diff {
                 commit: Some(commit),
                 ..
@@ -125,30 +136,42 @@ impl Editor {
             Some(Surface::Diff {
                 origin: Some(origin),
                 ..
-            }) => self
-                .docs
-                .get(origin.buffer)
-                .and_then(|document| document.buf.path.clone())
-                .ok_or("no source file for this diff")?,
-            _ => self.buf().path.clone().ok_or("no file for this buffer")?,
+            }) => {
+                let document = self
+                    .docs
+                    .get(origin.buffer)
+                    .ok_or("no source file for this diff")?;
+                self.permalink_rel_of(document, context)?
+            }
+            _ => self.permalink_rel_of(self.cur(), context)?,
         };
-        let abs = if file.is_absolute() {
-            file
+        if self.remote_file().is_some() && !self.remote_window_complete() {
+            return Err("partial remote windows have no full-file line coordinates".into());
+        }
+        let head_row = self.buf().line_of(self.head());
+        let anchor_row = if matches!(
+            self.mode,
+            Mode::Visual | Mode::VisualLine | Mode::VisualBlock
+        ) {
+            self.buf().line_of(self.anchor())
         } else {
-            context.workdir().join(file)
+            head_row
         };
-        let rel = abs
-            .strip_prefix(context.workdir())
-            .map_err(|_| format!("{} is outside the repo", abs.display()))?
-            .to_path_buf();
-        let (a, b) = if self.mode == Mode::Visual || self.mode == Mode::VisualLine {
-            (
-                self.buf().line_of(self.anchor()) + 1,
-                self.buf().line_of(self.head()) + 1,
-            )
+        let first = anchor_row.min(head_row);
+        let last = anchor_row.max(head_row);
+        let (a, b) = if let Some(surface @ Surface::Diff { .. }) = self.surface() {
+            let source_line = |row| match surface.diff_row(row) {
+                Some(super::DiffRow::Line(line)) => line
+                    .new_lineno
+                    .ok_or("deleted lines do not exist in this revision"),
+                _ => Err("select source content, not a diff header"),
+            };
+            for row in first..=last {
+                source_line(row)?;
+            }
+            (source_line(first)?, source_line(last)?)
         } else {
-            let l = self.buf().line_of(self.head()) + 1;
-            (l, l)
+            (first + 1, last + 1)
         };
         if context.remotes.is_empty() {
             return Err("no remote configured".into());
@@ -172,6 +195,7 @@ impl Editor {
                 PermalinkOutcome::Alias(PendingPermalink {
                     intent,
                     host: alias.alias,
+                    repo: context.repo.clone(),
                     remotes: context.remotes.clone(),
                     sha,
                     path: rel,
@@ -179,5 +203,45 @@ impl Editor {
                 })
             }
         })
+    }
+
+    /// A document's repo-relative path for permalink construction:
+    /// local buffers resolve under a local workdir, remote buffers
+    /// under their own endpoint's remote workdir — never across
+    /// machines.
+    fn permalink_rel_of(
+        &self,
+        document: &super::Document,
+        context: &strop_git::GitContext,
+    ) -> Result<PathBuf, String> {
+        match (&document.source, &context.repo) {
+            (
+                super::document::DocumentSource::Remote(file),
+                strop_git::RepoTarget::Remote { endpoint, .. },
+            ) if endpoint == file.file.endpoint() => context
+                .repo
+                .rel_of(file.file.path())
+                .ok_or_else(|| format!("{} is outside the repo", file.file.path().display())),
+            (super::document::DocumentSource::File, strop_git::RepoTarget::Local { .. }) => {
+                let path = document
+                    .buf
+                    .path
+                    .as_deref()
+                    .ok_or("no file for this buffer")?;
+                let abs = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    context.workdir().join(path)
+                };
+                context
+                    .repo
+                    .rel_of(&abs)
+                    .ok_or_else(|| format!("{} is outside the repo", abs.display()))
+            }
+            // a remote buffer under a local repository (or the
+            // reverse) has no rel path HERE — typed refusal, never a
+            // cross-machine strip
+            _ => Err("buffer does not belong to this repository".into()),
+        }
     }
 }

@@ -4,6 +4,7 @@ use async_lsp::{lsp_types as lt, router::Router};
 use ropey::Rope;
 use serde_json::{json, Value};
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::{
     mpsc::{channel, Receiver, TryRecvError},
     Arc,
@@ -44,10 +45,13 @@ impl Wire {
             socket: socket.clone(),
             handle: tokio::runtime::Handle::current(),
             tx: tx.clone(),
-            root: PathBuf::from("/workspace"),
+            workspace: crate::target::Workspace::Local {
+                root: PathBuf::from("/workspace"),
+            },
             caps: caps.clone(),
             quitting: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             thread: Arc::new(std::sync::Mutex::new(None)),
+            stop: Arc::new(ServiceStop(parking_lot::Mutex::new(None))),
             queue: queue::start(queue::WireEnv {
                 id,
                 name: "in-memory".into(),
@@ -56,7 +60,9 @@ impl Wire {
                 handle: tokio::runtime::Handle::current(),
                 tx,
                 caps,
-                root: PathBuf::from("/workspace"),
+                workspace: crate::target::Workspace::Local {
+                    root: PathBuf::from("/workspace"),
+                },
                 sync,
                 quitting: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),

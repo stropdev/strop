@@ -14,6 +14,11 @@ pub enum Operation {
         #[serde(with = "strop_core::path_serde::option")]
         state_dir: Option<PathBuf>,
     },
+    TrustRemote {
+        root: strop_remote::RemoteFile,
+        #[serde(with = "strop_core::path_serde::option")]
+        state_dir: Option<PathBuf>,
+    },
     Browser {
         url: String,
     },
@@ -34,6 +39,7 @@ pub struct NativeKey {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum NativeResult {
     Trusted(#[serde(with = "strop_core::path_serde")] PathBuf),
+    TrustedRemote(strop_remote::RemoteFile),
     BrowserRequested,
     /// OpenSSH's effective hostname for the alias in the request.
     SshHost(String),
@@ -41,13 +47,27 @@ pub enum NativeResult {
 
 impl Editor {
     pub(crate) fn request_trust(&mut self) {
-        if self
-            .io
-            .native
-            .values()
-            .any(|key| matches!(key.operation, Operation::Trust { .. }))
-        {
+        if self.io.native.values().any(|key| {
+            matches!(
+                key.operation,
+                Operation::Trust { .. } | Operation::TrustRemote { .. }
+            )
+        }) {
             self.message = "trust update already in progress".into();
+            return;
+        }
+        if self.remote_file().is_some() {
+            match self.remote_trust_target() {
+                Ok(root) => self.request_native(Operation::TrustRemote {
+                    root,
+                    state_dir: self.state_dir.clone(),
+                }),
+                Err(error) => self.message = error,
+            }
+            return;
+        }
+        if self.buf().readonly && self.buf().path.is_none() {
+            self.message = "trust requires a file buffer".into();
             return;
         }
         let probe = self
@@ -89,7 +109,7 @@ impl Editor {
         };
         self.io.native.insert(request, ticket.key.clone());
         self.message = match &ticket.key.operation {
-            Operation::Trust { .. } => "saving trust".into(),
+            Operation::Trust { .. } | Operation::TrustRemote { .. } => "saving trust".into(),
             Operation::Browser { .. } => "opening browser".into(),
             Operation::SshHost { pending } => format!("resolving ssh host {}", pending.host),
         };
@@ -109,7 +129,7 @@ impl Editor {
         let handle = worker::spawn(
             "strop-native",
             move |outcome| {
-                let _ = tx.send(IoEvent::Native(Completion { ticket, outcome }));
+                let _ = tx.send(IoEvent::Native(Box::new(Completion { ticket, outcome })));
             },
             move |cancel| {
                 if cancel.is_cancelled() {
@@ -127,6 +147,12 @@ impl Editor {
                             Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
                         }
                     }
+                    Operation::TrustRemote { root, state_dir } => {
+                        match crate::session::trust_remote(state_dir.as_deref(), &root) {
+                            Ok(()) => Outcome::Success(NativeResult::TrustedRemote(root)),
+                            Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
+                        }
+                    }
                     Operation::Browser { url } => launch_browser(&url),
                     Operation::SshHost { pending } => {
                         let Some(strop_git::permalink::SelectedRemote::Alias(remote)) =
@@ -137,7 +163,17 @@ impl Editor {
                                 "SSH permalink target unavailable",
                             );
                         };
-                        match strop_git::ssh::effective_host(&remote, &cancel) {
+                        let result = match &pending.repo {
+                            strop_git::RepoTarget::Local { .. } => {
+                                strop_git::ssh::effective_host(&remote, &cancel)
+                            }
+                            strop_git::RepoTarget::Remote { endpoint, workdir } => {
+                                strop_git::remote::effective_host(
+                                    endpoint, workdir, &remote, &cancel,
+                                )
+                            }
+                        };
+                        match result {
                             Ok(hostname) => Outcome::Success(NativeResult::SshHost(hostname)),
                             Err(error) => Outcome::failed(
                                 FailureKind::Exit,
@@ -164,6 +200,10 @@ impl Editor {
         match completion.outcome {
             Outcome::Success(NativeResult::Trusted(root)) => {
                 self.message = format!("trusted {}", root.display());
+                self.lsp_maybe_attach();
+            }
+            Outcome::Success(NativeResult::TrustedRemote(root)) => {
+                self.message = format!("trusted {root}");
                 self.lsp_maybe_attach();
             }
             Outcome::Success(NativeResult::BrowserRequested) => {

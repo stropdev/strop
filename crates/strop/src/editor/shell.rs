@@ -25,6 +25,10 @@ impl Editor {
     /// happened since (any input revokes the switch; the output
     /// itself always survives in the background).
     pub(crate) fn shell_run(&mut self, cmd: &str) {
+        if self.remote_endpoint().is_some() {
+            self.message = "remote shell commands are not supported; no local fallback".into();
+            return;
+        }
         let cmd = cmd.trim().to_string();
         if cmd.is_empty() {
             self.message = ":! needs a command".into();
@@ -66,6 +70,10 @@ impl Editor {
     /// `|cmd` (visual) or `|cmd` on a normal line: pipe the range
     /// through the command; stdout replaces it (one undo unit).
     pub(crate) fn pipe_run(&mut self, start: usize, end: usize, cmd: &str) {
+        if self.remote_endpoint().is_some() {
+            self.message = "remote pipes are not supported; no local fallback".into();
+            return;
+        }
         let cmd = cmd.trim().to_string();
         if cmd.is_empty() {
             self.message = "pipe: needs a command".into();

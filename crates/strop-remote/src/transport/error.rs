@@ -23,6 +23,9 @@ pub enum ReadStage {
     Validate,
     /// Closing file and session within the deadline.
     Teardown,
+    /// The pooled session itself: admission, connection availability,
+    /// actor state. No protocol exchange reached a phase above.
+    Session,
 }
 
 impl ReadStage {
@@ -35,6 +38,7 @@ impl ReadStage {
             Self::Transfer => "transfer",
             Self::Validate => "validate",
             Self::Teardown => "teardown",
+            Self::Session => "session",
         }
     }
 }
@@ -81,6 +85,21 @@ pub enum ReadFailureKind {
     InvalidUtf8,
     /// The read was cancelled by its owner.
     Cancelled,
+    /// The pooled session was stopped: explicit disconnect, or its last
+    /// lease went away.
+    Stopped,
+    /// No authenticated session exists for the endpoint, and the caller
+    /// refused to create one.
+    NotConnected,
+    /// The bounded session admission queue has no free slot.
+    QueueFull,
+    /// The path is not a directory where one is required.
+    NotDirectory,
+    /// The directory exceeds the bounded listing cap.
+    TooManyEntries,
+    /// The server does not advertise `expand-path@openssh.com`, so a home
+    /// query cannot be resolved. REALPATH is never guessed as a substitute.
+    HomeUnsupported,
     /// The total connection/read/close deadline elapsed.
     Deadline,
     /// Process supervision is unavailable on this platform.
@@ -106,7 +125,13 @@ impl ReadFailureKind {
             Self::TooLarge => "snapshot too large",
             Self::ShortRead => "short read",
             Self::InvalidUtf8 => "invalid UTF-8",
-            Self::Cancelled => "cancelled",
+            Self::Cancelled => "request cancelled",
+            Self::QueueFull => "session queue full",
+            Self::Stopped => "session stopped",
+            Self::NotConnected => "not connected",
+            Self::NotDirectory => "not a directory",
+            Self::TooManyEntries => "too many directory entries",
+            Self::HomeUnsupported => "home expansion unavailable",
             Self::Deadline => "deadline exceeded",
             #[cfg(not(unix))]
             Self::Unsupported => "unsupported platform",
@@ -124,37 +149,73 @@ impl fmt::Display for ReadFailureKind {
 /// orchestrator turns it into a [`RemoteReadError`] with stderr, exit
 /// status and the remote URI.
 #[derive(Debug, Clone)]
-pub(super) struct Fault {
+pub(crate) struct Fault {
     stage: ReadStage,
     kind: ReadFailureKind,
     detail: String,
+    /// Set when even handle cleanup failed: the physical connection is
+    /// suspect and must be discarded, whatever the primary kind says.
+    poison: bool,
 }
 
 impl Fault {
-    pub(super) fn new(stage: ReadStage, kind: ReadFailureKind, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(stage: ReadStage, kind: ReadFailureKind, detail: impl Into<String>) -> Self {
         Self {
             stage,
             kind,
             detail: detail.into(),
+            poison: false,
         }
     }
 
     /// Session establishment failed; the orchestrator refines the kind
     /// once ssh's retained stderr is available.
-    pub(super) fn connect(detail: impl Into<String>) -> Self {
+    pub(crate) fn connect(detail: impl Into<String>) -> Self {
         Self::new(ReadStage::Connect, ReadFailureKind::Connect, detail)
     }
 
-    pub(super) fn cancelled(stage: ReadStage) -> Self {
+    pub(crate) fn cancelled(stage: ReadStage) -> Self {
         Self::new(stage, ReadFailureKind::Cancelled, "the read was cancelled")
     }
 
-    pub(super) fn deadline(stage: ReadStage) -> Self {
+    pub(crate) fn stopped(stage: ReadStage) -> Self {
+        Self::new(
+            stage,
+            ReadFailureKind::Stopped,
+            "the connection was stopped (disconnect or last lease released)",
+        )
+    }
+
+    pub(crate) fn deadline(stage: ReadStage) -> Self {
         Self::new(
             stage,
             ReadFailureKind::Deadline,
             "connection, transfer or close exceeded the total deadline",
         )
+    }
+
+    /// Mark the owning connection as unsafe to reuse.
+    pub(crate) fn poisoned(mut self) -> Self {
+        self.poison = true;
+        self
+    }
+
+    /// Compose a primary fault with a failed cleanup exchange: keep the
+    /// primary diagnosis, and mark the connection unsafe to reuse.
+    pub(crate) fn with_cleanup(self, cleanup: Fault) -> Fault {
+        Fault::new(
+            self.stage,
+            self.kind,
+            format!(
+                "{}; connection cleanup also failed: {}",
+                self.detail, cleanup.detail
+            ),
+        )
+        .poisoned()
+    }
+    /// The kind plus whether the connection must be discarded.
+    pub(crate) fn disposition(&self) -> (ReadFailureKind, bool) {
+        (self.kind, self.poison)
     }
 
     fn into_parts(self) -> (ReadStage, ReadFailureKind, String) {
@@ -178,7 +239,7 @@ pub struct RemoteReadError {
 impl RemoteReadError {
     /// A failure with no diagnostics to attach (early exit, unsupported
     /// platform, spawn refusal).
-    pub(super) fn bare(stage: ReadStage, kind: ReadFailureKind, detail: impl Into<String>) -> Self {
+    pub(crate) fn bare(stage: ReadStage, kind: ReadFailureKind, detail: impl Into<String>) -> Self {
         Self {
             remote: String::new(),
             stage,
@@ -189,7 +250,7 @@ impl RemoteReadError {
         }
     }
 
-    pub(super) fn fault(remote: &str, fault: Fault) -> Self {
+    pub(crate) fn fault(remote: &str, fault: Fault) -> Self {
         let (stage, kind, detail) = fault.into_parts();
         Self {
             remote: remote.to_owned(),
@@ -201,17 +262,17 @@ impl RemoteReadError {
         }
     }
 
-    pub(super) fn remote(mut self, remote: &str) -> Self {
+    pub(crate) fn remote(mut self, remote: &str) -> Self {
         self.remote = remote.to_owned();
         self
     }
 
-    pub(super) fn stderr(mut self, stderr: Option<String>) -> Self {
+    pub(crate) fn stderr(mut self, stderr: Option<String>) -> Self {
         self.stderr = stderr;
         self
     }
 
-    pub(super) fn exit(mut self, exit: Option<String>) -> Self {
+    pub(crate) fn exit(mut self, exit: Option<String>) -> Self {
         self.exit = exit;
         self
     }
@@ -255,6 +316,22 @@ impl RemoteReadError {
                 "connection, transfer and close must finish within the total \
                  deadline; check reachability and file size",
             ),
+            ReadFailureKind::Stopped => Some(
+                "the session was closed by disconnect or by releasing its last \
+                 lease; retrying establishes a fresh connection",
+            ),
+            ReadFailureKind::NotConnected => Some(
+                "no authenticated session exists for this endpoint: open a \
+                 remote location or connect explicitly first — completion and \
+                 browsing of cached entries never authenticate on their own",
+            ),
+            ReadFailureKind::TooManyEntries => {
+                Some("the directory exceeds the browseable entry cap; narrow the path")
+            }
+            ReadFailureKind::HomeUnsupported => Some(
+                "the server does not advertise expand-path@openssh.com; address \
+                 the file by its absolute path instead of `~`",
+            ),
             #[cfg(not(unix))]
             ReadFailureKind::Unsupported => Some("remote reads require Unix process supervision"),
             _ => None,
@@ -264,7 +341,7 @@ impl RemoteReadError {
     /// Refine a generic connect failure now that ssh's stderr and the
     /// protocol detail are both known. ssh's stderr wording is its
     /// documented diagnostic surface, not an implementation detail of strop.
-    pub(super) fn refine_connect(&mut self) {
+    pub(crate) fn refine_connect(&mut self) {
         debug_assert_eq!(self.kind, ReadFailureKind::Connect);
         let mut haystack = format!("{}\n{}", self.detail, self.stderr.as_deref().unwrap_or(""));
         haystack.make_ascii_lowercase();

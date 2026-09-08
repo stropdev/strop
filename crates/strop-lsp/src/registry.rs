@@ -237,8 +237,7 @@ fn server_by_name<'a>(cfg: &'a Languages, name: &str) -> Option<ServerSpec<'a>> 
     };
     // the command must come from the def or the embedded spec it refines
     let command = def.command.as_deref().or(emb.map(|e| e.command))?;
-    let project_executable =
-        cfg.project_root.is_some() && (def.command.is_some() || def.args.is_some());
+    let project_executable = cfg.project_root.is_some() && cfg.project_commands.contains(name);
     Some(ServerSpec {
         name: key.as_str(),
         command,

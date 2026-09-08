@@ -1,15 +1,20 @@
-//! Editor-side LSP event handling and asynchronous navigation.
-use crate::editor::lsp::attach::AttachRecord;
+//! Editor-side LSP event handling and asynchronous navigation. Local
+//! and remote documents share the request/server/incarnation/revision
+//! ownership; a remote workspace adds the endpoint to every identity —
+//! diagnostics, bindings and navigation never alias a remote path onto
+//! the local disk (0036 RW8).
 
 use super::{trace, Editor};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::Receiver;
 
 use strop_lsp::protocol::ResolvedDiag;
 use strop_lsp::registry;
-use strop_lsp::{LspEvent, ServerId};
+use strop_lsp::{DocPath, FsTarget, LspEvent, ServerId};
 
 pub(crate) mod attach;
+mod lifecycle;
+pub(crate) mod remote;
 pub(crate) mod state;
 #[cfg(test)]
 mod tests;
@@ -20,301 +25,58 @@ pub(crate) struct LspServer {
     /// injected record/event stream — never a fake client.
     pub client: Option<strop_lsp::Client>,
     pub rx: Receiver<LspEvent>,
+    pub ready: bool,
 }
 
 impl Editor {
-    /// Try to attach a language server for the current buffer. The
-    /// synchronous part only touches in-memory state; discovery
-    /// (config, root, trust, executability) is owned worker work behind the
-    /// replay gate.
-    /// The LSP half of the startup "start services" action: enable
-    /// attach, then attach for the current buffer. A pure state
-    /// transition performed identically live and replayed — the tape
-    /// gates the native discovery inside `lsp_maybe_attach`.
-    pub fn lsp_start_services(&mut self) {
-        self.lsp_state.attach.enabled = true;
-        self.lsp_maybe_attach();
+    /// The current document's path identity: a local absolute path, or
+    /// the canonical remote file's endpoint-scoped path. Remote
+    /// windows must be complete for language services (0036 RW8) —
+    /// partial/follow windows refuse, they never pretend.
+    pub(super) fn lsp_current_doc_path(&self) -> Option<DocPath> {
+        if self.remote_file().is_some() && !self.remote_window_complete() {
+            return None;
+        }
+        self.lsp_doc_path(self.current())
     }
 
-    pub(crate) fn lsp_maybe_attach(&mut self) {
-        if !self.lsp_state.attach.enabled {
-            return;
-        }
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
-        let Some(ext) = path
-            .extension()
-            .map(|e| format!(".{}", e.to_string_lossy()))
-        else {
-            return;
-        };
-        let Some(language) = registry::language_for_extension(&ext) else {
-            return;
-        };
-        let abs = self.cwd.join(&path);
-        if self.lsp_server_for(&abs, language).is_some() {
-            self.lsp_did_open_current();
-            return;
-        }
-        match self.lsp_state.attach.refused.get(language) {
-            // Trust decisions change (`:trust`); re-discover those.
-            Some(attach::AttachDecision::TrustRequired { .. })
-            | Some(attach::AttachDecision::TrustError { .. }) => {}
-            // Everything else was reported once and stays refused.
-            Some(_) => return,
-            None => {}
-        }
-        if self.lsp_state.attach.pending.contains_key(language) {
-            return;
-        }
-        let ticket = match self.worker_ids.allocate() {
-            Ok(ticket) => ticket,
-            Err(error) => {
-                self.message = error.message;
-                return;
-            }
-        };
-        self.lsp_state
-            .attach
-            .pending
-            .insert(language.to_string(), ticket);
-        let args = attach::AttachArgs {
-            ticket,
-            path: abs.clone(),
-            language: language.to_string(),
-        };
-        // Replay gate: no native config/trust/executability before this
-        // registration (R11).
-        match self.tape.request("lsp.attach", &args) {
-            Ok(true) => self.lsp_spawn_discovery(ticket, abs, ext, language),
-            Ok(false) => {}
-            Err(error) => {
-                self.lsp_state.attach.pending.remove(language);
-                self.message = format!("lsp attach diverged from trace: {error}");
-            }
+    fn lsp_doc_path(&self, document: strop_core::id::DocumentId) -> Option<DocPath> {
+        let document = self.docs.get(document)?;
+        match &document.source {
+            crate::editor::document::DocumentSource::Remote(file) => Some(DocPath::remote(
+                file.file.endpoint().clone(),
+                file.file.path().to_path_buf(),
+            )),
+            _ => document
+                .buf
+                .path
+                .as_ref()
+                .map(|path| DocPath::local(self.cwd.join(path))),
         }
     }
 
-    fn lsp_spawn_discovery(
-        &mut self,
-        ticket: strop_core::worker::WorkerId,
-        abs: PathBuf,
-        ext: String,
-        language: &'static str,
-    ) {
-        let input = attach::DiscoverInput {
-            ticket,
-            abs,
-            ext,
-            language,
-            cwd: self.cwd.clone(),
-            git_workdir: self.git.as_ref().map(|g| g.workdir().to_path_buf()),
-            state_dir: self.state_dir.clone(),
-            xdg: strop_lsp::languages::xdg_path(),
-            transport: self.lsp_state.attach.transport.clone(),
-        };
-        let done = self.lsp_state.attach.attach_channel();
-        let spawned = std::thread::Builder::new()
-            .name("strop-lsp-attach".into())
-            .spawn(move || {
-                let _ = done.send(attach::discover(input));
-            });
-        if spawned.is_err() {
-            self.lsp_state.attach.pending.remove(language);
-            self.message = "lsp: cannot start attach discovery".into();
-        }
-    }
-
-    /// The server placement for a buffer, if one is attached: exact
-    /// language match, longest covering root wins.
-    pub(crate) fn lsp_server_for(
+    /// A canonical remote file on `endpoint`, when any open document
+    /// still owns one — the `with_path` seed for remote navigation.
+    pub(super) fn remote_file_for(
         &self,
-        abs: &Path,
-        language: &'static str,
-    ) -> Option<(ServerId, PathBuf)> {
-        let attach = &self.lsp_state.attach;
-        let best = attach
-            .attached
-            .iter()
-            .filter(|a| a.language == language && abs.starts_with(&a.root))
-            .max_by_key(|a| a.root.as_os_str().len())?;
-        Some((best.server, best.root.clone()))
-    }
-
-    pub(crate) fn handle_lsp_attach(&mut self, record: AttachRecord) {
-        trace_attach(&record);
-        let language_key = record.language.clone();
-        // Stale completion: a newer attempt owns this language now.
-        if self.lsp_state.attach.pending.get(&language_key) != Some(&record.ticket) {
-            trace::services::rejected("lsp", "attach completion superseded");
-            self.retire_superseded_transport(record.server);
-            return;
-        }
-        self.lsp_state.attach.pending.remove(&language_key);
-        let attach::AttachRecord {
-            ticket: _,
-            server,
-            language,
-            name,
-            root,
-            outcome,
-            layers,
-        } = record;
-        // Malformed layers are diagnosed whatever the outcome (0033
-        // §2): a healthy fallback server must not erase them.
-        self.record_layer_diagnostics(&layers);
-        let warning = layer_suffix(&layers);
-        match outcome {
-            attach::AttachDecision::Attached => {
-                let Some(server) = server else { return };
-                self.lsp_state
-                    .attach
-                    .attached
-                    .retain(|a| !(a.language == language && a.root == root));
-                // The placement exists before any didOpen resolves
-                // against it — live and replayed alike.
-                self.lsp_state.attach.attached.push(attach::Attachment {
-                    language: language.clone(),
-                    root: root.clone(),
-                    server,
-                });
-                match warning {
-                    Some(warning) => self.message = format!("lsp: {warning}"),
-                    None => self.message = format!("lsp: {name} starting"),
-                }
-                let transport = self
-                    .lsp_state
-                    .attach
-                    .transport
-                    .lock()
-                    .ok()
-                    .and_then(|mut table| table.remove(&server));
-                match transport {
-                    Some(attach::LiveTransport { client, rx }) => {
-                        // TUI: forward like every late-attaching server.
-                        if let Some(app_tx) = &self.app_tx {
-                            let tx = app_tx.clone();
-                            std::thread::spawn(move || {
-                                while let Ok(event) = rx.recv() {
-                                    if tx.send(super::events::AppEvent::Lsp(event)).is_err() {
-                                        break;
-                                    }
-                                }
-                            });
-                            let (_, empty) = channel();
-                            self.lsp_servers.push(LspServer {
-                                id: server,
-                                client: Some(client),
-                                rx: empty,
-                            });
-                        } else {
-                            self.lsp_servers.push(LspServer {
-                                id: server,
-                                client: Some(client),
-                                rx,
-                            });
-                        }
-                        self.lsp_did_open_current();
-                    }
-                    None => {
-                        // Replayed server: identity only, replies arrive
-                        // through the injected event stream.
-                        self.lsp_servers.push(LspServer {
-                            id: server,
-                            client: None,
-                            rx: channel().1,
-                        });
-                    }
-                }
+        endpoint: &strop_remote::RemoteEndpoint,
+    ) -> Option<strop_remote::RemoteFile> {
+        self.docs.iter().find_map(|(_, document)| {
+            match &document.source {
+                crate::editor::document::DocumentSource::Remote(source) => Some(&source.file),
+                _ => None,
             }
-            decision => {
-                let sticky = !matches!(
-                    decision,
-                    attach::AttachDecision::TrustRequired { .. }
-                        | attach::AttachDecision::TrustError { .. }
-                );
-                let first = self
-                    .lsp_state
-                    .attach
-                    .refused
-                    .insert(language.clone(), decision.clone())
-                    .is_none();
-                if sticky && !first {
-                    return;
-                }
-                self.message = match decision {
-                    attach::AttachDecision::NoServer => format!("no language server for {name}"),
-                    attach::AttachDecision::TrustRequired { command } => {
-                        format!("project config wants to run `{command}` — :trust to allow (once)")
-                    }
-                    attach::AttachDecision::TrustError { error } => {
-                        format!("project trust: {error}")
-                    }
-                    attach::AttachDecision::NotExecutable {
-                        command,
-                        reason,
-                        hint,
-                    } => {
-                        format!("lsp: {command} {reason} — {hint}")
-                    }
-                    attach::AttachDecision::SpawnFailed { reason } => {
-                        format!("lsp: {name} could not start — {reason}")
-                    }
-                    attach::AttachDecision::Attached => unreachable!("matched above"),
-                };
-                if let Some(warning) = warning {
-                    self.message = format!("{} — {}", self.message, warning);
-                }
-            }
-        }
-    }
-
-    /// Record newly reported malformed-layer diagnostics (0033 §2),
-    /// deduped: every later attach for the same layers is already
-    /// covered.
-    fn record_layer_diagnostics(&mut self, layers: &[strop_lsp::languages::LayerDiagnostic]) {
-        for diagnostic in layers {
-            let state = &mut self.lsp_state.attach;
-            if !state.layer_diagnostics.contains(diagnostic) {
-                state.layer_diagnostics.push(diagnostic.clone());
-            }
-        }
-    }
-
-    /// The first recorded layer diagnostic, when any — readiness and
-    /// later messages must not erase it (0033 §2).
-    fn layer_warning(&self) -> Option<String> {
-        layer_suffix(&self.lsp_state.attach.layer_diagnostics)
-    }
-
-    /// A superseded discovery may already have published a live
-    /// transport for its server: retire it so the attempt leaves no
-    /// orphan process and no undrained event stream.
-    fn retire_superseded_transport(&mut self, server: Option<ServerId>) {
-        let Some(server) = server else { return };
-        let transport = self
-            .lsp_state
-            .attach
-            .transport
-            .lock()
-            .ok()
-            .and_then(|mut table| table.remove(&server));
-        if let Some(attach::LiveTransport { client, .. }) = transport {
-            // Joining never blocks the input thread (same policy as
-            // lsp_failed).
-            std::thread::spawn(move || {
-                client.shutdown();
-                client.wait(std::time::Duration::from_secs(2));
-            });
-        }
+            .filter(|file| file.endpoint() == endpoint)
+            .cloned()
+        })
     }
 
     pub(crate) fn handle_lsp_event(&mut self, event: LspEvent) {
         trace::services::lsp(&event);
         match event {
             LspEvent::Ready { server, name } => {
-                if self.lsp_servers.iter().any(|s| s.id == server) {
+                if let Some(owner) = self.lsp_servers.iter_mut().find(|owner| owner.id == server) {
+                    owner.ready = true;
                     // Success must not erase a configuration warning
                     // (0033 §2): readiness is reported alongside it.
                     self.message = match self.layer_warning() {
@@ -333,7 +95,7 @@ impl Editor {
             }
             LspEvent::Diagnostics {
                 context,
-                path,
+                doc,
                 diags,
             } => {
                 let valid = self
@@ -342,10 +104,11 @@ impl Editor {
                     .get(&context.document)
                     .is_some_and(|b| {
                         b.server == context.server
-                            && b.path == path
+                            && b.path == doc.path
+                            && b.target == doc.target
                             && b.revision == context.revision
                     });
-                let Some(doc) = self
+                let Some(doc_buffer) = self
                     .docs
                     .get(context.document)
                     .filter(|d| valid && d.buf.revision() == context.revision)
@@ -353,37 +116,41 @@ impl Editor {
                     trace::services::rejected("lsp", "diagnostic owner/revision changed");
                     return;
                 };
-                let buffer = &doc.buf;
+                let buffer = &doc_buffer.buf;
                 let resolved: Vec<ResolvedDiag> = diags
                     .into_iter()
                     .map(|d| d.resolve(context.encoding, buffer))
                     .collect();
-                self.diags.insert(path, resolved);
+                self.diags.insert(
+                    context.document,
+                    super::diagnostics::DocumentDiagnostics {
+                        revision: context.revision,
+                        items: resolved,
+                    },
+                );
             }
             LspEvent::HoverText { context, text } => {
-                if !self.lsp_reply_fresh(&context) {
+                if !self.finish_lsp_reply(&context) {
                     trace::services::rejected(
                         "lsp",
                         "hover request/server/document/revision changed",
                     );
                     return;
                 }
-                self.lsp_state.hover = None;
                 self.hover_card = Some(text);
             }
             LspEvent::Note { context, text } => {
-                if !self.lsp_reply_fresh(&context) {
+                if !self.finish_lsp_reply(&context) {
                     trace::services::rejected(
                         "lsp",
                         "navigation request/server/document/revision changed",
                     );
                     return;
                 }
-                self.lsp_state.navigation = None;
                 self.message = text;
             }
             LspEvent::GotoLocation { context, location } => {
-                if !self.lsp_reply_fresh(&context) {
+                if !self.finish_lsp_reply(&context) {
                     trace::services::rejected(
                         "lsp",
                         "navigation request/server/document/revision changed",
@@ -397,40 +164,43 @@ impl Editor {
                 kind,
                 items,
             } => {
-                if !self.lsp_reply_fresh(&context) {
-                    trace::services::rejected(
-                        "lsp",
-                        "locations request/server/document/revision changed",
-                    );
+                if !self.finish_lsp_reply(&context) {
+                    trace::services::rejected("lsp", "location-list owner changed");
                     return;
                 }
                 match items.len() {
                     0 => {
-                        self.lsp_state.navigation = None;
-                        self.message = format!("lsp: no {}", kind.label());
+                        self.message = format!("no {}", kind.label());
                     }
                     1 => {
                         if let Some(location) = items.into_iter().next() {
                             self.jump_to_location(location, context);
                         }
                     }
-                    n => {
+                    count => {
                         use strop_picker::{Item, Kind, Payload};
                         let items = items
                             .into_iter()
                             .map(|location| {
                                 let line = location.position.line.get() + 1;
                                 let col = location.position.column.get() + 1;
-                                Item {
-                                    text: format!("{}:{}:{}", location.path.display(), line, col),
-                                    payload: Payload::Grep {
-                                        path: location.path,
+                                let text = format!("{}:{}:{}", location.doc.label(), line, col);
+                                let payload = match location.doc.target {
+                                    FsTarget::Local => Payload::Grep {
+                                        path: location.doc.path,
                                         line,
                                         col,
                                         match_len: 1,
                                         line_text: String::new(),
                                     },
-                                }
+                                    FsTarget::Remote(endpoint) => Payload::Remote {
+                                        endpoint,
+                                        path: location.doc.path,
+                                        line,
+                                        col,
+                                    },
+                                };
+                                Item { text, payload }
                             })
                             .collect();
                         let mut glue = super::PickerGlue::diagnostics(strop_picker::Picker::new(
@@ -440,7 +210,7 @@ impl Editor {
                         ));
                         glue.lsp_context = Some(context);
                         self.set_picker(glue);
-                        self.message = format!("{n} {}", kind.label());
+                        self.message = format!("{count} {}", kind.label());
                     }
                 }
             }
@@ -452,16 +222,37 @@ impl Editor {
         location: strop_lsp::ServerLocation,
         context: strop_lsp::ReplyContext,
     ) {
-        if !self.lsp_reply_fresh(&context) {
+        if !self.lsp_context_fresh(&context) {
             return;
         }
-        self.request_open(
-            location.path,
-            super::io::OpenIntent::LspLocation {
-                context,
-                position: location.position,
-            },
-        );
+        let intent = super::io::OpenIntent::LspLocation {
+            context,
+            position: location.position,
+        };
+        match location.doc.target {
+            FsTarget::Local => self.request_open(location.doc.path, intent),
+            FsTarget::Remote(endpoint) => {
+                // The target is a file on the replying server's host:
+                // resolve it through an open document's canonical seed
+                // (`with_path` keeps endpoint + native bytes) — the
+                // analogous local path is never opened or probed.
+                match self.remote_file_for(&endpoint) {
+                    Some(seed) => match seed.with_path(location.doc.path.clone()) {
+                        Ok(file) => self
+                            .request_target(crate::files::FileTarget::Remote(file.into()), intent),
+                        Err(error) => {
+                            trace::services::rejected("lsp", "remote navigation target invalid");
+                            self.message = format!("lsp: remote target invalid: {error}");
+                        }
+                    },
+                    None => {
+                        trace::services::rejected("lsp", "remote navigation endpoint lost");
+                        self.message =
+                            "lsp: the remote workspace for this target was closed".into();
+                    }
+                }
+            }
+        }
     }
 
     pub(crate) fn finish_lsp_jump(
@@ -470,7 +261,7 @@ impl Editor {
         position: strop_lsp::ServerPosition,
         context: strop_lsp::ReplyContext,
     ) {
-        if !self.lsp_reply_fresh(&context) {
+        if !self.lsp_context_fresh(&context) {
             trace::services::rejected("lsp", "navigation changed while target was loading");
             return;
         }
@@ -480,11 +271,19 @@ impl Editor {
         let Some(binding) = self.lsp_state.bindings.get(&context.stamp.document) else {
             return;
         };
-        let outside = target_doc
-            .buf
-            .path
-            .as_ref()
-            .is_some_and(|path| !self.cwd.join(path).starts_with(&binding.root));
+        let outside = match &target_doc.source {
+            // A remote target is outside the workspace when its remote
+            // path leaves the binding's remote root — never by
+            // comparing against local paths.
+            crate::editor::document::DocumentSource::Remote(file) => {
+                !file.file.path().starts_with(&binding.root)
+            }
+            _ => target_doc
+                .buf
+                .path
+                .as_ref()
+                .is_some_and(|path| !self.cwd.join(path).starts_with(&binding.root)),
+        };
         let line = position
             .line
             .get()
@@ -507,6 +306,66 @@ impl Editor {
         self.lsp_maybe_attach();
     }
 
+    /// A local picker hit with a live LSP request context: the server
+    /// that produced the list owns the target's filesystem.
+    pub(crate) fn lsp_jump_from_picker(
+        &mut self,
+        path: PathBuf,
+        line: usize,
+        col: usize,
+        context: strop_lsp::ReplyContext,
+    ) {
+        self.jump_to_location(
+            strop_lsp::ServerLocation {
+                doc: DocPath::local(path),
+                position: strop_lsp::ServerPosition {
+                    line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
+                    column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
+                },
+            },
+            context,
+        );
+    }
+
+    /// A remote picker hit (locations or diagnostics): re-parse the
+    /// endpoint and route through the endpoint's file identity — with
+    /// a live request context through the freshness-checked navigation
+    /// path (server columns), without one as a direct remote open at a
+    /// byte column. The analogous local path is never touched.
+    pub(crate) fn lsp_open_remote_hit(
+        &mut self,
+        endpoint: &strop_remote::RemoteEndpoint,
+        path: &Path,
+        line: usize,
+        col: usize,
+        context: Option<strop_lsp::ReplyContext>,
+    ) {
+        if let Some(context) = context {
+            self.jump_to_location(
+                strop_lsp::ServerLocation {
+                    doc: DocPath::remote(endpoint.clone(), path.to_owned()),
+                    position: strop_lsp::ServerPosition {
+                        line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
+                        column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
+                    },
+                },
+                context,
+            );
+        } else if let Some(seed) = self.remote_file_for(endpoint) {
+            match seed.with_path(path.to_owned()) {
+                Ok(file) => self.request_target(
+                    crate::files::FileTarget::Remote(file.into()),
+                    super::io::OpenIntent::Grep {
+                        line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
+                        column: strop_core::id::ByteColumn::new(col.saturating_sub(1)),
+                    },
+                ),
+                Err(error) => self.message = format!("lsp remote location: {error}"),
+            }
+        } else {
+            self.message = "lsp: the remote workspace for this hit was closed".into();
+        }
+    }
     pub(crate) fn lsp_locations(&mut self, kind: strop_lsp::LocKind) {
         self.lsp_request(strop_lsp::RequestKind::Locations(kind));
     }
@@ -521,11 +380,10 @@ impl Editor {
     }
 
     pub(crate) fn jump_diagnostic(&mut self, forward: bool) {
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
-        let abs = self.cwd.join(path);
-        let Some(diags) = self.diags.get(&abs).filter(|d| !d.is_empty()) else {
+        let Some(diags) = self
+            .diags_for(self.current())
+            .filter(|diags| !diags.is_empty())
+        else {
             self.message = "no diagnostics".into();
             return;
         };
@@ -559,29 +417,57 @@ impl Editor {
     pub(crate) fn open_diagnostics_picker(&mut self) {
         use strop_picker::{Item, Kind, Payload};
         // Deterministic row order across hash seeds (R11).
-        let mut by_path: Vec<(&PathBuf, &Vec<ResolvedDiag>)> = self.diags.iter().collect();
-        by_path.sort_by(|a, b| a.0.cmp(b.0));
-        let items: Vec<Item> = by_path
-            .into_iter()
-            .flat_map(|(path, diags)| {
-                diags.iter().map(move |d| Item {
-                    text: format!(
-                        "{}:{} {} {}",
-                        path.display(),
-                        d.line.get() + 1,
-                        d.severity_char(),
-                        d.message
-                    ),
-                    payload: Payload::Grep {
-                        path: path.clone(),
-                        line: d.line.get() + 1,
-                        col: d.col.get() + 1,
-                        match_len: 1,
-                        line_text: d.message.clone(),
-                    },
-                })
-            })
+        let mut by_doc: Vec<_> = self
+            .diags
+            .keys()
+            .filter_map(|&id| Some((self.lsp_doc_path(id)?, self.diags_for(id)?)))
             .collect();
+        by_doc
+            .sort_by(|a, b| (a.0.target.label(), &a.0.path).cmp(&(b.0.target.label(), &b.0.path)));
+        let mut items: Vec<Item> = Vec::new();
+        for (doc, diags) in by_doc {
+            for d in diags {
+                let line = d.line.get() + 1;
+                let col = d.col.get() + 1;
+                match &doc.target {
+                    FsTarget::Local => items.push(Item {
+                        text: format!(
+                            "{}:{} {} {}",
+                            doc.path.display(),
+                            line,
+                            d.severity_char(),
+                            d.message
+                        ),
+                        payload: Payload::Grep {
+                            path: doc.path.clone(),
+                            line,
+                            col,
+                            match_len: 1,
+                            line_text: d.message.clone(),
+                        },
+                    }),
+                    // Remote diagnostics carry their endpoint: the
+                    // preview stays local-clean and acceptance opens
+                    // the remote target (0036).
+                    FsTarget::Remote(endpoint) => items.push(Item {
+                        text: format!(
+                            "{}{}:{} {} {}",
+                            endpoint,
+                            doc.path.display(),
+                            line,
+                            d.severity_char(),
+                            d.message
+                        ),
+                        payload: Payload::Remote {
+                            endpoint: endpoint.clone(),
+                            path: doc.path.clone(),
+                            line,
+                            col,
+                        },
+                    }),
+                }
+            }
+        }
         if items.is_empty() {
             self.message = "no diagnostics".into();
             return;
@@ -608,52 +494,6 @@ impl Editor {
     pub fn jump_diagnostic_pub(&mut self, forward: bool) {
         self.jump_diagnostic(forward);
     }
-}
-
-/// Modeline suffix for malformed layers: the first diagnostic's exact
-/// path, plus a count when more follow (0033 §2).
-fn layer_suffix(layers: &[strop_lsp::languages::LayerDiagnostic]) -> Option<String> {
-    let first = layers.first()?;
-    Some(if layers.len() == 1 {
-        first.display()
-    } else {
-        format!("{} (+{} more)", first.display(), layers.len() - 1)
-    })
-}
-
-/// Attach completions reach the structured trace with their outcome
-/// and any malformed-layer diagnostics (0033 §2/§3) — silence is not a
-/// report. Runs at handler entry, before ownership decisions.
-fn trace_attach(record: &attach::AttachRecord) {
-    use strop_trace::{record_with, EventKind};
-    record_with(EventKind::JobFinished, || {
-        let mut value = serde_json::json!({
-            "service": "lsp",
-            "result": "attach",
-            "outcome": record.outcome.label(),
-            "language": record.language,
-            "name": record.name,
-            "server": record.server,
-            "root": trace::services::NativePath(record.root.clone()),
-            "layers": &record.layers,
-        });
-        match &record.outcome {
-            attach::AttachDecision::NotExecutable {
-                command,
-                reason,
-                hint,
-            } => {
-                value["command"] = serde_json::json!(command);
-                value["reason"] = serde_json::json!(reason);
-                value["hint"] = serde_json::json!(hint);
-            }
-            attach::AttachDecision::SpawnFailed { reason } => {
-                value["reason"] = serde_json::json!(reason);
-            }
-            _ => {}
-        }
-        value
-    });
 }
 
 /// The LSP language for a path, from the embedded extension table —

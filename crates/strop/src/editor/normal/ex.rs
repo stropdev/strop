@@ -20,8 +20,13 @@ impl Editor {
             .collect()
     }
 
-    /// Tab on the ex line: cycle the completion candidates.
+    /// Tab on the ex line: cycle the completion candidates — command
+    /// names for a bare prefix; remote hosts/paths for a file
+    /// command's `ssh://` operand (editor/remote_completion.rs).
     pub(super) fn ex_tab_complete(&mut self) {
+        if self.remote_completion_tab() {
+            return;
+        }
         let cands = self.ex_candidates();
         if cands.is_empty() {
             return;
@@ -229,6 +234,9 @@ impl Editor {
             return;
         }
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline, ""));
+        if self.run_remote_ex(cmd, arg) {
+            return;
+        }
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
             "w" | "w!" => {

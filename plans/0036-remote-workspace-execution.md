@@ -1,8 +1,8 @@
 # 0036 — Remote workspace delivery: P2, LSP and Git
 
-Status: accepted for implementation. The user expanded 0034/0035 while work was in
-progress: ship RW1, RW2, RW3, remote LSP and remote Git semantics, update the website,
-and publish the complete release. This supersedes the narrower snapshot-only scope.
+Status: implemented for 0.17.0. The user expanded 0034/0035 while work was in
+progress: RW1, RW2, RW3, read-only directory browsing, remote LSP and remote Git,
+website updates and a complete verified release. This supersedes snapshot-only scope.
 
 ## Scope and ordering
 
@@ -160,3 +160,53 @@ silently mutate the local cwd or an unversioned remote file.
    replay pass. Update README/changelog, roadmap status and site docs/demo/capability
    descriptions to match exercised behavior. Release through the repository workflow,
    with true topological crate publication order including strop-remote.
+
+## Implementation repair: service shutdown
+
+The recovered partial LSP implementation could leak a client on a shutdown timeout
+and attempted to reap SSH before killing its local process group. The cutover uses
+an owned Tokio child adapter: stderr EOF may acknowledge supervisor exit without
+reaping SSH; group signalling precedes the only wait, with Drop as the panic
+backstop. A last-owner stop channel and bounded shutdown exchange terminate the
+mainloop even when a server ignores `shutdown`. No socket/client is deliberately
+leaked. This does not strengthen the remote supervisor's stated network-partition,
+escaped-session or supervisor-crash guarantees.
+
+Range views permit several documents for one pathname. Diagnostic and blame
+caches therefore key by generational `DocumentId`, not by a pathname or a
+fabricated `ssh://` PathBuf; a full-file view must never lend overlays to a tail
+window with the same revision/line count. Git surfaces retain their own
+`RepoTarget` across pane switches rather than borrowing the current Git context.
+Remote trust grants persist the validated endpoint plus remote root, never a
+local-looking path. Attach admission includes the trigger document path so a
+refusal in one remote project cannot suppress another project on the same host.
+
+Snapshot publication now supplies its position correspondence to the same mutation
+lease that consumes ordinary edit journals. Full replacement geometry must not
+collapse saved marks before follow remaps them; each view/mark/jump is mapped once.
+Only EOF-attached views advance to the new tail, and a shrinking window clamps to
+real grapheme content rather than the virtual newline after the last line.
+Server attachment also performs `didOpen` through one shared transition after either
+live transport installation or replayed identity installation. The real TUI recording
+exposed the missing replay-side call; a diagnostics round-trip regression now guards it.
+
+## Runtime evidence
+
+The 2026-09-08 SSH fixture exercised a 300 MiB file through a 65,536-byte tail,
+bounded ranges, normal search/yank, directory filtering and navigation, EOF append
+stickiness versus browsing, preserved marks, same-size/same-mtime replacement and
+shrink reset. Closing the editor left only the fixture's SSH listener, no SFTP,
+language-server or supervisor children.
+
+Remote LSP emitted diagnostics and hover, then navigated to an endpoint-owned
+cross-file UTF-16 position and populated the references picker. Remote Git navigated
+log → changed files → historical diff. A display-row-five source link resolved to
+the commit's source line one; an SSH alias with different local/remote configuration
+and a remote `Match user` rule resolved on the repository's endpoint. Remote Git
+mutation and shell commands refused instead of touching a local lookalike.
+
+Full native-result replay passed with `PATH=/nonexistent`. Website docs and roadmap
+were exercised at desktop and 390-pixel widths; prose wrapping fixes the roadmap's
+horizontal overflow. The complete Docker model gate passed safety, qualified
+progress, exact mutant rejection and reachability witnesses. Rust/static/hosted
+publication gates remain mandatory; these observations do not replace them.

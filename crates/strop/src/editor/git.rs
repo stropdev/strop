@@ -3,13 +3,16 @@
 //! nav and the hunk verbs. No native git work runs on the input or
 //! render path — discovery, diffs and index mutations are worker jobs
 //! with terminal, ticket-owned results.
+mod context;
 
 use strop_core::worker::{CancelReason, Load, Outcome};
-use strop_git::{Hunk, HunkKind, Repo, Sign};
+use strop_git::{Hunk, HunkKind, Sign};
+
+use crate::files::FileTarget;
 
 use super::git_memory::{
-    git_failure, repo_or_unavailable, ContextKey, GitJob, GitMutation, HunkData, HunkKey,
-    MutationKey, MutationKind, MutationOp,
+    git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, MutationKey,
+    MutationKind, MutationOp,
 };
 use super::transact::ChangeSet;
 use super::Editor;
@@ -32,70 +35,6 @@ enum HunkTarget {
 }
 
 impl Editor {
-    /// Discover the repository for the current buffer. Native work
-    /// runs on a worker (R6); the pure cached context lands through
-    /// `GitJob::Context` and invalidates the git view only when it
-    /// actually changed.
-    pub(crate) fn discover_git(&mut self) {
-        if self.docs.is_empty() || self.finishing {
-            return;
-        }
-        if self.remote_file().is_some() {
-            if let Load::Running(ticket) = &self.git_discovery {
-                self.cancel_git_worker(ticket.request, CancelReason::Superseded);
-            }
-            self.cancel_hunk_owner();
-            self.git = None;
-            self.git_discovery = Load::Idle;
-            self.hunks = Default::default();
-            self.staged_hunks.clear();
-            self.hunks_untracked = false;
-            return;
-        }
-        self.git_discovery.retry_failed();
-        let from = self
-            .buf()
-            .path
-            .as_deref()
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| self.cwd.clone());
-        // one request per origin while running; a resolved (Ready)
-        // discovery is re-derivable, so explicit switches refresh it
-        if matches!(&self.git_discovery, Load::Running(current) if current.key.from == from) {
-            return;
-        }
-        let running = match &self.git_discovery {
-            Load::Running(current) => Some(current.request),
-            _ => None,
-        };
-        if let Some(request) = running {
-            self.cancel_git_worker(request, CancelReason::Superseded);
-        }
-        let Some(ticket) = self.git_ticket(ContextKey { from: from.clone() }) else {
-            return;
-        };
-        self.git_discovery = Load::Running(ticket.clone());
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({
-                "service":"git","request":"discover","from":from.to_string_lossy(),
-            })
-        });
-        let args = ticket.clone();
-        self.launch_git_job(
-            "git-discover",
-            "git.discover",
-            ticket,
-            &args,
-            GitJob::Context,
-            move |cancel| {
-                if cancel.is_cancelled() {
-                    return Outcome::Cancelled(CancelReason::Superseded);
-                }
-                Outcome::Success(Repo::discover(&from).map(|repo| repo.context()))
-            },
-        );
-    }
-
     /// Register the next gutter diff. Render-safe (R6): pure checks and
     /// registration only — the diff itself runs on a worker against an
     /// immutable text snapshot.
@@ -111,20 +50,53 @@ impl Editor {
             return;
         };
         let revision = document.buf.revision();
-        let Some(path) = document.buf.path.clone() else {
-            // a scratch buffer has no git identity: no owner, no vectors
-            self.cancel_hunk_owner();
-            self.hunks.clear();
-            self.staged_hunks.clear();
-            self.hunks_untracked = false;
-            return;
+        // the buffer's file identity: a local path or a remote file —
+        // a remote buffer never contributes a local path spelling
+        let file = match &document.source {
+            super::document::DocumentSource::Remote(remote) => {
+                FileTarget::Remote(remote.file.clone().into())
+            }
+            super::document::DocumentSource::File => match document.buf.path.as_deref() {
+                Some(path) => FileTarget::Local(std::path::PathBuf::from(path)),
+                // a scratch buffer has no git identity: no owner, no vectors
+                None => {
+                    self.clear_hunk_view();
+                    return;
+                }
+            },
+            // surfaces and output buffers have no git identity either
+            _ => {
+                self.clear_hunk_view();
+                return;
+            }
         };
-        let workdir = context.workdir().to_path_buf();
+        // the context must be the buffer's own repository: a remote
+        // file under any other target (local repo, or a different
+        // endpoint) has no gutter here — clear honestly, never diff
+        // against the wrong machine
+        let remote_file = match (&file, &context.repo) {
+            (FileTarget::Remote(remote), strop_git::RepoTarget::Remote { endpoint, .. })
+                if endpoint == remote.endpoint() =>
+            {
+                remote.absolute_file()
+            }
+            (FileTarget::Local(_), strop_git::RepoTarget::Local { .. }) => None,
+            _ => {
+                self.clear_hunk_view();
+                return;
+            }
+        };
+        if remote_file.is_some() && !self.remote_window_complete() {
+            // a partial window's line numbers are window-relative: no
+            // full-file hunk coordinates exist to show (0036)
+            self.clear_hunk_view();
+            return;
+        }
         let key = HunkKey {
             document: doc,
             revision,
-            path: path.clone(),
-            workdir: workdir.clone(),
+            file: file.clone(),
+            repo: context.repo.clone(),
             git_view: self.git_view,
         };
         if self.hunk_load.covers(&key) {
@@ -146,11 +118,66 @@ impl Editor {
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"git","request":"hunks",
+                "target":if context.repo.is_remote() { "remote" } else { "local" },
                 "document":{"slot":doc.index(),"generation":doc.generation()},
-                "revision":revision.get(),"path":path.to_string_lossy(),
+                "revision":revision.get(),"file":file.to_string(),
             })
         });
         let args = ticket.clone();
+        if let Some(remote) = remote_file {
+            // the remote gutter: bounded HEAD/index blob fetches plus
+            // the shared hunk semantics — never a local repository
+            let endpoint = remote.endpoint().clone();
+            let workdir = context.repo.workdir().to_path_buf();
+            let head_sha = context.head_sha.clone();
+            let rel = context.repo.rel_of(remote.path());
+            self.launch_git_job(
+                "git-hunks-remote",
+                "git.hunks",
+                ticket,
+                &args,
+                GitJob::Hunks,
+                move |cancel| {
+                    if cancel.is_cancelled() {
+                        return Outcome::Cancelled(CancelReason::Superseded);
+                    }
+                    let Some(rel) = rel else {
+                        return Outcome::failed(
+                            strop_core::worker::FailureKind::Exit,
+                            "buffer is outside the remote repository",
+                        );
+                    };
+                    let text = snapshot.to_string();
+                    match strop_git::remote::gutter(
+                        &endpoint,
+                        &workdir,
+                        head_sha.as_deref(),
+                        &rel,
+                        &text,
+                        &cancel,
+                    ) {
+                        Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
+                            unstaged,
+                            staged,
+                            untracked,
+                        }),
+                        Err(error) => Outcome::Failed {
+                            failure: strop_core::worker::Failure::new(
+                                strop_core::worker::FailureKind::Exit,
+                                error.to_string(),
+                            ),
+                            partial: None,
+                        },
+                    }
+                },
+            );
+            return;
+        }
+        let workdir = context.repo.workdir().to_path_buf();
+        let path = match &file {
+            FileTarget::Local(path) => path.clone(),
+            FileTarget::Remote(_) => unreachable!("remote handled above"),
+        };
         self.launch_git_job(
             "git-hunks",
             "git.hunks",
@@ -205,6 +232,17 @@ impl Editor {
                 })
             },
         );
+    }
+
+    /// Revoke the hunk owner and clear both cached vectors — the
+    /// honest state whenever the current buffer cannot take part in a
+    /// gutter diff (scratch, surface, mismatched repository or partial
+    /// remote window).
+    fn clear_hunk_view(&mut self) {
+        self.cancel_hunk_owner();
+        self.hunks.clear();
+        self.staged_hunks.clear();
+        self.hunks_untracked = false;
     }
 
     /// Revoke the running hunk owner (if any) and return to Idle. The
@@ -263,10 +301,16 @@ impl Editor {
     /// `]c` / `[c`: jump to the next/previous changed line. An explicit
     /// command retries a previously failed diff; render never does.
     pub(crate) fn jump_hunk(&mut self, forward: bool) {
+        // a partial remote window has no full-file coordinates to jump
+        // by — the honest refusal, not "no more hunks"
+        if self.remote_file().is_some() && !self.remote_window_complete() {
+            self.message = "partial remote snapshot — hunks need a full window".into();
+            return;
+        }
         self.hunk_load.retry_failed();
         self.refresh_hunks();
-        let cur = self.buf().line_of(self.head()) + 1;
         let total = self.buf().len_lines();
+        let cur = self.buf().line_of(self.head()) + 1;
         let mut lines: Vec<usize> = self
             .hunks
             .iter()
@@ -391,15 +435,30 @@ impl Editor {
     }
 
     /// `Space g u`: reset a hunk to HEAD's content. From the hunk
-    /// surface it restores the origin buffer's hunk (0010 §2).
+    /// surface it restores the origin buffer's hunk (0010 §2). A
+    /// remote origin refuses: the snapshot is readonly and the remote
+    /// repository has no writable index to restore from (RW4).
     pub(crate) fn undo_hunk(&mut self) {
+        if self.remote_endpoint().is_some() {
+            self.message = "remote Git mutations are not supported".into();
+            return;
+        }
+        let remote_refusal = |editor: &Self, idx| {
+            matches!(
+                editor.docs.get(idx).map(|d| &d.source),
+                Some(super::document::DocumentSource::Remote(_))
+            )
+            .then(|| "remote snapshots are read-only — hunk reset refused".to_string())
+        };
         match self.hunk_surface_target() {
             HunkTarget::Fresh {
                 buffer,
                 hunk,
                 untracked,
             } => {
-                if self.restore_hunk_in(buffer, &hunk, untracked) {
+                if let Some(message) = remote_refusal(self, buffer) {
+                    self.message = message;
+                } else if self.restore_hunk_in(buffer, &hunk, untracked) {
                     self.message = "hunk reset".into();
                 }
             }
@@ -409,6 +468,10 @@ impl Editor {
                     self.message = "no hunk here".into();
                     return;
                 };
+                if let Some(message) = remote_refusal(self, self.current()) {
+                    self.message = message;
+                    return;
+                }
                 let untracked = self.hunks_untracked;
                 if self.restore_hunk_in(self.current(), &hunk, untracked) {
                     self.message = "hunk reset".into();
@@ -419,8 +482,14 @@ impl Editor {
 
     /// `Space g s`: stage a hunk (index ← worktree edge). The index
     /// write runs on a worker, serialized FIFO with every other
-    /// mutation — the input path only validates and queues.
+    /// mutation — the input path only validates and queues. A remote
+    /// repository refuses by capability (RW4): there is no remote
+    /// index write, and nothing ever falls back to a local one.
     pub(crate) fn stage_hunk(&mut self) {
+        if self.remote_endpoint().is_some() {
+            self.message = "remote Git mutations are not supported".into();
+            return;
+        }
         match self.hunk_surface_target() {
             HunkTarget::Fresh { buffer, hunk, .. } => self.stage_hunk_in(buffer, &hunk),
             HunkTarget::Stale => self.message = "buffer changed — reopen the hunk preview".into(),
@@ -449,6 +518,10 @@ impl Editor {
             self.message = "not a git repo".into();
             return;
         };
+        if context.repo.is_remote() {
+            self.message = "remote repositories are read-only — staging is refused (RW4)".into();
+            return;
+        }
         let Ok(rel) = std::path::Path::new(&path)
             .strip_prefix(context.workdir())
             .map(|p| p.to_path_buf())
@@ -461,7 +534,7 @@ impl Editor {
             revision: self.doc(idx).buf.revision(),
             kind: MutationKind::Stage,
             rel,
-            workdir: context.workdir().to_path_buf(),
+            repo: context.repo.clone(),
             git_view: self.git_view,
         };
         self.git_mutations.push_back(GitMutation {
@@ -473,7 +546,13 @@ impl Editor {
 
     /// `Space g S`: unstage the hunk under the cursor — the index→HEAD
     /// edge. Queued like staging; the index write never blocks input.
+    /// A remote repository refuses by capability (RW4) — no remote
+    /// index exists to write, and the local one is never touched.
     pub(crate) fn unstage_hunk(&mut self) {
+        if self.remote_endpoint().is_some() {
+            self.message = "remote Git mutations are not supported".into();
+            return;
+        }
         if self.buf().dirty {
             self.message = "unsaved changes — :w first".into();
             return;
@@ -495,6 +574,10 @@ impl Editor {
             self.message = "not a git repo".into();
             return;
         };
+        if context.repo.is_remote() {
+            self.message = "remote repositories are read-only — unstaging is refused (RW4)".into();
+            return;
+        }
         let Ok(rel) = std::path::Path::new(&path)
             .strip_prefix(context.workdir())
             .map(|p| p.to_path_buf())
@@ -507,7 +590,7 @@ impl Editor {
             revision: self.buf().revision(),
             kind: MutationKind::Unstage,
             rel,
-            workdir: context.workdir().to_path_buf(),
+            repo: context.repo.clone(),
             git_view: self.git_view,
         };
         self.git_mutations.push_back(GitMutation {

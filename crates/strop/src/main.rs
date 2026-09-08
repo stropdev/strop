@@ -111,7 +111,11 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
         cli::Command::ReplayFull { .. } | cli::Command::ExportMetadata { .. } => {
             return Err("replay/export must run outside live startup".into());
         }
-        cli::Command::Headless { script, path } => {
+        cli::Command::Headless {
+            script,
+            path,
+            remote_view,
+        } => {
             let script = std::fs::read_to_string(script)?;
             let buffer = path
                 .as_ref()
@@ -135,10 +139,14 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
                 100,
                 30,
                 &mut io::stdout().lock(),
-                remote_start(&path),
+                remote_start(&path, remote_view),
             )?;
         }
-        cli::Command::Edit { path, readonly } => {
+        cli::Command::Edit {
+            path,
+            readonly,
+            remote_view,
+        } => {
             let directory = path
                 .as_ref()
                 .and_then(|location| location.path.local_path())
@@ -194,7 +202,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             editor.recorded_action(
                 editor::trace::drive::Action::Start {
                     directory_picker: directory.is_some(),
-                    open: remote_start(&path),
+                    open: remote_start(&path, remote_view),
                 },
                 tick,
             )?;
@@ -204,12 +212,16 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
     io::stdout().flush()?;
     Ok(())
 }
-fn remote_start(location: &Option<cli::FileLocation>) -> Option<editor::trace::drive::StartupOpen> {
+fn remote_start(
+    location: &Option<cli::FileLocation>,
+    view: editor::remote::RemoteView,
+) -> Option<editor::trace::drive::StartupOpen> {
     let location = location.as_ref()?;
     matches!(location.path, files::FileTarget::Remote(_)).then(|| {
         editor::trace::drive::StartupOpen {
             target: location.path.clone(),
             line: location.line,
+            view,
         }
     })
 }

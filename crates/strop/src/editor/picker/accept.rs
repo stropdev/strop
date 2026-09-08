@@ -26,16 +26,7 @@ impl Editor {
                 path, line, col, ..
             } => {
                 if let Some(context) = context {
-                    self.jump_to_location(
-                        strop_lsp::ServerLocation {
-                            path,
-                            position: strop_lsp::ServerPosition {
-                                line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
-                                column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
-                            },
-                        },
-                        context,
-                    );
+                    self.lsp_jump_from_picker(path, line, col, context);
                     return;
                 }
                 self.request_open(
@@ -45,6 +36,16 @@ impl Editor {
                         column: strop_core::id::ByteColumn::new(col.saturating_sub(1)),
                     },
                 );
+            }
+            // A remote hit routes through the endpoint's file identity
+            // (0036): the analogous local path is never opened.
+            Payload::Remote {
+                endpoint,
+                path,
+                line,
+                col,
+            } => {
+                self.lsp_open_remote_hit(&endpoint, &path, line, col, context);
             }
         }
     }

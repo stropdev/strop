@@ -16,11 +16,19 @@ pub enum DocumentSource {
     /// The [No Name] scratch buffer.
     Scratch,
     /// An in-memory SSH snapshot; never a local path or writable file.
-    Remote(strop_remote::RemoteFile),
+    Remote(Box<super::RemoteDocument>),
+    /// A remote directory's real, read-only listing buffer.
+    RemoteDirectory(Box<super::RemoteDirectory>),
     /// A git-memory surface: job-owned content, readonly.
-    Surface(Box<Surface>),
+    Surface(Box<GitSurface>),
     /// `:!cmd` output / help: named virtual content, readonly.
     Output,
+}
+
+#[derive(Debug, Clone)]
+pub struct GitSurface {
+    pub context: strop_git::GitContext,
+    pub content: Surface,
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +68,35 @@ pub enum Surface {
     },
 }
 
+/// One canonical row projection shared by rendering and source navigation.
+pub enum DiffRow<'a> {
+    Stats,
+    HunkHeader(&'a Hunk),
+    Line(&'a strop_git::DiffLine),
+}
+
 impl Surface {
+    pub(crate) fn diff_row(&self, row: usize) -> Option<DiffRow<'_>> {
+        let Surface::Diff { hunks, .. } = self else {
+            return None;
+        };
+        if row == 0 {
+            return Some(DiffRow::Stats);
+        }
+        let mut row = row - 1;
+        for hunk in hunks {
+            if row == 0 {
+                return Some(DiffRow::HunkHeader(hunk));
+            }
+            row -= 1;
+            if row < hunk.lines.len() {
+                return Some(DiffRow::Line(&hunk.lines[row]));
+            }
+            row -= hunk.lines.len();
+        }
+        None
+    }
+
     pub(crate) fn set_return_point(&mut self, ret: ReturnPoint) {
         *self.return_slot() = Some(ret);
     }
@@ -83,7 +119,7 @@ impl Surface {
 }
 
 /// this, `q` dumps you on line 1).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReturnPoint {
     pub buffer: strop_core::id::DocumentId,
     pub cursor: usize,

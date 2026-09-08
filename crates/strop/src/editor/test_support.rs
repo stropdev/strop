@@ -6,6 +6,18 @@ use strop_core::worker::{FailureKind, Outcome};
 use strop_picker::PickerMsg;
 
 impl Editor {
+    /// A named local repository for pure surface fixtures; no discovery or I/O.
+    pub(crate) fn fixture_git_context(&mut self) {
+        self.git = Some(strop_git::GitContext {
+            repo: strop_git::RepoTarget::Local {
+                workdir: self.cwd.clone(),
+            },
+            head_sha: None,
+            head_branch: None,
+            remotes: Vec::new(),
+        });
+    }
+
     /// Local-channel fixture barrier; live drivers never call this.
     pub fn wait_io(&mut self) -> Result<(), String> {
         while self.io_pending() {

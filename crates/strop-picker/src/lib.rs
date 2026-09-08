@@ -30,6 +30,15 @@ pub enum Payload {
         match_len: usize,
         line_text: String,
     },
+    /// A location on a validated remote endpoint. The native path can never
+    /// be previewed or opened as an analogous local file.
+    Remote {
+        endpoint: strop_remote::RemoteEndpoint,
+        #[serde(with = "strop_core::path_serde")]
+        path: PathBuf,
+        line: usize,
+        col: usize,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -1,10 +1,29 @@
 //! Native-byte remote file identity and owned, read-only SSH/SFTP transport.
 //!
-//! `read` belongs on a worker: it accepts that worker's cancellation token and
-//! returns an in-memory buffer or typed failure. Authentication and encryption
-//! stay in system OpenSSH; no editor, CLI, view or rendering state lives here.
+//! Requests belong on workers. Authentication and encryption stay in system
+//! OpenSSH; no editor, CLI, view or rendering state lives here.
 mod address;
+mod client;
+mod exec;
+mod hosts;
+mod pool;
+mod selection;
+mod ssh;
+#[cfg(test)]
+mod test_support;
 mod transport;
 
-pub use address::{AddressError, RemoteFile};
-pub use transport::{read, ReadFailureKind, ReadStage, RemoteReadError};
+pub use address::{AddressError, RemoteEndpoint, RemoteFile, RemoteLocation};
+pub use client::{
+    ConnectionLease, RemoteClient, RemoteDirectorySnapshot, RemoteEntry, RemoteEntryKind,
+    RemoteResource, RemoteSnapshot,
+};
+pub use exec::{
+    command, command_supervised, run, CommandOutput, RemoteCommand, RemoteCommandError,
+    RemoteExitStatus, StdinMode, SupervisionKey, SupervisionOutcome,
+};
+pub use hosts::{enumerate_hosts, CandidateOrigin, HostCandidate, HostEnumeration, HostSources};
+pub use selection::{
+    ReadLimit, ReadLimitError, ReadSelection, RemoteOffset, RemoteSize, RemoteWindow,
+};
+pub use transport::{ReadFailureKind, ReadStage, RemoteReadError};

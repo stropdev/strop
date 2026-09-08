@@ -15,7 +15,7 @@ COPY crates ./crates
 COPY docs ./docs
 
 FROM builder AS test
-RUN apk add --no-cache openssh-client openssh-server
+RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
 RUN cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
     && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked

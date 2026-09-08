@@ -48,12 +48,16 @@ pub struct LanguageDef {
 /// One malformed layer met while loading: the exact file plus what
 /// went wrong. Layers never brick the editor (0005 §2) — the typed
 /// diagnostic rides along to the modeline and trace instead, even when
-/// a valid fallback server attaches (0033 §2).
+/// a valid fallback server starts (0033 §2). `remote` names the
+/// endpoint a fetched remote layer came from, so its path can never
+/// masquerade as a local one.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LayerDiagnostic {
     #[serde(with = "strop_core::path_serde")]
     pub path: PathBuf,
     pub message: String,
+    #[serde(default)]
+    pub remote: Option<strop_remote::RemoteEndpoint>,
 }
 
 impl LayerDiagnostic {
@@ -61,12 +65,29 @@ impl LayerDiagnostic {
         Self {
             path: path.to_path_buf(),
             message,
+            remote: None,
         }
     }
 
-    /// Modeline/trace form: the exact path plus the problem.
+    pub fn remote_layer(
+        endpoint: &strop_remote::RemoteEndpoint,
+        path: &Path,
+        message: String,
+    ) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            message,
+            remote: Some(endpoint.clone()),
+        }
+    }
+
+    /// Modeline/trace form: the endpoint plus the exact path and the
+    /// problem — a remote layer never renders as a bare local path.
     pub fn display(&self) -> String {
-        format!("{}: {}", self.path.display(), self.message)
+        match &self.remote {
+            Some(endpoint) => format!("{endpoint}{}: {}", self.path.display(), self.message),
+            None => format!("{}: {}", self.path.display(), self.message),
+        }
     }
 }
 
@@ -79,10 +100,21 @@ pub struct Languages {
     /// Directory holding the project layer's `.strop/languages.toml`,
     /// when one was found — it anchors the workspace root (0012 §6).
     pub project_root: Option<PathBuf>,
+    pub(crate) project_commands: std::collections::BTreeSet<String>,
     /// Merge-level notes (unspawnable defs, unknown server names).
     warnings: Vec<String>,
     /// Malformed layers met while loading, with their exact paths.
     layer_diagnostics: Vec<LayerDiagnostic>,
+}
+
+/// A fetched remote `.strop/languages.toml`: which endpoint it came
+/// from, its native remote path and the raw bytes read over the owned
+/// connection. Nothing here touched the local filesystem.
+#[derive(Debug, Clone, Copy)]
+pub struct RemoteLayer<'a> {
+    pub endpoint: &'a strop_remote::RemoteEndpoint,
+    pub path: &'a Path,
+    pub bytes: &'a [u8],
 }
 
 impl Languages {
@@ -116,9 +148,57 @@ impl Languages {
         merged
     }
 
+    /// Layers for a REMOTE workspace (0036 RW8): the trusted local XDG
+    /// layer may select the command, and the project layer is the
+    /// fetched remote `.strop/languages.toml` — the local project
+    /// layer of the editor's own cwd is never consulted for a remote
+    /// workspace. Malformed remote content is a typed diagnostic
+    /// naming the endpoint, never a silent fallback.
+    pub fn load_remote(xdg: Option<&Path>, project: Option<RemoteLayer<'_>>) -> Self {
+        let mut layers = Vec::new();
+        let xdg_file = xdg.and_then(|p| read_layer(p, &mut layers));
+        let project_file = project.and_then(|layer| match std::str::from_utf8(layer.bytes) {
+            Ok(text) => parse_layer(
+                layer.path,
+                text,
+                &mut layers,
+                |path: &Path, message: String| {
+                    LayerDiagnostic::remote_layer(layer.endpoint, path, message)
+                },
+            ),
+            Err(error) => {
+                layers.push(LayerDiagnostic::remote_layer(
+                    layer.endpoint,
+                    layer.path,
+                    format!("invalid UTF-8 ({error}) — layer ignored"),
+                ));
+                None
+            }
+        });
+        let mut merged = Self::merge(xdg_file, project_file);
+        merged.project_root = project
+            .and_then(|layer| layer.path.parent().and_then(Path::parent))
+            .map(Path::to_path_buf);
+        merged.layer_diagnostics = layers;
+        merged
+    }
+
     /// Layer merge: per key, the project entry replaces the XDG entry —
     /// everything XDG configured for other keys survives.
     pub(crate) fn merge(xdg: Option<LanguagesToml>, project: Option<LanguagesToml>) -> Self {
+        let project_commands = project
+            .as_ref()
+            .map(|layer| {
+                layer
+                    .language_server
+                    .iter()
+                    .filter(|(_, definition)| {
+                        definition.command.is_some() || definition.args.is_some()
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut servers = BTreeMap::new();
         let mut languages = BTreeMap::new();
         for layer in [xdg, project].into_iter().flatten() {
@@ -149,6 +229,7 @@ impl Languages {
             servers,
             languages,
             project_root: None,
+            project_commands,
             warnings,
             layer_diagnostics: Vec::new(),
         }
@@ -187,10 +268,21 @@ fn read_layer(path: &Path, diagnostics: &mut Vec<LayerDiagnostic>) -> Option<Lan
             return None;
         }
     };
-    match toml::from_str::<LanguagesToml>(&text) {
+    parse_layer(path, &text, diagnostics, LayerDiagnostic::new)
+}
+
+/// Parse one layer's text; malformed TOML is a typed diagnostic naming
+/// the exact file, and the caller's constructor tags local vs remote.
+fn parse_layer(
+    path: &Path,
+    text: &str,
+    diagnostics: &mut Vec<LayerDiagnostic>,
+    diagnostic: impl Fn(&Path, String) -> LayerDiagnostic,
+) -> Option<LanguagesToml> {
+    match toml::from_str::<LanguagesToml>(text) {
         Ok(f) => Some(f),
         Err(e) => {
-            diagnostics.push(LayerDiagnostic::new(path, format!("{e} — layer ignored")));
+            diagnostics.push(diagnostic(path, format!("{e} — layer ignored")));
             None
         }
     }
@@ -520,5 +612,67 @@ language-servers = ["pyright"]
         assert_eq!(found, layer.join("languages.toml"));
         assert!(project_path(&std::env::temp_dir().join("nowhere.rs")).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remote_layers_merge_xdg_with_fetched_project_only() {
+        // A remote workspace layers the trusted local XDG config over
+        // the FETCHED remote project layer — the editor's own local
+        // project layer is not even a parameter here, so it cannot
+        // leak into a remote workspace (0036).
+        let xdg = tempfile::tempdir().unwrap();
+        let xdg_file = xdg.path().join("languages.toml");
+        std::fs::write(
+            &xdg_file,
+            r#"
+[language-server.remote-helper]
+command = "remote-helper"
+"#,
+        )
+        .unwrap();
+        let remote_project = std::path::Path::new("/srv/proj/.strop/languages.toml");
+        let bytes = br#"
+[language.rust]
+language-servers = ["remote-helper"]
+"#
+        .to_vec();
+        let merged = Languages::load_remote(
+            Some(&xdg_file),
+            Some(RemoteLayer {
+                endpoint: &strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap(),
+                path: remote_project,
+                bytes: &bytes,
+            }),
+        );
+        assert_eq!(
+            merged.project_root.as_deref(),
+            Some(std::path::Path::new("/srv/proj"))
+        );
+        let spec = registry::for_extension(".rs", &merged).unwrap();
+        assert_eq!(spec.command, "remote-helper");
+        // The XDG layer is user-trusted local config; the project
+        // layer that named it is remote, so the spawn is project-
+        // sourced only when the REMOTE layer provides the command.
+        assert!(!spec.project_executable);
+        assert!(merged.layer_diagnostics().is_empty());
+    }
+
+    #[test]
+    fn malformed_remote_layer_diagnoses_the_endpoint_not_a_local_path() {
+        let merged = Languages::load_remote(
+            None,
+            Some(RemoteLayer {
+                endpoint: &strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap(),
+                path: std::path::Path::new("/srv/proj/.strop/languages.toml"),
+                bytes: b"not toml at all [[".to_vec().as_slice(),
+            }),
+        );
+        let diagnostics = merged.layer_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        let text = diagnostics[0].display();
+        assert!(
+            text.starts_with("ssh://builder.example/srv/proj/.strop/languages.toml"),
+            "{text}"
+        );
     }
 }

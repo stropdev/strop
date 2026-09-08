@@ -21,6 +21,21 @@ impl<'a> DocumentEdit<'a> {
             map_active: true,
         }
     }
+
+    /// A replacement snapshot has its own position correspondence, not the
+    /// ordinary "deleted bytes collapse to the edit start" rule. Publish the
+    /// same journal once, with that mapping for every view and saved anchor.
+    pub(crate) fn replace_snapshot(
+        mut self,
+        rope: ropey::Rope,
+        position: impl Fn(usize) -> usize,
+    ) -> Result<(), strop_core::EditError> {
+        debug_assert!(self.buf.changes().is_empty());
+        self.buf.system_edit().replace_rope(rope)?;
+        self.editor
+            .sync_document_positions(self.document, true, |offset, _| position(offset));
+        Ok(())
+    }
 }
 impl Deref for DocumentEdit<'_> {
     type Target = Document;

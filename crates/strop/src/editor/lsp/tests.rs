@@ -13,9 +13,21 @@ use strop_lsp::{
 };
 
 fn editor(text: &str) -> Editor {
-    let mut e = Editor::new(Buffer::from_text(text));
-    e.buf_mut().path = Some(PathBuf::from("/workspace/origin.txt"));
-    e
+    let mut buffer = Buffer::from_text(text);
+    buffer.path = Some(PathBuf::from("/workspace/origin.txt"));
+    Editor::new_in(buffer, PathBuf::from("/workspace"))
+}
+
+fn attach_key(e: &Editor, language: &str) -> super::attach::AttachKey {
+    super::attach::AttachKey {
+        target: strop_lsp::FsTarget::Local,
+        language: language.into(),
+        path: e.buf().path.clone().unwrap(),
+    }
+}
+
+fn diag_key(path: &std::path::Path) -> strop_lsp::DocPath {
+    strop_lsp::DocPath::local(path.to_path_buf())
 }
 
 fn arm(e: &mut Editor, id: u64, kind: RequestKind, encoding: PositionEncoding) -> ReplyContext {
@@ -30,6 +42,7 @@ fn arm(e: &mut Editor, id: u64, kind: RequestKind, encoding: PositionEncoding) -
             revision,
             path,
             root: PathBuf::from("/workspace"),
+            target: strop_lsp::FsTarget::Local,
         },
     );
     let stamp = RequestStamp {
@@ -72,7 +85,7 @@ fn diagnostics(
             encoding,
             version: Some(WireVersion::new(1)),
         },
-        path,
+        doc: diag_key(&path),
         diags,
     }));
 }
@@ -225,12 +238,12 @@ fn diagnostics_resolve_utf8_columns_in_place() {
             message: "z".into(),
         }],
     );
-    let path = e.buf().path.clone().unwrap();
+    let diagnostics = e.diags_for(e.current()).unwrap();
     assert_eq!(
-        (e.diags[&path][0].col.get(), e.diags[&path][0].end_col.get()),
+        (diagnostics[0].col.get(), diagnostics[0].end_col.get()),
         (5, 6)
     );
-    assert_eq!(e.diags[&path][0].severity, Severity::Error);
+    assert_eq!(diagnostics[0].severity, Severity::Error);
 }
 
 #[test]
@@ -252,12 +265,12 @@ fn diagnostics_resolve_utf16_columns_against_the_rope() {
             message: "mid-emoji".into(),
         }],
     );
-    let path = e.buf().path.clone().unwrap();
+    let diagnostics = e.diags_for(e.current()).unwrap();
     assert_eq!(
-        (e.diags[&path][0].col.get(), e.diags[&path][0].end_col.get()),
+        (diagnostics[0].col.get(), diagnostics[0].end_col.get()),
         (5, 6)
     );
-    assert_eq!(e.diags[&path][0].severity_char(), 'W');
+    assert_eq!(diagnostics[0].severity_char(), 'W');
 }
 
 #[test]
@@ -277,74 +290,114 @@ fn diagnostics_beyond_the_document_clamp_instead_of_panicking() {
             message: "stale server range".into(),
         }],
     );
-    let path = e.buf().path.clone().unwrap();
-    assert_eq!(e.diags[&path][0].line.get(), 0);
-    assert_eq!(e.diags[&path][0].end_line.get(), 0);
+    let diagnostics = e.diags_for(e.current()).unwrap();
+    assert_eq!(diagnostics[0].line.get(), 0);
+    assert_eq!(diagnostics[0].end_line.get(), 0);
     // "single line": utf16 == bytes, col 2 stays 2.
-    assert_eq!(e.diags[&path][0].col.get(), 2);
+    assert_eq!(diagnostics[0].col.get(), 2);
 }
 
 #[test]
-fn replayed_attach_installs_identity_without_a_client() {
+fn attached_server_diagnostics_survive_full_replay() {
+    use crate::editor::trace::{
+        drive::{self, Action},
+        seed::Seed,
+    };
+    use strop_trace::replay::{Tape, Tick};
     let mut e = editor("a\n");
     e.buf_mut().path = Some(PathBuf::from("/workspace/origin.rs"));
-    let ticket = WorkerId::new(1);
-    e.lsp_state.attach.pending.insert("rust".into(), ticket);
-    e.handle_lsp_attach(AttachRecord {
+    e.tape = std::rc::Rc::new(Tape::fixture(|operation, _| match operation {
+        "lsp.open" => Ok(serde_json::json!(true)),
+        _ => Err(std::io::Error::other("unexpected native observation")),
+    }));
+    e.tape.seed(&Seed::capture(&e).unwrap()).unwrap();
+    e.recorded_action(
+        Action::Start {
+            directory_picker: false,
+            open: None,
+        },
+        Tick::default(),
+    )
+    .unwrap();
+    let ticket = *e.lsp_state.attach.pending.values().next().unwrap();
+    let attach = AttachRecord {
         ticket,
         server: Some(ServerId::new(3)),
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::Attached,
         layers: Vec::new(),
-    });
-    assert_eq!(e.lsp_servers.len(), 1);
-    assert!(
-        e.lsp_servers[0].client.is_none(),
-        "replay must not fake a client"
-    );
-    assert_eq!(e.lsp_servers[0].id, ServerId::new(3));
-    assert!(e.lsp_state.attach.pending.is_empty());
-    assert_eq!(e.lsp_state.attach.attached.len(), 1);
-    // The placement resolves the server for buffers under its root.
-    assert!(e
-        .lsp_server_for(Path::new("/workspace/origin.rs"), "rust")
-        .is_some());
-    assert!(e
-        .lsp_server_for(Path::new("/elsewhere/a.rs"), "rust")
-        .is_none());
+    };
+    e.recorded_action(Action::Event(AppEvent::LspAttach(attach)), Tick::default())
+        .unwrap();
+    let event = LspEvent::Diagnostics {
+        context: strop_lsp::DiagnosticContext {
+            server: ServerId::new(3),
+            document: e.current(),
+            revision: e.buf().revision(),
+            encoding: PositionEncoding::Utf8,
+            version: Some(WireVersion::new(1)),
+        },
+        doc: diag_key(Path::new("/workspace/origin.rs")),
+        diags: vec![Diag {
+            line: LineIndex::new(0),
+            col: ServerColumn::new(0),
+            end_line: LineIndex::new(0),
+            end_col: ServerColumn::new(1),
+            severity: Severity::Error,
+            message: "source diagnostic".into(),
+        }],
+    };
+    e.recorded_action(Action::Event(AppEvent::Lsp(event)), Tick::default())
+        .unwrap();
+    assert_eq!(e.diag_counts(e.current()), (1, 0));
+    e.tape.finish().unwrap();
+    let replayed = drive::replay(e.tape.fixture_nodes()).unwrap();
+    assert_eq!(replayed.diag_counts(replayed.current()), (1, 0));
 }
 
 #[test]
 fn stale_attach_completion_is_refused() {
     let mut e = editor("a\n");
     let current = WorkerId::new(2);
-    e.lsp_state.attach.pending.insert("rust".into(), current);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), current);
     e.handle_lsp_attach(AttachRecord {
         ticket: WorkerId::new(1),
         server: Some(ServerId::new(3)),
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::Attached,
         layers: Vec::new(),
     });
     assert!(e.lsp_servers.is_empty());
-    assert_eq!(e.lsp_state.attach.pending.get("rust"), Some(&current));
+    assert_eq!(
+        e.lsp_state.attach.pending.get(&attach_key(&e, "rust")),
+        Some(&current)
+    );
 }
 
 #[test]
 fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
     let mut e = editor("a\n");
     let first = WorkerId::new(1);
-    e.lsp_state.attach.pending.insert("rust".into(), first);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), first);
     e.handle_lsp_attach(AttachRecord {
         ticket: first,
         server: None,
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::NotExecutable {
             command: "rust-analyzer".into(),
             reason: "not found on PATH".into(),
@@ -356,7 +409,10 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
     assert!(e.message.contains("rust-analyzer"));
     assert!(e.message.contains("rustup component add rust-analyzer"));
     let second = WorkerId::new(2);
-    e.lsp_state.attach.pending.insert("rust".into(), second);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), second);
     e.message = "later state".into();
     e.handle_lsp_attach(AttachRecord {
         ticket: second,
@@ -364,6 +420,7 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::NotExecutable {
             command: "rust-analyzer".into(),
             reason: "not found on PATH".into(),
@@ -374,13 +431,17 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
     assert_eq!(e.message, "later state", "sticky refusals do not repeat");
     // Trust refusals are actionable: they re-report every attempt.
     let third = WorkerId::new(3);
-    e.lsp_state.attach.pending.insert("rust".into(), third);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), third);
     e.handle_lsp_attach(AttachRecord {
         ticket: third,
         server: None,
         language: "rust".into(),
         name: "custom-lsp".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::TrustRequired {
             command: "custom-lsp".into(),
         },
@@ -401,18 +462,26 @@ fn attach_skips_unknown_languages_without_discovery() {
 fn refused_attach_messages_are_reported() {
     let mut e = editor("a\n");
     let ticket = WorkerId::new(9);
-    e.lsp_state.attach.pending.insert("rust".into(), ticket);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), ticket);
     e.handle_lsp_attach(AttachRecord {
         ticket,
         server: None,
         language: "rust".into(),
         name: "rust".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::NoServer,
         layers: Vec::new(),
     });
     assert!(e.message.contains("no language server"));
-    assert!(e.lsp_state.attach.refused.contains_key("rust"));
+    assert!(e
+        .lsp_state
+        .attach
+        .refused
+        .contains_key(&attach_key(&e, "rust")));
 }
 
 /// 0033 §2: a malformed layer's diagnostic reaches the modeline with
@@ -423,17 +492,22 @@ fn layer_diagnostic_survives_a_healthy_attach_and_ready() {
     let mut e = editor("a\n");
     e.buf_mut().path = Some(PathBuf::from("/workspace/origin.rs"));
     let ticket = WorkerId::new(4);
-    e.lsp_state.attach.pending.insert("rust".into(), ticket);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), ticket);
     e.handle_lsp_attach(AttachRecord {
         ticket,
         server: Some(ServerId::new(5)),
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::Attached,
         layers: vec![strop_lsp::languages::LayerDiagnostic {
             path: PathBuf::from("/home/u/.config/strop/languages.toml"),
             message: "TOML parse error — layer ignored".into(),
+            remote: None,
         }],
     });
     // the fallback server attached and the warning is visible with the
@@ -459,17 +533,22 @@ fn layer_diagnostic_survives_a_healthy_attach_and_ready() {
     );
     // a later attach reporting the same layer does not duplicate it
     let again = WorkerId::new(6);
-    e.lsp_state.attach.pending.insert("rust".into(), again);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), again);
     e.handle_lsp_attach(AttachRecord {
         ticket: again,
         server: None,
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::NoServer,
         layers: vec![strop_lsp::languages::LayerDiagnostic {
             path: PathBuf::from("/home/u/.config/strop/languages.toml"),
             message: "TOML parse error — layer ignored".into(),
+            remote: None,
         }],
     });
     assert_eq!(e.lsp_state.attach.layer_diagnostics.len(), 1);
@@ -482,22 +561,28 @@ fn multiple_layer_diagnostics_report_with_a_count() {
     let mut e = editor("a\n");
     e.buf_mut().path = Some(PathBuf::from("/workspace/origin.rs"));
     let ticket = WorkerId::new(7);
-    e.lsp_state.attach.pending.insert("rust".into(), ticket);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), ticket);
     e.handle_lsp_attach(AttachRecord {
         ticket,
         server: None,
         language: "rust".into(),
         name: "rust".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::NoServer,
         layers: vec![
             strop_lsp::languages::LayerDiagnostic {
                 path: PathBuf::from("/xdg/languages.toml"),
                 message: "bad — layer ignored".into(),
+                remote: None,
             },
             strop_lsp::languages::LayerDiagnostic {
                 path: PathBuf::from("/proj/.strop/languages.toml"),
                 message: "worse — layer ignored".into(),
+                remote: None,
             },
         ],
     });
@@ -512,13 +597,17 @@ fn spawn_failure_refusal_carries_its_reason() {
     let mut e = editor("a\n");
     e.buf_mut().path = Some(PathBuf::from("/workspace/origin.rs"));
     let ticket = WorkerId::new(8);
-    e.lsp_state.attach.pending.insert("rust".into(), ticket);
+    e.lsp_state
+        .attach
+        .pending
+        .insert(attach_key(&e, "rust"), ticket);
     e.handle_lsp_attach(AttachRecord {
         ticket,
         server: None,
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
+        target: strop_lsp::FsTarget::Local,
         outcome: AttachDecision::SpawnFailed {
             reason: "cannot build the LSP runtime: boom".into(),
         },
@@ -526,7 +615,11 @@ fn spawn_failure_refusal_carries_its_reason() {
     });
     assert!(e.message.contains("could not start"), "{}", e.message);
     assert!(e.message.contains("runtime"), "{}", e.message);
-    assert!(e.lsp_state.attach.refused.contains_key("rust"));
+    assert!(e
+        .lsp_state
+        .attach
+        .refused
+        .contains_key(&attach_key(&e, "rust")));
 }
 
 /// 0033 §3: a terminal Failed event reaches the modeline with the
@@ -541,6 +634,7 @@ fn failed_server_event_names_the_command_and_removes_the_server() {
         id: server,
         client: None,
         rx: std::sync::mpsc::channel().1,
+        ready: true,
     });
     e.handle_lsp_event(LspEvent::Failed {
         server,
@@ -576,3 +670,5 @@ fn resolved_diag_round_trips_serde() {
     let back: ResolvedDiag = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(diag, back);
 }
+
+mod remote;

@@ -25,6 +25,11 @@ pub enum OpenIntent {
         line: LineIndex,
     },
     Refresh,
+    Browse,
+    RemoteView {
+        view: super::remote::RemoteView,
+        line: Option<LineIndex>,
+    },
     Grep {
         line: LineIndex,
         column: ByteColumn,
@@ -38,6 +43,17 @@ pub enum OpenIntent {
         replacement: String,
     },
 }
+impl OpenIntent {
+    fn requires_file(&self) -> bool {
+        match self {
+            Self::AtLine { .. } | Self::Grep { .. } | Self::LspLocation { .. } => true,
+            Self::RemoteView { view, line } => {
+                line.is_some() || *view != super::remote::RemoteView::default()
+            }
+            _ => false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OpenKey {
@@ -46,6 +62,7 @@ pub struct OpenKey {
     pub revision: BufferRevision,
     pub focus: u64,
     pub intent: OpenIntent,
+    pub selection: strop_remote::ReadSelection,
 }
 
 pub struct Opened {
@@ -68,7 +85,8 @@ pub struct SaveKey {
 pub enum IoEvent {
     Open(Box<Completion<OpenKey, Opened>>),
     Save(Box<Completion<SaveKey, SaveReceipt>>),
-    Native(Completion<native::NativeKey, native::NativeResult>),
+    Native(Box<Completion<native::NativeKey, native::NativeResult>>),
+    Remote(super::remote::RemoteEvent),
     Session {
         request: WorkerId,
         outcome: Outcome<()>,
@@ -110,6 +128,22 @@ impl Editor {
     }
 
     pub fn request_target(&mut self, target: FileTarget, intent: OpenIntent) {
+        let selection = match &intent {
+            OpenIntent::RemoteView { view, .. } => view.selection(),
+            OpenIntent::Refresh => self
+                .cur()
+                .remote_metadata()
+                .map_or(strop_remote::ReadSelection::Full, |source| source.selection),
+            _ => strop_remote::ReadSelection::Full,
+        };
+        let requires_file = intent.requires_file();
+        let browse = matches!(intent, OpenIntent::Browse);
+        if matches!(target, FileTarget::Local(_))
+            && (browse || matches!(intent, OpenIntent::RemoteView { .. }))
+        {
+            self.message = "range/tail/follow views require a remote target".into();
+            return;
+        }
         let path = match target {
             FileTarget::Local(path) => FileTarget::Local(self.cwd.join(path)),
             remote => remote,
@@ -117,11 +151,25 @@ impl Editor {
         if !matches!(intent, OpenIntent::Replace { .. }) {
             self.cancel_open(worker::CancelReason::Superseded);
         }
-        let existing = self
-            .docs
-            .iter()
-            .find_map(|(id, document)| document.matches_target(&path).then_some(id));
+        let existing = self.docs.iter().find_map(|(id, document)| {
+            (document.matches_target(&path)
+                && document
+                    .remote_metadata()
+                    .is_none_or(|source| source.selection == selection))
+            .then_some(id)
+        });
         if let Some(id) = existing.filter(|_| !matches!(intent, OpenIntent::Refresh)) {
+            if (requires_file && self.doc(id).directory_metadata_ref().is_some())
+                || (browse && self.doc(id).directory_metadata_ref().is_none())
+            {
+                self.message = if browse {
+                    "browse requires a directory"
+                } else {
+                    "this view requires a regular file"
+                }
+                .into();
+                return;
+            }
             self.finish_open(id, intent);
             return;
         }
@@ -138,6 +186,7 @@ impl Editor {
             revision: self.buf().revision(),
             focus: self.focus_epoch,
             intent,
+            selection,
         };
         if !matches!(key.intent, OpenIntent::Replace { .. }) {
             self.io.navigation = Some(request);
@@ -157,6 +206,7 @@ impl Editor {
                 return;
             }
         }
+        let client = self.remote_client();
         let handle = worker::spawn(
             "strop-open",
             move |outcome| {
@@ -175,11 +225,33 @@ impl Editor {
                     }
                     Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
                 },
-                FileTarget::Remote(file) => match strop_remote::read(&file, &cancel) {
-                    Ok(buffer) => Outcome::Success(Opened {
-                        document: Document::remote(buffer, file.clone()),
-                        canonical: FileTarget::Remote(file),
-                    }),
+                FileTarget::Remote(location) => match if browse {
+                    client
+                        .list(&location, &cancel)
+                        .map(strop_remote::RemoteResource::Directory)
+                } else {
+                    client.open(&location, selection, &cancel)
+                } {
+                    Ok(strop_remote::RemoteResource::File(snapshot)) => {
+                        let canonical = FileTarget::Remote(snapshot.file.clone().into());
+                        Outcome::Success(Opened {
+                            document: Document::remote_snapshot(*snapshot, selection),
+                            canonical,
+                        })
+                    }
+                    Ok(strop_remote::RemoteResource::Directory(snapshot)) => {
+                        if requires_file {
+                            return Outcome::failed(
+                                FailureKind::InvalidInput,
+                                "range/tail/follow requires a regular file",
+                            );
+                        }
+                        let canonical = FileTarget::Remote(snapshot.directory.clone().into());
+                        Outcome::Success(Opened {
+                            document: Document::remote_directory(snapshot),
+                            canonical,
+                        })
+                    }
                     Err(error) if error.is_cancellation() => {
                         Outcome::Cancelled(worker::CancelReason::OwnerClosed)
                     }
@@ -198,7 +270,7 @@ impl Editor {
             return true;
         }
         if let OpenIntent::LspLocation { context, .. } = &key.intent {
-            if !self.lsp_reply_fresh(context) {
+            if !self.lsp_context_fresh(context) {
                 return false;
             }
         }
@@ -234,6 +306,20 @@ impl Editor {
                         );
                         self.run_motion("^");
                     }
+                    OpenIntent::RemoteView { view, line } => {
+                        if let Some(line) = line {
+                            self.set_head(
+                                self.buf()
+                                    .line_start(line.get().min(self.buf().last_content_line())),
+                            );
+                            self.run_motion("^");
+                        } else if view.follow_limit().is_some() {
+                            self.set_head(super::remote::follow::last_position(self.buf().text()));
+                        }
+                        if let Some(limit) = view.follow_limit() {
+                            self.start_remote_follow(document, limit);
+                        }
+                    }
                     OpenIntent::Grep { line, column } => {
                         let line = line.get().min(self.buf().last_content_line());
                         let offset = self
@@ -262,12 +348,22 @@ impl Editor {
         force: bool,
         close: bool,
     ) {
-        if self
-            .docs
-            .get(document)
-            .is_some_and(|doc| matches!(doc.source, super::document::DocumentSource::Remote(_)))
-        {
+        if self.docs.get(document).is_some_and(|doc| {
+            matches!(
+                doc.source,
+                super::document::DocumentSource::Remote(_)
+                    | super::document::DocumentSource::RemoteDirectory(_)
+            )
+        }) {
             self.message = "remote snapshots are read-only; remote writes are not supported".into();
+            return;
+        }
+        if target
+            .as_ref()
+            .and_then(|path| path.to_str())
+            .is_some_and(|path| path.starts_with("ssh://"))
+        {
+            self.message = "remote writes are not supported; no local fallback".into();
             return;
         }
         if self.io.saves.contains_key(&document) {
@@ -380,7 +476,8 @@ impl Editor {
     pub fn handle_io(&mut self, event: IoEvent) {
         super::trace::services::io(&event);
         match event {
-            IoEvent::Native(completion) => self.handle_native(completion),
+            IoEvent::Native(completion) => self.handle_native(*completion),
+            IoEvent::Remote(event) => self.handle_remote_event(event),
             IoEvent::Open(completion) => {
                 let request = completion.ticket.request;
                 if self.io.open.get(&request) != Some(&completion.ticket.key) {
@@ -397,13 +494,25 @@ impl Editor {
                     return;
                 }
                 match completion.outcome {
-                    Outcome::Success(opened) => {
+                    Outcome::Success(mut opened) => {
                         if matches!(key.intent, OpenIntent::Refresh) {
                             self.finish_remote_refresh(key.origin, opened.document);
                             return;
                         }
+                        opened
+                            .document
+                            .set_return_point(super::document::ReturnPoint {
+                                buffer: key.origin,
+                                cursor: self.head(),
+                                view_top: self.view_top(),
+                                hscroll: self.view().hscroll,
+                            });
                         let existing = self.docs.iter().find_map(|(id, document)| {
-                            document.matches_target(&opened.canonical).then_some(id)
+                            (document.matches_target(&opened.canonical)
+                                && document
+                                    .remote_metadata()
+                                    .is_none_or(|source| source.selection == key.selection))
+                            .then_some(id)
                         });
                         let id = existing.unwrap_or_else(|| {
                             let id = self.docs.insert(opened.document);
@@ -487,6 +596,7 @@ impl Editor {
             || !self.io.saves.is_empty()
             || self.io.session.is_some()
             || !self.io.native.is_empty()
+            || self.remote_work_pending()
     }
 }
 
@@ -498,11 +608,12 @@ impl Editor {
                 .saves
                 .values()
                 .any(|ticket| ticket.request == request)
-            || self
-                .io
-                .native
-                .get(&request)
-                .is_some_and(|key| matches!(key.operation, native::Operation::Trust { .. }))
+            || self.io.native.get(&request).is_some_and(|key| {
+                matches!(
+                    key.operation,
+                    native::Operation::Trust { .. } | native::Operation::TrustRemote { .. }
+                )
+            })
     }
     pub(crate) fn io_status(&self) -> Option<&'static str> {
         if !self.io.saves.is_empty() {

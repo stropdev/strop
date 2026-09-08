@@ -3,8 +3,14 @@
 //! tickets; a stale revision, a superseded request or an edited buffer
 //! drops the pairing honestly — and every failure is terminal, so the
 //! next explicit toggle genuinely starts a new request.
+//!
+//! Remote buffers (0036 RW8) blame through the same seam: bounded
+//! remote `git blame` on the endpoint, keyed by an endpoint-qualified
+//! identity so a remote entry can never pair with a local buffer — or
+//! the reverse. Blame speaks file line numbers, so a partial remote
+//! window refuses instead of attributing window-relative lines.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use strop_core::worker::{CancelReason, Outcome};
 
@@ -12,14 +18,35 @@ use super::git_memory::{BlameGutter, BlameKey, CardKey, GitJob};
 use super::Editor;
 
 impl Editor {
-    /// `Space g b`: on a file buffer, toggle the blame gutter; anywhere
-    /// else (or as feedback while the gutter loads) the single-line
-    /// card (0011 §3).
+    /// `Space g b`: on a file buffer (local, or a remote buffer with a
+    /// complete window), toggle the blame gutter; anywhere else (or as
+    /// feedback while the gutter loads) the single-line card (0011 §3).
     pub(crate) fn toggle_blame_gutter(&mut self) {
-        if self.buf().readonly || self.buf().path.is_none() {
-            return self.blame_line();
+        let remote = self.remote_file().cloned();
+        let local_file = remote.is_none() && !self.buf().readonly && self.buf().path.is_some();
+        if !local_file {
+            if remote.is_some() {
+                if !self.remote_window_complete() {
+                    self.message = "partial remote snapshot — blame needs a full window".into();
+                    return;
+                }
+            } else {
+                return self.blame_line();
+            }
         }
-        let key = self.blame_key();
+        let Some(context) = self.git_context().cloned() else {
+            self.message = "not a git repo".into();
+            return;
+        };
+        // the context must be this buffer's repository: a remote file
+        // blames on its own endpoint, never any local workdir
+        if let Some(file) = &remote {
+            if context.repo.endpoint() != Some(file.endpoint()) {
+                self.message = "buffer's repository is not the current context".into();
+                return;
+            }
+        }
+        let key = self.current();
         if let Some(mut gutter) = self.blame_gutters.remove(&key) {
             // toggle off: revoke the pending request — its late result
             // cannot repopulate a newer incarnation of this entry
@@ -30,66 +57,47 @@ impl Editor {
         }
         let doc = self.current();
         let revision = self.buf().revision();
-        let workdir = self.git.as_ref().map(|c| c.workdir().to_path_buf());
+        let Some(file) = self.doc(doc).file_target(&self.cwd) else {
+            return;
+        };
         // the loading marker owns its ticket BEFORE any launch decision
         // (replay contract); pure-validation failures settle through
         // the same terminal path as worker failures
         let Some(ticket) = self.git_ticket(BlameKey {
             document: doc,
             revision,
-            path: key.clone(),
-            workdir: workdir.clone().unwrap_or_default(),
+            file,
+            repo: context.repo.clone(),
         }) else {
             return;
         };
         self.blame_gutters.insert(
-            key.clone(),
+            key,
             BlameGutter {
                 lines: Vec::new(),
                 revision,
                 request: Some(ticket.clone()),
             },
         );
-        self.spawn_blame_file(&key, ticket);
+        self.spawn_blame_file(ticket);
         self.blame_line(); // the card covers the line until data lands
     }
 
-    /// Canonical path key for the current buffer's gutter entry — the
-    /// same normalization every lookup uses, so `f.rs` and an absolute
-    /// path for one file share one entry.
-    pub(crate) fn blame_key(&self) -> PathBuf {
-        self.buf()
-            .file_identity()
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| {
-                self.cwd
-                    .join(self.buf().path.as_deref().unwrap_or_else(|| Path::new("")))
-            })
-    }
-
-    pub(crate) fn blame_key_of(&self, path: &Path) -> PathBuf {
-        self.docs
-            .iter()
-            .find_map(|(_, document)| {
-                (document.buf.path.as_deref() == Some(path))
-                    .then(|| document.buf.file_identity())
-                    .flatten()
-            })
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| self.cwd.join(path))
-    }
-
-    fn spawn_blame_file(&mut self, key: &Path, ticket: strop_core::worker::Ticket<BlameKey>) {
-        let Some(workdir) = self.git.as_ref().map(|c| c.workdir().to_path_buf()) else {
-            self.send_git_failure(
-                ticket,
-                strop_core::worker::FailureKind::Unavailable,
-                "blame failed: not a git repo",
-                GitJob::Gutter,
-            );
-            return;
+    fn spawn_blame_file(&mut self, ticket: strop_core::worker::Ticket<BlameKey>) {
+        let repo = ticket.key.repo.clone();
+        let rel = match (&repo, &ticket.key.file) {
+            (strop_git::RepoTarget::Local { .. }, crate::files::FileTarget::Local(path)) => {
+                repo.rel_of(path)
+            }
+            (
+                strop_git::RepoTarget::Remote { endpoint, .. },
+                crate::files::FileTarget::Remote(location),
+            ) if location.endpoint() == endpoint => location
+                .absolute_file()
+                .and_then(|file| repo.rel_of(file.path())),
+            _ => None,
         };
-        let Ok(rel) = key.strip_prefix(&workdir).map(|r| r.to_path_buf()) else {
+        let Some(rel) = rel else {
             self.send_git_failure(
                 ticket,
                 strop_core::worker::FailureKind::InvalidInput,
@@ -101,7 +109,8 @@ impl Editor {
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"git","request":"blame_gutter",
-                "path":key.to_string_lossy(),
+                "repository":if repo.is_remote() { "remote" } else { "local" },
+                "file": &ticket.key.file,
                 "document":{"slot":ticket.key.document.index(),"generation":ticket.key.document.generation()},
                 "revision":ticket.key.revision.get(),
             })
@@ -117,24 +126,30 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                match strop_git::memory::blame_file(&workdir, &rel) {
+                let exec = strop_git::GitExec::for_target(&repo);
+                match strop_git::memory::blame_file(&exec, &cancel, &rel) {
                     Ok(lines) => Outcome::Success(lines),
                     Err(message) => Outcome::failed(strop_core::worker::FailureKind::Exit, message),
                 }
             },
         );
     }
+
     /// The buffer's blame gutter, if its data is still trustworthy:
     /// same revision, same line count. Any edit since the capture
-    /// voids the line↔buffer-line pairing.
+    /// voids the line↔buffer-line pairing. A remote buffer pairs only
+    /// with its endpoint-qualified entry.
     pub fn blame_gutter_for(&self, buffer: strop_core::id::DocumentId) -> Option<&BlameGutter> {
-        let buf = self.docs.get(buffer).map(|d| &d.buf)?;
-        let path = buf.path.as_deref()?;
-        let gutter = if let Some(identity) = buf.file_identity() {
-            self.blame_gutters.get(identity)?
-        } else {
-            self.blame_gutters.get(&self.cwd.join(path))?
-        };
+        let document = self.docs.get(buffer)?;
+        let buf = &document.buf;
+        if document
+            .remote_metadata()
+            .is_some_and(|source| !source.window.is_complete())
+            || self.remote_following(buffer)
+        {
+            return None;
+        }
+        let gutter = self.blame_gutters.get(&buffer)?;
         // len_lines counts the trailing newline's phantom line — the
         // content count is what blame rows pair with
         let content_lines = buf.last_content_line() + 1;
@@ -143,25 +158,51 @@ impl Editor {
 
     /// `Space g b` fallback / surface blame: the card for the cursor
     /// line. One card request at a time — a new request supersedes (and
-    /// cancels) the old one.
+    /// cancels) the old one. The card speaks file line numbers: a
+    /// partial remote window refuses rather than blaming the wrong
+    /// line of the file.
     pub(crate) fn blame_line(&mut self) {
-        let Some(path) = self.buf().path.clone() else {
-            self.message = "blame works on file buffers".into();
+        match self.remote_file().cloned() {
+            Some(file) => {
+                // the card names a file line: a partial window's line
+                // numbers are window-relative — refuse, never blame
+                // the wrong line of the file
+                if !self.remote_window_complete() {
+                    self.message = "partial remote snapshot — blame needs a full window".into();
+                    return;
+                }
+                self.blame_line_remote(file);
+            }
+            None => match self.buf().path.clone() {
+                Some(path) => self.blame_line_local(path),
+                None => self.message = "blame works on file buffers".into(),
+            },
+        }
+    }
+    fn blame_line_local(&mut self, path: PathBuf) {
+        let Some(context) = self.git_context().cloned() else {
+            self.message = "not a git repo".into();
             return;
         };
+        if context.repo.is_remote() {
+            self.message = "buffer's repository is not the current context".into();
+            return;
+        }
         if let Some(ticket) = self.card_request.take() {
             self.cancel_git_worker(ticket.request, CancelReason::Superseded);
         }
         let doc = self.current();
         let revision = self.buf().revision();
         let line = self.buf().line_of(self.head()) + 1;
-        let workdir = self.git.as_ref().map(|c| c.workdir().to_path_buf());
+        let Some(file) = self.doc(doc).file_target(&self.cwd) else {
+            return;
+        };
         let Some(ticket) = self.git_ticket(CardKey {
             origin: BlameKey {
                 document: doc,
                 revision,
-                path: self.blame_key_of(&path),
-                workdir: workdir.clone().unwrap_or_default(),
+                file,
+                repo: context.repo.clone(),
             },
             line,
         }) else {
@@ -171,26 +212,18 @@ impl Editor {
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"git","request":"blame_line",
+                "repository":"local",
                 "path":path.to_string_lossy(),"line":line,
                 "document":{"slot":doc.index(),"generation":doc.generation()},
                 "revision":revision.get(),
             })
         });
-        let Some(workdir) = workdir else {
-            self.send_git_failure(
-                ticket,
-                strop_core::worker::FailureKind::Unavailable,
-                "blame failed: not a git repo",
-                GitJob::Card,
-            );
-            return;
-        };
         let abs = if path.is_absolute() {
             path.clone()
         } else {
-            workdir.join(&path)
+            context.workdir().join(&path)
         };
-        let Ok(rel) = abs.strip_prefix(&workdir).map(|r| r.to_path_buf()) else {
+        let Some(rel) = context.repo.rel_of(&abs) else {
             self.send_git_failure(
                 ticket,
                 strop_core::worker::FailureKind::InvalidInput,
@@ -199,6 +232,66 @@ impl Editor {
             );
             return;
         };
+        self.launch_blame_line(ticket, context.repo, rel, line);
+    }
+
+    fn blame_line_remote(&mut self, file: strop_remote::RemoteFile) {
+        let Some(context) = self.git_context().cloned() else {
+            self.message = "not a git repo".into();
+            return;
+        };
+        if context.repo.endpoint() != Some(file.endpoint()) {
+            self.message = "buffer's repository is not the current context".into();
+            return;
+        }
+        if let Some(ticket) = self.card_request.take() {
+            self.cancel_git_worker(ticket.request, CancelReason::Superseded);
+        }
+        let doc = self.current();
+        let revision = self.buf().revision();
+        let line = self.buf().line_of(self.head()) + 1;
+        let Some(ticket) = self.git_ticket(CardKey {
+            origin: BlameKey {
+                document: doc,
+                revision,
+                file: crate::files::FileTarget::Remote(file.clone().into()),
+                repo: context.repo.clone(),
+            },
+            line,
+        }) else {
+            return;
+        };
+        self.card_request = Some(ticket.clone());
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"git","request":"blame_line",
+                "repository":"remote",
+                "path":file.path().to_string_lossy(),"line":line,
+                "document":{"slot":doc.index(),"generation":doc.generation()},
+                "revision":revision.get(),
+            })
+        });
+        let Some(rel) = context.repo.rel_of(file.path()) else {
+            self.send_git_failure(
+                ticket,
+                strop_core::worker::FailureKind::InvalidInput,
+                "blame failed: buffer not under the remote workdir",
+                GitJob::Card,
+            );
+            return;
+        };
+        self.launch_blame_line(ticket, context.repo, rel, line);
+    }
+
+    /// The card's one bounded run: `git blame --line-porcelain -L` on
+    /// whichever backend owns the repository.
+    fn launch_blame_line(
+        &mut self,
+        ticket: strop_core::worker::Ticket<CardKey>,
+        repo: strop_git::RepoTarget,
+        rel: PathBuf,
+        line: usize,
+    ) {
         let args = ticket.clone();
         self.launch_git_job(
             "git-blame-line",
@@ -210,7 +303,8 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                match strop_git::memory::blame_line(&workdir, &rel, line) {
+                let exec = strop_git::GitExec::for_target(&repo);
+                match strop_git::memory::blame_line(&exec, &cancel, &rel, line) {
                     Ok(card) => Outcome::Success(Box::new(card)),
                     Err(message) => Outcome::failed(strop_core::worker::FailureKind::Exit, message),
                 }

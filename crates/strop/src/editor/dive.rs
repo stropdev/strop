@@ -20,10 +20,7 @@ impl Editor {
     /// stale gutter falls back to the single-line card; with the gutter
     /// off, Enter stays inert in normal mode.
     pub(crate) fn dive_from_blame(&mut self) -> bool {
-        if self.buf().readonly || self.buf().path.is_none() {
-            return false;
-        }
-        let key = self.blame_key();
+        let key = self.current();
         match self.blame_gutters.get(&key) {
             None => false,
             Some(_) if self.blame_gutter_for(self.current()).is_some() => {
@@ -50,7 +47,10 @@ impl Editor {
 
     /// Enter on a surface line dives deeper (0001 pillar 3.2) — the
     /// native fetch (`git show --numstat`, the commit delta) runs on a
-    /// worker; the surface appears when its data lands (R6).
+    /// worker; the surface appears when its data lands (R6). The fetch
+    /// runs against the repository the *origin buffer* lives in: a
+    /// surface opened from a remote file dives on that endpoint, never
+    /// the local cwd (0036 RW8).
     pub(crate) fn dive(&mut self) {
         let doc = self.current();
         let line = self.buf().line_of(self.head());
@@ -73,14 +73,14 @@ impl Editor {
             }
             _ => return,
         };
-        let Some(context) = self.git.clone() else {
+        let Some(context) = self.git_context().cloned() else {
             self.message = "not a git repo".into();
             return;
         };
         self.message = "loading…".into();
         self.register_dive(DiveKey {
             document: doc,
-            workdir: context.workdir().to_path_buf(),
+            repo: context.repo.clone(),
             target,
         });
     }
@@ -88,7 +88,9 @@ impl Editor {
     /// `]f` / `[f`: next/previous file of the same commit (0011 §4).
     /// The delta fetch is a worker request; the surface rewrites in
     /// place when the data lands, superseding any earlier dive request
-    /// for the same surface.
+    /// for the same surface. Provenance comes from the delta's own
+    /// [`CommitFiles`] — the repository the commit was listed in, not
+    /// whatever buffer is currently active.
     pub(crate) fn commit_file_step(&mut self, forward: bool) {
         let Some(Surface::Diff {
             commit: Some(cf), ..
@@ -112,14 +114,10 @@ impl Editor {
             (cur + n - 1) % n
         };
         let file = cf.files[next].clone();
-        let Some(context) = self.git.clone() else {
-            self.message = "not a git repo".into();
-            return;
-        };
         self.message = format!("loading {}…", file.path.display());
         self.register_dive(DiveKey {
             document: self.current(),
-            workdir: context.workdir().to_path_buf(),
+            repo: cf.repo.clone(),
             target: DiveTarget::FileDelta {
                 sha: cf.sha.clone(),
                 path: file.path.clone(),
@@ -141,6 +139,7 @@ impl Editor {
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"git","request":"dive",
+                "repository":if ticket.key.repo.is_remote() { "remote" } else { "local" },
                 "document":{"slot":doc.index(),"generation":doc.generation()},
                 "target":match &ticket.key.target {
                     DiveTarget::CommitFiles { sha } => format!("files@{sha}"),
@@ -151,7 +150,7 @@ impl Editor {
             })
         });
         let args = (ticket.clone(),);
-        let workdir = ticket.key.workdir.clone();
+        let repo = ticket.key.repo.clone();
         let target = ticket.key.target.clone();
         self.launch_git_job(
             "git-dive",
@@ -165,30 +164,49 @@ impl Editor {
                 }
                 match &target {
                     DiveTarget::CommitFiles { sha } => {
-                        match strop_git::memory::show_stat(&workdir, sha) {
+                        // numstat is one bounded run on either backend
+                        let exec = strop_git::GitExec::for_target(&repo);
+                        match strop_git::memory::show_stat(&exec, &cancel, sha) {
                             Ok(files) => Outcome::Success(DiveData::Files(files)),
                             Err(message) => {
                                 Outcome::failed(strop_core::worker::FailureKind::Exit, message)
                             }
                         }
                     }
-                    DiveTarget::FileDelta { sha, path } => {
-                        let repo = match super::git_memory::repo_or_unavailable(&workdir) {
-                            Ok(repo) => repo,
-                            Err(failure) => {
-                                return Outcome::Failed {
-                                    failure,
-                                    partial: None,
+                    DiveTarget::FileDelta { sha, path } => match &repo {
+                        strop_git::RepoTarget::Local { .. } => {
+                            let native =
+                                match super::git_memory::repo_or_unavailable(repo.workdir()) {
+                                    Ok(native) => native,
+                                    Err(failure) => {
+                                        return Outcome::Failed {
+                                            failure,
+                                            partial: None,
+                                        }
+                                    }
+                                };
+                            match native.commit_file_diff(sha, path) {
+                                Ok(diff) => Outcome::Success(DiveData::Delta(diff)),
+                                Err(message) => {
+                                    Outcome::failed(strop_core::worker::FailureKind::Exit, message)
                                 }
                             }
-                        };
-                        match repo.commit_file_diff(sha, path) {
-                            Ok(diff) => Outcome::Success(DiveData::Delta(diff)),
-                            Err(message) => {
-                                Outcome::failed(strop_core::worker::FailureKind::Exit, message)
+                        }
+                        strop_git::RepoTarget::Remote { endpoint, workdir } => {
+                            match strop_git::remote::commit_file_diff(
+                                endpoint, workdir, sha, path, &cancel,
+                            ) {
+                                Ok(diff) => Outcome::Success(DiveData::Delta(diff)),
+                                Err(error) => Outcome::Failed {
+                                    failure: strop_core::worker::Failure::new(
+                                        strop_core::worker::FailureKind::Exit,
+                                        error.to_string(),
+                                    ),
+                                    partial: None,
+                                },
                             }
                         }
-                    }
+                    },
                 }
             },
         );

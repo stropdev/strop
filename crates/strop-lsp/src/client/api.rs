@@ -1,8 +1,8 @@
 //! Request admission and the common launcher. Every admitted request
 //! ends in exactly one terminal event (R9) — success, empty, error or
 //! cancellation — carrying its ORIGINAL stamp and negotiated encoding
-//! (R1); nothing is silently dropped on an `Err`/`None` branch.
-use async_lsp::lsp_types as lt;
+use crate::protocol::*;
+use crate::target::DocPath;
 use strop_core::id::LineIndex;
 
 use super::queue::{WireEnv, WireJob, RETRY_DELAY};
@@ -10,7 +10,7 @@ use super::sync;
 use super::wire::{self, is_content_modified};
 use super::{Client, SwitchSourceHeader};
 use crate::convert::hover_text;
-use crate::protocol::*;
+use async_lsp::lsp_types as lt;
 
 impl Client {
     /// Admit a request against the current open state without sending
@@ -85,7 +85,7 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
             format!("{} is not supported by this language server", kind.label()),
         );
     }
-    let Some(uri) = uri_for(&env.root, &request.input.path) else {
+    let Some(uri) = env.workspace.uri(&request.input.path) else {
         return note(
             env,
             context,
@@ -122,17 +122,6 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
             RequestKind::SwitchHeader => switch_header(env, tdp, context).await,
         }
     });
-}
-
-/// Map a buffer path onto a file URI, anchoring relative paths at the
-/// workspace root.
-fn uri_for(root: &std::path::Path, path: &std::path::Path) -> Option<lt::Url> {
-    let abs = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        root.join(path)
-    };
-    lt::Url::from_file_path(abs).ok()
 }
 
 fn note(env: &WireEnv, context: ReplyContext, text: String) {
@@ -212,14 +201,17 @@ async fn goto(
     }
     match response {
         Ok(Some(response)) => match wire::first_location(response) {
-            Some(location) => match wire::to_server_location(location) {
+            Some(location) => match wire::to_server_location(location, &env.workspace) {
                 Ok(location) => {
                     let _ = env.tx.send(LspEvent::GotoLocation { context, location });
                 }
                 Err(uri) => note(
                     &env,
                     context,
-                    format!("definition target is not a local file: {uri}"),
+                    format!(
+                        "definition target is not a file on {}: {uri}",
+                        env.workspace.label()
+                    ),
                 ),
             },
             None => note(&env, context, "no definition found".into()),
@@ -235,10 +227,13 @@ async fn switch_header(env: WireEnv, tdp: lt::TextDocumentPositionParams, contex
         .request::<SwitchSourceHeader>(tdp.text_document)
         .await
     {
-        Ok(Some(uri)) => match uri.to_file_path() {
-            Ok(path) => {
+        Ok(Some(uri)) => match env.workspace.decode(&uri) {
+            Some(path) => {
                 let location = ServerLocation {
-                    path,
+                    doc: DocPath {
+                        target: env.workspace.target(),
+                        path,
+                    },
                     position: ServerPosition {
                         line: LineIndex::new(0),
                         column: ServerColumn::new(0),
@@ -246,10 +241,13 @@ async fn switch_header(env: WireEnv, tdp: lt::TextDocumentPositionParams, contex
                 };
                 let _ = env.tx.send(LspEvent::GotoLocation { context, location });
             }
-            Err(()) => note(
+            None => note(
                 &env,
                 context,
-                format!("header/source counterpart is not a local file: {uri}"),
+                format!(
+                    "header/source counterpart is not a file on {}: {uri}",
+                    env.workspace.label()
+                ),
             ),
         },
         Ok(None) => note(&env, context, "no header/source counterpart".into()),

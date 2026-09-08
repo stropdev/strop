@@ -355,8 +355,8 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         } else {
             Vec::new()
         };
-        match diff::diff_row(surface, line_idx) {
-            Some(diff::DiffRow::Stats | diff::DiffRow::HunkHeader(_)) => {
+        match surface.and_then(|surface| surface.diff_row(line_idx)) {
+            Some(crate::editor::DiffRow::Stats | crate::editor::DiffRow::HunkHeader(_)) => {
                 // structural text uses the SAME fixed inset its caret
                 // would; the band is row background, the text scrolls
                 left.push(Span::raw(" ".repeat(number_width)));
@@ -364,7 +364,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                 style.row_bg = decorated.style.bg;
                 style.decorations = decorated.spans;
             }
-            Some(diff::DiffRow::Line(dl)) => {
+            Some(crate::editor::DiffRow::Line(dl)) => {
                 left.extend(diff::diff_gutter(
                     dl,
                     line_idx == cur_line,

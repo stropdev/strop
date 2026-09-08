@@ -75,6 +75,15 @@ impl super::Editor {
     /// Core records geometry BEFORE mutation; no post-edit reconstruction or
     /// cloning deleted text to reconstruct syntax/anchor effects.
     pub(super) fn sync_document(&mut self, id: DocumentId, map_active: bool) {
+        self.sync_document_positions(id, map_active, map_position);
+    }
+
+    fn sync_document_positions(
+        &mut self,
+        id: DocumentId,
+        map_active: bool,
+        position: impl Fn(usize, &Change) -> usize,
+    ) {
         let Some(document) = self.docs.get_mut(id) else {
             return;
         };
@@ -83,7 +92,7 @@ impl super::Editor {
         }
         let active = self.active_pane;
         for change in document.buf.changes() {
-            let map = |position| map_position(position, change);
+            let map = |offset| position(offset, change);
             for (owner, position) in self.marks.values_mut() {
                 if *owner == id {
                     *position = map(*position);

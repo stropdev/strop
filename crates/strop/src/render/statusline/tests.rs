@@ -87,7 +87,9 @@ fn wide_and_control_labels_stay_printable_whole_graphemes() {
 fn narrow_rows_keep_the_mode_accent_and_position() {
     let mut editor = editor("hello\n", Some("/w/longfilename.rs"));
     editor.git = Some(GitContext {
-        workdir: "/w".into(),
+        repo: strop_git::RepoTarget::Local {
+            workdir: "/w".into(),
+        },
         head_sha: None,
         head_branch: Some("main".into()),
         remotes: Vec::new(),
@@ -124,7 +126,9 @@ fn git_marks_and_flags_render_quietly_beside_the_message() {
     editor.buf_mut().dirty = true;
     editor.buf_mut().readonly = true;
     editor.git = Some(GitContext {
-        workdir: "/w".into(),
+        repo: strop_git::RepoTarget::Local {
+            workdir: "/w".into(),
+        },
         head_sha: Some("abc123".into()),
         head_branch: Some("main".into()),
         remotes: Vec::new(),
@@ -151,7 +155,9 @@ fn git_marks_and_flags_render_quietly_beside_the_message() {
 fn historical_delta_names_its_revision_and_file_not_the_worktree() {
     let mut editor = editor("a\n", Some("/w/live.rs"));
     editor.git = Some(GitContext {
-        workdir: "/w".into(),
+        repo: strop_git::RepoTarget::Local {
+            workdir: "/w".into(),
+        },
         head_sha: None,
         head_branch: Some("main".into()),
         remotes: Vec::new(),
@@ -162,6 +168,9 @@ fn historical_delta_names_its_revision_and_file_not_the_worktree() {
         Vec::new(),
         None,
         Some(crate::editor::CommitFiles {
+            repo: strop_git::RepoTarget::Local {
+                workdir: "/w".into(),
+            },
             sha: "abcdef1234567890".into(),
             files: vec![strop_git::memory::ChangedFile {
                 path: "src/reader.rs".into(),

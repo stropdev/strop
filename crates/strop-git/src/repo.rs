@@ -3,7 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
+use strop_remote::RemoteEndpoint;
+
 use crate::diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin};
+use crate::target::RepoTarget;
 
 /// Why a repository operation failed — typed, not a string and not an
 /// empty Vec standing in for "something went wrong" (R9).
@@ -30,10 +33,13 @@ impl std::fmt::Display for GitError {
 /// while every native read runs on a worker. Equality is meaningful:
 /// an unchanged context (same HEAD, branch, remotes) means cached
 /// diffs stay valid.
+///
+/// `repo` is the typed machine boundary (0036 RW8): a local workdir
+/// or a remote endpoint's workdir. A remote context is never a valid
+/// libgit2 input — callers that need the local repository must match.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GitContext {
-    #[serde(with = "strop_core::path_serde")]
-    pub workdir: PathBuf,
+    pub repo: RepoTarget,
     pub head_sha: Option<String>,
     pub head_branch: Option<String>,
     /// (name, url) pairs; permalink selection is a pure fold over them.
@@ -41,10 +47,22 @@ pub struct GitContext {
 }
 
 impl GitContext {
-    /// Call-shape compatibility with `Repo::workdir` — readers that
-    /// only need the repository root work against either.
+    /// The repository root — a remote path for remote repositories,
+    /// valid only on `endpoint()`.
     pub fn workdir(&self) -> &Path {
-        &self.workdir
+        self.repo.workdir()
+    }
+
+    /// The host whose filesystem this repository lives on, if remote.
+    pub fn endpoint(&self) -> Option<&RemoteEndpoint> {
+        self.repo.endpoint()
+    }
+
+    /// True when this context describes a repository on another
+    /// machine: every mutating verb must refuse (RW4), and no local
+    /// git call may run against it.
+    pub fn is_remote(&self) -> bool {
+        self.repo.is_remote()
     }
 }
 
@@ -108,7 +126,9 @@ impl Repo {
     /// zero native work. An equal context means nothing changed.
     pub fn context(&self) -> GitContext {
         GitContext {
-            workdir: self.workdir.clone(),
+            repo: RepoTarget::Local {
+                workdir: self.workdir.clone(),
+            },
             head_sha: self.head_sha(),
             head_branch: self.head_branch(),
             remotes: self.remotes(),
@@ -323,23 +343,10 @@ impl Repo {
             let Some(patch) = git2::Patch::from_diff(&diff, d).map_err(|e| e.to_string())? else {
                 continue; // binary or unrenderable: nothing to show
             };
-            let hunks = hunks_from_patch(&patch);
-            let added = hunks
-                .iter()
-                .flat_map(|h| &h.lines)
-                .filter(|l| l.origin == LineOrigin::Addition)
-                .count();
-            let deleted = hunks
-                .iter()
-                .flat_map(|h| &h.lines)
-                .filter(|l| l.origin == LineOrigin::Deletion)
-                .count();
-            file = Some(FileDiff {
-                path: path.to_path_buf(),
-                hunks,
-                added,
-                deleted,
-            });
+            file = Some(FileDiff::from_hunks(
+                path.to_path_buf(),
+                hunks_from_patch(&patch),
+            ));
         }
         file.ok_or_else(|| "no diff for path".to_string())
     }
@@ -447,6 +454,70 @@ fn all_add_hunk(content: &str) -> Vec<Hunk> {
             })
             .collect(),
     }]
+}
+
+/// The gutter's typed hunk sets from the three content states — the
+/// shared semantics both backends feed (local libgit2 reads here,
+/// bounded remote blob fetches in `remote::gutter`): unstaged =
+/// index (or HEAD, or nothing staged)↔live text, staged = HEAD↔index,
+/// untracked = neither the index nor HEAD knows the path. Absent
+/// states are honest `None`s and behave exactly like the `Repo`
+/// methods local buffers use.
+pub(crate) fn gutter_from_contents(
+    head: Option<&str>,
+    index: Option<&str>,
+    text: &str,
+    rel: &Path,
+) -> Result<(Vec<Hunk>, Vec<Hunk>, bool), GitError> {
+    let staged = match index {
+        Some(index) => hunks_from_strings(head.unwrap_or_default(), index, rel)?,
+        None => Vec::new(),
+    };
+    let unstaged = match index.or(head) {
+        Some(base) => hunks_from_strings(base, text, rel)?,
+        None => all_add_hunk(text),
+    };
+    let untracked = index.is_none() && head.is_none();
+    Ok((unstaged, staged, untracked))
+}
+
+/// Typed hunks between two content strings (libgit2 diffs buffers in
+/// memory; no repository handle needed).
+fn hunks_from_strings(old: &str, new: &str, rel: &Path) -> Result<Vec<Hunk>, GitError> {
+    let mut opts = git2::DiffOptions::new();
+    opts.context_lines(3);
+    let patch = git2::Patch::from_buffers(
+        old.as_bytes(),
+        Some(rel),
+        new.as_bytes(),
+        Some(rel),
+        Some(&mut opts),
+    )
+    .map_err(|e| GitError::Native(format!("diff {rel:?}: {e}")))?;
+    Ok(hunks_from_patch(&patch))
+}
+
+/// Typed hunks between two blob byte slices — the shared delta
+/// builder for the commit view: the local path diffs trees, the
+/// remote path fetches the two blobs, and both end here. `old = None`
+/// is the empty side (a root commit's delta). Bytes stay bytes:
+/// non-UTF-8 content diffs as content, like the local tree path.
+pub(crate) fn hunks_from_buffers(
+    old: Option<&[u8]>,
+    new: &[u8],
+    rel: &Path,
+) -> Result<Vec<Hunk>, GitError> {
+    let mut opts = git2::DiffOptions::new();
+    opts.context_lines(3);
+    let patch = git2::Patch::from_buffers(
+        old.unwrap_or(&[]),
+        Some(rel),
+        new,
+        Some(rel),
+        Some(&mut opts),
+    )
+    .map_err(|e| GitError::Native(format!("diff {rel:?}: {e}")))?;
+    Ok(hunks_from_patch(&patch))
 }
 
 /// Byte-precise line split: (content-without-terminator, had-newline)

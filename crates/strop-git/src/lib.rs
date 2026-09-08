@@ -1,10 +1,20 @@
 //! strop-git: the working surface (0001 pillar 3.1). libgit2 for the hot
 //! paths — no process spawn per keystroke. HEAD vs the *live buffer*
 //! (not the disk file), so gutter signs track unsaved edits.
+//!
+//! Two backends share one typed model (0036 RW8): the local libgit2
+//! repository ([`Repo`]) and the read-oriented remote backend
+//! ([`remote`]) — bounded `git` commands against a worktree that
+//! exists only on an [`strop_remote::RemoteEndpoint`]. [`RepoTarget`]
+//! is the boundary that keeps a remote workdir from ever reaching a
+//! local Git call.
 
+pub mod exec;
 pub mod memory;
 pub mod permalink;
+pub mod remote;
 pub mod ssh;
+pub mod target;
 
 mod diff;
 mod numstat;
@@ -12,8 +22,10 @@ mod repo;
 mod revision;
 
 pub use diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin, Sign};
+pub use exec::{GitExec, GitExecError, GitRun};
 pub use repo::{GitContext, GitError, Repo};
 pub use revision::{GitRevision, SourceLocation};
+pub use target::RepoTarget;
 
 #[cfg(test)]
 mod tests {
@@ -285,7 +297,12 @@ mod tests {
         // context snapshot: head_sha absent until the first commit
         let ctx = repo.context();
         assert_eq!(ctx.head_sha, None);
-        assert_eq!(ctx.workdir, root.to_path_buf());
+        assert_eq!(
+            ctx.repo,
+            RepoTarget::Local {
+                workdir: root.to_path_buf()
+            }
+        );
     }
 
     /// The pure context round-trips through serde (replay tapes carry
@@ -297,11 +314,45 @@ mod tests {
         let wire = serde_json::to_string(&ctx).unwrap();
         assert_eq!(serde_json::from_str::<GitContext>(&wire).unwrap(), ctx);
         assert!(ctx.head_sha.is_some());
+        assert_eq!(ctx.repo.workdir(), d.path());
         // a new commit changes HEAD: the context is no longer equal —
         // cached diffs built against it are stale
         std::fs::write(d.path().join("f.rs"), "fn a() {}\nfn z() {}\n").unwrap();
         git(d.path(), &["commit", "-qam", "z"]);
         let repo2 = Repo::discover(d.path()).unwrap();
         assert_ne!(repo2.context(), ctx);
+    }
+
+    /// The shared gutter semantics (0036 RW8): `gutter_from_contents`
+    /// — what the remote backend feeds from fetched HEAD/index blobs —
+    /// returns exactly what the local `Repo` methods compute for the
+    /// same three states: staged set, unstaged set and the untracked
+    /// flag agree, and an untracked file is one all-add hunk.
+    #[test]
+    fn gutter_from_contents_matches_repo_semantics() {
+        let (d, repo, path) = fixture();
+        // stage an edit, then edit again: both edges exist
+        std::fs::write(&path, "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n").unwrap();
+        git(d.path(), &["add", "."]);
+        let text = "fn a() {}\nfn b() {}\nfn c() {}\nfn e() {}\n";
+        std::fs::write(&path, text).unwrap();
+        let rel = path.strip_prefix(d.path()).unwrap();
+        let head = repo.head_content(&path).unwrap();
+        let index = repo.index_content(&path).unwrap();
+        let (unstaged, staged, untracked) =
+            crate::repo::gutter_from_contents(Some(head.as_str()), Some(index.as_str()), text, rel)
+                .unwrap();
+        assert_eq!(unstaged, repo.unstaged_hunks(&path, text).unwrap());
+        assert_eq!(staged, repo.staged_hunks(&path).unwrap());
+        assert!(!untracked);
+        assert!(!repo.is_untracked(&path).unwrap());
+
+        // untracked file: one all-add hunk, no staged set
+        let (unstaged, staged, untracked) =
+            crate::repo::gutter_from_contents(None, None, "x\n", Path::new("new.rs")).unwrap();
+        assert!(untracked);
+        assert!(staged.is_empty());
+        assert_eq!(unstaged.len(), 1);
+        assert_eq!(unstaged[0].kind, HunkKind::Add);
     }
 }

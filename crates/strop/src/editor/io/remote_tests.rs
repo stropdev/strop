@@ -24,7 +24,19 @@ fn deliver(editor: &mut Editor, ticket: Ticket<OpenKey>, text: &str) {
         panic!("remote ticket")
     };
     let result = Opened {
-        document: Document::remote(Buffer::from_text(text), file.clone()),
+        document: Document::remote(
+            Buffer::from_text(text),
+            crate::editor::document::RemoteDocument {
+                file: file.absolute_file().unwrap().clone(),
+                window: strop_remote::RemoteWindow::resolve(
+                    &ticket.key.selection,
+                    strop_remote::RemoteSize::new(text.len() as u64),
+                ),
+                selection: ticket.key.selection,
+                connection: None,
+                return_to: None,
+            },
+        ),
         canonical: ticket.key.path.clone(),
     };
     editor.handle_io(IoEvent::Open(Box::new(Completion {
@@ -112,15 +124,10 @@ fn refresh_preserves_split_positions_and_failure_keeps_old_text() {
     assert_eq!(editor.buf().text(), "first\nneedle\nlast\n");
     editor.feed_text(":e!<cr>");
     let refresh = ticket(&editor);
-    let old = editor.current();
     deliver(
         &mut editor,
         refresh,
         "new first\nneedle changed\nnew last\nmore\n",
-    );
-    assert!(
-        editor.docs.get(old).is_none(),
-        "old generation cannot own later deliveries"
     );
     assert_eq!(editor.buf().line_of(editor.head()), 2);
     assert_eq!(editor.buf().line_of(editor.panes[0].sels.primary().head), 1);

@@ -18,6 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Protocol release gate
+        run: docker compose run --build --rm model
+
   # Per plan 0002 §1: musl-static linux via docker (rust:alpine is
   # multi-arch — no cross config), native macOS on the arm runner.
   build:
@@ -102,7 +109,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: build
+    needs: [build, protocol]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

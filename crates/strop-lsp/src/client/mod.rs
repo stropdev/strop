@@ -2,12 +2,14 @@
 //! lifecycle, ordered wire queue and wire helpers.
 use crate::caps::ServerCaps;
 use crate::protocol::{LspEvent, ServerId};
+use crate::target::Workspace;
 use async_lsp::lsp_types::Url;
 use async_lsp::ServerSocket;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc::Sender;
 
 mod api;
+mod process;
 mod queue;
 mod spawn;
 mod sync;
@@ -30,7 +32,9 @@ pub struct Client {
     socket: ServerSocket,
     handle: tokio::runtime::Handle,
     tx: Sender<LspEvent>,
-    root: PathBuf,
+    /// Where this server runs and which filesystem its paths name:
+    /// local disk or one remote endpoint (0036 RW8).
+    workspace: Workspace,
     caps: ServerCaps,
     /// A server exit after shutdown is not a crash.
     quitting: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -39,6 +43,21 @@ pub struct Client {
     thread: std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
     /// The ordered wire queue (R6): admission order == wire order.
     queue: queue::WireTx,
+    stop: std::sync::Arc<ServiceStop>,
+}
+
+struct ServiceStop(parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>);
+impl ServiceStop {
+    fn halt(&self) {
+        if let Some(signal) = self.0.lock().take() {
+            let _ = signal.send(());
+        }
+    }
+}
+impl Drop for ServiceStop {
+    fn drop(&mut self) {
+        self.halt();
+    }
 }
 
 /// clangd's proprietary extension, absent from lsp-types.
@@ -56,19 +75,28 @@ impl Client {
 
     /// The LSP exit sequence: shutdown request, then exit notification.
     pub fn shutdown(&self) {
-        self.quitting
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        if self
+            .quitting
+            .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
         let sock = self.socket.clone();
+        let stop = self.stop.clone();
         self.handle.spawn(async move {
-            let _ = sock
-                .request::<async_lsp::lsp_types::request::Shutdown>(())
-                .await;
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                sock.request::<async_lsp::lsp_types::request::Shutdown>(()),
+            )
+            .await;
             let _ = sock.notify::<async_lsp::lsp_types::notification::Exit>(());
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            stop.halt();
         });
     }
 
-    /// Join after shutdown. On timeout deliberately leak the handle rather
-    /// than dropping a live socket and panicking in the terminal.
+    /// Join once after shutdown. A timeout revokes the native mainloop; the
+    /// process owner completes asynchronous group cleanup without leaking clients.
     pub fn wait(self, timeout: std::time::Duration) {
         let handle = self.thread.lock().ok().and_then(|mut t| t.take());
         let Some(handle) = handle else { return };
@@ -78,16 +106,16 @@ impl Client {
             let _ = tx.send(());
         });
         if rx.recv_timeout(timeout).is_err() {
-            std::mem::forget(self);
+            self.stop.halt();
         }
     }
 
     fn uri(&self, path: &Path) -> Option<Url> {
-        let abs = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            self.root.join(path)
-        };
-        Url::from_file_path(abs).ok()
+        self.workspace.uri(path)
+    }
+
+    /// Where this server runs: local root or remote endpoint+root.
+    pub fn workspace(&self) -> &Workspace {
+        &self.workspace
     }
 }

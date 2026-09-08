@@ -30,6 +30,22 @@ impl Editor {
             }
             Payload::File(path) => (path, None),
             Payload::Grep { path, line, .. } => (path, Some(line)),
+            // A remote hit never previews from the local disk: the
+            // analogous path is another machine's file (0036). The
+            // endpoint-labelled title says where it lives; accepting
+            // opens it remotely.
+            Payload::Remote {
+                endpoint,
+                path,
+                line,
+                ..
+            } => {
+                return Some((
+                    format!("{endpoint}{}", path.display()),
+                    Some(line),
+                    PreviewSource::Failed("remote hit — accept to open".into()),
+                ));
+            }
         };
         let full = self.cwd.join(&path);
         let title = path.display().to_string();

@@ -281,10 +281,10 @@ fn permalink_ssh_alias_resolves_on_io_worker() {
     let tickets = e.io.native_tickets();
     assert_eq!(tickets.len(), 1, "one ssh -G evaluation in flight");
     let sha = git_out(&root, &["rev-parse", "HEAD"]);
-    e.handle_io(IoEvent::Native(Completion {
+    e.handle_io(IoEvent::Native(Box::new(Completion {
         ticket: tickets.into_iter().next().unwrap(),
         outcome: Outcome::Success(NativeResult::SshHost("bbgithub.dev.bloomberg.com".into())),
-    }));
+    })));
     let expected = format!("https://bbgithub.dev.bloomberg.com/acme/demo/blob/{sha}/f.rs#L2");
     assert_eq!(e.register(None).text, expected);
     assert_eq!(e.osc52.as_deref(), Some(expected.as_str()));
@@ -304,13 +304,13 @@ fn permalink_alias_failure_publishes_nothing() {
     suppress_native(&mut e);
     e.yank_permalink();
     let ticket = e.io.native_tickets().pop().unwrap();
-    e.handle_io(IoEvent::Native(Completion {
+    e.handle_io(IoEvent::Native(Box::new(Completion {
         ticket,
         outcome: Outcome::failed(
             FailureKind::Exit,
             "ssh alias \"bbgithub\": cannot run ssh: not found",
         ),
-    }));
+    })));
     assert!(e.message.contains("bbgithub"), "{}", e.message);
     assert!(e.message.contains("ssh"), "{}", e.message);
     assert!(e.register(None).text.is_empty(), "no guessed URL is copied");
@@ -330,10 +330,10 @@ fn permalink_alias_open_waits_for_resolution() {
     suppress_native(&mut e);
     e.open_permalink();
     let ticket = e.io.native_tickets().pop().unwrap();
-    e.handle_io(IoEvent::Native(Completion {
+    e.handle_io(IoEvent::Native(Box::new(Completion {
         ticket,
         outcome: Outcome::Success(NativeResult::SshHost("bbgithub.dev.bloomberg.com".into())),
-    }));
+    })));
     assert!(
         e.io.native_tickets()
             .iter()
@@ -521,8 +521,8 @@ fn stale_log_results_are_dropped() {
 /// entry is the toggle, not the job (0011 §2).
 #[test]
 fn gutter_result_dropped_after_toggle_off() {
-    let (dir, mut e) = fixture();
-    let key = dir.path().join("f.rs").canonicalize().unwrap();
+    let (_dir, mut e) = fixture();
+    let key = e.current();
     settle(&mut e, |e| e.git.is_some());
     e.feed_text(" gb"); // on (job in flight)
     let ticket = e

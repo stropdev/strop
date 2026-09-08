@@ -239,8 +239,13 @@ fn diagnostic_jumps_wrap() {
         severity: strop_lsp::Severity::Error,
         message: msg.into(),
     };
-    e.diags
-        .insert(p.clone(), vec![mk(1, "second"), mk(3, "fourth")]);
+    e.diags.insert(
+        e.current(),
+        crate::editor::DocumentDiagnostics {
+            revision: e.buf().revision(),
+            items: vec![mk(1, "second"), mk(3, "fourth")],
+        },
+    );
     e.feed_text("]d");
     assert_eq!(e.buf().line_of(e.head()), 1);
     e.feed_text("]d");

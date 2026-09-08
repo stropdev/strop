@@ -7,29 +7,33 @@
 
 mod jobs;
 mod types;
+pub(crate) use jobs::{git_failure, repo_or_unavailable};
+pub use types::GitJob;
+pub(crate) use types::{
+    BlameKey, CardKey, ContextKey, DiveData, DiveKey, DiveTarget, GitMutation, HunkData, HunkKey,
+    LogKey, MutationKey, MutationKind, MutationOp,
+};
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{CancelReason, FailureKind, Outcome, Ticket};
+use strop_git::exec::GitExec;
 use strop_git::memory::{self, BlameLine};
-use strop_git::{Hunk, LineOrigin};
+use strop_git::{Hunk, LineOrigin, RepoTarget};
 
 use super::document::{ReturnPoint, Surface};
 use super::{trace, Editor, Key};
-
-pub(crate) use jobs::{git_failure, repo_or_unavailable};
-pub use types::{
-    BlameKey, CardKey, ContextKey, DiveData, DiveKey, DiveTarget, GitJob, GitMutation, HunkData,
-    HunkKey, LogKey, MutationKey, MutationKind, MutationOp,
-};
-
 /// The commit a Diff surface's file belongs to, with the commit's full
 /// changed-file list — the sidebar's data (typed numstat rows, the same
-/// ones the changed-files surface renders from; 0011 §4).
+/// ones the changed-files surface renders from; 0011 §4). `repo` is
+/// the provenance the whole delta chain replays: `]f` steps and dives
+/// from this surface run against that repository — remote surfaces
+/// never answer from the local cwd (0036 RW8).
 #[derive(Debug, Clone)]
 pub struct CommitFiles {
+    pub repo: RepoTarget,
     pub sha: String,
     pub files: Vec<memory::ChangedFile>,
     /// Selected file identity; display labels are not reversible native paths.
@@ -70,6 +74,10 @@ impl Editor {
     }
     // ---- surface lifecycle --------------------------------------------
     pub(crate) fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
+        let Some(context) = self.git_context().cloned() else {
+            self.message = "not a git repository".into();
+            return;
+        };
         // rebind-after-insert happens in Document::surface insertion
         // below — dropping before the new id exists strands panes
 
@@ -87,7 +95,9 @@ impl Editor {
         buf.name = name.map(|n| n.to_string());
         // surfaces render via delta/plain rules: no tree-sitter;
         // readonly derives from the source (0021 §4)
-        let id = self.docs.insert(super::Document::surface(buf, surface));
+        let id = self
+            .docs
+            .insert(super::Document::surface(buf, surface, context));
         self.drop_stale_scratch(id);
         self.push_jump(); // opening a surface is a jumplist entry
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
@@ -168,20 +178,22 @@ impl Editor {
         focus: Option<String>,
         range: Option<(usize, usize)>,
     ) {
-        let Some(context) = self.git.clone() else {
+        let Some(context) = self.git_context().cloned() else {
             self.message = "not a git repo".into();
             return;
         };
-        let workdir = context.workdir().to_path_buf();
+        // `git log -L` speaks file line numbers: a partial remote
+        // window's lines are window-relative, and pretending they are
+        // file coordinates would show the history of the WRONG lines
+        // (0036: partial windows never masquerade as full-file Git
+        // inputs).
+        if range.is_some() && self.remote_file().is_some() && !self.remote_window_complete() {
+            self.message = "partial remote snapshot — line history needs a full window".into();
+            return;
+        }
+        let repo = context.repo.clone();
         let file = if file_scoped {
-            self.buf().path.as_deref().and_then(|p| {
-                let abs = if Path::new(p).is_absolute() {
-                    PathBuf::from(p)
-                } else {
-                    workdir.join(p)
-                };
-                abs.strip_prefix(&workdir).ok().map(|r| r.to_path_buf())
-            })
+            self.current_buffer_rel(&repo)
         } else {
             None
         };
@@ -206,6 +218,7 @@ impl Editor {
         let key = LogKey {
             document: doc,
             revision: self.buf().revision(),
+            repo: repo.clone(),
         };
         let Some(ticket) = self.git_ticket(key) else {
             return;
@@ -215,6 +228,7 @@ impl Editor {
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"git","request":"log",
+                "target":if repo.is_remote() { "remote" } else { "local" },
                 "document":{"slot":doc.index(),"generation":doc.generation()},
                 "revision":revision,
                 "path":file.as_ref().map(|p|p.to_string_lossy()),
@@ -222,7 +236,6 @@ impl Editor {
         });
         let args = (
             ticket.clone(),
-            trace::services::NativePath(workdir.clone()),
             file.clone().map(trace::services::NativePath),
             range,
         );
@@ -236,7 +249,8 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                match memory::log_graph_range(&workdir, 200, file.as_deref(), range) {
+                let exec = GitExec::for_target(&repo);
+                match memory::log_graph_range(&exec, &cancel, 200, file.as_deref(), range) {
                     Ok(rows) => Outcome::Success(rows),
                     Err(message) => Outcome::failed(FailureKind::Exit, message),
                 }
@@ -253,6 +267,8 @@ impl Editor {
     /// multi-key sequences behave exactly as in normal mode.
     pub(crate) fn feed_readonly(&mut self, key: Key) {
         if key == Key::Esc {
+            self.stop_remote_follow(self.current());
+            self.cancel_remote_filter(self.current());
             self.walker.clear();
             return;
         }
@@ -273,6 +289,9 @@ impl Editor {
         }
         if !self.walker.is_ground() {
             return self.feed_command(key);
+        }
+        if self.remote_directory_key(key) {
+            return;
         }
         match key {
             Key::Char('q') => self.close_surface(),
@@ -387,6 +406,34 @@ impl Editor {
     /// Table shim (0008 stage 2).
     pub(crate) fn open_log_pub(&mut self, file_scoped: bool) {
         self.open_log(file_scoped);
+    }
+}
+
+impl Editor {
+    /// The current buffer's repo-relative path for `repo` — a local
+    /// buffer's path or a remote buffer's remote-file path, stripped
+    /// by the repository that owns it. A buffer never borrows another
+    /// machine's spelling: a remote file only resolves under its own
+    /// endpoint's repository, a local file only under a local one.
+    pub(crate) fn current_buffer_rel(&self, repo: &RepoTarget) -> Option<PathBuf> {
+        match &self.cur().source {
+            super::document::DocumentSource::Remote(file) => match repo {
+                RepoTarget::Remote { endpoint, .. } if endpoint == file.file.endpoint() => {
+                    repo.rel_of(file.file.path())
+                }
+                _ => None,
+            },
+            super::document::DocumentSource::File => {
+                let path = self.cur().buf.path.as_deref()?;
+                let abs = if Path::new(path).is_absolute() {
+                    PathBuf::from(path)
+                } else {
+                    repo.workdir().join(path)
+                };
+                repo.rel_of(&abs)
+            }
+            _ => None,
+        }
     }
 }
 

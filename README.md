@@ -62,27 +62,69 @@ The modeline keeps filenames, live status and position legible at narrow widths.
 Git history uses quieter metadata, clear file hierarchy and native-path-safe
 navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
 
-## SSH log buffers
+## Read-only SSH workspaces
 
 ```sh
 strop +120 ssh://user@devbox/var/log/app.log
+strop --tail 65536 ssh://devbox/var/log/app.log
+strop --range 1048576:65536 ssh://devbox/var/log/app.log
+strop --follow ssh://devbox/var/log/app.log
+strop ssh://devbox/~/project/src/lib.rs
 ```
 
-Open the same URI with `:e` or `:view`. It becomes a real read-only buffer:
-normal motions, `/`/`?`, visual selection, yank and splits work unchanged.
-Escape cancels an in-flight open; `:e!` refreshes the current remote snapshot.
-OpenSSH supplies your aliases, keys, agent and ProxyJump configuration. Host keys
-must already be trusted; authentication is noninteractive. Paths are absolute;
-percent-encode reserved bytes (`%20`, `%23`, `%25`). Native Unix filename bytes
-stay intact. Snapshots are bounded to 256 MiB and must be valid UTF-8 text.
+These are real read-only buffers: motions, `/`/`?`, visual selection, yank and
+splits work unchanged. Escape cancels an open or stops following; `:e!` refreshes
+the snapshot. Follow sticks to EOF only while you stay there. Shrink, replacement
+and changed overlap produce a visible reset; size/mtime alone are not file identity.
+The modeline identifies partial byte windows, whose line numbers are window-relative.
 
-The standalone `strop-remote` crate owns transport/identity; editor glue owns views
-and replay. No local LSP/Git service attaches to a remote snapshot. See the
-[SSH contract and model evidence](plans/0034-ssh-log-buffers.md),
-[full remote workflow roadmap](plans/0035-remote-workflow-roadmap.md), and
+Inside strop:
+
+```vim
+:tail 65536 ssh://devbox/var/log/app.log
+:range 1048576 65536 ssh://devbox/var/log/app.log
+:follow
+:unfollow
+:browse ssh://devbox/var/log/
+:filter app
+:remote connect ssh://devbox
+:remote list
+:remote disconnect ssh://devbox
+:remote clear
+```
+
+Directory listings are searchable real buffers. Enter opens an entry; `../` returns
+to the parent; `:filter` narrows the listing, and an empty filter restores it.
+Tab completes SSH hosts and paths without starting authentication: remote candidates
+need a live authorized connection or cached data. Connections are shared by endpoint
+and held by documents or explicit `:remote connect` pins; clear/disconnect retires
+them without touching external SSH masters.
+
+Full-file snapshots support remote LSP diagnostics, hover, definition/references and
+source/header navigation, plus Git context, staged/unstaged diffs, log, blame and
+commit/file navigation. Services run **on the remote host**, never against a local
+lookalike path. Project-command trust is scoped to the endpoint and remote root
+(`:trust`). Partial windows and following refuse full-document language services;
+remote writes, Git mutations and shell/filter commands remain unsupported.
+
+OpenSSH supplies aliases, keys, agent and ProxyJump configuration. Host keys must
+already be trusted; authentication is noninteractive. Percent-encode reserved path
+bytes (`%20`, `%23`, `%25`); native Unix filenames stay intact. Reads are bounded to
+256 MiB of UTF-8 text; range/tail edges exclude incomplete UTF-8 characters. Home
+expansion requires the server's `expand-path@openssh.com` extension.
+
+SFTP reading needs no remote shell or daemon setup. Remote Git/LSP additionally need
+a POSIX execution environment, `python3`, and Git/the selected language server.
+Owned process groups are cleaned up when the server observes lease loss; network
+partitions delay detection, descendants creating new sessions can escape the group,
+and a killed supervisor cannot guarantee cleanup. Remote content is not persisted
+or automatically restored.
+
+The standalone `strop-remote` crate owns transport and execution; editor glue owns
+views and replay. See the [workspace contract](plans/0036-remote-workspace-execution.md),
+[protocol evidence](plans/0034-ssh-log-buffers.md),
+[prioritized remote roadmap](plans/0035-remote-workflow-roadmap.md), and
 [Dev Containers design](plans/0037-devcontainers-and-workspace-contexts.md).
-Tail/follow, directory browsing and remote workspace services are the separately
-tracked [next delivery](plans/0036-remote-workspace-execution.md).
 
 ## Reporting a bug
 

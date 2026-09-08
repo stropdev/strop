@@ -131,6 +131,7 @@ mod diff_surface_tests {
     fn diff_surface_frame_shape() {
         let mut e =
             crate::editor::Editor::new_in(strop_core::Buffer::from_text("x\n"), "/recorded".into());
+        e.fixture_git_context();
         e.open_diff_surface("delta", "f.rs", vec![hunk()], None);
         let frame = crate::headless::frame_string(&mut e, 80, 20).unwrap();
         assert!(frame.contains(" f.rs +2 -1"), "stats row: {frame}");
@@ -165,6 +166,7 @@ mod diff_surface_tests {
             strop_core::Buffer::from_text("a\nb\nc\n"),
             "/recorded".into(),
         );
+        e.fixture_git_context();
         e.feed_text("jj"); // line 3
         e.open_diff_surface("hunk", "hunk", vec![hunk()], None);
         assert_eq!(

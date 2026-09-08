@@ -33,6 +33,16 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("h", "help buffer"),
     ("!", "run shell command"),
     ("view", "open readonly"),
+    ("tail", "remote tail: :tail [BYTES] URI"),
+    ("range", "remote range: :range START BYTES URI"),
+    ("follow", "follow remote EOF: :follow [URI]"),
+    ("unfollow", "stop remote following"),
+    ("browse", "browse remote directory: :browse [URI]"),
+    ("filter", "filter remote directory by literal filename"),
+    (
+        "remote",
+        "connections: connect/disconnect ssh://HOST, clear, list",
+    ),
 ];
 
 impl Editor {
@@ -129,6 +139,14 @@ impl Editor {
                                 | "enter"
                                 | "jumplist"
                                 | "jump-forward"
+                                | "goto-definition"
+                                | "switch-source-header"
+                                | "references"
+                                | "implementation"
+                                | "type-definition"
+                                | "declaration"
+                                | "diagnostic-jumps"
+                                | "hover"
                         )
                 }
                 Handler::AbsorbChar(

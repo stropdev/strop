@@ -5,9 +5,11 @@
 use strop_core::Buffer;
 use strop_syntax::Highlighter;
 
+pub(crate) mod remote;
 pub mod surfaces;
+pub use remote::{RemoteDirectory, RemoteDocument};
 
-pub use surfaces::{DocumentSource, ReturnPoint, Surface};
+pub use surfaces::{DiffRow, DocumentSource, ReturnPoint, Surface};
 
 use super::Editor;
 
@@ -47,12 +49,15 @@ impl Document {
 
     /// A git-memory surface: job-owned content, readonly derived from
     /// the source — not set by hand (0021 §4).
-    pub fn surface(mut buf: Buffer, surface: Surface) -> Self {
+    pub fn surface(mut buf: Buffer, surface: Surface, context: strop_git::GitContext) -> Self {
         buf.readonly = true;
         Self {
             buf,
             highlighter: None,
-            source: DocumentSource::Surface(Box::new(surface)),
+            source: DocumentSource::Surface(Box::new(surfaces::GitSurface {
+                context,
+                content: surface,
+            })),
         }
     }
 
@@ -67,25 +72,15 @@ impl Document {
         }
     }
 
-    pub fn remote(mut buf: Buffer, file: strop_remote::RemoteFile) -> Self {
-        debug_assert!(
-            buf.path.is_none(),
-            "remote identity cannot become a local path"
-        );
-        buf.name = Some(file.to_string());
-        buf.readonly = true;
-        Self {
-            buf,
-            highlighter: None,
-            source: DocumentSource::Remote(file),
-        }
-    }
-
     pub fn matches_target(&self, target: &crate::files::FileTarget) -> bool {
         match (&self.source, target) {
-            (DocumentSource::Remote(file), crate::files::FileTarget::Remote(other)) => {
-                file == other
+            (DocumentSource::Remote(source), crate::files::FileTarget::Remote(location)) => {
+                location.absolute_file() == Some(&source.file)
             }
+            (
+                DocumentSource::RemoteDirectory(source),
+                crate::files::FileTarget::Remote(location),
+            ) => location.absolute_file() == Some(&source.directory),
             (DocumentSource::File, crate::files::FileTarget::Local(path)) => {
                 self.buf.path.as_ref() == Some(path)
                     || self.buf.file_identity() == Some(path.as_path())
@@ -94,10 +89,25 @@ impl Document {
         }
     }
 
+    pub(crate) fn file_target(&self, cwd: &std::path::Path) -> Option<crate::files::FileTarget> {
+        use crate::files::FileTarget;
+        match &self.source {
+            DocumentSource::Remote(source) => Some(FileTarget::Remote(source.file.clone().into())),
+            DocumentSource::RemoteDirectory(source) => {
+                Some(FileTarget::Remote(source.directory.clone().into()))
+            }
+            _ => self
+                .buf
+                .file_identity()
+                .or(self.buf.path.as_deref())
+                .map(|path| FileTarget::Local(cwd.join(path))),
+        }
+    }
+
     /// The surface payload, when this document is one.
     pub fn surface_payload(&self) -> Option<&Surface> {
         match &self.source {
-            DocumentSource::Surface(s) => Some(s),
+            DocumentSource::Surface(s) => Some(&s.content),
             _ => None,
         }
     }
@@ -105,7 +115,14 @@ impl Document {
     /// Mutable surface payload, when this document is one.
     pub fn surface_payload_mut(&mut self) -> Option<&mut Surface> {
         match &mut self.source {
-            DocumentSource::Surface(s) => Some(s),
+            DocumentSource::Surface(s) => Some(&mut s.content),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn git_context(&self) -> Option<&strop_git::GitContext> {
+        match &self.source {
+            DocumentSource::Surface(surface) => Some(&surface.context),
             _ => None,
         }
     }
@@ -254,13 +271,16 @@ impl Editor {
             self.request_session_save();
         }
         let closed = self.current();
+        self.stop_remote_follow(closed);
+        self.cancel_remote_filter(closed);
         self.lsp_close_document(closed);
         self.shell_document_closed(closed);
         self.revoke_git_requests_for(closed);
-        let closed_surface = self.docs.remove(closed).and_then(|d| match d.source {
-            DocumentSource::Surface(s) => Some(s),
-            _ => None,
-        });
+        self.blame_gutters.remove(&closed);
+        let return_to = self
+            .docs
+            .remove(closed)
+            .and_then(|document| document.return_point().cloned());
         if self.docs.is_empty() {
             self.panes.clear();
             self.active_pane = 0;
@@ -290,20 +310,19 @@ impl Editor {
             self.view_mut().hscroll = strop_core::id::DisplayColumn::new(0);
             // a closing surface hands the cursor and view back to the
             // document it opened from — by id, no index math (0011 §1)
-            if let Some(surface) = closed_surface {
-                if let Some(ret) = surface.return_point() {
-                    if self.docs.get(ret.buffer).is_some() {
-                        if ret.buffer != self.current() {
-                            self.view_mut().doc = ret.buffer;
-                            self.touch_mru(ret.buffer);
-                        }
-                        self.set_head(ret.cursor.min(self.buf().len_bytes()));
-                        self.view_mut().view_top = ret.view_top;
-                        self.view_mut().hscroll = ret.hscroll;
+            if let Some(ret) = return_to {
+                if self.docs.get(ret.buffer).is_some() {
+                    if ret.buffer != self.current() {
+                        self.view_mut().doc = ret.buffer;
+                        self.touch_mru(ret.buffer);
                     }
+                    self.set_head(ret.cursor.min(self.buf().len_bytes()));
+                    self.view_mut().view_top = ret.view_top;
+                    self.view_mut().hscroll = ret.hscroll;
                 }
             }
         }
+        self.lsp_retire_remote_servers();
         true
     }
     /// Any path-backed or scratch document holding unsaved content.

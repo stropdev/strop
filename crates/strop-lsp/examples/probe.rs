@@ -10,7 +10,13 @@ fn main() {
         return;
     };
     let root = std::path::Path::new("/tmp/lsp-proj");
-    let client = match strop_lsp::Client::spawn(&spec, root, tx) {
+    let client = match strop_lsp::Client::spawn(
+        &spec,
+        strop_lsp::Workspace::Local {
+            root: root.to_path_buf(),
+        },
+        tx,
+    ) {
         Ok(client) => client,
         Err(error) => {
             println!("spawn failed: {error}");
@@ -54,10 +60,10 @@ fn main() {
                     }
                 }
                 strop_lsp::LspEvent::Failed { name, hint, .. } => println!("FAILED {name}: {hint}"),
-                strop_lsp::LspEvent::Diagnostics { path, diags, .. } => {
+                strop_lsp::LspEvent::Diagnostics { doc, diags, .. } => {
                     println!(
                         "DIAGS {}: {:?}",
-                        path.display(),
+                        doc.label(),
                         diags
                             .iter()
                             .map(|d| (d.line.get(), d.severity.char()))

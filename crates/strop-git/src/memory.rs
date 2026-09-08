@@ -1,9 +1,16 @@
 //! Git memory (M3, 0001 pillar 3.2/3.3): log graph, blame, changed-file
-//! stats. Reads via shell `git` (matches user config; not hot-path).
-//! Permalinks and remote normalization live in `permalink`/`ssh`
-//! (0033 finding 1).
+//! stats. Reads run through [`GitExec`] — local `git` or bounded remote
+//! `git` over the shared execution boundary (0036 RW8) — with one argv
+//! builder and one structured parser per query, so both backends admit
+//! exactly the same machine formats. Permalinks and remote
+//! normalization live in `permalink`/`ssh` (0033 finding 1).
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+
+use strop_core::worker::CancelToken;
+
+use crate::exec::GitExec;
 
 /// One log line from `git log --graph`, with the commit hash extracted.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -14,56 +21,57 @@ pub struct LogRow {
     pub sha: Option<String>,
 }
 
-/// `git log --graph` for the browser. Shells out — the log is not a
-/// per-keystroke path (0001 §3). Caller decides threading.
-pub fn log_graph(workdir: &Path, max: usize, file: Option<&Path>) -> Result<Vec<LogRow>, String> {
-    log_graph_range(workdir, max, file, None)
+/// `git log --graph` for the browser. One bounded run — the log is not
+/// a per-keystroke path (0001 §3). Caller decides threading.
+pub fn log_graph(
+    exec: &GitExec,
+    cancel: &CancelToken,
+    max: usize,
+    file: Option<&Path>,
+) -> Result<Vec<LogRow>, String> {
+    log_graph_range(exec, cancel, max, file, None)
 }
 
 /// `git log -L start,end:path` — the history of a line range (0014 wave
 /// 4: selection archaeology). The graph flag is meaningless with -L;
 /// rows come straight from the patch headers.
 pub fn log_graph_range(
-    workdir: &Path,
+    exec: &GitExec,
+    cancel: &CancelToken,
     max: usize,
     file: Option<&Path>,
     range: Option<(usize, usize)>,
 ) -> Result<Vec<LogRow>, String> {
-    let mut cmd = std::process::Command::new("git");
     let (marker_fmt, ranged) = match range {
         Some(_) => ("%x01%h %an · %ar · %s%x00%H", true),
         None => ("%h %an · %ar · %s%x00%H", false),
     };
-    // workdir and file operands pass as OsStr: a non-UTF8 repo path or
-    // tracked filename must reach git byte-for-byte, not via a lossy
-    // display() rendering
-    cmd.arg("-C").arg(workdir).args([
-        "log",
-        &format!("--format={marker_fmt}"),
-        "-n",
-        &max.to_string(),
-    ]);
+    // file operands pass as OsStr: a non-UTF8 tracked filename must
+    // reach git byte-for-byte, not via a lossy display() rendering
+    let mut argv: Vec<OsString> = vec![
+        "log".into(),
+        format!("--format={marker_fmt}").into(),
+        "-n".into(),
+        max.to_string().into(),
+    ];
     match (file, range) {
         (Some(f), Some((a, b))) => {
             // -L embeds the path in one argument; compose the OsString
             // instead of formatting through display()
-            let mut spec = std::ffi::OsString::from(format!("-L{a},{b}:"));
+            let mut spec = OsString::from(format!("-L{a},{b}:"));
             spec.push(f);
-            cmd.arg(spec);
+            argv.push(spec);
         }
         (Some(f), None) => {
-            cmd.arg("--graph").arg("--").arg(f);
+            argv.push("--graph".into());
+            argv.push("--".into());
+            argv.push(f.as_os_str().into());
         }
-        (None, None) => {
-            cmd.arg("--graph");
-        }
+        (None, None) => argv.push("--graph".into()),
         (None, Some(_)) => return Err("-L needs a file".into()),
     }
-    let out = cmd.output().map_err(|e| format!("spawn git log: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
+    let stdout = exec.run_records("git log", &argv, cancel)?;
+    let text = String::from_utf8_lossy(&stdout);
     Ok(text
         .lines()
         // -L output carries patch text; only marked lines are commits
@@ -91,20 +99,23 @@ pub struct BlameCard {
     pub line: usize,
 }
 
-/// Blame one line of a file (1-based). Shells out; porcelain format.
-pub fn blame_line(workdir: &Path, rel: &Path, line: usize) -> Result<BlameCard, String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(workdir)
-        .args(["blame", "--line-porcelain", "-L", &format!("{line},{line}")])
-        .arg("--")
-        .arg(rel)
-        .output()
-        .map_err(|e| format!("spawn git blame: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
+/// Blame one line of a file (1-based). Porcelain format.
+pub fn blame_line(
+    exec: &GitExec,
+    cancel: &CancelToken,
+    rel: &Path,
+    line: usize,
+) -> Result<BlameCard, String> {
+    let argv: Vec<OsString> = vec![
+        "blame".into(),
+        "--line-porcelain".into(),
+        "-L".into(),
+        format!("{line},{line}").into(),
+        "--".into(),
+        rel.as_os_str().into(),
+    ];
+    let stdout = exec.run_records("git blame", &argv, cancel)?;
+    let text = String::from_utf8_lossy(&stdout);
     let mut sha = String::new();
     let mut author = String::new();
     let mut summary = String::new();
@@ -157,24 +168,24 @@ impl BlameLine {
 }
 
 /// Blame every line of a file (`--line-porcelain`; the gutter's data,
-/// 0011 §3). Shells out on a job thread — never the input path.
-pub fn blame_file(workdir: &Path, rel: &Path) -> Result<Vec<BlameLine>, String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(workdir)
-        .args(["blame", "--line-porcelain"])
-        .arg("--")
-        .arg(rel)
-        .output()
-        .map_err(|e| format!("spawn git blame: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
+/// 0011 §3). One bounded run on a job thread — never the input path.
+pub fn blame_file(
+    exec: &GitExec,
+    cancel: &CancelToken,
+    rel: &Path,
+) -> Result<Vec<BlameLine>, String> {
+    let argv: Vec<OsString> = vec![
+        "blame".into(),
+        "--line-porcelain".into(),
+        "--".into(),
+        rel.as_os_str().into(),
+    ];
+    let stdout = exec.run_records("git blame", &argv, cancel)?;
     let mut lines = Vec::new();
     let mut sha = String::new();
     let mut author = String::new();
     let mut ts = 0i64;
-    for l in String::from_utf8_lossy(&out.stdout).lines() {
+    for l in String::from_utf8_lossy(&stdout).lines() {
         if let Some(content) = l.strip_prefix('\t') {
             // the record's content row closes it — porcelain repeats
             // the full header per line, so every tab row emits one
@@ -229,17 +240,20 @@ pub struct ChangedFile {
 /// Paths come from numstat's NUL-delimited machine form, so native —
 /// never C-quoted, possibly non-UTF8 — names arrive as the worktree
 /// identities `commit_file_diff` expects.
-pub fn show_stat(workdir: &Path, sha: &str) -> Result<Vec<ChangedFile>, String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(workdir)
-        .args(["show", "--numstat", "-z", "--format=", sha])
-        .output()
-        .map_err(|e| format!("spawn git show: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    crate::numstat::parse_numstat(&out.stdout)
+pub fn show_stat(
+    exec: &GitExec,
+    cancel: &CancelToken,
+    sha: &str,
+) -> Result<Vec<ChangedFile>, String> {
+    let argv: Vec<OsString> = vec![
+        "show".into(),
+        "--numstat".into(),
+        "-z".into(),
+        "--format=".into(),
+        sha.into(),
+    ];
+    let stdout = exec.run_records("git show", &argv, cancel)?;
+    crate::numstat::parse_numstat(&stdout)
 }
 
 /// Relative age, human short form ("3h", "2d", "5mo").
@@ -261,7 +275,14 @@ fn rel_age(ts: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::exec::with_token;
     use crate::Repo;
+
+    /// The local backend for a repo root — what every local memory
+    /// call site constructs.
+    fn local(root: &Path) -> GitExec<'_> {
+        GitExec::Local { workdir: root }
+    }
 
     /// Repo with two commits (f.rs grows a line), then a dirty edit —
     /// blame_file must attribute committed lines and flag dirty ones.
@@ -285,7 +306,8 @@ mod tests {
         std::fs::write(root.join("f.rs"), "one\ntwo\n").unwrap();
         git(&["commit", "-qam", "second"]);
 
-        let clean = blame_file(root, Path::new("f.rs")).unwrap();
+        let clean =
+            with_token(|token| blame_file(&local(root), &token, Path::new("f.rs"))).unwrap();
         assert_eq!(clean.len(), 2, "one BlameLine per file line");
         assert_eq!(clean[0].author, "t");
         assert_eq!(clean[1].author, "t");
@@ -294,7 +316,8 @@ mod tests {
 
         // dirty worktree: the new line belongs to nobody
         std::fs::write(root.join("f.rs"), "one\ntwo\nthree\n").unwrap();
-        let dirty = blame_file(root, Path::new("f.rs")).unwrap();
+        let dirty =
+            with_token(|token| blame_file(&local(root), &token, Path::new("f.rs"))).unwrap();
         assert_eq!(dirty.len(), 3);
         assert!(dirty[2].is_uncommitted(), "last line is uncommitted");
         assert_eq!(dirty[2].age, "now");
@@ -305,7 +328,10 @@ mod tests {
     #[test]
     fn blame_file_rejects_missing_file() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(blame_file(dir.path(), Path::new("nope.rs")).is_err());
+        assert!(
+            with_token(|token| blame_file(&local(dir.path()), &token, Path::new("nope.rs")))
+                .is_err()
+        );
     }
 
     /// Hermetic git: no reads of the real HOME or system/global config,
@@ -355,7 +381,7 @@ mod tests {
         git_here(root, &["commit", "-qm", "second"]);
         let sha = git_here(root, &["rev-parse", "HEAD"]);
 
-        let files = show_stat(root, &sha).unwrap();
+        let files = with_token(|token| show_stat(&local(root), &token, &sha)).unwrap();
         assert_eq!(files.len(), 4, "{files:?}");
         let row = |p: &str| {
             files
@@ -398,7 +424,7 @@ mod tests {
         git_here(root, &["commit", "-qam", "second"]);
         let sha = git_here(root, &["rev-parse", "HEAD"]);
 
-        let files = show_stat(root, &sha).unwrap();
+        let files = with_token(|token| show_stat(&local(root), &token, &sha)).unwrap();
         let uni = files
             .iter()
             .find(|f| f.path == Path::new("src/日本語.rs"))
@@ -427,9 +453,35 @@ mod tests {
         git_here(root, &["commit", "-qm", "first"]);
         let sha = git_here(root, &["rev-parse", "HEAD"]);
 
-        let files = show_stat(root, &sha).unwrap();
+        let files = with_token(|token| show_stat(&local(root), &token, &sha)).unwrap();
         assert_eq!(files.len(), 1, "{files:?}");
         assert_eq!(files[0].path.as_os_str().as_bytes(), b"src/\xff\xfe.rs");
         assert_eq!(files[0].added, 1);
+    }
+
+    /// The log query runs through the same two-backend seam: local
+    /// log_graph_range still returns marked rows with full shas.
+    #[test]
+    fn log_graph_returns_marked_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git_here(root, &["init", "-q"]);
+        git_here(root, &["config", "user.email", "t@t.t"]);
+        git_here(root, &["config", "user.name", "t"]);
+        std::fs::write(root.join("f.rs"), "one\n").unwrap();
+        git_here(root, &["add", "."]);
+        git_here(root, &["commit", "-qm", "only"]);
+        let sha = git_here(root, &["rev-parse", "HEAD"]);
+
+        let rows = with_token(|token| log_graph(&local(root), &token, 10, None)).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].sha.as_deref(), Some(sha.as_str()));
+        assert!(rows[0].text.contains("only"));
+
+        // a bad revision is an honest error through the same seam
+        assert!(with_token(|token| {
+            log_graph_range(&local(root), &token, 10, None, Some((1, 1)))
+        })
+        .is_err());
     }
 }

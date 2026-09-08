@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use strop_core::{history::History, Buffer};
 
 mod trust;
-pub use trust::{is_trusted, trust};
+pub use trust::{is_trusted, is_trusted_remote, trust, trust_remote};
 mod persistence;
 #[cfg(test)]
 mod tests;

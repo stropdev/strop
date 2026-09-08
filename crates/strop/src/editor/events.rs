@@ -30,6 +30,7 @@ pub enum AppEvent {
     LspAttach(super::lsp::attach::AttachRecord),
     Shell(ShellResult),
     Io(super::io::IoEvent),
+    RemoteCompletion(super::remote_completion::RemoteCompletionEvent),
     Git(super::GitJob),
     Picker(super::picker::PickerEvent),
     Preview(super::picker::PreviewResult),
@@ -58,6 +59,9 @@ impl Editor {
     pub fn connect_events(&mut self, tx: Sender<AppEvent>) {
         if let Some(rx) = self.io.rx.take() {
             forward(rx, tx.clone(), AppEvent::Io);
+        }
+        if let Some(rx) = self.remote_completion.rx.take() {
+            forward(rx, tx.clone(), AppEvent::RemoteCompletion);
         }
         if let Some(rx) = self.shell_rx.take() {
             forward(rx, tx.clone(), AppEvent::Shell);
@@ -108,6 +112,7 @@ impl Editor {
             AppEvent::LspAttach(record) => self.handle_lsp_attach(record),
             AppEvent::Shell(r) => self.handle_shell_result(r),
             AppEvent::Io(event) => self.handle_io(event),
+            AppEvent::RemoteCompletion(event) => self.handle_remote_completion(event),
             AppEvent::Git(job) => self.handle_git_job(job),
             AppEvent::Picker(event) => self.handle_picker_event(event),
             AppEvent::Preview(result) => self.handle_preview(result),
@@ -143,6 +148,11 @@ impl Editor {
                 .values()
                 .any(|gutter| gutter.request.is_some())
             || !self.lsp_state.attach.pending.is_empty()
+            || self.remote_completion.pending.is_some()
+            || (!self.finishing
+                && (self.lsp_state.hover.is_some()
+                    || self.lsp_state.navigation.is_some()
+                    || self.lsp_servers.iter().any(|server| !server.ready)))
     }
 
     /// Finish is an explicit action in both modes. Preserve accepted writes;
@@ -150,6 +160,7 @@ impl Editor {
     pub(crate) fn finish_background_work(&mut self) {
         self.finishing = true;
         self.lsp_state.attach.enabled = false;
+        self.stop_remote_work();
         self.close_picker();
         self.git_mutations.clear();
         self.request_session_save();

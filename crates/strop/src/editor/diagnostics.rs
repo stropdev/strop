@@ -2,11 +2,14 @@
 //! line's end-of-line note, modeline chips. Data arrives via LSP events
 //! already resolved to byte-domain columns; these read it.
 
-use std::path::PathBuf;
-
 use strop_lsp::{ResolvedDiag, Severity};
 
 use super::Editor;
+
+pub struct DocumentDiagnostics {
+    pub revision: strop_core::id::BufferRevision,
+    pub items: Vec<ResolvedDiag>,
+}
 
 impl Editor {
     /// (errors, warnings) on the buffer — the modeline's diag chips.
@@ -23,16 +26,11 @@ impl Editor {
         (e, w)
     }
 
-    /// Diagnostics of buffer `idx`, resolved against cwd like
-    /// diag_severity_at.
-    fn diags_for(&self, idx: strop_core::id::DocumentId) -> Option<&Vec<ResolvedDiag>> {
-        let path = self.docs.get(idx).map(|d| &d.buf)?.path.as_deref()?;
-        let abs = if std::path::Path::new(path).is_absolute() {
-            PathBuf::from(path)
-        } else {
-            self.cwd.join(path)
-        };
-        self.diags.get(&abs)
+    /// Cached diagnostics belong to a document incarnation and text revision,
+    /// not a pathname shared by several full/range/tail views.
+    pub(super) fn diags_for(&self, idx: strop_core::id::DocumentId) -> Option<&[ResolvedDiag]> {
+        let cached = self.diags.get(&idx)?;
+        (self.docs.get(idx)?.buf.revision() == cached.revision).then_some(cached.items.as_slice())
     }
 
     /// The worst diagnostic's (severity, message) on a 1-based line —
@@ -81,13 +79,7 @@ impl Editor {
         idx: strop_core::id::DocumentId,
         line_1based: usize,
     ) -> Option<Severity> {
-        let path = self.docs.get(idx).map(|d| &d.buf)?.path.as_deref()?;
-        let abs = if std::path::Path::new(path).is_absolute() {
-            PathBuf::from(path)
-        } else {
-            self.cwd.join(path)
-        };
-        let diags = self.diags.get(&abs)?;
+        let diags = self.diags_for(idx)?;
         let mut best: Option<Severity> = None;
         for d in diags {
             if d.line.get() + 1 == line_1based {

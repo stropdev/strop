@@ -174,10 +174,32 @@ Modeline and commit/diff presentation polish shipped separately in 0.15.1 (0032)
 - Debugger/plugin expansion stays behind the correctness work (0019/0020).
 - Crate publication now derives a real dependency topological order (0034).
 - The full TRAMP-style capability roadmap is [0035](0035-remote-workflow-roadmap.md).
-  Its P2 slices plus read-only directory browsing, remote LSP and remote Git are the
-  accepted next delivery in [0036](0036-remote-workspace-execution.md).
+  Its P2 slices plus read-only directory browsing, remote LSP and remote Git are
+  implemented for 0.17.0 in [0036](0036-remote-workspace-execution.md).
 - Dev Container provisioning complements the same workspace/transport interfaces;
   the researched later-stage plan is [0037](0037-devcontainers-and-workspace-contexts.md).
+
+### GUI feasibility evaluation — P3 research, no implementation commitment
+
+Evaluate whether an optional GUI adds enough value to justify another frontend.
+Hypotheses: better IME/composition and accessibility, controlled font/shaping/HiDPI
+rendering, native clipboard/input integration and richer diagnostics. Weigh these
+against latency, memory, packaging/platform dependencies and long-term maintenance.
+
+Research Helix's [command/view separation work](https://github.com/helix-editor/helix/issues/5555)
+and [multi-client proposal](https://github.com/helix-editor/helix/pull/13468) as primary
+engineering evidence, not proof of a committed/shipped GUI roadmap. Compare suitable
+Rust frontend stacks only against concrete IME, accessibility, rendering and platform
+requirements; no framework selection by popularity.
+
+Any evaluation prototype must reuse the grammar, mutation, job/workspace ownership
+and replay semantics, not fork editor behavior. Keep pixel/font layout separate from
+terminal display-cell coordinates, and keep the static TUI a first-class delivery
+without mandatory GUI dependencies. Measure a small real vertical slice (edit/search,
+Unicode/IME, diagnostics, remote buffer, accessibility) against the terminal path.
+Use model/oracle checks for new asynchronous/input ownership where applicable.
+Acceptance is a written go/no-go decision with evidence; deciding not to build a GUI
+is a valid result. No GUI work is part of the current remote release scope.
 
 ## Verification status
 

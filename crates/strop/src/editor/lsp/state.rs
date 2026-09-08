@@ -16,6 +16,9 @@ pub(crate) struct Binding {
     pub server: ServerId,
     pub path: PathBuf,
     pub root: PathBuf,
+    /// Which filesystem `path` names — remote bindings never alias
+    /// same-bytes local paths (0036 RW8).
+    pub target: strop_lsp::FsTarget,
     pub revision: BufferRevision,
 }
 
@@ -68,18 +71,18 @@ impl Editor {
 
     pub(super) fn lsp_did_open_current(&mut self) {
         let document = self.current();
-        let Some(path) = self.buf().path.clone() else {
+        let Some(doc) = self.lsp_current_doc_path() else {
             return;
         };
-        let path = self.cwd.join(path);
-        let Some(language) = super::lsp_language(&path) else {
+        let Some(language) = super::lsp_language(&doc.path) else {
             return;
         };
-        let Some((server, root)) = self.lsp_server_for(&path, language) else {
+        let Some((server, root)) = self.lsp_server_for(&doc.path, language, &doc.target) else {
             return;
         };
         if let Some(binding) = self.lsp_state.bindings.get(&document) {
-            if binding.server == server && binding.path == path {
+            if binding.server == server && binding.path == doc.path && binding.target == doc.target
+            {
                 return;
             }
             self.lsp_close_document(document);
@@ -90,14 +93,20 @@ impl Editor {
             server,
             document,
             revision,
-            path: path.clone(),
+            path: doc.path.clone(),
             bytes: text.len_bytes(),
         };
         // Replay reproduces the recorded admission result; the binding
         // updates identically so injected replies pass freshness.
         let opened = self.tape.call("lsp.open", &args, || {
             self.lsp_live_client(server).map(|client| {
-                client.did_open(document, revision, &path, super::lang_id(&path), text)
+                client.did_open(
+                    document,
+                    revision,
+                    &doc.path,
+                    super::lang_id(&doc.path),
+                    text,
+                )
             })
         });
         match opened {
@@ -106,8 +115,9 @@ impl Editor {
                     document,
                     Binding {
                         server,
-                        path,
+                        path: doc.path,
                         root,
+                        target: doc.target,
                         revision,
                     },
                 );
@@ -164,7 +174,8 @@ impl Editor {
     }
 
     pub(crate) fn lsp_close_document(&mut self, document: DocumentId) {
-        if document == self.current() {
+        self.diags.remove(&document);
+        if !self.docs.is_empty() && document == self.current() {
             self.hover_card = None;
         }
         // Model owner removal happens in both modes; only the native
@@ -184,7 +195,6 @@ impl Editor {
                 Ok(false) => {}
                 Err(error) => self.message = format!("lsp close diverged from trace: {error}"),
             }
-            self.diags.remove(&binding.path);
         }
         if self.lsp_state.hover.is_some_and(|r| r.document == document) {
             self.lsp_state.hover = None;
@@ -205,6 +215,8 @@ impl Editor {
         {
             self.close_picker();
         }
+        // Closing the last owning remote workspace retires its server.
+        self.lsp_retire_remote_servers();
     }
 
     pub(crate) fn lsp_reply_fresh(&self, context: &ReplyContext) -> bool {
@@ -214,8 +226,22 @@ impl Editor {
         } else {
             self.lsp_state.navigation
         };
-        expected == Some(stamp)
+        expected == Some(stamp) && self.lsp_context_fresh(context)
+    }
+
+    /// An accepted result may transfer to a picker or I/O ticket after its
+    /// server request is terminal. The original document/server/revision still
+    /// has to be current; the new subsystem owns cancellation after transfer.
+    pub(crate) fn lsp_context_fresh(&self, context: &ReplyContext) -> bool {
+        let stamp = context.stamp;
+        let newer = if context.kind == RequestKind::Hover {
+            self.lsp_state.hover
+        } else {
+            self.lsp_state.navigation
+        };
+        !self.docs.is_empty()
             && stamp.document == self.current()
+            && newer.is_none_or(|owner| owner == stamp)
             && self
                 .docs
                 .get(stamp.document)
@@ -227,35 +253,60 @@ impl Editor {
                 .is_some_and(|b| b.server == stamp.server && b.revision == stamp.revision)
     }
 
+    pub(super) fn finish_lsp_reply(&mut self, context: &ReplyContext) -> bool {
+        let fresh = self.lsp_reply_fresh(context);
+        let slot = if context.kind == RequestKind::Hover {
+            &mut self.lsp_state.hover
+        } else {
+            &mut self.lsp_state.navigation
+        };
+        if *slot == Some(context.stamp) {
+            *slot = None;
+        }
+        fresh
+    }
+
     pub(super) fn lsp_request(&mut self, kind: RequestKind) {
         let hover = kind == RequestKind::Hover;
         if hover {
             self.lsp_state.hover = None;
         } else {
             self.lsp_state.navigation = None;
+            self.cancel_open(strop_core::worker::CancelReason::Superseded);
         }
-        let Some(path) = self.buf().path.clone() else {
+        let Some(doc) = self.lsp_current_doc_path() else {
+            self.message =
+                "language services require a complete file buffer, not a partial/follow view"
+                    .into();
             return;
         };
-        let abs = self.cwd.join(path);
-        let Some(language) = super::lsp_language(&abs) else {
+        let Some(language) = super::lsp_language(&doc.path) else {
             self.message = "no language server for this file type".into();
             return;
         };
-        let Some((server, _)) = self.lsp_server_for(&abs, language) else {
-            self.message = "no language server — install it or fix languages.toml".into();
+        let Some((server, _)) = self.lsp_server_for(&doc.path, language, &doc.target) else {
+            match doc.target {
+                strop_lsp::FsTarget::Local => {
+                    self.message = "no language server — install it or fix languages.toml".into()
+                }
+                strop_lsp::FsTarget::Remote(endpoint) => {
+                    self.message = format!(
+                        "no language server on {endpoint} — install it there or fix languages.toml"
+                    )
+                }
+            }
             return;
         };
         self.lsp_did_open_current();
         self.lsp_sync_changed();
-        let Some(path) = self.buf().path.clone() else {
+        let Some(doc) = self.lsp_current_doc_path() else {
             return;
         };
         let line = self.buf().line_of(self.head());
         let input = RequestInput {
             document: self.current(),
             revision: self.buf().revision(),
-            path: self.cwd.join(path),
+            path: doc.path.clone(),
             line: LineIndex::new(line),
             byte_col: ByteColumn::new(self.buf().col_of(self.head())),
             line_text: self.buf().line_text(line),

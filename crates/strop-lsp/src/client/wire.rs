@@ -27,26 +27,37 @@ pub(super) fn first_location(response: lt::GotoDefinitionResponse) -> Option<lt:
     }
 }
 
-/// A wire location → typed server location. `Err` keeps the URI for the
-/// terminal note when it is not a local file.
-pub(super) fn to_server_location(l: lt::Location) -> Result<ServerLocation, String> {
-    match l.uri.to_file_path() {
-        Ok(path) => Ok(ServerLocation {
-            path,
+/// A wire location → typed server location on the server's own
+/// filesystem. `Err` keeps the URI for the terminal note when it does
+/// not name a file there. Remote URIs decode onto the remote host's
+/// paths — the analogous local path is never considered.
+pub(super) fn to_server_location(
+    l: lt::Location,
+    workspace: &crate::target::Workspace,
+) -> Result<ServerLocation, String> {
+    match workspace.decode(&l.uri) {
+        Some(path) => Ok(ServerLocation {
+            doc: crate::target::DocPath {
+                target: workspace.target(),
+                path,
+            },
             position: ServerPosition {
                 line: LineIndex::new(l.range.start.line as usize),
                 column: ServerColumn::new(l.range.start.character as usize),
             },
         }),
-        Err(()) => Err(l.uri.to_string()),
+        None => Err(l.uri.to_string()),
     }
 }
 
-fn locations(items: Vec<lt::Location>) -> (Vec<ServerLocation>, usize) {
+fn locations(
+    items: Vec<lt::Location>,
+    workspace: &crate::target::Workspace,
+) -> (Vec<ServerLocation>, usize) {
     let mut dropped = 0;
     let items = items
         .into_iter()
-        .filter_map(|l| match to_server_location(l) {
+        .filter_map(|l| match to_server_location(l, workspace) {
             Ok(location) => Some(location),
             Err(_) => {
                 dropped += 1;
@@ -146,11 +157,11 @@ pub(super) async fn request_locations(
     };
     match items {
         Some(locs) => {
-            let (items, dropped) = locations(locs);
+            let (items, dropped) = locations(locs, &env.workspace);
             if items.is_empty() && dropped > 0 {
                 let _ = env.tx.send(LspEvent::Note {
                     context,
-                    text: format!("no local file {}", kind.label()),
+                    text: format!("no file on {} {}", env.workspace.label(), kind.label()),
                 });
             } else {
                 let _ = env.tx.send(LspEvent::Locations {

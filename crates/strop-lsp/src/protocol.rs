@@ -1,4 +1,5 @@
 //! Shared request ownership, diagnostics and negotiated coordinate domains.
+use crate::target::DocPath;
 use std::path::PathBuf;
 use strop_core::id::{BufferRevision, ByteColumn, DocumentId, LineIndex};
 
@@ -261,8 +262,9 @@ pub struct ServerPosition {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ServerLocation {
-    #[serde(with = "strop_core::path_serde")]
-    pub path: PathBuf,
+    /// Endpoint-scoped identity of the target: a remote location can
+    /// never alias the analogous local path.
+    pub doc: DocPath,
     pub position: ServerPosition,
 }
 
@@ -310,8 +312,9 @@ pub struct DiagnosticContext {
 pub enum LspEvent {
     Diagnostics {
         context: DiagnosticContext,
-        #[serde(with = "strop_core::path_serde")]
-        path: PathBuf,
+        /// The diagnosed document: endpoint-scoped, so remote
+        /// diagnostics never collide with same-bytes local paths.
+        doc: DocPath,
         diags: Vec<Diag>,
     },
     Ready {

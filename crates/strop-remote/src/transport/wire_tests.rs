@@ -1,7 +1,7 @@
-//! Executable counterparts of SftpWire's identity and size invariants. These
-//! inject malformed server frames, not implementation/argv snapshots.
+//! Executable SftpWire identity/size oracles. Malformed server frames exercise
+//! the production codec and selection reader, not source text or argv snapshots.
 use super::*;
-use crate::{ReadFailureKind, RemoteReadError};
+use crate::{ReadSelection, RemoteFile, RemoteReadError, RemoteWindow};
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -28,168 +28,148 @@ fn string(data: &[u8]) -> Vec<u8> {
 fn initial(size: u64) -> Vec<u8> {
     let mut input = frame(&[PacketKind::Version as u8, 0, 0, 0, 3]);
     input.extend(response(PacketKind::Handle, 1, &string(b"handle")));
-    let mut attrs = 5_u32.to_be_bytes().to_vec(); // size + permissions
+    let mut attrs = 5_u32.to_be_bytes().to_vec();
     attrs.extend(size.to_be_bytes());
     attrs.extend(0o100644_u32.to_be_bytes());
     input.extend(response(PacketKind::Attrs, 2, &attrs));
     input
 }
+fn status(id: u32, code: u32) -> Vec<u8> {
+    let mut payload = code.to_be_bytes().to_vec();
+    payload.extend(string(b"status"));
+    payload.extend(string(b""));
+    response(PacketKind::Status, id, &payload)
+}
 fn kind<T>(result: Result<T, Fault>) -> ReadFailureKind {
     match result {
         Err(fault) => RemoteReadError::fault("ssh://fixture/log", fault).kind(),
-        Ok(_) => panic!("malformed response was accepted"),
+        Ok(_) => panic!("malformed response accepted"),
     }
+}
+fn read_session(
+    bytes: &[u8],
+    selection: ReadSelection,
+) -> Result<(String, RemoteWindow), ReadFailureKind> {
+    runtime()
+        .block_on(async {
+            let (mut client, _) = ReadOnlySftp::connect(tokio::io::sink(), bytes).await?;
+            let file = RemoteFile::parse("ssh://fixture/log").unwrap();
+            let stage = std::cell::Cell::new(ReadStage::Connect);
+            super::super::session::read_selection(&mut client, &file, &selection, &stage).await
+        })
+        .map_err(|fault| RemoteReadError::fault("ssh://fixture/log", fault).kind())
 }
 
 #[test]
 fn packet_bound_is_checked_before_reading_or_allocating_payload() {
     let bytes = ((MAX_PACKET + 1) as u32).to_be_bytes();
-    let result = runtime().block_on(ReadOnlySftp::connect(tokio::io::sink(), &bytes[..]));
-    // Missing payload would be I/O failure if the cap weren't enforced first.
-    assert_eq!(kind(result), ReadFailureKind::Protocol);
+    assert_eq!(
+        kind(runtime().block_on(ReadOnlySftp::connect(tokio::io::sink(), &bytes[..]))),
+        ReadFailureKind::Protocol
+    );
 }
-
 #[test]
 fn a_reply_for_another_request_cannot_supply_a_file_handle() {
     let mut bytes = frame(&[PacketKind::Version as u8, 0, 0, 0, 3]);
     bytes.extend(response(PacketKind::Handle, 9, &string(b"stale")));
-    runtime().block_on(async {
-        let mut client = ReadOnlySftp::connect(tokio::io::sink(), bytes.as_slice())
-            .await
-            .unwrap();
-        assert_eq!(
-            kind(client.open(Path::new("/log")).await),
-            ReadFailureKind::Protocol
-        );
-    });
+    assert_eq!(
+        read_session(&bytes, ReadSelection::Full),
+        Err(ReadFailureKind::Protocol)
+    );
 }
-
 #[test]
-fn snapshot_length_is_validated_before_content_allocation() {
-    let bytes = initial(MAX_SNAPSHOT + 1);
-    runtime().block_on(async {
-        let mut client = ReadOnlySftp::connect(tokio::io::sink(), bytes.as_slice())
-            .await
-            .unwrap();
-        let handle = client.open(Path::new("/log")).await.unwrap();
-        assert_eq!(
-            kind(client.inspect(&handle).await),
-            ReadFailureKind::TooLarge
-        );
-    });
+fn memory_cap_applies_to_the_window_not_the_remote_file() {
+    let size = MAX_SNAPSHOT + 1024;
+    let mut too_large = initial(size);
+    too_large.extend(status(3, 0));
+    assert_eq!(
+        read_session(&too_large, ReadSelection::Full),
+        Err(ReadFailureKind::TooLarge)
+    );
+    let mut tail = initial(size);
+    tail.extend(response(PacketKind::Data, 3, &string(b"end")));
+    tail.extend(status(4, 0));
+    let (text, window) = read_session(
+        &tail,
+        ReadSelection::Tail(crate::ReadLimit::new(3).unwrap()),
+    )
+    .unwrap();
+    assert_eq!(text, "end");
+    assert_eq!(window.start().get(), size - 3);
+    assert_eq!(window.length().get(), 3);
+    assert!(!window.is_complete());
 }
-
 #[test]
 fn a_server_cannot_append_beyond_the_captured_snapshot_length() {
     let mut bytes = initial(1);
     bytes.extend(response(PacketKind::Data, 3, &string(b"ab")));
-    runtime().block_on(async {
-        let mut client = ReadOnlySftp::connect(tokio::io::sink(), bytes.as_slice())
-            .await
-            .unwrap();
-        let handle = client.open(Path::new("/log")).await.unwrap();
-        let length = client.inspect(&handle).await.unwrap();
-        assert_eq!(
-            kind(client.read(&handle, length).await),
-            ReadFailureKind::Protocol
-        );
-    });
+    assert_eq!(
+        read_session(&bytes, ReadSelection::Full),
+        Err(ReadFailureKind::Protocol)
+    );
 }
-
 #[test]
 fn early_eof_never_becomes_a_successful_partial_snapshot() {
     let mut bytes = initial(2);
-    let mut status = 1_u32.to_be_bytes().to_vec();
-    status.extend(string(b"EOF"));
-    status.extend(string(b""));
-    bytes.extend(response(PacketKind::Status, 3, &status));
-    runtime().block_on(async {
-        let mut client = ReadOnlySftp::connect(tokio::io::sink(), bytes.as_slice())
-            .await
-            .unwrap();
-        let handle = client.open(Path::new("/log")).await.unwrap();
-        let length = client.inspect(&handle).await.unwrap();
-        assert_eq!(
-            kind(client.read(&handle, length).await),
-            ReadFailureKind::ShortRead
-        );
-    });
+    bytes.extend(status(3, 1));
+    assert_eq!(
+        read_session(&bytes, ReadSelection::Full),
+        Err(ReadFailureKind::ShortRead)
+    );
 }
-
 #[test]
-fn malformed_nested_lengths_and_duplicate_reply_bytes_are_rejected() {
+fn malformed_nested_lengths_and_extra_reply_bytes_are_rejected() {
     let mut bytes = frame(&[PacketKind::Version as u8, 0, 0, 0, 3]);
     bytes.extend(response(PacketKind::Handle, 1, &u32::MAX.to_be_bytes()));
-    runtime().block_on(async {
-        let mut client = ReadOnlySftp::connect(tokio::io::sink(), bytes.as_slice())
-            .await
-            .unwrap();
-        assert_eq!(
-            kind(client.open(Path::new("/log")).await),
-            ReadFailureKind::Protocol
-        );
-    });
+    assert_eq!(
+        read_session(&bytes, ReadSelection::Full),
+        Err(ReadFailureKind::Protocol)
+    );
     let mut bytes = initial(1);
     let mut data = string(b"a");
-    data.push(0); // cannot silently ignore bytes after a DATA payload
+    data.push(0);
     bytes.extend(response(PacketKind::Data, 3, &data));
-    runtime().block_on(async {
-        let mut client = ReadOnlySftp::connect(tokio::io::sink(), bytes.as_slice())
-            .await
-            .unwrap();
-        let handle = client.open(Path::new("/log")).await.unwrap();
-        let length = client.inspect(&handle).await.unwrap();
-        assert_eq!(
-            kind(client.read(&handle, length).await),
-            ReadFailureKind::Protocol
-        );
-    });
-}
-
-fn completed_session(bytes: Vec<u8>) -> Result<String, ReadFailureKind> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let worker = strop_core::worker::spawn(
-        "session-oracle",
-        move |outcome| {
-            tx.send(outcome).unwrap();
-        },
-        move |token| {
-            let result = runtime()
-                .block_on(super::super::session::run(
-                    tokio::io::sink(),
-                    bytes.as_slice(),
-                    Path::new("/log"),
-                    &token,
-                ))
-                .map_err(|fault| RemoteReadError::fault("ssh://fixture/log", fault).kind());
-            strop_core::worker::Outcome::Success(result)
-        },
+    assert_eq!(
+        read_session(&bytes, ReadSelection::Full),
+        Err(ReadFailureKind::Protocol)
     );
-    let result = rx.recv().unwrap();
-    drop(worker);
-    match result {
-        strop_core::worker::Outcome::Success(result) => result,
-        other => panic!("session worker failed: {other:?}"),
-    }
 }
-
 #[test]
 fn failed_close_cannot_complete_a_snapshot() {
     let mut bytes = initial(0);
-    let mut status = 4_u32.to_be_bytes().to_vec();
-    status.extend(string(b"close failed"));
-    status.extend(string(b""));
-    bytes.extend(response(PacketKind::Status, 3, &status));
-    assert_eq!(completed_session(bytes), Err(ReadFailureKind::Protocol));
+    bytes.extend(status(3, 4));
+    assert_eq!(
+        read_session(&bytes, ReadSelection::Full),
+        Err(ReadFailureKind::Protocol)
+    );
 }
-
 #[test]
-fn invalid_utf8_cannot_be_replaced_with_a_successful_lossy_snapshot() {
-    let mut bytes = initial(1);
-    bytes.extend(response(PacketKind::Data, 3, &string(&[0xff])));
-    let mut status = 0_u32.to_be_bytes().to_vec();
-    status.extend(string(b""));
-    status.extend(string(b""));
-    bytes.extend(response(PacketKind::Status, 4, &status));
-    assert_eq!(completed_session(bytes), Err(ReadFailureKind::InvalidUtf8));
+fn invalid_utf8_is_not_trimmed_from_a_whole_file() {
+    for content in [&[0xff][..], &[0x80, 0x80, 0x80, 0x80], &[0xe8, 0xaa]] {
+        let mut bytes = initial(content.len() as u64);
+        bytes.extend(response(PacketKind::Data, 3, &string(content)));
+        bytes.extend(status(4, 0));
+        assert_eq!(
+            read_session(&bytes, ReadSelection::Full),
+            Err(ReadFailureKind::InvalidUtf8)
+        );
+    }
+}
+#[test]
+fn range_edges_trim_only_cut_utf8_and_report_the_actual_bytes() {
+    let content = "日abc語".as_bytes();
+    let mut bytes = initial(content.len() as u64);
+    bytes.extend(response(PacketKind::Data, 3, &string(&content[1..8])));
+    bytes.extend(status(4, 0));
+    let (text, window) = read_session(
+        &bytes,
+        ReadSelection::Range {
+            start: crate::RemoteOffset::new(1),
+            length: crate::ReadLimit::new(7).unwrap(),
+        },
+    )
+    .unwrap();
+    assert_eq!(text, "abc");
+    assert_eq!(window.start().get(), 3);
+    assert_eq!(window.length().get(), 3);
 }

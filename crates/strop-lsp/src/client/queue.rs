@@ -16,7 +16,6 @@ use ropey::Rope;
 
 use crate::caps::ServerCaps;
 use crate::protocol::{LspEvent, PendingRequest, ServerId, WireVersion};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -52,7 +51,9 @@ pub(crate) struct WireEnv {
     pub(crate) handle: tokio::runtime::Handle,
     pub(crate) tx: Sender<LspEvent>,
     pub(crate) caps: ServerCaps,
-    pub(crate) root: PathBuf,
+    /// Where the server runs: URI mapping and failure labels are
+    /// target-aware (local root or remote endpoint+root).
+    pub(crate) workspace: crate::target::Workspace,
     pub(crate) sync: Arc<parking_lot::Mutex<super::sync::SyncState>>,
     /// Set by `Client::shutdown`: an exit after this is not a crash.
     pub(crate) quitting: Arc<AtomicBool>,

@@ -13,6 +13,7 @@ fn document_set_stays_honest() {
     let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
     e.open_fixture(&b).unwrap();
     assert_eq!(e.docs.len(), 2);
+    e.fixture_git_context();
     e.open_diff_surface("delta", "f.rs", vec![], None);
     assert_eq!(e.docs.len(), 3);
     assert!(e.cur().surface_payload().is_some());

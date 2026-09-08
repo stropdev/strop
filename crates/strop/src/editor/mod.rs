@@ -13,6 +13,7 @@ pub mod trace;
 
 mod cursor;
 mod diagnostics;
+pub use diagnostics::DocumentDiagnostics;
 mod dive;
 mod document;
 pub mod events;
@@ -34,6 +35,8 @@ pub(crate) mod pending;
 mod permalink;
 mod picker;
 mod registers;
+pub(crate) mod remote;
+mod remote_completion;
 mod shell;
 pub mod transact;
 mod undo;
@@ -41,7 +44,7 @@ pub mod view;
 mod visual;
 
 pub use document::Document;
-pub use document::Surface;
+pub use document::{DiffRow, Surface};
 #[cfg(test)]
 pub use git_memory::CommitFiles;
 pub use git_memory::{git_channel, BlameGutter, GitJob};
@@ -117,6 +120,8 @@ pub struct Editor {
     pub(crate) trace_documents:
         HashMap<strop_core::id::DocumentId, strop_core::diagnostics::BufferTraceId>,
     pub(crate) io: io::IoState,
+    pub(crate) remote: remote::RemoteState,
+    pub(crate) remote_completion: remote_completion::RemoteCompletionState,
     pub(crate) worker_ids: strop_core::worker::WorkerIds,
     pub(crate) worker_handles:
         HashMap<strop_core::worker::WorkerId, strop_core::worker::CancelHandle>,
@@ -203,9 +208,8 @@ pub struct Editor {
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
     pub blame_card: Option<strop_git::memory::BlameCard>,
-    /// Blame gutters by canonical path (0011 §3): per-buffer view
-    /// state that outlives index churn and never persists to sessions.
-    pub blame_gutters: HashMap<PathBuf, BlameGutter>,
+    /// Each full/range/tail document owns its own revision-checked gutter.
+    pub blame_gutters: HashMap<strop_core::id::DocumentId, BlameGutter>,
     /// Bumped on every buffer-list mutation; git jobs carry the
     /// generation they were spawned under so results for dead
     /// surfaces are dropped (0011 §2).
@@ -227,7 +231,7 @@ pub struct Editor {
     /// server) — a rust file and a python file in one session get their
     /// own servers. Diagnostics by path, hover card, open bookkeeping.
     pub lsp_servers: Vec<crate::editor::lsp::LspServer>,
-    pub diags: std::collections::HashMap<PathBuf, Vec<strop_lsp::ResolvedDiag>>,
+    pub diags: HashMap<strop_core::id::DocumentId, DocumentDiagnostics>,
     pub hover_card: Option<String>,
     /// Shell jobs (`:!cmd` output buffers, `|cmd` pipes): results land
     /// in drain_shell — never a subprocess on the input path (0001 §3).
@@ -307,6 +311,8 @@ impl Editor {
             docs,
             trace_documents: HashMap::new(),
             io: io::IoState::default(),
+            remote: remote::RemoteState::default(),
+            remote_completion: remote_completion::RemoteCompletionState::default(),
             worker_ids: strop_core::worker::WorkerIds::default(),
             worker_handles: HashMap::new(),
             focus_epoch: 0,

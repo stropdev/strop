@@ -50,7 +50,7 @@ impl DiffLine {
 }
 
 /// One diff hunk between two versions of a file, in 1-based lines.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Hunk {
     pub kind: HunkKind,
     /// First affected line in the new version (1-based). For pure
@@ -70,6 +70,30 @@ pub struct FileDiff {
     pub hunks: Vec<Hunk>,
     pub added: usize,
     pub deleted: usize,
+}
+
+impl FileDiff {
+    /// Assemble the delta from typed hunks, deriving the added/deleted
+    /// counts from line origins — the one constructor both the local
+    /// libgit2 path and the remote blob-diff path feed.
+    pub(crate) fn from_hunks(path: PathBuf, hunks: Vec<Hunk>) -> Self {
+        let added = hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .filter(|l| l.origin == LineOrigin::Addition)
+            .count();
+        let deleted = hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .filter(|l| l.origin == LineOrigin::Deletion)
+            .count();
+        Self {
+            path,
+            hunks,
+            added,
+            deleted,
+        }
+    }
 }
 
 /// One changed line, for gutter signs. Hunk headers include context

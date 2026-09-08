@@ -6,17 +6,19 @@ fn cursor_line_shows_eol_diagnostic() {
     let mut e = Editor::new(Buffer::from_text("let x = 1;\n"));
     let rel = "strop-eol-diag-test.rs";
     e.buf_mut().path = Some(rel.into());
-    let abs = e.cwd.join(rel);
     e.diags.insert(
-        abs,
-        vec![strop_lsp::ResolvedDiag {
-            line: strop_core::id::LineIndex::new(0),
-            col: strop_core::id::ByteColumn::new(4),
-            severity: strop_lsp::Severity::Error,
-            end_line: strop_core::id::LineIndex::new(0),
-            end_col: strop_core::id::ByteColumn::new(8),
-            message: "mismatched types".into(),
-        }],
+        e.current(),
+        crate::editor::DocumentDiagnostics {
+            revision: e.buf().revision(),
+            items: vec![strop_lsp::ResolvedDiag {
+                line: strop_core::id::LineIndex::new(0),
+                col: strop_core::id::ByteColumn::new(4),
+                severity: strop_lsp::Severity::Error,
+                end_line: strop_core::id::LineIndex::new(0),
+                end_col: strop_core::id::ByteColumn::new(8),
+                message: "mismatched types".into(),
+            }],
+        },
     );
     let frame = crate::headless::frame_string(&mut e, 60, 10).unwrap();
     assert!(frame.contains("●"), "gutter sign: {frame}");
@@ -479,6 +481,7 @@ fn last_text_row_and_four_digit_gutter_keep_caret_alignment() {
 #[test]
 fn typed_diff_rows_keep_fixed_numbers_and_scrolled_content() {
     let mut e = Editor::new(Buffer::from_text("scratch\n"));
+    e.fixture_git_context();
     let hunk = strop_git::Hunk {
         kind: strop_git::HunkKind::Add,
         new_start: 1,
@@ -526,6 +529,7 @@ fn unattached_combining_cluster_cannot_rewrite_the_gutter() {
 #[test]
 fn sidebar_emission_matches_the_inset_the_caret_uses() {
     let mut e = Editor::new(Buffer::from_text("scratch\n"));
+    e.fixture_git_context();
     let hunk = strop_git::Hunk {
         kind: strop_git::HunkKind::Add,
         new_start: 1,
@@ -541,6 +545,9 @@ fn sidebar_emission_matches_the_inset_the_caret_uses() {
         }],
     };
     let commit = crate::editor::CommitFiles {
+        repo: strop_git::RepoTarget::Local {
+            workdir: e.cwd.clone(),
+        },
         sha: "0123456789abcdef".into(),
         files: vec![strop_git::memory::ChangedFile {
             path: "src/verylongfilename.rs".into(),

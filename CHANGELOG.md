@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.17.0 — 2026-09-08
+
+Read-only SSH workspaces: bounded log following, directory buffers, remote language
+services and native Git semantics (plan 0036).
+
+### Added
+
+- Byte ranges, bounded tails and follow mode through CLI and Ex commands. Partial
+  windows identify their byte range; follow compares content overlap, observes
+  same-size replacements and reports resets without guessing inode identity.
+- Negotiated remote-home expansion and host/path completion without implicit
+  authentication. Explicit `:remote connect`, `disconnect`, `clear` and `list`;
+  per-endpoint pooled SFTP ownership, cancellation isolation and reconnect epochs.
+- Real read-only remote directory buffers with entry/parent navigation, search and
+  filtering.
+- Owned remote process execution for Git and LSP, preserving native argv and cwd.
+  Remote LSP diagnostics, hover, definition/references and source/header navigation;
+  remote Git context, staged/unstaged diffs, log, blame, commit/file navigation and
+  revision-pinned source links. No corresponding local path is opened or mutated.
+- Connection/workspace/follow and remote-process model gates, with qualified
+  progress, reachability witnesses and deliberately faulty variants. Release
+  publication now requires the protocol gate as well as the platform builds.
+- Remote commands and connection controls are discoverable in the searchable
+  `:help` buffer.
+
+### Fixed
+
+- Remote refresh preserves line/column positions; EOF following does not drag marks
+  and jump history to the new tail. Snapshot publication maps positions once through
+  the shared mutation lease.
+- Diagnostic/blame caches belong to a document incarnation and revision, not a path
+  shared by different snapshots. Git surfaces retain their own repository context.
+- Language-server trust and retirement use endpoint plus workspace root. Shutdown
+  signals owned groups before reaping, including unresponsive servers.
+- Live and replayed server attachment perform the same document-open transition,
+  preserving diagnostics and the recorded native-call sequence.
+- Historical diff permalinks use source coordinates, not display rows. Header/deleted
+  rows refuse invalid locations; partial windows refuse full-file coordinates.
+  Repository SSH aliases are evaluated on the machine that owns the repository.
+
+### Scope
+
+Remote content stays read-only. Writes, Git mutations, arbitrary remote shell jobs,
+Dev Containers and additional transports remain prioritized roadmap work. SFTP
+reading needs OpenSSH; remote Git/LSP also require a POSIX environment, `python3`
+and their respective tools. Process cleanup is conditional on disconnect detection
+and process-group membership, not a guarantee across partitions or escaped sessions.
+
 ## 0.16.0 — 2026-09-07
 
 Trustworthy diagnostics and the first verified SSH log-reading milestone

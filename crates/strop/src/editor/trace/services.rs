@@ -57,6 +57,18 @@ pub fn io(event: &crate::editor::io::IoEvent) {
         IoEvent::Open(value) => completion("io", "open", value),
         IoEvent::Save(value) => completion("io", "save", value),
         IoEvent::Native(value) => completion("io", "native", value),
+        IoEvent::Remote(event) => {
+            use crate::editor::remote::RemoteEvent;
+            match event {
+                RemoteEvent::Tick(ticket) => {
+                    json!({"service":"remote","result":"follow_tick","ticket":ticket})
+                }
+                RemoteEvent::Timer(value) => completion("remote", "follow_clock", value),
+                RemoteEvent::Read(value) => completion("remote", "follow_read", value),
+                RemoteEvent::Control(value) => completion("remote", "control", value),
+                RemoteEvent::Filter(value) => completion("remote", "directory_filter", value),
+            }
+        }
         IoEvent::Session {
             request,
             outcome: value,

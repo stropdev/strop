@@ -1,8 +1,10 @@
 //! SFTP v3 read-only wire contract (draft-ietf-secsh-filexfer-02).
 //! SSH owns authentication/encryption; this codec owns native filename bytes,
-//! bounded packets and request identity. No path is interpreted by a shell.
+//! bounded packets, request identity, advertised extensions and directory
+//! enumeration. No path is ever interpreted by a shell.
 use super::error::{Fault, ReadFailureKind, ReadStage};
-use std::path::Path;
+use crate::address::uri::path_bytes;
+use std::path::{Path, PathBuf};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[cfg(test)]
@@ -12,6 +14,11 @@ mod tests;
 const MAX_PACKET: usize = 256 * 1024;
 const READ_CHUNK: usize = 32 * 1024;
 const MAX_SNAPSHOT: u64 = 256 * 1024 * 1024;
+/// Hard bound on one directory listing: a page is already packet-bounded;
+/// this caps the accumulated result across pages.
+pub(super) const MAX_ENTRIES: usize = 100_000;
+/// Sanity bound for one entry filename (native bytes).
+const MAX_NAME: usize = 4096;
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -21,26 +28,63 @@ enum PacketKind {
     Open = 3,
     Close = 4,
     Read = 5,
+    Opendir = 11,
+    Readdir = 12,
     Fstat = 8,
+    Stat = 17,
     Status = 101,
     Handle = 102,
     Data = 103,
+    Name = 104,
     Attrs = 105,
+    Extended = 200,
+    ExtendedReply = 201,
 }
 #[derive(Clone, Copy)]
 struct RequestId(u32);
 pub(super) struct FileHandle(Vec<u8>);
-pub(super) struct SnapshotSize(u64);
 
-pub(super) struct ReadOnlySftp<W, R> {
+/// The attributes this codec consumes: an optional size and an optional
+/// POSIX permissions word, both validated for supported flag bits.
+pub(super) struct Attrs {
+    pub(super) size: Option<u64>,
+    pub(super) permissions: Option<u32>,
+}
+
+/// Extension names the server advertised in its VERSION reply. Opaque
+/// strings; offering is decided by exact byte equality.
+pub(crate) struct Advertised(Vec<Vec<u8>>);
+
+impl Advertised {
+    pub(super) fn offers(&self, name: &[u8]) -> bool {
+        self.0.iter().any(|advertised| advertised == name)
+    }
+}
+
+/// One directory entry as the server spelled it: the native filename and
+/// the raw permissions word when carried.
+pub(super) struct RawEntry {
+    pub(super) name: PathBuf,
+    pub(super) permissions: Option<u32>,
+}
+
+/// One READDIR page: entries, or the clean end-of-directory status.
+pub(super) enum Page {
+    Entries(Vec<RawEntry>),
+    End,
+}
+
+pub(crate) struct ReadOnlySftp<W, R> {
     input: W,
     output: R,
     request: Vec<u8>,
     response: Vec<u8>,
     sequence: RequestId,
 }
+
 impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
-    pub(super) async fn connect(input: W, output: R) -> Result<Self, Fault> {
+    /// Negotiate SFTP v3 and capture the advertised extension names.
+    pub(super) async fn connect(input: W, output: R) -> Result<(Self, Advertised), Fault> {
         let mut client = Self {
             input,
             output,
@@ -55,12 +99,15 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
         if reply.take(1)? != [PacketKind::Version as u8] || reply.number()? != 3 {
             return Err(reply.invalid("server must support SFTP version 3"));
         }
-        // Extension names and values are opaque strings; framing still matters.
+        let mut advertised = Vec::new();
+        // Extension names and values are opaque strings; framing still
+        // matters, and only names are retained.
         while !reply.remaining.is_empty() {
+            let name = reply.string()?.to_vec();
             reply.string()?;
-            reply.string()?;
+            advertised.push(name);
         }
-        Ok(client)
+        Ok((client, Advertised(advertised)))
     }
 
     fn begin(&mut self, kind: PacketKind, stage: ReadStage) -> Result<RequestId, Fault> {
@@ -135,6 +182,7 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
                     1 => ReadFailureKind::ShortRead,
                     2 => ReadFailureKind::NotFound,
                     3 => ReadFailureKind::Permission,
+                    20 => ReadFailureKind::NotDirectory,
                     _ => ReadFailureKind::Protocol,
                 };
                 return Err(Fault::new(
@@ -150,10 +198,61 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
         Ok(reply)
     }
 
+    /// The REaddir exchange: SSH_FX_EOF ends the listing cleanly instead of
+    /// being a short read. Returns the decoded ATTRS-less page or `End`.
+    async fn readdir_reply(&mut self, id: RequestId, stage: ReadStage) -> Result<Page, Fault> {
+        self.exchange(stage).await?;
+        let mut reply = Decoder::new(&self.response, stage);
+        let kind = reply.take(1)?[0];
+        if reply.number()? != id.0 {
+            return Err(reply.invalid("SFTP response belongs to a different request"));
+        }
+        if kind == PacketKind::Status as u8 {
+            let code = reply.number()?;
+            reply.string()?;
+            reply.string()?;
+            reply.end()?;
+            return match code {
+                1 => Ok(Page::End),
+                2 | 3 => Err(Fault::new(
+                    stage,
+                    match code {
+                        2 => ReadFailureKind::NotFound,
+                        _ => ReadFailureKind::Permission,
+                    },
+                    format!("SFTP status {code} while listing"),
+                )),
+                _ => Err(reply.invalid(format!("unexpected SFTP status {code} while listing"))),
+            };
+        }
+        if kind != PacketKind::Name as u8 {
+            return Err(reply.invalid(format!("unexpected SFTP response type {kind}")));
+        }
+        let count = reply.number()? as usize;
+        if count == 0 || count > MAX_ENTRIES {
+            return Err(reply.invalid("SFTP NAME count outside sane bounds"));
+        }
+        let mut entries = Vec::with_capacity(count.min(64));
+        for _ in 0..count {
+            let name = reply.string()?;
+            if name.is_empty() || name.len() > MAX_NAME || name.contains(&0) || name.contains(&b'/')
+            {
+                return Err(reply.invalid("SFTP entry name outside sane bounds"));
+            }
+            reply.string()?; // longname: human text, ignored
+            let attrs = parse_attrs(&mut reply)?;
+            entries.push(RawEntry {
+                name: native_name(name)?,
+                permissions: attrs.permissions,
+            });
+        }
+        reply.end()?;
+        Ok(Page::Entries(entries))
+    }
+
     pub(super) async fn open(&mut self, path: &Path) -> Result<FileHandle, Fault> {
-        use std::os::unix::ffi::OsStrExt;
         let id = self.begin(PacketKind::Open, ReadStage::Open)?;
-        self.string(path.as_os_str().as_bytes(), ReadStage::Open)?;
+        self.string(path_bytes(path), ReadStage::Open)?;
         self.request.extend_from_slice(&1_u32.to_be_bytes()); // SSH_FXF_READ only
         self.request.extend_from_slice(&0_u32.to_be_bytes()); // no creation attributes
         let mut reply = self.reply(id, PacketKind::Handle, ReadStage::Open).await?;
@@ -166,76 +265,84 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
         Ok(handle)
     }
 
-    pub(super) async fn inspect(&mut self, handle: &FileHandle) -> Result<SnapshotSize, Fault> {
+    pub(super) async fn opendir(&mut self, path: &Path) -> Result<FileHandle, Fault> {
+        let id = self.begin(PacketKind::Opendir, ReadStage::Open)?;
+        self.string(path_bytes(path), ReadStage::Open)?;
+        let mut reply = self.reply(id, PacketKind::Handle, ReadStage::Open).await?;
+        let handle = reply.string()?;
+        if handle.is_empty() || handle.len() > 1024 {
+            return Err(reply.invalid("invalid SFTP directory handle length"));
+        }
+        let handle = FileHandle(handle.to_vec());
+        reply.end()?;
+        Ok(handle)
+    }
+
+    /// Path-based attributes, without any handle: how `open` decides a
+    /// file-or-directory target before opening anything.
+    pub(super) async fn stat(&mut self, path: &Path) -> Result<Attrs, Fault> {
+        let id = self.begin(PacketKind::Stat, ReadStage::Inspect)?;
+        self.string(path_bytes(path), ReadStage::Inspect)?;
+        let mut reply = self
+            .reply(id, PacketKind::Attrs, ReadStage::Inspect)
+            .await?;
+        let attrs = parse_attrs(&mut reply)?;
+        reply.end()?;
+        Ok(attrs)
+    }
+
+    pub(super) async fn fstat(&mut self, handle: &FileHandle) -> Result<Attrs, Fault> {
         let id = self.begin(PacketKind::Fstat, ReadStage::Inspect)?;
         self.string(&handle.0, ReadStage::Inspect)?;
         let mut reply = self
             .reply(id, PacketKind::Attrs, ReadStage::Inspect)
             .await?;
-        let flags = reply.number()?;
-        if flags & !0x8000_000f != 0 {
-            return Err(reply.invalid("unsupported SFTP v3 attribute flags"));
-        }
-        let size = if flags & 1 != 0 {
-            Some(reply.wide_number()?)
-        } else {
-            None
-        };
-        if flags & 2 != 0 {
-            reply.take(8)?;
-        } // uid/gid
-        let permissions = if flags & 4 != 0 {
-            Some(reply.number()?)
-        } else {
-            None
-        };
-        if flags & 8 != 0 {
-            reply.take(8)?;
-        } // atime/mtime
-        if flags & 0x8000_0000 != 0 {
-            let count = reply.number()?;
-            for _ in 0..count {
-                reply.string()?;
-                reply.string()?;
-            }
-        }
+        let attrs = parse_attrs(&mut reply)?;
         reply.end()?;
-        if !permissions.is_some_and(|mode| mode & 0xf000 == 0x8000) {
-            return Err(Fault::new(
-                ReadStage::Inspect,
-                ReadFailureKind::NotRegularFile,
-                "opened handle is not a proven regular file",
-            ));
-        }
-        let size = size.ok_or_else(|| {
-            Fault::new(
-                ReadStage::Inspect,
-                ReadFailureKind::UnknownLength,
-                "server reported no file length",
-            )
-        })?;
-        if size > MAX_SNAPSHOT {
-            return Err(Fault::new(
-                ReadStage::Inspect,
-                ReadFailureKind::TooLarge,
-                format!("{size} bytes exceeds the {MAX_SNAPSHOT} byte snapshot cap"),
-            ));
-        }
-        Ok(SnapshotSize(size))
+        Ok(attrs)
     }
 
-    pub(super) async fn read(
+    /// One page of a directory listing. `End` is the clean terminator.
+    pub(super) async fn readdir(&mut self, handle: &FileHandle) -> Result<Page, Fault> {
+        let id = self.begin(PacketKind::Readdir, ReadStage::Transfer)?;
+        self.string(&handle.0, ReadStage::Transfer)?;
+        self.readdir_reply(id, ReadStage::Transfer).await
+    }
+
+    /// `expand-path@openssh.com`: the only sanctioned home expansion. The
+    /// server returns the canonical absolute path for the given bytes.
+    pub(super) async fn expand_path(&mut self, path: &Path) -> Result<PathBuf, Fault> {
+        let id = self.begin(PacketKind::Extended, ReadStage::Open)?;
+        self.string(b"expand-path@openssh.com", ReadStage::Open)?;
+        self.string(path_bytes(path), ReadStage::Open)?;
+        let mut reply = self
+            .reply(id, PacketKind::ExtendedReply, ReadStage::Open)
+            .await?;
+        let expanded = reply.string()?;
+        if expanded.is_empty() || expanded.len() > MAX_NAME || expanded.contains(&0) {
+            return Err(reply.invalid("expanded path outside sane bounds"));
+        }
+        let expanded = native_name(expanded)?;
+        reply.end()?;
+        Ok(expanded)
+    }
+
+    /// Read exactly `length` bytes starting at `offset`. Short chunks are
+    /// protocol-legal; fewer bytes than requested before a clean end of
+    /// file is a short read, and nothing beyond `length` is accepted.
+    pub(super) async fn read_at(
         &mut self,
         handle: &FileHandle,
-        size: SnapshotSize,
+        offset: u64,
+        length: u64,
     ) -> Result<Vec<u8>, Fault> {
-        let mut snapshot = Vec::with_capacity(size.0 as usize);
-        while (snapshot.len() as u64) < size.0 {
-            let count = READ_CHUNK.min(size.0 as usize - snapshot.len());
+        let mut snapshot = Vec::with_capacity(length.min(MAX_SNAPSHOT) as usize);
+        let mut position = offset;
+        while (snapshot.len() as u64) < length {
+            let count = READ_CHUNK.min((length - snapshot.len() as u64) as usize);
             let id = self.begin(PacketKind::Read, ReadStage::Transfer)?;
             self.string(&handle.0, ReadStage::Transfer)?;
-            self.request
-                .extend_from_slice(&(snapshot.len() as u64).to_be_bytes());
+            self.request.extend_from_slice(&position.to_be_bytes());
             self.request
                 .extend_from_slice(&(count as u32).to_be_bytes());
             let mut reply = self
@@ -253,6 +360,7 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
                 ));
             }
             snapshot.extend_from_slice(data);
+            position += data.len() as u64;
             reply.end()?;
         }
         Ok(snapshot)
@@ -265,6 +373,46 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
             .await?
             .end()
     }
+}
+
+/// Decode one ATTRS block: size/permissions kept, everything else in the
+/// supported flag set skipped by bounds-checked arithmetic.
+fn parse_attrs(reply: &mut Decoder<'_>) -> Result<Attrs, Fault> {
+    let flags = reply.number()?;
+    if flags & !0x8000_000f != 0 {
+        return Err(reply.invalid("unsupported SFTP v3 attribute flags"));
+    }
+    let size = if flags & 1 != 0 {
+        Some(reply.wide_number()?)
+    } else {
+        None
+    };
+    if flags & 2 != 0 {
+        reply.take(8)?;
+    } // uid/gid
+    let permissions = if flags & 4 != 0 {
+        Some(reply.number()?)
+    } else {
+        None
+    };
+    if flags & 8 != 0 {
+        reply.take(8)?;
+    } // atime/mtime
+    if flags & 0x8000_0000 != 0 {
+        let count = reply.number()?;
+        for _ in 0..count {
+            reply.string()?;
+            reply.string()?;
+        }
+    }
+    Ok(Attrs { size, permissions })
+}
+
+/// Entry and expansion results are native bytes; platforms without byte
+/// filenames get strict UTF-8, never a lossy stand-in.
+fn native_name(bytes: &[u8]) -> Result<PathBuf, Fault> {
+    crate::address::uri::bytes_to_path(bytes.to_vec())
+        .map_err(|error| protocol(ReadStage::Transfer, error.to_string()))
 }
 
 fn protocol(stage: ReadStage, detail: impl Into<String>) -> Fault {

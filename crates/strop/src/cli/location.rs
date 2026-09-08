@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::files::FileTarget;
 use strop_core::id::LineIndex;
-use strop_remote::RemoteFile;
+use strop_remote::RemoteLocation;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileLocation {
@@ -38,7 +38,7 @@ impl FileLocation {
             if let Some(uri) = value.to_str().filter(|text| text.starts_with("ssh://")) {
                 return Ok(Self {
                     path: FileTarget::Remote(
-                        RemoteFile::parse(uri).map_err(LocationError::Remote)?,
+                        RemoteLocation::parse(uri).map_err(LocationError::Remote)?,
                     ),
                     line: None,
                 });

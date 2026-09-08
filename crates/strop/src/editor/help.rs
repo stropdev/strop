@@ -44,6 +44,22 @@ impl Editor {
                 ));
             }
         }
+        text.push_str(concat!(
+            "\n[remote]\n",
+            "  :tail [BYTES] [URI]     Read a bounded tail (URI defaults to current file)\n",
+            "  :range START BYTES URI  Read a byte window; line numbers are window-relative\n",
+            "  :follow [URI]           Follow a bounded tail; Escape stops following\n",
+            "  :unfollow               Keep the snapshot and stop polling\n",
+            "  :browse [URI]           Open a directory; Enter selects an entry or ../\n",
+            "  :filter [TEXT]          Filter a directory; no text restores all entries\n",
+            "  :remote connect URI     Hold a shared SSH connection explicitly\n",
+            "  :remote disconnect URI  Close the endpoint's owned connection\n",
+            "  :remote clear           Close all owned connections\n",
+            "  :remote list            List authenticated connections in a buffer\n",
+            "  :trust                  Authorize the pending endpoint/project command\n",
+            "  Tab                     Complete an SSH URI without starting authentication\n",
+            "  :e!                     Refresh the current read-only snapshot\n",
+        ));
         let mut buf = Buffer::from_text(&text);
         buf.name = Some("help".into());
         self.push_jump(); // opening help is a jumplist entry
