@@ -161,6 +161,16 @@ impl Picker {
         self.replace_input.insert_char(c);
     }
 
+    /// Bracketed paste into the focused field at its caret — one text
+    /// payload, never keystrokes, and valid in either field mode (the
+    /// ex line's pending reducer pastes the same way). Returns true
+    /// when the search field changed, so the glue refreshes results.
+    pub fn paste(&mut self, text: &str) -> bool {
+        let search = self.field == Field::Search;
+        self.active().insert_str(text);
+        search
+    }
+
     pub fn pop_replace_char(&mut self) {
         self.replace_input.backspace();
     }

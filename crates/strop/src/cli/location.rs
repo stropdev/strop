@@ -36,11 +36,29 @@ impl FileLocation {
     pub fn parse(value: OsString, literal: bool) -> Result<Self, LocationError> {
         if !literal {
             if let Some(uri) = value.to_str().filter(|text| text.starts_with("ssh://")) {
+                // FILE[:LINE] parity with local files: a trailing
+                // :digits after the last '/' is the line, so a pasted
+                // grep result opens where it points. The authority's
+                // :port is before the first '/', never ambiguous.
+                let (uri, line) = match uri.rfind('/') {
+                    Some(slash) => match uri[slash + 1..].rfind(':') {
+                        Some(colon) => {
+                            let digits = &uri[slash + 1 + colon + 1..];
+                            if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+                                (&uri[..slash + 1 + colon], Some(parse_line(digits)?))
+                            } else {
+                                (uri, None)
+                            }
+                        }
+                        None => (uri, None),
+                    },
+                    None => (uri, None),
+                };
                 return Ok(Self {
                     path: FileTarget::Remote(
                         RemoteLocation::parse(uri).map_err(LocationError::Remote)?,
                     ),
-                    line: None,
+                    line,
                 });
             }
             if let Some((path, line)) = suffix(&value)? {
@@ -189,5 +207,29 @@ mod tests {
             b"\xff.rs"
         );
         assert_eq!(location.line, Some(LineIndex::new(2)));
+    }
+
+    #[test]
+    fn ssh_urls_accept_a_line_suffix_like_local_files() {
+        // pasting a grep result opens where it points; the authority's
+        // :port precedes the first '/', never ambiguous with the suffix
+        let location = FileLocation::parse("ssh://host/path/f.txt:3".into(), false).unwrap();
+        assert!(matches!(location.path, FileTarget::Remote(_)));
+        assert_eq!(location.line, Some(LineIndex::new(2)));
+        let FileTarget::Remote(remote) = location.path else {
+            unreachable!()
+        };
+        assert_eq!(remote.to_string(), "ssh://host/path/f.txt");
+        // user@host:port with a line
+        let location =
+            FileLocation::parse("ssh://user@host:2222/path/f.txt:10".into(), false).unwrap();
+        assert_eq!(location.line, Some(LineIndex::new(9)));
+        // no numeric suffix: the path keeps its colons
+        let location = FileLocation::parse("ssh://host/path/f:txt".into(), false).unwrap();
+        assert_eq!(location.line, None);
+        let FileTarget::Remote(remote) = location.path else {
+            unreachable!()
+        };
+        assert_eq!(remote.to_string(), "ssh://host/path/f:txt");
     }
 }

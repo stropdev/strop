@@ -79,6 +79,53 @@ mod picker_tests {
         e.feed(crate::editor::Key::Right);
         assert_eq!(e.picker.as_ref().unwrap().picker.input.cursor, 1);
     }
+
+    #[test]
+    fn paste_into_picker_edits_the_field_not_the_document() {
+        // user report: bracketed paste in a picker or the connect-to-
+        // remote field was silently dropped (or worse, could land in
+        // the buffer behind the card)
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::Files);
+        e.paste_bracketed("main");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "main");
+        assert_eq!(e.buf().text(), "x\n", "the document is untouched");
+        // caret placement is honored
+        e.feed(crate::editor::Key::Left);
+        e.feed(crate::editor::Key::Left);
+        e.paste_bracketed("__");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "ma__in");
+        // paste works in the field's normal mode too (the ex line's
+        // pending reducer pastes the same way)
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("0");
+        e.paste_bracketed("#");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "#ma__in");
+    }
+
+    #[test]
+    fn paste_newline_into_picker_is_rejected_with_a_message() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::Files);
+        e.paste_bracketed("a\nb");
+        assert_eq!(
+            e.message, "picker input cannot contain a newline",
+            "a refused paste says so — silence reads as a broken terminal"
+        );
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "");
+    }
+
+    #[test]
+    fn paste_into_remote_address_field_is_accepted_verbatim() {
+        // the connect-to-remote case: an ssh://user@host:port/path URL
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::RemoteAddress);
+        e.paste_bracketed("ssh://user@example.com:2222/tmp/dir");
+        assert_eq!(
+            e.picker.as_ref().unwrap().picker.input.text,
+            "ssh://user@example.com:2222/tmp/dir"
+        );
+    }
 }
 
 // Worker lifecycle: injected terminal events (deterministic — no real

@@ -99,7 +99,11 @@ on a worker; cancellation must not erase the evidence needed for verification.
 - Hash the frozen rope on a worker. Obtain matching server content plus metadata
   under the cooperative lock; a same-size change is still a conflict.
 - Open the parent directory and target through native-byte, no-follow descriptor
-  operations. Refuse symlink components, nonregular targets and multiple hard links.
+  operations. Symlinked ancestor directories (the NFS-home norm on enterprise
+  hosts) are resolved component-wise and the no-follow walk restarts from the
+  root, bounded at 40 hops; every opened ancestor remains a revalidated real
+  directory. A symlink as the FINAL component, nonregular targets and multiple
+  hard links stay refused.
 - Reserve the protocol's lock and transaction prefixes in every native path
   component. Ordinary remote edits/saves must never replace an active lock inode
   or edit another transaction's stage. Validate lock path/descriptor identity,
@@ -144,6 +148,11 @@ on a worker; cancellation must not erase the evidence needed for verification.
 7. Cleanup removes only this transaction's stage and directory, then syncs the
    parent as required. Install termination handling before creating staging state:
    Python `finally` alone does not handle the supervisor's default SIGTERM action.
+   On NFS, renaming/unlinking an open file silly-renames it to `.nfsXXXX` until
+   the last client handle closes, so cleanup closes the stage handle before
+   unlinking and tolerates transient ENOTEMPTY on the stage rmdir with a bounded
+   retry; a still-failing cleanup after a committed rename stays explicitly
+   unconfirmed, never a false precommit failure.
    Observed cancellation/errors attempt cleanup; SIGKILL, host death or expiry of
    the supervisor's TERM grace may leave an orphan. Its 0700 parent protects it even
    after final file modes/ACLs were restored. Never glob-delete unrelated files.

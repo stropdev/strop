@@ -525,15 +525,19 @@ impl Editor {
     }
     /// Bracketed paste (0017): one undo unit, no key interpretation —
     /// the payload is text, not keystrokes. A live prompt consumes it
-    /// through the pending reducer; in normal mode it behaves like p;
-    /// a trailing newline pastes linewise (vim's paste plugin
-    /// convention).
+    /// through the pending reducer; an open picker pastes into its
+    /// focused field; in normal mode it behaves like p; a trailing
+    /// newline pastes linewise (vim's paste plugin convention).
     pub fn paste_bracketed(&mut self, text: &str) {
         if text.is_empty() {
             return;
         }
         if self.pending.is_active() {
             self.feed_pending_event(super::pending::PendingEvent::Paste(text.to_owned()));
+            return;
+        }
+        if self.picker_open() {
+            self.paste_picker(text);
             return;
         }
         if self.mode == super::Mode::Insert {

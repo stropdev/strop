@@ -41,6 +41,17 @@ Current delivery and remaining priorities:
   refuses a large Git completion rather than claiming a complete replay. Design
   bounded chunking/assembly with ownership and truncation tests before advertising
   full forensic capture of arbitrarily large worker results.
+- **P2 — remote-save lock release on clean exit.** `.strop-lock-<hash>` files
+  outlive `:q` (0.19.1 field report). The stable inode is deliberate today;
+  safe release needs the acquire-side identity recheck and a RemoteSave.tla
+  amendment. Design recorded in [0041](0041-handoff-adoption-and-roadmap.md) §4.
+- **P3 — `../` row attributes in remote listings.** The parent row renders
+  `d?????????` because it is never stat'ed. One SFTP stat in the list job;
+  cosmetic, batch with the next listing change.
+- **Architecture handoff (S1–S10, R1, G1/G2).** Adopt/defer disposition and
+  ROI ranking live in [0041](0041-handoff-adoption-and-roadmap.md), pending
+  the joint review session. Next adopted slice proposal: shared resource
+  identity (handoff S1).
 - **P3 — optional surfaces.** GUI, Dev Containers, writable directory operations,
   additional transports and arbitrary remote shell/debugger work retain their
   separate plans and safety/platform prerequisites below.

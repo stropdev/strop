@@ -9,6 +9,7 @@ import signal
 import stat
 import struct
 import sys
+import time
 import unicodedata
 
 VERSION = 1
@@ -26,6 +27,15 @@ class Refusal(Exception):
         self.kind = kind
         self.detail = detail
         super().__init__(detail)
+
+
+class ResolveLink(Exception):
+    """An intermediate directory component is a symlink; carries the
+    spliced absolute path to restart the no-follow walk with."""
+    def __init__(self, path):
+        super().__init__(path)
+        self.path = path
+
 
 
 def terminated(signum, frame):
@@ -154,21 +164,68 @@ class Transaction:
         self.descriptors.append(descriptor)
         return descriptor
 
+    MAX_LINK_HOPS = 40
+
     def open(self):
         if not self.path.startswith(b'/') or b'\0' in self.path:
             raise Refusal('invalid_path', 'an absolute native path is required')
         components = [part for part in self.path.split(b'/') if part]
         if not components or any(part in (b'.', b'..') or reserved(part) for part in components):
             raise Refusal('invalid_path', 'canonical non-control path components are required')
+        path = self.path
+        for _ in range(self.MAX_LINK_HOPS):
+            try:
+                self.walk(path)
+                return
+            except ResolveLink as resolution:
+                path = resolution.path
+        raise Refusal('invalid_path', 'too many symbolic links in the path')
+
+    def walk(self, path):
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        todo = [part for part in path.split(b'/') if part and part != b'.']
         parent = self.own(os.open(b'/', flags))
-        for component in components[:-1]:
-            exact_name(parent, component)
-            child = self.own(os.open(component, flags, dir_fd=parent))
-            self.bindings.append((parent, component, child))
+        done = []
+        bindings = []
+        while len(todo) > 1:
+            component = todo[0]
+            # '..' reaches this walk only through a symlink target; the
+            # kernel resolves it against the real directory, which is
+            # correct even across further symlinks. It is not a stored
+            # entry, so exact_name does not apply.
+            if component != b'..':
+                if reserved(component):
+                    raise Refusal('invalid_path', 'canonical non-control path components are required')
+                exact_name(parent, component)
+            try:
+                child = self.own(os.open(component, flags, dir_fd=parent))
+            except OSError as failure:
+                if failure.errno not in (errno.ENOTDIR, errno.ELOOP):
+                    raise
+                info = os.stat(component, dir_fd=parent, follow_symlinks=False)
+                if not stat.S_ISLNK(info.st_mode):
+                    raise Refusal('invalid_path', 'a path component is not a directory')
+                # A symlinked intermediate directory (NFS-mounted home
+                # directories are the norm on enterprise hosts): resolve
+                # it, then restart the walk from the root so every opened
+                # ancestor remains a verified real directory. The final
+                # component still opens O_NOFOLLOW below — writing a
+                # symlink target stays refused. revalidate() re-stats
+                # every binding before commit, so a component swapped
+                # after this walk is a conflict, never a silent redirect.
+                target = os.readlink(component, dir_fd=parent)
+                if not target.startswith(b'/'):
+                    target = b'/' + b'/'.join(done) + b'/' + target
+                raise ResolveLink(target + b'/' + b'/'.join(todo[1:]))
+            bindings.append((parent, component, child))
+            done.append(component)
+            todo = todo[1:]
             parent = child
+        self.bindings = bindings
         self.parent = parent
-        self.name = components[-1]
+        self.name = todo[0]
+        if self.name == b'..' or reserved(self.name):
+            raise Refusal('invalid_path', 'canonical non-control path components are required')
         exact_name(parent, self.name)
         self.lock_name = LOCK_PREFIX + hashlib.sha256(self.name).hexdigest().encode('ascii')
         self.lock = self.own(os.open(self.lock_name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600, dir_fd=parent))
@@ -232,6 +289,15 @@ class Transaction:
         signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT, signal.SIGHUP})
         try:
             if self.stage_identity is not None:
+                # NFS silly-rename: renaming or unlinking an open file
+                # leaves a .nfsXXXX entry in its directory until the last
+                # client handle closes, and rmdir then fails ENOTEMPTY on
+                # a directory that is already logically empty. Close our
+                # stage handle first so no linger is self-inflicted.
+                if self.stage is not None:
+                    os.close(self.stage)
+                    self.descriptors.remove(self.stage)
+                    self.stage = None
                 if self.stage_directory is not None:
                     try:
                         os.unlink(b'contents', dir_fd=self.stage_directory)
@@ -240,7 +306,17 @@ class Transaction:
                 current = os.stat(self.stage_name, dir_fd=self.parent, follow_symlinks=False)
                 if identity(current) != self.stage_identity:
                     raise Refusal('conflict', 'transaction directory changed identity during cleanup')
-                os.rmdir(self.stage_name, dir_fd=self.parent)
+                # The deferred .nfsXXXX removal can trail the close by a
+                # server round-trip; ENOTEMPTY here is transient, so retry
+                # briefly rather than report a committed save as failed.
+                for attempt in range(20):
+                    try:
+                        os.rmdir(self.stage_name, dir_fd=self.parent)
+                        break
+                    except OSError as failure:
+                        if failure.errno not in (errno.ENOTEMPTY, errno.EEXIST) or attempt == 19:
+                            raise
+                        time.sleep(0.05)
                 os.fsync(self.parent)
         finally:
             for descriptor in reversed(self.descriptors):

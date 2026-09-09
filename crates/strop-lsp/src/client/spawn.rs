@@ -6,12 +6,13 @@
 //! carry the protocol, with a bounded teardown that never leaks the
 //! local ssh process.
 use std::future::Future;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
-use async_lsp::lsp_types::notification::PublishDiagnostics;
+use async_lsp::lsp_types::notification::{LogMessage, PublishDiagnostics, ShowMessage};
 use async_lsp::lsp_types::{InitializeParams, InitializedParams};
 use async_lsp::router::Router;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -25,8 +26,7 @@ use crate::convert::diag_from_lsp;
 use crate::protocol::*;
 use crate::registry;
 use crate::target::Workspace;
-
-struct ClientState {
+pub(crate) struct ClientState {
     tx: Sender<LspEvent>,
     id: ServerId,
     caps: ServerCaps,
@@ -119,6 +119,79 @@ fn remote_launch(
     })
 }
 
+/// The production client router: diagnostics, server messages, and a
+/// tolerant catch-all. A free function (not a closure inline in
+/// `spawn`) so tests drive the exact handlers a spawned client uses.
+pub(crate) fn client_router(
+    tx: Sender<LspEvent>,
+    id: ServerId,
+    caps: ServerCaps,
+    sync: Arc<parking_lot::Mutex<sync::SyncState>>,
+    workspace: Workspace,
+    name: String,
+) -> Router<ClientState> {
+    let mut router = Router::new(ClientState { tx, id, caps, sync });
+    let diag_workspace = workspace;
+    router.notification::<PublishDiagnostics>(move |st, params| {
+        // The URI names a file on the server's own filesystem;
+        // decode there, never against the local disk.
+        let Some(path) = diag_workspace.decode(&params.uri) else {
+            return ControlFlow::Continue(());
+        };
+        let context = st.sync.lock().diagnostic_context(
+            &path,
+            params.version.map(WireVersion::new),
+            st.id,
+            st.caps.encoding(),
+        );
+        if let Some(context) = context {
+            let diags = params.diagnostics.iter().map(diag_from_lsp).collect();
+            let _ = st.tx.send(LspEvent::Diagnostics {
+                context,
+                doc: crate::target::DocPath {
+                    target: diag_workspace.target(),
+                    path,
+                },
+                diags,
+            });
+        }
+        ControlFlow::Continue(())
+    });
+    // window/showMessage is user-facing and reaches the status line;
+    // window/logMessage is server logging and stays in the trace.
+    // Neither may kill the connection: pyright sends logMessage on
+    // every startup, and async-lsp's default catch-all breaks the
+    // mainloop on any notification the client did not register.
+    router.notification::<ShowMessage>(move |st, params| {
+        strop_trace::record_with(strop_trace::EventKind::LspMessage, || {
+            serde_json::json!({"service":"lsp","server":st.id,"method":"window/showMessage",
+                "message":strop_trace::preview(&params.message)})
+        });
+        let _ = st.tx.send(LspEvent::ServerMessage {
+            server: st.id,
+            name: name.clone(),
+            text: params.message,
+        });
+        ControlFlow::Continue(())
+    });
+    router.notification::<LogMessage>(move |st, params| {
+        strop_trace::record_with(strop_trace::EventKind::LspMessage, || {
+            serde_json::json!({"service":"lsp","server":st.id,"method":"window/logMessage",
+                "message":strop_trace::preview(&params.message)})
+        });
+        ControlFlow::Continue(())
+    });
+    // The spec permits notifications a client does not handle; the
+    // correct response is to ignore them. Trace and continue.
+    router.unhandled_notification(|st, notif| {
+        strop_trace::record_with(strop_trace::EventKind::LspMessage, || {
+            serde_json::json!({"service":"lsp","server":st.id,"method":notif.method,"ignored":true})
+        });
+        ControlFlow::Continue(())
+    });
+    router
+}
+
 impl Client {
     /// Spawn the configured server on the given workspace — locally,
     /// or on the remote endpoint inside the remote root — and start
@@ -155,39 +228,14 @@ impl Client {
         let self_caps = ServerCaps::default();
         let sync = Arc::new(parking_lot::Mutex::new(sync::SyncState::default()));
         let diag_workspace = workspace.clone();
-        let (mainloop, socket) = async_lsp::MainLoop::new_client(|_server| {
-            let mut router = Router::new(ClientState {
-                tx: tx.clone(),
-                id,
-                caps: self_caps.clone(),
-                sync: sync.clone(),
-            });
-            router.notification::<PublishDiagnostics>(move |st, params| {
-                // The URI names a file on the server's own filesystem;
-                // decode there, never against the local disk.
-                let Some(path) = diag_workspace.decode(&params.uri) else {
-                    return std::ops::ControlFlow::Continue(());
-                };
-                let context = st.sync.lock().diagnostic_context(
-                    &path,
-                    params.version.map(WireVersion::new),
-                    st.id,
-                    st.caps.encoding(),
-                );
-                if let Some(context) = context {
-                    let diags = params.diagnostics.iter().map(diag_from_lsp).collect();
-                    let _ = st.tx.send(LspEvent::Diagnostics {
-                        context,
-                        doc: crate::target::DocPath {
-                            target: diag_workspace.target(),
-                            path,
-                        },
-                        diags,
-                    });
-                }
-                std::ops::ControlFlow::Continue(())
-            });
-            router
+        let name = spec.name.to_string();
+        let (mainloop, socket) = async_lsp::MainLoop::new_client({
+            let tx = tx.clone();
+            let caps = self_caps.clone();
+            let sync = sync.clone();
+            let workspace = diag_workspace.clone();
+            let name = name.clone();
+            move |_server| client_router(tx, id, caps, sync, workspace, name)
         });
 
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -200,7 +248,6 @@ impl Client {
         // All tokio work, including child spawn, lives on the runtime thread.
         let cmd = spec.command.to_string();
         let tx_fail = tx.clone();
-        let name = spec.name.to_string();
         let hint = spec
             .install_hint
             .map(ToString::to_string)
@@ -339,12 +386,21 @@ impl Client {
                                 }));
                             }
                             if !quitting_mainloop.load(std::sync::atomic::Ordering::Relaxed) {
-                                let mut detail = String::new();
+                                // The mainloop's own error is the primary
+                                // cause (protocol break, server closed the
+                                // connection); stderr and supervision
+                                // records add the process-level truth. The
+                                // generic install hint alone would mask
+                                // the real reason.
+                                let mut detail = match &result {
+                                    Err(error) => format!(": {error}"),
+                                    Ok(()) => String::new(),
+                                };
                                 {
                                     let guard = stderr_tail.lock();
                                     let text = String::from_utf8_lossy(&guard).trim().to_string();
                                     if !text.is_empty() {
-                                        detail = format!(": {text}");
+                                        detail = format!("{detail}; stderr: {text}");
                                     }
                                     // Typed supervision records name the
                                     // remote exit truthfully (signaled,
@@ -470,12 +526,18 @@ impl Client {
                         name: name.clone(),
                     });
                 }
-                _ => {
+                outcome => {
                     initializing.stop.halt();
+                    // A bare install hint masks the real reason: the
+                    // server's own refusal or a timeout names it instead.
+                    let reason = match outcome {
+                        Ok(Err(error)) => format!("initialize refused: {error}"),
+                        _ => "initialize timed out".to_string(),
+                    };
                     let _ = initializing.tx.send(LspEvent::Failed {
                         server: id,
                         name: name.clone(),
-                        hint: hint.clone(),
+                        hint: format!("{reason} — {hint}"),
                     });
                 }
             }

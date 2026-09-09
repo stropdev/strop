@@ -26,8 +26,47 @@ struct Wire {
 impl Wire {
     /// An in-memory client: real mainloop, real wire queue, duplex peer.
     fn new() -> (Client, Receiver<LspEvent>, Self) {
+        Self::with_router(|_, _, _, _, _| Router::new(()))
+    }
+
+    /// The PRODUCTION router (spawn.rs's handlers), so notification
+    /// tolerance is tested exactly as shipped.
+    fn production() -> (Client, Receiver<LspEvent>, Self) {
+        Self::with_router(|_, tx, id, caps, sync| {
+            super::spawn::client_router(
+                tx,
+                id,
+                caps,
+                sync,
+                crate::target::Workspace::Local {
+                    root: PathBuf::from("/workspace"),
+                },
+                "prod".into(),
+            )
+        })
+    }
+
+    /// The builder receives the parts the client will own, so a custom
+    /// router's state and the client share one identity.
+    fn with_router<St: Send + 'static>(
+        build: impl FnOnce(
+            async_lsp::ServerSocket,
+            Sender<LspEvent>,
+            ServerId,
+            ServerCaps,
+            Arc<parking_lot::Mutex<sync::SyncState>>,
+        ) -> Router<St>,
+    ) -> (Client, Receiver<LspEvent>, Self) {
         let (tx, rx) = channel();
-        let (mainloop, socket) = async_lsp::MainLoop::new_client(|_| Router::new(()));
+        let id = ServerId::allocate();
+        let caps = ServerCaps::default();
+        let sync = Arc::new(parking_lot::Mutex::new(sync::SyncState::default()));
+        let (mainloop, socket) = async_lsp::MainLoop::new_client({
+            let tx = tx.clone();
+            let caps = caps.clone();
+            let sync = sync.clone();
+            move |server| build(server, tx, id, caps, sync)
+        });
         let (client_io, peer_io) = tokio::io::duplex(65536);
         let (input, output) = tokio::io::split(client_io);
         let task = tokio::spawn(async move {
@@ -35,9 +74,6 @@ impl Wire {
                 .run_buffered(input.compat(), output.compat_write())
                 .await;
         });
-        let caps = ServerCaps::default();
-        let sync = Arc::new(parking_lot::Mutex::new(sync::SyncState::default()));
-        let id = ServerId::allocate();
         let client = Client {
             id,
             next_request: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -126,6 +162,18 @@ impl Wire {
                 payload.insert(key, value);
             }
         }
+        let bytes = serde_json::to_vec(&payload).unwrap();
+        self.writer
+            .write_all(format!("Content-Length: {}\r\n\r\n", bytes.len()).as_bytes())
+            .await
+            .unwrap();
+        self.writer.write_all(&bytes).await.unwrap();
+        self.writer.flush().await.unwrap();
+    }
+
+    /// A server-to-client notification frame (no id).
+    async fn notify(&mut self, method: &str, params: Value) {
+        let payload = json!({ "jsonrpc": "2.0", "method": method, "params": params });
         let bytes = serde_json::to_vec(&payload).unwrap();
         self.writer
             .write_all(format!("Content-Length: {}\r\n\r\n", bytes.len()).as_bytes())

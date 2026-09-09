@@ -155,6 +155,9 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
                 // The hint carries the executable and the fix (0033 §3)
                 json!({"service":"lsp","result":"failed","server":server,"name":name,"hint":hint})
             }
+            LspEvent::ServerMessage { server, name, text } => {
+                json!({"service":"lsp","result":"message","server":server,"name":name,"bytes":text.len()})
+            }
             LspEvent::Diagnostics { context, diags, .. } => json!({
                 "service":"lsp","result":"diagnostics","context":context,"count":diags.len(),
             }),

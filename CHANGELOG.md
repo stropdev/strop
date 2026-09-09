@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.19.1 — 2026-09-09
+
+Enterprise-remote fixes from the first RHEL/NFS field report.
+
+### Fixed
+
+- Bracketed paste now reaches picker and popup inputs (the `:remote` chooser,
+  the connect-to-remote address field, replace fields): it edits the focused
+  field instead of being silently dropped. Multi-line pastes are refused with
+  a message; paste into the buffer and `:` line is unchanged.
+- `:remote edit` and remote saves accept paths with symlinked ancestor
+  directories (the NFS-mounted-home norm, e.g. `/home/user -> /home24/user`).
+  Intermediate links are resolved component-wise under a bounded no-follow
+  walk; a symlink as the final component, non-regular targets and hard links
+  stay refused.
+- Saving into an NFS directory no longer fails at cleanup: the stage handle is
+  closed before unlink and a transient silly-rename ENOTEMPTY is retried, so a
+  committed save reports committed and the staging directory is removed.
+- Language servers whose startup sends `window/logMessage` (pyright does,
+  unconditionally) are no longer killed as "unhandled notification". Server
+  notifications a client need not handle are traced and ignored,
+  `window/showMessage` reaches the status line, and attach failures now name
+  the real reason (initialize refusal/timeout, protocol error, stderr)
+  alongside the install hint.
+- `strop ssh://host/path/file.txt:LINE` accepts the same `:LINE` suffix as
+  local files; `--help` now points at the remote command surface (`:help`).
+
 ## 0.19.0 — 2026-09-09
 
 Explicit remote editing and conflict-aware saving (plan 0040).

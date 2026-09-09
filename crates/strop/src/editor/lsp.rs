@@ -93,6 +93,13 @@ impl Editor {
                     trace::services::rejected("lsp", "failure for an unowned server");
                 }
             }
+            LspEvent::ServerMessage { server, name, text } => {
+                if self.lsp_servers.iter().any(|s| s.id == server) {
+                    self.message = format!("lsp: {name}: {text}");
+                } else {
+                    trace::services::rejected("lsp", "message for an unowned server");
+                }
+            }
             LspEvent::Diagnostics {
                 context,
                 doc,

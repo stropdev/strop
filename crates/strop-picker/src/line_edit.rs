@@ -37,6 +37,13 @@ impl LineEdit {
         self.cursor += c.len_utf8();
     }
 
+    /// Insert a pasted payload at the caret (bracketed paste: one
+    /// payload, no key interpretation — same shape as insert_char).
+    pub fn insert_str(&mut self, text: &str) {
+        self.text.insert_str(self.cursor, text);
+        self.cursor += text.len();
+    }
+
     /// Delete before the caret (insert mode backspace).
     pub fn backspace(&mut self) {
         if self.cursor > 0 {

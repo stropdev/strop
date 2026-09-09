@@ -156,6 +156,78 @@ fn symlinks_hardlinks_and_protocol_namespace_cannot_gain_write_authority() {
 }
 
 #[test]
+fn symlinked_ancestor_directories_resolve_but_the_target_stays_strict() {
+    // Enterprise NFS layout: /home/user is a symlink to /home24/user.
+    // The no-follow walk resolves intermediate links and restarts from
+    // the root; the file itself still opens O_NOFOLLOW, so a symlinked
+    // FINAL component stays refused (covered above).
+    let directory = fixture_directory();
+    let real = directory.path().join("real");
+    std::fs::create_dir_all(real.join("deep")).unwrap();
+    std::fs::write(real.join("deep").join("g.txt"), "y\n").unwrap();
+    let link = directory.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let through = link.join("deep").join("g.txt");
+    let before = baseline(&through, "y\n");
+    let saved = helper(&through, request("save", "z\n", Some(before)), b"z\n", "");
+    assert!(
+        saved.status.success(),
+        "{}",
+        String::from_utf8_lossy(&saved.stdout)
+    );
+    assert_eq!(
+        std::fs::read(real.join("deep").join("g.txt")).unwrap(),
+        b"z\n"
+    );
+    assert!(private_stages(&real.join("deep")).is_empty());
+    // A relative target resolves against the link's real directory, and
+    // '..' inside a target is resolved by the kernel step by step.
+    let relative = directory.path().join("relative");
+    std::os::unix::fs::symlink("real", &relative).unwrap();
+    let output = helper(
+        &relative.join("deep").join("g.txt"),
+        request("edit", "z\n", None),
+        b"",
+        "",
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let dotted = directory.path().join("dotted");
+    std::os::unix::fs::symlink("real/../real", &dotted).unwrap();
+    let output = helper(
+        &dotted.join("deep").join("g.txt"),
+        request("edit", "z\n", None),
+        b"",
+        "",
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    // A symlink loop is refused after a bounded number of hops, and a
+    // regular file as an intermediate component is not a directory.
+    let loop_a = directory.path().join("loopa");
+    let loop_b = directory.path().join("loopb");
+    std::os::unix::fs::symlink(&loop_b, &loop_a).unwrap();
+    std::os::unix::fs::symlink(&loop_a, &loop_b).unwrap();
+    let output = helper(&loop_a.join("g.txt"), request("edit", "z\n", None), b"", "");
+    assert!(!output.status.success());
+    assert_eq!(result(&output)["kind"], "invalid_path");
+    let output = helper(
+        &real.join("deep").join("g.txt").join("x"),
+        request("edit", "z\n", None),
+        b"",
+        "",
+    );
+    assert!(!output.status.success());
+    assert_eq!(result(&output)["kind"], "invalid_path");
+}
+
+#[test]
 fn crash_after_metadata_restoration_keeps_draft_behind_private_directory() {
     let directory = fixture_directory();
     let path = directory.path().join("file");

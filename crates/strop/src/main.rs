@@ -240,7 +240,9 @@ USAGE:\n  strop [+LINE] [FILE[:LINE]|DIR] terminal editor (-R: readonly)\n\
   strop update [--check]          self-update\n\
   strop config | --version | --dump-compat\n\n\
   strop -- FILE:3                open a literal colon-suffixed filename\n\n\
-  strop [+LINE] ssh://[user@]host[:port]/absolute/path  read-only remote file or directory\n\
+  strop [+LINE] ssh://[user@]host[:port]/absolute/path[:LINE]  remote file or directory\n\
+REMOTE: :remote edit enables saving; :remote verify reconciles an unconfirmed\n\
+  save; :browse :filter :tail :range :follow :remote connect/list — :help lists all\n\
 TRACING:\n  --log / --log=ALL              all diagnostic categories to strop-log.jsonl\n\
   --log=PATH / --log-file PATH    create a new private JSONL file\n\
   STROP_LOG=PATH                 environment alternative (flag wins)\n\

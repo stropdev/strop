@@ -394,6 +394,24 @@ impl Editor {
         }
     }
 
+    /// Bracketed paste while a picker is open edits the focused field
+    /// (query, replacement or remote address); it never reaches the
+    /// document behind the card. Multi-line payloads are rejected with
+    /// a message — a dropped keystroke with no feedback reads as a
+    /// broken terminal, not as an editor decision.
+    pub(crate) fn paste_picker(&mut self, text: &str) {
+        let Some(glue) = &mut self.picker else {
+            return;
+        };
+        if text.contains(['\r', '\n']) {
+            self.message = "picker input cannot contain a newline".into();
+            return;
+        }
+        if glue.picker.paste(text) {
+            self.picker_input_changed();
+        }
+    }
+
     pub(crate) fn accept_current_picker(&mut self) {
         if self
             .picker

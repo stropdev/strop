@@ -307,6 +307,14 @@ pub enum LspEvent {
         name: String,
         hint: String,
     },
+    /// A server-initiated `window/showMessage`: user-facing, from the
+    /// owning server. `window/logMessage` stays in the trace — it is
+    /// logging, not a message.
+    ServerMessage {
+        server: ServerId,
+        name: String,
+        text: String,
+    },
     HoverText {
         context: ReplyContext,
         text: String,

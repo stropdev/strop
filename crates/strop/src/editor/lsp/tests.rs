@@ -656,6 +656,34 @@ fn failed_server_event_names_the_command_and_removes_the_server() {
     assert_eq!(e.message, "later state");
 }
 
+/// window/showMessage reaches the modeline from its owning server;
+/// a message for an unknown server is refused, not shown.
+#[test]
+fn server_message_reaches_the_modeline_from_its_owner() {
+    let mut e = editor("a\n");
+    e.buf_mut().path = Some(PathBuf::from("/workspace/origin.rs"));
+    let server = ServerId::new(6);
+    e.lsp_servers.push(LspServer {
+        id: server,
+        client: None,
+        rx: std::sync::mpsc::channel().1,
+        ready: true,
+    });
+    e.handle_lsp_event(LspEvent::ServerMessage {
+        server,
+        name: "pyright".into(),
+        text: "stubPath is not a valid directory".into(),
+    });
+    assert_eq!(e.message, "lsp: pyright: stubPath is not a valid directory");
+    e.message = "later state".into();
+    e.handle_lsp_event(LspEvent::ServerMessage {
+        server: ServerId::new(99),
+        name: "ghost".into(),
+        text: "stale".into(),
+    });
+    assert_eq!(e.message, "later state");
+}
+
 #[test]
 fn resolved_diag_round_trips_serde() {
     let diag = ResolvedDiag {
