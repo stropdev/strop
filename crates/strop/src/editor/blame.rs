@@ -235,7 +235,7 @@ impl Editor {
         self.launch_blame_line(ticket, context.repo, rel, line);
     }
 
-    fn blame_line_remote(&mut self, file: strop_remote::RemoteFile) {
+    fn blame_line_remote(&mut self, file: strop_workspace::RemoteFile) {
         let Some(context) = self.git_context().cloned() else {
             self.message = "not a git repo".into();
             return;

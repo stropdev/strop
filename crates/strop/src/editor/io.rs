@@ -27,7 +27,7 @@ pub enum OpenIntent {
     Refresh,
     Browse,
     DirectoryParent {
-        child: strop_remote::RemoteFile,
+        child: strop_workspace::RemoteFile,
     },
     RemoteDestination,
     RemoteView {

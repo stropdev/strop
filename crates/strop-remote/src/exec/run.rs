@@ -21,10 +21,10 @@ use super::{
     CommandOutput, RemoteCommand, RemoteCommandError, RemoteExitStatus, StdinMode,
     SupervisionOutcome,
 };
-use crate::address::RemoteEndpoint;
 use std::time::Duration;
 use strop_core::process::{capture_with, CaptureError, CapturePolicy, StdinPolicy};
 use strop_core::worker::CancelToken;
+use strop_workspace::RemoteEndpoint;
 
 pub(super) const STDOUT_LIMIT: u64 = 16 * 1024 * 1024;
 pub(super) const STDERR_LIMIT: u64 = 64 * 1024;

@@ -8,7 +8,7 @@ use crate::editor::{
 use crate::files::FileTarget;
 use strop_core::worker::{self, CancelReason, Completion, FailureKind, Outcome, Ticket};
 use strop_picker::{Catalog, Item, Kind, Payload, Picker};
-use strop_remote::{RemoteEndpoint, RemoteFile, RemoteLocation};
+use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub(crate) struct RemoteChoices {

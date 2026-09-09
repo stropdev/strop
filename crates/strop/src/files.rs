@@ -1,7 +1,10 @@
-//! Application open targets. Remote URIs and native local paths are distinct identities.
+//! Application open targets (0042). `FileTarget` is the *unresolved* input an
+//! open/browse command was given — a local path or a remote URI spelling — as
+//! opposed to `strop_workspace::ResourceLocation`, the resolved identity of a
+//! resource once it is known. Remote URIs and native local paths stay distinct.
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use strop_remote::{AddressError, RemoteLocation};
+use strop_workspace::{AddressError, RemoteLocation};
 
 /// Local paths keep their existing native-byte wire representation; remote targets
 /// have an explicit remote envelope, never an ambiguous legacy local-path string.

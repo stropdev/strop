@@ -26,9 +26,9 @@
 //! subsystem or a supervised remote command) is the caller's one
 //! remaining decision.
 
-use crate::address::RemoteEndpoint;
 use std::ffi::OsString;
 use std::process::{Command, Stdio};
+use strop_workspace::RemoteEndpoint;
 
 /// The option argv — program excluded — shared by every transport.
 ///

@@ -5,7 +5,7 @@
 //! Two backends share one typed model (0036 RW8): the local libgit2
 //! repository ([`Repo`]) and the read-oriented remote backend
 //! ([`remote`]) — bounded `git` commands against a worktree that
-//! exists only on an [`strop_remote::RemoteEndpoint`]. [`RepoTarget`]
+//! exists only on an [`strop_workspace::RemoteEndpoint`]. [`RepoTarget`]
 //! is the boundary that keeps a remote workdir from ever reaching a
 //! local Git call.
 

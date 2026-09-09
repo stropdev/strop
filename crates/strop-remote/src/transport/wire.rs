@@ -3,8 +3,8 @@
 //! bounded packets, request identity, advertised extensions and directory
 //! enumeration. No path is ever interpreted by a shell.
 use super::error::{Fault, ReadFailureKind, ReadStage};
-use crate::address::uri::path_bytes;
 use std::path::{Path, PathBuf};
+use strop_workspace::addr::uri::path_bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[cfg(test)]
@@ -416,7 +416,7 @@ fn parse_attrs(reply: &mut Decoder<'_>) -> Result<Attrs, Fault> {
 /// Entry and expansion results are native bytes; platforms without byte
 /// filenames get strict UTF-8, never a lossy stand-in.
 fn native_name(bytes: &[u8]) -> Result<PathBuf, Fault> {
-    crate::address::uri::bytes_to_path(bytes.to_vec())
+    strop_workspace::addr::uri::bytes_to_path(bytes.to_vec())
         .map_err(|error| protocol(ReadStage::Transfer, error.to_string()))
 }
 

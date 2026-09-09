@@ -37,8 +37,8 @@ pub(super) fn to_server_location(
 ) -> Result<ServerLocation, String> {
     match workspace.decode(&l.uri) {
         Some(path) => Ok(ServerLocation {
-            doc: crate::target::DocPath {
-                target: workspace.target(),
+            doc: strop_workspace::ResourceLocation {
+                filesystem: workspace.target(),
                 path,
             },
             position: ServerPosition {

@@ -24,7 +24,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{self, CancelReason, Completion, FailureKind, Outcome, Ticket};
-use strop_remote::{HostCandidate, HostSources, RemoteClient, RemoteEntryKind, RemoteFile};
+use strop_remote::{HostCandidate, HostSources, RemoteClient, RemoteEntryKind};
+use strop_workspace::RemoteFile;
 
 use super::document::DocumentSource;
 use super::pending::{PendingEvent, PromptContext};

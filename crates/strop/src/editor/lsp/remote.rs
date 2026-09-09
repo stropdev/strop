@@ -11,8 +11,9 @@ use std::sync::mpsc::channel;
 use strop_core::worker::CancelToken;
 use strop_remote::{
     ReadFailureKind, ReadLimit, ReadSelection, RemoteClient, RemoteCommand, RemoteCommandError,
-    RemoteEndpoint, RemoteFile, RemoteLocation, RemoteOffset,
+    RemoteOffset,
 };
+use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 use super::attach::{AttachDecision, AttachRecord, DiscoverInput, LiveTransport};
 use strop_lsp::languages::{Languages, LayerDiagnostic, RemoteLayer};
@@ -234,7 +235,7 @@ pub(super) fn discover(
     } = input;
     let endpoint = file.endpoint().clone();
     let abs = file.path().to_path_buf();
-    let target = strop_lsp::FsTarget::Remote(endpoint.clone());
+    let target = strop_workspace::Filesystem::Remote(endpoint.clone());
     let parent = abs.parent().map(Path::to_path_buf).unwrap_or_default();
     let record = |server: Option<ServerId>,
                   name: String,

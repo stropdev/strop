@@ -12,7 +12,7 @@ use strop_core::worker::{self, CancelReason, Completion, Outcome, Ticket, Worker
 use strop_remote::save::{
     self as transport, RemoteSaveError, RemoteSaveReceipt, RemoteVersion, Verification,
 };
-use strop_remote::RemoteFile;
+use strop_workspace::RemoteFile;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct WritePermit {

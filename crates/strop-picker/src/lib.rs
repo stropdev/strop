@@ -37,14 +37,14 @@ pub enum Payload {
     /// A location on a validated remote endpoint. The native path can never
     /// be previewed or opened as an analogous local file.
     Remote {
-        endpoint: strop_remote::RemoteEndpoint,
+        endpoint: strop_workspace::RemoteEndpoint,
         #[serde(with = "strop_core::path_serde")]
         path: PathBuf,
         line: usize,
         col: usize,
     },
     /// Explicitly chosen SSH directory, never an analogous local path.
-    RemoteDirectory(strop_remote::RemoteFile),
+    RemoteDirectory(strop_workspace::RemoteFile),
     /// Switch the same modal picker to its new-address field.
     RemoteConnect,
 }

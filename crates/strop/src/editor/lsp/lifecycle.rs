@@ -41,14 +41,14 @@ impl Editor {
             return;
         };
         if self
-            .lsp_server_for(&doc.path, language, &doc.target)
+            .lsp_server_for(&doc.path, language, &doc.filesystem)
             .is_some()
         {
             self.lsp_did_open_current();
             return;
         }
         let key = AttachKey {
-            target: doc.target.clone(),
+            target: doc.filesystem.clone(),
             language: language.to_string(),
             path: doc.path.clone(),
         };
@@ -78,7 +78,7 @@ impl Editor {
             ticket,
             path: doc.path.clone(),
             language: language.to_string(),
-            target: doc.target.clone(),
+            target: doc.filesystem.clone(),
         };
         // Replay gate: no native config/trust/executability before this
         // registration (R11).
@@ -95,19 +95,19 @@ impl Editor {
     fn lsp_spawn_discovery(
         &mut self,
         ticket: strop_core::worker::WorkerId,
-        doc: DocPath,
+        doc: ResourceLocation,
         ext: String,
         language: &'static str,
     ) {
-        let place = match doc.target.clone() {
-            FsTarget::Local => attach::DiscoverPlace::Local {
+        let place = match doc.filesystem.clone() {
+            Filesystem::Local => attach::DiscoverPlace::Local {
                 abs: doc.path.clone(),
                 cwd: self.cwd.clone(),
                 git_workdir: self.git.as_ref().map(|g| g.workdir().to_path_buf()),
             },
             // The remote client is a cheap clone routed to the owned
             // session actor; the document's lease keeps it connected.
-            FsTarget::Remote(_) => {
+            Filesystem::Remote(_) => {
                 let Some(file) = self.remote_file().cloned() else {
                     return;
                 };
@@ -132,7 +132,7 @@ impl Editor {
             language: language.to_owned(),
             name: language.to_owned(),
             root: doc.path.parent().unwrap_or(Path::new("/")).to_owned(),
-            target: doc.target,
+            target: doc.filesystem,
             outcome: attach::AttachDecision::Cancelled,
             layers: Vec::new(),
         };
@@ -172,7 +172,7 @@ impl Editor {
         &self,
         path: &Path,
         language: &'static str,
-        target: &FsTarget,
+        target: &Filesystem,
     ) -> Option<(ServerId, PathBuf)> {
         let attach = &self.lsp_state.attach;
         let best = attach
@@ -408,8 +408,8 @@ impl Editor {
             .filter(|a| a.target.is_remote())
             .filter(|a| {
                 let endpoint = match &a.target {
-                    FsTarget::Remote(endpoint) => endpoint,
-                    FsTarget::Local => return false,
+                    Filesystem::Remote(endpoint) => endpoint,
+                    Filesystem::Local => return false,
                 };
                 !self.docs.iter().any(|(id, document)| {
                     document.remote_metadata().is_some_and(|source| {
@@ -467,16 +467,16 @@ impl Editor {
 }
 
 impl Editor {
-    pub(crate) fn remote_trust_target(&self) -> Result<strop_remote::RemoteFile, String> {
+    pub(crate) fn remote_trust_target(&self) -> Result<strop_workspace::RemoteFile, String> {
         let doc = self
             .lsp_current_doc_path()
             .ok_or("trust requires a file buffer")?;
-        let FsTarget::Remote(endpoint) = doc.target else {
+        let Filesystem::Remote(endpoint) = doc.filesystem else {
             return Err("not a remote workspace".into());
         };
         let language = lsp_language(&doc.path).ok_or("no language server for this file")?;
         let key = AttachKey {
-            target: FsTarget::Remote(endpoint.clone()),
+            target: Filesystem::Remote(endpoint.clone()),
             language: language.to_owned(),
             path: doc.path,
         };
@@ -486,7 +486,7 @@ impl Editor {
             .trust_roots
             .get(&key)
             .ok_or("no pending remote project trust request")?;
-        strop_remote::RemoteFile::from_path(endpoint, root.clone())
+        strop_workspace::RemoteFile::from_path(endpoint, root.clone())
             .map_err(|error| error.to_string())
     }
 }

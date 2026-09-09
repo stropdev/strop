@@ -123,6 +123,56 @@ const CASES: &[Case] = &[
         keys: "wdiw",
     },
     Case {
+        name: "diW punctuation",
+        text: "call foo(bar, baz) now\n",
+        keys: "wdiW",
+    },
+    Case {
+        name: "ciW",
+        text: "call foo(bar, baz) now\n",
+        keys: "wciWCHANGED<esc>",
+    },
+    Case {
+        name: "daW trailing blanks",
+        text: "call foo(bar, baz) now\n",
+        keys: "wdaW",
+    },
+    Case {
+        name: "diW on blanks",
+        text: "foo  bar\n",
+        keys: "3ldiW",
+    },
+    Case {
+        name: "daw trailing blanks",
+        text: "hello world\n",
+        keys: "daw",
+    },
+    Case {
+        name: "daw last word takes leading blanks",
+        text: "hello world\n",
+        keys: "wdaw",
+    },
+    Case {
+        name: "diw selects a punct run",
+        text: "f(a, b)\n",
+        keys: "ldiw",
+    },
+    Case {
+        name: "daw on blanks takes the next word",
+        text: "foo  bar\n",
+        keys: "3ldaw",
+    },
+    Case {
+        name: "daw on line-ending blanks is a no-op",
+        text: "foo bar  \n",
+        keys: "w3ldaw",
+    },
+    Case {
+        name: "diw multibyte word",
+        text: "héllo wörld\n",
+        keys: "diw",
+    },
+    Case {
         name: "ci quote",
         text: "say \"hi\" now\n",
         keys: "f\"ci\"yo<esc>",
@@ -245,7 +295,12 @@ const CASES: &[Case] = &[
 ];
 
 /// Cases where strop deliberately differs — each with the doctrine reason.
-const KNOWN_DIVERGENCES: &[(&str, &str)] = &[];
+const KNOWN_DIVERGENCES: &[(&str, &str)] = &[(
+    "daw on line-ending blanks is a no-op",
+    "vim's FAILED current_word still moves the cursor one column (its FAIL path \
+     returns after incl()); strop refuses without moving the cursor. Text agrees; \
+     only the cursor side effect of a refused command differs.",
+)];
 
 /// strop script tokens → raw bytes for nvim's feedkeys().
 fn keys_to_bytes(keys: &str) -> Vec<u8> {

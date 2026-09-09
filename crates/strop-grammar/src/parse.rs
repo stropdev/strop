@@ -202,6 +202,7 @@ pub fn parse(keys: &str) -> Parse {
         };
         let obj = match objc {
             'w' => Object::Word,
+            'W' => Object::BigWord,
             q @ ('"' | '\'' | '`') => Object::Quote(q),
             '(' | ')' => Object::Bracket {
                 open: '(',

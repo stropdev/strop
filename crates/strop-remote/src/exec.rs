@@ -46,11 +46,11 @@ mod run;
 mod spec;
 mod supervisor;
 
-use crate::address::RemoteEndpoint;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
+use strop_workspace::RemoteEndpoint;
 
 /// Program identity is distinct from argv. Built-in scripts reuse the already
 /// selected supervisor interpreter, never another PATH lookup for `python3`.

@@ -71,6 +71,41 @@ pub mod contract {
     }
 
     #[test]
+    fn big_word_objects_are_whitespace_delimited() {
+        // ciW was an invalid command (0028 P2); the WORD object family
+        // spans punctuation where the word object stops at it
+        let text = "call foo(bar, baz) now\n";
+        let buf = Buffer::from_text(text);
+        let at = |needle: &str| text.find(needle).unwrap();
+        assert_eq!(resolve_str(&buf, at("bar"), "diW"), "foo(bar,");
+        assert_eq!(resolve_str(&buf, at("bar"), "diw"), "bar");
+        assert_eq!(resolve_str(&buf, at("now"), "diW"), "now");
+        // parse level: W admits both inner and around forms
+        assert!(matches!(
+            cmd("ciW").target,
+            Target::Object {
+                inner: true,
+                obj: Object::BigWord
+            }
+        ));
+        assert!(matches!(
+            cmd("daW").target,
+            Target::Object {
+                inner: false,
+                obj: Object::BigWord
+            }
+        ));
+    }
+
+    #[test]
+    fn inner_word_object_on_blanks_selects_the_blank_run() {
+        // nvim: diW/diw on whitespace deletes the run, no refusal
+        let buf = Buffer::from_text("foo  bar\n");
+        assert_eq!(resolve_str(&buf, 3, "diW"), "  ");
+        assert_eq!(resolve_str(&buf, 3, "diw"), "  ");
+    }
+
+    #[test]
     fn word_motions_are_multibyte_honest() {
         let buf = Buffer::from_text("héllo wörld 🦀\n");
         assert_eq!(resolve_str(&buf, 0, "dw"), "héllo ", "é is a word char");

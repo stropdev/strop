@@ -82,7 +82,7 @@ impl Editor {
     /// Remote discovery: the repository containing the current remote
     /// file, on its endpoint. `Ok(None)` (no repository there) is an
     /// honest answer, published like any other context.
-    fn discover_remote_git(&mut self, file: strop_remote::RemoteFile) {
+    fn discover_remote_git(&mut self, file: strop_workspace::RemoteFile) {
         let endpoint = file.endpoint().clone();
         let from_dir = if self.remote_directory().is_some() {
             file.path().to_owned()

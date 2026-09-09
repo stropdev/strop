@@ -2,7 +2,7 @@
 //! credentials or permission to reconnect. All functions run on an I/O worker.
 use super::{persistence, SessionError};
 use std::path::Path;
-use strop_remote::RemoteFile;
+use strop_workspace::RemoteFile;
 
 pub(crate) const RETAINED: usize = 32;
 

@@ -20,14 +20,14 @@ fn editor(text: &str) -> Editor {
 
 fn attach_key(e: &Editor, language: &str) -> super::attach::AttachKey {
     super::attach::AttachKey {
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         language: language.into(),
         path: e.buf().path.clone().unwrap(),
     }
 }
 
-fn diag_key(path: &std::path::Path) -> strop_lsp::DocPath {
-    strop_lsp::DocPath::local(path.to_path_buf())
+fn diag_key(path: &std::path::Path) -> strop_workspace::ResourceLocation {
+    strop_workspace::ResourceLocation::local(path.to_path_buf())
 }
 
 fn arm(e: &mut Editor, id: u64, kind: RequestKind, encoding: PositionEncoding) -> ReplyContext {
@@ -42,7 +42,7 @@ fn arm(e: &mut Editor, id: u64, kind: RequestKind, encoding: PositionEncoding) -
             revision,
             path,
             root: PathBuf::from("/workspace"),
-            target: strop_lsp::FsTarget::Local,
+            target: strop_workspace::Filesystem::Local,
         },
     );
     let stamp = RequestStamp {
@@ -326,7 +326,7 @@ fn attached_server_diagnostics_survive_full_replay() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::Attached,
         layers: Vec::new(),
     };
@@ -372,7 +372,7 @@ fn stale_attach_completion_is_refused() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::Attached,
         layers: Vec::new(),
     });
@@ -397,7 +397,7 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::NotExecutable {
             command: "rust-analyzer".into(),
             reason: "not found on PATH".into(),
@@ -420,7 +420,7 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::NotExecutable {
             command: "rust-analyzer".into(),
             reason: "not found on PATH".into(),
@@ -441,7 +441,7 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
         language: "rust".into(),
         name: "custom-lsp".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::TrustRequired {
             command: "custom-lsp".into(),
         },
@@ -472,7 +472,7 @@ fn refused_attach_messages_are_reported() {
         language: "rust".into(),
         name: "rust".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::NoServer,
         layers: Vec::new(),
     });
@@ -502,7 +502,7 @@ fn layer_diagnostic_survives_a_healthy_attach_and_ready() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::Attached,
         layers: vec![strop_lsp::languages::LayerDiagnostic {
             path: PathBuf::from("/home/u/.config/strop/languages.toml"),
@@ -543,7 +543,7 @@ fn layer_diagnostic_survives_a_healthy_attach_and_ready() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::NoServer,
         layers: vec![strop_lsp::languages::LayerDiagnostic {
             path: PathBuf::from("/home/u/.config/strop/languages.toml"),
@@ -571,7 +571,7 @@ fn multiple_layer_diagnostics_report_with_a_count() {
         language: "rust".into(),
         name: "rust".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::NoServer,
         layers: vec![
             strop_lsp::languages::LayerDiagnostic {
@@ -607,7 +607,7 @@ fn spawn_failure_refusal_carries_its_reason() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/workspace"),
-        target: strop_lsp::FsTarget::Local,
+        target: strop_workspace::Filesystem::Local,
         outcome: AttachDecision::SpawnFailed {
             reason: "cannot build the LSP runtime: boom".into(),
         },

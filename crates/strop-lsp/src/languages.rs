@@ -57,7 +57,7 @@ pub struct LayerDiagnostic {
     pub path: PathBuf,
     pub message: String,
     #[serde(default)]
-    pub remote: Option<strop_remote::RemoteEndpoint>,
+    pub remote: Option<strop_workspace::RemoteEndpoint>,
 }
 
 impl LayerDiagnostic {
@@ -70,7 +70,7 @@ impl LayerDiagnostic {
     }
 
     pub fn remote_layer(
-        endpoint: &strop_remote::RemoteEndpoint,
+        endpoint: &strop_workspace::RemoteEndpoint,
         path: &Path,
         message: String,
     ) -> Self {
@@ -112,7 +112,7 @@ pub struct Languages {
 /// connection. Nothing here touched the local filesystem.
 #[derive(Debug, Clone, Copy)]
 pub struct RemoteLayer<'a> {
-    pub endpoint: &'a strop_remote::RemoteEndpoint,
+    pub endpoint: &'a strop_workspace::RemoteEndpoint,
     pub path: &'a Path,
     pub bytes: &'a [u8],
 }
@@ -639,7 +639,7 @@ language-servers = ["remote-helper"]
         let merged = Languages::load_remote(
             Some(&xdg_file),
             Some(RemoteLayer {
-                endpoint: &strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap(),
+                endpoint: &strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap(),
                 path: remote_project,
                 bytes: &bytes,
             }),
@@ -662,7 +662,7 @@ language-servers = ["remote-helper"]
         let merged = Languages::load_remote(
             None,
             Some(RemoteLayer {
-                endpoint: &strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap(),
+                endpoint: &strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap(),
                 path: std::path::Path::new("/srv/proj/.strop/languages.toml"),
                 bytes: b"not toml at all [[".to_vec().as_slice(),
             }),

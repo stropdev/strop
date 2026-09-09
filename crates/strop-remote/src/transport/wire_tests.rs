@@ -1,7 +1,8 @@
 //! Executable SftpWire identity/size oracles. Malformed server frames exercise
 //! the production codec and selection reader, not source text or argv snapshots.
 use super::*;
-use crate::{ReadSelection, RemoteFile, RemoteReadError, RemoteWindow};
+use crate::{ReadSelection, RemoteReadError, RemoteWindow};
+use strop_workspace::RemoteFile;
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()

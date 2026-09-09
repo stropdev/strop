@@ -15,7 +15,7 @@ pub enum Operation {
         state_dir: Option<PathBuf>,
     },
     TrustRemote {
-        root: strop_remote::RemoteFile,
+        root: strop_workspace::RemoteFile,
         #[serde(with = "strop_core::path_serde::option")]
         state_dir: Option<PathBuf>,
     },
@@ -39,7 +39,7 @@ pub struct NativeKey {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum NativeResult {
     Trusted(#[serde(with = "strop_core::path_serde")] PathBuf),
-    TrustedRemote(strop_remote::RemoteFile),
+    TrustedRemote(strop_workspace::RemoteFile),
     BrowserRequested,
     /// OpenSSH's effective hostname for the alias in the request.
     SshHost(String),

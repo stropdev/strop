@@ -1,8 +1,9 @@
 //! Native-byte remote identity, read-only SFTP and explicit cooperative SSH saves.
 //!
 //! Requests belong on workers. Authentication and encryption stay in system
-//! OpenSSH; no editor, CLI, view or rendering state lives here.
-mod address;
+//! OpenSSH; no editor, CLI, view or rendering state lives here. Identity types
+//! (endpoint, file, location, address errors) live in `strop-workspace` (0042);
+//! this crate is the transport and behavior over them.
 mod client;
 mod exec;
 mod hosts;
@@ -13,8 +14,6 @@ mod ssh;
 #[cfg(test)]
 mod test_support;
 mod transport;
-
-pub use address::{AddressError, RemoteEndpoint, RemoteFile, RemoteLocation};
 pub use client::{
     ConnectionLease, PermissionBitsError, RemoteClient, RemoteDirectorySnapshot, RemoteEntry,
     RemoteEntryKind, RemotePermissions, RemoteResource, RemoteSnapshot,

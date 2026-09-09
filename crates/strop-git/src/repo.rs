@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use strop_remote::RemoteEndpoint;
+use strop_workspace::RemoteEndpoint;
 
 use crate::diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin};
 use crate::target::RepoTarget;

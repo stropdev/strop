@@ -17,7 +17,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use strop_core::worker::CancelToken;
-use strop_remote::RemoteEndpoint;
+use strop_workspace::RemoteEndpoint;
 
 use crate::diff::FileDiff;
 use crate::exec::{GitExec, GitExecError, GitRun};

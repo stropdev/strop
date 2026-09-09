@@ -48,20 +48,20 @@ pub fn trust(base: Option<&Path>, root: &Path) -> Result<(), SessionError> {
 
 pub fn is_trusted_remote(
     base: Option<&Path>,
-    endpoint: &strop_remote::RemoteEndpoint,
+    endpoint: &strop_workspace::RemoteEndpoint,
     root: &Path,
 ) -> Result<bool, SessionError> {
     let Some(path) = path(base) else {
         return Ok(false);
     };
-    let file = strop_remote::RemoteFile::from_path(endpoint.clone(), root.to_owned())
+    let file = strop_workspace::RemoteFile::from_path(endpoint.clone(), root.to_owned())
         .map_err(|error| SessionError::Invalid(error.to_string()))?;
     let target = FileTarget::Remote(file.into());
     Ok(load(&path)?.contains(&target))
 }
 pub fn trust_remote(
     base: Option<&Path>,
-    root: &strop_remote::RemoteFile,
+    root: &strop_workspace::RemoteFile,
 ) -> Result<(), SessionError> {
     save(base, FileTarget::Remote(root.clone().into()))
 }

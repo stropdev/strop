@@ -4,11 +4,12 @@ mod protocol;
 #[cfg(all(test, unix))]
 mod tests;
 
-use crate::{ReadLimit, RemoteFile};
+use crate::ReadLimit;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use strop_core::worker::CancelToken;
+use strop_workspace::RemoteFile;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct ContentDigest([u8; 32]);

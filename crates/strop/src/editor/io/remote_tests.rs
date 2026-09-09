@@ -2,8 +2,8 @@
 use super::*;
 use crate::editor::{document::DocumentSource, Key};
 use std::rc::Rc;
-use strop_remote::RemoteFile;
 use strop_trace::replay::Tape;
+use strop_workspace::RemoteFile;
 
 fn editor(text: &str) -> Editor {
     let mut editor = Editor::new_in(Buffer::from_text(text), "/isolated".into());

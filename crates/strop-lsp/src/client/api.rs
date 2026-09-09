@@ -2,8 +2,8 @@
 //! ends in exactly one terminal event (R9) — success, empty, error or
 //! cancellation — carrying its ORIGINAL stamp and negotiated encoding
 use crate::protocol::*;
-use crate::target::DocPath;
 use strop_core::id::LineIndex;
+use strop_workspace::ResourceLocation;
 
 use super::queue::{WireEnv, WireJob, RETRY_DELAY};
 use super::sync;
@@ -234,8 +234,8 @@ async fn switch_header(env: WireEnv, tdp: lt::TextDocumentPositionParams, contex
         Ok(Some(uri)) => match env.workspace.decode(&uri) {
             Some(path) => {
                 let location = ServerLocation {
-                    doc: DocPath {
-                        target: env.workspace.target(),
+                    doc: ResourceLocation {
+                        filesystem: env.workspace.target(),
                         path,
                     },
                     position: ServerPosition {

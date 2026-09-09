@@ -10,7 +10,8 @@ use std::sync::mpsc::Receiver;
 
 use strop_lsp::protocol::ResolvedDiag;
 use strop_lsp::registry;
-use strop_lsp::{DocPath, FsTarget, LspEvent, ServerId};
+use strop_lsp::{LspEvent, ServerId};
+use strop_workspace::{Filesystem, ResourceLocation};
 
 pub(crate) mod attach;
 mod lifecycle;
@@ -33,25 +34,27 @@ impl Editor {
     /// the canonical remote file's endpoint-scoped path. Remote
     /// windows must be complete for language services (0036 RW8) —
     /// partial/follow windows refuse, they never pretend.
-    pub(super) fn lsp_current_doc_path(&self) -> Option<DocPath> {
+    pub(super) fn lsp_current_doc_path(&self) -> Option<ResourceLocation> {
         if self.cur().remote_metadata().is_some() && !self.remote_window_complete() {
             return None;
         }
         self.lsp_doc_path(self.current())
     }
 
-    fn lsp_doc_path(&self, document: strop_core::id::DocumentId) -> Option<DocPath> {
+    fn lsp_doc_path(&self, document: strop_core::id::DocumentId) -> Option<ResourceLocation> {
         let document = self.docs.get(document)?;
         match &document.source {
-            crate::editor::document::DocumentSource::Remote(file) => Some(DocPath::remote(
-                file.file.endpoint().clone(),
-                file.file.path().to_path_buf(),
-            )),
+            crate::editor::document::DocumentSource::Remote(file) => {
+                Some(ResourceLocation::remote(
+                    file.file.endpoint().clone(),
+                    file.file.path().to_path_buf(),
+                ))
+            }
             _ => document
                 .buf
                 .path
                 .as_ref()
-                .map(|path| DocPath::local(self.cwd.join(path))),
+                .map(|path| ResourceLocation::local(self.cwd.join(path))),
         }
     }
 
@@ -59,8 +62,8 @@ impl Editor {
     /// still owns one — the `with_path` seed for remote navigation.
     pub(super) fn remote_file_for(
         &self,
-        endpoint: &strop_remote::RemoteEndpoint,
-    ) -> Option<strop_remote::RemoteFile> {
+        endpoint: &strop_workspace::RemoteEndpoint,
+    ) -> Option<strop_workspace::RemoteFile> {
         self.docs.iter().find_map(|(_, document)| {
             match &document.source {
                 crate::editor::document::DocumentSource::Remote(source) => Some(&source.file),
@@ -112,7 +115,7 @@ impl Editor {
                     .is_some_and(|b| {
                         b.server == context.server
                             && b.path == doc.path
-                            && b.target == doc.target
+                            && b.target == doc.filesystem
                             && b.revision == context.revision
                     });
                 let Some(doc_buffer) = self
@@ -192,15 +195,15 @@ impl Editor {
                                 let line = location.position.line.get() + 1;
                                 let col = location.position.column.get() + 1;
                                 let text = format!("{}:{}:{}", location.doc.label(), line, col);
-                                let payload = match location.doc.target {
-                                    FsTarget::Local => Payload::Grep {
+                                let payload = match location.doc.filesystem {
+                                    Filesystem::Local => Payload::Grep {
                                         path: location.doc.path,
                                         line,
                                         col,
                                         match_len: 1,
                                         line_text: String::new(),
                                     },
-                                    FsTarget::Remote(endpoint) => Payload::Remote {
+                                    Filesystem::Remote(endpoint) => Payload::Remote {
                                         endpoint,
                                         path: location.doc.path,
                                         line,
@@ -236,9 +239,9 @@ impl Editor {
             context,
             position: location.position,
         };
-        match location.doc.target {
-            FsTarget::Local => self.request_open(location.doc.path, intent),
-            FsTarget::Remote(endpoint) => {
+        match location.doc.filesystem {
+            Filesystem::Local => self.request_open(location.doc.path, intent),
+            Filesystem::Remote(endpoint) => {
                 // The target is a file on the replying server's host:
                 // resolve it through an open document's canonical seed
                 // (`with_path` keeps endpoint + native bytes) — the
@@ -327,7 +330,7 @@ impl Editor {
     ) {
         self.jump_to_location(
             strop_lsp::ServerLocation {
-                doc: DocPath::local(path),
+                doc: ResourceLocation::local(path),
                 position: strop_lsp::ServerPosition {
                     line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
                     column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
@@ -344,7 +347,7 @@ impl Editor {
     /// byte column. The analogous local path is never touched.
     pub(crate) fn lsp_open_remote_hit(
         &mut self,
-        endpoint: &strop_remote::RemoteEndpoint,
+        endpoint: &strop_workspace::RemoteEndpoint,
         path: &Path,
         line: usize,
         col: usize,
@@ -353,7 +356,7 @@ impl Editor {
         if let Some(context) = context {
             self.jump_to_location(
                 strop_lsp::ServerLocation {
-                    doc: DocPath::remote(endpoint.clone(), path.to_owned()),
+                    doc: ResourceLocation::remote(endpoint.clone(), path.to_owned()),
                     position: strop_lsp::ServerPosition {
                         line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
                         column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
@@ -432,15 +435,16 @@ impl Editor {
             .keys()
             .filter_map(|&id| Some((self.lsp_doc_path(id)?, self.diags_for(id)?)))
             .collect();
-        by_doc
-            .sort_by(|a, b| (a.0.target.label(), &a.0.path).cmp(&(b.0.target.label(), &b.0.path)));
+        by_doc.sort_by(|a, b| {
+            (a.0.filesystem.label(), &a.0.path).cmp(&(b.0.filesystem.label(), &b.0.path))
+        });
         let mut items: Vec<Item> = Vec::new();
         for (doc, diags) in by_doc {
             for d in diags {
                 let line = d.line.get() + 1;
                 let col = d.col.get() + 1;
-                match &doc.target {
-                    FsTarget::Local => items.push(Item {
+                match &doc.filesystem {
+                    Filesystem::Local => items.push(Item {
                         text: format!(
                             "{}:{} {} {}",
                             doc.path.display(),
@@ -459,7 +463,7 @@ impl Editor {
                     // Remote diagnostics carry their endpoint: the
                     // preview stays local-clean and acceptance opens
                     // the remote target (0036).
-                    FsTarget::Remote(endpoint) => items.push(Item {
+                    Filesystem::Remote(endpoint) => items.push(Item {
                         text: format!(
                             "{}{}:{} {} {}",
                             endpoint,

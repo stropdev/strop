@@ -1272,6 +1272,7 @@ dependencies = [
  "strop-remote",
  "strop-syntax",
  "strop-trace",
+ "strop-workspace",
  "tempfile",
  "thiserror",
  "toml",
@@ -1289,6 +1290,7 @@ dependencies = [
  "serde_json",
  "strop-core",
  "strop-remote",
+ "strop-workspace",
  "tempfile",
 ]
 
@@ -1314,6 +1316,7 @@ dependencies = [
  "strop-core",
  "strop-remote",
  "strop-trace",
+ "strop-workspace",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -1331,7 +1334,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strop-core",
- "strop-remote",
+ "strop-workspace",
 ]
 
 [[package]]
@@ -1344,6 +1347,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "strop-core",
+ "strop-workspace",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1391,6 +1395,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "strop-workspace"
+version = "0.19.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strop-core",
  "thiserror",
 ]
 

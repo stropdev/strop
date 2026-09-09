@@ -34,9 +34,12 @@ Current delivery and remaining priorities:
 - **P1 delivered for 0.19 — remote editing/saving (RW4).** 0040 implements explicit
   writable admission, content-aware conflicts, protected atomic replacement,
   metadata/symlink policy, cancellation outcomes and qualified cooperative exclusion.
-- **P2 — WORD text-object fidelity.** `ciW` currently reports an invalid command.
-  Add the WORD-object family through the shared grammar and differential corpus;
-  do not disguise it as a deferred-input bug or add a preview-only implementation.
+- **P2 delivered — WORD text-object fidelity.** `ciW`/`diW`/`daW` parse and
+  resolve through the shared grammar; the same change brought word objects to
+  full nvim-faithful semantics (punct runs, blank-run objects, around-trailing/
+  leading blank rules, indent preservation), arbitrated by new differential
+  cases. One reviewed cursor-only divergence on a REFUSED command is recorded
+  in `KNOWN_DIVERGENCES`.
 - **P2 — chunked large forensic results.** The existing 256 KiB per-value limit
   refuses a large Git completion rather than claiming a complete replay. Design
   bounded chunking/assembly with ownership and truncation tests before advertising

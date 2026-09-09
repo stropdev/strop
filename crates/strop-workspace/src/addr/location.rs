@@ -73,7 +73,7 @@ impl RemoteLocation {
     }
 
     /// The unresolved home-relative bytes (`~/log`), exactly as decoded.
-    pub(crate) fn home_relative(&self) -> Option<&Path> {
+    pub fn home_relative(&self) -> Option<&Path> {
         match &self.0 {
             LocationInner::File(_) => None,
             LocationInner::Home { relative, .. } => Some(relative),

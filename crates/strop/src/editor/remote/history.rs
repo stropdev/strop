@@ -3,7 +3,7 @@
 use super::{Editor, RemoteEvent};
 use crate::editor::io::IoEvent;
 use strop_core::worker::{self, Completion, FailureKind, Outcome, Ticket, WorkerId};
-use strop_remote::RemoteFile;
+use strop_workspace::RemoteFile;
 
 impl Editor {
     pub(crate) fn remember_remote_destination(&mut self) {

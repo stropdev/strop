@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use strop_remote::{RemoteEndpoint, RemoteFile};
+use strop_workspace::{RemoteEndpoint, RemoteFile};
 
 /// Where a Git query runs. Exactly two real backends exist (0036);
 /// there is deliberately no provider trait behind them.

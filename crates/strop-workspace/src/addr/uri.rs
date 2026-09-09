@@ -109,14 +109,14 @@ pub(super) fn strip_leading_slash(path: PathBuf) -> PathBuf {
 }
 
 #[cfg(unix)]
-pub(crate) fn bytes_to_path(bytes: Vec<u8>) -> Result<PathBuf, AddressError> {
+pub fn bytes_to_path(bytes: Vec<u8>) -> Result<PathBuf, AddressError> {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
     Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
 
 #[cfg(unix)]
-pub(crate) fn path_bytes(path: &std::path::Path) -> &[u8] {
+pub fn path_bytes(path: &std::path::Path) -> &[u8] {
     use std::os::unix::ffi::OsStrExt;
     path.as_os_str().as_bytes()
 }
@@ -124,13 +124,13 @@ pub(crate) fn path_bytes(path: &std::path::Path) -> &[u8] {
 /// Platforms without byte filenames get strict UTF-8, never a lossy
 /// replacement character that could name the wrong remote file.
 #[cfg(not(unix))]
-pub(crate) fn bytes_to_path(bytes: Vec<u8>) -> Result<PathBuf, AddressError> {
+pub fn bytes_to_path(bytes: Vec<u8>) -> Result<PathBuf, AddressError> {
     let text = String::from_utf8(bytes).map_err(|_| AddressError::UnrepresentablePath)?;
     Ok(PathBuf::from(text))
 }
 
 #[cfg(not(unix))]
-pub(crate) fn path_bytes(path: &std::path::Path) -> &[u8] {
+pub fn path_bytes(path: &std::path::Path) -> &[u8] {
     // Built only from strict UTF-8 here, so this is the exact path text.
     path.as_os_str().as_encoded_bytes()
 }

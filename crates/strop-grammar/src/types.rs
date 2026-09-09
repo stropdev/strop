@@ -98,6 +98,8 @@ pub enum Motion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Object {
     Word,
+    /// iW / aW — WORD object: a whitespace-delimited run.
+    BigWord,
     /// Quote pair — the delimiter is a char (0014: no ASCII-only grammar).
     Quote(char),
     Bracket {

@@ -1,7 +1,7 @@
 //! Shared request ownership, diagnostics and negotiated coordinate domains.
-use crate::target::DocPath;
 use std::path::PathBuf;
 use strop_core::id::{BufferRevision, ByteColumn, DocumentId, LineIndex};
+use strop_workspace::ResourceLocation;
 
 /// Diagnostic severity (R13): a named domain, never a raw u8. Variant
 /// order matches the LSP rank, so `min_by_key` keeps the worst entry.
@@ -245,7 +245,7 @@ pub struct ServerPosition {
 pub struct ServerLocation {
     /// Endpoint-scoped identity of the target: a remote location can
     /// never alias the analogous local path.
-    pub doc: DocPath,
+    pub doc: ResourceLocation,
     pub position: ServerPosition,
 }
 
@@ -295,7 +295,7 @@ pub enum LspEvent {
         context: DiagnosticContext,
         /// The diagnosed document: endpoint-scoped, so remote
         /// diagnostics never collide with same-bytes local paths.
-        doc: DocPath,
+        doc: ResourceLocation,
         diags: Vec<Diag>,
     },
     Ready {

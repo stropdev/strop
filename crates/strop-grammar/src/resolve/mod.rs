@@ -70,15 +70,17 @@ fn resolve_controlled(
         }
         Target::Object { inner, obj } => {
             let (s, e, spec) = match obj {
-                Object::Word => {
-                    let (s, e) = none!(inner_word(buf, cursor));
+                Object::Word | Object::BigWord => {
+                    let big = matches!(obj, Object::BigWord);
+                    let (s, e) = none!(word_object(buf, cursor, big, *inner));
+                    let class = if big { "WORD" } else { "word" };
                     (
                         s,
                         e,
                         if *inner {
-                            "inner word".to_string()
+                            format!("inner {class}")
                         } else {
-                            "around word".to_string()
+                            format!("around {class}")
                         },
                     )
                 }

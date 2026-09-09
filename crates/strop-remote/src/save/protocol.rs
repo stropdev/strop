@@ -1,9 +1,10 @@
 //! Versioned helper messages and a borrowed-chunk upload through the owned lease.
 use super::{ContentDigest, RefusalKind, RemoteSaveError, Stamp};
-use crate::{RemoteCommand, RemoteFile};
+use crate::RemoteCommand;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use strop_core::worker::CancelToken;
+use strop_workspace::RemoteFile;
 
 const VERSION: u8 = 1;
 const HEADER_LIMIT: usize = 16 * 1024;

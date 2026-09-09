@@ -9,8 +9,10 @@ license.workspace = true
 git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 strop-core = { path = "../strop-core", version = "0.19.1" }
-# path dependency, no new features: remote Git only needs the typed
-# endpoint identity and the bounded remote-execution boundary (0036 RW8).
+strop-workspace = { path = "../strop-workspace", version = "0.19.1" }
+# path dependency, no new features: remote Git only needs the bounded
+# remote-execution boundary (0036 RW8); endpoint identity lives in
+# strop-workspace.
 strop-remote = { path = "../strop-remote", version = "0.19.1" }
 
 [dev-dependencies]

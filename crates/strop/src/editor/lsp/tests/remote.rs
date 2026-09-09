@@ -2,7 +2,7 @@
 use super::*;
 
 fn remote_doc(e: &mut Editor, uri: &str, text: &str) -> strop_core::id::DocumentId {
-    let file = strop_remote::RemoteFile::parse(uri).expect("canonical remote uri");
+    let file = strop_workspace::RemoteFile::parse(uri).expect("canonical remote uri");
     e.docs.insert(Document::remote(
         strop_core::Buffer::from_text(text),
         crate::editor::document::RemoteDocument {
@@ -22,7 +22,7 @@ fn remote_doc(e: &mut Editor, uri: &str, text: &str) -> strop_core::id::Document
 fn remote_arm(
     e: &mut Editor,
     document: strop_core::id::DocumentId,
-    endpoint: &strop_remote::RemoteEndpoint,
+    endpoint: &strop_workspace::RemoteEndpoint,
     path: &std::path::Path,
 ) -> ReplyContext {
     let revision = e.docs.get(document).unwrap().buf.revision();
@@ -34,7 +34,7 @@ fn remote_arm(
             revision,
             path: path.to_path_buf(),
             root: PathBuf::from("/w/proj"),
-            target: strop_lsp::FsTarget::Remote(endpoint.clone()),
+            target: strop_workspace::Filesystem::Remote(endpoint.clone()),
         },
     );
     let stamp = RequestStamp {
@@ -55,7 +55,7 @@ fn remote_arm(
 /// diagnostics store: endpoints are part of the key.
 #[test]
 fn remote_diagnostics_never_alias_local_paths() {
-    let endpoint = strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap();
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap();
     let mut e = editor("local twin\n");
     e.buf_mut().path = Some(PathBuf::from("/w/proj/a.rs"));
     let local = e.current();
@@ -70,7 +70,7 @@ fn remote_diagnostics_never_alias_local_paths() {
             encoding: PositionEncoding::Utf8,
             version: Some(WireVersion::new(1)),
         },
-        doc: strop_lsp::DocPath::remote(endpoint, PathBuf::from("/w/proj/a.rs")),
+        doc: strop_workspace::ResourceLocation::remote(endpoint, PathBuf::from("/w/proj/a.rs")),
         diags: vec![Diag {
             line: LineIndex::new(0),
             col: ServerColumn::new(0),
@@ -89,7 +89,7 @@ fn remote_diagnostics_never_alias_local_paths() {
 /// local path.
 #[test]
 fn remote_goto_routes_to_the_remote_target_not_local() {
-    let endpoint = strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap();
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap();
     let mut e = editor("origin\n");
     e.buf_mut().path = Some(PathBuf::from("/w/proj/origin.rs"));
     let origin = e.current();
@@ -99,7 +99,10 @@ fn remote_goto_routes_to_the_remote_target_not_local() {
     e.handle_lsp_event(LspEvent::GotoLocation {
         context,
         location: strop_lsp::ServerLocation {
-            doc: strop_lsp::DocPath::remote(endpoint, PathBuf::from("/w/proj/other.rs")),
+            doc: strop_workspace::ResourceLocation::remote(
+                endpoint,
+                PathBuf::from("/w/proj/other.rs"),
+            ),
             position: ServerPosition {
                 line: LineIndex::new(0),
                 column: ServerColumn::new(1),
@@ -117,7 +120,7 @@ fn remote_goto_routes_to_the_remote_target_not_local() {
 /// local navigation.
 #[test]
 fn remote_goto_resolves_utf16_columns_against_the_remote_rope() {
-    let endpoint = strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap();
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap();
     let mut e = editor("origin\n");
     e.buf_mut().path = Some(PathBuf::from("/w/proj/origin.rs"));
     let origin = e.current();
@@ -141,7 +144,7 @@ fn remote_goto_resolves_utf16_columns_against_the_remote_rope() {
 /// (0036): no orphan ssh client, no live placement.
 #[test]
 fn closing_the_last_remote_document_retires_its_server() {
-    let endpoint = strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap();
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap();
     let mut e = editor("keepalive\n");
     e.buf_mut().path = Some(PathBuf::from("/w/keep.txt"));
     let remote = remote_doc(&mut e, "ssh://builder.example/w/proj/a.rs", "remote\n");
@@ -153,7 +156,7 @@ fn closing_the_last_remote_document_retires_its_server() {
     let ticket = WorkerId::new(21);
     e.lsp_state.attach.pending.insert(
         super::super::attach::AttachKey {
-            target: strop_lsp::FsTarget::Remote(endpoint.clone()),
+            target: strop_workspace::Filesystem::Remote(endpoint.clone()),
             language: "rust".into(),
             path: "/w/proj/a.rs".into(),
         },
@@ -165,7 +168,7 @@ fn closing_the_last_remote_document_retires_its_server() {
         language: "rust".into(),
         name: "rust-analyzer".into(),
         root: PathBuf::from("/w/proj"),
-        target: strop_lsp::FsTarget::Remote(endpoint),
+        target: strop_workspace::Filesystem::Remote(endpoint),
         outcome: AttachDecision::Attached,
         layers: Vec::new(),
     });
@@ -185,7 +188,7 @@ fn closing_the_last_remote_document_retires_its_server() {
 #[test]
 fn partial_remote_window_refuses_attach_visibly() {
     let mut e = editor("tail window\n");
-    let file = strop_remote::RemoteFile::parse("ssh://builder.example/w/proj/a.rs").unwrap();
+    let file = strop_workspace::RemoteFile::parse("ssh://builder.example/w/proj/a.rs").unwrap();
     let id = e.docs.insert(Document::remote(
         strop_core::Buffer::from_text("tail\n"),
         crate::editor::document::RemoteDocument {

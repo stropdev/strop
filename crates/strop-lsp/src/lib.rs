@@ -15,7 +15,7 @@ pub mod registry;
 pub use caps::ServerCaps;
 pub use client::{Client, SpawnError};
 pub use protocol::*;
-pub use target::{DocPath, FsTarget, Workspace};
+pub use target::Workspace;
 #[cfg(test)]
 mod tests {
     use super::{to_byte_col, to_server_col, PositionEncoding, ServerCaps, ServerColumn};
@@ -109,9 +109,9 @@ mod tests {
     fn server_location_trace_round_trips_native_path_bytes() {
         use std::os::unix::ffi::OsStringExt;
         let local = super::ServerLocation {
-            doc: super::DocPath::local(std::path::PathBuf::from(std::ffi::OsString::from_vec(
-                b"/workspace/a\xff.rs".to_vec(),
-            ))),
+            doc: strop_workspace::ResourceLocation::local(std::path::PathBuf::from(
+                std::ffi::OsString::from_vec(b"/workspace/a\xff.rs".to_vec()),
+            )),
             position: super::ServerPosition {
                 line: strop_core::id::LineIndex::new(2),
                 column: super::ServerColumn::new(5),
@@ -121,8 +121,8 @@ mod tests {
         let decoded: super::ServerLocation = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded, local);
         let remote = super::ServerLocation {
-            doc: super::DocPath::remote(
-                strop_remote::RemoteEndpoint::parse("ssh://h:2222").unwrap(),
+            doc: strop_workspace::ResourceLocation::remote(
+                strop_workspace::RemoteEndpoint::parse("ssh://h:2222").unwrap(),
                 std::path::PathBuf::from(std::ffi::OsString::from_vec(b"/srv/a\xff.rs".to_vec())),
             ),
             position: local.position,

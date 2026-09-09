@@ -14,7 +14,8 @@ use std::sync::{Arc, Mutex};
 use strop_core::worker::{CancelToken, WorkerId};
 use strop_lsp::languages::LayerDiagnostic;
 use strop_lsp::registry::{self, ServerSpec};
-use strop_lsp::{Client, FsTarget, LspEvent, ServerId};
+use strop_lsp::{Client, LspEvent, ServerId};
+use strop_workspace::Filesystem;
 
 /// A live connection produced by discovery: the client handle plus the
 /// event stream every server owns.
@@ -34,7 +35,7 @@ pub(crate) struct AttachArgs {
     pub path: PathBuf,
     pub language: String,
     #[serde(default)]
-    pub target: FsTarget,
+    pub target: Filesystem,
 }
 
 /// The serializable outcome of one attach attempt. Refusals carry
@@ -48,7 +49,7 @@ pub(crate) struct AttachRecord {
     #[serde(with = "strop_core::path_serde")]
     pub root: PathBuf,
     #[serde(default)]
-    pub target: FsTarget,
+    pub target: Filesystem,
     pub outcome: AttachDecision,
     /// Malformed layer diagnostics met while loading the config layers
     /// for this attempt (0033 §2) — reported even when a valid
@@ -109,7 +110,7 @@ impl AttachDecision {
 /// pending attempt, refusal or placement (0036 RW8).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct AttachKey {
-    pub target: FsTarget,
+    pub target: Filesystem,
     pub language: String,
     pub path: PathBuf,
 }
@@ -121,7 +122,7 @@ pub(crate) struct Attachment {
     pub language: String,
     pub root: PathBuf,
     pub server: ServerId,
-    pub target: FsTarget,
+    pub target: Filesystem,
 }
 
 pub(crate) struct AttachState {
@@ -188,7 +189,7 @@ pub(crate) enum DiscoverPlace {
         git_workdir: Option<PathBuf>,
     },
     Remote {
-        file: strop_remote::RemoteFile,
+        file: strop_workspace::RemoteFile,
         client: strop_remote::RemoteClient,
     },
 }
@@ -256,7 +257,7 @@ fn discover_local(
         language: language.to_string(),
         name,
         root,
-        target: FsTarget::Local,
+        target: Filesystem::Local,
         outcome,
         layers: layers.clone(),
     };
@@ -309,7 +310,7 @@ fn discover_local(
                 language: language.to_string(),
                 name,
                 root,
-                target: FsTarget::Local,
+                target: Filesystem::Local,
                 outcome: AttachDecision::Attached,
                 layers,
             }
@@ -371,14 +372,14 @@ mod tests {
 
     #[test]
     fn attach_keys_separate_local_from_remote_targets() {
-        let endpoint = strop_remote::RemoteEndpoint::parse("ssh://builder.example").unwrap();
+        let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap();
         let local = AttachKey {
-            target: FsTarget::Local,
+            target: Filesystem::Local,
             language: "rust".into(),
             path: "/workspace/a.rs".into(),
         };
         let remote = AttachKey {
-            target: FsTarget::Remote(endpoint),
+            target: Filesystem::Remote(endpoint),
             language: "rust".into(),
             path: "/workspace/a.rs".into(),
         };
@@ -396,7 +397,7 @@ mod tests {
         // field; they must deserialize as local attempts.
         let legacy = r#"{"ticket":0,"path":"/w/a.rs","language":"rust"}"#;
         let args: AttachArgs = serde_json::from_str(legacy).unwrap();
-        assert_eq!(args.target, FsTarget::Local);
+        assert_eq!(args.target, Filesystem::Local);
     }
 
     #[test]
@@ -428,7 +429,7 @@ mod tests {
             None,
         );
         assert_eq!(record.outcome, AttachDecision::NoServer);
-        assert_eq!(record.target, FsTarget::Local);
+        assert_eq!(record.target, Filesystem::Local);
         assert_eq!(record.root, dir);
         assert!(record.layers.is_empty());
     }

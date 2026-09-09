@@ -4,8 +4,9 @@ use std::fmt::Write;
 use strop_core::Buffer;
 use strop_remote::{
     ConnectionLease, ReadSelection, RemoteDirectorySnapshot, RemoteEntry, RemoteEntryKind,
-    RemoteFile, RemoteSnapshot, RemoteWindow,
+    RemoteSnapshot, RemoteWindow,
 };
+use strop_workspace::RemoteFile;
 
 #[derive(Clone)]
 pub struct RemoteDocument {
@@ -96,7 +97,7 @@ impl RemoteDirectory {
         }
         text
     }
-    pub fn parent(&self) -> Result<Option<RemoteFile>, strop_remote::AddressError> {
+    pub fn parent(&self) -> Result<Option<RemoteFile>, strop_workspace::AddressError> {
         self.directory
             .path()
             .parent()

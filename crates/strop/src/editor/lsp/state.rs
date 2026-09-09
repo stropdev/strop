@@ -18,7 +18,7 @@ pub(crate) struct Binding {
     pub root: PathBuf,
     /// Which filesystem `path` names — remote bindings never alias
     /// same-bytes local paths (0036 RW8).
-    pub target: strop_lsp::FsTarget,
+    pub target: strop_workspace::Filesystem,
     pub revision: BufferRevision,
 }
 
@@ -77,11 +77,13 @@ impl Editor {
         let Some(language) = super::lsp_language(&doc.path) else {
             return;
         };
-        let Some((server, root)) = self.lsp_server_for(&doc.path, language, &doc.target) else {
+        let Some((server, root)) = self.lsp_server_for(&doc.path, language, &doc.filesystem) else {
             return;
         };
         if let Some(binding) = self.lsp_state.bindings.get(&document) {
-            if binding.server == server && binding.path == doc.path && binding.target == doc.target
+            if binding.server == server
+                && binding.path == doc.path
+                && binding.target == doc.filesystem
             {
                 return;
             }
@@ -117,7 +119,7 @@ impl Editor {
                         server,
                         path: doc.path,
                         root,
-                        target: doc.target,
+                        target: doc.filesystem,
                         revision,
                     },
                 );
@@ -284,12 +286,12 @@ impl Editor {
             self.message = "no language server for this file type".into();
             return;
         };
-        let Some((server, _)) = self.lsp_server_for(&doc.path, language, &doc.target) else {
-            match doc.target {
-                strop_lsp::FsTarget::Local => {
+        let Some((server, _)) = self.lsp_server_for(&doc.path, language, &doc.filesystem) else {
+            match doc.filesystem {
+                strop_workspace::Filesystem::Local => {
                     self.message = "no language server — install it or fix languages.toml".into()
                 }
-                strop_lsp::FsTarget::Remote(endpoint) => {
+                strop_workspace::Filesystem::Remote(endpoint) => {
                     self.message = format!(
                         "no language server on {endpoint} — install it there or fix languages.toml"
                     )

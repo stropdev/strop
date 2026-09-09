@@ -7,7 +7,6 @@
 
 use super::error::{Fault, ReadFailureKind, ReadStage};
 use super::wire::{Advertised, Attrs, ReadOnlySftp};
-use crate::address::{RemoteFile, RemoteLocation};
 use crate::client::{RemoteEntry, RemoteEntryKind};
 use crate::pool::StopSignal;
 use crate::selection::{utf8_boundary_range, ReadLimit, ReadSelection, RemoteSize, RemoteWindow};
@@ -17,6 +16,7 @@ use std::pin::pin;
 use std::task::Poll;
 use std::time::Duration;
 use strop_core::worker::CancelToken;
+use strop_workspace::{RemoteFile, RemoteLocation};
 
 /// Total budget for one job's connection, transfer and close. Cleanup after
 /// failure is separately bounded by the actor and never waits on this.

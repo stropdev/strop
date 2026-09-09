@@ -1,11 +1,11 @@
 //! Worker-only requests to the per-endpoint SFTP actor. Cloning a client or
 //! lease never connects; every accepted request retains its own lease.
-use crate::address::{RemoteEndpoint, RemoteFile, RemoteLocation};
 use crate::pool::{EndpointHandle, Job, Registry, Reply, Request, SessionState};
 use crate::{ReadFailureKind, ReadSelection, ReadStage, RemoteReadError, RemoteWindow};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
+use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 const CANCEL_POLL: Duration = Duration::from_millis(50);
 

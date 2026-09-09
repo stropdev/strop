@@ -16,7 +16,8 @@ use std::ffi::OsString;
 use std::path::Path;
 
 use strop_core::worker::CancelToken;
-use strop_remote::{RemoteCommand, RemoteCommandError, RemoteEndpoint};
+use strop_remote::{RemoteCommand, RemoteCommandError};
+use strop_workspace::RemoteEndpoint;
 
 use crate::target::RepoTarget;
 

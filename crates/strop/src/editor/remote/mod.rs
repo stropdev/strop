@@ -17,7 +17,8 @@ use super::{Document, Editor};
 use std::collections::HashMap;
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{Completion, Ticket, WorkerId};
-use strop_remote::{ConnectionLease, ReadLimit, RemoteClient, RemoteEndpoint, RemoteFile};
+use strop_remote::{ConnectionLease, ReadLimit, RemoteClient};
+use strop_workspace::{RemoteEndpoint, RemoteFile};
 pub(crate) use view::RemoteView;
 
 pub(crate) struct RemoteState {

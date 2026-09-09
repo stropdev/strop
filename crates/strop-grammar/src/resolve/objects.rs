@@ -3,8 +3,6 @@
 
 use strop_core::Buffer;
 
-use super::motions::*;
-
 /// % — matching pair. On a bracket: its mate. Else: first bracket on the
 /// line right of cursor, then its mate (vim semantics).
 pub fn match_pair(buf: &Buffer, pos: usize) -> Option<usize> {
@@ -122,19 +120,92 @@ pub(crate) fn quote_pair(buf: &Buffer, pos: usize, q: char) -> Option<(usize, us
     Some((open, close))
 }
 
-pub(crate) fn inner_word(buf: &Buffer, pos: usize) -> Option<(usize, usize)> {
-    if pos >= buf.len_bytes() || !is_word(buf.byte(pos)) {
+/// Object classes: blank / word / punct (a WORD object merges the last
+/// two). Chars classify as a whole — continuation bytes inherit their
+/// char's class, so run boundaries always land on char edges.
+const BLANK: u8 = 0;
+const WORD: u8 = 1;
+const PUNCT: u8 = 2;
+
+fn object_class(buf: &Buffer, pos: usize, big: bool) -> u8 {
+    let b = buf.byte(pos);
+    let character = if b.is_ascii() {
+        b as char
+    } else {
+        buf.text().char(buf.text().byte_to_char(pos))
+    };
+    if character.is_whitespace() {
+        return BLANK;
+    }
+    if big || character.is_alphanumeric() || character == '_' {
+        WORD
+    } else {
+        PUNCT
+    }
+}
+
+/// iw/aw/iW/aW — vim's current_word, count one, outside Visual mode:
+///
+/// - inner: the run under the cursor of its own class (a blank run is
+///   itself a selectable object; word and punct runs are distinct).
+/// - around a word/punct run: plus the trailing blank run on the line;
+///   with none, plus the leading blank run — never indent (a blank run
+///   starting at column 0 stays).
+/// - around a blank run: plus the following word/punct run, across line
+///   breaks; no following run refuses the whole command (vim's FAIL).
+pub(crate) fn word_object(
+    buf: &Buffer,
+    pos: usize,
+    big: bool,
+    inner: bool,
+) -> Option<(usize, usize)> {
+    let n = buf.len_bytes();
+    if pos >= n {
         return None;
     }
+    let class = object_class(buf, pos, big);
     let mut s = pos;
-    while s > 0 && is_word(buf.byte(s - 1)) {
+    while s > 0 && object_class(buf, s - 1, big) == class {
         s -= 1;
     }
-    let mut e = pos;
-    while e + 1 < buf.len_bytes() && is_word(buf.byte(e + 1)) {
+    let mut e = pos + 1;
+    while e < n && object_class(buf, e, big) == class {
         e += 1;
     }
-    Some((s, e + 1)) // half-open
+    if inner {
+        return Some((s, e));
+    }
+    if class == BLANK {
+        let mut end = e;
+        while end < n && object_class(buf, end, big) == BLANK {
+            end += 1;
+        }
+        if end >= n {
+            return None; // trailing blank run with nothing after: vim FAILs
+        }
+        let word = object_class(buf, end, big);
+        while end < n && object_class(buf, end, big) == word {
+            end += 1;
+        }
+        return Some((s, end));
+    }
+    let mut trail = e;
+    while trail < n && buf.byte(trail) != b'\n' && object_class(buf, trail, big) == BLANK {
+        trail += 1;
+    }
+    if trail > e {
+        return Some((s, trail));
+    }
+    if s > 0 && buf.byte(s - 1) != b'\n' && object_class(buf, s - 1, big) == BLANK {
+        let mut lead = s;
+        while lead > 0 && buf.byte(lead - 1) != b'\n' && object_class(buf, lead - 1, big) == BLANK {
+            lead -= 1;
+        }
+        if lead > 0 && buf.byte(lead - 1) != b'\n' {
+            return Some((lead, e));
+        }
+    }
+    Some((s, e))
 }
 
 /// Search forward for `pat` (prototype: plain substring; 0001 §2.5's

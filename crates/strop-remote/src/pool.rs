@@ -8,7 +8,6 @@
 //! its epoch, fails that request honestly, and never replays it silently.
 
 mod lifecycle;
-use crate::address::{RemoteEndpoint, RemoteFile, RemoteLocation};
 use crate::client::{ConnectionLease, RemoteDirectorySnapshot, RemoteEntry, RemoteSnapshot};
 use crate::selection::ReadSelection;
 use crate::transport::{Fault, ReadFailureKind, ReadStage, RemoteReadError};
@@ -21,6 +20,7 @@ use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
+use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 #[cfg(unix)]
 use crate::transport::{process::Physical, session};

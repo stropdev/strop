@@ -88,7 +88,7 @@ struct RemoteLaunch {
 }
 
 fn remote_launch(
-    endpoint: &strop_remote::RemoteEndpoint,
+    endpoint: &strop_workspace::RemoteEndpoint,
     spec: &registry::ServerSpec<'_>,
     root: &Path,
 ) -> Result<RemoteLaunch, SpawnError> {
@@ -148,8 +148,8 @@ pub(crate) fn client_router(
             let diags = params.diagnostics.iter().map(diag_from_lsp).collect();
             let _ = st.tx.send(LspEvent::Diagnostics {
                 context,
-                doc: crate::target::DocPath {
-                    target: diag_workspace.target(),
+                doc: strop_workspace::ResourceLocation {
+                    filesystem: diag_workspace.target(),
                     path,
                 },
                 diags,

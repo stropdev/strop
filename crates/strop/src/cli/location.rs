@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::files::FileTarget;
 use strop_core::id::LineIndex;
-use strop_remote::RemoteLocation;
+use strop_workspace::RemoteLocation;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileLocation {
@@ -17,7 +17,7 @@ pub(crate) enum LocationError {
     InvalidLine,
     MissingPath,
     DuplicateLine,
-    Remote(strop_remote::AddressError),
+    Remote(strop_workspace::AddressError),
 }
 
 impl std::fmt::Display for LocationError {

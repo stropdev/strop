@@ -20,7 +20,7 @@ mod endpoint;
 mod error;
 mod file;
 mod location;
-pub(crate) mod uri;
+pub mod uri;
 
 pub use endpoint::RemoteEndpoint;
 pub use error::AddressError;

@@ -2,7 +2,8 @@
 use super::{Editor, RemoteControl, RemoteView};
 use crate::editor::io::OpenIntent;
 use crate::files::FileTarget;
-use strop_remote::{ReadLimit, ReadSelection, RemoteEndpoint, RemoteLocation};
+use strop_remote::{ReadLimit, ReadSelection};
+use strop_workspace::{RemoteEndpoint, RemoteLocation};
 
 impl Editor {
     pub(crate) fn run_remote_ex(&mut self, command: &str, argument: &str) -> bool {

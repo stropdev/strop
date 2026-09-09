@@ -20,7 +20,7 @@ use std::io::Read;
 use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 
-use crate::address::RemoteFile;
+use strop_workspace::RemoteFile;
 
 #[cfg(test)]
 mod tests;
