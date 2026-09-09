@@ -641,6 +641,14 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Files)),
     },
     Binding {
+        keys: "space o",
+        desc: "open remote destination",
+        section: "leader",
+        live: true,
+        id: "remote-open",
+        handler: Handler::Leaf(|e, _| e.open_remote_picker()),
+    },
+    Binding {
         keys: "space b",
         desc: "buffers (MRU)",
         section: "leader",

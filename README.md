@@ -37,7 +37,7 @@ v V                           visual           u ctrl-r .           undo, redo, 
 "a … "+                       registers        :w :q :e :help        ex line
 Q                            multicursor      Space c              cursor below
 
-Space  f files · b buffers · / grep · R replace · ? help   C-w …    panes
+Space  f files · o remote · b buffers · / grep · R replace · ? help   C-w … panes
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 
@@ -45,7 +45,7 @@ Operator previews and execution consume the same resolver. Surround
 (`ys`/`cs`/`ds`), multicursor cascades (`Q`/`Space c`), project-wide search &
 replace with live row previews, per-project sessions, and undo
 history that crosses restarts (with a `Space u` tree browser), tree-sitter highlighting
-for thirteen languages (bash/fish/lua/sql included, shebang detection too), git gutter +
+for 23 languages (including CMake, Markdown, TOML, YAML, HTML and CSS), git gutter +
 blame + commit dive chains, SHA-resolved permalinks over OSC52, and helix-flavored
 `.strop/languages.toml` LSP config.
 
@@ -54,6 +54,12 @@ collections, groups, alternation, repetition and backreferences. Unsupported
 constructs report an error instead of being treated as literals. Search previews
 and Enter use the same counted resolver. Horizontal views, block selection and
 carets share display-cell geometry; new edits preserve the buffer's line endings.
+
+Markdown includes inline emphasis, links, tables and fenced-language highlighting;
+HTML embeds JavaScript and CSS. Grammars and licensed queries ship in the binary.
+Syntax, structural indentation guides and search counts are revision-owned worker
+results. Long-line byte/cell checkpoints keep horizontal navigation and typing
+from repeatedly walking the line prefix.
 
 File/native work runs on owned jobs rather than blocking keystrokes. Sessions
 use private atomic files and lossless native paths, including undo history.
@@ -70,6 +76,7 @@ strop --tail 65536 ssh://devbox/var/log/app.log
 strop --range 1048576:65536 ssh://devbox/var/log/app.log
 strop --follow ssh://devbox/var/log/app.log
 strop ssh://devbox/~/project/src/lib.rs
+strop ssh://devbox/etc/
 ```
 
 These are real read-only buffers: motions, `/`/`?`, visual selection, yank and
@@ -79,6 +86,12 @@ and changed overlap produce a visible reset; size/mtime alone are not file ident
 The modeline identifies partial byte windows, whose line numbers are window-relative.
 
 Inside strop:
+
+Press **Space o** or run **`:remote`** to choose a known/connected destination or
+select **Add a host**. Enter `host`, `user@host:port`, or a complete SSH path.
+Enter is the connection action; opening the chooser does not authenticate.
+New hosts start at `/`; successful directory choices are remembered privately.
+`:remote home` uses negotiated remote-home expansion; `:remote root` returns to `/`.
 
 ```vim
 :tail 65536 ssh://devbox/var/log/app.log
@@ -93,8 +106,12 @@ Inside strop:
 :remote clear
 ```
 
-Directory listings are searchable real buffers. Enter opens an entry; `../` returns
-to the parent; `:filter` narrows the listing, and an empty filter restores it.
+Directory listings are searchable real buffers with kind, POSIX permissions,
+server-reported byte size and native filename columns. Missing attributes show
+`?`, distinct from mode `000` and size zero. Directory sizes are not recursive
+totals. Links and special entries have distinct type markers. Enter opens an entry;
+`-`, Backspace or `../` returns to the parent and restores the selected child.
+`:filter` narrows names, and an empty filter restores the full listing.
 Tab completes SSH hosts and paths without starting authentication: remote candidates
 need a live authorized connection or cached data. Connections are shared by endpoint
 and held by documents or explicit `:remote connect` pins; clear/disconnect retires
@@ -113,8 +130,11 @@ bytes (`%20`, `%23`, `%25`); native Unix filenames stay intact. Reads are bounde
 256 MiB of UTF-8 text; range/tail edges exclude incomplete UTF-8 characters. Home
 expansion requires the server's `expand-path@openssh.com` extension.
 
-SFTP reading needs no remote shell or daemon setup. Remote Git/LSP additionally need
-a POSIX execution environment, `python3`, and Git/the selected language server.
+SFTP reading needs no remote Python or daemon setup. Remote Git/LSP additionally
+need a POSIX execution environment and Git/the selected language server.
+Compatible Python 3.8+ is discovered as `python3` or a versioned program on remote
+PATH; set local `STROP_REMOTE_PYTHON=/opt/tools/python3.11` to select an explicit
+remote executable. An invalid override fails rather than choosing a fallback.
 Owned process groups are cleaned up when the server observes lease loss; network
 partitions delay detection, descendants creating new sessions can escape the group,
 and a killed supervisor cannot guarantee cleanup. Remote content is not persisted
@@ -125,6 +145,32 @@ views and replay. See the [workspace contract](plans/0036-remote-workspace-execu
 [protocol evidence](plans/0034-ssh-log-buffers.md),
 [prioritized remote roadmap](plans/0035-remote-workflow-roadmap.md), and
 [Dev Containers design](plans/0037-devcontainers-and-workspace-contexts.md).
+
+## Headless scripts
+
+`strop --headless SCRIPT [+LINE] [FILE[:LINE]]` uses the same editor and service
+handlers. `--script SCRIPT` is equivalent. `strop --help` lists every directive:
+`buffer`, `keys`, `key`, `paste`, `resize`, `frame`, `state`, `settle`, `wait` and
+`quit-intent`. JSON strings use double quotes and JSON escapes; `keys` text is
+unquoted and accepts tokens such as `<esc>`, `<cr>`, `<bs>` and `<lt>`.
+
+```text
+keys :e source.rs<cr>
+settle 5000
+keys /needle<cr>
+frame
+state
+```
+
+`settle [MS]` returns when finite owned work drains (default 30,000 ms) and exits
+nonzero on timeout. `wait MS` remains a deliberate delay. Pure grammar work keeps
+key, paste, repeat and macro ordering; filesystem/service jobs require an explicit
+settle before a script relies on their result.
+
+Headless `:trust` uses the same explicit per-project/endpoint consent and
+`XDG_STATE_HOME` (or `$HOME/.local/state`) store as the TUI. It does not restore or
+automatically persist editor sessions. Project configuration never grants itself
+permission to execute commands.
 
 ## Reporting a bug
 

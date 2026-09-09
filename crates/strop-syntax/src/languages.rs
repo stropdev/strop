@@ -1,262 +1,421 @@
-//! The curated language registry (0002 §2.2: statically linked, always).
-//! All highlight queries are Helix-vendored (queries/ per language, MPL-2.0) —
-//! one upstream, one review surface, divergence watched weekly (0002 §7).
-//! Adding a language is one row here plus one crate in Cargo.toml — never a
-//! download, never a dlopen. C++ included specifically: its scanner is C++,
-//! the musl static-libstdc++ path the release gate guards (0002 §5).
-//!
-//! Detection for a file path goes: exact basename → extension → shebang
-//! (first line, only consulted when the extension is unknown or absent).
-//! `detect` is pure over `(path, first_line)`; `Highlighter::for_path`
-//! supplies that first line from the rope itself — detection reads
-//! nothing.
-
+//! One statically linked registry for native filenames, shebangs and injections.
+//! Queries are vendored from Helix under MPL-2.0; no runtime grammar downloads.
 use std::path::Path;
-
 use tree_sitter::Language;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LanguageId {
+    Rust,
+    Python,
+    JavaScript,
+    TypeScript,
+    Tsx,
+    Go,
+    C,
+    Cpp,
+    Json,
+    Bash,
+    Fish,
+    Lua,
+    Sql,
+    CMake,
+    Markdown,
+    MarkdownInline,
+    Java,
+    CSharp,
+    Ruby,
+    Php,
+    Toml,
+    Yaml,
+    Html,
+    Css,
+}
+
 pub struct LanguageSpec {
+    pub id: LanguageId,
     pub name: &'static str,
     pub language: Language,
     pub highlights: &'static str,
+    pub injections: &'static str,
 }
-
-// tree-sitter-toml 0.20 targets an old ABI (a second tree-sitter in the
-// tree — not worth it); TOML joins when a 0.24-ABI grammar crate exists.
-macro_rules! lang_fn {
-    ($name:literal, $f:expr, $q:expr) => {
+struct Entry {
+    id: LanguageId,
+    name: &'static str,
+    grammar: fn() -> Language,
+    extensions: &'static [&'static str],
+    filenames: &'static [&'static str],
+    interpreters: &'static [&'static str],
+    aliases: &'static [&'static str],
+    highlights: &'static str,
+    injections: &'static str,
+}
+impl Entry {
+    fn spec(&self) -> LanguageSpec {
         LanguageSpec {
-            name: $name,
-            language: $f.into(),
-            highlights: $q,
+            id: self.id,
+            name: self.name,
+            language: (self.grammar)(),
+            highlights: self.highlights,
+            injections: self.injections,
         }
-    };
+    }
 }
 
-/// Extension (with dot) → spec. First match wins.
-pub fn for_extension(ext: &str) -> Option<LanguageSpec> {
-    Some(match ext {
-        ".rs" => lang_fn!(
-            "rust",
-            tree_sitter_rust::LANGUAGE,
-            include_str!("../queries/rust/highlights.scm")
-        ),
-        ".py" | ".pyi" => {
-            lang_fn!(
-                "python",
-                tree_sitter_python::LANGUAGE,
-                include_str!("../queries/python/highlights.scm")
-            )
-        }
-        ".js" | ".jsx" | ".mjs" | ".cjs" => {
-            lang_fn!(
-                "javascript",
-                tree_sitter_javascript::LANGUAGE,
-                include_str!("../queries/javascript/highlights.scm")
-            )
-        }
-        ".ts" => lang_fn!(
-            "typescript",
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
-            include_str!("../queries/typescript/highlights.scm")
-        ),
-        ".tsx" => lang_fn!(
-            "tsx",
-            tree_sitter_typescript::LANGUAGE_TSX,
-            include_str!("../queries/tsx/highlights.scm")
-        ),
-        ".go" => lang_fn!(
-            "go",
-            tree_sitter_go::LANGUAGE,
-            include_str!("../queries/go/highlights.scm")
-        ),
-        ".c" | ".h" => lang_fn!(
-            "c",
-            tree_sitter_c::LANGUAGE,
-            include_str!("../queries/c/highlights.scm")
-        ),
-        ".cpp" | ".cc" | ".cxx" | ".hpp" | ".hh" => {
-            lang_fn!(
-                "cpp",
-                tree_sitter_cpp::LANGUAGE,
-                include_str!("../queries/cpp/highlights.scm")
-            )
-        }
-        ".json" => lang_fn!(
-            "json",
-            tree_sitter_json::LANGUAGE,
-            include_str!("../queries/json/highlights.scm")
-        ),
-        ".sh" | ".bash" => lang_fn!(
-            "bash",
-            tree_sitter_bash::LANGUAGE,
-            include_str!("../queries/bash/highlights.scm")
-        ),
-        ".fish" => lang_fn!(
-            "fish",
-            tree_sitter_fish::language(),
-            include_str!("../queries/fish/highlights.scm")
-        ),
-        ".lua" => lang_fn!(
-            "lua",
-            tree_sitter_lua::LANGUAGE,
-            include_str!("../queries/lua/highlights.scm")
-        ),
-        ".sql" => lang_fn!(
-            "sql",
-            tree_sitter_sequel::LANGUAGE,
-            include_str!("../queries/sql/highlights.scm")
-        ),
-        _ => return None,
-    })
+static LANGUAGES: &[Entry] = &[
+    Entry {
+        id: LanguageId::Rust,
+        name: "rust",
+        grammar: || tree_sitter_rust::LANGUAGE.into(),
+        extensions: &["rs"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["rust", "rs"],
+        highlights: include_str!("../queries/rust/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Python,
+        name: "python",
+        grammar: || tree_sitter_python::LANGUAGE.into(),
+        extensions: &["py", "pyi", "pyw"],
+        filenames: &[],
+        interpreters: &["python", "python3"],
+        aliases: &["python", "py", "python3"],
+        highlights: include_str!("../queries/python/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::JavaScript,
+        name: "javascript",
+        grammar: || tree_sitter_javascript::LANGUAGE.into(),
+        extensions: &["js", "jsx", "mjs", "cjs"],
+        filenames: &[],
+        interpreters: &["node", "nodejs"],
+        aliases: &["javascript", "js", "node"],
+        highlights: include_str!("../queries/javascript/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::TypeScript,
+        name: "typescript",
+        grammar: || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        extensions: &["ts", "mts", "cts"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["typescript", "ts"],
+        highlights: include_str!("../queries/typescript/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Tsx,
+        name: "tsx",
+        grammar: || tree_sitter_typescript::LANGUAGE_TSX.into(),
+        extensions: &["tsx"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["tsx"],
+        highlights: include_str!("../queries/tsx/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Go,
+        name: "go",
+        grammar: || tree_sitter_go::LANGUAGE.into(),
+        extensions: &["go"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["go", "golang"],
+        highlights: include_str!("../queries/go/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::C,
+        name: "c",
+        grammar: || tree_sitter_c::LANGUAGE.into(),
+        extensions: &["c", "h"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["c"],
+        highlights: include_str!("../queries/c/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Cpp,
+        name: "cpp",
+        grammar: || tree_sitter_cpp::LANGUAGE.into(),
+        extensions: &["cpp", "cc", "cp", "cxx", "hpp", "hh", "hxx", "ino", "tpp"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["cpp", "c++", "cxx"],
+        highlights: include_str!("../queries/cpp/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Json,
+        name: "json",
+        grammar: || tree_sitter_json::LANGUAGE.into(),
+        extensions: &["json", "jsonc"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["json", "jsonc"],
+        highlights: include_str!("../queries/json/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Bash,
+        name: "bash",
+        grammar: || tree_sitter_bash::LANGUAGE.into(),
+        extensions: &["sh", "bash", "zsh", "ksh"],
+        filenames: &[
+            ".bashrc",
+            ".bash_profile",
+            ".bash_aliases",
+            ".bash_logout",
+            ".zshrc",
+            ".zshenv",
+            ".zprofile",
+            ".profile",
+            "PKGBUILD",
+            "APKBUILD",
+        ],
+        interpreters: &["bash", "sh", "dash", "zsh", "ksh"],
+        aliases: &["bash", "sh", "shell", "zsh", "shell-script"],
+        highlights: include_str!("../queries/bash/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Fish,
+        name: "fish",
+        grammar: tree_sitter_fish::language,
+        extensions: &["fish"],
+        filenames: &[],
+        interpreters: &["fish"],
+        aliases: &["fish"],
+        highlights: include_str!("../queries/fish/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Lua,
+        name: "lua",
+        grammar: || tree_sitter_lua::LANGUAGE.into(),
+        extensions: &["lua"],
+        filenames: &[],
+        interpreters: &["lua"],
+        aliases: &["lua"],
+        highlights: include_str!("../queries/lua/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Sql,
+        name: "sql",
+        grammar: || tree_sitter_sequel::LANGUAGE.into(),
+        extensions: &["sql"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["sql"],
+        highlights: include_str!("../queries/sql/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::CMake,
+        name: "cmake",
+        grammar: || tree_sitter_cmake::LANGUAGE.into(),
+        extensions: &["cmake"],
+        filenames: &["CMakeLists.txt"],
+        interpreters: &["cmake"],
+        aliases: &["cmake"],
+        highlights: include_str!("../queries/cmake/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Markdown,
+        name: "markdown",
+        grammar: || tree_sitter_md::LANGUAGE.into(),
+        extensions: &["md", "markdown"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["markdown", "md"],
+        highlights: include_str!("../queries/markdown/highlights.scm"),
+        injections: include_str!("../queries/markdown/injections.scm"),
+    },
+    Entry {
+        id: LanguageId::MarkdownInline,
+        name: "markdown.inline",
+        grammar: || tree_sitter_md::INLINE_LANGUAGE.into(),
+        extensions: &[],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["markdown.inline", "markdown_inline"],
+        highlights: include_str!("../queries/markdown.inline/highlights.scm"),
+        injections: include_str!("../queries/markdown.inline/injections.scm"),
+    },
+    Entry {
+        id: LanguageId::Java,
+        name: "java",
+        grammar: || tree_sitter_java::LANGUAGE.into(),
+        extensions: &["java"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["java"],
+        highlights: include_str!("../queries/java/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::CSharp,
+        name: "c-sharp",
+        grammar: || tree_sitter_c_sharp::LANGUAGE.into(),
+        extensions: &["cs", "csx"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["csharp", "c#", "cs", "c-sharp"],
+        highlights: include_str!("../queries/c-sharp/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Ruby,
+        name: "ruby",
+        grammar: || tree_sitter_ruby::LANGUAGE.into(),
+        extensions: &["rb", "rbw", "rake", "gemspec"],
+        filenames: &["Gemfile", "Rakefile", "Vagrantfile", "Guardfile"],
+        interpreters: &["ruby"],
+        aliases: &["ruby", "rb"],
+        highlights: include_str!("../queries/ruby/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Php,
+        name: "php",
+        grammar: || tree_sitter_php::LANGUAGE_PHP.into(),
+        extensions: &["php", "phtml"],
+        filenames: &[],
+        interpreters: &["php"],
+        aliases: &["php"],
+        highlights: include_str!("../queries/php/highlights.scm"),
+        injections: include_str!("../queries/php/injections.scm"),
+    },
+    Entry {
+        id: LanguageId::Toml,
+        name: "toml",
+        grammar: || tree_sitter_toml_ng::LANGUAGE.into(),
+        extensions: &["toml"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["toml"],
+        highlights: include_str!("../queries/toml/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Yaml,
+        name: "yaml",
+        grammar: || tree_sitter_yaml::LANGUAGE.into(),
+        extensions: &["yaml", "yml"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["yaml", "yml"],
+        highlights: include_str!("../queries/yaml/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Html,
+        name: "html",
+        grammar: || tree_sitter_html::LANGUAGE.into(),
+        extensions: &["html", "htm", "xhtml"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["html"],
+        highlights: include_str!("../queries/html/highlights.scm"),
+        injections: include_str!("../queries/html/injections.scm"),
+    },
+    Entry {
+        id: LanguageId::Css,
+        name: "css",
+        grammar: || tree_sitter_css::LANGUAGE.into(),
+        extensions: &["css"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["css"],
+        highlights: include_str!("../queries/css/highlights.scm"),
+        injections: "",
+    },
+];
+
+pub fn for_extension(extension: &str) -> Option<LanguageSpec> {
+    let extension = extension.strip_prefix('.').unwrap_or(extension);
+    LANGUAGES
+        .iter()
+        .find(|entry| {
+            entry
+                .extensions
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(extension))
+        })
+        .map(Entry::spec)
 }
 
-/// Basenames that imply a language regardless of extension. Checked
-/// before the extension so dotfiles (`Path::extension` sees none for
-/// `.bashrc`) and Arch build scripts resolve.
-fn for_basename(name: &str) -> Option<LanguageSpec> {
-    (matches!(name, ".bashrc" | ".bash_profile" | ".profile" | "PKGBUILD")).then(|| {
-        lang_fn!(
-            "bash",
-            tree_sitter_bash::LANGUAGE,
-            include_str!("../queries/bash/highlights.scm")
-        )
-    })
+pub fn for_name(name: &str) -> Option<LanguageSpec> {
+    let name = name.trim();
+    let name = name
+        .strip_prefix("source.")
+        .or_else(|| name.strip_prefix("text."))
+        .unwrap_or(name);
+    LANGUAGES
+        .iter()
+        .find(|entry| {
+            entry
+                .aliases
+                .iter()
+                .any(|alias| alias.eq_ignore_ascii_case(name))
+        })
+        .map(Entry::spec)
 }
 
-/// Interpreter named by a shebang line → spec. Only shells live here;
-/// one row per language we actually ship a grammar for.
-fn for_interpreter(interp: &str) -> Option<LanguageSpec> {
-    Some(match interp {
-        "bash" | "sh" | "dash" | "zsh" => lang_fn!(
-            "bash",
-            tree_sitter_bash::LANGUAGE,
-            include_str!("../queries/bash/highlights.scm")
-        ),
-        "fish" => lang_fn!(
-            "fish",
-            tree_sitter_fish::language(),
-            include_str!("../queries/fish/highlights.scm")
-        ),
-        _ => return None,
-    })
+/// A registry walk for compatibility checks, not another detection vocabulary.
+pub fn specifications() -> impl Iterator<Item = LanguageSpec> {
+    LANGUAGES.iter().map(Entry::spec)
 }
 
-/// First shebang token as a bare interpreter name: `#!/bin/bash` →
-/// `bash`, `#!/usr/bin/env -S fish -e` → `fish`. Returns `None` for
-/// anything that isn't a shebang line.
 pub fn interpreter_of(first_line: &str) -> Option<&str> {
     let mut tokens = first_line.strip_prefix("#!")?.split_whitespace();
     let program = tokens.next()?;
-    // `env` indirection: the interpreter is the next non-flag word
-    // (`-S`/`--split-string` and friends).
     let program = if basename(program) == Some("env") {
-        tokens.find(|t| !t.starts_with('-'))?
+        tokens.find(|token| !token.starts_with('-'))?
     } else {
         program
     };
     basename(program)
 }
-
 fn basename(program: &str) -> Option<&str> {
     Path::new(program)
         .file_name()
-        .and_then(|n| n.to_str())
-        .filter(|n| !n.is_empty())
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
 }
-
-/// Shebang line → spec.
 pub fn for_shebang(first_line: &str) -> Option<LanguageSpec> {
-    for_interpreter(interpreter_of(first_line)?)
+    let interpreter = interpreter_of(first_line)?;
+    LANGUAGES
+        .iter()
+        .find(|entry| entry.interpreters.contains(&interpreter))
+        .map(Entry::spec)
 }
 
-/// Path → spec, pure in `first_line`: exact basename first, then the
-/// extension table, then — only when the extension is unknown or
-/// absent — whatever the (already-read) first line shebangs to.
+/// Exact basename wins over extension, which wins over the bounded shebang.
+/// Non-UTF-8 filename bytes never become a lossy path used for I/O.
 pub fn detect(path: &Path, first_line: Option<&str>) -> Option<LanguageSpec> {
-    let p = path;
-    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-        if let Some(spec) = for_basename(name) {
-            return Some(spec);
+    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+        if let Some(entry) = LANGUAGES.iter().find(|entry| {
+            entry
+                .filenames
+                .iter()
+                .any(|filename| filename.eq_ignore_ascii_case(name))
+        }) {
+            return Some(entry.spec());
         }
     }
-    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy()));
-    if let Some(spec) = ext.as_deref().and_then(for_extension) {
-        return Some(spec);
-    }
-    first_line.and_then(for_shebang)
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(for_extension)
+        .or_else(|| first_line.and_then(for_shebang))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn covers_the_curated_set() {
-        for ext in [
-            ".rs", ".py", ".js", ".ts", ".tsx", ".go", ".c", ".cpp", ".json", ".sh", ".fish",
-            ".lua", ".sql",
-        ] {
-            assert!(for_extension(ext).is_some(), "missing {ext}");
-        }
-        assert!(for_extension(".xyz").is_none());
-    }
-
-    #[test]
-    fn exact_filenames_beat_extension_and_shebang() {
-        for name in [".bashrc", ".bash_profile", ".profile", "PKGBUILD"] {
-            let spec = detect(std::path::Path::new(&format!("/home/tarek/{name}")), None)
-                .unwrap_or_else(|| panic!("{name} unresolved"));
-            assert_eq!(spec.name, "bash", "{name}");
-        }
-        // exact basename wins even against a contradictory shebang
-        let spec = detect(
-            std::path::Path::new("/home/tarek/.bashrc"),
-            Some("#!/usr/bin/env fish\n"),
-        )
-        .unwrap();
-        assert_eq!(spec.name, "bash");
-        // "PKGBUILD.fish" is not an exact basename — extension rules
-        assert_eq!(
-            detect(std::path::Path::new("PKGBUILD.fish"), None)
-                .unwrap()
-                .name,
-            "fish"
-        );
-    }
-
-    #[test]
-    fn shebang_resolves_when_extension_unknown_or_absent() {
-        for (line, lang) in [
-            ("#!/bin/bash\n", "bash"),
-            ("#!/bin/bash -euo pipefail\n", "bash"),
-            ("#!/usr/bin/env bash\n", "bash"),
-            ("#!/usr/bin/env -S bash --norc\n", "bash"),
-            ("#!/bin/sh\n", "bash"),
-            ("#!/usr/bin/env zsh\n", "bash"),
-            ("#!/usr/bin/fish\n", "fish"),
-            ("#!/usr/bin/env fish\n", "fish"),
-        ] {
-            let spec = detect(std::path::Path::new("some-script"), Some(line))
-                .unwrap_or_else(|| panic!("unresolved shebang {line:?}"));
-            assert_eq!(spec.name, lang, "{line:?}");
-        }
-        // unknown extension still defers to the shebang
-        assert_eq!(
-            detect(std::path::Path::new("weird.tool"), Some("#!/bin/bash\n"))
-                .unwrap()
-                .name,
-            "bash"
-        );
-        // no shebang, no extension, no dice
-        assert!(detect(std::path::Path::new("README"), Some("# comment\n")).is_none());
-        assert!(detect(std::path::Path::new("run.pl"), Some("#!/usr/bin/perl\n")).is_none());
-        assert!(detect(std::path::Path::new("empty"), Some("")).is_none());
-    }
-
-    #[test]
-    fn known_extension_beats_shebang() {
-        let spec = detect(std::path::Path::new("x.fish"), Some("#!/bin/bash\n")).unwrap();
-        assert_eq!(spec.name, "fish");
-    }
-}
+mod tests;

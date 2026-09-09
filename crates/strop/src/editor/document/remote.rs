@@ -1,5 +1,6 @@
 //! Remote provenance stays with its real buffer. Live leases never cross replay.
 use super::{Document, DocumentSource, ReturnPoint};
+use std::fmt::Write;
 use strop_core::Buffer;
 use strop_remote::{
     ConnectionLease, ReadSelection, RemoteDirectorySnapshot, RemoteEntry, RemoteEntryKind,
@@ -48,9 +49,34 @@ impl std::fmt::Debug for RemoteDirectory {
 }
 impl RemoteDirectory {
     pub fn text(&self) -> String {
-        let mut text = String::from("../\n");
+        let size_width = self
+            .visible
+            .iter()
+            .filter_map(|&index| self.entries[index].size)
+            .map(|size| size.get().checked_ilog10().unwrap_or(0) as usize + 1)
+            .max()
+            .unwrap_or(1)
+            .max(5);
+        let mut text = String::new();
+        // fmt::Write on String is infallible; parent attributes were not fetched.
+        let _ = writeln!(text, "d????????? {:>size_width$} ../", "?");
         for &index in &self.visible {
             let entry = &self.entries[index];
+            text.push(entry.kind.marker());
+            match entry.permissions {
+                Some(permissions) => {
+                    let _ = write!(text, "{permissions}");
+                }
+                None => text.push_str("?????????"),
+            }
+            match entry.size {
+                Some(size) => {
+                    let _ = write!(text, " {:>size_width$} ", size.get());
+                }
+                None => {
+                    let _ = write!(text, " {:>size_width$} ", "?");
+                }
+            }
             let name = entry
                 .file
                 .path()
@@ -60,6 +86,9 @@ impl RemoteDirectory {
             text.push_str(&strop_core::layout::printable_text(name));
             if entry.kind == RemoteEntryKind::Directory {
                 text.push('/');
+            }
+            if entry.kind == RemoteEntryKind::SymbolicLink {
+                text.push('@');
             }
             text.push('\n');
         }
@@ -78,6 +107,28 @@ impl RemoteDirectory {
             .and_then(|line| self.visible.get(line))
             .and_then(|&index| self.entries.get(index))
     }
+    /// Entries are grouped directory-first then native-path sorted. Search
+    /// both groups and the sorted visible mapping without scanning the listing.
+    pub(crate) fn line_for(&self, file: &RemoteFile) -> Option<strop_core::id::LineIndex> {
+        if file.endpoint() != self.directory.endpoint() {
+            return None;
+        }
+        let split = self
+            .entries
+            .partition_point(|entry| entry.kind == RemoteEntryKind::Directory);
+        for (offset, entries) in [(0, &self.entries[..split]), (split, &self.entries[split..])] {
+            if let Ok(index) = entries.binary_search_by(|entry| {
+                entry.file.path().as_os_str().cmp(file.path().as_os_str())
+            }) {
+                return self
+                    .visible
+                    .binary_search(&(offset + index))
+                    .ok()
+                    .map(|row| strop_core::id::LineIndex::new(row + 1));
+            }
+        }
+        None
+    }
 }
 
 impl Document {
@@ -88,10 +139,8 @@ impl Document {
         );
         buffer.name = Some(source.file.to_string());
         buffer.readonly = true;
-        let highlighter = strop_syntax::Highlighter::for_path(source.file.path(), buffer.text());
         Self {
             buf: buffer,
-            highlighter,
             source: DocumentSource::Remote(Box::new(source)),
         }
     }
@@ -135,7 +184,6 @@ impl Document {
         buffer.readonly = true;
         Self {
             buf: buffer,
-            highlighter: None,
             source: DocumentSource::RemoteDirectory(Box::new(source)),
         }
     }

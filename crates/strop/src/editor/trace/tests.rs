@@ -21,8 +21,9 @@ fn fixture() -> Editor {
         strop_core::Buffer::from_text("source\n"),
         "/recorded".into(),
     );
-    editor.tape = Rc::new(Tape::fixture(|_, _| {
-        Err(io::Error::other("unexpected native observation"))
+    editor.tape = Rc::new(Tape::fixture(|operation, _| match operation {
+        "analysis.start" => Ok(serde_json::json!({"Ok": null})),
+        _ => Err(io::Error::other("unexpected native observation")),
     }));
     editor.tape.seed(&Seed::capture(&editor).unwrap()).unwrap();
     editor
@@ -125,10 +126,13 @@ fn stale_picker_terminal_cannot_end_recorded_new_query() {
         &mut editor,
         AppEvent::Picker(PickerEvent {
             ticket: second.clone(),
-            msg: PickerMsg::Items(vec![Item {
-                text: "matching row".into(),
-                payload: Payload::File("hit".into()),
-            }]),
+            msg: PickerMsg::Items(
+                vec![Item {
+                    text: "matching row".into(),
+                    payload: Payload::File("hit".into()),
+                }]
+                .into(),
+            ),
         }),
     );
     action(

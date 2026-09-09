@@ -6,7 +6,7 @@
 use strop_core::id::ByteOffset;
 use strop_core::Buffer;
 
-use crate::query::exec::{all_matches, first_from, Matcher};
+use crate::query::exec::{first_from, visit_matches, Matcher};
 use crate::query::{CompiledQuery, QueryError, SearchMatch};
 
 /// KMP over rope chunks for a plain byte needle (the program is a
@@ -15,10 +15,14 @@ fn visit(
     buf: &Buffer,
     needle: &[u8],
     from: usize,
+    query: &CompiledQuery,
     mut matched: impl FnMut(usize) -> std::ops::ControlFlow<()>,
-) {
+) -> Result<(), QueryError> {
+    if query.cancelled() {
+        return Err(QueryError::Cancelled);
+    }
     if needle.is_empty() {
-        return;
+        return Ok(());
     }
     let from = buf.ceil_boundary(from.min(buf.len_bytes()));
     let mut prefixes = vec![0; needle.len()];
@@ -33,13 +37,14 @@ fn visit(
         prefixes[index] = length;
     }
     let mut length = 0;
-    let mut offset = 0;
-    for chunk in buf.text().chunks() {
+    let mut offset = from;
+    let suffix = buf.text().byte_slice(from..);
+    for chunk in suffix.chunks() {
+        if query.cancelled() {
+            return Err(QueryError::Cancelled);
+        }
         for &byte in chunk.as_bytes() {
             offset += 1;
-            if offset <= from {
-                continue;
-            }
             while length > 0 && byte != needle[length] {
                 length = prefixes[length - 1];
             }
@@ -48,11 +53,16 @@ fn visit(
             }
             if length == needle.len() {
                 if matched(offset - length).is_break() {
-                    return;
+                    return Ok(());
                 }
                 length = prefixes[length - 1];
             }
         }
+    }
+    if query.cancelled() {
+        Err(QueryError::Cancelled)
+    } else {
+        Ok(())
     }
 }
 
@@ -71,15 +81,15 @@ pub(crate) fn forward(
     let prog = query.program();
     if let Some(needle) = &prog.literal {
         let mut found = None;
-        visit(buf, needle, from, |offset| {
+        visit(buf, needle, from, query, |offset| {
             found = Some(literal_hit(needle, offset));
             std::ops::ControlFlow::Break(())
-        });
+        })?;
         return Ok(found);
     }
-    let matcher = Matcher::new(buf.text());
+    let matcher = Matcher::new(buf.text(), query);
     let from = buf.ceil_boundary(from.min(buf.len_bytes()));
-    first_from(&matcher, prog, from).map_err(QueryError::from)
+    first_from(&matcher, prog, from)
 }
 
 pub(crate) fn backward(
@@ -88,37 +98,39 @@ pub(crate) fn backward(
     query: &CompiledQuery,
 ) -> Result<Option<SearchMatch>, QueryError> {
     let from = from.min(buf.len_bytes());
-    let prog = query.program();
-    if let Some(needle) = &prog.literal {
-        let mut found = None;
-        visit(buf, needle, 0, |offset| {
-            if offset < from {
-                found = Some(literal_hit(needle, offset));
-            }
-            std::ops::ControlFlow::Continue(())
-        });
-        return Ok(found);
-    }
-    // last match whose start precedes `from`, even if its end crosses
-    // the cursor — the `?pat` contract the resolver's tests pin
-    let matcher = Matcher::new(buf.text());
-    Ok(all_matches(&matcher, prog)?
-        .into_iter()
-        .rfind(|hit| hit.start.get() < from))
+    let mut found = None;
+    visit_all(buf, query, |hit| {
+        if hit.start.get() >= from {
+            return std::ops::ControlFlow::Break(());
+        }
+        found = Some(hit);
+        std::ops::ControlFlow::Continue(())
+    })?;
+    Ok(found)
 }
 
 pub(crate) fn all(buf: &Buffer, query: &CompiledQuery) -> Result<Vec<SearchMatch>, QueryError> {
-    let prog = query.program();
-    if let Some(needle) = &prog.literal {
-        let mut hits = Vec::new();
-        visit(buf, needle, 0, |offset| {
-            hits.push(literal_hit(needle, offset));
-            std::ops::ControlFlow::Continue(())
-        });
-        return Ok(hits);
+    let mut hits = Vec::new();
+    visit_all(buf, query, |hit| {
+        hits.push(hit);
+        std::ops::ControlFlow::Continue(())
+    })?;
+    Ok(hits)
+}
+
+pub(crate) fn visit_all(
+    buf: &Buffer,
+    query: &CompiledQuery,
+    mut visitor: impl FnMut(SearchMatch) -> std::ops::ControlFlow<()>,
+) -> Result<(), QueryError> {
+    let program = query.program();
+    if let Some(needle) = &program.literal {
+        visit(buf, needle, 0, query, |offset| {
+            visitor(literal_hit(needle, offset))
+        })
+    } else {
+        visit_matches(&Matcher::new(buf.text(), query), program, visitor)
     }
-    let matcher = Matcher::new(buf.text());
-    all_matches(&matcher, prog).map_err(QueryError::from)
 }
 
 #[cfg(test)]

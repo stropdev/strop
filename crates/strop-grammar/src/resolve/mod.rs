@@ -2,11 +2,14 @@
 //! consume `resolve`. Search runs through the compiled query engine
 //! (`crate::query`) — bounded, typed errors, explicit match ranges.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use strop_core::{Buffer, Range};
 
 use crate::types::*;
 
+mod find;
 mod motions;
+pub use find::find_character;
 mod objects;
 pub(crate) mod search;
 
@@ -37,13 +40,23 @@ pub fn resolve(
     cursor: usize,
     cmd: &Command,
 ) -> Result<Option<Resolved>, crate::query::QueryError> {
+    resolve_controlled(buf, cursor, cmd, None)
+}
+
+fn resolve_controlled(
+    buf: &Buffer,
+    cursor: usize,
+    cmd: &Command,
+    cancel: Option<&AtomicBool>,
+) -> Result<Option<Resolved>, crate::query::QueryError> {
+    check_cancel(cancel)?;
     let count = cmd.count.unwrap_or(1);
     let mut motion_target = None;
     let (range, inclusive, mut spec) = match &cmd.target {
         Target::Linewise => {
             let line = buf.line_of(cursor);
             let start = buf.line_start(line);
-            let end_line = (line + count).min(buf.len_lines());
+            let end_line = line.saturating_add(count).min(buf.len_lines());
             let end = if end_line >= buf.len_lines() {
                 buf.len_bytes()
             } else {
@@ -108,7 +121,7 @@ pub fn resolve(
                 target: (**inner).clone(),
                 keys: String::new(),
             };
-            let r = none!(resolve(buf, cursor, &sub)?);
+            let r = none!(resolve_controlled(buf, cursor, &sub, cancel)?);
             (
                 r.range,
                 r.range.inclusive(),
@@ -126,6 +139,8 @@ pub fn resolve(
                 let is_cont = |p: usize| p < buf.len_bytes() && buf.byte(p) & 0xC0 == 0x80;
                 let mut pos = cursor;
                 for _ in 0..count {
+                    check_cancel(cancel)?;
+                    let previous = pos;
                     pos = if *m == Motion::Left {
                         let mut p = pos.saturating_sub(1).max(lo);
                         while p > lo && is_cont(p) {
@@ -139,6 +154,9 @@ pub fn resolve(
                         }
                         p
                     };
+                    if pos == previous {
+                        break;
+                    }
                 }
                 let (s, e) = if pos <= cursor {
                     (pos, cursor)
@@ -153,7 +171,7 @@ pub fn resolve(
                 if cmd.op.is_some() {
                     let line = buf.line_of(cursor);
                     let (a, b) = if *m == Motion::Down {
-                        (line, line + count)
+                        (line, line.saturating_add(count))
                     } else {
                         (line.saturating_sub(count), line)
                     };
@@ -171,7 +189,7 @@ pub fn resolve(
                 } else {
                     let line = buf.line_of(cursor);
                     let target = if *m == Motion::Down {
-                        (line + count).min(buf.len_lines() - 1)
+                        line.saturating_add(count).min(buf.len_lines() - 1)
                     } else {
                         line.saturating_sub(count)
                     };
@@ -196,7 +214,12 @@ pub fn resolve(
                 let big = matches!(m, Motion::BigWordForward);
                 let mut pos = change_word_end(buf, cursor, big);
                 for _ in 1..count {
-                    pos = word_end(buf, pos, big);
+                    check_cancel(cancel)?;
+                    let next = word_end(buf, pos, big);
+                    if next == pos {
+                        break;
+                    }
+                    pos = next;
                 }
                 (
                     Range::charwise(cursor.min(pos), pos.max(cursor) + 1),
@@ -212,7 +235,12 @@ pub fn resolve(
                 let big = matches!(m, Motion::BigWordForward);
                 let mut pos = cursor;
                 for _ in 0..count {
-                    pos = word_forward(buf, pos, big);
+                    check_cancel(cancel)?;
+                    let next = word_forward(buf, pos, big);
+                    if next == pos {
+                        break;
+                    }
+                    pos = next;
                 }
                 // exclusive: [cursor, target)
                 (
@@ -229,7 +257,12 @@ pub fn resolve(
                 let big = matches!(m, Motion::BigWordBackward);
                 let mut pos = cursor;
                 for _ in 0..count {
-                    pos = word_backward(buf, pos, big);
+                    check_cancel(cancel)?;
+                    let next = word_backward(buf, pos, big);
+                    if next == pos {
+                        break;
+                    }
+                    pos = next;
                 }
                 (
                     Range::charwise(pos, cursor),
@@ -245,7 +278,12 @@ pub fn resolve(
                 let big = matches!(m, Motion::BigWordEnd);
                 let mut pos = cursor;
                 for _ in 0..count {
-                    pos = word_end(buf, pos, big);
+                    check_cancel(cancel)?;
+                    let next = word_end(buf, pos, big);
+                    if next == pos {
+                        break;
+                    }
+                    pos = next;
                 }
                 (
                     Range::charwise(cursor.min(pos), pos.max(cursor) + 1),
@@ -261,7 +299,12 @@ pub fn resolve(
                 let big = matches!(m, Motion::BigWordEndBackward);
                 let mut pos = cursor;
                 for _ in 0..count {
-                    pos = word_end_backward(buf, pos, big);
+                    check_cancel(cancel)?;
+                    let next = word_end_backward(buf, pos, big);
+                    if next == pos {
+                        break;
+                    }
+                    pos = next;
                 }
                 (
                     Range::charwise(pos.min(cursor), pos.max(cursor) + 1),
@@ -280,6 +323,8 @@ pub fn resolve(
                 let n = buf.len_lines();
                 let mut line = buf.line_of(cursor);
                 for _ in 0..count {
+                    check_cancel(cancel)?;
+                    let previous = line;
                     if forward {
                         loop {
                             line += 1;
@@ -301,6 +346,9 @@ pub fn resolve(
                                 break;
                             }
                         }
+                    }
+                    if line == previous {
+                        break;
                     }
                 }
                 let target = buf.line_start(line);
@@ -393,60 +441,23 @@ pub fn resolve(
                 (Range::linewise(start, end), true, name.to_string())
             }
             Motion::FindChar { ch, till, backward } => {
-                let line = buf.line_of(cursor);
-                let (lo, hi) = (buf.line_start(line), buf.line_end(line));
-                // char-honest: f é must find é, never a continuation byte
-                let line_text = buf.line_text(line);
-                let mut found = None;
-                let mut hits = 0;
-                if !backward {
-                    for (off, c) in line_text.char_indices() {
-                        let i = lo + off;
-                        if i <= cursor {
-                            continue;
-                        }
-                        if i >= hi {
-                            break;
-                        }
-                        if c == *ch {
-                            hits += 1;
-                            if hits == count {
-                                found = Some(i);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    for (off, c) in line_text.char_indices().rev() {
-                        let i = lo + off;
-                        if i >= cursor.min(hi) {
-                            continue;
-                        }
-                        if c == *ch {
-                            hits += 1;
-                            if hits == count {
-                                found = Some(i);
-                                break;
-                            }
-                        }
-                    }
-                }
-                let target = none!(found);
+                let target = none!(find_character(buf, cursor.into(), *ch, *backward, count)).get();
                 // till lands one before/after the char
                 let land = if *till {
                     if *backward {
-                        target + 1
+                        buf.ceil_boundary(target + 1)
                     } else {
-                        target.saturating_sub(1).max(cursor.min(target))
+                        buf.clamp_boundary(target.saturating_sub(1))
                     }
                 } else {
                     target
                 };
+                motion_target = Some(land);
                 let inclusive = !till;
                 let (s, e) = if land >= cursor {
-                    (cursor, land + 1)
+                    (cursor, buf.ceil_boundary(land + 1))
                 } else {
-                    (land, cursor + 1)
+                    (land, buf.ceil_boundary(cursor + 1))
                 };
                 let verb = if *till { "till" } else { "find" };
                 (
@@ -459,6 +470,7 @@ pub fn resolve(
                 let backward = matches!(m, Motion::SearchBackward(_));
                 let mut target = cursor;
                 for _ in 0..count {
+                    check_cancel(cancel)?;
                     // wrap at the file edge like `n`/`N`; query errors
                     // (step budget) propagate as Err
                     let hit = if backward {
@@ -490,6 +502,7 @@ pub fn resolve(
             }
         },
     };
+    check_cancel(cancel)?;
     if range.is_empty() && cmd.op.is_some() {
         return Ok(None);
     }
@@ -548,13 +561,6 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
             };
             buf.line_start(line.min(buf.len_lines().saturating_sub(1)))
         }
-        Target::Motion(Motion::FindChar { backward, .. }) => {
-            if *backward {
-                r.range.start.get()
-            } else {
-                r.range.end.get().saturating_sub(1)
-            }
-        }
         Target::Motion(Motion::MatchPair) => {
             // bare %: cursor lands on the mate (the far end)
             if r.range.end - 1 == _cursor {
@@ -563,8 +569,8 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
                 r.range.end.get() - 1
             }
         }
-        Target::Motion(Motion::Search(_) | Motion::SearchBackward(_)) => {
-            unreachable!("search carries motion_target; returned above")
+        Target::Motion(Motion::Search(_) | Motion::SearchBackward(_) | Motion::FindChar { .. }) => {
+            unreachable!("resolved motion carries its exact target; returned above")
         }
         Target::Motion(Motion::Right) => r.range.end.get(),
         Target::Motion(Motion::ParagraphForward) => r.range.end.get(),
@@ -578,14 +584,14 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
 /// A command resolved against a cursor SET (0014 wave 3): preview
 /// renders exactly these ranges, execute applies exactly these ranges.
 /// The preview cannot lie because both consume this object.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ActionPlan {
     /// Sorted by start, deduped, non-overlapping (overlaps keep the
     /// lower range — the first cursor to claim a region owns it).
     pub targets: Vec<PlannedTarget>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct PlannedTarget {
     /// The cursor this range was resolved from.
     pub cursor: usize,
@@ -599,27 +605,41 @@ pub fn plan(
     cursors: &[usize],
     cmd: &Command,
 ) -> Result<Option<ActionPlan>, crate::query::QueryError> {
-    let mut targets: Vec<PlannedTarget> = Vec::with_capacity(cursors.len());
-    for &c in cursors {
-        if let Some(r) = resolve(buf, c, cmd)? {
-            targets.push(PlannedTarget {
-                cursor: c,
-                range: r.range,
-            });
+    let resolved = resolve_many(buf, cursors, cmd)?;
+    Ok(ActionPlan::from_resolved(cursors, &resolved))
+}
+
+impl ActionPlan {
+    /// Preserve the same sorted, non-overlapping plan without running the
+    /// resolver twice when a worker also needs each cursor's motion result.
+    pub fn from_resolved(cursors: &[usize], resolved: &[Option<Resolved>]) -> Option<Self> {
+        debug_assert_eq!(cursors.len(), resolved.len());
+        let mut targets: Vec<_> = cursors
+            .iter()
+            .zip(resolved)
+            .filter_map(|(&cursor, resolved)| {
+                resolved.as_ref().map(|resolved| PlannedTarget {
+                    cursor,
+                    range: resolved.range,
+                })
+            })
+            .collect();
+        if targets.is_empty() {
+            return None;
         }
-    }
-    if targets.is_empty() {
-        return Ok(None);
-    }
-    targets.sort_by_key(|t| t.range.start);
-    targets.dedup_by_key(|t| (t.range.start, t.range.end));
-    let mut kept: Vec<PlannedTarget> = Vec::with_capacity(targets.len());
-    for t in targets {
-        if kept.last().is_none_or(|k| t.range.start >= k.range.end) {
-            kept.push(t);
+        targets.sort_by_key(|target| target.range.start);
+        targets.dedup_by_key(|target| (target.range.start, target.range.end));
+        let mut kept: Vec<PlannedTarget> = Vec::with_capacity(targets.len());
+        for target in targets {
+            if kept
+                .last()
+                .is_none_or(|previous| target.range.start >= previous.range.end)
+            {
+                kept.push(target);
+            }
         }
+        Some(Self { targets: kept })
     }
-    Ok(Some(ActionPlan { targets: kept }))
 }
 
 /// The same command resolved at every cursor, independently — no
@@ -632,4 +652,25 @@ pub fn resolve_many(
     cmd: &Command,
 ) -> Result<Vec<Option<Resolved>>, crate::query::QueryError> {
     cursors.iter().map(|&c| resolve(buf, c, cmd)).collect()
+}
+
+/// The same pure resolver under a native work owner's stop flag.
+pub fn resolve_many_cancellable(
+    buf: &Buffer,
+    cursors: &[usize],
+    cmd: &Command,
+    cancel: &AtomicBool,
+) -> Result<Vec<Option<Resolved>>, crate::query::QueryError> {
+    cursors
+        .iter()
+        .map(|&cursor| resolve_controlled(buf, cursor, cmd, Some(cancel)))
+        .collect()
+}
+
+fn check_cancel(cancel: Option<&AtomicBool>) -> Result<(), crate::query::QueryError> {
+    if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+        Err(crate::query::QueryError::Cancelled)
+    } else {
+        Ok(())
+    }
 }

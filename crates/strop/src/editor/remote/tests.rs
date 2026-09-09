@@ -149,13 +149,15 @@ fn historical_permalink_uses_the_rendered_source_coordinate() {
     };
     e.open_delta(
         "delta",
-        "app.log",
-        vec![hunk],
+        crate::editor::git_memory::PreparedDiff::new("app.log".into(), vec![hunk]),
         None,
         Some(crate::editor::git_memory::CommitFiles {
             repo,
             sha: "0123456789abcdef0123456789abcdef01234567".into(),
-            files: Vec::new(),
+            files: crate::editor::git_memory::PreparedFiles::new(
+                "0123456789abcdef0123456789abcdef01234567".into(),
+                Vec::new(),
+            ),
             current: "app.log".into(),
         }),
     );
@@ -173,4 +175,52 @@ fn historical_permalink_uses_the_rendered_source_coordinate() {
             .is_err(),
         "a deleted line has no location in the selected commit"
     );
+}
+
+#[test]
+fn directory_metadata_preserves_unknown_zero_and_native_row_identity() {
+    use crate::editor::document::RemoteDirectory;
+    use strop_remote::{RemoteEntry, RemoteEntryKind, RemotePermissions};
+    let root = RemoteFile::parse("ssh://fixture/repo").unwrap();
+    let entries = vec![
+        RemoteEntry {
+            file: root.with_path("/repo/missing".into()).unwrap(),
+            kind: RemoteEntryKind::Unknown,
+            permissions: None,
+            size: None,
+        },
+        RemoteEntry {
+            file: root.with_path("/repo/zero".into()).unwrap(),
+            kind: RemoteEntryKind::File,
+            permissions: Some(RemotePermissions::new(0).unwrap()),
+            size: Some(RemoteSize::new(0)),
+        },
+        RemoteEntry {
+            file: root.with_path("/repo/line\nbreak".into()).unwrap(),
+            kind: RemoteEntryKind::SymbolicLink,
+            permissions: Some(RemotePermissions::new(0o777).unwrap()),
+            size: Some(RemoteSize::new(7)),
+        },
+    ];
+    let directory = RemoteDirectory {
+        directory: root,
+        entries: entries.into(),
+        visible: vec![0, 1, 2],
+        filter: String::new(),
+        connection: None,
+        return_to: None,
+    };
+    let mut editor = editor("origin\n");
+    let document = Document::directory(Buffer::from_text(&directory.text()), directory);
+    let id = editor.docs.insert(document);
+    editor.switch_to(id);
+    let frame = crate::headless::frame_string(&mut editor, 80, 10).unwrap();
+    assert!(frame.contains("??????????     ? missing"), "{frame}");
+    assert!(frame.contains("----------     0 zero"), "{frame}");
+    assert!(frame.contains("lrwxrwxrwx     7 line�break@"), "{frame}");
+    editor.feed_text("3Gyy");
+    assert!(editor
+        .register(None)
+        .text
+        .starts_with("----------     0 zero"));
 }

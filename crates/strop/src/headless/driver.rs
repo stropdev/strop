@@ -1,4 +1,5 @@
 //! Scripted inputs and native completions use the same channel and recording edge.
+use super::directives::{self, DirectiveKind};
 use crate::editor::{
     events::AppEvent,
     trace::{drive::Action, seed::Seed},
@@ -6,13 +7,28 @@ use crate::editor::{
 };
 use ratatui::{backend::TestBackend, Terminal};
 use std::io::{self, Write};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 struct Driver<'a> {
     editor: &'a mut Editor,
     terminal: Terminal<TestBackend>,
     events: Receiver<AppEvent>,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WaitTarget {
+    Delay,
+    Jobs,
+    Input,
+}
+impl WaitTarget {
+    fn pending(self, editor: &Editor) -> bool {
+        match self {
+            Self::Delay => true,
+            Self::Jobs => editor.async_pending(),
+            Self::Input => editor.resolution.pending(),
+        }
+    }
 }
 impl Driver<'_> {
     fn apply(&mut self, action: Action) -> io::Result<()> {
@@ -22,8 +38,15 @@ impl Driver<'_> {
         Ok(())
     }
     fn drain(&mut self) -> io::Result<()> {
-        while let Ok(event) = self.events.try_recv() {
+        let started = Instant::now();
+        for _ in 0..crate::editor::events::EVENTS_PER_TURN {
+            let Ok(event) = self.events.try_recv() else {
+                break;
+            };
             self.apply(Action::Event(event))?;
+            if started.elapsed() >= crate::editor::events::TURN_BUDGET {
+                break;
+            }
         }
         Ok(())
     }
@@ -42,19 +65,24 @@ impl Driver<'_> {
         self.drain()?;
         self.draw()
     }
-    fn wait(&mut self, duration: Duration, until_idle: bool, draw: bool) -> io::Result<()> {
-        let deadline = Instant::now() + duration;
+    fn wait(&mut self, duration: Duration, target: WaitTarget, draw: bool) -> io::Result<()> {
+        let deadline = Instant::now().checked_add(duration).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "wait duration exceeds the clock range",
+            )
+        })?;
         loop {
             self.drain()?;
             if draw {
                 self.draw()?;
             }
-            if until_idle && !self.editor.async_pending() {
+            if target != WaitTarget::Delay && !target.pending(self.editor) {
                 return Ok(());
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return if until_idle {
+                return if target != WaitTarget::Delay {
                     Err(io::Error::new(
                         io::ErrorKind::TimedOut,
                         "editor jobs did not settle",
@@ -65,8 +93,22 @@ impl Driver<'_> {
             }
             match self.events.recv_timeout(remaining) {
                 Ok(event) => self.apply(Action::Event(event))?,
-                Err(RecvTimeoutError::Timeout) if !until_idle => return Ok(()),
-                Err(error) => return Err(io::Error::other(error)),
+                Err(RecvTimeoutError::Timeout) => {
+                    return if target != WaitTarget::Delay {
+                        Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "editor jobs did not settle",
+                        ))
+                    } else {
+                        Ok(())
+                    };
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "editor event channel disconnected",
+                    ));
+                }
             }
         }
     }
@@ -82,20 +124,29 @@ pub fn run_script(
 ) -> io::Result<()> {
     let mut steps = script
         .lines()
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
         .peekable();
-    if let Some(text) = steps.peek().and_then(|line| line.strip_prefix("buffer ")) {
+    if let Some((DirectiveKind::Buffer, text)) = steps
+        .peek()
+        .map(|line| directives::parse(line))
+        .transpose()?
+    {
         let text: String = serde_json::from_str(text).map_err(io::Error::other)?;
         let configuration = std::mem::take(&mut editor.config);
         let cwd = editor.cwd.clone();
+        let state_dir = editor.state_dir.take();
+        let message = std::mem::take(&mut editor.message);
         *editor = Editor::new_in(strop_core::Buffer::from_text(&text), cwd);
         editor.config = configuration;
+        editor.state_dir = state_dir;
+        editor.message = message;
         steps.next();
     }
+    editor.session_policy = crate::session::SessionPolicy::Disabled;
     if editor.tape.observes() {
         editor.tape.seed(&Seed::capture(editor)?)?;
     }
-    let (tx, events) = mpsc::channel();
+    let (tx, events) = crate::editor::events::channel();
     editor.connect_events(tx);
     let mut driver = Driver {
         editor,
@@ -111,65 +162,97 @@ pub fn run_script(
         if driver.editor.should_quit {
             break;
         }
-        if let Some(keys) = line.strip_prefix("keys ") {
-            for key in crate::editor::keys::parse(keys) {
-                driver.input(AppEvent::Terminal(key))?;
-                if driver.editor.should_quit {
-                    break;
+        let (kind, arguments) = directives::parse(line)?;
+        match kind {
+            DirectiveKind::Buffer => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "buffer must be the first directive",
+                ));
+            }
+            DirectiveKind::Keys => {
+                for key in crate::editor::keys::parse(arguments) {
+                    driver.input(AppEvent::Terminal(key))?;
+                    if driver.editor.should_quit {
+                        break;
+                    }
+                }
+                if driver.editor.resolution.pending() {
+                    driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
                 }
             }
-        } else if let Some(key) = line.strip_prefix("key ") {
-            driver.input(AppEvent::Terminal(
-                serde_json::from_str(key).map_err(io::Error::other)?,
-            ))?;
-        } else if let Some(text) = line.strip_prefix("paste ") {
-            driver.input(AppEvent::Paste(
-                serde_json::from_str(text).map_err(io::Error::other)?,
-            ))?;
-        } else if line == "quit-intent" {
-            driver.input(AppEvent::QuitIntent)?;
-        } else if let Some(size) = line.strip_prefix("resize ") {
-            let dimensions: Result<Vec<u16>, _> = size.split_whitespace().map(str::parse).collect();
-            let dimensions = dimensions.map_err(io::Error::other)?;
-            let [columns, rows] = dimensions.as_slice() else {
-                return Err(io::Error::other("resize requires columns and rows"));
-            };
-            driver.terminal.backend_mut().resize(*columns, *rows);
-            driver.input(AppEvent::Resize {
-                columns: *columns,
-                rows: *rows,
-            })?;
-        } else if line == "settle" {
-            driver.wait(Duration::from_secs(30), true, true)?;
-        } else if let Some(duration) = line.strip_prefix("wait ") {
-            driver.wait(
-                Duration::from_millis(duration.trim().parse().map_err(io::Error::other)?),
-                false,
-                true,
-            )?;
-        } else if line == "frame" {
-            driver.drain()?;
-            driver.draw()?;
-            let buffer = driver.terminal.backend().buffer();
-            writeln!(
-                out,
-                "─── frame {}×{}",
-                buffer.area.width, buffer.area.height
-            )?;
-            for y in 0..buffer.area.height {
-                for symbol in super::row_symbols(buffer, y) {
-                    write!(out, "{symbol}")?;
+            DirectiveKind::Key => {
+                driver.input(AppEvent::Terminal(
+                    serde_json::from_str(arguments).map_err(io::Error::other)?,
+                ))?;
+                if driver.editor.resolution.pending() {
+                    driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
                 }
-                writeln!(out)?;
             }
-        } else if line == "state" {
-            writeln!(out, "─── state {}", super::state_json(driver.editor))?;
-        } else {
-            return Err(io::Error::other(format!("unknown script command: {line}")));
+            DirectiveKind::Paste => {
+                driver.input(AppEvent::Paste(
+                    serde_json::from_str(arguments).map_err(io::Error::other)?,
+                ))?;
+                if driver.editor.resolution.pending() {
+                    driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
+                }
+            }
+            DirectiveKind::QuitIntent => driver.input(AppEvent::QuitIntent)?,
+            DirectiveKind::Resize => {
+                let dimensions = arguments
+                    .split_whitespace()
+                    .map(str::parse)
+                    .collect::<Result<Vec<u16>, _>>()
+                    .map_err(io::Error::other)?;
+                let [columns, rows] = dimensions.as_slice() else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "resize requires columns and rows",
+                    ));
+                };
+                driver.terminal.backend_mut().resize(*columns, *rows);
+                driver.input(AppEvent::Resize {
+                    columns: *columns,
+                    rows: *rows,
+                })?;
+            }
+            DirectiveKind::Settle => {
+                driver.wait(
+                    directives::duration(arguments, Some(Duration::from_secs(30)))?,
+                    WaitTarget::Jobs,
+                    true,
+                )?;
+            }
+            DirectiveKind::Wait => {
+                driver.wait(
+                    directives::duration(arguments, None)?,
+                    WaitTarget::Delay,
+                    true,
+                )?;
+            }
+            DirectiveKind::Frame => {
+                driver.drain()?;
+                driver.draw()?;
+                let buffer = driver.terminal.backend().buffer();
+                writeln!(
+                    out,
+                    "─── frame {}×{}",
+                    buffer.area.width, buffer.area.height
+                )?;
+                for y in 0..buffer.area.height {
+                    for symbol in super::row_symbols(buffer, y) {
+                        write!(out, "{symbol}")?;
+                    }
+                    writeln!(out)?;
+                }
+            }
+            DirectiveKind::State => {
+                writeln!(out, "─── state {}", super::state_json(driver.editor))?
+            }
         }
     }
     driver.apply(Action::Finish)?;
-    driver.wait(Duration::from_secs(30), true, false)?;
+    driver.wait(Duration::from_secs(30), WaitTarget::Jobs, false)?;
     driver.editor.tape.finish()?;
     if let Some(error) = driver.editor.io.session_error.take() {
         return Err(io::Error::other(error));

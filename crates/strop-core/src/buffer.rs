@@ -5,11 +5,12 @@ mod io;
 pub use io::{SaveReceipt, SaveRequest};
 mod seed;
 pub use seed::BufferSeed;
+mod layout_cache;
 mod mutation;
 use crate::diagnostics::BufferTraceId;
 use crate::history::History;
+use crate::id;
 use crate::range::Range;
-use crate::{id, layout};
 pub use mutation::{
     Change, ChangeOrigin, EditError, HistoryMove, PreparedReplacements, Replacement, SystemEdit,
     UserEdit,
@@ -39,6 +40,7 @@ pub struct Buffer {
     /// Disk mtime at load/last save — overwrite protection for `:w`.
     disk_stamp: Option<std::time::SystemTime>,
     file_identity: Option<std::path::PathBuf>,
+    line_layouts: layout_cache::LineLayouts,
 }
 
 impl Buffer {
@@ -68,9 +70,15 @@ impl Buffer {
     }
 
     pub fn from_text(text: &str) -> Self {
+        Self::from_snapshot(Rope::from_str(text))
+    }
+
+    /// A cheap independent reader over immutable rope structure. No text copy,
+    /// disk identity, or history is inherited from the publishing document.
+    pub fn from_snapshot(rope: Rope) -> Self {
         Self {
             trace_identity: BufferTraceId::next(),
-            rope: Rope::from_str(text),
+            rope,
             path: None,
             dirty: false,
             epoch: 0,
@@ -80,6 +88,7 @@ impl Buffer {
             changes: Vec::new(),
             disk_stamp: None,
             file_identity: None,
+            line_layouts: layout_cache::LineLayouts::default(),
         }
     }
 
@@ -107,6 +116,7 @@ impl Buffer {
             changes: Vec::new(),
             disk_stamp,
             file_identity: Some(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())),
+            line_layouts: layout_cache::LineLayouts::default(),
         })
     }
 
@@ -119,19 +129,10 @@ impl Buffer {
         offset: impl Into<id::ByteOffset>,
         tab: usize,
     ) -> id::DisplayColumn {
-        let offset = offset.into().get().min(self.len_bytes());
-        let line = self.line_of(offset);
-        let start = self.line_start(line);
-        let text = self.text().byte_slice(start..self.line_end(line));
-        let byte = offset.saturating_sub(start).min(text.len_bytes());
-        let mut end = id::DisplayColumn::new(0);
-        for (span, cluster) in layout::RopeGraphemes::new(text, tab) {
-            if byte < span.byte + cluster.len() {
-                return span.cell;
-            }
-            end = span.cell + span.width;
+        match self.column_from_layout(offset.into().get(), tab, false) {
+            Some(column) => column,
+            None => unreachable!("an unbounded layout projection always completes"),
         }
-        end
     }
 
     pub fn len_bytes(&self) -> usize {

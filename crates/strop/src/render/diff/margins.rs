@@ -1,8 +1,6 @@
 //! Left-margin chrome (0011, 0032 §3): the blame column and the
-//! commit file sidebar. A `Sidebar` is built ONCE per pane render —
-//! rows, width and clipping all derive from it; per-row work is a
-//! lookup. Native path identity lives in file indices; lossy display
-//! labels exist only at the emission edge and are never parsed back.
+//! commit file sidebar. Its immutable tree is built by the Git worker;
+//! rendering borrows only visible rows. Native file indices preserve identity.
 
 use std::path::Path;
 
@@ -53,6 +51,7 @@ pub(crate) fn blame_blank() -> Span<'static> {
 
 /// One sidebar row in tree form (zed-lite: always-expanded, directory
 /// rows dim and shallow, files indented by depth).
+#[derive(Debug)]
 enum SidebarRow {
     Dir {
         name: String,
@@ -65,22 +64,20 @@ enum SidebarRow {
     },
 }
 
-/// The commit's changed files as a tree, built once per pane render.
-/// `files` keeps the native paths: the current-file selection compares
-/// `PathBuf` identity, never a display label (0032 §3).
-pub(crate) struct Sidebar<'a> {
-    files: &'a [ChangedFile],
+/// The immutable commit tree; native filenames stay in its owning file list.
+#[derive(Debug)]
+pub(crate) struct Sidebar {
     rows: Vec<SidebarRow>,
     /// Interior width in display cells (excludes the dividing rule).
     width: usize,
 }
 
-impl<'a> Sidebar<'a> {
+impl Sidebar {
     /// Flat file list → sorted tree rows: a directory row appears the
     /// first time its component prefix shows up. Sorting and grouping
     /// walk native path components, so distinct non-UTF-8 paths never
     /// collapse into one lossy label.
-    pub(crate) fn build(files: &'a [ChangedFile]) -> Sidebar<'a> {
+    pub(crate) fn build(files: &[ChangedFile]) -> Sidebar {
         let mut order: Vec<usize> = (0..files.len()).collect();
         // byte order, not `Path`'s component order: `src/a.rs` must
         // stay ahead of `src/a/b.rs`, or the sibling file would render
@@ -118,14 +115,12 @@ impl<'a> Sidebar<'a> {
             previous_parent = parent;
         }
         Sidebar {
-            files,
             width: Self::measured_width(files) - 1,
             rows,
         }
     }
 
-    /// The geometry pass measures labels without allocating a sidebar tree.
-    /// Rendering uses this same width while building the rows once.
+    /// Used only while preparing the immutable tree, never during painting.
     pub(crate) fn measured_width(files: &[ChangedFile]) -> usize {
         let longest = files
             .iter()
@@ -152,6 +147,7 @@ impl<'a> Sidebar<'a> {
     /// at grapheme/cell boundaries, then pad in cells.
     pub(crate) fn row_spans(
         &self,
+        files: &[ChangedFile],
         current: &Path,
         row: usize,
         focused: bool,
@@ -168,7 +164,7 @@ impl<'a> Sidebar<'a> {
                 ]
             }
             Some(SidebarRow::File { index, name, depth }) => {
-                let is_current = self.files[*index].path == current;
+                let is_current = files[*index].path == current;
                 let marker = match (is_current, focused) {
                     (true, true) => "▸",
                     (true, false) => "▌",
@@ -262,16 +258,16 @@ mod tests {
         let files = vec![file("a.rs"), file("b.rs")];
         let sidebar = Sidebar::build(&files);
         // focused: the current file points at you
-        let b = sidebar.row_spans(Path::new("b.rs"), 1, true);
+        let b = sidebar.row_spans(&files, Path::new("b.rs"), 1, true);
         assert!(b.iter().any(|s| s.content.starts_with('▸')));
         // unfocused: the same file keeps a quiet marker
-        let b_quiet = sidebar.row_spans(Path::new("b.rs"), 1, false);
+        let b_quiet = sidebar.row_spans(&files, Path::new("b.rs"), 1, false);
         assert!(b_quiet.iter().any(|s| s.content.starts_with('▌')));
         // a different row never borrows the marker
-        let a = sidebar.row_spans(Path::new("b.rs"), 0, true);
+        let a = sidebar.row_spans(&files, Path::new("b.rs"), 0, true);
         assert!(a.iter().all(|s| !s.content.starts_with('▸')));
         // rows past the tree stay blank (plus the rule)
-        let blank = sidebar.row_spans(Path::new("b.rs"), 5, true);
+        let blank = sidebar.row_spans(&files, Path::new("b.rs"), 5, true);
         assert!(blank
             .iter()
             .all(|s| s.content == "│" || s.content.chars().all(|c| c == ' ')));
@@ -289,12 +285,12 @@ mod tests {
         let sidebar = Sidebar::build(&files);
         assert_eq!(sidebar.width, SIDEBAR_MAX);
         for row in 0..sidebar.rows.len() + 3 {
-            let spans = sidebar.row_spans(Path::new("none.rs"), row, false);
+            let spans = sidebar.row_spans(&files, Path::new("none.rs"), row, false);
             let cells: usize = spans.iter().map(|s| text::width(&s.content)).sum();
             assert_eq!(cells, sidebar.outer_width(), "row {row}");
         }
         // a wide name clips at a grapheme boundary with an ellipsis
-        let file_row = sidebar.row_spans(Path::new("none.rs"), 0, false);
+        let file_row = sidebar.row_spans(&files, Path::new("none.rs"), 0, false);
         let label: String = file_row
             .iter()
             .flat_map(|s| s.content.chars())
@@ -335,7 +331,7 @@ mod tests {
         // native-byte order: \xfe sorts before \xff
         let marks_current = |row: usize, current: &Path| {
             sidebar
-                .row_spans(current, row, true)
+                .row_spans(&files, current, row, true)
                 .iter()
                 .any(|s| s.content.starts_with('▸'))
         };

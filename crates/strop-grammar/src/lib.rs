@@ -12,9 +12,13 @@ mod tests;
 
 pub use parse::parse;
 pub use query::{
-    search_all, search_backward, search_forward, CompiledQuery, QueryError, SearchMatch,
+    search_all, search_backward, search_forward, search_visit, CompiledQuery, QueryError,
+    SearchMatch,
 };
-pub use resolve::{cursor_after, plan, resolve, resolve_many, ActionPlan, PlannedTarget};
+pub use resolve::{
+    cursor_after, find_character, plan, resolve, resolve_many, resolve_many_cancellable,
+    ActionPlan, PlannedTarget,
+};
 
 pub use types::*;
 mod types;

@@ -26,6 +26,10 @@ pub enum OpenIntent {
     },
     Refresh,
     Browse,
+    DirectoryParent {
+        child: strop_remote::RemoteFile,
+    },
+    RemoteDestination,
     RemoteView {
         view: super::remote::RemoteView,
         line: Option<LineIndex>,
@@ -137,9 +141,16 @@ impl Editor {
             _ => strop_remote::ReadSelection::Full,
         };
         let requires_file = intent.requires_file();
-        let browse = matches!(intent, OpenIntent::Browse);
+        let browse = matches!(
+            intent,
+            OpenIntent::Browse | OpenIntent::DirectoryParent { .. }
+        );
         if matches!(target, FileTarget::Local(_))
-            && (browse || matches!(intent, OpenIntent::RemoteView { .. }))
+            && (browse
+                || matches!(
+                    intent,
+                    OpenIntent::RemoteView { .. } | OpenIntent::RemoteDestination
+                ))
         {
             self.message = "range/tail/follow views require a remote target".into();
             return;
@@ -158,7 +169,12 @@ impl Editor {
                     .is_none_or(|source| source.selection == selection))
             .then_some(id)
         });
-        if let Some(id) = existing.filter(|_| !matches!(intent, OpenIntent::Refresh)) {
+        if let Some(id) = existing.filter(|_| {
+            !matches!(
+                intent,
+                OpenIntent::Refresh | OpenIntent::Browse | OpenIntent::RemoteDestination
+            )
+        }) {
             if (requires_file && self.doc(id).directory_metadata_ref().is_some())
                 || (browse && self.doc(id).directory_metadata_ref().is_none())
             {
@@ -299,6 +315,14 @@ impl Editor {
                 self.view_mut().view_top = 0;
                 match intent {
                     OpenIntent::Switch { readonly: true } => self.buf_mut().readonly = true,
+                    OpenIntent::DirectoryParent { child } => {
+                        if let Some(line) = self
+                            .remote_directory()
+                            .and_then(|directory| directory.line_for(&child))
+                        {
+                            self.set_head(self.buf().line_start(line));
+                        }
+                    }
                     OpenIntent::AtLine { line } => {
                         self.set_head(
                             self.buf()
@@ -331,6 +355,7 @@ impl Editor {
                     }
                     _ => {}
                 }
+                self.remember_remote_destination();
                 self.discover_git();
                 self.lsp_maybe_attach();
             }
@@ -514,13 +539,26 @@ impl Editor {
                                     .is_none_or(|source| source.selection == key.selection))
                             .then_some(id)
                         });
-                        let id = existing.unwrap_or_else(|| {
+                        let id = if let Some(id) = existing {
+                            if matches!(
+                                key.intent,
+                                OpenIntent::Browse | OpenIntent::RemoteDestination
+                            ) {
+                                if let Err(error) =
+                                    self.publish_remote_snapshot(id, opened.document, false)
+                                {
+                                    self.message = error.to_string();
+                                    return;
+                                }
+                            }
+                            id
+                        } else {
                             let id = self.docs.insert(opened.document);
                             self.drop_stale_scratch(id);
                             self.generation += 1;
                             self.mru.push(id);
                             id
-                        });
+                        };
                         self.message.clear();
                         self.finish_open(id, key.intent);
                     }
@@ -603,6 +641,7 @@ impl Editor {
 impl Editor {
     pub(crate) fn io_write_pending(&self, request: WorkerId) -> bool {
         self.io.session == Some(request)
+            || self.destination_write_pending(request)
             || self
                 .io
                 .saves

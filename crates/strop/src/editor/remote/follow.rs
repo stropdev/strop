@@ -337,7 +337,6 @@ impl Editor {
             .replace_snapshot(after.clone(), position)?;
         if let Some(doc) = self.docs.get_mut(document) {
             doc.source = replacement.source;
-            doc.highlighter = replacement.highlighter;
             doc.buf.name = replacement.buf.name;
         }
         for (index, was_tail, old_top) in views {

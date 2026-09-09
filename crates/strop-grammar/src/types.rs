@@ -4,7 +4,7 @@
 use crate::query::{CompiledQuery, QueryError};
 use strop_core::Range;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Op {
     Delete,
     Yank,
@@ -51,7 +51,7 @@ impl Op {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Motion {
     Left,
     Down,
@@ -95,7 +95,7 @@ pub enum Motion {
     MatchPair,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Object {
     Word,
     /// Quote pair — the delimiter is a char (0014: no ASCII-only grammar).
@@ -106,7 +106,7 @@ pub enum Object {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Target {
     Motion(Motion),
     Object {
@@ -129,7 +129,7 @@ pub enum Target {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Command {
     pub op: Option<Op>,
     /// Named register (`"a` prefix); None = unnamed.
@@ -151,7 +151,7 @@ pub enum Parse {
 }
 
 /// What the resolver found: the affected bytes plus the spec-footer text.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Resolved {
     pub range: Range,
     /// Destination retained independently of sorted affected ranges (wrapped search).

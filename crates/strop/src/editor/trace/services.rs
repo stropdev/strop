@@ -67,6 +67,10 @@ pub fn io(event: &crate::editor::io::IoEvent) {
                 RemoteEvent::Read(value) => completion("remote", "follow_read", value),
                 RemoteEvent::Control(value) => completion("remote", "control", value),
                 RemoteEvent::Filter(value) => completion("remote", "directory_filter", value),
+                RemoteEvent::Choices(value) => completion("remote", "destinations", value),
+                RemoteEvent::DestinationWritten(value) => {
+                    completion("remote", "destination_write", value)
+                }
             }
         }
         IoEvent::Session {

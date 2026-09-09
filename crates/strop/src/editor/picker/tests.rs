@@ -32,6 +32,7 @@ mod picker_tests {
             e.open_fixture(&dir.path().join(f)).unwrap();
         }
         e.open_picker(Kind::Buffers);
+        e.wait_picker();
         let sel = |e: &Editor| e.picker.as_ref().unwrap().picker.selected;
         assert_eq!(sel(&e), 0);
         e.feed(crate::editor::Key::Esc); // normal mode on the field
@@ -54,12 +55,13 @@ mod picker_tests {
         // translation layer dropped KeyCode::Up/Down entirely
         let dir = tempfile::tempdir().unwrap();
         let mut e = Editor::new(Buffer::from_text("x\n"));
-        for f in ["a.txt", "b.txt", "c.txt"] {
+        for f in ["aa.txt", "ab.txt", "ac.txt"] {
             std::fs::write(dir.path().join(f), "x\n").unwrap();
             e.open_fixture(&dir.path().join(f)).unwrap();
         }
         e.open_picker(Kind::Buffers);
         e.feed_text("a");
+        e.wait_picker();
         e.feed(crate::editor::Key::Down);
         assert_eq!(
             e.picker.as_ref().unwrap().picker.selected,
@@ -100,6 +102,12 @@ mod worker_lifecycle_tests {
             text: text.into(),
             payload: Payload::File(PathBuf::from(text)),
         }
+    }
+
+    fn rank_fixture(e: &mut Editor) {
+        let picker = &mut e.picker.as_mut().unwrap().picker;
+        let ranking = strop_picker::rank::rank(&picker.filter_request(), || false).unwrap();
+        assert!(picker.install_ranking(ranking));
     }
 
     /// Register a grep-stream request without launching rg: the glue
@@ -171,12 +179,13 @@ mod worker_lifecycle_tests {
         let ticket = register_stream(&mut e);
         e.handle_picker_event(PickerEvent {
             ticket: ticket.clone(),
-            msg: PickerMsg::Items(vec![item("a.rs"), item("b.rs")]),
+            msg: PickerMsg::Items(vec![item("a.rs"), item("b.rs")].into()),
         });
         e.handle_picker_event(PickerEvent {
             ticket: ticket.clone(),
             msg: PickerMsg::Finished(Outcome::failed(FailureKind::Spawn, "rg: not found")),
         });
+        e.wait_picker();
         let glue = e.picker.as_ref().unwrap();
         assert!(!glue.picker.streaming, "terminal failure settles streaming");
         assert_eq!(glue.picker.rows.len(), 2, "useful partial results survive");
@@ -193,7 +202,7 @@ mod worker_lifecycle_tests {
         });
         e.handle_picker_event(PickerEvent {
             ticket: ticket.clone(),
-            msg: PickerMsg::Items(vec![item("late.rs")]),
+            msg: PickerMsg::Items(vec![item("late.rs")].into()),
         });
         let glue = e.picker.as_ref().unwrap();
         assert_eq!(glue.picker.rows.len(), 2, "settled state is immutable");
@@ -236,7 +245,7 @@ mod worker_lifecycle_tests {
         };
         // A's late messages in every shape are rejected wholesale
         for msg in [
-            PickerMsg::Items(vec![item("stale.rs")]),
+            PickerMsg::Items(vec![item("stale.rs")].into()),
             PickerMsg::Warning("stale".into()),
             PickerMsg::Finished(Outcome::Success(())),
             PickerMsg::Finished(Outcome::failed(FailureKind::Io, "stale pipe")),
@@ -272,6 +281,7 @@ mod worker_lifecycle_tests {
             .unwrap()
             .picker
             .append(vec![item("a.txt")]);
+        rank_fixture(&mut e);
         let (ticket, path) = register_preview(&mut e, "a.txt");
         e.handle_preview(Completion {
             ticket: ticket.clone(),
@@ -305,6 +315,7 @@ mod worker_lifecycle_tests {
             .unwrap()
             .picker
             .append(vec![item("a.txt")]);
+        rank_fixture(&mut e);
         let (fresh, path) = register_preview(&mut e, "a.txt");
         assert_ne!(
             fresh.request, ticket.request,
@@ -313,7 +324,7 @@ mod worker_lifecycle_tests {
         // the old ticket's late success cannot touch the fresh request
         e.handle_preview(Completion {
             ticket: ticket.clone(),
-            outcome: Outcome::Success("late".into()),
+            outcome: Outcome::Success(String::from("late").into()),
         });
         assert!(
             matches!(e.preview_loads.get(&path), Some(Load::Running(t)) if *t == fresh),
@@ -322,7 +333,7 @@ mod worker_lifecycle_tests {
         // the fresh one succeeds and its cache survives the next close
         e.handle_preview(Completion {
             ticket: fresh,
-            outcome: Outcome::Success("body".into()),
+            outcome: Outcome::Success(String::from("body").into()),
         });
         let entry = e.previews.get(&path).unwrap();
         assert_eq!(entry.rope.to_string(), "body");
@@ -345,11 +356,12 @@ mod worker_lifecycle_tests {
             .unwrap()
             .picker
             .append(vec![item("empty.txt")]);
+        rank_fixture(&mut e);
         let (ticket, path) = register_preview(&mut e, "empty.txt");
         // an empty file is a real success: cached Ready
         e.handle_preview(Completion {
             ticket,
-            outcome: Outcome::Success(String::new()),
+            outcome: Outcome::Success(String::new().into()),
         });
         assert!(matches!(e.preview_loads.get(&path), Some(Load::Ready(_))));
         assert!(e.previews[&path].rope.to_string().is_empty());
@@ -370,6 +382,7 @@ mod worker_lifecycle_tests {
             .unwrap()
             .picker
             .append(vec![item("cancelled.txt")]);
+        rank_fixture(&mut e);
         e.picker.as_mut().unwrap().picker.move_by(1);
         let preview = e.picker_preview().unwrap();
         assert!(
@@ -387,13 +400,13 @@ mod worker_lifecycle_tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("ok.txt"), "body\n").unwrap();
         match read_preview(&dir.path().join("ok.txt")) {
-            Outcome::Success(text) => assert_eq!(text, "body\n"),
+            Outcome::Success(text) => assert_eq!(text.rope, "body\n"),
             outcome => panic!("readable file must succeed: {outcome:?}"),
         }
         // empty file: a real success, not a failure
         std::fs::write(dir.path().join("empty.txt"), "").unwrap();
         let empty = read_preview(&dir.path().join("empty.txt"));
-        assert!(matches!(&empty, Outcome::Success(t) if t.is_empty()));
+        assert!(matches!(&empty, Outcome::Success(t) if t.rope.len_bytes() == 0));
         // over the 512 KiB cap
         std::fs::write(dir.path().join("big.txt"), vec![b'x'; 512 * 1024 + 1]).unwrap();
         let big = read_preview(&dir.path().join("big.txt"));

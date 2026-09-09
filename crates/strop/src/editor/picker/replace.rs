@@ -250,6 +250,7 @@ mod tests {
             ],
             false,
         );
+        p.install_ranking(strop_picker::rank::rank(&p.filter_request(), || false).unwrap());
         p.toggle_excluded(); // excludes row 0
         assert_eq!(p.accepted().count(), 1);
         assert_eq!(p.accepted().next().unwrap().text, "b");

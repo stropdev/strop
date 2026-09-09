@@ -2,6 +2,10 @@
 //! Model + scoring + streaming sources. Rendering lives in the binary;
 //! this crate never draws.
 
+mod catalog;
+pub use catalog::Catalog;
+pub mod rank;
+pub use rank::{FilterRequest, Ranking, RankingEvent, RankingWorker, Row};
 mod line_edit;
 mod score;
 mod source;
@@ -39,6 +43,10 @@ pub enum Payload {
         line: usize,
         col: usize,
     },
+    /// Explicitly chosen SSH directory, never an analogous local path.
+    RemoteDirectory(strop_remote::RemoteFile),
+    /// Switch the same modal picker to its new-address field.
+    RemoteConnect,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -60,6 +68,8 @@ pub enum Kind {
     /// LSP location lists (references/implementation/…): same
     /// payload shape as grep rows, title set per request.
     Locations,
+    RemoteHosts,
+    RemoteAddress,
 }
 
 impl Kind {
@@ -71,6 +81,8 @@ impl Kind {
             Kind::Replace => " replace ",
             Kind::Locations => " locations ",
             Kind::Diagnostics => " diagnostics ",
+            Kind::RemoteHosts => " remote destinations ",
+            Kind::RemoteAddress => " connect to remote ",
         }
     }
 }
@@ -82,19 +94,8 @@ pub enum Field {
     Replace,
 }
 
-/// A scored, filtered row: index into `items` + matched char columns.
-#[derive(Debug, Clone)]
-pub struct Row {
-    pub item: usize,
-    /// Denormalized display text — the renderer shouldn't chase indices.
-    pub text: String,
-    pub score: i32,
-    pub match_cols: Vec<u32>,
-}
-
-/// Picker state: input, accumulated items (streaming sources append),
-/// filtered rows, selection. Filtering is synchronous over the
-/// accumulated items — cheap at repo scale with subsequence scoring.
+/// Picker input and immutable catalog ownership. Scoring is worker work; the UI
+/// installs a checked ranking and renders only its visible rows.
 pub struct Picker {
     pub kind: Kind,
     pub input: LineEdit,
@@ -106,14 +107,23 @@ pub struct Picker {
     /// Whole-file exclusion (replace mode, vscode's file toggle):
     /// ctrl-d on a row excludes every match in that file.
     pub excluded_files: std::collections::HashSet<PathBuf>,
-    pub items: Vec<Item>,
+    pub items: Catalog,
     pub rows: Vec<Row>,
+    match_columns: Vec<u32>,
+    exclusion_count: usize,
+    file_counts: std::collections::HashMap<PathBuf, FileCounts>,
     pub selected: usize,
     /// Streaming sources: true while the worker may still send.
     pub streaming: bool,
     /// A source error (rg's stderr, a dead worker): sticky in the card —
     /// the transient modeline clears on the next keystroke, this doesn't.
     pub error: Option<String>,
+}
+
+#[derive(Default)]
+struct FileCounts {
+    items: usize,
+    excluded_rows: usize,
 }
 
 impl Picker {
@@ -125,13 +135,16 @@ impl Picker {
             field: Field::Search,
             excluded: std::collections::HashSet::new(),
             excluded_files: std::collections::HashSet::new(),
-            items,
+            items: Catalog::default(),
             rows: Vec::new(),
+            match_columns: Vec::new(),
+            exclusion_count: 0,
+            file_counts: std::collections::HashMap::new(),
             selected: 0,
             streaming,
             error: None,
         };
-        p.refilter();
+        p.append(items);
         p
     }
 
@@ -207,10 +220,33 @@ impl Picker {
 
     /// Exclude/include the selected row from the apply set (0007 §2).
     pub fn toggle_excluded(&mut self) {
-        if let Some(row) = self.rows.get(self.selected) {
-            let item = row.item;
-            if !self.excluded.remove(&item) {
-                self.excluded.insert(item);
+        let Some(row) = self.rows.get(self.selected) else {
+            return;
+        };
+        let item = row.item;
+        let removed = self.excluded.remove(&item);
+        if !removed {
+            self.excluded.insert(item);
+        }
+        let mut covered = false;
+        if let Payload::Grep { path, .. } = &self.items[item].payload {
+            covered = self.excluded_files.contains(path);
+            match self.file_counts.get_mut(path) {
+                Some(counts) => {
+                    if removed {
+                        counts.excluded_rows -= 1;
+                    } else {
+                        counts.excluded_rows += 1;
+                    }
+                }
+                None => unreachable!("grep entries are indexed during append"),
+            }
+        }
+        if !covered {
+            if removed {
+                self.exclusion_count -= 1;
+            } else {
+                self.exclusion_count += 1;
             }
         }
     }
@@ -227,8 +263,13 @@ impl Picker {
         }) else {
             return;
         };
-        if !self.excluded_files.remove(&path) {
+        let counts = &self.file_counts[&path];
+        let changed = counts.items - counts.excluded_rows;
+        if self.excluded_files.remove(&path) {
+            self.exclusion_count -= changed;
+        } else {
             self.excluded_files.insert(path);
+            self.exclusion_count += changed;
         }
     }
 
@@ -252,42 +293,55 @@ impl Picker {
             .map(|(_, it)| it)
     }
 
-    /// Recompute rows from items + input. Grep rows arrive pre-filtered
-    /// from rg; everything else fuzzy-filters here.
-    pub fn refilter(&mut self) {
-        // 0020 §9: grep/replace items were matched by rg against the
-        // REAL query (a regex — "foo|bar" rows contain no "|") — fuzzy-
-        // filtering them again hides valid results. Their rows are the
-        // items, enumerated; fuzzy scoring is for local sources only.
-        let upstream_filtered = matches!(self.kind, Kind::Grep | Kind::Replace);
-        self.rows = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(i, item)| {
-                if self.input.text.is_empty() || upstream_filtered {
-                    return Some(Row {
-                        item: i,
-                        text: item.text.clone(),
-                        score: 0,
-                        match_cols: vec![],
-                    });
-                }
-                fuzzy_score(&self.input.text, &item.text).map(|(score, cols)| Row {
-                    item: i,
-                    text: item.text.clone(),
-                    score,
-                    match_cols: cols,
-                })
-            })
-            .collect();
-        self.rows.sort_by_key(|r| std::cmp::Reverse(r.score));
+    pub fn filter_request(&self) -> FilterRequest {
+        FilterRequest {
+            catalog: self.items.clone(),
+            query: self.input.text.clone(),
+            upstream_filtered: matches!(self.kind, Kind::Grep | Kind::Replace),
+        }
+    }
+
+    pub fn install_ranking(&mut self, ranking: Ranking) -> bool {
+        if ranking.item_count() != self.items.len() {
+            return false;
+        }
+        self.rows = ranking.rows;
+        self.match_columns = ranking.columns;
         self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        true
+    }
+
+    pub fn match_columns(&self, row: &Row) -> &[u32] {
+        &self.match_columns[row.matches.clone()]
+    }
+
+    pub fn clear_results(&mut self) {
+        self.rows.clear();
+        self.match_columns.clear();
+        self.selected = 0;
+    }
+
+    pub fn clear_items(&mut self) {
+        self.items.clear();
+        self.clear_results();
+        self.excluded.clear();
+        self.excluded_files.clear();
+        self.exclusion_count = 0;
+        self.file_counts.clear();
+    }
+
+    pub fn excluded_count(&self) -> usize {
+        self.exclusion_count
     }
 
     pub fn append(&mut self, items: Vec<Item>) {
-        self.items.extend(items);
-        self.refilter();
+        for item in &items {
+            if let Payload::Grep { path, .. } = &item.payload {
+                self.file_counts.entry(path.clone()).or_default().items += 1;
+                self.exclusion_count += usize::from(self.excluded_files.contains(path));
+            }
+        }
+        self.items.append(items);
     }
 
     pub fn move_by(&mut self, delta: i32) {
@@ -354,7 +408,7 @@ mod tests {
         for c in "render".chars() {
             p.push_char(c);
         }
-        p.refilter();
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
         assert_eq!(p.rows.len(), 1);
         assert_eq!(p.current().unwrap().text, "src/render.rs");
     }
@@ -370,6 +424,7 @@ mod tests {
             })
             .collect();
         let mut p = Picker::new(Kind::Buffers, items, false);
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
         p.move_by(-1);
         assert_eq!(p.selected, 2);
         p.move_by(1);
@@ -393,6 +448,7 @@ mod tests {
             vec![hit("a.rs"), hit("a.rs"), hit("b.rs")],
             false,
         );
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
         p.toggle_file_excluded(); // row 0 -> a.rs
         assert_eq!(p.accepted().count(), 1);
         assert_eq!(p.accepted().next().unwrap().text, "b.rs");
@@ -424,6 +480,7 @@ mod tests {
         for c in "foo|bar".chars() {
             p.push_char(c);
         }
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
         assert_eq!(p.rows.len(), 3);
         // and the apply set is exactly those rows
         assert_eq!(p.accepted().count(), 3);

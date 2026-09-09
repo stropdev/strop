@@ -34,7 +34,7 @@ impl Editor {
     /// windows must be complete for language services (0036 RW8) —
     /// partial/follow windows refuse, they never pretend.
     pub(super) fn lsp_current_doc_path(&self) -> Option<DocPath> {
-        if self.remote_file().is_some() && !self.remote_window_complete() {
+        if self.cur().remote_metadata().is_some() && !self.remote_window_complete() {
             return None;
         }
         self.lsp_doc_path(self.current())
@@ -288,8 +288,11 @@ impl Editor {
             .line
             .get()
             .min(target_doc.buf.len_lines().saturating_sub(1));
-        let text = target_doc.buf.line_text(line);
-        let col = strop_lsp::to_byte_col(&text, position.column, context.encoding).get();
+        let text = target_doc
+            .buf
+            .text()
+            .byte_slice(target_doc.buf.line_start(line)..target_doc.buf.line_end(line));
+        let col = strop_lsp::to_byte_col_slice(text, position.column, context.encoding).get();
         let head = target_doc
             .buf
             .clamp_boundary(target_doc.buf.line_start(line).saturating_add(col));

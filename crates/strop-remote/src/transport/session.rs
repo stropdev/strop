@@ -292,6 +292,8 @@ where
                     entries.push(RemoteEntry {
                         file,
                         kind: kind_of(raw.permissions),
+                        permissions: raw.permissions.map(crate::RemotePermissions::from_mode),
+                        size: raw.size.map(RemoteSize::new),
                     });
                     if entries.len() > super::wire::MAX_ENTRIES {
                         return Err(Fault::new(
@@ -345,14 +347,19 @@ where
 }
 
 /// Map a permissions word to the entry kind; without permissions the kind
-/// is honestly `Other` — never guessed from the human longname.
+/// is honestly `Unknown` — never guessed from the human longname.
 fn kind_of(permissions: Option<u32>) -> RemoteEntryKind {
     match permissions {
         Some(mode) => match mode & 0xf000 {
             0x4000 => RemoteEntryKind::Directory,
             0x8000 => RemoteEntryKind::File,
-            _ => RemoteEntryKind::Other,
+            0xa000 => RemoteEntryKind::SymbolicLink,
+            0x1000 => RemoteEntryKind::Fifo,
+            0xc000 => RemoteEntryKind::Socket,
+            0x6000 => RemoteEntryKind::BlockDevice,
+            0x2000 => RemoteEntryKind::CharacterDevice,
+            _ => RemoteEntryKind::Unknown,
         },
-        None => RemoteEntryKind::Other,
+        None => RemoteEntryKind::Unknown,
     }
 }

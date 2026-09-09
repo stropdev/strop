@@ -21,7 +21,7 @@ impl Editor {
         if !self.lsp_state.attach.enabled {
             return;
         }
-        if self.remote_file().is_some() && !self.remote_window_complete() {
+        if self.cur().remote_metadata().is_some() && !self.remote_window_complete() {
             // Typed refusal, never silence: a partial/follow window is
             // not a document a server can be told about.
             self.message = "lsp unavailable — partial remote window".into();

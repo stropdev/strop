@@ -6,11 +6,10 @@
 use std::path::Path;
 
 use strop_core::worker::{CancelReason, Outcome};
-use strop_git::Hunk;
 
 use super::document::Surface;
 use super::git_memory::{
-    diff_surface_text, hunk_stats, CommitFiles, DiveData, DiveKey, DiveTarget, GitJob,
+    CommitFiles, DiveData, DiveKey, DiveTarget, GitJob, PreparedDiff, PreparedFiles,
 };
 use super::Editor;
 
@@ -54,7 +53,7 @@ impl Editor {
     pub(crate) fn dive(&mut self) {
         let doc = self.current();
         let line = self.buf().line_of(self.head());
-        let target = match self.surface().cloned() {
+        let target = match self.surface() {
             Some(Surface::CommitLog { rows, .. }) => {
                 let Some(sha) = rows.get(line).and_then(|r| r.sha.clone()) else {
                     return;
@@ -67,7 +66,7 @@ impl Editor {
                     return;
                 };
                 DiveTarget::FileDelta {
-                    sha,
+                    sha: sha.clone(),
                     path: file.path.clone(),
                 }
             }
@@ -103,7 +102,7 @@ impl Editor {
             self.message = "single-file commit".into();
             return;
         }
-        let Some(cur) = cf.files.iter().position(|file| file.path == cf.current) else {
+        let Some(cur) = cf.files.index_of(&cf.current) else {
             self.message = "current file not in commit".into();
             return;
         };
@@ -127,7 +126,7 @@ impl Editor {
 
     /// Register one dive request for a surface document, superseding
     /// (and cancelling) any earlier one, then launch the native fetch.
-    fn register_dive(&mut self, key: DiveKey) {
+    pub(super) fn register_dive(&mut self, key: DiveKey) {
         let doc = key.document;
         if let Some(old) = self.dive_requests.remove(&doc) {
             self.cancel_git_worker(old.request, CancelReason::Superseded);
@@ -142,6 +141,7 @@ impl Editor {
                 "repository":if ticket.key.repo.is_remote() { "remote" } else { "local" },
                 "document":{"slot":doc.index(),"generation":doc.generation()},
                 "target":match &ticket.key.target {
+                    DiveTarget::HunkPreview { .. } => "hunk".into(),
                     DiveTarget::CommitFiles { sha } => format!("files@{sha}"),
                     DiveTarget::FileDelta { sha, path } => {
                         format!("delta@{sha}:{}", path.display())
@@ -152,6 +152,7 @@ impl Editor {
         let args = (ticket.clone(),);
         let repo = ticket.key.repo.clone();
         let target = ticket.key.target.clone();
+        let captured_hunks = self.hunks.clone();
         self.launch_git_job(
             "git-dive",
             "git.dive",
@@ -163,11 +164,24 @@ impl Editor {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
                 match &target {
+                    DiveTarget::HunkPreview { index, .. } => match captured_hunks.get(*index) {
+                        Some(hunk) => Outcome::Success(DiveData::Delta(PreparedDiff::new(
+                            "hunk".into(),
+                            vec![hunk.as_ref().clone()],
+                        ))),
+                        None => Outcome::failed(
+                            strop_core::worker::FailureKind::InvalidInput,
+                            "hunk snapshot no longer contains the selected hunk",
+                        ),
+                    },
                     DiveTarget::CommitFiles { sha } => {
                         // numstat is one bounded run on either backend
                         let exec = strop_git::GitExec::for_target(&repo);
                         match strop_git::memory::show_stat(&exec, &cancel, sha) {
-                            Ok(files) => Outcome::Success(DiveData::Files(files)),
+                            Ok(files) => Outcome::Success(DiveData::Files(PreparedFiles::new(
+                                sha.clone(),
+                                files,
+                            ))),
                             Err(message) => {
                                 Outcome::failed(strop_core::worker::FailureKind::Exit, message)
                             }
@@ -186,7 +200,11 @@ impl Editor {
                                     }
                                 };
                             match native.commit_file_diff(sha, path) {
-                                Ok(diff) => Outcome::Success(DiveData::Delta(diff)),
+                                Ok(diff) => Outcome::Success(DiveData::Delta(PreparedDiff::new(
+                                    strop_core::layout::printable_text(path.to_string_lossy())
+                                        .into_owned(),
+                                    diff.hunks,
+                                ))),
                                 Err(message) => {
                                     Outcome::failed(strop_core::worker::FailureKind::Exit, message)
                                 }
@@ -196,7 +214,11 @@ impl Editor {
                             match strop_git::remote::commit_file_diff(
                                 endpoint, workdir, sha, path, &cancel,
                             ) {
-                                Ok(diff) => Outcome::Success(DiveData::Delta(diff)),
+                                Ok(diff) => Outcome::Success(DiveData::Delta(PreparedDiff::new(
+                                    strop_core::layout::printable_text(path.to_string_lossy())
+                                        .into_owned(),
+                                    diff.hunks,
+                                ))),
                                 Err(error) => Outcome::Failed {
                                     failure: strop_core::worker::Failure::new(
                                         strop_core::worker::FailureKind::Exit,
@@ -242,42 +264,31 @@ impl Editor {
 
     /// Swap the current diff surface to another file of the same
     /// commit: surface data and buffer text in place, cursor to top.
-    pub(crate) fn load_commit_delta(&mut self, cf: &CommitFiles, path: &Path, hunks: Vec<Hunk>) {
-        let (added, deleted) = hunk_stats(&hunks);
-        let label = strop_core::layout::printable_text(path.to_string_lossy()).into_owned();
-        let text = diff_surface_text(&label, &hunks);
+    pub(crate) fn load_commit_delta(&mut self, cf: &CommitFiles, path: &Path, hunks: PreparedDiff) {
+        let label = hunks.label().to_owned();
         let idx = self.current();
-        if let Err(error) = self.replace_system(idx, &text) {
+        let replaced = self
+            .doc_mut(idx)
+            .buf
+            .system_edit()
+            .replace_rope(hunks.text());
+        if let Err(error) = replaced {
             super::trace::services::rejected("git", "delta rewrite failed");
             self.message = format!("delta rewrite failed: {error}");
             return;
         }
         if let Some(Some(Surface::Diff {
-            label: slot,
             hunks: hunk_slot,
-            added: add_slot,
-            deleted: del_slot,
             commit: Some(commit),
             ..
         })) = self.docs.get_mut(idx).map(|d| d.surface_payload_mut())
         {
-            *slot = label.clone();
             *hunk_slot = hunks;
-            *add_slot = added;
-            *del_slot = deleted;
             commit.current = path.to_path_buf();
         }
-        // the highlighter follows the file the surface now shows (the
-        // pure detector reads the rewritten surface's own rope)
-        let hl = strop_syntax::Highlighter::for_path(path, self.doc(idx).buf.text());
-        self.doc_mut(idx).highlighter = hl;
         self.set_head(0);
         self.view_mut().view_top = 0;
-        let pos = cf
-            .files
-            .iter()
-            .position(|f| f.path == path)
-            .map_or(0, |i| i + 1);
+        let pos = cf.files.index_of(path).map_or(0, |i| i + 1);
         self.message = format!("{label} · {pos}/{}", cf.files.len());
     }
 }

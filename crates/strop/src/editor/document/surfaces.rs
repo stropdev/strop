@@ -4,7 +4,7 @@
 //! surface bookkeeping reads one place.
 
 use crate::editor::git_memory::{CommitFiles, HunkOrigin};
-use strop_git::memory::{ChangedFile, LogRow};
+use strop_git::memory::LogRow;
 use strop_git::Hunk;
 
 /// What backs a document. Derived facts (readonly, save refusal) come
@@ -42,7 +42,7 @@ pub enum Surface {
     },
     ChangedFiles {
         sha: String,
-        files: Vec<ChangedFile>,
+        files: crate::editor::git_memory::PreparedFiles,
         return_to: Option<ReturnPoint>,
     },
     /// A diff as a readonly buffer (0010 §2): the file's delta at a
@@ -54,11 +54,8 @@ pub enum Surface {
     /// `commit` carries the commit's other files when this delta came
     /// from the dive chain (the sidebar + `]f`/`[f`, 0011 §4).
     Diff {
-        /// Stats-row label: the file path (delta view) or "hunk".
-        label: String,
-        hunks: Vec<Hunk>,
-        added: usize,
-        deleted: usize,
+        /// Worker-prepared immutable content and its display/source projection.
+        hunks: crate::editor::git_memory::PreparedDiff,
         origin: Option<HunkOrigin>,
         commit: Option<CommitFiles>,
         /// tuicr-style: Tab moves focus between the file sidebar and
@@ -80,21 +77,7 @@ impl Surface {
         let Surface::Diff { hunks, .. } = self else {
             return None;
         };
-        if row == 0 {
-            return Some(DiffRow::Stats);
-        }
-        let mut row = row - 1;
-        for hunk in hunks {
-            if row == 0 {
-                return Some(DiffRow::HunkHeader(hunk));
-            }
-            row -= 1;
-            if row < hunk.lines.len() {
-                return Some(DiffRow::Line(&hunk.lines[row]));
-            }
-            row -= hunk.lines.len();
-        }
-        None
+        hunks.row(row)
     }
 
     pub(crate) fn set_return_point(&mut self, ret: ReturnPoint) {

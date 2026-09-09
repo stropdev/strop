@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.18.0 — 2026-09-09
+
+Remote browsing, responsive large-workspace editing, and broader static syntax
+coverage (plans 0038/0039).
+
+### Added
+
+- `Space o` / `:remote` opens a host chooser with explicit connection, host entry,
+  and privately remembered successful destinations. New hosts begin at the remote
+  root; `:remote home` and `:remote root` remain explicit navigation actions.
+- Remote directory rows show file kind, POSIX permissions and server-reported byte
+  size. Missing attributes are visibly unknown, not confused with zero; parent
+  navigation restores the selected child.
+- Structural indentation rails follow real nesting transitions rather than
+  marking every whitespace tab stop or continuation alignment column.
+- Ten more detected languages: CMake, Markdown, Java, C#, Ruby, PHP, TOML, YAML,
+  HTML and CSS. The binary now contains 23 detected languages and Markdown's
+  additional inline grammar. Markdown emphasis, links and fenced languages, plus
+  HTML script/style injections, share the native highlighter and palette.
+- Discoverable headless directives, bounded `settle [MS]`, explicit `wait MS`,
+  local/headless file locations, and documented remote-directory CLI usage.
+- Explicit headless project trust and configured/versioned remote Python support.
+  `STROP_REMOTE_PYTHON` selects an absolute remote interpreter; an invalid override
+  fails rather than silently choosing another executable.
+
+### Fixed
+
+- File pickers no longer re-score, clone and sort the accumulated workspace on
+  each source batch or keystroke. An owned ranking actor publishes immutable
+  results; superseded queries cannot overwrite the current selection.
+- Large grammar reads, syntax/injection parsing, search summaries, indentation
+  analysis and long-line layout preparation run on persistent CPU owners.
+  Accepted commands preserve typeahead, repeat and macro ordering through replay.
+- Sparse grapheme checkpoints avoid repeated whole-prefix walks when navigating
+  or typing near the end of a long line. LSP requests capture owned rope slices
+  instead of materializing entire source lines.
+- Git workers prepare diff text, row indexes, gutters, intra-line emphasis and
+  commit file trees. Rendering and file stepping borrow those projections instead
+  of reconstructing entire hunks or sidebars. Added-line emphasis uses its own
+  byte coordinates, including unequal-length Unicode replacements.
+- Remote home expansion decodes OpenSSH's documented NAME reply instead of
+  expecting an extended-reply packet. Repositories without configured remotes
+  retain valid Git context.
+
+### Scope
+
+Remote files remain read-only in this release. Explicit writable admission and
+conflict-aware atomic saving are the separately requested next release, behind
+RW4's transport, metadata, cancellation and concurrency safety gate.
+
 ## 0.17.0 — 2026-09-08
 
 Read-only SSH workspaces: bounded log following, directory buffers, remote language

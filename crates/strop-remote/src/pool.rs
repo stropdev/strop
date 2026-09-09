@@ -591,7 +591,7 @@ fn execute(physical: &mut Physical, job: &Job, stop: &Arc<StopSignal>) -> Result
                         connection: lease,
                     })))
                 }
-                RemoteEntryKind::Other => Err(Fault::new(
+                _ => Err(Fault::new(
                     ReadStage::Inspect,
                     ReadFailureKind::NotRegularFile,
                     "the target is neither a regular file nor a directory",

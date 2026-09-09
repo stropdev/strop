@@ -2,10 +2,10 @@
 //! that owns the remote lifecycle, plus the local code that talks to it.
 //!
 //! No helper is installed remotely and nothing is written to the remote
-//! filesystem. The login shell executes exactly one line —
-//! `exec python3 -c 'SOURCE' 'SPEC'` — where `SPEC` is the base64
-//! [`crate::exec::spec`] description of the command. The shell's only
-//! job is that single `exec`; every later decision belongs to Python.
+//! filesystem. The login shell selects a compatible interpreter, then
+//! `exec`s this fixed source with the base64 command spec. The bounded
+//! selector is shared by Git and LSP; every later lifecycle decision
+//! belongs to Python.
 //!
 //! ## Topology
 //!
@@ -61,10 +61,10 @@
 //! ## Remote prerequisites
 //!
 //! A POSIX-compatible login shell, OpenSSH stdio without a PTY, and
-//! Python 3 with `fork`, `setsid`, `poll`, `killpg` and native byte
-//! execution. A missing `python3` fails with the shell's `command not
-//! found` (ssh exit 127), which `run` reports as an actionable typed
-//! error. Remote stdin must be a pipe whose `poll` reports `POLLHUP`
+//! Python 3.8+ with `fork`, `setsid`, `poll`, `killpg` and native byte
+//! execution. The bootstrap probes Python 3 names on PATH, or the explicit
+//! `STROP_REMOTE_PYTHON` interpreter only; unavailable/incompatible Python
+//! is a typed prerequisite error. Remote stdin must be a pipe whose `poll` reports `POLLHUP`
 //! when its last writer closes even with unread bytes buffered (Linux
 //! sshd behavior).
 
@@ -408,17 +408,16 @@ os._exit(250)
 /// OpenSSH remote command arguments are parsed by the remote login
 /// shell, not passed as a native argv: the only safe way to carry a
 /// literal string through that boundary is single quotes, with the one
-/// impossible byte (the quote itself) spliced as `'\''`. Inputs here
-/// are ASCII by construction (the Python source and base64 spec).
-pub(super) fn shell_single_quote(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() + 2);
+/// impossible byte (the quote itself) spliced as `'\''`. UTF-8 executable
+/// paths remain intact; native command argv stays base64 in the spec.
+pub(super) fn shell_single_quote(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
     out.push('\'');
-    for &byte in bytes {
-        if byte == b'\'' {
+    for ch in text.chars() {
+        if ch == '\'' {
             out.push_str("'\\''");
         } else {
-            debug_assert!(byte.is_ascii(), "supervisor argv must be ASCII");
-            out.push(byte as char);
+            out.push(ch);
         }
     }
     out.push('\'');
@@ -428,12 +427,11 @@ pub(super) fn shell_single_quote(bytes: &[u8]) -> String {
 /// The one line the remote login shell executes. The `exec` replaces
 /// the shell, so the supervisor is sshd's direct child and no shell
 /// lingers holding the pipes.
-pub(super) fn command_line(encoded_spec: &str) -> String {
-    format!(
-        "exec python3 -c {} {}",
-        shell_single_quote(SOURCE.as_bytes()),
-        shell_single_quote(encoded_spec.as_bytes())
-    )
+pub(super) fn command_line(
+    encoded_spec: &str,
+    python: &super::python::PythonInterpreter,
+) -> String {
+    python.bootstrap(SOURCE, encoded_spec)
 }
 
 /// Extract the nonce-marked supervisor records from captured stderr.
@@ -510,7 +508,7 @@ mod tests {
     #[cfg(unix)]
     fn shell_quoting_survives_every_metacharacter() {
         let tricky = "it's \"quoted\" $(rm -rf /) `x` \\n; | & < > \t";
-        let quoted = shell_single_quote(tricky.as_bytes());
+        let quoted = shell_single_quote(tricky);
         // Feed it through a real POSIX sh: what sh sees must be the original.
         let script = format!("printf %s {}", quoted);
         let status = std::process::Command::new("sh")

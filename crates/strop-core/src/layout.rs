@@ -17,6 +17,9 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::id::DisplayColumn;
 
+mod index;
+pub use index::{LayoutCheckpoint, LineLayoutIndex, PreparedLineLayout, INLINE_LAYOUT_BYTES};
+
 /// A terminal cell must contain printable text, never protocol bytes. Use the
 /// same one-cell replacement in layout and emission; tab expansion is separate.
 pub fn printable_grapheme(grapheme: &str) -> &str {
@@ -74,6 +77,7 @@ pub struct RopeGraphemes<'a> {
     chunk_start: usize,
     cell: DisplayColumn,
     tab: usize,
+    base_byte: usize,
 }
 
 impl<'a> RopeGraphemes<'a> {
@@ -92,7 +96,14 @@ impl<'a> RopeGraphemes<'a> {
             chunk_start,
             cell,
             tab: tab.max(1),
+            base_byte: 0,
         }
+    }
+    /// Resume at a proven grapheme boundary while retaining original line bytes.
+    pub fn from_checkpoint(text: RopeSlice<'a>, tab: usize, point: LayoutCheckpoint) -> Self {
+        let mut iterator = Self::new_at(text.byte_slice(point.byte.get()..), tab, point.cell);
+        iterator.base_byte = point.byte.get();
+        iterator
     }
 }
 
@@ -133,7 +144,7 @@ impl<'a> Iterator for RopeGraphemes<'a> {
         };
         let width = grapheme_width(&text, self.cell, self.tab);
         let span = GraphemeSpan {
-            byte: start,
+            byte: self.base_byte + start,
             cell: self.cell,
             width,
         };

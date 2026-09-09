@@ -34,7 +34,7 @@ impl Client {
             |n| n.checked_add(1),
         ) {
             Ok(value) => value,
-            Err(_) => panic!("LSP request identity exhausted"),
+            Err(_) => return Err(RequestRefusal::IdentityExhausted),
         };
         let stamp = RequestStamp {
             request: RequestId::new(request),
@@ -95,7 +95,11 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
     let Ok(line) = u32::try_from(request.input.line.get()) else {
         return note(env, context, "line is out of protocol range".into());
     };
-    let server_col = to_server_col(&request.input.line_text, request.input.byte_col, encoding);
+    let server_col = crate::to_server_col_slice(
+        request.input.line_text.as_slice(),
+        request.input.byte_col,
+        encoding,
+    );
     let Ok(character) = u32::try_from(server_col.get()) else {
         return note(env, context, "column is out of protocol range".into());
     };

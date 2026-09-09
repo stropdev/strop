@@ -32,6 +32,10 @@ impl Editor {
             self.message = "macro recursion too deep".into();
             return;
         }
+        if self.resolution.enabled {
+            self.queue_macro(keys, count, depth + 1);
+            return;
+        }
         for _ in 0..count {
             for key in &keys {
                 if self.should_quit {

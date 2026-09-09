@@ -9,11 +9,26 @@ use strop_core::{history::History, Buffer};
 mod trust;
 pub use trust::{is_trusted, is_trusted_remote, trust, trust_remote};
 mod persistence;
+pub(crate) mod remotes;
 #[cfg(test)]
 mod tests;
 
 const UNDO_CAP: usize = 200;
 const UNDO_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionPolicy {
+    Automatic,
+    Disabled,
+}
+
+/// Resolve once at live startup. Replay receives this value in the seed;
+/// trust access does not imply automatic session restoration or persistence.
+pub fn state_root() -> Option<PathBuf> {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -133,6 +148,9 @@ pub fn capture(editor: &Editor) -> Option<Session> {
 }
 
 pub fn capture_save(editor: &Editor) -> Option<SaveRequest> {
+    if editor.session_policy == SessionPolicy::Disabled {
+        return None;
+    }
     let path = session_path(editor.state_dir.as_deref(), &editor.cwd)?;
     Some(SaveRequest {
         path,

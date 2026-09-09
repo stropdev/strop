@@ -114,6 +114,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Extract checked-in release notes before publishing
+        run: |
+          python3 .github/scripts/changelog-notes.py "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.txt"
+
       - uses: actions/download-artifact@v8
         with:
           pattern: dist-*
@@ -234,7 +238,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "strop $GITHUB_REF_NAME" \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/release-notes.txt"
 
       # Redeploy the site so the version chip and demo stay current.
       # Best-effort: a site hiccup must not fail a release.

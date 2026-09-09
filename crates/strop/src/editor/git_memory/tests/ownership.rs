@@ -59,8 +59,8 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
     let stale = install_running_hunk(&mut e, view);
     let owner = install_running_hunk(&mut e, view);
     let data = || HunkData {
-        unstaged: vec![],
-        staged: vec![],
+        unstaged: Default::default(),
+        staged: Default::default(),
         untracked: false,
     };
     inject_hunks(&mut e, stale.clone(), Outcome::Success(data()));
@@ -82,8 +82,8 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
         &mut e,
         owner,
         Outcome::Success(HunkData {
-            unstaged: vec![all_add_hunk()],
-            staged: vec![],
+            unstaged: crate::editor::git_memory::HunkSet::new(vec![all_add_hunk()], 3),
+            staged: Default::default(),
             untracked: false,
         }),
     );
@@ -139,8 +139,8 @@ fn hunk_failures_are_terminal_and_retry_gets_a_new_request() {
         &mut e,
         ticket.clone(),
         Outcome::Success(HunkData {
-            unstaged: vec![],
-            staged: vec![],
+            unstaged: Default::default(),
+            staged: Default::default(),
             untracked: false,
         }),
     );
@@ -183,8 +183,8 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
         &mut e,
         hunk_ticket,
         Outcome::Success(HunkData {
-            unstaged: vec![all_add_hunk()],
-            staged: vec![],
+            unstaged: crate::editor::git_memory::HunkSet::new(vec![all_add_hunk()], 3),
+            staged: Default::default(),
             untracked: true,
         }),
     );
@@ -212,7 +212,7 @@ fn queued_mutations_are_serial_and_failure_keeps_the_queue_live() {
         git_view: view,
     };
     let op = MutationOp::Stage {
-        hunk: all_add_hunk(),
+        hunk: all_add_hunk().into(),
     };
     e.git_mutations.push_back(GitMutation {
         key: key(MutationKind::Stage),
@@ -221,7 +221,7 @@ fn queued_mutations_are_serial_and_failure_keeps_the_queue_live() {
     e.git_mutations.push_back(GitMutation {
         key: key(MutationKind::Unstage),
         op: MutationOp::Unstage {
-            hunk: all_add_hunk(),
+            hunk: all_add_hunk().into(),
         },
     });
     e.pump_git_mutations();
@@ -462,7 +462,7 @@ fn dive_results_need_their_surface() {
     // hand-build a CommitLog surface with one sha row
     e.push_surface(
         Some("git log"),
-        "loading log…\n",
+        ropey::Rope::from_str("loading log…\n"),
         Surface::CommitLog {
             rows: vec![LogRow {
                 text: "c0".into(),
@@ -500,7 +500,12 @@ fn dive_results_need_their_surface() {
     // a foreign ticket lands nothing
     e.handle_git_job(GitJob::Dive(Completion {
         ticket: foreign,
-        outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(vec![])),
+        outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(
+            crate::editor::git_memory::PreparedFiles::new(
+                "0123456789abcdef0123456789abcdef01234567".into(),
+                vec![],
+            ),
+        )),
     }));
     assert_eq!(e.current(), doc, "no surface was pushed");
     // the owner's files land as a ChangedFiles surface
@@ -511,7 +516,12 @@ fn dive_results_need_their_surface() {
     };
     e.handle_git_job(GitJob::Dive(Completion {
         ticket: owner,
-        outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(vec![file])),
+        outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(
+            crate::editor::git_memory::PreparedFiles::new(
+                "0123456789abcdef0123456789abcdef01234567".into(),
+                vec![file],
+            ),
+        )),
     }));
     assert!(
         matches!(e.surface(), Some(Surface::ChangedFiles { .. })),

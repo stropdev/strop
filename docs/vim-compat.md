@@ -83,6 +83,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 
 - `✓ space |` — pipe line/selection through shell (:! runs)
 - `✓ space f` — file finder
+- `✓ space o` — open remote destination
 - `✓ space b` — buffers (MRU)
 - `✓ space /` — live grep
 - `✓ space R` — global search & replace

@@ -41,7 +41,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("filter", "filter remote directory by literal filename"),
     (
         "remote",
-        "connections: connect/disconnect ssh://HOST, clear, list",
+        "choose remote destination; root/home/connect/disconnect/clear/list",
     ),
 ];
 
@@ -147,6 +147,7 @@ impl Editor {
                                 | "declaration"
                                 | "diagnostic-jumps"
                                 | "hover"
+                                | "remote-open"
                         )
                 }
                 Handler::AbsorbChar(
@@ -179,11 +180,7 @@ impl Editor {
                     "clip-yank" => self
                         .walker
                         .begin_operator(grammar::Op::Yank, Some('+'), count),
-                    _ => {
-                        for _ in 0..n {
-                            f(self, last);
-                        }
-                    }
+                    _ => self.run_counted_leaf(f, last, n),
                 }
             }
             // aliases are semantic (0016): the expansion parses ONCE

@@ -58,6 +58,7 @@ impl Editor {
                 directory_picker,
                 open,
             } => {
+                self.resolution.enabled = true;
                 let startup_message = self.message.clone();
                 if let Some(open) = open {
                     self.lsp_start_services();

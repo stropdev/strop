@@ -375,7 +375,7 @@ fn grep_respawns_reach_the_production_event_source() {
     std::fs::write(dir.path().join("hit.txt"), "needle here\n").unwrap();
     let mut e = Editor::new(Buffer::from_text("x\n"));
     e.cwd = dir.path().to_path_buf();
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = crate::editor::events::channel();
     e.connect_events(tx);
     e.open_picker(strop_picker::Kind::Grep);
     // type the query: respawns flow through the forwarded channel
@@ -391,8 +391,13 @@ fn grep_respawns_reach_the_production_event_source() {
             Ok(ev) => {
                 e.handle_app_event(ev);
                 let glue = e.picker.as_ref().unwrap();
-                saw_hit = saw_hit || glue.picker.rows.iter().any(|r| r.text.contains("hit.txt"));
-                done = !glue.picker.streaming;
+                saw_hit = saw_hit
+                    || glue
+                        .picker
+                        .rows
+                        .iter()
+                        .any(|row| glue.picker.items[row.item].text.contains("hit.txt"));
+                done = !glue.picker.streaming && glue.rank_pending.is_none();
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -412,10 +417,13 @@ fn grep_respawns_reach_the_production_event_source() {
     e.handle_app_event(crate::editor::events::AppEvent::Picker(
         crate::editor::picker::PickerEvent {
             ticket: stale,
-            msg: strop_picker::PickerMsg::Items(vec![strop_picker::Item {
-                text: "STALE".into(),
-                payload: strop_picker::Payload::Buffer(*e.mru.first().unwrap()),
-            }]),
+            msg: strop_picker::PickerMsg::Items(
+                vec![strop_picker::Item {
+                    text: "STALE".into(),
+                    payload: strop_picker::Payload::Buffer(*e.mru.first().unwrap()),
+                }]
+                .into(),
+            ),
         },
     ));
     assert_eq!(e.picker.as_ref().unwrap().picker.rows.len(), before);
@@ -504,24 +512,9 @@ fn incremental_syntax_equals_fresh_parse() {
     for script in scripts {
         let mut e = Editor::new(Buffer::from_text("fn demo() {\n    let x = 1;\n}\n"));
         e.buf_mut().path = Some(std::path::PathBuf::from("/tmp/demo.rs"));
-        e.cur_mut().highlighter = strop_syntax::Highlighter::for_path(
-            std::path::Path::new("/tmp/demo.rs"),
-            e.buf().text(),
-        );
         // warm the tree BEFORE edits — without this the test passes
         // trivially through the full-parse fallback
-        {
-            let rope = e.buf().text().clone();
-            let len = e.buf().len_bytes();
-            let rev = e.buf().revision();
-            let _ = e
-                .cur_mut()
-                .highlighter
-                .as_mut()
-                .unwrap()
-                .highlight(&rope, rev, 0, len)
-                .unwrap();
-        }
+        e.analysis_fixture();
         for keys in &script {
             match *keys {
                 "<esc>" => e.feed(crate::editor::Key::Esc),
@@ -533,13 +526,7 @@ fn incremental_syntax_equals_fresh_parse() {
         let rope = e.buf().text().clone();
         let len = e.buf().len_bytes();
         // incremental: the kept tree + lazy reparse
-        let inc = e
-            .cur_mut()
-            .highlighter
-            .as_mut()
-            .unwrap()
-            .highlight(&rope, revision, 0, len)
-            .unwrap();
+        let inc = e.analysis_fixture().spans.clone();
         // fresh: no old tree at all
         let mut fresh =
             strop_syntax::Highlighter::for_path(std::path::Path::new("/tmp/demo.rs"), &rope)

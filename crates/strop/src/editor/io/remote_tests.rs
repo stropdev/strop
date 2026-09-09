@@ -7,8 +7,9 @@ use strop_trace::replay::Tape;
 
 fn editor(text: &str) -> Editor {
     let mut editor = Editor::new_in(Buffer::from_text(text), "/isolated".into());
-    editor.tape = Rc::new(Tape::fixture(|_, _| {
-        Err(std::io::Error::other("native work forbidden"))
+    editor.tape = Rc::new(Tape::fixture(|operation, _| match operation {
+        "analysis.start" => Ok(serde_json::json!({"Ok": null})),
+        _ => Err(std::io::Error::other("native work forbidden")),
     }));
     editor
 }

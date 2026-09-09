@@ -14,7 +14,7 @@ use crate::editor::{Editor, Mode};
 mod blame_card;
 mod buffer;
 mod cmd_card;
-mod diff;
+pub(crate) mod diff;
 mod help;
 mod hover_card;
 mod picker_card;
@@ -60,7 +60,29 @@ pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
         C::Constant => ACCENT,
         C::Attribute => Color::Rgb(0xd0, 0xa4, 0x5e),
         C::Variable => TEXT,
+        C::Heading | C::List => ACCENT,
+        C::Link | C::Tag => Color::Rgb(0x7f, 0xb4, 0xca),
+        C::Code => Color::Rgb(0xa9, 0xc4, 0x7c),
+        C::Quote => MUTED,
     }
+}
+
+/// One style projection for panes and picker previews; overlays compose later.
+pub(crate) fn syntax_style(span: &strop_syntax::Span) -> Style {
+    let mut style = Style::default().fg(class_color(span.class));
+    if span.emphasis.bold {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    if span.emphasis.italic {
+        style = style.add_modifier(Modifier::ITALIC);
+    }
+    if span.emphasis.underline {
+        style = style.add_modifier(Modifier::UNDERLINED);
+    }
+    if span.emphasis.strikethrough {
+        style = style.add_modifier(Modifier::CROSSED_OUT);
+    }
+    style
 }
 
 pub fn render(editor: &mut Editor, frame: &mut Frame) {

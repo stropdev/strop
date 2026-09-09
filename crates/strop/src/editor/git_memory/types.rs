@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{Completion, WorkerId};
 use strop_git::memory::{BlameCard, BlameLine, LogRow};
-use strop_git::{FileDiff, GitContext, Hunk, RepoTarget};
+use strop_git::{GitContext, Hunk, RepoTarget};
 
 use crate::files::FileTarget;
 
@@ -42,8 +42,8 @@ pub struct HunkKey {
 /// to go back to).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HunkData {
-    pub unstaged: Vec<Hunk>,
-    pub staged: Vec<Hunk>,
+    pub unstaged: super::HunkSet,
+    pub staged: super::HunkSet,
     pub untracked: bool,
 }
 
@@ -79,8 +79,8 @@ pub struct MutationKey {
 /// separate from the key — the key names the view, the op is the work.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum MutationOp {
-    Stage { hunk: Hunk },
-    Unstage { hunk: Hunk },
+    Stage { hunk: std::sync::Arc<Hunk> },
+    Unstage { hunk: std::sync::Arc<Hunk> },
 }
 
 /// A queued mutation waiting for the running one to settle — index
@@ -120,6 +120,10 @@ pub struct CardKey {
 /// file's delta at a commit.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DiveTarget {
+    HunkPreview {
+        origin: super::HunkOrigin,
+        index: usize,
+    },
     CommitFiles {
         sha: String,
     },
@@ -141,8 +145,8 @@ pub struct DiveKey {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DiveData {
-    Files(Vec<strop_git::memory::ChangedFile>),
-    Delta(FileDiff),
+    Files(super::PreparedFiles),
+    Delta(super::PreparedDiff),
 }
 
 /// Results from git workers; the event loop (or headless drain)

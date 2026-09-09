@@ -13,8 +13,13 @@
 //! the editor's char-classified word model (`is_alphanumeric`/`_`), so
 //! `é` is a word char for boundaries like it is for `w`/`b`/`*`.
 
+mod codec;
 pub(crate) mod exec;
 mod parse;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use strop_core::id::ByteOffset;
 use strop_core::Buffer;
@@ -25,7 +30,9 @@ use parse::Program;
 /// An explicit match range `[start, end)` in buffer bytes. The length
 /// is whatever the pattern matched — never assume `end - start` equals
 /// the pattern's length (0031: highlighting reads this range).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct SearchMatch {
     pub start: ByteOffset,
     pub end: ByteOffset,
@@ -67,6 +74,8 @@ pub enum QueryError {
     /// The bounded engine's step budget ran out (vim's E363 family) —
     /// the pattern is too expensive to run, not wrong.
     TooComplex,
+    /// Superseded background work stops without publishing a partial answer.
+    Cancelled,
 }
 
 impl std::fmt::Display for QueryError {
@@ -82,6 +91,7 @@ impl std::fmt::Display for QueryError {
             QueryError::BadClass { at } => ("malformed [...]", Some(*at)),
             QueryError::BadCharCode { at } => ("malformed character code", Some(*at)),
             QueryError::TrailingBackslash { at } => ("trailing backslash", Some(*at)),
+            QueryError::Cancelled => return f.write_str("query cancelled"),
             QueryError::TooComplex => {
                 return write!(f, "query too complex (over {STEP_BUDGET} steps)")
             }
@@ -103,9 +113,10 @@ impl std::error::Error for QueryError {}
 /// with the same text and whole-word flag are the same query.
 #[derive(Clone)]
 pub struct CompiledQuery {
-    source: String,
+    source: Arc<str>,
     whole_word: bool,
-    prog: Program,
+    prog: Arc<Program>,
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl CompiledQuery {
@@ -114,10 +125,24 @@ impl CompiledQuery {
     pub fn compile(pattern: &str, whole_word: bool) -> Result<Self, QueryError> {
         let prog = parse::compile(pattern, whole_word)?;
         Ok(Self {
-            source: pattern.to_string(),
+            source: Arc::from(pattern),
             whole_word,
-            prog,
+            prog: Arc::new(prog),
+            cancel: None,
         })
+    }
+
+    /// Attach only a work owner's cooperative stop flag. It changes no query
+    /// semantics and is never serialized with the source-level command.
+    pub fn cancellable(&self, cancel: Arc<AtomicBool>) -> Self {
+        let mut query = self.clone();
+        query.cancel = Some(cancel);
+        query
+    }
+    pub(crate) fn cancelled(&self) -> bool {
+        self.cancel
+            .as_ref()
+            .is_some_and(|cancel| cancel.load(Ordering::Acquire))
     }
 
     /// The pattern as typed (spec footers, `/` line echo, `n` replay).
@@ -177,4 +202,15 @@ pub fn search_backward(
 /// and vim's `cpo+=c` walk). The highlight range source.
 pub fn search_all(buf: &Buffer, query: &CompiledQuery) -> Result<Vec<SearchMatch>, QueryError> {
     super::resolve::search::all(buf, query)
+}
+
+/// Visit the shared engine's matches without allocating a whole-buffer hit
+/// vector. The visitor may stop early; a work owner's cancellation is an error,
+/// never an apparently complete prefix of the answer.
+pub fn search_visit(
+    buf: &Buffer,
+    query: &CompiledQuery,
+    visitor: impl FnMut(SearchMatch) -> std::ops::ControlFlow<()>,
+) -> Result<(), QueryError> {
+    super::resolve::search::visit_all(buf, query, visitor)
 }

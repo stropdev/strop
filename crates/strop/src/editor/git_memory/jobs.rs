@@ -25,9 +25,10 @@ use strop_git::{GitContext, GitError, RepoTarget};
 /// surface check and the publish never fight over a borrow.
 enum DiveLanding {
     LogSurface,
+    HunkPreview(super::HunkOrigin),
     Files {
         sha: String,
-        files: Vec<strop_git::memory::ChangedFile>,
+        files: super::PreparedFiles,
     },
     Delta {
         cf: CommitFiles,
@@ -164,8 +165,8 @@ impl Editor {
             self.cancel_git_worker(request, CancelReason::Superseded);
         }
         self.hunk_load = Load::Idle;
-        self.hunks.clear();
-        self.staged_hunks.clear();
+        self.hunks = super::HunkSet::default();
+        self.staged_hunks = super::HunkSet::default();
         self.hunks_untracked = false;
         if let Ok(view) = self.worker_ids.allocate() {
             self.git_view = view;
@@ -575,7 +576,6 @@ impl Editor {
         if self.docs.is_empty()
             || self.current() != doc
             || self
-                .doc(doc)
                 .git_context()
                 .is_none_or(|context| context.repo != key.repo)
         {
@@ -587,6 +587,11 @@ impl Editor {
             .get(doc)
             .map_or(DiveLanding::Mismatch, |document| {
                 match (&key.target, document.surface_payload()) {
+                    (DiveTarget::HunkPreview { origin, .. }, _)
+                        if origin.buffer == doc && origin.revision == document.buf.revision() =>
+                    {
+                        DiveLanding::HunkPreview(origin.clone())
+                    }
                     (DiveTarget::CommitFiles { .. }, Some(Surface::CommitLog { .. })) => {
                         DiveLanding::LogSurface
                     }
@@ -606,7 +611,7 @@ impl Editor {
                         Some(Surface::Diff {
                             commit: Some(cf), ..
                         }),
-                    ) if cf.sha == *sha && cf.files.iter().any(|f| f.path == *path) => {
+                    ) if cf.sha == *sha && cf.files.index_of(path).is_some() => {
                         DiveLanding::Delta {
                             cf: cf.clone(),
                             path: path.clone(),
@@ -616,22 +621,20 @@ impl Editor {
                 }
             });
         match (landing, outcome) {
+            (DiveLanding::HunkPreview(origin), Outcome::Success(DiveData::Delta(diff))) => {
+                self.message.clear();
+                self.open_delta("hunk", diff, Some(origin), None);
+            }
             (DiveLanding::LogSurface, Outcome::Success(DiveData::Files(files))) => {
                 let sha = match &key.target {
                     DiveTarget::CommitFiles { sha } => sha.clone(),
                     _ => return,
                 };
-                let mut text = format!("commit {}\n\n", &sha[..10.min(sha.len())]);
-                for f in &files {
-                    text.push_str(&strop_core::layout::printable_text(
-                        f.path.to_string_lossy(),
-                    ));
-                    text.push('\n');
-                }
+                let text = files.text();
                 self.message.clear();
                 self.push_surface(
                     Some("commit files"),
-                    &text,
+                    text,
                     Surface::ChangedFiles {
                         sha,
                         files,
@@ -650,12 +653,11 @@ impl Editor {
                     files,
                     current: path.clone(),
                 };
-                let label = strop_core::layout::printable_text(path.to_string_lossy()).into_owned();
                 self.message.clear();
-                self.open_delta("delta", &label, diff.hunks, None, Some(commit));
+                self.open_delta("delta", diff, None, Some(commit));
             }
             (DiveLanding::Delta { cf, path }, Outcome::Success(DiveData::Delta(diff))) => {
-                self.load_commit_delta(&cf, &path, diff.hunks);
+                self.load_commit_delta(&cf, &path, diff);
             }
             // a payload that does not match its target cannot come
             // from our producers; reject rather than mis-publish

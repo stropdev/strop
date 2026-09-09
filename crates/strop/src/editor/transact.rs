@@ -112,10 +112,8 @@ impl super::Editor {
                     pane.sels.map_positions(map);
                 }
             }
-            if let Some(highlighter) = document.highlighter.as_mut() {
-                highlighter.apply_edits(&[change.edit], change.revision);
-            }
         }
+        self.analysis.edits(id, document.buf.changes());
         document.buf.clear_changes();
     }
 }

@@ -33,6 +33,7 @@ pub struct Seed {
     cwd: PathBuf,
     #[serde(with = "strop_core::path_serde::option")]
     state_dir: Option<PathBuf>,
+    session_policy: crate::session::SessionPolicy,
     config: crate::config::Config,
     git: Option<strop_git::GitContext>,
     git_view: WorkerId,
@@ -71,6 +72,7 @@ impl Seed {
             layout: editor.layout,
             cwd: editor.cwd.clone(),
             state_dir: editor.state_dir.clone(),
+            session_policy: editor.session_policy,
             config: editor.config.clone(),
             git: editor.git.clone(),
             git_view: editor.git_view,
@@ -152,6 +154,7 @@ impl Seed {
         editor.active_pane = self.active;
         editor.layout = self.layout;
         editor.state_dir = self.state_dir;
+        editor.session_policy = self.session_policy;
         editor.config = self.config;
         editor.git = self.git;
         editor.git_view = self.git_view;

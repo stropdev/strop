@@ -6,20 +6,12 @@ use strop_core::Buffer;
 
 fn syntax_editor() -> Editor {
     let mut e = Editor::new(Buffer::from_text("fn demo() {\n    let x = 1;\n}\n"));
-    e.cur_mut().highlighter =
-        strop_syntax::Highlighter::for_path(std::path::Path::new("audit.rs"), e.buf().text());
+    e.buf_mut().path = Some(std::path::PathBuf::from("audit.rs"));
     e
 }
 
 fn spans(e: &mut Editor) -> Vec<strop_syntax::Span> {
-    let rope = e.buf().text().clone();
-    let rev = e.buf().revision();
-    e.cur_mut()
-        .highlighter
-        .as_mut()
-        .unwrap()
-        .highlight(&rope, rev, 0, rope.len_bytes())
-        .unwrap()
+    e.analysis_fixture().spans.clone()
 }
 
 fn fresh_spans(e: &Editor) -> Vec<strop_syntax::Span> {

@@ -1,39 +1,58 @@
-//! The picker regression bench (0023): measures the REAL hot path —
-//! Picker::refilter over accumulated items, per keystroke — the way the
-//! reviewer's audit did. Not a comparison: a regression floor. Run:
-//! cargo run -p strop-picker --example scorebench --release
-
-use std::time::Instant;
-
-use strop_picker::{Item, Kind, Payload, Picker};
-
-fn items(n: usize) -> Vec<Item> {
-    (0..n)
-        .map(|i| Item {
-            text: format!("crates/package_{i:06}/src/main_{i}.rs"),
-            payload: Payload::File(format!("{i}.rs").into()),
-        })
-        .collect()
-}
+//! Separate foreground snapshot cost from asynchronous matching latency (0038).
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+use strop_core::worker::{Outcome, Ticket, WorkerId};
+use strop_picker::{Item, Kind, Payload, Picker, RankingEvent, RankingWorker};
 
 fn main() {
-    let median = |mut ns: Vec<u128>| {
-        ns.sort_unstable();
-        ns[ns.len() / 2] as f64 / 1e6
-    };
-    for n in [10_000usize, 50_000, 100_000] {
-        let mut p = Picker::new(Kind::Files, items(n), false);
-        p.input.text = "mainrs".into();
-        let mut samples = Vec::new();
-        for _ in 0..7 {
-            let t = Instant::now();
-            p.refilter();
-            samples.push(t.elapsed().as_nanos());
+    for count in [10_000usize, 100_000, 1_000_000] {
+        let items = (0..count)
+            .map(|index| Item {
+                text: format!("crates/package_{index:06}/src/main_{index}.rs"),
+                payload: Payload::File(format!("{index}.rs").into()),
+            })
+            .collect();
+        let mut picker = Picker::new(Kind::Files, items, false);
+        picker.input.text = "mainrs".into();
+        let mut snapshots = Vec::new();
+        for _ in 0..100 {
+            let start = Instant::now();
+            std::hint::black_box(picker.filter_request());
+            snapshots.push(start.elapsed());
         }
+        snapshots.sort_unstable();
+        let (tx, rx) = mpsc::channel();
+        let worker = RankingWorker::start(move |event| tx.send(event).is_ok()).unwrap();
+        let start = Instant::now();
+        worker
+            .submit(
+                Ticket {
+                    request: WorkerId::new(1),
+                    key: (),
+                },
+                picker.filter_request(),
+            )
+            .unwrap();
+        let RankingEvent::Completed(completion) = rx.recv_timeout(Duration::from_secs(30)).unwrap()
+        else {
+            panic!("worker stopped");
+        };
+        let Outcome::Success(ranking) = completion.outcome else {
+            panic!("ranking failed");
+        };
+        let elapsed = start.elapsed();
+        assert_eq!(ranking.rows.len(), count);
+        picker.install_ranking(ranking);
         println!(
-            "PERF refilter items={n} rows={} median_ms={:.3}",
-            p.rows.len(),
-            median(samples)
+            "PERF items={count} request_p50_ms={:.4} request_p99_ms={:.4} worker_ms={:.3}",
+            snapshots[50].as_secs_f64() * 1000.0,
+            snapshots[99].as_secs_f64() * 1000.0,
+            elapsed.as_secs_f64() * 1000.0
         );
+        worker.retire(picker).unwrap();
+        assert!(matches!(
+            rx.recv_timeout(Duration::from_secs(30)).unwrap(),
+            RankingEvent::Stopped
+        ));
     }
 }

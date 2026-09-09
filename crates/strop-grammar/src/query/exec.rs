@@ -18,11 +18,8 @@ pub const STEP_BUDGET: u64 = 100_000;
 pub(crate) struct Matcher<'a> {
     rope: &'a Rope,
     len: usize,
+    query: &'a super::CompiledQuery,
 }
-
-/// The one runtime failure the engine can produce (the step
-/// budget) — internal signal, mapped onto `QueryError::TooComplex`.
-pub(crate) struct TooComplex;
 
 enum Mark {
     Slot(usize, usize),
@@ -38,10 +35,11 @@ struct Frame {
 const UNSET: usize = usize::MAX;
 
 impl<'a> Matcher<'a> {
-    pub(crate) fn new(rope: &'a Rope) -> Self {
+    pub(crate) fn new(rope: &'a Rope, query: &'a super::CompiledQuery) -> Self {
         Self {
             len: rope.len_bytes(),
             rope,
+            query,
         }
     }
 
@@ -243,7 +241,10 @@ impl<'a> Matcher<'a> {
         &self,
         prog: &Program,
         start: usize,
-    ) -> Result<Option<(usize, usize)>, TooComplex> {
+    ) -> Result<Option<(usize, usize)>, QueryError> {
+        if self.query.cancelled() {
+            return Err(QueryError::Cancelled);
+        }
         let mut saves = vec![UNSET; prog.n_slots];
         let mut guards = vec![None; prog.n_loops];
         let mut trail: Vec<Mark> = Vec::new();
@@ -266,7 +267,10 @@ impl<'a> Matcher<'a> {
             loop {
                 steps += 1;
                 if steps > STEP_BUDGET {
-                    return Err(TooComplex);
+                    return Err(QueryError::TooComplex);
+                }
+                if steps.is_multiple_of(512) && self.query.cancelled() {
+                    return Err(QueryError::Cancelled);
                 }
                 match &prog.insts[pc] {
                     Inst::Consume(class) => match self.consume(class, pos) {
@@ -401,24 +405,38 @@ fn chars_eq_fold(a: char, b: char) -> bool {
 
 /// All matches left to right, non-overlapping; empty matches advance
 /// one char (the `cpo+=c` walk the corpus pins).
-pub(crate) fn all_matches(m: &Matcher<'_>, prog: &Program) -> Result<Vec<SearchMatch>, TooComplex> {
-    let mut out = Vec::new();
+pub(crate) fn visit_matches(
+    m: &Matcher<'_>,
+    prog: &Program,
+    mut visit: impl FnMut(SearchMatch) -> std::ops::ControlFlow<()>,
+) -> Result<(), QueryError> {
     let mut at = 0usize;
     while at <= m.len() {
         match m.find_at(prog, at)? {
-            Some((s, e)) => {
-                if s < m.len() || s < e {
-                    out.push(SearchMatch {
-                        start: ByteOffset::new(s),
-                        end: ByteOffset::new(e),
-                    });
+            Some((start, end)) => {
+                if (start < m.len() || start < end)
+                    && visit(SearchMatch {
+                        start: ByteOffset::new(start),
+                        end: ByteOffset::new(end),
+                    })
+                    .is_break()
+                {
+                    return Ok(());
                 }
-                at = if e > s { e } else { m.next_boundary(s) };
+                at = if end > start {
+                    end
+                } else {
+                    m.next_boundary(start)
+                };
             }
             None => at = m.next_boundary(at),
         }
     }
-    Ok(out)
+    if m.query.cancelled() {
+        Err(QueryError::Cancelled)
+    } else {
+        Ok(())
+    }
 }
 
 /// First match from a scan start; attempts advance one char.
@@ -426,7 +444,7 @@ pub(crate) fn first_from(
     m: &Matcher<'_>,
     prog: &Program,
     from: usize,
-) -> Result<Option<SearchMatch>, TooComplex> {
+) -> Result<Option<SearchMatch>, QueryError> {
     let mut at = from.min(m.len());
     while at <= m.len() {
         if let Some((s, e)) = m.find_at(prog, at)? {
@@ -437,11 +455,9 @@ pub(crate) fn first_from(
         }
         at = m.next_boundary(at);
     }
-    Ok(None)
-}
-
-impl From<TooComplex> for QueryError {
-    fn from(_: TooComplex) -> Self {
-        QueryError::TooComplex
+    if m.query.cancelled() {
+        Err(QueryError::Cancelled)
+    } else {
+        Ok(None)
     }
 }

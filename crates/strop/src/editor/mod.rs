@@ -11,8 +11,10 @@ pub mod conformance;
 pub mod contract_probes;
 pub mod trace;
 
+pub(crate) mod analysis;
 mod cursor;
 mod diagnostics;
+pub(crate) mod resolution;
 pub use diagnostics::DocumentDiagnostics;
 mod dive;
 mod document;
@@ -45,9 +47,9 @@ mod visual;
 
 pub use document::Document;
 pub use document::{DiffRow, Surface};
-#[cfg(test)]
-pub use git_memory::CommitFiles;
 pub use git_memory::{git_channel, BlameGutter, GitJob};
+#[cfg(test)]
+pub(crate) use git_memory::{CommitFiles, PreparedDiff, PreparedFiles};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews};
 pub use registers::{ClipboardKey, ClipboardResult, Register};
@@ -178,7 +180,7 @@ pub struct Editor {
     pub recording: Option<char>,
     /// The app event channel (0018): set by connect_events; late LSP
     /// attaches forward through it.
-    pub app_tx: Option<std::sync::mpsc::Sender<events::AppEvent>>,
+    pub app_tx: Option<events::EventSender>,
     pub(crate) lsp_state: lsp::state::LspState,
     /// Recorded macros: register → key events.
     pub macros: std::collections::HashMap<char, Vec<Key>>,
@@ -189,6 +191,9 @@ pub struct Editor {
     /// Macro self-replay depth guard.
     pub macro_depth: usize,
     pub picker: Option<PickerGlue>,
+    pub(crate) picker_ranking: picker::ranking::State,
+    pub(crate) analysis: analysis::AnalysisState,
+    pub(crate) resolution: resolution::ResolutionState,
     pub cwd: PathBuf,
     /// MRU document order (most recent first); drives `Space b`.
     pub mru: Vec<strop_core::id::DocumentId>,
@@ -201,10 +206,10 @@ pub struct Editor {
     pub preview_tx: std::sync::mpsc::Sender<PreviewResult>,
     pub preview_rx: Option<std::sync::mpsc::Receiver<PreviewResult>>,
     pub(crate) preview_loads: HashMap<PathBuf, strop_core::worker::Load<PreviewKey>>,
-    pub hunks: Vec<strop_git::Hunk>,
+    pub hunks: git_memory::HunkSet,
     /// HEAD↔index — the staged set (0014 wave 4); rendered in the
     /// gutter's committed-adjacent color.
-    pub staged_hunks: Vec<strop_git::Hunk>,
+    pub staged_hunks: git_memory::HunkSet,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
     pub blame_card: Option<strop_git::memory::BlameCard>,
@@ -245,9 +250,9 @@ pub struct Editor {
     pub layout: LayoutDir,
     /// User config (0005-lite: TOML, embedded defaults, never bricks).
     pub config: crate::config::Config,
-    /// XDG state dir for sessions, resolved once at startup by main;
-    /// None in tests/headless → session writes no-op (hermetic).
+    /// Shared state root for explicit trust and optional session persistence.
     pub state_dir: Option<PathBuf>,
+    pub(crate) session_policy: crate::session::SessionPolicy,
     /// The last grammar-level change (dot-repeat's semantic form).
     pub(crate) last_change: Option<strop_grammar::Command>,
     /// Direct non-grammar commands (x, p, J…) replay their key string.
@@ -313,6 +318,9 @@ impl Editor {
             io: io::IoState::default(),
             remote: remote::RemoteState::default(),
             remote_completion: remote_completion::RemoteCompletionState::default(),
+            picker_ranking: picker::ranking::State::default(),
+            analysis: analysis::AnalysisState::default(),
+            resolution: resolution::ResolutionState::default(),
             worker_ids: strop_core::worker::WorkerIds::default(),
             worker_handles: HashMap::new(),
             focus_epoch: 0,
@@ -367,8 +375,8 @@ impl Editor {
             shell_tx,
             shell_rx: Some(shell_rx),
             git: None,
-            hunks: Vec::new(),
-            staged_hunks: Vec::new(),
+            hunks: git_memory::HunkSet::default(),
+            staged_hunks: git_memory::HunkSet::default(),
             blame_card: None,
             git_tx,
             git_rx: Some(git_rx),
@@ -397,6 +405,7 @@ impl Editor {
             layout: LayoutDir::Row,
             config: crate::config::Config::default(),
             state_dir: None,
+            session_policy: crate::session::SessionPolicy::Automatic,
         }
     }
 
@@ -409,7 +418,29 @@ impl Editor {
     pub fn feed(&mut self, key: Key) {
         let _trace_scope = trace::InputScope::enter(self, key);
         self.trace_state();
-        self.feed_inner(key);
+        let generated = self.resolution.in_action;
+        if self.resolution.blocked()
+            || (!generated && !self.resolution.queue.is_empty())
+            || (generated && !self.resolution.staged.is_empty())
+        {
+            if generated {
+                self.resolution
+                    .staged
+                    .push_back(resolution::DeferredInput::GeneratedKey {
+                        key,
+                        depth: self.macro_depth,
+                    });
+            } else {
+                self.resolution
+                    .queue
+                    .push_back(resolution::DeferredInput::Key(key));
+            }
+            return;
+        }
+        self.run_input_action(|editor| {
+            editor.feed_inner(key);
+            editor.prepare_resolution_preview();
+        });
         self.trace_state();
     }
 

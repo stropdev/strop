@@ -1,11 +1,10 @@
 //! Ticket-stamped picker deliveries. Live and headless drivers both
 //! forward worker messages through the shared AppEvent channel.
 
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Receiver;
 
 use strop_core::worker::{FailureKind, Load, Outcome, Ticket};
 use strop_picker::PickerMsg;
-use strop_syntax::Highlighter;
 
 use super::super::events::AppEvent;
 use super::super::trace;
@@ -19,7 +18,7 @@ use super::{PickerEvent, PickerKey, PreviewEntry, PreviewResult};
 pub(crate) fn forward_picker_stream(
     rx: Receiver<PickerMsg>,
     ticket: Ticket<PickerKey>,
-    tx: Sender<AppEvent>,
+    tx: super::super::events::EventSender,
 ) -> std::io::Result<()> {
     std::thread::Builder::new()
         .name("picker-bridge".into())
@@ -69,8 +68,9 @@ impl Editor {
             trace::services::rejected("picker", "picker request superseded or completed");
             return;
         }
+        let appended = matches!(&event.msg, PickerMsg::Items(_));
         match event.msg {
-            PickerMsg::Items(items) => glue.picker.append(items),
+            PickerMsg::Items(items) => glue.picker.append(items.into_items()),
             PickerMsg::Warning(message) => glue.picker.error = Some(message),
             PickerMsg::Finished(outcome) => {
                 // exactly-once terminal: settle streaming, drop the
@@ -83,9 +83,14 @@ impl Editor {
                 glue.worker = None;
                 if let Outcome::Failed { failure, .. } = outcome {
                     glue.picker.error = Some(failure.message);
+                    glue.accept_when_ranked = false;
                 }
             }
         }
+        if appended {
+            self.request_picker_ranking();
+        }
+        self.finish_pending_picker_accept();
     }
 
     /// One preview completion → cached entry. Only the exact registered
@@ -115,7 +120,7 @@ impl Editor {
         strop_trace::record_with(strop_trace::EventKind::JobFinished, || {
             let outcome = match &result.outcome {
                 Outcome::Success(text) => {
-                    serde_json::json!({"result":"success","bytes":text.len()})
+                    serde_json::json!({"result":"success","bytes":text.rope.len_bytes()})
                 }
                 Outcome::Failed { failure, .. } => serde_json::json!({
                     "result":"failed","kind":format!("{:?}",failure.kind),
@@ -130,11 +135,13 @@ impl Editor {
         });
         let key = result.ticket.key;
         match result.outcome {
-            Outcome::Success(text) => {
-                let rope = ropey::Rope::from_str(&text);
-                let hl = Highlighter::for_path(&path, &rope);
-                self.previews
-                    .insert(path.clone(), PreviewEntry { rope, hl });
+            Outcome::Success(prepared) => {
+                self.previews.insert(
+                    path.clone(),
+                    PreviewEntry {
+                        rope: prepared.rope,
+                    },
+                );
                 self.preview_loads.insert(path, Load::Ready(key));
             }
             Outcome::Failed { failure, .. } => {

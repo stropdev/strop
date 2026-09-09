@@ -32,6 +32,12 @@ impl Editor {
             }
             "remote" => {
                 let operation = match words.as_slice() {
+                    [] => {
+                        self.open_remote_picker();
+                        return Ok(());
+                    }
+                    ["root"] => return self.browse_remote_root(false),
+                    ["home"] => return self.browse_remote_root(true),
                     ["connect", endpoint] => RemoteControl::Connect(
                         RemoteEndpoint::parse(endpoint).map_err(|e| e.to_string())?,
                     ),
@@ -45,7 +51,7 @@ impl Editor {
                             .clone(),
                     ),
                     ["clear"] => RemoteControl::DisconnectAll,
-                    [] | ["list"] => RemoteControl::Connections,
+                    ["list"] => RemoteControl::Connections,
                     _ => return Err(
                         "usage: :remote connect|disconnect ssh://HOST, :remote clear, :remote list"
                             .into(),

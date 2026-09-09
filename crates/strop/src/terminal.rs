@@ -30,8 +30,9 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     let mut output = io::stdout();
     crossterm::execute!(output, EnterAlternateScreen, EnableBracketedPaste)?;
     let mut terminal = ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(output))?;
-    let (sender, receiver) = std::sync::mpsc::channel();
-    editor.connect_events(sender.clone());
+    let (sender, receiver) = editor::events::channel();
+    let (input_sender, input_receiver) = editor::events::channel();
+    editor.connect_events(sender);
     std::thread::spawn(move || loop {
         let application_event = match event::read() {
             Ok(Event::Key(key)) if key.kind == KeyEventKind::Release => continue,
@@ -63,55 +64,82 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
                 break;
             }
         };
-        if sender.send(application_event).is_err() {
+        if input_sender.send(application_event).is_err() {
             break;
         }
     });
     editor.trace_state();
+    let mut redraw = true;
+    let mut painted_flash = false;
+    let mut animation_due = std::time::Instant::now();
     while !editor.should_quit {
-        use crossterm::cursor::SetCursorStyle;
-        let shape = if editor.input_normal() {
-            SetCursorStyle::SteadyBlock
-        } else if editor.picker_open()
-            || editor.pending_sigil().is_some()
-            || editor.mode == Mode::Insert
-        {
-            SetCursorStyle::SteadyBar
-        } else if matches!(
-            editor.mode,
-            Mode::Visual | Mode::VisualLine | Mode::VisualBlock
-        ) {
-            SetCursorStyle::SteadyUnderScore
-        } else {
-            SetCursorStyle::SteadyBlock
-        };
-        crossterm::execute!(terminal.backend_mut(), shape)?;
-        if std::mem::take(&mut editor.needs_repaint) {
-            terminal.clear()?;
-        }
-        terminal.draw(|frame| editor::trace::frame::draw(&mut editor, frame, true))?;
-        let event = if editor.flash_range().is_some() {
-            match receiver.recv_timeout(Duration::from_millis(16)) {
+        let started = std::time::Instant::now();
+        let mut processed = 0;
+        for _ in 0..editor::events::EVENTS_PER_TURN {
+            let event = match input_receiver.try_recv() {
                 Ok(event) => Some(event),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        } else {
-            receiver.recv().ok()
-        };
-        let Some(event) = event else { continue };
-        editor.recorded_action(
-            editor::trace::drive::Action::Event(event),
-            editor.tape.sample_tick(),
-        )?;
-        editor.trace_state();
-        for payload in std::mem::take(&mut editor.terminal_output) {
-            write!(
-                terminal.backend_mut(),
-                "\x1b]52;c;{}\x07",
-                base64_encode(payload.as_bytes())
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    editor.should_quit = true;
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => receiver.try_recv().ok(),
+            };
+            let Some(event) = event else {
+                break;
+            };
+            editor.recorded_action(
+                editor::trace::drive::Action::Event(event),
+                editor.tape.sample_tick(),
             )?;
-            terminal.backend_mut().flush()?;
+            editor.trace_state();
+            redraw = true;
+            processed += 1;
+            for payload in std::mem::take(&mut editor.terminal_output) {
+                write!(
+                    terminal.backend_mut(),
+                    "\x1b]52;c;{}\x07",
+                    base64_encode(payload.as_bytes())
+                )?;
+                terminal.backend_mut().flush()?;
+            }
+            if editor.should_quit || started.elapsed() >= editor::events::TURN_BUDGET {
+                break;
+            }
+        }
+        if editor.should_quit {
+            break;
+        }
+        let flashing = editor.flash_range().is_some();
+        if redraw || ((flashing || painted_flash) && std::time::Instant::now() >= animation_due) {
+            use crossterm::cursor::SetCursorStyle;
+            let shape = if editor.input_normal() {
+                SetCursorStyle::SteadyBlock
+            } else if editor.picker_open()
+                || editor.pending_sigil().is_some()
+                || editor.mode == Mode::Insert
+            {
+                SetCursorStyle::SteadyBar
+            } else if matches!(
+                editor.mode,
+                Mode::Visual | Mode::VisualLine | Mode::VisualBlock
+            ) {
+                SetCursorStyle::SteadyUnderScore
+            } else {
+                SetCursorStyle::SteadyBlock
+            };
+            crossterm::execute!(terminal.backend_mut(), shape)?;
+            if std::mem::take(&mut editor.needs_repaint) {
+                terminal.clear()?;
+            }
+            terminal.draw(|frame| editor::trace::frame::draw(&mut editor, frame, true))?;
+            redraw = false;
+            painted_flash = flashing;
+            animation_due = std::time::Instant::now() + Duration::from_millis(16);
+        }
+        if processed == 0 {
+            // A retained unpark token closes the queue-empty/park race. The
+            // timeout also notices terminal-reader shutdown and flash expiry.
+            std::thread::park_timeout(Duration::from_millis(16));
         }
     }
     editor.recorded_action(

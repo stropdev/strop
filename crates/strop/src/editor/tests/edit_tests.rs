@@ -199,6 +199,25 @@ fn star_searches_word_under_cursor_whole_word() {
 }
 
 #[test]
+fn star_from_inside_unicode_word_does_not_cross_the_previous_separator() {
+    let mut editor = Editor::new(Buffer::from_text("left café left café\n"));
+    editor.feed_text("wl*");
+    assert_eq!(editor.head(), 16);
+}
+
+#[test]
+fn repeated_unicode_till_skips_the_adjacent_previous_target() {
+    let mut forward = Editor::new(Buffer::from_text("aöböcöd\n"));
+    forward.feed_text("tö;");
+    assert_eq!(forward.head(), 3);
+    forward.feed_text(";");
+    assert_eq!(forward.head(), 6);
+    let mut backward = Editor::new(Buffer::from_text("aöböcöd\n"));
+    backward.feed_text("$Tö;");
+    assert_eq!(backward.head(), 6);
+}
+
+#[test]
 fn count_motions_and_ex_line_jump() {
     // 30j: the 0 after a count digit is a digit, not line-start
     let mut e = Editor::new(Buffer::from_text("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n"));

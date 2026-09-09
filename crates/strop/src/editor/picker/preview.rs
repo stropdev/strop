@@ -1,5 +1,5 @@
-//! Picker preview: files read once (bounded) and cached with a
-//! highlighter; buffers render from the live rope. Reads run as owned
+//! Picker preview: bounded worker-prepared ropes; open documents use their live
+//! snapshots. Syntax belongs to the display-analysis actor, not the UI. Reads run as
 //! worker requests — registration precedes launch, every miss is a
 //! typed failure (never an empty success), and a failure never poisons
 //! the path forever.
@@ -13,23 +13,48 @@ use strop_picker::Payload;
 use super::super::Editor;
 use super::{PreviewKey, PreviewResult, PreviewSource};
 
+/// Live delivery already owns a rope. Replay reconstructs the same pure snapshot
+/// from the recorded text; no parser or filesystem access crosses this boundary.
+#[derive(Debug, Clone)]
+pub struct PreparedPreview {
+    pub rope: ropey::Rope,
+}
+impl From<String> for PreparedPreview {
+    fn from(text: String) -> Self {
+        Self {
+            rope: ropey::Rope::from_str(&text),
+        }
+    }
+}
+impl serde::Serialize for PreparedPreview {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&self.rope)
+    }
+}
+impl<'de> serde::Deserialize<'de> for PreparedPreview {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer).map(Self::from)
+    }
+}
+
 impl Editor {
-    pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource<'_>)> {
-        let item = self.picker.as_ref()?.picker.current()?.clone();
-        let (path, focus_line) = match item.payload {
+    pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
+        let item = self.picker.as_ref()?.picker.current()?;
+        let (path, focus_line) = match &item.payload {
+            Payload::RemoteDirectory(_) | Payload::RemoteConnect => return None,
             Payload::Buffer(document) => {
                 let name = self
                     .docs
-                    .get(document)?
+                    .get(*document)?
                     .buf
                     .path
                     .as_ref()
                     .map(|path| path.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "[scratch]".into());
-                return Some((name, None, PreviewSource::Buffer(document)));
+                return Some((name, None, PreviewSource::Buffer(*document)));
             }
-            Payload::File(path) => (path, None),
-            Payload::Grep { path, line, .. } => (path, Some(line)),
+            Payload::File(path) => (path.clone(), None),
+            Payload::Grep { path, line, .. } => (path.clone(), Some(*line)),
             // A remote hit never previews from the local disk: the
             // analogous path is another machine's file (0036). The
             // endpoint-labelled title says where it lives; accepting
@@ -42,13 +67,20 @@ impl Editor {
             } => {
                 return Some((
                     format!("{endpoint}{}", path.display()),
-                    Some(line),
+                    Some(*line),
                     PreviewSource::Failed("remote hit — accept to open".into()),
                 ));
             }
         };
         let full = self.cwd.join(&path);
         let title = path.display().to_string();
+        if let Some((document, _)) = self
+            .docs
+            .iter()
+            .find(|(_, document)| document.buf.path.as_ref() == Some(&full))
+        {
+            return Some((title, focus_line, PreviewSource::Buffer(document)));
+        }
         match self.preview_loads.get(&full) {
             Some(Load::Failed { failure, .. }) => {
                 return Some((
@@ -65,8 +97,7 @@ impl Editor {
         if !self.preview_ready(&full) {
             return Some((title, focus_line, PreviewSource::Loading));
         }
-        let entry = self.previews.get_mut(&full)?;
-        Some((title, focus_line, PreviewSource::Cached(entry)))
+        Some((title, focus_line, PreviewSource::Cached(full)))
     }
 
     /// True when the preview is cached. Otherwise registers an owned
@@ -150,7 +181,7 @@ impl Editor {
 /// The bounded preview read: at most 512 KiB, real files only, valid
 /// UTF-8 — every miss is a typed failure, never an empty success. The
 /// read stays capped even if the file grows after metadata.
-pub(crate) fn read_preview(path: &Path) -> Outcome<String> {
+pub(crate) fn read_preview(path: &Path) -> Outcome<PreparedPreview> {
     const LIMIT: u64 = 512 * 1024;
     let read = || -> Result<String, Failure> {
         let meta =
@@ -176,7 +207,7 @@ pub(crate) fn read_preview(path: &Path) -> Outcome<String> {
         String::from_utf8(bytes).map_err(|e| Failure::new(FailureKind::Io, e.to_string()))
     };
     match read() {
-        Ok(text) => Outcome::Success(text),
+        Ok(text) => Outcome::Success(text.into()),
         Err(failure) => Outcome::Failed {
             failure,
             partial: None,

@@ -7,6 +7,9 @@
 mod grep;
 mod query;
 
+mod flow;
+pub use flow::ItemBatch;
+use flow::StreamSender;
 pub use grep::GrepWorker;
 
 use std::path::PathBuf;
@@ -19,7 +22,7 @@ use crate::{Item, Payload};
 /// Messages workers post to the event loop.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PickerMsg {
-    Items(Vec<Item>),
+    Items(ItemBatch),
     /// A successful source can still issue a useful warning (rg's
     /// stderr on exit 0): it lands in the picker, not the void.
     Warning(String),
@@ -33,11 +36,12 @@ pub enum PickerMsg {
 /// streaming paths in chunks. A walk error terminates visibly after
 /// the batches already streamed — never as a silent empty success.
 pub fn spawn_files(cwd: PathBuf, tx: Sender<PickerMsg>) -> CancelHandle {
+    let tx = StreamSender::from(tx);
     let terminal = tx.clone();
     worker::spawn(
         "picker-files",
         move |outcome| {
-            let _ = terminal.send(PickerMsg::Finished(outcome));
+            let _ = terminal.control(PickerMsg::Finished(outcome));
         },
         move |cancel| {
             let mut batch = Vec::with_capacity(512);
@@ -50,7 +54,7 @@ pub fn spawn_files(cwd: PathBuf, tx: Sender<PickerMsg>) -> CancelHandle {
                     Err(error) => {
                         // keep the useful partial stream, then fail loudly
                         if !batch.is_empty() {
-                            let _ = tx.send(PickerMsg::Items(std::mem::take(&mut batch)));
+                            tx.batch(std::mem::take(&mut batch), &cancel);
                         }
                         return Outcome::failed(FailureKind::Io, error.to_string());
                     }
@@ -65,16 +69,12 @@ pub fn spawn_files(cwd: PathBuf, tx: Sender<PickerMsg>) -> CancelHandle {
                     text: rel.display().to_string(),
                     payload: Payload::File(rel.to_path_buf()),
                 });
-                if batch.len() >= 512
-                    && tx
-                        .send(PickerMsg::Items(std::mem::take(&mut batch)))
-                        .is_err()
-                {
+                if batch.len() >= 512 && !tx.batch(std::mem::take(&mut batch), &cancel) {
                     // the event loop dropped the stream: cancelled
                     return Outcome::Cancelled(CancelReason::OwnerClosed);
                 }
             }
-            if !batch.is_empty() && tx.send(PickerMsg::Items(batch)).is_err() {
+            if !batch.is_empty() && !tx.batch(batch, &cancel) {
                 return Outcome::Cancelled(CancelReason::OwnerClosed);
             }
             Outcome::Success(())

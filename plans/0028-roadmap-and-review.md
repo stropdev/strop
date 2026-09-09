@@ -21,6 +21,35 @@ The ownership and transition work is implemented in 0031. The next separate pass
 is UI polish, particularly the modeline and commit surfaces; optional capability
 expansion remains P3.
 
+## Current review — 0.18.0
+
+The practical weakness was still work placement: asynchronous filesystem reads
+did not prevent synchronous ranking, parser work, long-line prefix walks or Git
+tree reconstruction from blocking rendering. 0038 now records the owner for each
+path and real editor measurements; 0039 adds static syntax coverage without moving
+parsers back onto input. Keep measuring the complete path, not just the matcher.
+
+Named remaining priorities:
+
+- **P1 — requested next release: remote editing/saving (RW4).** Keep explicit
+  writable admission, content-aware conflicts, atomic replacement, metadata and
+  symlink policy, cancellation outcomes and a truthful concurrency guarantee.
+- **P2 — WORD text-object fidelity.** `ciW` currently reports an invalid command.
+  Add the WORD-object family through the shared grammar and differential corpus;
+  do not disguise it as a deferred-input bug or add a preview-only implementation.
+- **P2 — chunked large forensic results.** The existing 256 KiB per-value limit
+  refuses a large Git completion rather than claiming a complete replay. Design
+  bounded chunking/assembly with ownership and truncation tests before advertising
+  full forensic capture of arbitrarily large worker results.
+- **P3 — optional surfaces.** GUI, Dev Containers, writable directory operations,
+  additional transports and arbitrary remote shell/debugger work retain their
+  separate plans and safety/platform prerequisites below.
+
+Production source modules remain below the approximate 800-line ceiling; the
+972-line keymap is the intentional single-pattern command listing. Keep domain
+types at ownership/coordinate/protocol boundaries; private iteration indices do
+not need ceremonial wrappers. Do not treat a green model as an unbounded proof.
+
 ## Closed in 0.14.1
 
 | Finding | Fix / evidence |
@@ -181,25 +210,30 @@ Modeline and commit/diff presentation polish shipped separately in 0.15.1 (0032)
 
 ### GUI feasibility evaluation — P3 research, no implementation commitment
 
-Evaluate whether an optional GUI adds enough value to justify another frontend.
-Hypotheses: better IME/composition and accessibility, controlled font/shaping/HiDPI
-rendering, native clipboard/input integration and richer diagnostics. Weigh these
-against latency, memory, packaging/platform dependencies and long-term maintenance.
+Verdict from [0038](0038-remote-experience-and-responsiveness.md): keep the TUI
+first-class and pursue an optional native GUI later, sharing the same editor engine.
+Do not replace the terminal frontend or fork grammar, documents, jobs or replay.
 
-Research Helix's [command/view separation work](https://github.com/helix-editor/helix/issues/5555)
-and [multi-client proposal](https://github.com/helix-editor/helix/pull/13468) as primary
-engineering evidence, not proof of a committed/shipped GUI roadmap. Compare suitable
-Rust frontend stacks only against concrete IME, accessibility, rendering and platform
-requirements; no framework selection by popularity.
+Preferred first prototype: GPUI + gpui_platform + AccessKit, using our own
+editor surface and pinned framework versions. GPUI's custom Elements fit code-editor
+layout; its Apache-2.0 crate and native platform layer are a better initial fit than
+a webview. Its pre-1.0 API churn and Zed coupling remain explicit risks. Iced/egui
+are comparison/fallback candidates, not parallel implementations; Slint also adds
+a declarative language and a licensing decision. 0038 records sources and tradeoffs.
 
-Any evaluation prototype must reuse the grammar, mutation, job/workspace ownership
-and replay semantics, not fork editor behavior. Keep pixel/font layout separate from
-terminal display-cell coordinates, and keep the static TUI a first-class delivery
-without mandatory GUI dependencies. Measure a small real vertical slice (edit/search,
-Unicode/IME, diagnostics, remote buffer, accessibility) against the terminal path.
-Use model/oracle checks for new asynchronous/input ownership where applicable.
-Acceptance is a written go/no-go decision with evidence; deciding not to build a GUI
-is a valid result. No GUI work is part of the current remote release scope.
+The user's acceptance requirement is native Windows-first, GPU-accelerated and
+visually polished while retaining strop's current minimal look. WSL is not Windows
+GUI evidence. The future prototype includes mixed DPI, IME, Narrator/NVDA, driver
+coverage and Windows GUI → WSL workspaces. Windows process-tree ownership and
+filesystem/service integration must be ported as well; see 0038 for the concrete
+DirectX/GPUI rationale and current engine gaps.
+
+The P3 gate remains real evidence: IME preedit/commit, shaping/font fallback and
+Unicode, screen-reader text/selection/actions, clipboard/HiDPI, remote buffers,
+large-document latency and packaging on Linux/macOS/Windows. AccessKit in a
+dependency tree does not prove a custom editor is accessible. Pixels must remain
+outside byte-domain grammar and terminal display-cell geometry. A failed prototype
+can still produce a no-go verdict. No GUI implementation is part of 0038's release.
 
 ## Verification status
 

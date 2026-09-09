@@ -108,6 +108,7 @@ fn space_g_namespace_dispatches() {
     e.feed(Key::Esc);
     pump_hunks(&mut e);
     e.feed_text(" gp"); // Space, g, p
+    settle(&mut e, |e| e.dive_requests.is_empty());
     assert!(
         matches!(e.surface(), Some(Surface::Diff { .. })),
         "Space g p opens the hunk surface (buffer: {})",
@@ -126,6 +127,7 @@ fn hunk_surface_moves_and_undoes() {
     pump_hunks(&mut e);
     e.feed_text("]c"); // like the tape: jump onto the hunk first
     e.feed_text(" gp");
+    settle(&mut e, |e| e.dive_requests.is_empty());
     assert!(e.buf().readonly);
     assert!(e.buf().text().to_string().contains("fn c() {}"));
     // motions work on the hunk surface
@@ -185,6 +187,7 @@ fn stale_hunk_surface_refuses() {
     e.feed_text("<esc>");
     pump_hunks(&mut e);
     e.feed_text("gg]c gp");
+    settle(&mut e, |e| e.dive_requests.is_empty());
     // edit the origin document: the revision moves, the preview goes stale
     // (the active pane's document IS the current one — the surface —
     // so point a second pane at the file for the cursor-keep branch)

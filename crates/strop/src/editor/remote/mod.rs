@@ -1,9 +1,11 @@
 //! Editor-side remote workspace ownership. Transport actors live in strop-remote;
 //! this module owns view intent, periodic reads, explicit connections and browsing.
+mod chooser;
 mod commands;
 mod controls;
 mod directory;
 pub(super) mod follow;
+mod history;
 #[cfg(test)]
 mod tests;
 pub(crate) mod view;
@@ -23,6 +25,9 @@ pub(crate) struct RemoteState {
     controls: HashMap<WorkerId, ControlKey>,
     pins: HashMap<RemoteEndpoint, ConnectionLease>,
     filters: HashMap<WorkerId, DirectoryFilterKey>,
+    choices: Option<Ticket<super::picker::PickerId>>,
+    destination_write: Option<Ticket<RemoteFile>>,
+    destination_queue: Vec<RemoteFile>,
 }
 impl Default for RemoteState {
     fn default() -> Self {
@@ -32,6 +37,9 @@ impl Default for RemoteState {
             controls: HashMap::new(),
             pins: HashMap::new(),
             filters: HashMap::new(),
+            choices: None,
+            destination_write: None,
+            destination_queue: Vec::new(),
         }
     }
 }
@@ -100,6 +108,8 @@ pub(crate) enum RemoteEvent {
     Read(Box<Completion<FollowReadKey, FollowUpdate>>),
     Control(Completion<ControlKey, ControlResult>),
     Filter(Box<Completion<DirectoryFilterKey, Opened>>),
+    Choices(Completion<super::picker::PickerId, chooser::RemoteChoices>),
+    DestinationWritten(Completion<RemoteFile, ()>),
 }
 
 impl Editor {
@@ -135,6 +145,9 @@ impl Editor {
     pub(crate) fn remote_work_pending(&self) -> bool {
         !self.remote.controls.is_empty()
             || !self.remote.filters.is_empty()
+            || self.remote.choices.is_some()
+            || self.remote.destination_write.is_some()
+            || !self.remote.destination_queue.is_empty()
             || self
                 .remote
                 .following
@@ -148,6 +161,10 @@ impl Editor {
             RemoteEvent::Read(completion) => self.remote_follow_read(*completion),
             RemoteEvent::Control(completion) => self.remote_control_done(completion),
             RemoteEvent::Filter(completion) => self.remote_filter_done(*completion),
+            RemoteEvent::Choices(completion) => self.remote_choices_done(completion),
+            RemoteEvent::DestinationWritten(completion) => {
+                self.remote_destination_written(completion)
+            }
         }
     }
     pub(crate) fn stop_remote_work(&mut self) {

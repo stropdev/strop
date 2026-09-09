@@ -5,13 +5,14 @@
 //! with terminal, ticket-owned results.
 mod context;
 
+use std::sync::Arc;
 use strop_core::worker::{CancelReason, Load, Outcome};
-use strop_git::{Hunk, HunkKind, Sign};
+use strop_git::Hunk;
 
 use crate::files::FileTarget;
 
 use super::git_memory::{
-    git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, MutationKey,
+    git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, HunkSet, MutationKey,
     MutationKind, MutationOp,
 };
 use super::transact::ChangeSet;
@@ -25,7 +26,7 @@ enum HunkTarget {
     /// it was captured at.
     Fresh {
         buffer: strop_core::id::DocumentId,
-        hunk: Hunk,
+        hunk: Arc<Hunk>,
         /// The origin buffer was untracked when captured: undo refuses.
         untracked: bool,
     },
@@ -112,8 +113,8 @@ impl Editor {
         self.hunk_load = Load::Running(ticket.clone());
         // stale signs paint WRONG lines after an edit — clear honestly
         // for the frames the diff takes, never lie
-        self.hunks.clear();
-        self.staged_hunks.clear();
+        self.hunks = HunkSet::default();
+        self.staged_hunks = HunkSet::default();
         self.hunks_untracked = false;
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
@@ -157,8 +158,8 @@ impl Editor {
                         &cancel,
                     ) {
                         Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
-                            unstaged,
-                            staged,
+                            unstaged: HunkSet::new(unstaged, snapshot.len_lines()),
+                            staged: HunkSet::new(staged, snapshot.len_lines()),
                             untracked,
                         }),
                         Err(error) => Outcome::Failed {
@@ -226,8 +227,8 @@ impl Editor {
                     }
                 };
                 Outcome::Success(HunkData {
-                    unstaged,
-                    staged,
+                    unstaged: HunkSet::new(unstaged, snapshot.len_lines()),
+                    staged: HunkSet::new(staged, snapshot.len_lines()),
                     untracked,
                 })
             },
@@ -240,8 +241,8 @@ impl Editor {
     /// remote window).
     fn clear_hunk_view(&mut self) {
         self.cancel_hunk_owner();
-        self.hunks.clear();
-        self.staged_hunks.clear();
+        self.hunks = HunkSet::default();
+        self.staged_hunks = HunkSet::default();
         self.hunks_untracked = false;
     }
 
@@ -262,28 +263,7 @@ impl Editor {
     /// Gutter sign for a 1-based buffer line: `+` add, `~` change,
     /// `-` deletion below (0001 pillar 3.1).
     pub fn sign_at(&self, line_1based: usize) -> Option<char> {
-        let total = self.buf().len_lines();
-        for h in &self.hunks {
-            for (l, kind) in h.signs() {
-                let matched = match kind {
-                    Sign::AddOrChange => l == line_1based,
-                    Sign::DeleteAfter => l.min(total) == line_1based,
-                };
-                if matched {
-                    return Some(match kind {
-                        Sign::DeleteAfter => '-',
-                        Sign::AddOrChange => {
-                            if h.kind == HunkKind::Add {
-                                '+'
-                            } else {
-                                '~'
-                            }
-                        }
-                    });
-                }
-            }
-        }
-        None
+        self.hunks.sign(line_1based)
     }
 
     /// Staged sign (HEAD↔index edge, 0014 wave 4): the line sits inside
@@ -291,11 +271,7 @@ impl Editor {
     /// text is approximate when both sets exist — the gutter's rule:
     /// unstaged wins, staged marks what's already in the index.
     pub fn sign_at_staged(&self, line_1based: usize) -> bool {
-        self.staged_hunks.iter().any(|h| {
-            h.lines.iter().any(|l| {
-                l.origin == strop_git::LineOrigin::Addition && l.new_lineno == Some(line_1based)
-            })
-        })
+        self.staged_hunks.addition(line_1based)
     }
 
     /// `]c` / `[c`: jump to the next/previous changed line. An explicit
@@ -309,21 +285,8 @@ impl Editor {
         }
         self.hunk_load.retry_failed();
         self.refresh_hunks();
-        let total = self.buf().len_lines();
         let cur = self.buf().line_of(self.head()) + 1;
-        let mut lines: Vec<usize> = self
-            .hunks
-            .iter()
-            .flat_map(|h| h.signs().iter().map(|&(l, _)| l).collect::<Vec<_>>())
-            .map(|l| l.min(total))
-            .collect();
-        lines.sort_unstable();
-        lines.dedup();
-        let target = if forward {
-            lines.iter().copied().find(|&l| l > cur)
-        } else {
-            lines.iter().copied().rev().find(|&l| l < cur)
-        };
+        let target = self.hunks.next_line(cur, forward);
         match target {
             Some(l) => {
                 self.set_head(self.buf().line_start(l - 1));
@@ -334,12 +297,13 @@ impl Editor {
     }
 
     /// The hunk under the cursor, if any.
-    fn hunk_under_cursor(&mut self) -> Option<Hunk> {
+    fn hunk_under_cursor(&mut self) -> Option<Arc<Hunk>> {
         self.hunk_load.retry_failed();
         self.refresh_hunks();
         let line = self.buf().line_of(self.head()) + 1;
-        let total = self.buf().len_lines();
-        self.hunks.iter().find(|h| h.covers(line, total)).cloned()
+        self.hunks
+            .at_line(line)
+            .map(|index| self.hunks[index].clone())
     }
 
     /// Apply `hunk`'s reverse to buffer `idx`: pure deletions reinsert,
@@ -503,7 +467,7 @@ impl Editor {
         }
     }
 
-    fn stage_hunk_in(&mut self, idx: strop_core::id::DocumentId, hunk: &Hunk) {
+    fn stage_hunk_in(&mut self, idx: strop_core::id::DocumentId, hunk: &Arc<Hunk>) {
         let Some(path) = self.doc(idx).buf.path.clone() else {
             return;
         };
@@ -560,9 +524,8 @@ impl Editor {
         let line = self.buf().line_of(self.head()) + 1;
         let Some(hunk) = self
             .staged_hunks
-            .iter()
-            .find(|h| h.covers(line, self.buf().len_lines()))
-            .cloned()
+            .at_line(line)
+            .map(|index| self.staged_hunks[index].clone())
         else {
             self.message = "no staged hunk here".into();
             return;
@@ -604,7 +567,10 @@ impl Editor {
     /// (0010 §2) — a readonly buffer you can move in; `q` closes,
     /// `Space g u`/`g s` still act on the file.
     pub(crate) fn preview_hunk(&mut self) {
-        let Some(hunk) = self.hunk_under_cursor() else {
+        self.hunk_load.retry_failed();
+        self.refresh_hunks();
+        let line = self.buf().line_of(self.head()) + 1;
+        let Some(index) = self.hunks.at_line(line) else {
             self.message = "no hunk here".into();
             return;
         };
@@ -613,7 +579,16 @@ impl Editor {
             revision: self.cur().buf.revision(),
             untracked: self.hunks_untracked,
         };
-        self.open_diff_surface("hunk", "hunk", vec![hunk], Some(origin));
+        let Some(context) = self.git_context() else {
+            return;
+        };
+        let key = super::git_memory::DiveKey {
+            document: self.current(),
+            repo: context.repo.clone(),
+            target: super::git_memory::DiveTarget::HunkPreview { origin, index },
+        };
+        self.message = "loading hunk…".into();
+        self.register_dive(key);
     }
 
     /// What a `Space g u`/`g s` from the current buffer should act on:

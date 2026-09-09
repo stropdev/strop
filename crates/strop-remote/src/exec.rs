@@ -41,6 +41,7 @@
 //! kill; and nothing survives a remote SIGKILL of the supervisor
 //! itself. See `exec::supervisor` for the full topology and limits.
 
+mod python;
 mod run;
 mod spec;
 mod supervisor;
@@ -267,7 +268,7 @@ pub enum RemoteCommandError {
     )]
     ArgvTooLarge { bytes: usize },
     #[error(
-        "remote execution needs python3 on the remote host, which was not usable: {diagnostics}"
+        "remote execution needs compatible Python 3.8+ on remote PATH or STROP_REMOTE_PYTHON: {diagnostics}"
     )]
     MissingPython { diagnostics: String },
     #[error("remote program could not start: {diagnostics}")]

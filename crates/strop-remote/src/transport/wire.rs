@@ -38,7 +38,6 @@ enum PacketKind {
     Name = 104,
     Attrs = 105,
     Extended = 200,
-    ExtendedReply = 201,
 }
 #[derive(Clone, Copy)]
 struct RequestId(u32);
@@ -62,10 +61,11 @@ impl Advertised {
 }
 
 /// One directory entry as the server spelled it: the native filename and
-/// the raw permissions word when carried.
+/// size and POSIX mode attributes when carried.
 pub(super) struct RawEntry {
     pub(super) name: PathBuf,
     pub(super) permissions: Option<u32>,
+    pub(super) size: Option<u64>,
 }
 
 /// One READDIR page: entries, or the clean end-of-directory status.
@@ -244,6 +244,7 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
             entries.push(RawEntry {
                 name: native_name(name)?,
                 permissions: attrs.permissions,
+                size: attrs.size,
             });
         }
         reply.end()?;
@@ -310,19 +311,23 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
     }
 
     /// `expand-path@openssh.com`: the only sanctioned home expansion. The
-    /// server returns the canonical absolute path for the given bytes.
+    /// OpenSSH PROTOCOL §4.9 specifies a REALPATH-format NAME reply,
+    /// not EXTENDED_REPLY: count, filename, longname, attributes.
     pub(super) async fn expand_path(&mut self, path: &Path) -> Result<PathBuf, Fault> {
         let id = self.begin(PacketKind::Extended, ReadStage::Open)?;
         self.string(b"expand-path@openssh.com", ReadStage::Open)?;
         self.string(path_bytes(path), ReadStage::Open)?;
-        let mut reply = self
-            .reply(id, PacketKind::ExtendedReply, ReadStage::Open)
-            .await?;
+        let mut reply = self.reply(id, PacketKind::Name, ReadStage::Open).await?;
+        if reply.number()? != 1 {
+            return Err(reply.invalid("path expansion must return exactly one name"));
+        }
         let expanded = reply.string()?;
         if expanded.is_empty() || expanded.len() > MAX_NAME || expanded.contains(&0) {
             return Err(reply.invalid("expanded path outside sane bounds"));
         }
         let expanded = native_name(expanded)?;
+        reply.string()?; // human longname is not the path identity
+        parse_attrs(&mut reply)?;
         reply.end()?;
         Ok(expanded)
     }

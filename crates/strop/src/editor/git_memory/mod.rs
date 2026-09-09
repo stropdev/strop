@@ -5,7 +5,13 @@
 //! R9/R6: every job owns a ticket; results land through
 //! `git_memory::jobs` handlers which validate ownership first.
 
+mod file_list;
+mod hunk_set;
 mod jobs;
+mod presentation;
+pub(crate) use file_list::PreparedFiles;
+pub(crate) use hunk_set::HunkSet;
+pub(crate) use presentation::PreparedDiff;
 mod types;
 pub(crate) use jobs::{git_failure, repo_or_unavailable};
 pub use types::GitJob;
@@ -35,7 +41,7 @@ use super::{trace, Editor, Key};
 pub struct CommitFiles {
     pub repo: RepoTarget,
     pub sha: String,
-    pub files: Vec<memory::ChangedFile>,
+    pub files: PreparedFiles,
     /// Selected file identity; display labels are not reversible native paths.
     pub current: PathBuf,
 }
@@ -43,7 +49,7 @@ pub struct CommitFiles {
 /// Where a hunk preview came from: the buffer it undoes/stages in, at
 /// the revision it was captured. Edits since then invalidate it —
 /// applying a stale region would cut the wrong lines.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HunkOrigin {
     pub buffer: DocumentId,
     pub revision: BufferRevision,
@@ -73,7 +79,12 @@ impl Editor {
         self.cur().surface_payload()
     }
     // ---- surface lifecycle --------------------------------------------
-    pub(crate) fn push_surface(&mut self, name: Option<&str>, text: &str, mut surface: Surface) {
+    pub(crate) fn push_surface(
+        &mut self,
+        name: Option<&str>,
+        text: ropey::Rope,
+        mut surface: Surface,
+    ) {
         let Some(context) = self.git_context().cloned() else {
             self.message = "not a git repository".into();
             return;
@@ -91,7 +102,7 @@ impl Editor {
                 hscroll: self.view().hscroll,
             });
         }
-        let mut buf = strop_core::Buffer::from_text(text);
+        let mut buf = strop_core::Buffer::from_snapshot(text);
         buf.name = name.map(|n| n.to_string());
         // surfaces render via delta/plain rules: no tree-sitter;
         // readonly derives from the source (0021 §4)
@@ -108,51 +119,25 @@ impl Editor {
 
     /// A diff surface from structured hunks (0010 §2). `label` heads the
     /// stats row; `origin` is set only for working-tree hunk previews.
-    pub(crate) fn open_diff_surface(
-        &mut self,
-        name: &str,
-        label: &str,
-        hunks: Vec<Hunk>,
-        origin: Option<HunkOrigin>,
-    ) {
-        self.open_delta(name, label, hunks, origin, None);
-    }
-
-    /// The diff-surface builder: `commit` rides along when the delta
-    /// came from the dive chain (sidebar + `]f`/`[f`, 0011 §4).
     pub(crate) fn open_delta(
         &mut self,
         name: &str,
-        label: &str,
-        hunks: Vec<Hunk>,
+        hunks: PreparedDiff,
         origin: Option<HunkOrigin>,
         commit: Option<CommitFiles>,
     ) {
-        let (added, deleted) = hunk_stats(&hunks);
-        let text = diff_surface_text(label, &hunks);
+        let text = hunks.text();
         self.push_surface(
             Some(name),
-            &text,
+            text,
             Surface::Diff {
-                label: label.to_string(),
                 hunks,
-                added,
-                deleted,
                 origin,
                 commit,
                 sidebar_focus: false,
                 return_to: None,
             },
         );
-        // syntax highlighting under the origin tint (delta's look):
-        // the label is the file path for commit deltas; "hunk" and
-        // friends resolve to None and keep origin colors. The pure
-        // detector reads the surface's own rope — no extra build.
-        let hl =
-            strop_syntax::Highlighter::for_path(std::path::Path::new(label), self.buf().text());
-        if hl.is_some() {
-            self.cur_mut().highlighter = hl;
-        }
     }
 
     /// `Space g l`: commit browser. `Space g h`: log scoped to the file.
@@ -205,7 +190,7 @@ impl Editor {
             } else {
                 "git log"
             }),
-            "loading log…",
+            ropey::Rope::from_str("loading log…"),
             Surface::CommitLog {
                 rows: vec![],
                 focus,
@@ -321,7 +306,14 @@ impl Editor {
     /// Yank the plan's target ranges (shared with normal mode's
     /// dispatch: one implementation, one behavior).
     pub(crate) fn yank_only(&mut self, command: &strop_grammar::Command) {
-        let plan = match strop_grammar::plan(self.buf(), &self.all_cursors(), command) {
+        if self.defer_resolution(
+            command,
+            self.all_cursors(),
+            super::resolution::ResolutionPurpose::Execute,
+        ) {
+            return;
+        }
+        let plan = match self.resolved_plan(command, &self.all_cursors()) {
             Ok(Some(plan)) => plan,
             Ok(None) => {
                 self.message = "no target".into();

@@ -90,6 +90,7 @@ impl Editor {
     /// prompt was opened against — never on rejected service results.
     pub(crate) fn cancel_pending(&mut self) {
         if let PendingEffect::Aborted(prompt) = self.pending.reduce(PendingEvent::Cancel) {
+            self.resolution.cancel_preview();
             self.restore_prompt_origin(prompt.origin());
         }
     }
@@ -149,6 +150,13 @@ impl Editor {
                         return;
                     }
                 };
+                if self.defer_resolution(
+                    &command,
+                    self.all_cursors(),
+                    super::super::resolution::ResolutionPurpose::Execute,
+                ) {
+                    return;
+                }
                 // Runtime query errors must be discovered for every
                 // cursor BEFORE dispatch changes last_search, history
                 // or a register.
@@ -210,8 +218,7 @@ impl Editor {
     ) -> Result<Vec<usize>, String> {
         let (origin, _) = prompt.search().expect("search context");
         let heads = origin.pane.sels.heads();
-        let resolved =
-            grammar::resolve_many(self.buf(), &heads, command).map_err(|e| e.to_string())?;
+        let resolved = self.resolved_many(command, &heads)?;
         Ok(heads
             .into_iter()
             .zip(resolved)
@@ -228,7 +235,7 @@ impl Editor {
     /// AND deleting re-resolve, all cursors at once. No match parks at
     /// the origin (vim keeps position and reports E486).
     pub(crate) fn incsearch_jump(&mut self) {
-        let Some(prompt) = self.pending.prompt() else {
+        let Some(prompt) = self.pending.prompt().cloned() else {
             return;
         };
         let Some((origin, _)) = prompt.search() else {
@@ -237,23 +244,34 @@ impl Editor {
         if !self.pending_origin_valid(origin) {
             return;
         }
-        let result = self
-            .search_prompt_command(prompt, false)
-            .and_then(|command| {
-                command
-                    .map(|command| self.search_prompt_heads(prompt, &command))
-                    .transpose()
-            });
-        let origin = origin.clone();
-        self.restore_prompt_origin(&origin);
-        match result {
-            Ok(Some(heads)) => {
+        let command = self.search_prompt_command(&prompt, false);
+        self.restore_prompt_origin(origin);
+        let command = match command {
+            Ok(Some(command)) => command,
+            Ok(None) => {
+                self.resolution.cancel_preview();
+                return;
+            }
+            Err(error) => {
+                self.resolution.cancel_preview();
+                self.message = error;
+                return;
+            }
+        };
+        if self.defer_resolution(
+            &command,
+            origin.pane.sels.heads(),
+            super::super::resolution::ResolutionPurpose::IncSearch,
+        ) {
+            return;
+        }
+        match self.search_prompt_heads(&prompt, &command) {
+            Ok(heads) => {
                 let mut heads = heads.into_iter();
                 self.set_head(heads.next().expect("primary selection"));
                 self.sels_mut().set_extras(heads);
                 self.clamp_cursor();
             }
-            Ok(None) => {}
             Err(error) => self.message = error,
         }
     }

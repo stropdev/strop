@@ -26,24 +26,11 @@ pub(crate) fn class_at(buf: &Buffer, pos: usize, big: bool) -> u8 {
     if b.is_ascii() {
         return class_of(b, big);
     }
-    let mut lead = pos;
-    while lead > 0 && buf.byte(lead) & 0xC0 == 0x80 {
-        lead -= 1;
-    }
-    let len = match buf.byte(lead) {
-        b if b & 0xE0 == 0xC0 => 2,
-        b if b & 0xF0 == 0xE0 => 3,
-        b if b & 0xF8 == 0xF0 => 4,
-        _ => 1,
-    };
-    let bytes: Vec<u8> = (0..len).map(|i| buf.byte(lead + i)).collect();
-    let ch = std::str::from_utf8(&bytes)
-        .ok()
-        .and_then(|s| s.chars().next());
-    match (ch, big) {
-        (Some(c), true) => u8::from(!c.is_whitespace()),
-        (Some(c), false) => u8::from(c.is_alphanumeric() || c == '_'),
-        (None, _) => 0,
+    let character = buf.text().char(buf.text().byte_to_char(pos));
+    if big {
+        u8::from(!character.is_whitespace())
+    } else {
+        u8::from(character.is_alphanumeric() || character == '_')
     }
 }
 

@@ -3,7 +3,6 @@
 //! highlighter, and git surface — no parallel vectors.
 
 use strop_core::Buffer;
-use strop_syntax::Highlighter;
 
 pub(crate) mod remote;
 pub mod surfaces;
@@ -18,8 +17,6 @@ use super::Editor;
 /// one arena — the alignment invariant is the type system now.
 pub struct Document {
     pub buf: Buffer,
-    /// None: unsupported extension.
-    pub highlighter: Option<Highlighter>,
     /// What backs this document (0021 §4): the surface payload lives in
     /// the source variant; readonly derives from it at construction.
     pub source: DocumentSource,
@@ -27,13 +24,8 @@ pub struct Document {
 
 impl Document {
     pub fn new(buf: Buffer) -> Self {
-        let highlighter = buf
-            .path
-            .as_deref()
-            .and_then(|path| Highlighter::for_path(path, buf.text()));
         Self {
             buf,
-            highlighter,
             source: DocumentSource::File,
         }
     }
@@ -42,7 +34,6 @@ impl Document {
     pub fn scratch(buf: Buffer) -> Self {
         Self {
             buf,
-            highlighter: None,
             source: DocumentSource::Scratch,
         }
     }
@@ -53,7 +44,6 @@ impl Document {
         buf.readonly = true;
         Self {
             buf,
-            highlighter: None,
             source: DocumentSource::Surface(Box::new(surfaces::GitSurface {
                 context,
                 content: surface,
@@ -67,8 +57,24 @@ impl Document {
         buf.readonly = true;
         Self {
             buf,
-            highlighter: None,
             source: DocumentSource::Output,
+        }
+    }
+
+    /// Syntax identity is data; parsers live on the display-analysis worker.
+    pub(crate) fn syntax_path(&self) -> Option<&std::path::Path> {
+        match &self.source {
+            DocumentSource::Remote(source) => Some(source.file.path()),
+            DocumentSource::Surface(source) => match &source.content {
+                Surface::Diff {
+                    commit: Some(commit),
+                    ..
+                } => Some(&commit.current),
+                Surface::Diff { hunks, .. } => Some(std::path::Path::new(hunks.label())),
+                _ => None,
+            },
+            DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
+            DocumentSource::RemoteDirectory(_) | DocumentSource::Output => None,
         }
     }
 
@@ -271,6 +277,8 @@ impl Editor {
             self.request_session_save();
         }
         let closed = self.current();
+        self.analysis
+            .forget(super::analysis::AnalysisTarget::Document(closed));
         self.stop_remote_follow(closed);
         self.cancel_remote_filter(closed);
         self.lsp_close_document(closed);
@@ -371,7 +379,9 @@ mod pathbuf_tests {
         let id = e.open_fixture(&path).expect("opens by bytes");
         e.switch_to(id);
         // extension detection works through the OsStr, not a lossy str
-        assert!(e.cur().highlighter.is_some());
+        assert!(e.analysis_fixture().spans.iter().any(|span| span.start == 0
+            && span.end == 2
+            && span.class == strop_syntax::Class::Keyword));
         e.feed_text("dd"); // delete the line
         e.feed_text(":w\r");
         e.wait_io().unwrap();

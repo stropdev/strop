@@ -146,3 +146,42 @@ fn metadata_does_not_disclose_paste_and_existing_log_is_not_truncated() {
     assert!(!failed.status.success());
     assert_eq!(std::fs::read_to_string(&trace).unwrap(), saved);
 }
+
+#[test]
+fn deferred_grammar_keeps_typeahead_repeat_and_macro_order_in_full_replay() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let file = root.join("large.txt");
+    let script = root.join("ordered.keys");
+    let trace = root.join("ordered.jsonl");
+    std::fs::write(&file, "alpha beta gamma\n".repeat(1000)).unwrap();
+    std::fs::write(
+        &script,
+        "keys ggciwNEW<esc>w.\nkeys qawq3@a\nkeys /gamma<cr>3nNn\nsettle 5000\nstate\nframe\n",
+    )
+    .unwrap();
+    let output = successful(run(
+        root,
+        &[
+            "--headless".as_ref(),
+            script.as_os_str(),
+            file.as_os_str(),
+            "--log-file".as_ref(),
+            trace.as_os_str(),
+            "--log-content".as_ref(),
+        ],
+    ));
+    let state: Value = serde_json::from_str(
+        output
+            .lines()
+            .find_map(|line| line.strip_prefix("─── state "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(state["cursor"], 93);
+    assert_eq!(state["mode"], "NORMAL");
+    assert!(output.contains("NEW NEW gamma"));
+    // Full replay compares every logical observation and actual cell grid;
+    // it does not merely feed the extracted keys through another driver.
+    successful(run(root, &["--replay".as_ref(), trace.as_os_str()]));
+}

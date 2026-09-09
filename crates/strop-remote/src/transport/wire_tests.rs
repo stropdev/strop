@@ -173,3 +173,35 @@ fn range_edges_trim_only_cut_utf8_and_report_the_actual_bytes() {
     assert_eq!(window.start().get(), 3);
     assert_eq!(window.length().get(), 3);
 }
+
+#[test]
+fn home_expansion_decodes_the_realpath_name_reply() {
+    let mut input = frame(&[PacketKind::Version as u8, 0, 0, 0, 3]);
+    let mut name = 1_u32.to_be_bytes().to_vec();
+    name.extend(string(b"/home/fixture/project"));
+    name.extend(string(b"human longname is not the target"));
+    name.extend(0_u32.to_be_bytes()); // missing attributes are valid here
+    input.extend(response(PacketKind::Name, 1, &name));
+    let expanded = runtime().block_on(async {
+        let (mut client, _) = ReadOnlySftp::connect(tokio::io::sink(), &input[..])
+            .await
+            .unwrap();
+        client.expand_path(Path::new("~/project")).await.unwrap()
+    });
+    assert_eq!(expanded, Path::new("/home/fixture/project"));
+}
+
+#[test]
+fn home_expansion_refuses_ambiguous_name_counts() {
+    for count in [0_u32, 2] {
+        let mut input = frame(&[PacketKind::Version as u8, 0, 0, 0, 3]);
+        input.extend(response(PacketKind::Name, 1, &count.to_be_bytes()));
+        let result = runtime().block_on(async {
+            let (mut client, _) = ReadOnlySftp::connect(tokio::io::sink(), &input[..])
+                .await
+                .unwrap();
+            client.expand_path(Path::new("~")).await
+        });
+        assert_eq!(kind(result), ReadFailureKind::Protocol);
+    }
+}

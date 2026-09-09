@@ -41,12 +41,91 @@ pub enum RemoteResource {
 pub struct RemoteEntry {
     pub file: RemoteFile,
     pub kind: RemoteEntryKind,
+    pub permissions: Option<RemotePermissions>,
+    /// Server-reported bytes, never a recursively computed directory total.
+    pub size: Option<crate::RemoteSize>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RemoteEntryKind {
     File,
     Directory,
-    Other,
+    SymbolicLink,
+    Fifo,
+    Socket,
+    BlockDevice,
+    CharacterDevice,
+    Unknown,
+}
+
+impl RemoteEntryKind {
+    pub const fn marker(self) -> char {
+        match self {
+            Self::File => '-',
+            Self::Directory => 'd',
+            Self::SymbolicLink => 'l',
+            Self::Fifo => 'p',
+            Self::Socket => 's',
+            Self::BlockDevice => 'b',
+            Self::CharacterDevice => 'c',
+            Self::Unknown => '?',
+        }
+    }
+}
+
+/// Only the POSIX access/special bits; file kind is a separate typed value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u16", into = "u16")]
+pub struct RemotePermissions(u16);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("permission bits exceed POSIX access and special bits")]
+pub struct PermissionBitsError;
+
+impl RemotePermissions {
+    pub const fn new(bits: u16) -> Result<Self, PermissionBitsError> {
+        if bits & !0o7777 != 0 {
+            Err(PermissionBitsError)
+        } else {
+            Ok(Self(bits))
+        }
+    }
+    pub(crate) const fn from_mode(mode: u32) -> Self {
+        Self((mode & 0o7777) as u16)
+    }
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+}
+impl TryFrom<u16> for RemotePermissions {
+    type Error = PermissionBitsError;
+    fn try_from(bits: u16) -> Result<Self, Self::Error> {
+        Self::new(bits)
+    }
+}
+impl From<RemotePermissions> for u16 {
+    fn from(value: RemotePermissions) -> Self {
+        value.bits()
+    }
+}
+impl std::fmt::Display for RemotePermissions {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (read, write, execute, special, lower, upper) in [
+            (0o400, 0o200, 0o100, 0o4000, 's', 'S'),
+            (0o040, 0o020, 0o010, 0o2000, 's', 'S'),
+            (0o004, 0o002, 0o001, 0o1000, 't', 'T'),
+        ] {
+            let r = if self.0 & read != 0 { 'r' } else { '-' };
+            let w = if self.0 & write != 0 { 'w' } else { '-' };
+            let x = match (self.0 & execute != 0, self.0 & special != 0) {
+                (true, true) => lower,
+                (false, true) => upper,
+                (true, false) => 'x',
+                (false, false) => '-',
+            };
+            write!(formatter, "{r}{w}{x}")?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Default)]

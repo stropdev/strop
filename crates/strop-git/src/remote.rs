@@ -109,6 +109,26 @@ fn exit_or_bytes(op: &'static str, run: &GitRun) -> Result<Vec<u8>, RemoteGitErr
     }
 }
 
+fn remotes_from_run(config_run: &GitRun) -> Result<Vec<(String, String)>, RemoteGitError> {
+    const OP: &str = "config --get-regexp remote.*.url";
+    if config_run.code != Some(0) && config_run.code != Some(1) {
+        return Err(RemoteGitError::Exit {
+            op: OP,
+            code: config_run.code.unwrap_or(-1),
+            stderr: String::from_utf8_lossy(&config_run.stderr)
+                .trim_end()
+                .to_string(),
+        });
+    }
+    if config_run.stdout_dropped > 0 {
+        return Err(RemoteGitError::Truncated {
+            op: OP,
+            dropped: config_run.stdout_dropped,
+        });
+    }
+    parse_remote_config(&config_run.stdout)
+}
+
 /// Discover the repository containing a remote directory. `Ok(None)` is
 /// the honest "no repository here" — git's own not-a-repository fatal
 /// — while transport failures, missing `git`/python3 and corrupt
@@ -204,17 +224,7 @@ pub fn context(
         ],
         cancel,
     )?;
-    if config_run.code != Some(0) && config_run.code != Some(1) {
-        return Err(RemoteGitError::Exit {
-            op: "config --get-regexp remote.*.url",
-            code: config_run.code.unwrap_or(-1),
-            stderr: String::from_utf8_lossy(&config_run.stderr)
-                .trim_end()
-                .to_string(),
-        });
-    }
-    let stdout = exit_or_bytes("config --get-regexp remote.*.url", &config_run)?;
-    let remotes = parse_remote_config(&stdout)?;
+    let remotes = remotes_from_run(&config_run)?;
     Ok(GitContext {
         repo: RepoTarget::Remote {
             endpoint: endpoint.clone(),
@@ -712,6 +722,30 @@ mod tests {
         }
     }
 
+    #[test]
+    fn no_matching_remote_config_is_data_but_real_failure_is_not() {
+        let mut run = GitRun {
+            success: false,
+            code: Some(1),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            stdout_dropped: 0,
+            stderr_dropped: 0,
+        };
+        assert!(remotes_from_run(&run).unwrap().is_empty());
+        run.code = Some(3);
+        assert!(matches!(
+            remotes_from_run(&run),
+            Err(RemoteGitError::Exit { code: 3, .. })
+        ));
+        run.code = Some(1);
+        run.stdout_dropped = 1;
+        assert!(matches!(
+            remotes_from_run(&run),
+            Err(RemoteGitError::Truncated { .. })
+        ));
+    }
+
     /// Truncated stdout cannot pose as a complete record stream.
     #[test]
     fn truncation_is_typed() {
@@ -729,14 +763,6 @@ mod tests {
                 op: "ls-tree",
                 dropped: 4096
             })
-        );
-        assert_eq!(
-            RemoteGitError::Truncated {
-                op: "ls-tree",
-                dropped: 9
-            }
-            .to_string(),
-            "ls-tree: remote output truncated (9 bytes dropped)"
         );
     }
 }

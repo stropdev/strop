@@ -35,7 +35,10 @@ fn local_supervised(
         command.args(),
         command.cwd(),
     )?;
-    let line = supervisor::command_line(&spec.encoded()?);
+    let line = supervisor::command_line(
+        &spec.encoded()?,
+        &super::python::PythonInterpreter::Discover,
+    );
     let mut shell = Command::new("sh");
     shell.arg("-c").arg(line);
     shell

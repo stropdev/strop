@@ -4,12 +4,19 @@ use strop_grammar::{self as grammar, Command};
 
 impl Editor {
     pub(crate) fn move_cursor(&mut self, command: &Command) {
+        if self.defer_resolution(
+            command,
+            self.all_cursors(),
+            super::super::resolution::ResolutionPurpose::Motion,
+        ) {
+            return;
+        }
         if self.block_vertical(command) {
             return;
         }
         self.view_mut().desired_column = None;
         let cursors = self.all_cursors();
-        let resolutions = match grammar::resolve_many(self.buf(), &cursors, command) {
+        let resolutions = match self.resolved_many(command, &cursors) {
             Ok(resolutions) => resolutions,
             Err(error) => {
                 self.message = error.to_string();

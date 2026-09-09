@@ -101,6 +101,7 @@ impl GrepWorker {
     /// (`-t rs`, `--glob '!target/*'` — rootle-style power filters).
     /// An empty pattern succeeds without spawning rg.
     pub fn spawn(query: &str, cwd: &std::path::Path, tx: Sender<PickerMsg>) -> Self {
+        let tx = super::flow::StreamSender::from(tx);
         let (pattern, filters) = split_query(query);
         let cwd = cwd.to_path_buf();
         let (events, rx) = channel::<ReadEvent>();
@@ -109,7 +110,7 @@ impl GrepWorker {
         let terminal = worker::spawn(
             "picker-rg",
             move |outcome| {
-                let _ = terminal_tx.send(PickerMsg::Finished(outcome));
+                let _ = terminal_tx.control(PickerMsg::Finished(outcome));
             },
             move |cancel| {
                 if pattern.is_empty() {
@@ -159,7 +160,7 @@ impl GrepWorker {
                                 Err(e) => return Outcome::failed(FailureKind::Io, e.to_string()),
                             };
                             let items = parse_json_match(&line);
-                            if !items.is_empty() && out_tx.send(PickerMsg::Items(items)).is_err() {
+                            if !out_tx.batch(items, &token) {
                                 return Outcome::Cancelled(CancelReason::OwnerClosed);
                             }
                         }
@@ -211,7 +212,7 @@ impl GrepWorker {
                 let outcome = verdict(status, &stderr);
                 if matches!(outcome, Outcome::Success(())) && !stderr.trim().is_empty() {
                     let detail = stderr.trim().strip_prefix("rg: ").unwrap_or(stderr.trim());
-                    let _ = tx.send(PickerMsg::Warning(format!("rg: {detail}")));
+                    let _ = tx.control(PickerMsg::Warning(format!("rg: {detail}")));
                 }
                 outcome
             },

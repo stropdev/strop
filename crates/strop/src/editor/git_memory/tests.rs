@@ -599,10 +599,10 @@ fn commit_file_nav_walks_files() {
     });
     let (label, files) = match e.surface() {
         Some(Surface::Diff {
-            label,
+            hunks,
             commit: Some(cf),
             ..
-        }) => (label.clone(), cf.files.len()),
+        }) => (hunks.label().to_owned(), cf.files.len()),
         other => panic!("not a commit diff: {other:?}"),
     };
     assert_eq!(label, "a.rs");
@@ -611,7 +611,7 @@ fn commit_file_nav_walks_files() {
     e.feed_text("]f");
     settle(
         &mut e,
-        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+        |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "b.rs"),
     );
     let text = e.buf().text().to_string();
     assert!(text.starts_with("b.rs +1 -0\n"), "{text}");
@@ -621,12 +621,12 @@ fn commit_file_nav_walks_files() {
     e.feed_text("[f");
     settle(
         &mut e,
-        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "a.rs"),
+        |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "a.rs"),
     );
     e.feed_text("[f"); // wraparound
     settle(
         &mut e,
-        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+        |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "b.rs"),
     );
     assert_eq!(
         e.docs.len(),
@@ -664,7 +664,7 @@ fn tab_cycles_focus_between_sidebar_and_diff() {
     e.feed_text("j"); // focused j steps to the next file
     settle(
         &mut e,
-        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+        |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "b.rs"),
     );
     assert!(e.sidebar_focused(), "focus survives the file step");
     e.feed(crate::editor::Key::Enter);
@@ -740,7 +740,7 @@ fn gutters_and_sidebar_render() {
     e.feed_text("]f");
     settle(
         &mut e,
-        |e| matches!(e.surface(), Some(Surface::Diff { label, .. }) if label == "b.rs"),
+        |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "b.rs"),
     );
     let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
     assert!(frame.contains("▌b.rs"), "marker follows ]f: {frame}");

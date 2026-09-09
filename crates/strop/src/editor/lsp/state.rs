@@ -309,7 +309,11 @@ impl Editor {
             path: doc.path.clone(),
             line: LineIndex::new(line),
             byte_col: ByteColumn::new(self.buf().col_of(self.head())),
-            line_text: self.buf().line_text(line),
+            line_text: strop_lsp::FrozenLine::from_slice(
+                self.buf()
+                    .text()
+                    .byte_slice(self.buf().line_start(line)..self.buf().line_end(line)),
+            ),
             kind,
         };
         let native_input = input.clone();
@@ -360,6 +364,7 @@ impl Editor {
                     RequestRefusal::Unsupported => {
                         format!("lsp: {} is not supported by this server", kind.label())
                     }
+                    RequestRefusal::IdentityExhausted => "lsp: request identities exhausted".into(),
                 };
             }
             Err(error) => self.message = format!("lsp prepare diverged from trace: {error}"),

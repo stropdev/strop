@@ -243,10 +243,18 @@ fn long_line_tabs_unicode_and_native_caret_share_origin() {
         e.set_head(70_010); // Z, after a CJK cluster, combining cluster and ESC
         let mut terminal = viewport_terminal(11, 4); // 5 fixed + 6 content cells
         terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+        e.wait_analysis();
+        terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
         assert_eq!(e.view().hscroll.get(), origin);
         assert_eq!(
-            row_symbols(terminal.backend().buffer(), 0, 0, 11),
-            [" ", " ", " ", "1", " ", " ", "界", " ", "e\u{301}", "\u{fffd}", "Z"]
+            row_symbols(terminal.backend().buffer(), 0, 0, 7),
+            [" ", " ", " ", "1", " ", " ", "界"]
+        );
+        // TestBackend retains arbitrary old storage under wide glyphs; it is
+        // not a visible cell. Assert the next visible positions, not that storage.
+        assert_eq!(
+            row_symbols(terminal.backend().buffer(), 8, 0, 3),
+            ["e\u{301}", "\u{fffd}", "Z"]
         );
         // the tab's clipped remainder is a blank, 界 renders whole (its
         // continuation cell stays untouched), ESC is the replacement
@@ -496,7 +504,12 @@ fn typed_diff_rows_keep_fixed_numbers_and_scrolled_content() {
             has_newline: true,
         }],
     };
-    e.open_diff_surface("delta", "abcdef", vec![hunk], None);
+    e.open_delta(
+        "delta",
+        crate::editor::PreparedDiff::new("abcdef".into(), vec![hunk]),
+        None,
+        None,
+    );
     e.set_head(e.buf().line_start(2) + 10);
     let mut terminal = viewport_terminal(13, 6); // 9 fixed diff cells + 4 content
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
@@ -549,17 +562,19 @@ fn sidebar_emission_matches_the_inset_the_caret_uses() {
             workdir: e.cwd.clone(),
         },
         sha: "0123456789abcdef".into(),
-        files: vec![strop_git::memory::ChangedFile {
-            path: "src/verylongfilename.rs".into(),
-            added: 1,
-            deleted: 0,
-        }],
+        files: crate::editor::PreparedFiles::new(
+            "0123456789abcdef".into(),
+            vec![strop_git::memory::ChangedFile {
+                path: "src/verylongfilename.rs".into(),
+                added: 1,
+                deleted: 0,
+            }],
+        ),
         current: "src/verylongfilename.rs".into(),
     };
     e.open_delta(
         "delta",
-        "src/verylongfilename.rs",
-        vec![hunk],
+        crate::editor::PreparedDiff::new("src/verylongfilename.rs".into(), vec![hunk]),
         None,
         Some(commit),
     );
@@ -587,4 +602,24 @@ fn sidebar_emission_matches_the_inset_the_caret_uses() {
         "measured inset matches the rendered boundary"
     );
     terminal.backend_mut().assert_cursor_position((content, 0));
+}
+
+#[test]
+fn markdown_semantics_reach_the_real_cell_grid() {
+    use ratatui::style::Modifier;
+    let mut editor = Editor::new(Buffer::from_text("# Heading\n\n**bold** and *italic*\n"));
+    editor.buf_mut().path = Some(std::path::PathBuf::from("guide.md"));
+    editor.analysis_fixture();
+    let mut terminal = viewport_terminal(80, 10);
+    terminal
+        .draw(|frame| crate::render::render(&mut editor, frame))
+        .unwrap();
+    let grid = terminal.backend().buffer();
+    assert_eq!(grid[(7, 0)].symbol(), "H");
+    assert_eq!(grid[(7, 0)].fg, crate::render::ACCENT);
+    assert!(grid[(7, 0)].modifier.contains(Modifier::BOLD));
+    assert_eq!(grid[(7, 2)].symbol(), "b");
+    assert!(grid[(7, 2)].modifier.contains(Modifier::BOLD));
+    assert_eq!(grid[(19, 2)].symbol(), "i");
+    assert!(grid[(19, 2)].modifier.contains(Modifier::ITALIC));
 }

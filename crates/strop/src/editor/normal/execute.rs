@@ -21,7 +21,10 @@ impl Editor {
         }
         // resolve is typed (R5): a refused query surfaces its error —
         // surround never guesses past one
-        let r = match grammar::resolve(self.buf(), self.head(), cmd) {
+        let r = match self
+            .resolved_many(cmd, &self.all_cursors())
+            .map(|resolved| resolved.into_iter().next().flatten())
+        {
             Ok(Some(resolved)) => resolved,
             Ok(None) => return None,
             Err(error) => {
@@ -75,6 +78,13 @@ impl Editor {
     }
 
     pub(super) fn execute(&mut self, cmd: &Command) {
+        if self.defer_resolution(
+            cmd,
+            self.all_cursors(),
+            super::super::resolution::ResolutionPurpose::Execute,
+        ) {
+            return;
+        }
         // semantic dot-repeat (0014): `.` re-resolves this command from
         // the new position — it never replays a stale key string through
         // a changed keymap
@@ -87,7 +97,7 @@ impl Editor {
         }
         // the cascade (0013 §3) IS the plan (0014 §3): preview renders
         // these same targets — one object, no preview/execute drift
-        let plan = match grammar::plan(self.buf(), &self.all_cursors(), cmd) {
+        let plan = match self.resolved_plan(cmd, &self.all_cursors()) {
             Ok(Some(plan)) => plan,
             Ok(None) => {
                 self.message = "no target".into();
@@ -278,6 +288,15 @@ impl Editor {
         if self.last_change.is_none() && self.last_cmd_keys.is_empty() && self.last_insert.is_none()
         {
             return;
+        }
+        if let Some(command) = self.last_change.clone() {
+            if self.defer_resolution(
+                &command,
+                self.all_cursors(),
+                super::super::resolution::ResolutionPurpose::DotRepeat,
+            ) {
+                return;
+            }
         }
         let insert = self.last_insert.clone();
         if let Some(cmd) = self.last_change.clone() {

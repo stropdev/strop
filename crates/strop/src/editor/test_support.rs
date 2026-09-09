@@ -54,6 +54,33 @@ impl Editor {
             };
             self.handle_picker_event(event);
         }
+        while self
+            .picker
+            .as_ref()
+            .is_some_and(|glue| glue.rank_pending.is_some())
+        {
+            let event = self
+                .picker_ranking
+                .rx
+                .as_ref()
+                .expect("local ranking channel")
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("ranking settled");
+            self.handle_picker_ranking(event);
+        }
+    }
+
+    pub fn wait_analysis(&mut self) {
+        while self.analysis.pending() {
+            let event = self
+                .analysis
+                .rx
+                .as_ref()
+                .expect("local analysis channel")
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("analysis settles");
+            self.handle_analysis(event);
+        }
     }
 
     pub fn drain_lsp(&mut self) {
@@ -128,6 +155,14 @@ impl Editor {
                     });
                 }
             }
+        }
+        while let Some(event) = self
+            .picker_ranking
+            .rx
+            .as_ref()
+            .and_then(|rx| rx.try_recv().ok())
+        {
+            self.handle_picker_ranking(event);
         }
         self.drain_previews();
     }

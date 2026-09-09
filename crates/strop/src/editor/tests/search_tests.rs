@@ -285,8 +285,10 @@ fn backward_prompt_is_present_in_the_actual_headless_frame() {
     let mut e = Editor::new(Buffer::from_text("foo\nbar\n"));
     e.feed_text("?ba");
     let frame = crate::headless::frame_string(&mut e, 40, 8).unwrap();
-    assert!(frame.contains("search"), "{frame}");
-    assert!(frame.contains("1 match"), "{frame}");
+    assert!(
+        frame.contains("? ba"),
+        "the backward prompt retains its typed pattern: {frame}"
+    );
 }
 
 #[test]

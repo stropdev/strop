@@ -164,19 +164,21 @@ fn historical_delta_names_its_revision_and_file_not_the_worktree() {
     });
     editor.open_delta(
         "delta",
-        "src/reader.rs",
-        Vec::new(),
+        crate::editor::PreparedDiff::new("src/reader.rs".into(), Vec::new()),
         None,
         Some(crate::editor::CommitFiles {
             repo: strop_git::RepoTarget::Local {
                 workdir: "/w".into(),
             },
             sha: "abcdef1234567890".into(),
-            files: vec![strop_git::memory::ChangedFile {
-                path: "src/reader.rs".into(),
-                added: 1,
-                deleted: 0,
-            }],
+            files: crate::editor::PreparedFiles::new(
+                "abcdef1234567890".into(),
+                vec![strop_git::memory::ChangedFile {
+                    path: "src/reader.rs".into(),
+                    added: 1,
+                    deleted: 0,
+                }],
+            ),
             current: "src/reader.rs".into(),
         }),
     );

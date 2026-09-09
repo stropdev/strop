@@ -9,6 +9,11 @@ impl Editor {
         context: Option<strop_lsp::ReplyContext>,
     ) {
         match payload {
+            Payload::RemoteDirectory(directory) => self.request_target(
+                crate::files::FileTarget::Remote(directory.into()),
+                super::super::io::OpenIntent::Browse,
+            ),
+            Payload::RemoteConnect => self.open_remote_address(),
             Payload::File(rel) => {
                 self.request_open(
                     rel,

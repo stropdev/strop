@@ -126,6 +126,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             let mut editor = editor::Editor::new(buffer);
             let (configuration, error) = config::Config::load();
             editor.config = configuration;
+            editor.state_dir = session::state_root();
             if let Some(error) = error {
                 editor.message = error;
             }
@@ -174,12 +175,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             editor.buf_mut().readonly = readonly;
             let (configuration, error) = config::Config::load();
             editor.config = configuration;
-            editor.state_dir = std::env::var_os("XDG_STATE_HOME")
-                .map(std::path::PathBuf::from)
-                .or_else(|| {
-                    std::env::var_os("HOME")
-                        .map(|home| std::path::PathBuf::from(home).join(".local/state"))
-                });
+            editor.state_dir = session::state_root();
             if path.is_none() {
                 if let Err(error) = session::restore(&mut editor) {
                     editor.message = format!("session restore failed: {error}");
@@ -237,14 +233,14 @@ fn apply_initial_line(editor: &mut editor::Editor, line: Option<strop_core::id::
 fn print_help() {
     println!(
         "strop {} — see the cut before you make it\n\n\
-USAGE:\n  strop [+LINE] [file[:LINE]|dir] terminal editor (-R: readonly)\n\
-  strop --headless SCRIPT [FILE]  scripted driver\n\
-  strop --script SCRIPT [FILE]    same scripted driver\n\
+USAGE:\n  strop [+LINE] [FILE[:LINE]|DIR] terminal editor (-R: readonly)\n\
+  strop --headless SCRIPT [+LINE] [FILE[:LINE]]  scripted driver\n\
+  strop --script SCRIPT [+LINE] [FILE[:LINE]]    same scripted driver\n\
   strop --replay-script TRACE     extract a headless reproduction script\n\
   strop update [--check]          self-update\n\
   strop config | --version | --dump-compat\n\n\
   strop -- FILE:3                open a literal colon-suffixed filename\n\n\
-  strop [+LINE] ssh://[user@]host[:port]/absolute/path  read-only SSH snapshot\n\
+  strop [+LINE] ssh://[user@]host[:port]/absolute/path  read-only remote file or directory\n\
 TRACING:\n  --log / --log=ALL              all diagnostic categories to strop-log.jsonl\n\
   --log=PATH / --log-file PATH    create a new private JSONL file\n\
   STROP_LOG=PATH                 environment alternative (flag wins)\n\
@@ -257,6 +253,7 @@ CONFIG: {}\nhttps://strop.dev · https://github.com/stropdev/strop",
         env!("CARGO_PKG_VERSION"),
         config_path_display()
     );
+    headless::directives::print_help();
 }
 
 fn config_path_display() -> String {

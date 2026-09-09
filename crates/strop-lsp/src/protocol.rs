@@ -164,33 +164,12 @@ pub enum PositionEncoding {
 
 /// Byte column → server column for one line's text.
 pub fn to_server_col(line: &str, byte_col: ByteColumn, enc: PositionEncoding) -> ServerColumn {
-    ServerColumn::new(match enc {
-        PositionEncoding::Utf8 => byte_col.get(),
-        PositionEncoding::Utf16 => {
-            let prefix = match line.get(..byte_col.get()) {
-                Some(prefix) => prefix,
-                None => line,
-            };
-            prefix.chars().map(char::len_utf16).sum()
-        }
-    })
+    crate::to_server_col_slice(line.into(), byte_col, enc)
 }
 
 /// Server column → byte column for one line's text.
 pub fn to_byte_col(line: &str, server_col: ServerColumn, enc: PositionEncoding) -> ByteColumn {
-    ByteColumn::new(match enc {
-        PositionEncoding::Utf8 => server_col.get(),
-        PositionEncoding::Utf16 => {
-            let mut units = 0;
-            for (i, c) in line.char_indices() {
-                if units >= server_col.get() {
-                    return ByteColumn::new(i);
-                }
-                units += c.len_utf16();
-            }
-            line.len()
-        }
-    })
+    crate::to_byte_col_slice(line.into(), server_col, enc)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -240,6 +219,8 @@ pub enum RequestRefusal {
     StaleRevision,
     /// The server advertised no provider for this request kind.
     Unsupported,
+    /// The monotonic request-id domain has no unused identity.
+    IdentityExhausted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -286,7 +267,7 @@ pub struct RequestInput {
     pub path: PathBuf,
     pub line: LineIndex,
     pub byte_col: ByteColumn,
-    pub line_text: String,
+    pub line_text: crate::FrozenLine,
     pub kind: RequestKind,
 }
 

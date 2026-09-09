@@ -167,7 +167,11 @@ incarnation cannot publish.
 Verification: `RemoteRead` grows incarnation/pool ownership invariants (or a sibling
 model); oracle drives kill/reopen in the fixture.
 
-### RW4 — Remote write path (P3; hard safety gate, depends on RW1–RW3 verified)
+### RW4 — Remote write path (next requested release; hard safety gate, depends on RW1–RW3 verified)
+
+The user explicitly requested implementation after the 0038/0039 release, followed
+by another downloadable release. It is no longer an indefinite optional item;
+write the dedicated execution plan and preserve every safety criterion below.
 
 Writable remote editing needs content-aware conflict detection: size/mtime alone
 cannot detect same-size concurrent rewrites. Define a server version/lease or

@@ -232,6 +232,7 @@ impl Buffer {
     fn publish_change(&mut self, edit: InputEdit, origin: ChangeOrigin) {
         debug_assert!(self.epoch < u64::MAX);
         self.epoch += 1;
+        self.invalidate_line_layouts(&edit);
         self.dirty |= origin != ChangeOrigin::System;
         self.changes.push(Change {
             revision: self.revision(),

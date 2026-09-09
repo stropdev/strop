@@ -6,6 +6,7 @@
 //! a headless run is a complete forensic recording and `--replay`
 //! reproduces it without the script, the clock or the host.
 
+pub(crate) mod directives;
 mod driver;
 pub use driver::run_script;
 
@@ -132,7 +133,12 @@ mod diff_surface_tests {
         let mut e =
             crate::editor::Editor::new_in(strop_core::Buffer::from_text("x\n"), "/recorded".into());
         e.fixture_git_context();
-        e.open_diff_surface("delta", "f.rs", vec![hunk()], None);
+        e.open_delta(
+            "delta",
+            crate::editor::PreparedDiff::new("f.rs".into(), vec![hunk()]),
+            None,
+            None,
+        );
         let frame = crate::headless::frame_string(&mut e, 80, 20).unwrap();
         assert!(frame.contains(" f.rs +2 -1"), "stats row: {frame}");
         assert!(frame.contains(" @@ -1,2 +1,3 @@"), "hunk header: {frame}");
@@ -168,7 +174,12 @@ mod diff_surface_tests {
         );
         e.fixture_git_context();
         e.feed_text("jj"); // line 3
-        e.open_diff_surface("hunk", "hunk", vec![hunk()], None);
+        e.open_delta(
+            "hunk",
+            crate::editor::PreparedDiff::new("hunk".into(), vec![hunk()]),
+            None,
+            None,
+        );
         assert_eq!(
             e.buf().line_of(e.head()),
             0,

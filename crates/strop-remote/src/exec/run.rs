@@ -36,7 +36,8 @@ pub(super) const STDERR_TAIL: u64 = 2 * 1024;
 pub(super) const DEFAULT_DEADLINE: Duration = Duration::from_secs(120);
 
 /// Build the local ssh command plus the key that identifies this
-/// session's supervisor records. Pure: no spawn, no IO.
+/// session's supervisor records. Native worker-side setup captures interpreter
+/// configuration here; RemoteCommand constructors remain pure and do not spawn.
 pub(super) fn supervised(
     endpoint: &RemoteEndpoint,
     command: &RemoteCommand,
@@ -50,7 +51,8 @@ pub(super) fn supervised(
         command.args(),
         command.cwd(),
     )?;
-    let line = supervisor::command_line(&spec.encoded()?);
+    let python = super::python::PythonInterpreter::from_environment()?;
+    let line = supervisor::command_line(&spec.encoded()?, &python);
     Ok((crate::ssh::exec_command(endpoint, &line), key))
 }
 

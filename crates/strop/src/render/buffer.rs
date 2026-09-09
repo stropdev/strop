@@ -24,7 +24,7 @@ use strop_core::layout::{clip, RopeGraphemes};
 use crate::editor::{Editor, LayoutDir};
 
 use super::diff;
-use super::{class_color, dim_color, severity_color};
+use super::{dim_color, severity_color};
 use super::{ACCENT, BASE, FLASH_BG, MUTED, PREVIEW_BG, SELECT_BG, TEXT};
 
 /// Width of the standard gutter: sign column + 3-digit number + space.
@@ -104,11 +104,13 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
             } else {
                 editor.scroll_to_cursor(h);
             }
-            let column = editor
+            if let Some(column) = editor
                 .buf()
-                .cell_col_with_tab(editor.head(), editor.config.tab_size);
-            let width = w.saturating_sub(diff::left_inset(editor, editor.current()));
-            editor.view_mut().reveal_column(column, width);
+                .try_cell_col_with_tab(editor.head(), editor.config.tab_size)
+            {
+                let width = w.saturating_sub(diff::left_inset(editor, editor.current()));
+                editor.view_mut().reveal_column(column, width);
+            }
             active_rect = rect;
         }
         let pane = &editor.panes[i];
@@ -169,7 +171,7 @@ pub(crate) fn caret_position(
     if row >= usize::from(area.height) {
         return None;
     }
-    let column = buf.cell_col_with_tab(byte, editor.config.tab_size);
+    let column = buf.try_cell_col_with_tab(byte, editor.config.tab_size)?;
     let relative = column.get().checked_sub(origin.get())?;
     let col = diff::left_inset(editor, doc).checked_add(relative)?;
     if col >= usize::from(area.width) {
@@ -214,50 +216,44 @@ fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &P
 /// (help/log/stats) keep their existing owned styled text.
 fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
     let rows = usize::from(area.height);
-    // tree-sitter takes the mutable borrow first; everything below it
-    // reads immutably (one borrow discipline per pane render)
-    let (cur_line, first, last, rope, revision) = {
+    let (cur_line, first, last) = {
         let buf = &editor.doc(view.doc).buf;
         let last_line = view.view_top.saturating_add(rows).min(buf.len_lines());
         (
             buf.line_of(view.cursor),
             buf.line_start(view.view_top),
             buf.line_end(last_line.saturating_sub(1)),
-            buf.snapshot(),
-            buf.revision(),
         )
     };
-    let syn_spans: Vec<strop_syntax::Span> = match editor
-        .docs
-        .get_mut(view.doc)
-        .and_then(|d| d.highlighter.as_mut())
-    {
-        Some(h) => match h.highlight(&rope, revision, first, last) {
-            Ok(spans) => spans,
-            Err(error) => {
-                // a failed incremental parse degrades to unstyled text
-                // with a visible reason — never a silent empty pass
-                editor.message = format!("syntax: {error}");
-                Vec::new()
-            }
-        },
-        None => Vec::new(),
-    };
+    let analysis = editor.document_analysis(
+        view.doc,
+        first,
+        last,
+        view.hscroll.get(),
+        area.width as usize,
+    );
+    let syn_spans = analysis
+        .as_ref()
+        .map_or(&[][..], |analysis| analysis.spans.as_slice());
     // one search entry point (0031: match ranges are explicit — the
     // current match is the hit containing the caret, never "pattern
     // length from the caret"); a query that cannot compile renders no
     // highlights and lets the modeline carry the error
     let search_hits = if view.overlays {
-        editor.search_matches().unwrap_or_default()
+        analysis
+            .as_ref()
+            .and_then(|analysis| analysis.search.as_ref())
+            .and_then(|summary| summary.as_ref().ok())
+            .map_or(&[][..], |summary| summary.hits.as_slice())
     } else {
-        Vec::new()
+        &[]
     };
     let buf = &editor.doc(view.doc).buf;
     let surface = editor.doc(view.doc).surface_payload();
 
     // overlays read live editor state; only the active pane shows them
     let mut style = RowStyle {
-        syn_spans: &syn_spans,
+        syn_spans,
         preview: if view.overlays {
             match editor.preview() {
                 Ok(Some((ranges, _))) => ranges,
@@ -269,28 +265,28 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         flash: view.overlays.then(|| editor.flash_range()).flatten(),
         selection: view.overlays.then(|| editor.visual_range()).flatten(),
         block: view.overlays.then(|| editor.block_rect_pub()).flatten(),
-        search_hits: &search_hits,
+        search_hits,
         find: view.overlays.then(|| editor.find_candidates()).flatten(),
         ..Default::default()
     };
     // 0011 left-margin columns: the commit file sidebar (Diff surfaces
     // from the dive chain) and the blame gutter (file buffers) prepend
     // to every row; content width shrinks by what they take. The tree
-    // is laid out ONCE per pane render (0032 §3); the current file is
-    // the commit's native `current` path, never the diff's display
-    // label
+    // was prepared by the worker; selection retains native path identity.
     let (sidebar, sidebar_focused) = match surface {
         Some(crate::editor::Surface::Diff {
             commit: Some(cf),
             sidebar_focus,
             ..
         }) => (
-            Some((diff::Sidebar::build(&cf.files), cf.current.as_path())),
+            Some((cf.files.sidebar(), &cf.files[..], cf.current.as_path())),
             *sidebar_focus,
         ),
         _ => (None, false),
     };
-    let sidebar_w = sidebar.as_ref().map_or(0, |(tree, _)| tree.outer_width());
+    let sidebar_w = sidebar
+        .as_ref()
+        .map_or(0, |(tree, _, _)| tree.outer_width());
     let blame = editor.blame_gutter_for(view.doc);
     let number_width = diff::number_gutter_width(editor, view.doc);
     let inset = sidebar_w + blame.map_or(0, |_| diff::BLAME_W) + number_width;
@@ -304,9 +300,9 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         // cell (or blank past the buffer's lines) — fitted to their
         // assigned width so wide/control text cannot move the inset
         let mut left: Vec<Span> = Vec::new();
-        if let Some((tree, current)) = &sidebar {
+        if let Some((tree, files, current)) = &sidebar {
             left.extend(fixed_spans(
-                tree.row_spans(current, line_idx, sidebar_focused),
+                tree.row_spans(files, current, line_idx, sidebar_focused),
                 sidebar_w,
                 editor.config.tab_size,
             ));
@@ -348,6 +344,23 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         style.diff_line = None;
         style.emphasis = None;
         style.row_bg = None;
+        style.row_fg =
+            editor
+                .doc(view.doc)
+                .directory_metadata_ref()
+                .map(|directory| {
+                    match directory
+                        .entry(strop_core::id::LineIndex::new(line_idx))
+                        .map(|entry| entry.kind)
+                    {
+                        Some(strop_remote::RemoteEntryKind::Directory) => ACCENT,
+                        Some(strop_remote::RemoteEntryKind::SymbolicLink) => {
+                            Color::Rgb(0x89, 0xb4, 0xfa)
+                        }
+                        Some(strop_remote::RemoteEntryKind::File) => TEXT,
+                        _ => MUTED,
+                    }
+                });
         style.decorations.clear();
         style.note = None;
         style.diags = if view.overlays {
@@ -426,6 +439,28 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         lines.push(pad_row(Line::from(left), area.width));
     }
     frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
+    if let Some(analysis) = &analysis {
+        for row in 0..rows {
+            let line = view.view_top.saturating_add(row);
+            if line > buf.last_content_line() {
+                break;
+            }
+            for column in analysis.guides.columns(line) {
+                let Some(x) = column
+                    .get()
+                    .checked_sub(view.hscroll.get())
+                    .filter(|x| *x < width)
+                else {
+                    continue;
+                };
+                let at = (area.x + (inset + x) as u16, area.y + row as u16);
+                let cell = &mut frame.buffer_mut()[at];
+                if cell.symbol() == " " {
+                    cell.set_symbol("│").set_fg(Color::Rgb(0x2e, 0x30, 0x42));
+                }
+            }
+        }
+    }
 }
 
 /// Digits per side for a Diff surface's number columns.
@@ -488,6 +523,7 @@ struct RowStyle<'a> {
     emphasis: Option<(usize, usize)>,
     /// Full-row background (diff add/del, structural band).
     row_bg: Option<Color>,
+    row_fg: Option<Color>,
     /// Decorated-surface text (help/log/files/stats): styled spans
     /// whose concatenated content keeps the buffer line's exact byte
     /// prefix; anything past it is virtual EOL decoration.
@@ -517,14 +553,6 @@ fn content_spans(
     let buf = &editor.doc(view.doc).buf;
     let row = buf.line_of(start);
     let cur_line = buf.line_of(view.cursor);
-    // indent guides: dim │ at each indent level within leading
-    // whitespace (spaces only, v1) — decorative help/log whitespace
-    // must not become guides
-    let lead_ws = if editor.config.indent_guides && style.decorations.is_empty() {
-        text.chars().take_while(|c| *c == ' ').count()
-    } else {
-        0
-    };
     let decorated = (!style.decorations.is_empty()).then(|| {
         style
             .decorations
@@ -536,14 +564,24 @@ fn content_spans(
         .as_ref()
         .map_or(text, |s| ropey::RopeSlice::from(s.as_str()));
     let right = view.hscroll.get().saturating_add(width);
-    let mut syn_idx = style.syn_spans.partition_point(|s| s.end <= start);
+    let Some(checkpoint) =
+        buf.layout_checkpoint(strop_core::id::LineIndex::new(row), view.hscroll, tab)
+    else {
+        return vec![Span::styled("layout pending", Style::default().fg(MUTED))];
+    };
+    if checkpoint.byte.get() > source.len_bytes() {
+        return Vec::new();
+    }
+    let mut syn_idx = style
+        .syn_spans
+        .partition_point(|span| span.end <= start + checkpoint.byte.get());
     let mut decoration_index = 0usize;
     let mut decoration_end = style.decorations.first().map_or(0, |s| s.content.len());
     let mut spans = Vec::with_capacity(width);
     let mut used = 0usize;
-    let mut end_cell = DisplayColumn::new(0);
+    let mut end_cell = checkpoint.cell;
     let mut reached_end = true;
-    for (glyph, grapheme) in RopeGraphemes::new(source, tab) {
+    for (glyph, grapheme) in RopeGraphemes::from_checkpoint(source, tab, checkpoint) {
         end_cell = glyph.cell + glyph.width;
         if glyph.cell.get() >= right {
             reached_end = false;
@@ -555,7 +593,7 @@ fn content_spans(
         let i = glyph.byte;
         let pos = start + i;
         let is_source = i < text.len_bytes();
-        let mut cell = Style::default().fg(TEXT);
+        let mut cell = Style::default().fg(style.row_fg.unwrap_or(TEXT));
         if let Some(bg) = style.row_bg {
             cell = cell.bg(bg);
         }
@@ -566,11 +604,7 @@ fn content_spans(
             cell = cell.fg(diff::origin_fg(line.origin));
         }
         if is_source && syn_idx < style.syn_spans.len() && style.syn_spans[syn_idx].start <= pos {
-            let class = style.syn_spans[syn_idx].class;
-            cell = cell.fg(class_color(class));
-            if class == strop_syntax::Class::Comment {
-                cell = cell.add_modifier(Modifier::ITALIC);
-            }
+            cell = cell.patch(super::syntax_style(&style.syn_spans[syn_idx]));
         }
         while decoration_index < style.decorations.len() && i >= decoration_end {
             decoration_index += 1;
@@ -616,10 +650,13 @@ fn content_spans(
             }
             // search hits light up (accent bold); the match under the
             // cursor — the "current" one n/N walks — wears an underline
+            let hit_index = style
+                .search_hits
+                .partition_point(|hit| hit.end.get() <= pos);
             if let Some(hit) = style
                 .search_hits
-                .iter()
-                .find(|hit| hit.start.get() < pos + grapheme.len() && pos < hit.end.get())
+                .get(hit_index)
+                .filter(|hit| hit.start.get() < pos + grapheme.len() && pos < hit.end.get())
             {
                 cell = cell.fg(ACCENT).add_modifier(Modifier::BOLD);
                 if hit.start.get() <= view.cursor && view.cursor < hit.end.get() {
@@ -654,9 +691,6 @@ fn content_spans(
         let symbol = if !visible.complete || grapheme == "\t" {
             // the layout owns tab width: glyph and caret can't disagree
             " ".repeat(visible.width)
-        } else if i < lead_ws && (glyph.cell.get() + 1) % tab == 0 {
-            cell = cell.fg(Color::Rgb(0x2e, 0x30, 0x42));
-            "│".to_string()
         } else {
             strop_core::layout::printable_grapheme(&grapheme).to_string()
         };

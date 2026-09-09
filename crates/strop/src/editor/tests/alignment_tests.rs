@@ -14,7 +14,12 @@ fn document_set_stays_honest() {
     e.open_fixture(&b).unwrap();
     assert_eq!(e.docs.len(), 2);
     e.fixture_git_context();
-    e.open_diff_surface("delta", "f.rs", vec![], None);
+    e.open_delta(
+        "delta",
+        crate::editor::git_memory::PreparedDiff::new("f.rs".into(), vec![]),
+        None,
+        None,
+    );
     assert_eq!(e.docs.len(), 3);
     assert!(e.cur().surface_payload().is_some());
     e.close_buffer(true);

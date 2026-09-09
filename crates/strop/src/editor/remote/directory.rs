@@ -12,14 +12,22 @@ use strop_core::worker::{self, CancelReason, FailureKind, Outcome};
 
 impl Editor {
     pub(crate) fn remote_directory_key(&mut self, key: Key) -> bool {
-        if !matches!(key, Key::Enter | Key::Backspace) {
+        if !matches!(key, Key::Enter | Key::Backspace | Key::Char('-')) {
             return false;
         }
         let Some(directory) = self.remote_directory() else {
             return false;
         };
         let line = self.buf().line_of(self.head());
-        let target = if key == Key::Backspace || line == 0 {
+        let parent = matches!(key, Key::Backspace | Key::Char('-')) || line == 0;
+        let intent = if parent {
+            OpenIntent::DirectoryParent {
+                child: directory.directory.clone(),
+            }
+        } else {
+            OpenIntent::Switch { readonly: true }
+        };
+        let target = if parent {
             directory.parent().map_err(|error| error.to_string())
         } else {
             Ok(directory
@@ -27,10 +35,7 @@ impl Editor {
                 .map(|entry| entry.file.clone()))
         };
         match target {
-            Ok(Some(file)) => self.request_target(
-                FileTarget::Remote(file.into()),
-                OpenIntent::Switch { readonly: true },
-            ),
+            Ok(Some(file)) => self.request_target(FileTarget::Remote(file.into()), intent),
             Ok(None) => self.message = "no remote entry at this position".into(),
             Err(message) => self.message = message,
         }

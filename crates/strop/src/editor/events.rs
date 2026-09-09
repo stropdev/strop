@@ -8,7 +8,9 @@
 //! headless harness keeps the raw channels (no forwarders) and drives
 //! the same per-event handlers through the drains.
 
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Receiver;
+mod channel;
+pub use channel::{channel, EventSender, EVENTS_PER_TURN, TURN_BUDGET};
 
 use super::{Editor, Key, ShellResult};
 
@@ -33,6 +35,10 @@ pub enum AppEvent {
     RemoteCompletion(super::remote_completion::RemoteCompletionEvent),
     Git(super::GitJob),
     Picker(super::picker::PickerEvent),
+    PickerRanking(super::picker::ranking::Event),
+    Analysis(super::analysis::AnalysisEvent),
+    Resolution(super::resolution::ResolutionEvent),
+    ResumeInput,
     Preview(super::picker::PreviewResult),
     Clipboard(super::ClipboardResult),
 }
@@ -40,7 +46,7 @@ pub enum AppEvent {
 /// A forwarder: move every item of a job channel onto the app channel.
 fn forward<T: Send + 'static>(
     rx: Receiver<T>,
-    tx: Sender<AppEvent>,
+    tx: EventSender,
     wrap: impl Fn(T) -> AppEvent + Send + 'static,
 ) {
     std::thread::spawn(move || {
@@ -56,7 +62,7 @@ impl Editor {
     /// Connect the editor's job channels to the app event channel
     /// (TUI only — headless keeps the raw channels for its drains).
     /// Late-attaching LSP servers forward through the retained sender.
-    pub fn connect_events(&mut self, tx: Sender<AppEvent>) {
+    pub fn connect_events(&mut self, tx: EventSender) {
         if let Some(rx) = self.io.rx.take() {
             forward(rx, tx.clone(), AppEvent::Io);
         }
@@ -74,6 +80,15 @@ impl Editor {
         }
         if let Some(rx) = self.preview_rx.take() {
             forward(rx, tx.clone(), AppEvent::Preview);
+        }
+        if let Some(rx) = self.picker_ranking.rx.take() {
+            forward(rx, tx.clone(), AppEvent::PickerRanking);
+        }
+        if let Some(rx) = self.analysis.rx.take() {
+            forward(rx, tx.clone(), AppEvent::Analysis);
+        }
+        if let Some(rx) = self.resolution.rx.take() {
+            forward(rx, tx.clone(), AppEvent::Resolution);
         }
         self.connect_picker_stream(&tx);
         for srv in &mut self.lsp_servers {
@@ -97,6 +112,12 @@ impl Editor {
                         "bytes":text.len(),"text":strop_trace::capture_content().then_some(text.as_str()),
                     })
                 });
+                if self.resolution.blocked() || !self.resolution.queue.is_empty() {
+                    self.resolution
+                        .queue
+                        .push_back(super::resolution::DeferredInput::Paste(text));
+                    return;
+                }
                 self.paste_bracketed(&text);
             }
             AppEvent::QuitIntent => {
@@ -104,6 +125,8 @@ impl Editor {
                     strop_trace::EventKind::Input,
                     || serde_json::json!({"action":"quit_intent","source":"external"}),
                 );
+                self.resolution.cancel();
+                self.resolution.queue.clear();
                 if self.ctrl_c_quit() {
                     self.should_quit = true;
                 }
@@ -115,6 +138,10 @@ impl Editor {
             AppEvent::RemoteCompletion(event) => self.handle_remote_completion(event),
             AppEvent::Git(job) => self.handle_git_job(job),
             AppEvent::Picker(event) => self.handle_picker_event(event),
+            AppEvent::PickerRanking(event) => self.handle_picker_ranking(event),
+            AppEvent::Analysis(event) => self.handle_analysis(event),
+            AppEvent::Resolution(event) => self.handle_resolution(event),
+            AppEvent::ResumeInput => self.resume_resolution_input(),
             AppEvent::Preview(result) => self.handle_preview(result),
             AppEvent::Clipboard(content) => self.handle_clipboard(content),
         }
@@ -131,7 +158,10 @@ impl Editor {
             || self
                 .picker
                 .as_ref()
-                .is_some_and(|glue| glue.picker.streaming)
+                .is_some_and(|glue| glue.picker.streaming || glue.rank_pending.is_some())
+            || !self.picker_ranking.retiring.is_empty()
+            || self.analysis.pending()
+            || self.resolution.pending()
             || self
                 .preview_loads
                 .values()
@@ -162,6 +192,8 @@ impl Editor {
         self.lsp_state.attach.enabled = false;
         self.stop_remote_work();
         self.close_picker();
+        self.analysis.stop();
+        self.resolution.stop();
         self.git_mutations.clear();
         self.request_session_save();
         let cancel: Vec<_> = self

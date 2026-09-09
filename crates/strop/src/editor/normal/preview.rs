@@ -14,7 +14,54 @@ impl Editor {
     /// (the modeline shows them); no operator or no origin means no
     /// preview at all.
     pub fn preview(&self) -> Result<Option<(Vec<Range>, String)>, String> {
-        let (command, cursors) = if let Some(prompt) = self.pending.prompt() {
+        let Some((command, cursors)) = self.preview_command()? else {
+            return Ok(None);
+        };
+        if command.op.is_none()
+            || (self.resolution_is_large(&command) && !self.resolution_ready(&command, &cursors))
+        {
+            return Ok(None);
+        }
+        let resolved = self.resolved_many(&command, &cursors)?;
+        let Some(Some(primary)) = resolved.first() else {
+            return Ok(None);
+        };
+        let Some(plan) = self.resolved_plan(&command, &cursors)? else {
+            return Ok(None);
+        };
+        Ok(Some((
+            plan.targets.iter().map(|target| target.range).collect(),
+            primary.spec.clone(),
+        )))
+    }
+
+    pub(crate) fn prepare_resolution_preview(&mut self) {
+        if self.resolution.blocked()
+            || self
+                .pending
+                .prompt()
+                .is_some_and(|prompt| prompt.search().is_some())
+        {
+            return;
+        }
+        match self.preview_command() {
+            Ok(Some((command, cursors))) => {
+                self.defer_resolution(
+                    &command,
+                    cursors,
+                    super::super::resolution::ResolutionPurpose::Preview,
+                );
+            }
+            Ok(None) => self.resolution.cancel_preview(),
+            Err(error) => {
+                self.resolution.cancel_preview();
+                self.message = error;
+            }
+        }
+    }
+
+    fn preview_command(&self) -> Result<Option<(grammar::Command, Vec<usize>)>, String> {
+        if let Some(prompt) = self.pending.prompt() {
             let Some((origin, state)) = prompt.search() else {
                 return Ok(None);
             };
@@ -24,7 +71,7 @@ impl Editor {
             let Some(command) = self.search_prompt_command(prompt, false)? else {
                 return Ok(None);
             };
-            (command, origin.pane.sels.heads())
+            Ok(Some((command, origin.pane.sels.heads())))
         } else {
             let Some((operator, motion)) = self.walker.op_motion() else {
                 return Ok(None);
@@ -37,27 +84,7 @@ impl Editor {
             };
             command.count = self.walker.state.count();
             command.register = self.walker.state.register;
-            (command, self.all_cursors())
-        };
-        if command.op.is_none() {
-            return Ok(None);
+            Ok(Some((command, self.all_cursors())))
         }
-        let Some(&primary) = cursors.first() else {
-            return Ok(None);
-        };
-        let Some(resolved) =
-            grammar::resolve(self.buf(), primary, &command).map_err(|e| e.to_string())?
-        else {
-            return Ok(None);
-        };
-        let Some(plan) =
-            grammar::plan(self.buf(), &cursors, &command).map_err(|e| e.to_string())?
-        else {
-            return Ok(None);
-        };
-        Ok(Some((
-            plan.targets.iter().map(|target| target.range).collect(),
-            resolved.spec,
-        )))
     }
 }

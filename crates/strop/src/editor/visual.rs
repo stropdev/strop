@@ -123,6 +123,32 @@ impl Editor {
         }
     }
 
+    pub(crate) fn select_visual_object(&mut self, command: &grammar::Command) {
+        if self.defer_resolution(
+            command,
+            self.all_cursors(),
+            super::resolution::ResolutionPurpose::VisualObject,
+        ) {
+            return;
+        }
+        match self
+            .resolved_many(command, &self.all_cursors())
+            .map(|resolved| resolved.into_iter().next().flatten())
+        {
+            Ok(Some(resolved)) => {
+                let head = self.head();
+                self.sels_mut()
+                    .stretch_primary(resolved.range.start.get(), head);
+                self.set_head(
+                    self.buf()
+                        .clamp_boundary(resolved.range.end.get().saturating_sub(1)),
+                );
+            }
+            Ok(None) => {}
+            Err(error) => self.message = error,
+        }
+    }
+
     /// One typed visual action: motions extend, objects select, the
     /// table's leader rows (Space y, Space g h) act on the selection,
     /// `S<c>` wraps it.
@@ -134,22 +160,7 @@ impl Editor {
             Action::EnterText { sigil, state } => self.begin_text_line(sigil, state),
             Action::Grammar(command) if command.op.is_none() => {
                 if let grammar::Target::Object { .. } = command.target {
-                    match grammar::resolve(self.buf(), self.head(), &command) {
-                        Ok(Some(resolved)) => {
-                            // objects select (vi[, va"): the anchor jumps
-                            // to the range start, the cursor to its end —
-                            // inclusive, vim semantics (0001 §5.5)
-                            let head = self.head();
-                            self.sels_mut()
-                                .stretch_primary(resolved.range.start.get(), head);
-                            self.set_head(
-                                self.buf()
-                                    .clamp_boundary(resolved.range.end.get().saturating_sub(1)),
-                            );
-                        }
-                        Ok(None) => {}
-                        Err(error) => self.message = error.to_string(),
-                    }
+                    self.select_visual_object(&command);
                 } else {
                     self.move_cursor(&command);
                 }

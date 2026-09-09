@@ -5,18 +5,17 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver};
 
 use strop_core::worker::{CancelHandle, CancelReason, Load, Ticket, WorkerId};
 use strop_picker::{spawn_files, GrepWorker, Item, Kind, Payload, Picker, PickerMsg};
-use strop_syntax::Highlighter;
 
-use super::events::AppEvent;
 use super::{Editor, Key};
 
 mod accept;
 mod drain;
 mod preview;
+pub(crate) mod ranking;
 mod replace;
 #[cfg(test)]
 mod tests;
@@ -24,7 +23,7 @@ mod tests;
 /// One picker instance's identity, allocated from the editor's worker
 /// id pool when the picker opens. Every streaming request and preview
 /// read binds to it — closing the picker invalidates them all at once.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct PickerId(pub WorkerId);
 
@@ -56,7 +55,7 @@ pub struct PreviewKey {
 }
 
 /// The terminal result of a preview request.
-pub type PreviewResult = strop_core::worker::Completion<PreviewKey, String>;
+pub type PreviewResult = strop_core::worker::Completion<PreviewKey, preview::PreparedPreview>;
 
 /// The live worker behind a streaming request.
 pub(crate) enum PickerWorker {
@@ -84,6 +83,11 @@ pub struct PickerGlue {
     pub(crate) rx: Option<(Ticket<PickerKey>, Receiver<PickerMsg>)>,
     pub(crate) worker: Option<PickerWorker>,
     pub(crate) lsp_context: Option<strop_lsp::ReplyContext>,
+    pub(crate) rank_worker: Option<strop_picker::RankingWorker<ranking::Key>>,
+    pub(crate) rank_pending: Option<Ticket<ranking::Key>>,
+    pub(crate) ranked_query: Option<String>,
+    pub(crate) rank_alive: bool,
+    pub(crate) accept_when_ranked: bool,
 }
 
 impl PickerGlue {
@@ -99,6 +103,11 @@ impl PickerGlue {
             rx: None,
             worker: None,
             lsp_context: None,
+            rank_worker: None,
+            rank_pending: None,
+            ranked_query: None,
+            rank_alive: false,
+            accept_when_ranked: false,
         }
     }
 
@@ -137,9 +146,24 @@ impl Editor {
             })
         });
         self.picker = Some(glue);
+        if self
+            .picker
+            .as_ref()
+            .is_some_and(|glue| glue.picker.kind != Kind::RemoteAddress)
+        {
+            self.start_picker_ranking();
+        }
     }
 
     pub fn open_picker(&mut self, kind: Kind) {
+        if kind == Kind::RemoteHosts {
+            self.open_remote_picker();
+            return;
+        }
+        if kind == Kind::RemoteAddress {
+            self.open_remote_address();
+            return;
+        }
         let items = match kind {
             Kind::Buffers => self
                 .mru
@@ -157,7 +181,9 @@ impl Editor {
                 .collect(),
             // Grep/Replace stream only once input registers a request;
             // Files launches its walk right after install.
-            Kind::Files | Kind::Grep | Kind::Replace => vec![],
+            Kind::Files | Kind::Grep | Kind::Replace | Kind::RemoteHosts | Kind::RemoteAddress => {
+                vec![]
+            }
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
             }
@@ -248,7 +274,7 @@ impl Editor {
 
     /// Connect-time: hand any already-registered headless stream to
     /// the app channel (normally requests attach at launch).
-    pub(crate) fn connect_picker_stream(&mut self, tx: &Sender<AppEvent>) {
+    pub(crate) fn connect_picker_stream(&mut self, tx: &super::events::EventSender) {
         if let Some(glue) = &mut self.picker {
             if let Some((ticket, rx)) = glue.rx.take() {
                 let _ = drain::forward_picker_stream(rx, ticket, tx.clone());
@@ -264,7 +290,16 @@ impl Editor {
             return;
         };
         glue.revoke(CancelReason::OwnerClosed);
+        self.revoke_remote_chooser(glue.id);
         self.revoke_picker_previews(glue.id);
+        if glue.rank_alive {
+            self.picker_ranking.retiring.insert(glue.id);
+        }
+        if let Some(worker) = glue.rank_worker.take() {
+            if let Err(error) = worker.retire(glue.picker) {
+                self.message = format!("picker cleanup failed: {error}");
+            }
+        }
     }
 
     pub fn picker_open(&self) -> bool {
@@ -296,6 +331,8 @@ impl Editor {
         }
         for path in forgotten {
             self.previews.remove(&path);
+            self.analysis
+                .forget(super::analysis::AnalysisTarget::Preview(path));
         }
     }
 
@@ -303,6 +340,9 @@ impl Editor {
         let Some(glue) = &mut self.picker else {
             return;
         };
+        if key != Key::Enter {
+            glue.accept_when_ranked = false;
+        }
         let replace = glue.picker.kind == Kind::Replace;
         match key {
             Key::Esc => {
@@ -312,15 +352,7 @@ impl Editor {
                     glue.picker.enter_normal();
                 }
             }
-            Key::Enter if replace => self.apply_replace(),
-            Key::Enter => {
-                let payload = glue.picker.current().map(|i| i.payload.clone());
-                let context = glue.lsp_context;
-                self.close_picker();
-                if let Some(payload) = payload {
-                    self.accept_picker(payload, context);
-                }
-            }
+            Key::Enter => self.accept_current_picker(),
             Key::Tab | Key::Backtab if replace => glue.picker.toggle_field(),
             Key::CtrlX if replace => glue.picker.toggle_excluded(),
             Key::CtrlD if replace => glue.picker.toggle_file_excluded(),
@@ -362,6 +394,49 @@ impl Editor {
         }
     }
 
+    pub(crate) fn accept_current_picker(&mut self) {
+        if self
+            .picker
+            .as_ref()
+            .is_some_and(|glue| glue.picker.kind == Kind::RemoteAddress)
+        {
+            self.accept_remote_address();
+            return;
+        }
+        let Some(glue) = self.picker.as_mut() else {
+            return;
+        };
+        let replacing = glue.picker.kind == Kind::Replace;
+        if (replacing || glue.picker.current().is_none())
+            && (glue.rank_pending.is_some() || glue.picker.streaming)
+        {
+            glue.accept_when_ranked = true;
+            return;
+        }
+        glue.accept_when_ranked = false;
+        if replacing {
+            self.apply_replace();
+            return;
+        }
+        let Some(payload) = glue.picker.current().map(|item| item.payload.clone()) else {
+            self.message = "no matching entries".into();
+            return;
+        };
+        let context = glue.lsp_context;
+        self.close_picker();
+        self.accept_picker(payload, context);
+    }
+
+    pub(crate) fn finish_pending_picker_accept(&mut self) {
+        if self.picker.as_ref().is_some_and(|glue| {
+            glue.accept_when_ranked
+                && glue.rank_pending.is_none()
+                && (glue.picker.kind != Kind::Replace || !glue.picker.streaming)
+        }) {
+            self.accept_current_picker();
+        }
+    }
+
     /// Grep/Replace: every input change is a new owned request — the
     /// previous one is superseded, its items/rows/exclusions cleared,
     /// and a fresh ticket + worker launched. Other kinds just refilter.
@@ -370,17 +445,21 @@ impl Editor {
             let Some(glue) = &mut self.picker else {
                 return;
             };
+            if glue.picker.kind == Kind::RemoteAddress {
+                glue.picker.error = None;
+                return;
+            }
             if !matches!(glue.picker.kind, Kind::Grep | Kind::Replace) {
-                glue.picker.refilter();
+                self.request_picker_ranking();
                 return;
             }
             let query = glue.picker.input.text.clone();
             let picker = glue.id;
             glue.revoke(CancelReason::Superseded);
             glue.picker.error = None;
-            glue.picker.items.clear();
-            glue.picker.rows.clear();
-            glue.picker.excluded.clear();
+            glue.picker.clear_items();
+            glue.ranked_query = None;
+            glue.rank_pending = None;
             (query, picker)
         };
         let request = match self.worker_ids.allocate() {
@@ -441,12 +520,11 @@ impl Editor {
 
 pub struct PreviewEntry {
     pub rope: ropey::Rope,
-    pub hl: Option<Highlighter>,
 }
 
-pub enum PreviewSource<'a> {
+pub enum PreviewSource {
     Buffer(strop_core::id::DocumentId),
-    Cached(&'a mut PreviewEntry),
+    Cached(PathBuf),
     Loading,
     Failed(String),
     Cancelled(CancelReason),

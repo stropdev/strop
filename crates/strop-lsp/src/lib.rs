@@ -7,6 +7,8 @@ pub mod target;
 mod caps;
 mod client;
 mod convert;
+mod frozen_line;
+pub use frozen_line::{to_byte_col_slice, to_server_col_slice, FrozenLine};
 pub mod protocol;
 pub mod registry;
 

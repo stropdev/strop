@@ -15,8 +15,8 @@ mod transport;
 
 pub use address::{AddressError, RemoteEndpoint, RemoteFile, RemoteLocation};
 pub use client::{
-    ConnectionLease, RemoteClient, RemoteDirectorySnapshot, RemoteEntry, RemoteEntryKind,
-    RemoteResource, RemoteSnapshot,
+    ConnectionLease, PermissionBitsError, RemoteClient, RemoteDirectorySnapshot, RemoteEntry,
+    RemoteEntryKind, RemotePermissions, RemoteResource, RemoteSnapshot,
 };
 pub use exec::{
     command, command_supervised, run, CommandOutput, RemoteCommand, RemoteCommandError,

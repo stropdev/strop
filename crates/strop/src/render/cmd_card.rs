@@ -74,12 +74,17 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
 
     // search rides with a live match count
     if matches!(kind, '/' | '?') {
-        let label = match editor.search_matches() {
-            Ok(matches) => format!(
-                "   {} match{}",
-                matches.len(),
-                if matches.len() == 1 { "" } else { "es" }
-            ),
+        let label = match editor.current_search_query() {
+            Ok(Some(query)) => match editor.search_summary(&query) {
+                Some(Ok(summary)) => format!(
+                    "   {} match{}",
+                    summary.count,
+                    if summary.count == 1 { "" } else { "es" }
+                ),
+                Some(Err(error)) => format!("   {error}"),
+                None => "   searching…".into(),
+            },
+            Ok(None) => "   0 matches".into(),
             Err(error) => format!("   {error}"),
         };
         spans.push(Span::styled(label, Style::default().fg(MUTED)));

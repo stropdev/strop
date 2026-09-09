@@ -59,86 +59,7 @@ pub(crate) fn emphasis_span(surface: Option<&Surface>, row: usize) -> Option<(us
     let Some(Surface::Diff { hunks, .. }) = surface else {
         return None;
     };
-    if row == 0 {
-        return None;
-    }
-    let mut row = row - 1;
-    for hunk in hunks {
-        if row == 0 {
-            return None;
-        }
-        row -= 1;
-        if row < hunk.lines.len() {
-            return hunk_emphasis(&hunk.lines, row);
-        }
-        row -= hunk.lines.len();
-    }
-    None
-}
-
-/// Pair a row with its opposite-side counterpart in the hunk and return
-/// THIS row's changed byte range.
-fn hunk_emphasis(lines: &[DiffLine], idx: usize) -> Option<(usize, usize)> {
-    let origin = lines[idx].origin;
-    match origin {
-        LineOrigin::Context => None,
-        LineOrigin::Deletion => {
-            // del-run start and the add-run right after it
-            let mut run_start = idx;
-            while run_start > 0 && lines[run_start - 1].origin == LineOrigin::Deletion {
-                run_start -= 1;
-            }
-            let mut add_start = idx;
-            while add_start < lines.len() && lines[add_start].origin == LineOrigin::Deletion {
-                add_start += 1;
-            }
-            let k = idx - run_start;
-            lines
-                .get(add_start + k)
-                .filter(|l| l.origin == LineOrigin::Addition)
-                .map(|p| changed_range(&lines[idx].text_str(), &p.text_str()))
-        }
-        LineOrigin::Addition => {
-            // add-run start and the del-run right before it
-            let mut run_start = idx;
-            while run_start > 0 && lines[run_start - 1].origin == LineOrigin::Addition {
-                run_start -= 1;
-            }
-            let mut del_start = run_start;
-            while del_start > 0 && lines[del_start - 1].origin == LineOrigin::Deletion {
-                del_start -= 1;
-            }
-            if del_start == run_start {
-                return None; // no paired deletions
-            }
-            let k = idx - run_start;
-            lines
-                .get(del_start + k)
-                .filter(|l| l.origin == LineOrigin::Deletion)
-                .map(|p| changed_range(&p.text_str(), &lines[idx].text_str()))
-        }
-    }
-}
-
-/// The changed middle of `a` vs `b` after trimming the common prefix
-/// and suffix (byte offsets into `a`, char-boundary safe by
-/// construction).
-fn changed_range(a: &str, b: &str) -> (usize, usize) {
-    let prefix: usize = a
-        .chars()
-        .zip(b.chars())
-        .take_while(|(x, y)| x == y)
-        .map(|(c, _)| c.len_utf8())
-        .sum();
-    let suffix: usize = a
-        .chars()
-        .rev()
-        .zip(b.chars().rev())
-        .take_while(|(x, y)| x == y)
-        .map(|(c, _)| c.len_utf8())
-        .sum();
-    let end = a.len().saturating_sub(suffix).max(prefix);
-    (prefix.min(end), end)
+    hunks.emphasis(row)
 }
 
 /// Gutter width for a surface's buffer: the diff gutter widens to fit
@@ -148,16 +69,7 @@ pub(crate) fn gutter_width(surface: Option<&Surface>) -> usize {
     let Some(Surface::Diff { hunks, .. }) = surface else {
         return super::buffer::GUTTER as usize;
     };
-    let max_lineno = hunks
-        .iter()
-        .flat_map(|h| &h.lines)
-        .flat_map(|l| [l.old_lineno, l.new_lineno])
-        .flatten()
-        .max()
-        .unwrap_or(0);
-    let digits = max_lineno.to_string().len().max(3);
-    // sign(1) + old(digits) + space + new(digits) + space
-    1 + digits + 1 + digits + 1
+    hunks.gutter_width()
 }
 
 /// The diff gutter for one content row: origin marker + both sides'
@@ -207,25 +119,17 @@ pub(crate) fn diff_gutter(
 /// the caller prepends the fixed number-gutter cells.
 pub(crate) fn structural_row(surface: &Surface, row: usize) -> Line<'static> {
     match (surface, row) {
-        (
-            Surface::Diff {
-                label,
-                added,
-                deleted,
-                ..
-            },
-            0,
-        ) => Line::from(vec![
+        (Surface::Diff { hunks, .. }, 0) => Line::from(vec![
             Span::styled(
-                label.clone(),
+                hunks.label().to_owned(),
                 Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!(" +{added} "),
+                format!(" +{} ", hunks.added()),
                 Style::default().fg(ADD_FG).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("-{deleted}"),
+                format!("-{}", hunks.deleted()),
                 Style::default().fg(DEL_FG).add_modifier(Modifier::BOLD),
             ),
         ])
@@ -292,7 +196,7 @@ pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) ->
         commit: Some(cf), ..
     }) = surface
     {
-        inset += Sidebar::measured_width(&cf.files);
+        inset += cf.files.sidebar().outer_width();
     }
     inset
 }
@@ -300,51 +204,6 @@ pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn emphasis_trims_shared_affixes() {
-        // delta-style: only the middle changed
-        assert_eq!(
-            changed_range("let x = hone(a);", "let x = hone(b, c);"),
-            (13, 14) // only "a" vs "b, c" differs
-        );
-        // whole line changed
-        assert_eq!(changed_range("aaa", "bbb"), (0, 3));
-        // identical → empty range
-        assert_eq!(changed_range("same", "same"), (4, 4));
-    }
-
-    #[test]
-    fn hunk_pairs_deletions_with_additions() {
-        let line = |origin, old, new, text: &str| DiffLine {
-            has_newline: true,
-            origin,
-            old_lineno: old,
-            new_lineno: new,
-            text: text.into(),
-        };
-        let lines = vec![
-            line(LineOrigin::Context, Some(1), Some(1), "fn f() {"),
-            line(LineOrigin::Deletion, Some(2), None, "    hone(a);"),
-            line(LineOrigin::Deletion, Some(3), None, "    gone();"),
-            line(LineOrigin::Addition, None, Some(2), "    hone(b, c);"),
-            line(LineOrigin::Context, Some(4), Some(3), "}"),
-        ];
-        // first deletion pairs with the lone addition
-        assert_eq!(
-            hunk_emphasis(&lines, 1),
-            Some(changed_range("    hone(a);", "    hone(b, c);"))
-        );
-        // second deletion has no pair
-        assert_eq!(hunk_emphasis(&lines, 2), None);
-        // the addition sees the same middle from its own side
-        assert_eq!(
-            hunk_emphasis(&lines, 3),
-            Some(changed_range("    hone(a);", "    hone(b, c);"))
-        );
-        // context never emphasizes
-        assert_eq!(hunk_emphasis(&lines, 0), None);
-    }
 
     #[test]
     fn hunk_header_spans_keep_the_buffer_rows_bytes() {

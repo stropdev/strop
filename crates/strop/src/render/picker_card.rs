@@ -11,7 +11,7 @@ use ratatui::Frame;
 
 use crate::editor::{Editor, PreviewSource};
 
-use super::{class_color, dim_color, ACCENT, BASE, MUTED, SELECT_BG, TEXT};
+use super::{dim_color, ACCENT, BASE, MUTED, SELECT_BG, TEXT};
 
 /// Dim the backdrop: the editor stays readable under the card (0003 §2.1
 /// live backdrop), with fg colors pulled toward the base.
@@ -53,9 +53,12 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             let width = ((u32::from(area.width) * 84 / 100) as u16)
                 .max(50)
                 .min(area.width.saturating_sub(2));
-            let height = ((u32::from(area.height) * 70 / 100) as u16)
-                .max(12)
-                .min(area.height.saturating_sub(2));
+            let height = if p.kind == strop_picker::Kind::RemoteAddress {
+                8
+            } else {
+                ((u32::from(area.height) * 70 / 100) as u16).max(12)
+            }
+            .min(area.height.saturating_sub(2));
             Rect {
                 x: (area.width - width) / 2,
                 y: (area.height - height) / 2,
@@ -73,7 +76,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         input_cursor,
         replace_cursor,
         field,
-        rows_data,
+        row_count,
         selected,
         streaming,
         total,
@@ -90,20 +93,28 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             p.input.cursor,
             p.replace_input.cursor,
             p.field,
-            p.rows.clone(),
+            p.rows.len(),
             p.selected,
-            p.streaming,
+            p.streaming || glue.rank_pending.is_some(),
             p.items.len(),
             // row + file exclusions both count (0007)
-            p.rows.iter().filter(|r| p.is_excluded(r.item)).count(),
+            p.excluded_count(),
             p.input_normal(),
             p.error.clone(),
         )
     };
     let replace_mode = kind == strop_picker::Kind::Replace;
+    let remote_picker = matches!(
+        kind,
+        strop_picker::Kind::RemoteHosts | strop_picker::Kind::RemoteAddress
+    );
 
     let hint = if replace_mode {
         " enter apply · tab field · ctrl-x row · ctrl-d file · esc  —  -t rs / --glob filters "
+    } else if kind == strop_picker::Kind::RemoteAddress {
+        " enter connect · esc normal/close "
+    } else if remote_picker {
+        " enter choose/connect · esc normal/close · ↑↓/tab move "
     } else {
         " enter open · esc normal/close · ↑↓/tab move · j/k after esc "
     };
@@ -197,21 +208,33 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
         .split(rows[1]);
+    let results = if remote_picker { rows[1] } else { cols[0] };
 
-    if replace_mode {
+    if kind == strop_picker::Kind::RemoteAddress {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from("host or user@host[:port]"),
+                Line::from("ssh://host/absolute/path  —  file or directory"),
+                Line::from("New hosts open /; no mount or recursive workspace scan."),
+            ])
+            .style(Style::default().fg(MUTED)),
+            results,
+        );
+    } else if replace_mode {
         let p = &editor.picker.as_ref().expect("picker open").picker;
-        render_replace_results(frame, cols[0], p);
+        render_replace_results(frame, results, p);
     } else {
-        render_results(frame, cols[0], &rows_data, selected);
+        let p = &editor.picker.as_ref().expect("picker open").picker;
+        render_results(frame, results, p, selected);
     }
     // border-column scrollbar for the results list (0003 §5.5)
-    if !cols[0].is_empty() && rows_data.len() > cols[0].height as usize && !rows_data.is_empty() {
-        let track_x = cols[0].x + cols[0].width - 1;
-        let track_h = cols[0].height as usize;
-        let frac = selected as f32 / rows_data.len().max(1) as f32;
+    if !results.is_empty() && row_count > results.height as usize {
+        let track_x = results.x + results.width - 1;
+        let track_h = results.height as usize;
+        let frac = selected as f32 / row_count.max(1) as f32;
         let thumb = ((track_h - 1) as f32 * frac) as usize;
         for y in 0..track_h {
-            let cell = &mut frame.buffer_mut()[(track_x, cols[0].y + y as u16)];
+            let cell = &mut frame.buffer_mut()[(track_x, results.y + y as u16)];
             if y == thumb {
                 cell.set_symbol("▮");
                 cell.set_fg(ACCENT);
@@ -221,7 +244,9 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             }
         }
     }
-    render_preview(editor, frame, cols[1]);
+    if !remote_picker {
+        render_preview(editor, frame, cols[1]);
+    }
     let _ = streaming; // spinner lands with the 100ms rule (0001 §4)
     let (caret_len, caret_row) = if replace_mode && field == strop_picker::Field::Replace {
         (10 + replace_input[..replace_cursor].chars().count(), 1u16)
@@ -236,7 +261,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     }
 }
 
-fn render_results(frame: &mut Frame, area: Rect, rows: &[strop_picker::Row], selected: usize) {
+fn render_results(frame: &mut Frame, area: Rect, picker: &strop_picker::Picker, selected: usize) {
     let visible = area.height as usize;
     let start = if selected >= visible {
         selected + 1 - visible
@@ -244,15 +269,18 @@ fn render_results(frame: &mut Frame, area: Rect, rows: &[strop_picker::Row], sel
         0
     };
     let mut lines: Vec<Line> = Vec::with_capacity(visible);
-    for (vi, row) in rows.iter().enumerate().skip(start).take(visible) {
+    for (vi, row) in picker.rows.iter().enumerate().skip(start).take(visible) {
         let active = vi == selected;
         let marker = if active { "▌" } else { " " };
         let style = Style::default().fg(if active { ACCENT } else { MUTED });
         let mut spans = vec![Span::styled(marker, style)];
         // matched chars accent+bold, never background blocks (0001 §4)
 
-        let text = row_text(row);
-        let match_cols: Vec<u32> = row.match_cols.clone();
+        let Some(item) = picker.items.get(row.item) else {
+            continue;
+        };
+        let text = super::text::clip_end(&item.text, area.width.saturating_sub(1) as usize);
+        let match_cols = picker.match_columns(row);
         let base_fg = if active {
             TEXT
         } else {
@@ -322,28 +350,28 @@ fn render_replace_results(frame: &mut Frame, area: Rect, p: &strop_picker::Picke
             ));
             let (s, e) = strop_picker::replace_span(line_text, *col, *match_len);
             spans.push(Span::styled(
-                line_text[..s].to_string(),
+                super::text::clip_end(&line_text[..s], area.width as usize).into_owned(),
                 Style::default().fg(text_fg),
             ));
             spans.push(Span::styled(
-                line_text[s..e].to_string(),
+                super::text::clip_end(&line_text[s..e], area.width as usize).into_owned(),
                 Style::default()
                     .fg(dim_color(TEXT))
                     .add_modifier(Modifier::CROSSED_OUT),
             ));
             if !p.replace_input.text.is_empty() {
                 spans.push(Span::styled(
-                    p.replace_input.text.clone(),
+                    super::text::clip_end(&p.replace_input.text, area.width as usize).into_owned(),
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 ));
             }
             spans.push(Span::styled(
-                line_text[e..].to_string(),
+                super::text::clip_end(&line_text[e..], area.width as usize).into_owned(),
                 Style::default().fg(text_fg),
             ));
         } else {
             spans.push(Span::styled(
-                item.text.clone(),
+                super::text::clip_end(&item.text, area.width as usize).into_owned(),
                 Style::default().fg(text_fg),
             ));
         }
@@ -358,50 +386,55 @@ fn render_replace_results(frame: &mut Frame, area: Rect, p: &strop_picker::Picke
     frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
 
-fn row_text(row: &strop_picker::Row) -> &str {
-    &row.text
-}
-
 fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
     let Some((title, focus_line, source)) = editor.picker_preview() else {
         frame.render_widget(Paragraph::new("").style(Style::default().bg(BASE)), area);
         return;
     };
     let visible = area.height as usize;
+    let width = usize::from(area.width.saturating_sub(1));
+    let tab = editor.config.tab_size;
 
     let lines: Vec<Line> = match source {
-        PreviewSource::Buffer(i) => {
-            let mut document = editor.doc_mut(i);
-            let rope = document.buf.snapshot();
-            let revision = document.buf.revision();
-            match document
-                .highlighter
-                .as_mut()
-                .map(|highlighter| highlighter.highlight(&rope, revision, 0, rope.len_bytes()))
-                .transpose()
-            {
-                Ok(spans) => highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible),
-                Err(error) => vec![Line::from(format!("syntax: {error}"))],
-            }
+        PreviewSource::Buffer(document) => {
+            let rope = editor.doc(document).buf.snapshot();
+            let window = preview_window(&rope, focus_line, visible);
+            let analysis = editor.document_analysis(
+                document,
+                rope.line_to_byte(window.start),
+                rope.line_to_byte(window.end),
+                0,
+                width,
+            );
+            highlight_lines_owned(
+                &rope,
+                analysis.as_ref().map(|a| a.spans.as_slice()),
+                focus_line,
+                window,
+                width,
+                tab,
+            )
         }
-        PreviewSource::Cached(entry) => {
+        PreviewSource::Cached(path) => {
+            let Some(entry) = editor.previews.get(&path) else {
+                return;
+            };
             let rope = entry.rope.clone();
-            match entry
-                .hl
-                .as_mut()
-                .map(|highlighter| {
-                    highlighter.highlight(
-                        &rope,
-                        strop_core::id::BufferRevision::new(0),
-                        0,
-                        rope.len_bytes(),
-                    )
-                })
-                .transpose()
-            {
-                Ok(spans) => highlight_lines_owned(&rope, spans.as_deref(), focus_line, visible),
-                Err(error) => vec![Line::from(format!("syntax: {error}"))],
-            }
+            let window = preview_window(&rope, focus_line, visible);
+            let analysis = editor.preview_analysis(
+                &path,
+                rope.line_to_byte(window.start),
+                rope.line_to_byte(window.end),
+                width,
+            );
+            highlight_lines_owned(
+                &rope,
+                analysis.as_ref().map(|a| a.spans.as_slice()),
+                focus_line,
+                window,
+                width,
+                tab,
+            )
         }
         PreviewSource::Loading => vec![Line::from(Span::styled(
             " loading…",
@@ -424,47 +457,65 @@ fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-fn text_len(rope: &ropey::Rope, line: usize) -> usize {
-    rope.line(line).len_bytes().saturating_sub(1) // exclude \n
+fn preview_window(
+    rope: &ropey::Rope,
+    focus: Option<usize>,
+    visible: usize,
+) -> std::ops::Range<usize> {
+    let first = focus
+        .map_or(0, |line| line.saturating_sub(1).saturating_sub(visible / 3))
+        .min(rope.len_lines());
+    first..first.saturating_add(visible).min(rope.len_lines())
 }
 
 fn highlight_lines_owned(
     rope: &ropey::Rope,
     spans: Option<&[strop_syntax::Span]>,
     focus_line: Option<usize>,
-    visible: usize,
+    window: std::ops::Range<usize>,
+    width: usize,
+    tab: usize,
 ) -> Vec<Line<'static>> {
-    let total = rope.len_lines();
-    let top = match focus_line {
-        Some(l) => l.saturating_sub(1).saturating_sub(visible / 3),
-        None => 0,
-    };
-    let spans = spans.map(|s| s.to_vec()).unwrap_or_default();
-    let mut out = Vec::with_capacity(visible);
-    for li in top..(top + visible).min(total) {
-        let start = rope.line_to_byte(li);
-        let end = start + text_len(rope, li);
-        let line_spans: Vec<&strop_syntax::Span> = spans
-            .iter()
-            .filter(|s| s.start < end && s.end > start)
-            .collect();
-        let text = rope.line(li).to_string();
+    use strop_core::layout::{clip, printable_grapheme, RopeGraphemes};
+    let spans = spans.unwrap_or_default();
+    let mut out = Vec::with_capacity(window.len());
+    for line in window {
+        let start = rope.line_to_byte(line);
+        let text = rope.line(line);
+        let mut end = text.len_bytes();
+        while end > 0 && matches!(text.byte(end - 1), b'\r' | b'\n') {
+            end -= 1;
+        }
+        let text = text.byte_slice(..end);
+        let first_span = spans.partition_point(|span| span.end <= start);
         let mut spans_out = Vec::new();
-        for (i, ch) in text.trim_end_matches('\n').chars().enumerate() {
-            let pos = start + i;
-            let mut style = Style::default().fg(TEXT);
-            // most specific (smallest) span wins
-            if let Some(sp) = line_spans
-                .iter()
-                .filter(|s| s.start <= pos && pos < s.end)
-                .min_by_key(|s| s.end - s.start)
-            {
-                style = style.fg(class_color(sp.class));
+        for (placement, grapheme) in RopeGraphemes::new(text, tab) {
+            if placement.cell.get() >= width {
+                break;
             }
-            if focus_line == Some(li + 1) {
+            let Some(visible) = clip(placement, strop_core::id::DisplayColumn::new(0), width)
+            else {
+                continue;
+            };
+            let pos = start + placement.byte;
+            let mut style = Style::default().fg(TEXT);
+            if let Some(span) = spans[first_span..]
+                .iter()
+                .take_while(|span| span.start <= pos)
+                .filter(|span| pos < span.end)
+                .min_by_key(|span| span.end - span.start)
+            {
+                style = style.patch(super::syntax_style(span));
+            }
+            if focus_line == Some(line + 1) {
                 style = style.bg(SELECT_BG);
             }
-            spans_out.push(Span::styled(ch.to_string(), style));
+            let symbol = if !visible.complete || grapheme == "\t" {
+                " ".repeat(visible.width)
+            } else {
+                printable_grapheme(&grapheme).to_owned()
+            };
+            spans_out.push(Span::styled(symbol, style));
         }
         out.push(Line::from(spans_out));
     }

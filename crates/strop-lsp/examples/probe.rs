@@ -52,7 +52,7 @@ fn main() {
                         path: path.clone(),
                         line: strop_core::id::LineIndex::new(1),
                         byte_col: strop_core::id::ByteColumn::new(8),
-                        line_text,
+                        line_text: line_text.into(),
                         kind: strop_lsp::RequestKind::Hover,
                     });
                     if let Err(refusal) = admitted {
