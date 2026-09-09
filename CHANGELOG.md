@@ -43,6 +43,10 @@ coverage (plans 0038/0039).
 - Remote home expansion decodes OpenSSH's documented NAME reply instead of
   expecting an extended-reply packet. Repositories without configured remotes
   retain valid Git context.
+- Protocol builds pin the checksum-verified stable TLA+ release instead of a
+  moving prerelease asset. Temporal fault checks verify the sole configured
+  property and require a rejecting exit status; checker failures never count as
+  successful fault detection.
 
 ### Scope
 

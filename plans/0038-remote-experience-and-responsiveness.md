@@ -363,3 +363,13 @@ Both local compose gates passed: `test` (formatting, strict Clippy and workspace
 tests with SSH required) and `model` (bounded checks, progress/witness cases and
 deliberate fault variants). Hosted CI and release-artifact checks remain publication
 gates, not assumptions inferred from these local results.
+
+The first hosted run passed Rust but caught a changed checksum at the moving
+TLA+ `v1.8.0` prerelease URL. The build now pins the
+[stable `v1.7.4` asset](https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4):
+published SHA-1 `bee4a54f3ee3d4afc347c3240ec2d9e93b075104` matched the download,
+and SHA-256 `936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88`
+is enforced by Docker. The full model gate passed again with stable TLC 2.19.
+Its aggregate temporal diagnostic is attributed only after checking that the fault
+configuration contains exactly the sole expected final `PROPERTY`; fault runs must
+also exit nonzero. No checksum or model-failure check was disabled.

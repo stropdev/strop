@@ -3,7 +3,7 @@
 run_model() {
     name=$1
     result=0
-    java -XX:+UseParallelGC -Xmx4g -jar "$JAR" -noTE -cleanup \
+    java -XX:+UseParallelGC -Xmx4g -jar "$JAR" -cleanup \
         -metadir "$WORK/$name.meta" -config "$2" "$3" >"$WORK/$name.log" 2>&1 || result=$?
     # Stop at the first fault/witness: exhaustive safety is a separate clean run.
     # Classify all error lines so parser/tool failures cannot count as a kill.
@@ -35,6 +35,10 @@ expect_kills() {
     shift 4
     echo "[model gate] $label: expect $*${temporal:+ (temporal=$temporal)}"
     run_model "$label" "$config" "$module"
+    if [ "$result" -eq 0 ]; then
+        echo "FAIL: $label reported success instead of rejecting the fault"
+        cat "$WORK/$name.log"; exit 1
+    fi
     got=$(grep -oE 'Invariant [A-Za-z0-9_]+ is violated' "$WORK/$name.log" | sort -u)
     want=""
     if [ "$#" -gt 0 ]; then want=$(printf 'Invariant %s is violated\n' "$@" | sort -u); fi
@@ -44,8 +48,16 @@ expect_kills() {
         exit 1
     fi
     if [ "$temporal" != no ]; then
-        grep -q "Temporal property $temporal was violated" "$WORK/$name.log" || {
-            echo "FAIL: $label did not kill its sole configured temporal property"
+        # Stable TLC reports a collective temporal violation. Attribute it only
+        # when the fault config ends with exactly the one expected property.
+        declared_properties=$(sed -n '/^[[:space:]]*PROPERT[YI]/,$p' "$config" \
+            | tr '\n\t' '  ' | sed 's/^ *//; s/ *$//; s/  */ /g')
+        if [ "$declared_properties" != "PROPERTY $temporal" ]; then
+            echo "FAIL: $label must configure only the final PROPERTY $temporal"
+            exit 1
+        fi
+        grep -q '^Error: Temporal properties were violated\.$' "$WORK/$name.log" || {
+            echo "FAIL: $label did not reject its sole configured temporal property"
             cat "$WORK/$name.log"; exit 1;
         }
     elif grep -q 'Temporal propert' "$WORK/$name.log"; then

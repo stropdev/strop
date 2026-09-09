@@ -41,11 +41,12 @@ ENTRYPOINT ["/strop"]
 
 # The editor protocol model check (0024/R12): TLC over
 # specs/EditorProtocol.tla plus the kept-mutant kill check — the gate
-# script proves the protocol AND requires the mutant to die by exactly
-# the NoMisapply invariant. The image existing IS the gate.
+# script checks both freshness invariants in the deliberate mutant.
 FROM eclipse-temurin:21-jre AS model
-ARG TLA_TOOLS_SHA256=b658b4e504fdf0b721caf7066320f6b6fe5805f4dd2f717d0e47baba4097205e
-ADD --checksum=sha256:${TLA_TOOLS_SHA256} https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar /tla/tla2tools.jar
+# v1.8.0 is a moving prerelease asset; use the stable, checksum-verified release.
+# Its published SHA-1 and downloaded SHA-256 were independently checked.
+ARG TLA_TOOLS_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+ADD --checksum=sha256:${TLA_TOOLS_SHA256} https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar /tla/tla2tools.jar
 WORKDIR /work
 COPY specs ./specs
 RUN sh specs/gate.sh
