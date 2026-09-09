@@ -12,6 +12,7 @@ fn document(text: &str, selection: ReadSelection) -> Document {
             selection,
             connection: None,
             return_to: None,
+            write: None,
         },
     )
 }

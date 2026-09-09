@@ -277,6 +277,7 @@ impl Editor {
             self.request_session_save();
         }
         let closed = self.current();
+        self.revoke_remote_write(closed);
         self.analysis
             .forget(super::analysis::AnalysisTarget::Document(closed));
         self.stop_remote_follow(closed);

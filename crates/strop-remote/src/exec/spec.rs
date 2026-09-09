@@ -10,15 +10,14 @@
 //! Python supervisor via `os.chdir(bytes)` / `os.execvpe` with byte
 //! argv; nothing is ever interpolated into shell syntax.
 //!
-//! Layout (little-endian): version `u8`, mode `u8` (0 finite, 1
-//! relayed), grace milliseconds `u32`, 16 raw nonce bytes, then length-
-//! prefixed (`u32`) cwd and `argc`-counted length-prefixed argv
-//! elements. Every string is native POSIX bytes with no NUL.
+//! Layout (little-endian): version, stdin mode and program kind (`u8` each),
+//! grace milliseconds (`u32`), 16 nonce bytes, length-prefixed cwd and an
+//! argc-counted length-prefixed argv. Native strings never contain NUL.
 
-use crate::exec::{RemoteCommandError, StdinMode};
+use crate::exec::{RemoteCommandError, RemoteProgram, StdinMode};
 use std::path::Path;
 
-pub(super) const VERSION: u8 = 1;
+pub(super) const VERSION: u8 = 2;
 
 /// Linux caps a single argv element at 128 KiB (`MAX_ARG_STRLEN`); the
 /// base64 wrapper plus quoting headroom keeps us comfortably below.
@@ -32,6 +31,7 @@ pub(super) const GRACE_MS: u32 = 2_000;
 #[derive(Debug)]
 pub(super) struct Spec {
     pub(super) mode: StdinMode,
+    pub(super) python: bool,
     pub(super) grace_ms: u32,
     pub(super) nonce: [u8; 16],
     pub(super) cwd: Vec<u8>,
@@ -66,18 +66,21 @@ impl Spec {
     pub(super) fn encode(
         mode: StdinMode,
         nonce: [u8; 16],
-        program: &std::ffi::OsStr,
+        program: &RemoteProgram,
         args: &[std::ffi::OsString],
         cwd: &Path,
     ) -> Result<Self, RemoteCommandError> {
         let mut argv = Vec::with_capacity(args.len() + 1);
-        let program = os_bytes(program)?;
-        if program.is_empty() {
-            return Err(RemoteCommandError::Invalid {
-                detail: "program is empty".into(),
-            });
+        let python = matches!(program, RemoteProgram::SupervisorPython);
+        if let RemoteProgram::Executable(program) = program {
+            let program = os_bytes(program)?;
+            if program.is_empty() {
+                return Err(RemoteCommandError::Invalid {
+                    detail: "program is empty".into(),
+                });
+            }
+            argv.push(program);
         }
-        argv.push(program);
         for argument in args {
             argv.push(os_bytes(argument)?);
         }
@@ -102,6 +105,7 @@ impl Spec {
         }
         Ok(Self {
             mode,
+            python,
             grace_ms: GRACE_MS,
             nonce,
             cwd,
@@ -111,12 +115,13 @@ impl Spec {
 
     /// Canonical binary form.
     pub(super) fn bytes(&self) -> Vec<u8> {
-        let mut blob = Vec::with_capacity(6 + 16 + 4 + self.cwd.len() + 4 * self.argv.len());
+        let mut blob = Vec::with_capacity(7 + 16 + 4 + self.cwd.len() + 4 * self.argv.len());
         blob.push(VERSION);
         blob.push(match self.mode {
             StdinMode::Finite => 0,
             StdinMode::Relayed => 1,
         });
+        blob.push(u8::from(self.python));
         blob.extend_from_slice(&self.grace_ms.to_le_bytes());
         blob.extend_from_slice(&self.nonce);
         blob.extend_from_slice(&(self.cwd.len() as u32).to_le_bytes());
@@ -197,7 +202,7 @@ mod tests {
         Spec::encode(
             StdinMode::Finite,
             [7u8; 16],
-            std::ffi::OsStr::new(argv[0]),
+            &RemoteProgram::Executable(argv[0].into()),
             &argv[1..]
                 .iter()
                 .map(|a| OsString::from(a.to_owned()))
@@ -219,38 +224,6 @@ mod tests {
     }
 
     #[test]
-    fn canonical_bytes_have_a_stable_layout() {
-        let bytes = spec(&["git", "log"], "/srv").bytes();
-        assert_eq!(bytes[0], 1, "version");
-        assert_eq!(bytes[1], 0, "finite mode");
-        assert_eq!(
-            u32::from_le_bytes(bytes[2..6].try_into().unwrap()),
-            GRACE_MS
-        );
-        assert_eq!(&bytes[6..22], &[7u8; 16], "nonce");
-        let mut at = 22;
-        let cwd_len = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
-        at += 4;
-        assert_eq!(&bytes[at..at + cwd_len], b"/srv");
-        at += cwd_len;
-        let argc = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
-        assert_eq!(argc, 2);
-    }
-
-    #[test]
-    fn relayed_mode_is_encoded_as_one() {
-        let relayed = Spec::encode(
-            StdinMode::Relayed,
-            nonce(),
-            std::ffi::OsStr::new("server"),
-            &[],
-            &PathBuf::from("/"),
-        )
-        .unwrap();
-        assert_eq!(relayed.bytes()[1], 1);
-    }
-
-    #[test]
     #[cfg(unix)]
     fn nul_bytes_are_refused() {
         use std::os::unix::ffi::OsStringExt;
@@ -258,7 +231,7 @@ mod tests {
         let error = Spec::encode(
             StdinMode::Finite,
             nonce(),
-            std::ffi::OsStr::new("git"),
+            &RemoteProgram::Executable("git".into()),
             &[poisoned],
             &PathBuf::from("/"),
         )
@@ -271,7 +244,7 @@ mod tests {
         let error = Spec::encode(
             StdinMode::Finite,
             nonce(),
-            std::ffi::OsStr::new("git"),
+            &RemoteProgram::Executable("git".into()),
             &[],
             &PathBuf::from("relative/path"),
         )

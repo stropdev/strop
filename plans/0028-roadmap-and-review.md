@@ -29,11 +29,11 @@ tree reconstruction from blocking rendering. 0038 now records the owner for each
 path and real editor measurements; 0039 adds static syntax coverage without moving
 parsers back onto input. Keep measuring the complete path, not just the matcher.
 
-Named remaining priorities:
+Current delivery and remaining priorities:
 
-- **P1 — requested next release: remote editing/saving (RW4).** Keep explicit
-  writable admission, content-aware conflicts, atomic replacement, metadata and
-  symlink policy, cancellation outcomes and a truthful concurrency guarantee.
+- **P1 delivered for 0.19 — remote editing/saving (RW4).** 0040 implements explicit
+  writable admission, content-aware conflicts, protected atomic replacement,
+  metadata/symlink policy, cancellation outcomes and qualified cooperative exclusion.
 - **P2 — WORD text-object fidelity.** `ciW` currently reports an invalid command.
   Add the WORD-object family through the shared grammar and differential corpus;
   do not disguise it as a deferred-input bug or add a preview-only implementation.

@@ -96,14 +96,16 @@ def _plain(text):
         pass
 
 def _parse_spec(blob):
-    if len(blob) < 28:
+    if len(blob) < 29:
         raise ValueError('short spec')
-    version, mode, grace = struct.unpack_from('<BBI', blob, 0)
-    if version != 1:
+    version, mode, program, grace = struct.unpack_from('<BBBI', blob, 0)
+    if version != 2:
         raise ValueError('version %d' % version)
     if mode > 1:
         raise ValueError('mode %d' % mode)
-    off = 6
+    if program not in (0, 1):
+        raise ValueError('program kind %d' % program)
+    off = 7
     nonce = blob[off:off + 16]
     if len(nonce) != 16:
         raise ValueError('nonce')
@@ -129,6 +131,10 @@ def _parse_spec(blob):
         raise ValueError('cwd not absolute')
     if b'\x00' in cwd or any(b'\x00' in item for item in argv):
         raise ValueError('NUL in spec')
+    if program == 1:
+        argv = [os.fsencode(sys.executable), b'-I', b'-S'] + argv
+    elif not argv[0]:
+        raise ValueError('empty executable')
     if grace > 600000:
         grace = 600000
     return mode, grace, nonce, cwd, argv

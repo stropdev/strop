@@ -132,6 +132,13 @@ impl Editor {
     }
 
     pub fn request_target(&mut self, target: FileTarget, intent: OpenIntent) {
+        if matches!(intent, OpenIntent::Refresh) && self.remote_write_blocks_refresh(self.current())
+        {
+            self.message =
+                "remote save pending or unconfirmed; settle or :remote verify before refresh"
+                    .into();
+            return;
+        }
         let selection = match &intent {
             OpenIntent::RemoteView { view, .. } => view.selection(),
             OpenIntent::Refresh => self
@@ -169,11 +176,10 @@ impl Editor {
                     .is_none_or(|source| source.selection == selection))
             .then_some(id)
         });
-        if let Some(id) = existing.filter(|_| {
-            !matches!(
-                intent,
-                OpenIntent::Refresh | OpenIntent::Browse | OpenIntent::RemoteDestination
-            )
+        if let Some(id) = existing.filter(|&id| {
+            !matches!(intent, OpenIntent::Refresh)
+                && (!matches!(intent, OpenIntent::Browse | OpenIntent::RemoteDestination)
+                    || self.doc(id).directory_metadata_ref().is_none())
         }) {
             if (requires_file && self.doc(id).directory_metadata_ref().is_some())
                 || (browse && self.doc(id).directory_metadata_ref().is_none())
@@ -380,7 +386,7 @@ impl Editor {
                     | super::document::DocumentSource::RemoteDirectory(_)
             )
         }) {
-            self.message = "remote snapshots are read-only; remote writes are not supported".into();
+            self.request_remote_save(document, target, force, close);
             return;
         }
         if target
@@ -388,7 +394,7 @@ impl Editor {
             .and_then(|path| path.to_str())
             .is_some_and(|path| path.starts_with("ssh://"))
         {
-            self.message = "remote writes are not supported; no local fallback".into();
+            self.message = "remote save-as is unsupported; no local fallback".into();
             return;
         }
         if self.io.saves.contains_key(&document) {
@@ -521,6 +527,7 @@ impl Editor {
                 match completion.outcome {
                     Outcome::Success(mut opened) => {
                         if matches!(key.intent, OpenIntent::Refresh) {
+                            self.revoke_remote_write(key.origin);
                             self.finish_remote_refresh(key.origin, opened.document);
                             return;
                         }
@@ -543,7 +550,8 @@ impl Editor {
                             if matches!(
                                 key.intent,
                                 OpenIntent::Browse | OpenIntent::RemoteDestination
-                            ) {
+                            ) && self.doc(id).directory_metadata_ref().is_some()
+                            {
                                 if let Err(error) =
                                     self.publish_remote_snapshot(id, opened.document, false)
                                 {
@@ -641,6 +649,7 @@ impl Editor {
 impl Editor {
     pub(crate) fn io_write_pending(&self, request: WorkerId) -> bool {
         self.io.session == Some(request)
+            || self.remote_write_pending(request)
             || self.destination_write_pending(request)
             || self
                 .io
@@ -655,6 +664,9 @@ impl Editor {
             })
     }
     pub(crate) fn io_status(&self) -> Option<&'static str> {
+        if let Some(status) = self.remote_write_status() {
+            return Some(status);
+        }
         if !self.io.saves.is_empty() {
             Some("saving")
         } else if !self.io.open.is_empty() {
@@ -662,6 +674,13 @@ impl Editor {
         } else {
             None
         }
+    }
+
+    pub(crate) fn remote_refresh_pending(&self, document: DocumentId) -> bool {
+        self.io
+            .open
+            .values()
+            .any(|key| key.origin == document && matches!(key.intent, OpenIntent::Refresh))
     }
 }
 

@@ -61,14 +61,23 @@ impl Buffer {
         if self.path != receipt.origin {
             return false;
         }
-        let current = self.revision() == receipt.revision;
+        let current = self.acknowledge_saved_revision(receipt.revision);
         if current {
             self.path = Some(receipt.target);
             self.disk_stamp = receipt.stamp;
             self.file_identity = Some(receipt.canonical);
-            self.dirty = false;
         } else if self.path.as_ref() == Some(&receipt.target) {
             self.disk_stamp = receipt.stamp;
+        }
+        current
+    }
+
+    /// Pure acknowledgment for an externally owned save. The caller validates
+    /// document/request identity; no local filesystem path is created or changed.
+    pub fn acknowledge_saved_revision(&mut self, revision: BufferRevision) -> bool {
+        let current = self.revision() == revision;
+        if current {
+            self.dirty = false;
         }
         current
     }

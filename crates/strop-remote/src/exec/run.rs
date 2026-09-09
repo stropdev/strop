@@ -62,13 +62,27 @@ pub(super) fn run(
     command: &RemoteCommand,
     token: &CancelToken,
 ) -> Result<CommandOutput, RemoteCommandError> {
-    let (mut process, key) = supervised(endpoint, command, StdinMode::Finite)?;
+    run_input(endpoint, command, token, None)
+}
+
+pub(super) fn run_input(
+    endpoint: &RemoteEndpoint,
+    command: &RemoteCommand,
+    token: &CancelToken,
+    chunks: Option<&[&[u8]]>,
+) -> Result<CommandOutput, RemoteCommandError> {
+    let mode = if chunks.is_some() {
+        StdinMode::Relayed
+    } else {
+        StdinMode::Finite
+    };
+    let (mut process, key) = supervised(endpoint, command, mode)?;
     let policy = CapturePolicy {
         stdout_limit: STDOUT_LIMIT,
         stderr_limit: STDERR_LIMIT,
         stderr_tail: STDERR_TAIL,
         deadline: command.deadline(),
-        stdin: StdinPolicy::Held,
+        stdin: chunks.map_or(StdinPolicy::Held, StdinPolicy::HeldInput),
     };
     let output = match capture_with(&mut process, token, &policy) {
         Ok(output) => output,
@@ -119,6 +133,7 @@ pub(super) fn classify(
             stderr: output.stderr,
             stdout_dropped: output.stdout_dropped,
             stderr_dropped: output.stderr_dropped,
+            stdin_error: output.stdin_error.map(|error| error.to_string()),
         }),
         Some(SupervisionOutcome::Signaled(signal)) => Ok(CommandOutput {
             status: RemoteExitStatus::Signaled(*signal),
@@ -126,6 +141,7 @@ pub(super) fn classify(
             stderr: output.stderr,
             stdout_dropped: output.stdout_dropped,
             stderr_dropped: output.stderr_dropped,
+            stdin_error: output.stdin_error.map(|error| error.to_string()),
         }),
         Some(SupervisionOutcome::Cancelled) => Err(RemoteCommandError::Cancelled {
             diagnostics: tail(&output.stderr),

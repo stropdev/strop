@@ -49,6 +49,9 @@ impl Editor {
             "  Space o / :remote       Choose an SSH destination or add a host; Enter connects\n",
             "  - / Backspace           Visit parent directory and retain the selected child\n",
             "  :remote root / home     Browse remote root or negotiated home directory\n",
+            "  :remote edit             Verify a full file snapshot and explicitly enable editing\n",
+            "  :w / :wq                 Save an authorized remote file; no conflict bypass via !\n",
+            "  :remote verify           Reconcile an unconfirmed save without blind overwrite\n",
             "  :tail [BYTES] [URI]     Read a bounded tail (URI defaults to current file)\n",
             "  :range START BYTES URI  Read a byte window; line numbers are window-relative\n",
             "  :follow [URI]           Follow a bounded tail; Escape stops following\n",
@@ -61,7 +64,7 @@ impl Editor {
             "  :remote list            List authenticated connections in a buffer\n",
             "  :trust                  Authorize the pending endpoint/project command\n",
             "  Tab                     Complete an SSH URI without starting authentication\n",
-            "  :e!                     Refresh the current read-only snapshot\n",
+            "  :e!                     Refresh the remote snapshot and revoke write authority\n",
             "  directory columns       kind, POSIX permissions, server bytes, name; ? = unknown\n",
         ));
         let mut buf = Buffer::from_text(&text);

@@ -252,6 +252,7 @@ impl Editor {
     /// multi-key sequences behave exactly as in normal mode.
     pub(crate) fn feed_readonly(&mut self, key: Key) {
         if key == Key::Esc {
+            self.cancel_remote_write(self.current());
             self.stop_remote_follow(self.current());
             self.cancel_remote_filter(self.current());
             self.walker.clear();

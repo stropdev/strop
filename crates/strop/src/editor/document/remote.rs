@@ -14,6 +14,7 @@ pub struct RemoteDocument {
     pub selection: ReadSelection,
     pub connection: Option<ConnectionLease>,
     pub return_to: Option<ReturnPoint>,
+    pub(crate) write: Option<crate::editor::remote::save::WritePermit>,
 }
 impl std::fmt::Debug for RemoteDocument {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -23,6 +24,7 @@ impl std::fmt::Debug for RemoteDocument {
             .field("window", &self.window)
             .field("selection", &self.selection)
             .field("connected", &self.connection.is_some())
+            .field("write_authorized", &self.write.is_some())
             .finish()
     }
 }
@@ -153,6 +155,7 @@ impl Document {
                 selection,
                 connection: Some(snapshot.connection),
                 return_to: None,
+                write: None,
             },
         )
     }

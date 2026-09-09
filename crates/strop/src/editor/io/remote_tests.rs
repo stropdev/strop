@@ -36,6 +36,7 @@ fn deliver(editor: &mut Editor, ticket: Ticket<OpenKey>, text: &str) {
                 selection: ticket.key.selection,
                 connection: None,
                 return_to: None,
+                write: None,
             },
         ),
         canonical: ticket.key.path.clone(),

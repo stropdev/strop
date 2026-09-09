@@ -38,6 +38,8 @@ impl Editor {
                     }
                     ["root"] => return self.browse_remote_root(false),
                     ["home"] => return self.browse_remote_root(true),
+                    ["edit"] => return self.enable_remote_edit(),
+                    ["verify"] => return self.verify_remote_save(),
                     ["connect", endpoint] => RemoteControl::Connect(
                         RemoteEndpoint::parse(endpoint).map_err(|e| e.to_string())?,
                     ),
@@ -53,7 +55,7 @@ impl Editor {
                     ["clear"] => RemoteControl::DisconnectAll,
                     ["list"] => RemoteControl::Connections,
                     _ => return Err(
-                        "usage: :remote connect|disconnect ssh://HOST, :remote clear, :remote list"
+                        "usage: :remote [edit|verify|root|home|connect URI|disconnect [URI]|clear|list]"
                             .into(),
                     ),
                 };

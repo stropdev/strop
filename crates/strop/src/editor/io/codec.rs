@@ -120,6 +120,7 @@ impl<'de> Deserialize<'de> for Opened {
                                 selection,
                                 connection: None,
                                 return_to,
+                                write: None,
                             },
                         )
                     }

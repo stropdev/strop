@@ -68,6 +68,19 @@ pub fn io(event: &crate::editor::io::IoEvent) {
                 RemoteEvent::Control(value) => completion("remote", "control", value),
                 RemoteEvent::Filter(value) => completion("remote", "directory_filter", value),
                 RemoteEvent::Choices(value) => completion("remote", "destinations", value),
+                RemoteEvent::Write(value) => {
+                    let mut record = completion("remote", "write", value);
+                    if let strop_core::worker::Outcome::Success(
+                        crate::editor::remote::save::RemoteWriteResult::Refused(error),
+                    ) = &value.outcome
+                    {
+                        record["outcome"] = outcome(&strop_core::worker::Outcome::<()>::failed(
+                            strop_core::worker::FailureKind::Io,
+                            error.to_string(),
+                        ));
+                    }
+                    record
+                }
                 RemoteEvent::DestinationWritten(value) => {
                     completion("remote", "destination_write", value)
                 }

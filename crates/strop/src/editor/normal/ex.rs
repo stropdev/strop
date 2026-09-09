@@ -240,14 +240,9 @@ impl Editor {
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
             "w" | "w!" => {
-                if self.remote_file().is_some() {
-                    self.message =
-                        "remote snapshots are read-only; remote writes are not supported".into();
-                    return;
-                }
                 // vim: readonly buffers refuse plain :w (surfaces, :view);
                 // :w! forces through the mutation boundary's rule
-                if self.buf().readonly && cmd != "w!" {
+                if self.buf().readonly && cmd != "w!" && self.remote_file().is_none() {
                     let name = self.buf().name.as_deref().unwrap_or("readonly buffer");
                     self.message = format!("{name}: readonly — :w! to force");
                     return;
@@ -255,7 +250,7 @@ impl Editor {
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "w!", false);
             }
             "wq" | "wq!" => {
-                self.request_save(None, cmd == "wq!", true);
+                self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "wq!", true);
             }
             "set" => {
                 // vim's option surface, narrowly: ro/noro only for now
@@ -265,8 +260,9 @@ impl Editor {
                         self.message = "readonly".into();
                     }
                     "noro" | "noreadonly" => {
-                        if self.remote_file().is_some() {
-                            self.message = "remote snapshots are read-only".into();
+                        if self.remote_file().is_some() && !self.remote_edit_authorized() {
+                            self.message =
+                                "remote file is read-only; use :remote edit first".into();
                         } else {
                             self.buf_mut().readonly = false;
                             self.message = "writable".into();

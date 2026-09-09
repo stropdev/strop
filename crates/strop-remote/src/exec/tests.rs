@@ -48,7 +48,7 @@ fn local_supervised(
     Ok((shell, key))
 }
 
-fn local_policy(deadline_seconds: u64) -> CapturePolicy {
+fn local_policy(deadline_seconds: u64) -> CapturePolicy<'static> {
     CapturePolicy {
         stdout_limit: STDOUT_LIMIT,
         stderr_limit: STDERR_LIMIT,
@@ -305,4 +305,51 @@ fn lease_close_while_running_cancels_the_worker() {
         );
         assert_ne!(status.code(), Some(0));
     });
+}
+
+#[test]
+fn selected_python_receives_chunks_without_losing_isolation_or_lease() {
+    require_python3();
+    let command = RemoteCommand::python(
+        "import sys,select; data=sys.stdin.buffer.read(5); poll=select.poll(); poll.register(0,select.POLLIN|select.POLLHUP); print(data.decode(),bool(poll.poll(0)),sys.flags.isolated,sys.flags.no_site)",
+        vec![], std::path::Path::new("/"),
+    ).unwrap();
+    let (mut shell, key) = local_supervised(&command, StdinMode::Relayed).unwrap();
+    let output = in_worker(move |token| {
+        let chunks: [&[u8]; 2] = [b"ab", b"cde"];
+        let policy = CapturePolicy {
+            stdin: StdinPolicy::HeldInput(&chunks),
+            deadline: Duration::from_secs(10),
+            ..Default::default()
+        };
+        classify(capture_with(&mut shell, &token, &policy).unwrap(), &key).unwrap()
+    });
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"abcde False 1 1\n");
+    assert!(output.stdin_error.is_none());
+}
+
+#[test]
+fn failed_input_keeps_the_programs_refusal_output() {
+    let output = in_worker(|token| {
+        let bytes = vec![b'x'; 1024 * 1024];
+        let chunks = [bytes.as_slice()];
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf refused; exit 42"]);
+        capture_with(
+            &mut command,
+            &token,
+            &CapturePolicy {
+                stdin: StdinPolicy::HeldInput(&chunks),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    });
+    assert_eq!(output.status.code(), Some(42));
+    assert_eq!(output.stdout, b"refused");
+    assert!(
+        output.stdin_error.is_some(),
+        "failed delivery remains visible beside the refusal"
+    );
 }

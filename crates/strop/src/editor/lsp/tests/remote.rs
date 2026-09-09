@@ -14,6 +14,7 @@ fn remote_doc(e: &mut Editor, uri: &str, text: &str) -> strop_core::id::Document
             selection: strop_remote::ReadSelection::Full,
             connection: None,
             return_to: None,
+            write: None,
         },
     ))
 }
@@ -196,6 +197,7 @@ fn partial_remote_window_refuses_attach_visibly() {
             ),
             connection: None,
             return_to: None,
+            write: None,
         },
     ));
     e.switch_to(id);

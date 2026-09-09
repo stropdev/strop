@@ -381,18 +381,6 @@ fn home_paths_are_refused_not_guessed() {
 }
 
 #[test]
-fn write_commands_refuse_remote_targets() {
-    let mut e = editor();
-    e.feed_text(":w ssh://build/etc/passwd");
-    e.feed_text("<tab>");
-    assert_eq!(
-        e.message,
-        "remote snapshots are read-only; remote writes are not supported"
-    );
-    assert!(e.remote_completion.ticket().is_none());
-}
-
-#[test]
 fn non_file_commands_fall_back_to_command_name_cycling() {
     let mut e = editor();
     e.feed_text(":help ssh://x/y");

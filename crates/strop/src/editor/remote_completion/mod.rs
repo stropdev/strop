@@ -230,7 +230,7 @@ impl Editor {
             return false;
         }
         if matches!(cmd, "w" | "w!" | "wq" | "wq!") {
-            self.message = "remote snapshots are read-only; remote writes are not supported".into();
+            self.message = "remote save-as completion is unsupported".into();
             return true;
         }
         let Some((min_args, max_args)) = remote_operand_shape(cmd) else {

@@ -6,6 +6,7 @@ mod controls;
 mod directory;
 pub(super) mod follow;
 mod history;
+pub(crate) mod save;
 #[cfg(test)]
 mod tests;
 pub(crate) mod view;
@@ -28,6 +29,7 @@ pub(crate) struct RemoteState {
     choices: Option<Ticket<super::picker::PickerId>>,
     destination_write: Option<Ticket<RemoteFile>>,
     destination_queue: Vec<RemoteFile>,
+    writes: save::WriteState,
 }
 impl Default for RemoteState {
     fn default() -> Self {
@@ -40,6 +42,7 @@ impl Default for RemoteState {
             choices: None,
             destination_write: None,
             destination_queue: Vec::new(),
+            writes: save::WriteState::default(),
         }
     }
 }
@@ -110,6 +113,7 @@ pub(crate) enum RemoteEvent {
     Filter(Box<Completion<DirectoryFilterKey, Opened>>),
     Choices(Completion<super::picker::PickerId, chooser::RemoteChoices>),
     DestinationWritten(Completion<RemoteFile, ()>),
+    Write(Box<Completion<save::RemoteWriteKey, save::RemoteWriteResult>>),
 }
 
 impl Editor {
@@ -148,6 +152,7 @@ impl Editor {
             || self.remote.choices.is_some()
             || self.remote.destination_write.is_some()
             || !self.remote.destination_queue.is_empty()
+            || self.remote.writes.pending()
             || self
                 .remote
                 .following
@@ -156,6 +161,7 @@ impl Editor {
     }
     pub(crate) fn handle_remote_event(&mut self, event: RemoteEvent) {
         match event {
+            RemoteEvent::Write(completion) => self.remote_write_done(*completion),
             RemoteEvent::Tick(ticket) => self.remote_follow_tick(ticket),
             RemoteEvent::Timer(completion) => self.remote_follow_timer_done(completion),
             RemoteEvent::Read(completion) => self.remote_follow_read(*completion),

@@ -15,7 +15,7 @@ pub enum DocumentSource {
     File,
     /// The [No Name] scratch buffer.
     Scratch,
-    /// An in-memory SSH snapshot; never a local path or writable file.
+    /// An in-memory SSH document; write authority is explicit and never local.
     Remote(Box<super::RemoteDocument>),
     /// A remote directory's real, read-only listing buffer.
     RemoteDirectory(Box<super::RemoteDirectory>),

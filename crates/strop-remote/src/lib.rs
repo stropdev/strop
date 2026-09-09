@@ -1,4 +1,4 @@
-//! Native-byte remote file identity and owned, read-only SSH/SFTP transport.
+//! Native-byte remote identity, read-only SFTP and explicit cooperative SSH saves.
 //!
 //! Requests belong on workers. Authentication and encryption stay in system
 //! OpenSSH; no editor, CLI, view or rendering state lives here.
@@ -7,6 +7,7 @@ mod client;
 mod exec;
 mod hosts;
 mod pool;
+pub mod save;
 mod selection;
 mod ssh;
 #[cfg(test)]
@@ -19,8 +20,9 @@ pub use client::{
     RemoteEntryKind, RemotePermissions, RemoteResource, RemoteSnapshot,
 };
 pub use exec::{
-    command, command_supervised, run, CommandOutput, RemoteCommand, RemoteCommandError,
-    RemoteExitStatus, StdinMode, SupervisionKey, SupervisionOutcome,
+    command, command_supervised, run, run_with_input, CommandOutput, RemoteCommand,
+    RemoteCommandError, RemoteExitStatus, RemoteProgram, StdinMode, SupervisionKey,
+    SupervisionOutcome,
 };
 pub use hosts::{enumerate_hosts, CandidateOrigin, HostCandidate, HostEnumeration, HostSources};
 pub use selection::{

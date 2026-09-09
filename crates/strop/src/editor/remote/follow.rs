@@ -12,6 +12,17 @@ const FOLLOW_INTERVAL: Duration = Duration::from_millis(500);
 
 impl Editor {
     pub(crate) fn start_remote_follow(&mut self, document: DocumentId, limit: ReadLimit) {
+        if self.remote_write_blocks_refresh(document)
+            || self.docs.get(document).is_some_and(|doc| {
+                doc.buf.dirty
+                    || doc
+                        .remote_metadata()
+                        .is_some_and(|source| source.write.is_some())
+            })
+        {
+            self.message = "follow requires a separate read-only snapshot".into();
+            return;
+        }
         if self
             .docs
             .get(document)
@@ -338,6 +349,8 @@ impl Editor {
         if let Some(doc) = self.docs.get_mut(document) {
             doc.source = replacement.source;
             doc.buf.name = replacement.buf.name;
+            doc.buf.readonly = replacement.buf.readonly;
+            doc.buf.dirty = false;
         }
         for (index, was_tail, old_top) in views {
             let pane = &mut self.panes[index];

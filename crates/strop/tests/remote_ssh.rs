@@ -6,6 +6,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+#[path = "remote_ssh/writes.rs"]
+mod writes;
 
 struct Fixture {
     directory: tempfile::TempDir,
@@ -25,7 +27,9 @@ fn successful(command: &mut Command) -> Output {
 }
 impl Fixture {
     fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::Builder::new()
+            .tempdir_in(std::fs::canonicalize(std::env::temp_dir()).unwrap())
+            .unwrap();
         let root = directory.path();
         std::fs::create_dir(root.join("bin")).unwrap();
         for name in ["host", "client", "denied"] {
@@ -81,6 +85,7 @@ impl Fixture {
                 .env("XDG_CONFIG_HOME", self.root().join("config"))
                 .env("XDG_STATE_HOME", self.root().join("state"))
                 .env_remove("STROP_LOG")
+                .env_remove("STROP_REMOTE_PYTHON")
                 .args(args),
         );
         String::from_utf8(output.stdout).unwrap()

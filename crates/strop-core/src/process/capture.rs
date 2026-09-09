@@ -18,8 +18,8 @@
 //! failing: callers decide whether truncation invalidates the result.
 use super::OwnedProcess;
 use crate::worker::{CancelToken, Failure, FailureKind};
-use std::io::{self, Read};
-use std::process::{Command, ExitStatus, Stdio};
+use std::io::{self, Read, Write};
+use std::process::{ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
@@ -44,22 +44,26 @@ pub struct CommandOutput {
     pub stdout_dropped: u64,
     /// Stderr bytes discarded between the retained head and tail.
     pub stderr_dropped: u64,
+    /// Input delivery failure, retained alongside the child's diagnostic output.
+    pub stdin_error: Option<io::Error>,
 }
 
 /// What capture does with the child's stdin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StdinPolicy {
+pub enum StdinPolicy<'a> {
     /// The child reads `/dev/null` and sees EOF immediately.
     Null,
     /// The child's stdin is a pipe whose local writer is held open for
     /// the whole capture and dropped when the child has exited. The
     /// child sees an open stdin with no data — never an early EOF.
     Held,
+    /// Deliver borrowed chunks concurrently, then hold the lifetime lease open.
+    HeldInput(&'a [&'a [u8]]),
 }
 
 /// Bounds and stdin handling for one capture.
 #[derive(Debug, Clone)]
-pub struct CapturePolicy {
+pub struct CapturePolicy<'a> {
     /// Retained head of stdout.
     pub stdout_limit: u64,
     /// Retained head of stderr.
@@ -69,10 +73,10 @@ pub struct CapturePolicy {
     pub stderr_tail: u64,
     /// Wall-clock budget for the whole exchange.
     pub deadline: Duration,
-    pub stdin: StdinPolicy,
+    pub stdin: StdinPolicy<'a>,
 }
 
-impl Default for CapturePolicy {
+impl Default for CapturePolicy<'_> {
     fn default() -> Self {
         Self {
             stdout_limit: LIMIT,
@@ -98,6 +102,7 @@ pub enum CaptureError {
 enum Stream {
     Stdout(io::Result<Retained>),
     Stderr(io::Result<Retained>),
+    Stdin(io::Result<ChildStdin>),
 }
 
 /// Keep the first `head` bytes and, when `tail` is non-zero, also the
@@ -177,7 +182,7 @@ pub fn capture_with(
         command.stderr(Stdio::piped());
         match policy.stdin {
             StdinPolicy::Null => command.stdin(Stdio::null()),
-            StdinPolicy::Held => command.stdin(Stdio::piped()),
+            StdinPolicy::Held | StdinPolicy::HeldInput(_) => command.stdin(Stdio::piped()),
         };
         // Owned here, INSIDE scope: unwinding kills pipes before scope joins.
         let mut process = OwnedProcess::spawn(command, token).map_err(|failure| {
@@ -189,7 +194,7 @@ pub fn capture_with(
         })?;
         // Held: keep the writer alive until the child has exited; its
         // drop afterwards is pure pipe hygiene.
-        let _lease = if policy.stdin == StdinPolicy::Held {
+        let mut lease = if !matches!(policy.stdin, StdinPolicy::Null) {
             process.take_stdin()
         } else {
             None
@@ -205,6 +210,21 @@ pub fn capture_with(
         let out_limit = policy.stdout_limit;
         let err_limit = policy.stderr_limit;
         let err_tail = policy.stderr_tail;
+        let mut input_finished = !matches!(policy.stdin, StdinPolicy::HeldInput(_));
+        let mut stdin_error = None;
+        if let StdinPolicy::HeldInput(chunks) = policy.stdin {
+            let mut stdin = lease
+                .take()
+                .ok_or_else(|| failure(FailureKind::Protocol, "missing stdin".into()))?;
+            let input_tx = tx.clone();
+            std::thread::Builder::new()
+                .name("capture-stdin".into())
+                .spawn_scoped(scope, move || {
+                    let written = chunks.iter().try_for_each(|chunk| stdin.write_all(chunk));
+                    let _ = input_tx.send(Stream::Stdin(written.map(|()| stdin)));
+                })
+                .map_err(|error| failure(FailureKind::ThreadStart, error.to_string()))?;
+        }
         std::thread::Builder::new()
             .name("capture-stdout".into())
             .spawn_scoped(scope, move || {
@@ -231,14 +251,16 @@ pub fn capture_with(
             if exited {
                 process.terminate().map_err(CaptureError::Failure)?; // descendants cannot retain the pipes
                 match (stdout.take(), stderr.take()) {
-                    (Some(stdout), Some(stderr)) => {
+                    (Some(stdout), Some(stderr)) if input_finished => {
                         let status = process.wait().map_err(CaptureError::Failure)?;
+                        drop(lease);
                         return Ok(CommandOutput {
                             status,
                             stdout: stdout.bytes,
                             stderr: stderr.bytes,
                             stdout_dropped: stdout.dropped,
                             stderr_dropped: stderr.dropped,
+                            stdin_error,
                         });
                     }
                     (out, err) => {
@@ -259,6 +281,14 @@ pub fn capture_with(
             let (slot, result) = match event {
                 Stream::Stdout(result) => (&mut stdout, result),
                 Stream::Stderr(result) => (&mut stderr, result),
+                Stream::Stdin(result) => {
+                    input_finished = true;
+                    match result {
+                        Ok(stdin) => lease = Some(stdin),
+                        Err(error) => stdin_error = Some(error),
+                    }
+                    continue;
+                }
             };
             *slot = Some(result.map_err(|error| failure(FailureKind::Io, error.to_string()))?);
         }
@@ -285,7 +315,7 @@ mod tests {
 
     fn run_capture(
         script: &'static str,
-        policy: CapturePolicy,
+        policy: CapturePolicy<'static>,
     ) -> Result<CommandOutput, CaptureError> {
         let (tx, rx) = channel();
         let _owner = crate::worker::spawn(

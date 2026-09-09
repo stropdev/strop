@@ -68,7 +68,7 @@ The modeline keeps filenames, live status and position legible at narrow widths.
 Git history uses quieter metadata, clear file hierarchy and native-path-safe
 navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
 
-## Read-only SSH workspaces
+## SSH workspaces
 
 ```sh
 strop +120 ssh://user@devbox/var/log/app.log
@@ -79,7 +79,7 @@ strop ssh://devbox/~/project/src/lib.rs
 strop ssh://devbox/etc/
 ```
 
-These are real read-only buffers: motions, `/`/`?`, visual selection, yank and
+Remote files open read-only by default: motions, `/`/`?`, visual selection, yank and
 splits work unchanged. Escape cancels an open or stops following; `:e!` refreshes
 the snapshot. Follow sticks to EOF only while you stay there. Shrink, replacement
 and changed overlap produce a visible reset; size/mtime alone are not file identity.
@@ -122,7 +122,7 @@ source/header navigation, plus Git context, staged/unstaged diffs, log, blame an
 commit/file navigation. Services run **on the remote host**, never against a local
 lookalike path. Project-command trust is scoped to the endpoint and remote root
 (`:trust`). Partial windows and following refuse full-document language services;
-remote writes, Git mutations and shell/filter commands remain unsupported.
+Git mutations, remote save-as and arbitrary shell/filter commands remain unsupported.
 
 OpenSSH supplies aliases, keys, agent and ProxyJump configuration. Host keys must
 already be trusted; authentication is noninteractive. Percent-encode reserved path
@@ -130,8 +130,39 @@ bytes (`%20`, `%23`, `%25`); native Unix filenames stay intact. Reads are bounde
 256 MiB of UTF-8 text; range/tail edges exclude incomplete UTF-8 characters. Home
 expansion requires the server's `expand-path@openssh.com` extension.
 
-SFTP reading needs no remote Python or daemon setup. Remote Git/LSP additionally
-need a POSIX execution environment and Git/the selected language server.
+### Explicit remote editing
+
+On a complete, non-following file snapshot, run **`:remote edit`**. The editor
+verifies the displayed content against the server and grants this document write
+authority. Edit normally, then use **`:w`** or **`:wq`**. Saves run off the input
+thread; a receipt for an older revision never clears newer unsaved edits.
+
+The write path checks content and metadata, stages inside a private 0700 transaction
+directory, preserves mode/ownership/mtime/extended attributes, atomically replaces
+the file, and syncs the file and changed directories. Unsupported preservation
+refuses the save. It requires an owned regular single-link file, exact stored path
+spelling, and no symlink components. Edited snapshots remain bounded to 256 MiB.
+Protocol lock/staging paths are reserved; private lock files remain to keep a stable
+lock identity. Do not delete active locks.
+
+**Concurrency is cooperative, not universal compare-and-swap.** Strop's remote-save
+participants share a lock. Completed changes by other programs are detected before
+commit, but a nonparticipating writer can race the final check/rename window.
+`:w!` never bypasses that conflict check or grants authority to a read-only snapshot.
+
+Escape in normal mode requests cancellation. If a save may have crossed rename,
+local edits stay dirty and the outcome is explicitly unconfirmed. **`:remote verify`**
+compares the original and intended states and syncs matching saved content before
+acknowledgment; it never blindly overwrites or retries. A conflict preserves local
+edits. Successful `:e!` refresh revokes the permit; pending/unconfirmed saves must
+settle or be verified first. A failed refresh does not discard edits or permissions.
+Forced close may leave an unconfirmed remote outcome and a private orphan stage.
+
+See the [remote-save contract and safety limits](plans/0040-remote-editing-and-saving.md).
+Remote contents and write permits are never restored from persisted sessions.
+
+SFTP reading needs no remote Python or daemon setup. Remote editing and execution
+need a POSIX environment and Python; Git/LSP also need their respective programs.
 Compatible Python 3.8+ is discovered as `python3` or a versioned program on remote
 PATH; set local `STROP_REMOTE_PYTHON=/opt/tools/python3.11` to select an explicit
 remote executable. An invalid override fails rather than choosing a fallback.

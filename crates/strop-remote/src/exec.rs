@@ -47,16 +47,23 @@ mod spec;
 mod supervisor;
 
 use crate::address::RemoteEndpoint;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
 
+/// Program identity is distinct from argv. Built-in scripts reuse the already
+/// selected supervisor interpreter, never another PATH lookup for `python3`.
+#[derive(Debug, Clone)]
+pub enum RemoteProgram {
+    Executable(OsString),
+    SupervisorPython,
+}
 /// A checked description of one remote process. Pure data: nothing is
 /// spawned by constructing, cloning or inspecting it.
 #[derive(Debug, Clone)]
 pub struct RemoteCommand {
-    program: OsString,
+    program: RemoteProgram,
     args: Vec<OsString>,
     cwd: PathBuf,
     deadline: Duration,
@@ -73,8 +80,28 @@ impl RemoteCommand {
         args: Vec<OsString>,
         cwd: &Path,
     ) -> Result<Self, RemoteCommandError> {
+        Self::admit(RemoteProgram::Executable(program.into()), args, cwd)
+    }
+
+    pub fn python(
+        script: &str,
+        args: Vec<OsString>,
+        cwd: &Path,
+    ) -> Result<Self, RemoteCommandError> {
+        let mut arguments = Vec::with_capacity(args.len() + 2);
+        arguments.push("-c".into());
+        arguments.push(script.into());
+        arguments.extend(args);
+        Self::admit(RemoteProgram::SupervisorPython, arguments, cwd)
+    }
+
+    fn admit(
+        program: RemoteProgram,
+        args: Vec<OsString>,
+        cwd: &Path,
+    ) -> Result<Self, RemoteCommandError> {
         let command = Self {
-            program: program.into(),
+            program,
             args,
             cwd: cwd.to_path_buf(),
             deadline: run::DEFAULT_DEADLINE,
@@ -97,7 +124,7 @@ impl RemoteCommand {
         Ok(command)
     }
 
-    pub fn program(&self) -> &OsStr {
+    pub fn program(&self) -> &RemoteProgram {
         &self.program
     }
 
@@ -176,6 +203,8 @@ pub struct CommandOutput {
     pub stderr: Vec<u8>,
     pub stdout_dropped: u64,
     pub stderr_dropped: u64,
+    /// Any upload failure is retained even when the program returned diagnostics.
+    pub stdin_error: Option<String>,
 }
 
 /// Identifies one supervised session's status records: the supervisor
@@ -323,6 +352,17 @@ pub fn run(
     token: &CancelToken,
 ) -> Result<CommandOutput, RemoteCommandError> {
     run::run(endpoint, command, token)
+}
+
+/// Worker-only framed input. Chunks are borrowed; no whole-rope copy is needed.
+/// The stdin lease remains open after the final chunk until the program exits.
+pub fn run_with_input(
+    endpoint: &RemoteEndpoint,
+    command: &RemoteCommand,
+    token: &CancelToken,
+    chunks: &[&[u8]],
+) -> Result<CommandOutput, RemoteCommandError> {
+    run::run_input(endpoint, command, token, Some(chunks))
 }
 
 #[cfg(all(test, unix))]

@@ -167,18 +167,19 @@ incarnation cannot publish.
 Verification: `RemoteRead` grows incarnation/pool ownership invariants (or a sibling
 model); oracle drives kill/reopen in the fixture.
 
-### RW4 — Remote write path (next requested release; hard safety gate, depends on RW1–RW3 verified)
+### RW4 — Explicit remote editing/saving (implemented for 0.19.0; hard safety gate)
 
-The user explicitly requested implementation after the 0038/0039 release, followed
-by another downloadable release. It is no longer an indefinite optional item;
-write the dedicated execution plan and preserve every safety criterion below.
+Implemented under [0040](0040-remote-editing-and-saving.md), following the requested
+0038/0039 release. `:remote edit` grants per-document authority; `:w`/`:wq` save and
+`:remote verify` reconciles unconfirmed outcomes. The guarantee is cooperative
+exclusion, not CAS against nonparticipating writers.
 
 Writable remote editing needs content-aware conflict detection: size/mtime alone
 cannot detect same-size concurrent rewrites. Define a server version/lease or
 cooperating-lock protocol for commit-time exclusion; if unavailable, state/refuse the
-concurrency guarantee rather than claim race-free compare-and-rename. Use a
-same-directory private temp and verified atomic replacement (POSIX-rename extension
-where necessary), preserve metadata, and handle symlinks explicitly.
+concurrency guarantee rather than claim race-free compare-and-rename. Use
+protected same-filesystem staging beneath the destination directory and verified
+atomic replacement, preserve metadata, and handle symlinks explicitly.
 Read-only remains the default disposition; writability is per-open explicit.
 Acceptance: fixture proves external modification ⇒ conflict error, not overwrite;
 kill between temp-write and rename leaves no partial file; permission bits and mtime
@@ -189,8 +190,9 @@ fault-injected oracles on the real transport. This gate is the precedent for RW5
 
 ### RW5 — Remote directory surface and file operations (read-only: 0036; mutations: P3 after RW4)
 
-Read-only entry/parent navigation, search and filtering are implemented in 0036 /
-0.17.0. The mutation and metadata-column acceptance below remains P3, after RW4.
+Read-only entry/parent navigation, search and filtering shipped in 0.17.0; file
+kind, permissions and size columns followed in 0.18.0. Writable directory operations
+and additional owner/mtime columns remain P3 after RW4.
 
 The file-tree buffer (0001 pillar 2) over SFTP READDIR/STAT: motions, `/`, filter;
 edit-the-line rename, `dd` delete, yank/paste copy with confirmation; attribute

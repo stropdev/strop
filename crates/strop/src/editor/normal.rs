@@ -41,7 +41,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("filter", "filter remote directory by literal filename"),
     (
         "remote",
-        "choose remote destination; root/home/connect/disconnect/clear/list",
+        "choose remote destination; edit/verify/root/home/connect/disconnect/clear/list",
     ),
 ];
 
@@ -55,6 +55,7 @@ impl Editor {
         // Esc is a mode-level key: collapse to the primary cursor and
         // ground the machine (0013 §3) — it never walks the trie
         if key == Key::Esc {
+            self.cancel_remote_write(self.current());
             self.collapse_cursors();
             self.walker.clear();
             return;

@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.19.0 — 2026-09-09
+
+Explicit remote editing and conflict-aware saving (plan 0040).
+
+### Added
+
+- `:remote edit` verifies a complete remote snapshot and grants per-document write
+  authority. Existing insert/operators/undo and ordinary `:w`/`:wq` use that same
+  buffer. Read-only remains the default, and no remote path becomes a local save.
+- Owned remote saves with content/metadata conflict checks, stable cooperative locks,
+  protected 0700 staging directories, atomic replacement and file/directory syncing.
+  Modes, ownership, mtime and extended attributes are preserved or the save refuses.
+- `:remote verify` reconciles unconfirmed outcomes without blind retry or rollback.
+  Newer local edits remain dirty when an older snapshot finishes saving.
+- Borrowed-chunk stdin delivery retains the SSH lifetime lease after upload; fixed
+  helpers use the selected isolated Python interpreter, including configured and
+  versioned-only installations.
+- A bounded remote-save protocol model, deliberate faulty variants, progress and
+  reachability witnesses, plus filesystem, ownership and real SSH acceptance oracles.
+
+### Fixed
+
+- Pending edit admission cannot enter follow mode, and a late grant rechecks the
+  snapshot/follow state. Cancelling admission revokes even an already-queued grant.
+- `:wq` carries its destination through save validation instead of silently ignoring
+  it. Remote save-as is refused rather than overwriting the original remote file.
+- Reopening an existing remote file preserves its edits. Successful explicit refresh
+  restores clean read-only state; failed refresh does not strand an edited buffer.
+- Normal-mode Escape requests remote cancellation; graceful shutdown retains accepted
+  Save/Verify work. Forced close revokes the document's pending authority.
+
+### Safety boundary
+
+Locks coordinate remote-save protocol participants, not arbitrary external writers.
+There is no universal CAS guarantee in the final comparison/rename window.
+Symlinks, hard links, non-owned files, noncanonical path spellings and unsupported
+metadata preservation refuse writable admission. Git mutations, directory mutations,
+save-as, elevation and arbitrary remote commands remain outside this release.
+Cancellation or loss after commit begins is unconfirmed until a receipt or explicit
+verification establishes the durable current state.
+
 ## 0.18.0 — 2026-09-09
 
 Remote browsing, responsive large-workspace editing, and broader static syntax
