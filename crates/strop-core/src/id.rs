@@ -41,10 +41,14 @@ pub struct DocumentKind;
 pub struct ViewKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PaneKind;
+/// Registry keys for bound workspace contexts (0042 slice 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct WorkspaceKind;
 
 pub type DocumentId = Id<DocumentKind>;
 pub type ViewId = Id<ViewKind>;
 pub type PaneId = Id<PaneKind>;
+pub type WorkspaceId = Id<WorkspaceKind>;
 
 /// A minimal generational arena (house rule: 40 boring lines beat a
 /// dependency). Slots are reused; each reuse bumps the generation.

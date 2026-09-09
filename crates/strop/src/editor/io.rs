@@ -561,6 +561,22 @@ impl Editor {
                             }
                             id
                         } else {
+                            // A first open on an endpoint binds its workspace
+                            // context (0042 slice 2); rebinds are idempotent.
+                            let endpoint = opened
+                                .document
+                                .remote_metadata()
+                                .map(|source| source.file.endpoint().clone())
+                                .or_else(|| {
+                                    opened
+                                        .document
+                                        .directory_metadata_ref()
+                                        .map(|directory| directory.directory.endpoint().clone())
+                                });
+                            if let Some(endpoint) = endpoint {
+                                self.workspaces
+                                    .bind(strop_workspace::Filesystem::Remote(endpoint), None);
+                            }
                             let id = self.docs.insert(opened.document);
                             self.drop_stale_scratch(id);
                             self.generation += 1;

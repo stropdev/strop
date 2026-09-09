@@ -19,6 +19,7 @@ pub use diagnostics::DocumentDiagnostics;
 mod dive;
 mod document;
 pub mod events;
+mod explain;
 mod git;
 mod git_memory;
 mod help;
@@ -44,6 +45,7 @@ pub mod transact;
 mod undo;
 pub mod view;
 mod visual;
+mod workspaces;
 
 pub use document::Document;
 pub use document::{DiffRow, Surface};
@@ -195,6 +197,8 @@ pub struct Editor {
     pub(crate) analysis: analysis::AnalysisState,
     pub(crate) resolution: resolution::ResolutionState,
     pub cwd: PathBuf,
+    /// Bound workspace contexts (0042 slice 2): one per filesystem in use.
+    pub workspaces: workspaces::WorkspaceRegistry,
     /// MRU document order (most recent first); drives `Space b`.
     pub mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
@@ -368,6 +372,11 @@ impl Editor {
             insert_count: 1,
             insert_open: None,
             picker: None,
+            workspaces: {
+                let mut registry = workspaces::WorkspaceRegistry::default();
+                registry.bind(strop_workspace::Filesystem::Local, Some(cwd.clone()));
+                registry
+            },
             cwd,
             blame_gutters: HashMap::new(),
             generation: 0,

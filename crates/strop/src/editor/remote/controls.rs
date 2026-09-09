@@ -131,6 +131,8 @@ impl Editor {
             && !self.finishing;
         match completion.outcome {
             Outcome::Success(ControlResult::Connected { endpoint, lease }) => {
+                self.workspaces
+                    .bind(strop_workspace::Filesystem::Remote(endpoint.clone()), None);
                 if let Some(lease) = lease.filter(|_| !self.finishing) {
                     self.remote.pins.insert(endpoint, lease);
                 }
@@ -139,6 +141,23 @@ impl Editor {
                 }
             }
             Outcome::Success(ControlResult::Disconnected) => {
+                match &key.operation {
+                    RemoteControl::Disconnect(endpoint) => self
+                        .workspaces
+                        .note_disconnect(&strop_workspace::Filesystem::Remote(endpoint.clone())),
+                    RemoteControl::DisconnectAll => {
+                        let filesystems: Vec<_> = self
+                            .workspaces
+                            .iter()
+                            .filter(|(_, context)| context.filesystem.is_remote())
+                            .map(|(_, context)| context.filesystem.clone())
+                            .collect();
+                        for filesystem in filesystems {
+                            self.workspaces.note_disconnect(&filesystem);
+                        }
+                    }
+                    _ => {}
+                }
                 match key.operation {
                     RemoteControl::Disconnect(endpoint) => {
                         self.remote.pins.remove(&endpoint);

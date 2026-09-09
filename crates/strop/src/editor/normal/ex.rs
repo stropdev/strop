@@ -315,6 +315,7 @@ impl Editor {
             "vs" | "vsplit" => self.split(true, if arg.is_empty() { None } else { Some(arg) }),
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "help" | "h" => self.open_help(),
+            "explain" => self.open_explain(),
             "e" | "e!" => {
                 if arg.is_empty() && cmd == "e!" && self.refresh_remote() {
                     return;

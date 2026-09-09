@@ -66,6 +66,7 @@ impl Editor {
             "  Tab                     Complete an SSH URI without starting authentication\n",
             "  :e!                     Refresh the remote snapshot and revoke write authority\n",
             "  directory columns       kind, POSIX permissions, server bytes, name; ? = unknown\n",
+            "  :explain                 Why: workspaces, LSP readiness/refusals, effective config\n",
         ));
         let mut buf = Buffer::from_text(&text);
         buf.name = Some("help".into());
