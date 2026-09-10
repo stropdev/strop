@@ -256,10 +256,74 @@ impl Editor {
         let revision = self.docs.get(id).unwrap().buf.revision();
         self.collections.get_mut(&id).unwrap().revision = revision;
     }
+    /// Line-level diff (LCS over lines): changed regions as ordered
+    /// (shadow range, current range) hunk pairs. Collection views are
+    /// small; the DP table is O(view²) by design.
+    fn diff_lines(
+        shadow: &[&str],
+        current: &[&str],
+    ) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+        let (n, m) = (shadow.len(), current.len());
+        // lcs[i][j] = LCS length of shadow[i..] vs current[j..]
+        let mut lcs = vec![vec![0usize; m + 1]; n + 1];
+        for i in (0..n).rev() {
+            for j in (0..m).rev() {
+                lcs[i][j] = if shadow[i] == current[j] {
+                    lcs[i + 1][j + 1] + 1
+                } else {
+                    lcs[i + 1][j].max(lcs[i][j + 1])
+                };
+            }
+        }
+        let mut hunks = Vec::new();
+        let (mut i, mut j) = (0, 0);
+        while i < n || j < m {
+            if i < n && j < m && shadow[i] == current[j] {
+                i += 1;
+                j += 1;
+                continue;
+            }
+            let (si, sj) = (i, j);
+            while i < n || j < m {
+                if i < n && j < m && shadow[i] == current[j] {
+                    break;
+                }
+                if i < n && (j == m || lcs[i + 1][j] >= lcs[i][j + 1]) {
+                    i += 1;
+                } else {
+                    j += 1;
+                }
+            }
+            hunks.push((si..i, sj..j));
+        }
+        hunks
+    }
 
-    /// Diff shadow vs current (one contiguous changed region — one user
-    /// action), map it into exactly one excerpt, and apply through the
-    /// change-plan gateway. Anything wider refuses; the caller refreshes.
+    /// A shadow line's position in the current text, given the hunks.
+    /// An insertion exactly AT the line attaches forward: span starts map
+    /// without it (the inserted text joins the span), span ends with it.
+    fn map_line(
+        hunks: &[(std::ops::Range<usize>, std::ops::Range<usize>)],
+        line: usize,
+        count_at_boundary: bool,
+    ) -> usize {
+        let mut current = line;
+        for (old, new) in hunks {
+            let counts =
+                old.end < line || (old.end == line && (!old.is_empty() || count_at_boundary));
+            if counts {
+                current += new.len() - old.len();
+            } else {
+                break;
+            }
+        }
+        current
+    }
+
+    /// Diff shadow vs current and write back every touched excerpt as one
+    /// change plan (0044 v2: multiple regions across excerpts, one batch
+    /// per source document). Structure lines (title, headers) are never
+    /// editable; a hunk touching one refuses the whole sync.
     fn collection_write_back(
         &mut self,
         collection: &Collection,
@@ -267,72 +331,97 @@ impl Editor {
     ) -> Result<(), String> {
         let shadow_lines: Vec<&str> = collection.shadow.split_inclusive('\n').collect();
         let current_lines: Vec<&str> = current.split_inclusive('\n').collect();
-        let prefix = shadow_lines
-            .iter()
-            .zip(&current_lines)
-            .take_while(|(a, b)| a == b)
-            .count();
-        let shared = shadow_lines.len().min(current_lines.len());
-        let suffix = shadow_lines
-            .iter()
-            .rev()
-            .zip(current_lines.iter().rev())
-            .take(shared - prefix)
-            .take_while(|(a, b)| a == b)
-            .count();
-        let shadow_middle = prefix..shadow_lines.len() - suffix;
-        let current_middle = prefix..current_lines.len() - suffix;
-        if shadow_middle.is_empty() && current_middle.is_empty() {
+        let hunks = Self::diff_lines(&shadow_lines, &current_lines);
+        if hunks.is_empty() {
             return Ok(());
         }
-        // The changed line region must sit fully inside one excerpt's
-        // source-line span: [view_line + 1, view_line + view_lines].
-        let mut hit = None;
-        for (index, excerpt) in collection.excerpts.iter().enumerate() {
+        // Every hunk must sit fully inside one excerpt's body span.
+        let mut touched: Vec<usize> = Vec::new();
+        for (old, _) in &hunks {
+            let mut owner = None;
+            for (index, excerpt) in collection.excerpts.iter().enumerate() {
+                let lo = excerpt.view_line + 1;
+                let hi = excerpt.view_line + excerpt.view_lines + 1;
+                let inside = if old.is_empty() {
+                    // an insertion belongs to a body only inside it
+                    old.start >= lo && old.start < hi
+                } else {
+                    old.start >= lo && old.end <= hi
+                };
+                if inside {
+                    owner = Some(index);
+                    break;
+                }
+                // Overlap without containment crosses a boundary.
+                if !old.is_empty() && old.start < hi && old.end > lo {
+                    return Err(
+                        "edit touches a header or spans excerpts — refused; view refreshed".into(),
+                    );
+                }
+            }
+            let Some(index) = owner else {
+                return Err(
+                    "edit touches the title, a header, or the collection's structure — refused; view refreshed"
+                        .into(),
+                );
+            };
+            if !touched.contains(&index) {
+                touched.push(index);
+            }
+        }
+        // One replacement per touched excerpt: its whole body span as it
+        // currently reads — partial hunks carry their unchanged context.
+        let mut by_source: Vec<(DocumentId, Vec<strop_core::Replacement>, ResourceLocation)> =
+            Vec::new();
+        for index in touched {
+            let excerpt = &collection.excerpts[index];
+            let source = self
+                .docs
+                .get(excerpt.source)
+                .ok_or_else(|| "collection: a source buffer was closed".to_string())?;
+            let present = source
+                .buf
+                .text()
+                .byte_slice(excerpt.start..excerpt.end)
+                .to_string();
+            if fingerprint(&present) != excerpt.fingerprint {
+                return Err(
+                    "collection: a source changed elsewhere — refused; view refreshed".into(),
+                );
+            }
             let lo = excerpt.view_line + 1;
-            let hi = excerpt.view_line + excerpt.view_lines + 1; // exclusive
-            if shadow_middle.start >= lo && shadow_middle.end <= hi {
-                hit = Some(index);
-                break;
+            let hi = excerpt.view_line + excerpt.view_lines + 1;
+            let cur_lo = Self::map_line(&hunks, lo, false);
+            let cur_hi = Self::map_line(&hunks, hi, true);
+            let mut replacement: String = current_lines[cur_lo..cur_hi].concat();
+            if !replacement.is_empty() && !replacement.ends_with('\n') {
+                replacement.push('\n');
             }
-            // Any overlap that is not full containment crosses a boundary.
-            if shadow_middle.start < hi && shadow_middle.end > lo {
-                return Err("edit spans excerpt boundaries — refused; view refreshed".into());
-            }
-        }
-        let Some(index) = hit else {
-            return Err("edit touches the title or a header — refused; view refreshed".into());
-        };
-        let excerpt = &collection.excerpts[index];
-        let source = self
-            .docs
-            .get(excerpt.source)
-            .ok_or_else(|| "collection: a source buffer was closed".to_string())?;
-        let present = source
-            .buf
-            .text()
-            .byte_slice(excerpt.start..excerpt.end)
-            .to_string();
-        if fingerprint(&present) != excerpt.fingerprint {
-            return Err(
-                "collection: the source changed elsewhere — refused; view refreshed".into(),
+            let edit = strop_core::Replacement::new(
+                Range::charwise(excerpt.start, excerpt.end),
+                replacement,
             );
+            let location = ResourceLocation::local(source.buf.path.clone().unwrap_or_default());
+            match by_source
+                .iter_mut()
+                .find(|(id, _, _)| *id == excerpt.source)
+            {
+                Some((_, edits, _)) => edits.push(edit),
+                None => by_source.push((excerpt.source, vec![edit], location)),
+            }
         }
-        let mut replacement: String = current_lines[current_middle].concat();
-        if !replacement.is_empty() && !replacement.ends_with('\n') {
-            replacement.push('\n');
-        }
+        let documents = by_source
+            .into_iter()
+            .map(|(document, edits, location)| PlannedDocument {
+                location,
+                document,
+                base: self.docs.get(document).unwrap().buf.revision(),
+                edits,
+            })
+            .collect();
         let plan = ChangePlan {
             producer: ChangeProducer::CollectionEdit,
-            documents: vec![PlannedDocument {
-                location: ResourceLocation::local(source.buf.path.clone().unwrap_or_default()),
-                document: excerpt.source,
-                base: source.buf.revision(),
-                edits: vec![strop_core::Replacement::new(
-                    Range::charwise(excerpt.start, excerpt.end),
-                    replacement,
-                )],
-            }],
+            documents,
             refused: Vec::new(),
         };
         self.apply_change_plan(plan);

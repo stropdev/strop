@@ -157,3 +157,78 @@ fn anchors_remap_when_the_source_grows() {
         .unwrap();
     assert_eq!(source, "beta one\nbeta tw\n");
 }
+
+/// Hits on a.txt:1 and b.txt:1 (both contain "one") — the multi-region
+/// fixture: one ranged substitution touches both excerpts in one commit.
+fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let a = root.join("a.txt");
+    let b = root.join("b.txt");
+    std::fs::write(&a, "alpha one\n").unwrap();
+    std::fs::write(&b, "beta one\n").unwrap();
+    let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
+    e.open_fixture(&a).unwrap();
+    e.open_fixture(&b).unwrap();
+    e.open_picker(Kind::Grep);
+    let item = |path: &std::path::Path| Item {
+        text: "hit".into(),
+        payload: Payload::Grep {
+            path: path.to_path_buf(),
+            line: 1,
+            col: 1,
+            match_len: 3,
+            line_text: "x one".into(),
+        },
+    };
+    if let Some(glue) = e.picker.as_mut() {
+        glue.picker.append(vec![item(&a), item(&b)]);
+    }
+    (e, a, b)
+}
+
+#[test]
+fn one_commit_across_excerpts_writes_back_to_both_sources() {
+    let (mut e, a, b) = two_file_fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    // title 1, header-a 2, body-a 3, header-b 4, body-b 5 (1-based)
+    e.feed_text(":3,5s/one/1/\r");
+    assert_eq!(e.message, "collection edit: applied to 2 buffer(s)");
+    for (path, want) in [(&a, "alpha 1\n"), (&b, "beta 1\n")] {
+        let text = e
+            .docs
+            .iter()
+            .find(|(_, d)| d.buf.path.as_ref() == Some(path))
+            .map(|(_, d)| d.buf.text().to_string())
+            .unwrap();
+        assert_eq!(text, want);
+    }
+}
+
+#[test]
+fn inserting_a_line_inside_a_body_writes_the_wider_span_back() {
+    let (mut e, a, _b) = two_file_fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    let body = e.buf().text().to_string().find("alpha one").unwrap();
+    e.set_head(body);
+    e.feed_text("Oinserted first<esc>");
+    assert_eq!(e.message, "collection edit: applied to 1 buffer(s)");
+    let text = e
+        .docs
+        .iter()
+        .find(|(_, d)| d.buf.path.as_ref() == Some(&a))
+        .map(|(_, d)| d.buf.text().to_string())
+        .unwrap();
+    assert_eq!(text, "inserted first\nalpha one\n");
+}
+
+#[test]
+fn inserting_between_excerpts_is_refused() {
+    let (mut e, _a, _b) = two_file_fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    // O on the b header line inserts between the excerpts — structure
+    let header = e.buf().text().to_string().find("b.txt").unwrap();
+    e.set_head(header);
+    e.feed_text("Onope<esc>");
+    assert!(e.message.contains("refused"), "{}", e.message);
+}
