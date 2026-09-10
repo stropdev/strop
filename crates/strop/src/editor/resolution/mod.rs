@@ -418,6 +418,11 @@ impl Editor {
                 self.resolution.queue.push_front(input);
             }
             self.schedule_resolution_input();
+            // Collections write back at normal-mode action boundaries
+            // (0044); the revision gate keeps this free for motions.
+            if self.mode == super::Mode::Normal {
+                self.maybe_sync_collection();
+            }
         }
     }
     pub(crate) fn run_counted_leaf(

@@ -112,6 +112,15 @@ impl super::Editor {
                     pane.sels.map_positions(map);
                 }
             }
+            // Collection excerpts anchor into sources like any other mark.
+            for collection in self.collections.values_mut() {
+                for excerpt in &mut collection.excerpts {
+                    if excerpt.source == id {
+                        excerpt.start = map(excerpt.start);
+                        excerpt.end = map(excerpt.end);
+                    }
+                }
+            }
         }
         self.analysis.edits(id, document.buf.changes());
         document.buf.clear_changes();

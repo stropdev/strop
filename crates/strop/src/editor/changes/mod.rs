@@ -23,6 +23,8 @@ pub(crate) enum ChangeProducer {
     Format,
     Rename,
     CodeAction,
+    /// An edit written back from an editable code collection (0044).
+    CollectionEdit,
 }
 
 impl ChangeProducer {
@@ -31,6 +33,7 @@ impl ChangeProducer {
             Self::Format => "format",
             Self::Rename => "rename",
             Self::CodeAction => "code action",
+            Self::CollectionEdit => "collection edit",
         }
     }
 }

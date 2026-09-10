@@ -13,6 +13,7 @@ pub mod trace;
 
 pub(crate) mod analysis;
 mod changes;
+mod collections;
 mod cursor;
 mod diagnostics;
 pub(crate) mod resolution;
@@ -202,6 +203,8 @@ pub struct Editor {
     pub workspaces: workspaces::WorkspaceRegistry,
     /// Applied change plans and their receipts (0043); grouped undo reads it.
     pub(crate) changes: changes::ChangeState,
+    /// Open editable code collections by their buffer document (0044).
+    pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
     /// MRU document order (most recent first); drives `Space b`.
     pub mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
@@ -346,6 +349,7 @@ impl Editor {
             shell_focus: None,
             mru: vec![current],
             changes: changes::ChangeState::default(),
+            collections: HashMap::new(),
             mode: Mode::Normal,
             pending: pending::PendingInput::default(),
             walker: input::Walker::new(),

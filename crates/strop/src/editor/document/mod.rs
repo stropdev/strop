@@ -286,6 +286,7 @@ impl Editor {
         self.shell_document_closed(closed);
         self.revoke_git_requests_for(closed);
         self.blame_gutters.remove(&closed);
+        self.collections.remove(&closed);
         let return_to = self
             .docs
             .remove(closed)

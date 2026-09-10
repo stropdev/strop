@@ -37,3 +37,4 @@ echo "editor model gate: bounded checks clean; freshness mutant rejected"
 sh specs/ssh-gate.sh
 sh specs/remote-gate.sh
 sh specs/save-gate.sh
+sh specs/change-gate.sh

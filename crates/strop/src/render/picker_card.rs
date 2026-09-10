@@ -109,8 +109,14 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         strop_picker::Kind::RemoteHosts | strop_picker::Kind::RemoteAddress
     );
 
+    let collectable = matches!(
+        kind,
+        strop_picker::Kind::Locations | strop_picker::Kind::Diagnostics | strop_picker::Kind::Grep
+    );
     let hint = if replace_mode {
         " enter apply · tab field · ctrl-x row · ctrl-d file · esc  —  -t rs / --glob filters "
+    } else if collectable {
+        " enter open · ctrl-o collect · esc normal/close · ↑↓/tab move "
     } else if kind == strop_picker::Kind::RemoteAddress {
         " enter connect · esc normal/close "
     } else if remote_picker {

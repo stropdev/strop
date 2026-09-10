@@ -67,6 +67,7 @@ impl Editor {
             "  :e!                     Refresh the remote snapshot and revoke write authority\n",
             "  directory columns       kind, POSIX permissions, server bytes, name; ? = unknown\n",
             "  :explain                 Why: workspaces, LSP readiness/refusals, effective config\n",
+            "  ctrl-o in a results list  Open hits as an editable collection (edits write back)\n",
         ));
         let mut buf = Buffer::from_text(&text);
         buf.name = Some("help".into());

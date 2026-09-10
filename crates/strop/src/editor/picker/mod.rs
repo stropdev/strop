@@ -357,10 +357,11 @@ impl Editor {
             }
             Key::Enter => self.accept_current_picker(),
             Key::Tab | Key::Backtab if replace => glue.picker.toggle_field(),
-            Key::CtrlX if replace => glue.picker.toggle_excluded(),
+            // ctrl-o: the listed hits become an editable collection (0044).
+            Key::CtrlO => self.open_collection_from_picker(),
             Key::CtrlD if replace => glue.picker.toggle_file_excluded(),
             Key::CtrlD => {}
-            Key::CtrlX | Key::CtrlO => {}
+            Key::CtrlX => {}
             Key::Backspace => {
                 if glue.picker.input_normal() {
                     glue.picker.normal_key('h');
