@@ -10,6 +10,9 @@ the verified functions — `editor/transact.rs` anchor remaps and
 z3 4.16.0) and a required CI job; negative control confirmed the gate
 bites. Proof finds folded in: the no-overflow precondition and
 `start <= new_end` invariant are explicit where they were implicit.
+
+
+Original scope statement: the pilot boundary is the code
 S4 made load-bearing: every change plan, collection write-back, mark,
 jumplist and cursor rides `prepare_replacements` batch validation and the
 anchor-mapping arithmetic in `editor/transact.rs`.
