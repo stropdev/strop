@@ -1,8 +1,14 @@
 # 0041 — Architecture handoff: adoption proposal and prioritized roadmap
 
-Status: **proposal, pending joint review** (the "storm the handoff" session).
-Source: `strop-implementation-handoff.md` (9 Sep 2026), written against this exact
-tree (0.19.0, commit 2a568d1). The handoff is unusually well grounded — it cites
+Status: **reviewed and adopted in part** (9 Sep 2026 session). Landed:
+S1 identity (0042: strop-workspace, registry, `:explain`), S4a/S4b change
+plans (0043: format/rename/code actions/`:undo-change` + ChangePlan.tla),
+S5 v1 editable collections (0044), S3 DC1a container browse/read (0037
+amendment). The bench stress fixtures and chunked forensics shipped with
+them. Remaining stages keep their ranks below; the storming session
+continues from there.
+Source: `strop-implementation-handoff.md` (9 Sep 2026), written against the
+0.19.0 tree. The handoff is unusually well grounded — it cites
 real files, respects the numbered plans, and defers the GUI per user instruction.
 This plan maps it onto strop's plan system: what to adopt, in what order, what to
 defer, and where to push back.

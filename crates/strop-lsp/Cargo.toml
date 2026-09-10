@@ -6,10 +6,10 @@ license.workspace = true
 description = "strop lsp: async-lsp client, server registry, diagnostics store"
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.19.1" }
-strop-workspace = { path = "../strop-workspace", version = "0.19.1" }
-strop-remote = { path = "../strop-remote", version = "0.19.1" }
-strop-trace = { path = "../strop-trace", version = "0.19.1" }
+strop-core = { path = "../strop-core", version = "0.20.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.20.0" }
+strop-remote = { path = "../strop-remote", version = "0.20.0" }
+strop-trace = { path = "../strop-trace", version = "0.20.0" }
 async-lsp = "0.2"
 tokio = { version = "1", features = ["rt", "process", "io-util", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }

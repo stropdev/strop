@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.20.0 — 2026-09-10
+
+Shared workspace identity, semantic editing, editable collections, and
+existing-container browsing (plans 0042/0043/0044, 0037 DC1a).
+
+### Added
+
+- `strop-workspace` owns resource identity for every consumer: remote address
+  forms moved out of the transport, one `Filesystem` namespace type, one
+  `ResourceLocation`, and a checked `ContainerId`. The editor binds a
+  workspace context per filesystem in use, with incarnation counters across
+  reconnects.
+- `:explain` renders the editor's actual decision records: workspace bindings,
+  the current document's routing and LSP binding, server readiness and attach
+  refusals with their actionable reasons, and effective configuration.
+- Semantic editing through shared change plans: `:format`, `:rename NEW`,
+  `Space a` code actions, and `:undo-change` grouped undo. One plan, one
+  revision-checked gateway application, one receipt; unbound, stale or
+  conflicting targets are named refusals. Verified against real
+  rust-analyzer. `ChangePlan.tla` models the lifecycle with mutants killed
+  and witnesses reached.
+- Editable code collections (0044): `ctrl-o` in a references/diagnostics/grep
+  picker opens the hits as one real buffer of source excerpts; editing an
+  excerpt writes back to its source through the change-plan gateway. Headers
+  are protected, boundary-crossing edits refuse, sources that moved on refuse
+  by name.
+- Existing containers (0037 DC1a): `:containers` attaches to a running local
+  Docker container — no SSH daemon, no provisioning, no tools required inside
+  (distroless works). Read-only listings and bounded file reads stream through
+  supervised `docker cp`; restarts and same-name recreations are detected as
+  stale identities. Detach never touches the container's lifecycle.
+- WORD text objects: `ciW`/`diW`/`daW` and full nvim-faithful word-object
+  semantics (punct runs, blank-run objects, around-blank rules), arbitrated
+  by new differential cases against nvim.
+- Trace schema 3: oversize forensic values chunk with digest and completeness
+  checks; replay assembles them; metadata exports stay payload-free.
+- Bench stress fixtures: 100k-result picker stream, 1 MiB line, large project
+  replace, cancel/reopen, dropped stale results.
+
+### Fixed
+
+- Word objects are nvim-faithful where they previously deviated: `aw` includes
+  trailing (or leading) blanks, `iw` on punctuation selects the punct run, and
+  blank runs are selectable objects. One cursor-only divergence on a refused
+  command is recorded in `KNOWN_DIVERGENCES` with its reason.
+
 ## 0.19.1 — 2026-09-09
 
 Enterprise-remote fixes from the first RHEL/NFS field report.

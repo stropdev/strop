@@ -40,10 +40,10 @@ Current delivery and remaining priorities:
   leading blank rules, indent preservation), arbitrated by new differential
   cases. One reviewed cursor-only divergence on a REFUSED command is recorded
   in `KNOWN_DIVERGENCES`.
-- **P2 — chunked large forensic results.** The existing 256 KiB per-value limit
-  refuses a large Git completion rather than claiming a complete replay. Design
-  bounded chunking/assembly with ownership and truncation tests before advertising
-  full forensic capture of arbitrarily large worker results.
+- **P2 delivered — chunked large forensic results.** strop-trace schema 3
+  chunks oversize capture values with digest/ordering/completeness checks;
+  replay assembles, metadata export stays payload-free, old traces decode
+  unchanged. Delivered alongside the 0.19.1 hardening round.
 - **P2 — remote-save lock release on clean exit.** `.strop-lock-<hash>` files
   outlive `:q` (0.19.1 field report). The stable inode is deliberate today;
   safe release needs the acquire-side identity recheck and a RemoteSave.tla
