@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.20.1 — 2026-09-10
+
+Interaction fixes from hands-on field reports, plus the verified kernel.
+
+### Fixed
+
+- A hover or blame card landing mid-insert no longer eats the next key:
+  transient overlays dismiss AND forward in insert mode (the "Esc needs a
+  second press" report). Elsewhere they consume as before.
+- Syntax highlighting no longer blanks for a frame after each edit: the
+  previous analysis frame serves the interim, spans clipped to the live text.
+
+### Added
+
+- `:qa` / `:qall` (`:qa!` to discard) quit the editor across all buffers;
+  unsaved buffers refuse without the bang, per vim.
+- The input dispatch is now a computed `InputOwner` (editor/dispatch.rs):
+  owner priority and insert-mode policy are data, not if-chain order.
+
+### Verified
+
+- The anchor-mapping kernel (`strop-core/src/editmap.rs`, called by
+  `editor/transact.rs` for every mark/cursor/selection remap) carries its
+  proof in-tree: spec equivalence, monotonicity, in-bounds — verified by the
+  checksum-pinned Verus image (`docker compose run --build --rm verify`,
+  now a CI job). Proof work already paid: the no-overflow precondition and
+  `start <= new_end` invariant are now explicit where they were implicit.
+
 ## 0.20.0 — 2026-09-10
 
 Shared workspace identity, semantic editing, editable collections, and

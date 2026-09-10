@@ -1,6 +1,15 @@
 # 0045 — Verus pilot: the change-map geometry, verified in production
 
-Status: adopted (user direction, 10 Sep 2026). The pilot boundary is the code
+Status: **landed** (10 Sep 2026, 0.20.1). Both seams proved in production:
+`strop-core/src/editmap.rs` verifies in place (10 verified, 0 errors:
+map_position spec-equivalence/monotonicity/in-bounds, check_batch sorted/
+non-overlapping/in-bounds with honest error witnesses). Production calls
+the verified functions — `editor/transact.rs` anchor remaps and
+`buffer/mutation.rs` `prepare_replacements` geometry. Gates: compose
+`verify` service (checksum-pinned Verus 0.2026.09.06 / rustc 1.98.0 /
+z3 4.16.0) and a required CI job; negative control confirmed the gate
+bites. Proof finds folded in: the no-overflow precondition and
+`start <= new_end` invariant are explicit where they were implicit.
 S4 made load-bearing: every change plan, collection write-back, mark,
 jumplist and cursor rides `prepare_replacements` batch validation and the
 anchor-mapping arithmetic in `editor/transact.rs`.

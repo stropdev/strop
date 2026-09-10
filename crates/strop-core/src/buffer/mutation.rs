@@ -116,16 +116,30 @@ impl Buffer {
             });
         }
         replacements.retain(|edit| !edit.range.is_empty() || !edit.text.is_empty());
-        replacements.sort_unstable_by_key(|edit| edit.range.start);
         for edit in &replacements {
             self.validate_range(edit.range)?;
         }
-        for pair in replacements.windows(2) {
-            if pair[0].range.end > pair[1].range.start || pair[0].range.start == pair[1].range.start
-            {
-                return Err(EditError::Overlap);
-            }
+        // The verified geometry kernel (0045, crate::editmap): sorted by
+        // start, strictly non-overlapping, in-bounds — proven, and the
+        // error here can only be an overlap (bounds checked above).
+        let pairs: Vec<(usize, usize)> = replacements
+            .iter()
+            .map(|edit| (edit.range.start.get(), edit.range.end.get()))
+            .collect();
+        let sorted = crate::editmap::check_batch(self.len_bytes(), pairs)
+            .map_err(|()| EditError::Overlap)?;
+        // Validated batches carry unique ranges, so each pair names its
+        // Replacement unambiguously.
+        let mut rest = replacements;
+        let mut ordered = Vec::with_capacity(sorted.len());
+        for pair in sorted {
+            let at = rest
+                .iter()
+                .position(|edit| edit.range.start.get() == pair.0 && edit.range.end.get() == pair.1)
+                .expect("a validated batch contains only input ranges");
+            ordered.push(rest.remove(at));
         }
+        replacements = ordered;
         self.epoch
             .checked_add(replacements.len() as u64)
             .ok_or(EditError::RevisionExhausted)?;
