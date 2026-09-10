@@ -2,6 +2,7 @@
 use super::attach::{AttachKey, AttachRecord};
 use super::*;
 use std::sync::mpsc::channel;
+use strop_core::id::DocumentId;
 
 impl Editor {
     /// Try to attach a language server for the current buffer. The
@@ -30,6 +31,20 @@ impl Editor {
         let Some(doc) = self.lsp_current_doc_path() else {
             return;
         };
+        // Extensionless/ambiguous headers keep a navigation-bound
+        // context (0049 §4.4); without one there is nothing to attach.
+        let Some(language) = self.lsp_doc_language(self.current(), &doc.path) else {
+            return;
+        };
+        if self
+            .lsp_server_for(self.current(), &doc.path, &language, &doc.filesystem)
+            .is_some()
+        {
+            self.lsp_did_open_current();
+            return;
+        }
+        // Discovery runs only for an unambiguous extension — never
+        // rediscover project commands from /usr/include (0049 §4.7).
         let Some(ext) = doc
             .path
             .extension()
@@ -40,13 +55,6 @@ impl Editor {
         let Some(language) = registry::language_for_extension(&ext) else {
             return;
         };
-        if self
-            .lsp_server_for(&doc.path, language, &doc.filesystem)
-            .is_some()
-        {
-            self.lsp_did_open_current();
-            return;
-        }
         let key = AttachKey {
             target: doc.filesystem.clone(),
             language: language.to_string(),
@@ -174,12 +182,31 @@ impl Editor {
     /// The server placement for a buffer, if one is attached: exact
     /// language match on the same filesystem target, longest covering
     /// root wins.
+    /// Resolve the serving (server, root) for a document: the
+    /// navigation-bound context first (0049 §4.2 — the server that
+    /// brought this document here keeps answering inside it), then
+    /// longest-covering-root discovery for unbound ordinary opens.
+    /// Never a scan that picks the first server speaking the language.
     pub(crate) fn lsp_server_for(
         &self,
+        document: DocumentId,
         path: &Path,
-        language: &'static str,
+        language: &str,
         target: &Filesystem,
     ) -> Option<(ServerId, PathBuf)> {
+        // The maps are the authority: `lsp_failed` drops a dead
+        // server's bindings and carried contexts, so a present entry is
+        // a live context. Replay resolves identically without a client.
+        if let Some(binding) = self.lsp_state.bindings.get(&document) {
+            if binding.target == *target && binding.language == language {
+                return Some((binding.server, binding.root.clone()));
+            }
+        }
+        if let Some(context) = self.lsp_state.jump_contexts.get(&document) {
+            if context.target == *target && context.language == language {
+                return Some((context.server, context.root.clone()));
+            }
+        }
         let attach = &self.lsp_state.attach;
         let best = attach
             .attached

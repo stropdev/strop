@@ -42,6 +42,7 @@ fn arm(e: &mut Editor, id: u64, kind: RequestKind, encoding: PositionEncoding) -
             revision,
             path,
             root: PathBuf::from("/workspace"),
+            language: "rust".into(),
             target: strop_workspace::Filesystem::Local,
         },
     );
@@ -201,6 +202,189 @@ fn old_server_reply_is_not_accepted_by_replacement_binding() {
         .server = ServerId::new(8);
     hover(&mut e, old, "dead connection");
     assert!(e.hover_card.is_none());
+}
+
+/// A cpp binding at a custom root, mirroring arm().
+fn arm_cpp(e: &mut Editor, id: u64, server_id: u64, root: &str) -> ReplyContext {
+    let document = e.current();
+    let revision = e.buf().revision();
+    let server = ServerId::new(server_id);
+    let path = e.buf().path.clone().unwrap();
+    e.lsp_state.bindings.insert(
+        document,
+        state::Binding {
+            server,
+            revision,
+            path,
+            root: PathBuf::from(root),
+            language: "cpp".into(),
+            target: strop_workspace::Filesystem::Local,
+        },
+    );
+    let stamp = RequestStamp {
+        request: RequestId::new(id),
+        server,
+        document,
+        revision,
+    };
+    e.lsp_state.navigation = Some(stamp);
+    ReplyContext {
+        stamp,
+        encoding: PositionEncoding::Utf8,
+        kind: RequestKind::Goto,
+    }
+}
+
+fn cpp_editor() -> Editor {
+    let mut buffer = Buffer::from_text("#include <vector.hpp>\n");
+    buffer.path = Some(PathBuf::from("/proj/main.cpp"));
+    Editor::new_in(buffer, PathBuf::from("/proj"))
+}
+
+fn insert_target(e: &mut Editor, path: &str, text: &str) -> strop_core::id::DocumentId {
+    let mut buffer = Buffer::from_text(text);
+    buffer.path = Some(PathBuf::from(path));
+    e.docs.insert(Document::new(buffer))
+}
+
+fn at_origin() -> ServerPosition {
+    ServerPosition {
+        line: LineIndex::new(0),
+        column: ServerColumn::new(0),
+    }
+}
+
+#[test]
+fn external_header_keeps_the_originating_server() {
+    // 0049 §4: gd out of the working tree retains the replying server;
+    // the second gd resolves through the carried binding.
+    let mut e = cpp_editor();
+    let context = arm_cpp(&mut e, 0, 7, "/proj");
+    let target = insert_target(&mut e, "/usr/include/vector.hpp", "// vector\n");
+    e.finish_lsp_jump(target, at_origin(), context);
+    let carried = e
+        .lsp_state
+        .jump_contexts
+        .get(&target)
+        .expect("the jump carried the originating server's context");
+    assert_eq!(carried.server, ServerId::new(7));
+    assert_eq!(carried.root, PathBuf::from("/proj"));
+    assert_eq!(carried.language, "cpp");
+    assert!(
+        !e.lsp_state.bindings.contains_key(&target),
+        "a carried context is a routing hint, not open state — didOpen follows"
+    );
+    let resolved = e.lsp_server_for(
+        target,
+        Path::new("/usr/include/vector.hpp"),
+        "cpp",
+        &strop_workspace::Filesystem::Local,
+    );
+    assert_eq!(resolved, Some((ServerId::new(7), PathBuf::from("/proj"))));
+    assert!(
+        e.docs.get(target).unwrap().buf.readonly,
+        "outside-root content stays read-only"
+    );
+}
+
+#[test]
+fn extensionless_header_inherits_the_navigation_language() {
+    let mut e = cpp_editor();
+    let context = arm_cpp(&mut e, 0, 7, "/proj");
+    let target = insert_target(&mut e, "/usr/include/vector", "// no extension\n");
+    e.finish_lsp_jump(target, at_origin(), context);
+    assert_eq!(
+        e.lsp_state
+            .jump_contexts
+            .get(&target)
+            .map(|c| c.language.as_str()),
+        Some("cpp"),
+        "extensionless inherits the jump's language (0049 §4.4)"
+    );
+    assert_eq!(
+        e.lsp_doc_language(target, Path::new("/usr/include/vector"))
+            .as_deref(),
+        Some("cpp")
+    );
+}
+
+#[test]
+fn ambiguous_c_header_inherits_cpp_context() {
+    let mut e = cpp_editor();
+    let context = arm_cpp(&mut e, 0, 7, "/proj");
+    let target = insert_target(&mut e, "/usr/include/legacy.h", "// c header\n");
+    e.finish_lsp_jump(target, at_origin(), context);
+    assert_eq!(
+        e.lsp_state
+            .jump_contexts
+            .get(&target)
+            .map(|c| c.language.as_str()),
+        Some("cpp"),
+        "an ambiguous .h keeps the cpp navigation context (0049 §4.4)"
+    );
+}
+
+#[test]
+fn a_second_project_never_switches_an_existing_binding() {
+    // 0049 §4.5: the shared header reached from project B keeps the
+    // context project A established — no silent switch.
+    let mut e = cpp_editor();
+    let first = insert_target(&mut e, "/usr/include/vector.hpp", "// shared\n");
+    e.lsp_state.bindings.insert(
+        first,
+        state::Binding {
+            server: ServerId::new(9),
+            revision: e.docs.get(first).unwrap().buf.revision(),
+            path: PathBuf::from("/usr/include/vector.hpp"),
+            root: PathBuf::from("/proj-a"),
+            language: "cpp".into(),
+            target: strop_workspace::Filesystem::Local,
+        },
+    );
+    e.switch_to(e.current()); // no-op clarity: current is the target
+    let origin = e.current();
+    // jump from the /proj (server 7) document into the shared header
+    e.switch_to(origin);
+    let context = arm_cpp(&mut e, 0, 7, "/proj");
+    e.finish_lsp_jump(first, at_origin(), context);
+    assert_eq!(
+        e.lsp_state.bindings.get(&first).map(|b| b.server),
+        Some(ServerId::new(9)),
+        "the first project's context stands"
+    );
+    assert!(
+        !e.lsp_state.jump_contexts.contains_key(&first),
+        "and no second context queues behind it"
+    );
+}
+
+#[test]
+fn manual_external_open_names_the_context_route() {
+    // 0049 §4.6: a server exists but doesn't cover this path — the
+    // message says so and names the way in, no install red herring.
+    let mut e = Editor::new_in(Buffer::from_text("int main() {}\n"), PathBuf::from("/proj"));
+    e.buf_mut().path = Some(PathBuf::from("/usr/include/lonely.hpp"));
+    e.lsp_state.attach.attached.push(super::attach::Attachment {
+        language: "cpp".into(),
+        root: PathBuf::from("/proj"),
+        server: ServerId::new(7),
+        target: strop_workspace::Filesystem::Local,
+    });
+    e.lsp_request(RequestKind::Goto);
+    assert!(
+        e.message.contains("no language context"),
+        "truthful context route, got: {}",
+        e.message
+    );
+    // And with no server at all, the install advice is the honest one.
+    let mut e = Editor::new_in(Buffer::from_text("int main() {}\n"), PathBuf::from("/proj"));
+    e.buf_mut().path = Some(PathBuf::from("/usr/include/lonely.hpp"));
+    e.lsp_request(RequestKind::Goto);
+    assert!(
+        e.message.contains("no language server"),
+        "install advice only when nothing serves the language: {}",
+        e.message
+    );
 }
 
 #[test]

@@ -463,6 +463,54 @@ impl Editor {
         }
         self.set_head(head);
         self.clamp_cursor();
+        // A server-originated jump carries its language-service context
+        // (0049 §4.1): the replying server keeps answering inside the
+        // target. A live binding another navigation established is never
+        // switched (0049 §4.5), and namespaces never cross (0049 §4.7).
+        let origin = self
+            .lsp_state
+            .bindings
+            .get(&context.stamp.document)
+            .map(|b| {
+                (
+                    b.server,
+                    b.root.clone(),
+                    b.target.clone(),
+                    b.language.clone(),
+                )
+            });
+        if let Some((server, root, origin_target, language)) = origin {
+            let target_bound = self.lsp_state.bindings.contains_key(&target);
+            let doc = self.lsp_doc_path(target);
+            // C and C++ headers are interchangeable for the server that
+            // serves both (0049 §4.4: an ambiguous `.h` inherits).
+            let language_compatible = doc
+                .as_ref()
+                .and_then(|doc| lsp_language(&doc.path))
+                .is_none_or(|known| {
+                    known == language
+                        || (matches!(known, "c" | "cpp")
+                            && matches!(language.as_str(), "c" | "cpp"))
+                });
+            let context_free = !self.lsp_state.jump_contexts.contains_key(&target);
+            if let (false, true, Some(doc), true) =
+                (target_bound, context_free, doc, language_compatible)
+            {
+                if doc.filesystem == origin_target {
+                    // A routing hint, not open state: didOpen follows in
+                    // lsp_maybe_attach and becomes the real binding.
+                    self.lsp_state.jump_contexts.insert(
+                        target,
+                        state::JumpContext {
+                            server,
+                            root,
+                            language,
+                            target: origin_target,
+                        },
+                    );
+                }
+            }
+        }
         self.scroll_to_cursor(self.view_rows());
         self.lsp_maybe_attach();
     }

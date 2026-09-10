@@ -34,6 +34,7 @@ fn remote_arm(
             revision,
             path: path.to_path_buf(),
             root: PathBuf::from("/w/proj"),
+            language: "rust".into(),
             target: strop_workspace::Filesystem::Remote(endpoint.clone()),
         },
     );
@@ -87,6 +88,33 @@ fn remote_diagnostics_never_alias_local_paths() {
 /// A goto on a remote server routes to the endpoint's file identity —
 /// through the already-open remote document, never the analogous
 /// local path.
+/// A jump that lands on a LOCAL document never inherits a remote
+/// binding — namespaces never cross (0049 §4.7).
+#[test]
+fn remote_navigation_context_never_binds_local_targets() {
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap();
+    let mut e = editor("origin\n");
+    e.buf_mut().path = Some(PathBuf::from("/w/proj/origin.rs"));
+    let origin = e.current();
+    let context = remote_arm(&mut e, origin, &endpoint, Path::new("/w/proj/origin.rs"));
+    let mut buffer = Buffer::from_text("local\n");
+    buffer.path = Some(PathBuf::from("/usr/include/twin.hpp"));
+    let local = e.docs.insert(Document::new(buffer));
+    e.switch_to(origin);
+    e.finish_lsp_jump(
+        local,
+        ServerPosition {
+            line: LineIndex::new(0),
+            column: ServerColumn::new(0),
+        },
+        context,
+    );
+    assert!(
+        !e.lsp_state.bindings.contains_key(&local),
+        "a remote context never binds a local document"
+    );
+}
+
 #[test]
 fn remote_goto_routes_to_the_remote_target_not_local() {
     let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://builder.example").unwrap();

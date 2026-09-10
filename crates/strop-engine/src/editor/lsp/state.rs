@@ -2,7 +2,7 @@
 //! calls run through the replay tape (R11): model owners update
 //! identically live and replayed; only the native wire work is gated.
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use strop_core::id::{BufferRevision, ByteColumn, DocumentId, LineIndex};
 use strop_lsp::{
@@ -16,6 +16,10 @@ pub(crate) struct Binding {
     pub server: ServerId,
     pub path: PathBuf,
     pub root: PathBuf,
+    /// The registry language this binding serves — extensionless and
+    /// ambiguous headers inherit it from the navigation that brought
+    /// them here (0049 §4.4).
+    pub language: String,
     /// Which filesystem `path` names — remote bindings never alias
     /// same-bytes local paths (0036 RW8).
     pub target: strop_workspace::Filesystem,
@@ -43,8 +47,21 @@ pub(crate) struct CloseArgs {
     pub path: PathBuf,
 }
 
+/// A server-originated jump's carried language-service context (0049
+/// §4): a routing hint, NOT open state — didOpen still has to happen
+/// before the document is served (the binding records that).
+pub(crate) struct JumpContext {
+    pub server: ServerId,
+    pub root: PathBuf,
+    pub language: String,
+    pub target: strop_workspace::Filesystem,
+}
+
 pub(crate) struct LspState {
     pub bindings: HashMap<DocumentId, Binding>,
+    /// Carried contexts for jumped-to documents not yet opened on the
+    /// originating server. Consumed into a binding by didOpen.
+    pub jump_contexts: HashMap<DocumentId, JumpContext>,
     pub hover: Option<RequestStamp>,
     pub navigation: Option<RequestStamp>,
     pub attach: AttachState,
@@ -54,6 +71,7 @@ impl Default for LspState {
     fn default() -> Self {
         Self {
             bindings: HashMap::new(),
+            jump_contexts: HashMap::new(),
             hover: None,
             navigation: None,
             attach: AttachState::new(),
@@ -62,11 +80,25 @@ impl Default for LspState {
 }
 
 impl Editor {
-    fn lsp_live_client(&self, server: ServerId) -> Option<Client> {
+    pub(super) fn lsp_live_client(&self, server: ServerId) -> Option<Client> {
         self.lsp_servers
             .iter()
             .find(|s| s.id == server)
             .and_then(|s| s.client.clone())
+    }
+
+    /// The document's language: a navigation-bound context's first
+    /// (0049 §4.2 — an extensionless or ambiguous `.h` header keeps the
+    /// language of the jump that brought it here), the extension's own
+    /// for unbound ordinary opens.
+    pub(super) fn lsp_doc_language(&self, document: DocumentId, path: &Path) -> Option<String> {
+        if let Some(binding) = self.lsp_state.bindings.get(&document) {
+            return Some(binding.language.clone());
+        }
+        if let Some(context) = self.lsp_state.jump_contexts.get(&document) {
+            return Some(context.language.clone());
+        }
+        super::lsp_language(path).map(str::to_string)
     }
 
     pub(super) fn lsp_did_open_current(&mut self) {
@@ -74,10 +106,12 @@ impl Editor {
         let Some(doc) = self.lsp_current_doc_path() else {
             return;
         };
-        let Some(language) = super::lsp_language(&doc.path) else {
+        let Some(language) = self.lsp_doc_language(document, &doc.path) else {
             return;
         };
-        let Some((server, root)) = self.lsp_server_for(&doc.path, language, &doc.filesystem) else {
+        let Some((server, root)) =
+            self.lsp_server_for(document, &doc.path, &language, &doc.filesystem)
+        else {
             return;
         };
         if let Some(binding) = self.lsp_state.bindings.get(&document) {
@@ -100,25 +134,26 @@ impl Editor {
         };
         // Replay reproduces the recorded admission result; the binding
         // updates identically so injected replies pass freshness.
+        // Headers whose extension disagrees with (or lacks) the bound
+        // language speak the bound language's id (0049 §4.4).
+        let lang_id = match super::lsp_language(&doc.path) {
+            Some(own) if own == language => super::lang_id(&doc.path).to_string(),
+            _ => language.clone(),
+        };
         let opened = self.tape.call("lsp.open", &args, || {
-            self.lsp_live_client(server).map(|client| {
-                client.did_open(
-                    document,
-                    revision,
-                    &doc.path,
-                    super::lang_id(&doc.path),
-                    text,
-                )
-            })
+            self.lsp_live_client(server)
+                .map(|client| client.did_open(document, revision, &doc.path, &lang_id, text))
         });
         match opened {
             Ok(Some(true)) => {
+                self.lsp_state.jump_contexts.remove(&document);
                 self.lsp_state.bindings.insert(
                     document,
                     Binding {
                         server,
                         path: doc.path,
                         root,
+                        language,
                         target: doc.filesystem,
                         revision,
                     },
@@ -294,24 +329,40 @@ impl Editor {
                     .into();
             return;
         };
-        let Some(language) = super::lsp_language(&doc.path) else {
+        let Some(language) = self.lsp_doc_language(self.current(), &doc.path) else {
             self.message = "no language server for this file type".into();
             return;
         };
-        let Some((server, _)) = self.lsp_server_for(&doc.path, language, &doc.filesystem) else {
-            match doc.filesystem {
+        let Some((server, _)) =
+            self.lsp_server_for(self.current(), &doc.path, &language, &doc.filesystem)
+        else {
+            self.message = match doc.filesystem {
                 strop_workspace::Filesystem::Local => {
-                    self.message = "no language server — install it or fix languages.toml".into()
+                    // 0049 §4.6: a server that simply doesn't cover this
+                    // path is a different story from one that isn't
+                    // installed — name the way in, honestly.
+                    let covered_language = self
+                        .lsp_state
+                        .attach
+                        .attached
+                        .iter()
+                        .any(|a| a.language == language);
+                    if covered_language {
+                        "no language context for this file — reach it via gd from a                          served file, or add its root to languages.toml"
+                            .into()
+                    } else {
+                        "no language server — install it or fix languages.toml".into()
+                    }
                 }
                 strop_workspace::Filesystem::Remote(endpoint) => {
-                    self.message = format!(
+                    format!(
                         "no language server on {endpoint} — install it there or fix languages.toml"
                     )
                 }
                 strop_workspace::Filesystem::Container(_) => {
-                    self.message = "language services in containers are not wired yet".into()
+                    "language services in containers are not wired yet".into()
                 }
-            }
+            };
             return;
         };
         self.lsp_did_open_current();
@@ -419,6 +470,9 @@ impl Editor {
             .attach
             .attached
             .retain(|a| a.server != server);
+        self.lsp_state
+            .jump_contexts
+            .retain(|_, context| context.server != server);
         if let Some(index) = self.lsp_servers.iter().position(|s| s.id == server) {
             let connection = self.lsp_servers.remove(index);
             if let Some(client) = connection.client {

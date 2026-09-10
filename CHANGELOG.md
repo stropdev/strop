@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.24.0 — 2026-09-10
+
+External-header LSP continuity (0049 §4): a definition jump out of the
+working tree keeps its language service.
+
+### Fixed
+
+- `gd` from a project file into a library/system header (e.g.
+  `vector.hpp`) no longer loses the language server: the jump carries
+  the replying server's context as a routing hint, `didOpen` follows
+  through it, and the next `gd` inside the header answers. Verified
+  against real clangd: extensionless `vector` opens with
+  `languageId: cpp`.
+- Extensionless and ambiguous C/C++ headers (`.h`) inherit the
+  navigation's language instead of falling to plaintext or C.
+- The same external header reached from two projects keeps the first
+  navigation's context — no silent compile-context switch.
+- A manually opened file no server covers gets a truthful route ("no
+  language context for this file — reach it via gd from a served file,
+  or add its root to languages.toml") instead of install advice; the
+  install hint is reserved for languages with no server at all.
+- Namespaces never cross: a remote jump context never binds a local
+  document, and server death drops both bindings and carried contexts.
+
 ## 0.23.0 — 2026-09-10
 
 Escape is preserved at the terminal boundary (0048), and navigation

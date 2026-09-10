@@ -81,6 +81,47 @@ Production source modules remain below the approximate 800-line ceiling; the
 types at ownership/coordinate/protocol boundaries; private iteration indices do
 not need ceremonial wrappers. Do not treat a green model as an unbounded proof.
 
+## Current program — the multibuffer milestone (0049)
+
+Landed from [0049](0049-product-and-architecture-handoff.md):
+
+- 0048 input preservation (0.23.0), 0047 navigation surfaces (0.23.0).
+- §4 external-header LSP continuity (0.24.0): server-originated jumps carry
+  their language-service context as a routing hint consumed by didOpen;
+  extensionless and ambiguous C/C++ headers inherit the navigation language;
+  binding-first resolution with root-scan fallback; manual opens without
+  context get a truthful route instead of install advice.
+
+Deferred, in 0049's own order (§1, §11):
+
+1. **Multibuffer correctness (0049 §5)** — source-backed collection
+   transactions replacing the scratch-history contract: versioned
+   source/projection map, typed protected rows, projection invalidation on
+   every source edit path, collection undo/redo as source-history groups,
+   `:w`/`:q` semantics, `g<Space>` source navigation with Ctrl-O working-set
+   restore, and elimination of the quadratic full-view diff (the measured
+   1,000/2,000-excerpt stall). Sign-off requires behavior + selection +
+   presentation together; no partial claims.
+2. **Presentation (0049 §6)** — Rootle-inspired source-excerpt cards with
+   per-source syntax projection, original line numbers, provenance/dirty/
+   conflict states; one card per source file. A reusable excerpt seam for
+   grep preview, collections and change review — not a widget framework.
+3. **Occurrence selection (0049 §7)** — `gb` next / `gB` all with
+   `:select-next|:select-all|:select-skip|:select-pop`, real anchor/head
+   ranges in ordinary buffers and collections, one edit group per action.
+4. **Reviewable project changes (0049 §8)** — prepared-proposal review
+   before rename/code-action/project application, bounded delivery,
+   inspectable receipts, project-replace migration onto the shared
+   semantics, `workspace/applyEdit` with truthful response timing.
+5. **Accompanying architecture (0049 §9)** — engine public-surface
+   tightening, render-side job admission removal (0046 stage C),
+   `collections/mod.rs` split, `:explain` decision provenance, arena
+   exhaustion checks, pinned base images, required-mode container gate.
+6. **Later (0049 §10)** — structural selections before recipe syntax;
+   saved working sets/named investigations; tasks with source-bound
+   evidence; selective checkpoints; Dev Container lifecycle, daemon and
+   GUI keep their existing evidence gates.
+
 ## Closed in 0.14.1
 
 | Finding | Fix / evidence |

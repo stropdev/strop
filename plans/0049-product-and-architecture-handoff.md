@@ -1,8 +1,9 @@
 # 0049 — Product and architecture handoff: finish the multibuffer experience
 
-Status: **investigation complete; implementation proposed**, 10 September 2026.
-This is a design/implementation handoff, not a claim that the changes below
-have landed. No editor source was changed during this investigation.
+Status: **§4 landed in 0.24.0; the multibuffer milestone (§§5–7) is the
+active program, queued on the roadmap (0028 "Current program")**,
+10 September 2026. §§8–10 follow in the order §1 sets. This document's
+evidence and contracts stand; what remains is execution, not re-review.
 
 Baseline: `fc3fbfa673171e4260530f45f0b170dac2d25f68`, Strop 0.22.1.
 Plan 0047's symbol/jumplist/mark work is in flight in the shared checkout;

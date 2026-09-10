@@ -41,6 +41,7 @@ fn arm(e: &mut Editor, document: DocumentId, id: u64, kind: RequestKind) -> Repl
             revision,
             path,
             root: PathBuf::from("/workspace"),
+            language: "rust".into(),
             target: strop_workspace::Filesystem::Local,
         },
     );
