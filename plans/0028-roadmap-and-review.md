@@ -48,6 +48,12 @@ Current delivery and remaining priorities:
   outlive `:q` (0.19.1 field report). The stable inode is deliberate today;
   safe release needs the acquire-side identity recheck and a RemoteSave.tla
   amendment. Design recorded in [0041](0041-handoff-adoption-and-roadmap.md) §4.
+- **P3 — trace-queue load flake watch.** One hosted-CI failure: a loaded runner
+  starved the 64-deep capture writer queue, marked the trace incomplete, and
+  failed `remote_edit_save_refresh...` (which replays the trace). Honest and
+  loud by design; rerun passed. If it recurs, the SSH replay tests should
+  tolerate an incomplete trace capture (skip the replay half) rather than
+  fail the functional save half.
 - **P3 — `../` row attributes in remote listings.** The parent row renders
   `d?????????` because it is never stat'ed. One SFTP stat in the list job;
   cosmetic, batch with the next listing change.
