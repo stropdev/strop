@@ -62,6 +62,11 @@ pub struct FilterRequest {
     pub catalog: Catalog,
     pub query: String,
     pub upstream_filtered: bool,
+    /// Count of trailing catalog items that survive any query — pinned
+    /// affordances like the remote picker's "Add a host…" (0.21.0 field
+    /// report: filtering hid the only way to enter a new destination).
+    /// Pinned rows score 0: real matches always rank above them.
+    pub pinned_tail: usize,
 }
 
 /// Shared by the actor, hermetic oracles and the scoring benchmark. Pattern
@@ -75,13 +80,15 @@ pub fn rank(request: &FilterRequest, cancelled: impl Fn() -> bool) -> Option<Ran
         item_count: request.catalog.len(),
         ..Ranking::default()
     };
+    let pinned_from = request.catalog.len().saturating_sub(request.pinned_tail);
     for (index, item) in request.catalog.iter().enumerate() {
         if index % 128 == 0 && cancelled() {
             return None;
         }
         let start = ranking.columns.len();
         matched.clear();
-        let score = if request.upstream_filtered || request.query.is_empty() {
+        let score = if index >= pinned_from || request.upstream_filtered || request.query.is_empty()
+        {
             Some(0)
         } else {
             let text = if item.text.is_ascii() {

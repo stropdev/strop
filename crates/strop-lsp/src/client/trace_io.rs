@@ -77,6 +77,11 @@ struct Message {
     response: bool,
     error_code: Option<Value>,
     error_message: Option<String>,
+    /// The full frame body, only under --log-content (0.21.0 field
+    /// report: diagnosing an LSP failure meant reimplementing a client
+    /// because the trace carried metadata but never the payload).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload: Option<String>,
 }
 
 struct Decoder {
@@ -185,14 +190,22 @@ fn metadata(
             .and_then(|error| error.get("message"))
             .and_then(Value::as_str)
             .map(strop_trace::preview),
+        payload: strop_trace::capture_content()
+            .then(|| String::from_utf8_lossy(bytes).into_owned()),
     })
 }
+
+/// Trace install is process-global; tests that start a Full-content
+/// session or assert the default policy serialize on this.
+#[cfg(test)]
+pub(crate) static TRACE_SESSION: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn wire_metadata_never_contains_text_payloads() {
+        let _session = super::TRACE_SESSION.lock();
         let payload = br#"{"jsonrpc":"2.0","id":17,"method":"textDocument/didChange","params":{"secret":"private document"}}"#;
         let message = metadata(payload, "fake-language-server", Direction::Tx).unwrap();
         assert_eq!(message.method.as_deref(), Some("textDocument/didChange"));

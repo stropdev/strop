@@ -31,6 +31,11 @@ pub(crate) struct ClientState {
     id: ServerId,
     caps: ServerCaps,
     sync: Arc<parking_lot::Mutex<sync::SyncState>>,
+    /// The server's languages.toml config block — answered to
+    /// `workspace/configuration` pulls (0043 follow-on: the block used
+    /// to be serialized into initializationOptions and ignored by every
+    /// server that reads settings the standard way).
+    config: Option<serde_json::Value>,
 }
 
 /// Why a client could not start. Every variant reaches the modeline
@@ -138,8 +143,15 @@ pub(crate) fn client_router(
     sync: Arc<parking_lot::Mutex<sync::SyncState>>,
     workspace: Workspace,
     name: String,
+    config: Option<serde_json::Value>,
 ) -> Router<ClientState> {
-    let mut router = Router::new(ClientState { tx, id, caps, sync });
+    let mut router = Router::new(ClientState {
+        tx,
+        id,
+        caps,
+        sync,
+        config,
+    });
     let diag_workspace = workspace;
     router.notification::<PublishDiagnostics>(move |st, params| {
         // The URI names a file on the server's own filesystem;
@@ -189,6 +201,27 @@ pub(crate) fn client_router(
                 "message":strop_trace::preview(&params.message)})
         });
         ControlFlow::Continue(())
+    });
+    // Servers that read settings the standard way pull them via
+    // workspace/configuration; the languages.toml config block answers,
+    // section-scoped when the pull names one.
+    router.request::<async_lsp::lsp_types::request::WorkspaceConfiguration, _>(|st, params| {
+        let config = st.config.clone();
+        async move {
+            let answer: Vec<serde_json::Value> = params
+                .items
+                .iter()
+                .map(|item| match (&config, &item.section) {
+                    (Some(config), Some(section)) => config
+                        .get(section)
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                    (Some(config), None) => config.clone(),
+                    (None, _) => serde_json::Value::Null,
+                })
+                .collect();
+            Ok(answer)
+        }
     });
     // The spec permits notifications a client does not handle; the
     // correct response is to ignore them. Trace and continue.
@@ -251,7 +284,8 @@ impl Client {
             let sync = sync.clone();
             let workspace = diag_workspace.clone();
             let name = name.clone();
-            move |_server| client_router(tx, id, caps, sync, workspace, name)
+            let config = spec.init_options.cloned();
+            move |_server| client_router(tx, id, caps, sync, workspace, name, config)
         });
 
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -469,6 +503,11 @@ impl Client {
             .map_err(|error| {
                 SpawnError::Startup(format!("cannot start the LSP client thread: {error}"))
             })?;
+        let root_name = workspace
+            .root()
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "root".into());
         let client = Self {
             id,
             next_request: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -487,7 +526,14 @@ impl Client {
         };
         let params = InitializeParams {
             #[allow(deprecated)] // root_uri is what every server still honors
-            root_uri: Some(root_uri),
+            root_uri: Some(root_uri.clone()),
+            // pyright (and others) discover project config through
+            // workspace folders — rootUri alone has been insufficient
+            // since LSP 3.6 (field report: pyrightconfig.json unseen).
+            workspace_folders: Some(vec![async_lsp::lsp_types::WorkspaceFolder {
+                name: root_name,
+                uri: root_uri,
+            }]),
             initialization_options: spec.init_options.cloned(),
             capabilities: async_lsp::lsp_types::ClientCapabilities {
                 text_document: Some(async_lsp::lsp_types::TextDocumentClientCapabilities {
@@ -495,6 +541,14 @@ impl Client {
                     publish_diagnostics: Some(Default::default()),
                     hover: Some(Default::default()),
                     definition: Some(Default::default()),
+                    ..Default::default()
+                }),
+                // Servers that read settings pull them via
+                // workspace/configuration — advertised so the pull comes
+                // (languages.toml's config block answers it below).
+                workspace: Some(async_lsp::lsp_types::WorkspaceClientCapabilities {
+                    workspace_folders: Some(true),
+                    configuration: Some(true),
                     ..Default::default()
                 }),
                 // Offer utf-8 first, accept the spec default utf-16.

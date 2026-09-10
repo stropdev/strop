@@ -244,7 +244,7 @@ REMOTE: :remote edit enables saving; :remote verify reconciles an unconfirmed\n\
 TRACING:\n  --log / --log=ALL              all diagnostic categories to strop-log.jsonl\n\
   --log=PATH / --log-file PATH    create a new private JSONL file\n\
   STROP_LOG=PATH                 environment alternative (flag wins)\n\
-  --log-content                 include file/paste text and rendered cells\n\
+  --log-content                 include file/paste text, LSP payloads and rendered cells\n\
   Keys, commands, paths and messages can be sensitive even without content.\n\
   Inspect logs before sharing. Existing files are never overwritten.\n\n\
 KEYS: h j k l w b e 0 $ gg G %; d y c + motion; i a A o O; v V; u ctrl-r\n\

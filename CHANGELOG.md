@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.22.1 — 2026-09-10
+
+Field-report fixes from a 0.21.0 review against real pyright and remote
+hosts.
+
+### Fixed
+
+- pyright (and any server that discovers project config through the
+  workspace) now sees it: `initialize` carries `workspaceFolders`
+  alongside the deprecated `rootUri` — rootUri alone has been
+  insufficient since LSP 3.6, so `pyrightconfig.json`'s `extraPaths` /
+  `venvPath` never applied and every non-relative import failed.
+- The languages.toml `[language-server.NAME.config]` block is no longer
+  inert for servers that read settings the standard way: strop
+  advertises `workspace.configuration` and answers
+  `workspace/configuration` pulls from the block, section-scoped.
+- The remote destinations picker keeps `Add a host…` visible under
+  filtering (pinned row), and Enter on filter text that matched no
+  listed destination carries the text into the address box as the
+  draft — typed hostnames are no longer swallowed.
+- `--log-content` traces now carry LSP frame bodies (`payload` on
+  `lsp_message` events), so initialize params and diagnostics are
+  readable in a capture instead of requiring a hand-rolled client.
+
 ## 0.22.0 — 2026-09-10
 
 The engine extraction (0046): one `strop-engine`, the terminal as a consumer.

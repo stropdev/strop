@@ -18,11 +18,12 @@ pub struct RemoteChoices {
 
 impl Editor {
     pub(crate) fn open_remote_picker(&mut self) {
-        self.set_picker(PickerGlue::diagnostics(Picker::new(
-            Kind::RemoteHosts,
-            vec![new_host_item()],
-            true,
-        )));
+        let mut picker = Picker::new(Kind::RemoteHosts, vec![new_host_item()], true);
+        // The worker's catalog always appends "Add a host…" last; keep it
+        // visible under filtering — it's the only way to enter a new
+        // destination (0.21.0 field report).
+        picker.pinned_tail = 1;
+        self.set_picker(PickerGlue::diagnostics(picker));
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return;
         };

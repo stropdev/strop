@@ -130,6 +130,8 @@ pub struct Picker {
     /// A source error (rg's stderr, a dead worker): sticky in the card —
     /// the transient modeline clears on the next keystroke, this doesn't.
     pub error: Option<String>,
+    /// Trailing catalog items that filtering never hides (pinned_tail).
+    pub pinned_tail: usize,
 }
 
 #[derive(Default)]
@@ -155,6 +157,7 @@ impl Picker {
             selected: 0,
             streaming,
             error: None,
+            pinned_tail: 0,
         };
         p.append(items);
         p
@@ -320,6 +323,7 @@ impl Picker {
             catalog: self.items.clone(),
             query: self.input.text.clone(),
             upstream_filtered: matches!(self.kind, Kind::Grep | Kind::Replace),
+            pinned_tail: self.pinned_tail,
         }
     }
 
@@ -433,6 +437,56 @@ mod tests {
         p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
         assert_eq!(p.rows.len(), 1);
         assert_eq!(p.current().unwrap().text, "src/render.rs");
+    }
+
+    #[test]
+    fn pinned_tail_survives_filtering_below_real_matches() {
+        // The remote destinations picker pins "Add a host…": filtering a
+        // query that matches nothing real still offers it, and any real
+        // match ranks above it.
+        let items = vec![
+            Item {
+                text: "prtdv-pw-846".into(),
+                payload: Payload::RemoteConnect,
+            },
+            Item {
+                text: "Add a host\u{2026}".into(),
+                payload: Payload::RemoteConnect,
+            },
+        ];
+        let mut p = Picker::new(Kind::RemoteHosts, items, false);
+        p.pinned_tail = 1;
+        for c in "ewosd".chars() {
+            p.push_char(c);
+        }
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        assert_eq!(p.rows.len(), 1, "the pinned row survives a dead query");
+        assert_eq!(p.current().unwrap().text, "Add a host\u{2026}");
+        let mut p = Picker::new(
+            Kind::RemoteHosts,
+            vec![
+                Item {
+                    text: "prtdv-pw-846".into(),
+                    payload: Payload::RemoteConnect,
+                },
+                Item {
+                    text: "Add a host\u{2026}".into(),
+                    payload: Payload::RemoteConnect,
+                },
+            ],
+            false,
+        );
+        p.pinned_tail = 1;
+        for c in "prtdv".chars() {
+            p.push_char(c);
+        }
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        assert_eq!(p.rows.len(), 2);
+        assert_eq!(
+            p.current().unwrap().text,
+            "prtdv-pw-846",
+            "a real match ranks above the pinned row"
+        );
     }
 
     #[test]

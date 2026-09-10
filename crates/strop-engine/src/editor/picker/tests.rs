@@ -116,6 +116,71 @@ mod picker_tests {
     }
 
     #[test]
+    fn remote_hosts_enter_carries_unmatched_text_into_the_address_box() {
+        // 0.21.0 field report: a typed hostname that matched no listed
+        // destination made Enter a no-op. Now the pinned "Add a host…"
+        // row survives filtering and Enter carries the text into the
+        // address box as a draft — never a blind connect to a host
+        // literally named like the filter text.
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        let mut picker = Picker::new(
+            Kind::RemoteHosts,
+            vec![Item {
+                text: "Add a host\u{2026}".into(),
+                payload: Payload::RemoteConnect,
+            }],
+            false,
+        );
+        picker.pinned_tail = 1;
+        e.set_picker(PickerGlue::diagnostics(picker));
+        e.feed_text("ewosd-tt-925");
+        let filter = e.picker.as_ref().unwrap().picker.filter_request();
+        let ranking = strop_picker::rank::rank(&filter, || false).unwrap();
+        e.picker.as_mut().unwrap().picker.install_ranking(ranking);
+        assert_eq!(
+            e.picker
+                .as_ref()
+                .unwrap()
+                .picker
+                .current()
+                .map(|i| i.text.as_str()),
+            Some("Add a host\u{2026}"),
+            "the pinned row survives a dead query"
+        );
+        e.accept_current_picker();
+        let glue = e.picker.as_ref().expect("the address box opens");
+        assert_eq!(glue.picker.kind, Kind::RemoteAddress);
+        assert_eq!(
+            glue.picker.input.text, "ewosd-tt-925",
+            "the typed destination arrives as the address draft"
+        );
+    }
+
+    #[test]
+    fn remote_hosts_empty_enter_opens_the_address_box() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        let mut picker = Picker::new(
+            Kind::RemoteHosts,
+            vec![Item {
+                text: "Add a host\u{2026}".into(),
+                payload: Payload::RemoteConnect,
+            }],
+            false,
+        );
+        picker.pinned_tail = 1;
+        e.set_picker(PickerGlue::diagnostics(picker));
+        let filter = e.picker.as_ref().unwrap().picker.filter_request();
+        let ranking = strop_picker::rank::rank(&filter, || false).unwrap();
+        e.picker.as_mut().unwrap().picker.install_ranking(ranking);
+        e.accept_current_picker();
+        assert_eq!(
+            e.picker.as_ref().map(|glue| glue.picker.kind),
+            Some(Kind::RemoteAddress),
+            "empty input on the pinned row still opens the address box"
+        );
+    }
+
+    #[test]
     fn paste_into_remote_address_field_is_accepted_verbatim() {
         // the connect-to-remote case: an ssh://user@host:port/path URL
         let mut e = Editor::new(Buffer::from_text("x\n"));

@@ -42,6 +42,7 @@ impl Wire {
                     root: PathBuf::from("/workspace"),
                 },
                 "prod".into(),
+                None,
             )
         })
     }
@@ -1230,4 +1231,5 @@ fn format_rename_and_code_action_refuse_admission_without_providers() {
     });
 }
 
+mod spawn;
 mod startup;

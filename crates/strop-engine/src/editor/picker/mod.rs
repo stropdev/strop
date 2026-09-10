@@ -441,7 +441,35 @@ impl Editor {
             self.apply_replace();
             return;
         }
-        let Some(payload) = glue.picker.current().map(|item| item.payload.clone()) else {
+        let payload = glue.picker.current().map(|item| item.payload.clone());
+        // RemoteHosts: the pinned "Add a host…" row keeps one meaning —
+        // open the address box. Typed filter text comes along as the
+        // draft, so a hostname that matched no listed destination isn't
+        // lost (0.21.0 field report), and typing "Add" can't connect to
+        // a host literally named "add".
+        if glue.picker.kind == Kind::RemoteHosts && matches!(payload, Some(Payload::RemoteConnect))
+        {
+            let draft = {
+                let text = glue.picker.input.text.trim();
+                // Filter text that matches the pinned row's own label was
+                // aimed AT the row ("Add"); only text that matched
+                // nothing — a bare hostname — becomes the address draft.
+                let aimed_at_row = glue
+                    .picker
+                    .current()
+                    .is_some_and(|item| strop_picker::fuzzy_score(text, &item.text).is_some());
+                (!aimed_at_row).then(|| text.to_string())
+            };
+            self.close_picker();
+            self.open_remote_address();
+            if let Some(draft) = draft.filter(|draft| !draft.is_empty()) {
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.picker.paste(&draft);
+                }
+            }
+            return;
+        }
+        let Some(payload) = payload else {
             self.message = "no matching entries".into();
             return;
         };
