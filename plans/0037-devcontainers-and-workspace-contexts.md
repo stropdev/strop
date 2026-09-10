@@ -139,6 +139,14 @@ nothing is ever stopped or removed. **DC1b — LSP/Git/writes policy** remains
 open: service routing into a container context, and the write capability
 decision (likely refuse, like early SFTP).
 
+DC1b write policy (decided 10 Sep 2026): **container files stay read-only.**
+`docker cp` into a container is not an atomic, conditional save — the 0040
+save contract (baseline check + protected staging + atomic rename) has no
+faithful docker-exec equivalent without an in-container helper. A helper
+like 0040's could run through `docker exec` later; until that exists with
+its own verification, `:w` on a container document refuses and the buffer
+says so. LSP/Git run inside via `docker exec` argv — never a shell.
+
 Attach without provisioning. Resolve immutable engine/container/user/workspace
 identity; browse/read files and run the same LSP/Git paths in that context. Accept:
 no SSH daemon is required; no analogous local path is accessed; container restart or

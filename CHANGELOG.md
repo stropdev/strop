@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.21.0 — 2026-09-10
+
+Containers become real workspaces (0037 DC1b), and directory listings scale.
+
+### Added
+
+- Language servers run inside attached containers: `:containers` → browse →
+  open a file, and the server's LSP session rides `docker exec` stdio —
+  no SSH daemon, no tools required inside (distroless-safe), no local-path
+  fallback. Attach discovery uses XDG/embedded layers; in-container project
+  layers join the trust gate when they're read.
+- Git in containers: repository discovery (`rev-parse`) and context inside
+  the container through the same bounded exec boundary; per-commit diffs
+  inside containers refuse by name this round.
+- Container directory listings stream: retention is direct-children only, so
+  a 114 MiB image root lists instantly instead of refusing at the 16 MiB
+  archive cap. `strop-core` gained the supervised streaming primitive
+  (`stream_with`) behind it.
+
+### Decided
+
+- Container write policy: read-only. `docker cp` into a container is not an
+  atomic conditional save; `:w`/`:w!`/`:wq` on container documents refuse
+  with the policy named, never a local-path fallback.
+
 ## 0.20.1 — 2026-09-10
 
 Interaction fixes from hands-on field reports, plus the verified kernel.

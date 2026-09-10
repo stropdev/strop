@@ -172,6 +172,9 @@ impl Editor {
                                     endpoint, workdir, &remote, &cancel,
                                 )
                             }
+                            strop_git::RepoTarget::Container { .. } => {
+                                Err(strop_git::ssh::EffectiveHostError::InvalidHost)
+                            }
                         };
                         match result {
                             Ok(hostname) => Outcome::Success(NativeResult::SshHost(hostname)),

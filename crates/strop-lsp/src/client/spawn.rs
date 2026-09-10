@@ -63,6 +63,15 @@ enum Launch {
         args: Vec<String>,
         cwd: PathBuf,
     },
+    /// A server inside a running container: `docker exec -i` carries
+    /// stdio; the local client's death ends the in-container program
+    /// (stdin EOF), no SSH and no supervisor anywhere (0037 DC1b).
+    Container {
+        id: strop_workspace::ContainerId,
+        cmd: String,
+        args: Vec<String>,
+        cwd: PathBuf,
+    },
     Remote(RemoteLaunch),
 }
 
@@ -214,15 +223,22 @@ impl Client {
             Workspace::Remote { endpoint, root } => {
                 Launch::Remote(remote_launch(endpoint, spec, root)?)
             }
+            Workspace::Container { container, root } => Launch::Container {
+                id: container.clone(),
+                cmd: spec.command.to_string(),
+                args: spec.args.to_vec(),
+                cwd: root.clone(),
+            },
         };
         let remote = workspace.endpoint().is_some();
+        let in_container = matches!(workspace, Workspace::Container { .. });
         let label_workspace = workspace.label();
         // The thread is 'static: it gets owned copies, never borrows
         // into the spawning scope.
         let endpoint_display = workspace.endpoint().map(|e| e.to_string());
         let supervision = match &launch {
             Launch::Remote(remote) => Some(remote.supervision.clone()),
-            Launch::Local { .. } => None,
+            Launch::Local { .. } | Launch::Container { .. } => None,
         };
         let id = ServerId::allocate();
         let self_caps = ServerCaps::default();
@@ -300,6 +316,15 @@ impl Client {
                         // stdin EOF.
                         Launch::Remote(remote) => {
                             let mut command = tokio::process::Command::from(remote.command);
+                            command.kill_on_drop(true);
+                            command
+                        }
+                        Launch::Container {
+                            id, cmd, args, cwd,
+                        } => {
+                            let mut command = tokio::process::Command::from(
+                                strop_containers::exec_command(&id, &cmd, &args, &cwd),
+                            );
                             command.kill_on_drop(true);
                             command
                         }
@@ -425,7 +450,7 @@ impl Client {
                             // The spawn failure names the command and the
                             // io error — silence or a bare "failed" is not
                             // a report (0033 §3).
-                            let where_ = if remote {
+                            let where_ = if remote || in_container {
                                 format!(" on {label_workspace}")
                             } else {
                                 String::new()

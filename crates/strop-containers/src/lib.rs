@@ -30,17 +30,22 @@
 //! Every `docker` invocation runs through `strop_core::process`
 //! supervision: an [`OwnedProcess`](strop_core::process::OwnedProcess)
 //! process group, the caller's [`CancelToken`], a wall-clock deadline and
-//! bounded pipe retention. Output that overflows its bound is refused
-//! (listings) or truncated by explicit `max` semantics (file reads), never
-//! presented as complete when it is not.
+//! bounded pipe retention. Directory listings stream the tar archive
+//! through an incremental parser that retains only direct-child metadata,
+//! so a subtree's bulk bounds the transfer, never the memory; a listing
+//! whose retained metadata overflows its bound is refused, and file reads
+//! truncate by explicit `max` semantics — nothing partial is ever
+//! presented as complete.
 
 mod engine;
 mod error;
+mod exec;
 mod identity;
 mod read;
 mod tar;
 
 pub use engine::{engine, inspect, list_running, revalidate, EngineRef};
 pub use error::ContainerError;
+pub use exec::{exec_capture, exec_command};
 pub use identity::{ContainerIdentity, ContainerRef};
 pub use read::{list_dir, read_file, DirEntry, DirEntryKind};

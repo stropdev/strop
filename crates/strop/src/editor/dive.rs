@@ -228,6 +228,16 @@ impl Editor {
                                 },
                             }
                         }
+                        // Container repos report context this round;
+                        // per-commit diffs inside a container are not
+                        // wired — refuse by name, never a local fallback.
+                        strop_git::RepoTarget::Container { .. } => Outcome::Failed {
+                            failure: strop_core::worker::Failure::new(
+                                strop_core::worker::FailureKind::Exit,
+                                "container commit diffs are not wired yet (0037 DC1b)".to_string(),
+                            ),
+                            partial: None,
+                        },
                     },
                 }
             },

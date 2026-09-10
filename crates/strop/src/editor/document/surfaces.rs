@@ -19,6 +19,12 @@ pub enum DocumentSource {
     Remote(Box<super::RemoteDocument>),
     /// A remote directory's real, read-only listing buffer.
     RemoteDirectory(Box<super::RemoteDirectory>),
+    /// A file inside a container: readonly (DC1b refuses writes); the
+    /// path names the container's filesystem — never a local path.
+    Container {
+        container: strop_workspace::ContainerId,
+        path: std::path::PathBuf,
+    },
     /// A git-memory surface: job-owned content, readonly.
     Surface(Box<GitSurface>),
     /// `:!cmd` output / help: named virtual content, readonly.

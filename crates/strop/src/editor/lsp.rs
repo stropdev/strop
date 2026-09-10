@@ -50,6 +50,12 @@ impl Editor {
                     file.file.path().to_path_buf(),
                 ))
             }
+            crate::editor::document::DocumentSource::Container { container, path } => {
+                Some(ResourceLocation {
+                    filesystem: strop_workspace::Filesystem::Container(container.clone()),
+                    path: path.clone(),
+                })
+            }
             _ => document
                 .buf
                 .path

@@ -20,6 +20,8 @@ pub struct ContainerIdentity {
     pub started_at: String,
     /// `Config.User`; empty means the image default.
     pub user: String,
+    /// `Config.WorkingDir`; empty means the image default ("/").
+    pub workdir: String,
 }
 
 /// A canonical, incarnation-pinned reference to one running container.
@@ -108,6 +110,7 @@ mod tests {
             image: "busybox".into(),
             started_at: "2026-09-10T08:00:00Z".into(),
             user: String::new(),
+            workdir: String::new(),
         }
     }
 

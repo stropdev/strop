@@ -192,6 +192,12 @@ pub(crate) enum DiscoverPlace {
         file: strop_workspace::RemoteFile,
         client: strop_remote::RemoteClient,
     },
+    /// A running container (0037 DC1b): the engine is local, the id is
+    /// the canonical inspect id, root names container paths.
+    Container {
+        id: strop_workspace::ContainerId,
+        root: PathBuf,
+    },
 }
 
 /// Everything the discovery worker owns for one attempt.
@@ -224,6 +230,7 @@ pub(crate) fn discover(input: DiscoverInput, token: &CancelToken) -> Option<Atta
         DiscoverPlace::Remote { file, client } => {
             super::remote::discover(&input, file, client, token)
         }
+        DiscoverPlace::Container { id, root } => Some(discover_container(&input, id, root)),
     }
 }
 
@@ -321,6 +328,66 @@ fn discover_local(
             },
             name,
             root,
+        ),
+    }
+}
+
+/// Container discovery (0037 DC1b): XDG/embedded layers only — an
+/// in-container project languages.toml is deliberately not read yet (it
+/// joins the trust gate when it is). The server binary's absence is
+/// classified by the spawn, honestly, from the engine's own error.
+fn discover_container(
+    input: &DiscoverInput,
+    id: &strop_workspace::ContainerId,
+    root: &Path,
+) -> AttachRecord {
+    let languages = strop_lsp::languages::Languages::load(input.xdg.as_deref(), None);
+    let layers: Vec<LayerDiagnostic> = languages.layer_diagnostics().to_vec();
+    let target = Filesystem::Container(id.clone());
+    let refused = |outcome: AttachDecision, name: String| AttachRecord {
+        ticket: input.ticket,
+        server: None,
+        language: input.language.to_string(),
+        name,
+        root: root.to_path_buf(),
+        target: target.clone(),
+        outcome,
+        layers: layers.clone(),
+    };
+    let Some(spec) = registry::for_extension(&input.ext, &languages) else {
+        return refused(AttachDecision::NoServer, input.language.to_string());
+    };
+    let name = spec.name.to_string();
+    let (tx, rx) = channel();
+    match Client::spawn(
+        &spec,
+        strop_lsp::Workspace::Container {
+            container: id.clone(),
+            root: root.to_path_buf(),
+        },
+        tx,
+    ) {
+        Ok(client) => {
+            let server = client.id();
+            if let Ok(mut table) = input.transport.lock() {
+                table.insert(server, LiveTransport { client, rx });
+            }
+            AttachRecord {
+                ticket: input.ticket,
+                server: Some(server),
+                language: input.language.to_string(),
+                name,
+                root: root.to_path_buf(),
+                target,
+                outcome: AttachDecision::Attached,
+                layers,
+            }
+        }
+        Err(error) => refused(
+            AttachDecision::SpawnFailed {
+                reason: error.to_string(),
+            },
+            name,
         ),
     }
 }

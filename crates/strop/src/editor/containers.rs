@@ -257,15 +257,28 @@ impl Editor {
                 path,
                 text,
             }) if focused => {
+                let short = identity.id[..12].to_string();
                 let mut buffer = Buffer::from_text(&text);
-                buffer.name = Some(format!("container:{}:{}", &identity.id[..12], path));
-                let id = self.docs.insert(Document::output(buffer));
+                buffer.name = Some(format!("container:{short}:{path}"));
+                let Ok(container) = strop_workspace::ContainerId::canonical(identity.id.clone())
+                else {
+                    self.message = "container identity failed validation".into();
+                    return;
+                };
+                let id = self.docs.insert(Document::container_file(
+                    buffer,
+                    container,
+                    std::path::PathBuf::from(&path),
+                ));
                 self.drop_stale_scratch(id);
                 self.containers
                     .buffers
                     .insert(id, (identity.id.clone(), path));
                 self.switch_to(id);
                 self.set_head(0);
+                // Container files get language services like any document
+                // (DC1b); discovery runs on its own worker.
+                self.lsp_maybe_attach();
             }
             Outcome::Success(_) => {}
             Outcome::Failed { failure, .. } if focused => {

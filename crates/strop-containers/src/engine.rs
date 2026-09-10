@@ -7,7 +7,9 @@ use crate::identity::{validate_name, ContainerIdentity, ContainerRef};
 use crate::ContainerError;
 use std::process::Command;
 use std::time::Duration;
-use strop_core::process::{capture_with, CaptureError, CapturePolicy, StdinPolicy};
+use strop_core::process::{
+    capture_with, stream_with, CaptureError, CapturePolicy, StdinPolicy, StreamError, StreamPolicy,
+};
 use strop_core::worker::CancelToken;
 
 /// Wall-clock budget for the `docker info` probe.
@@ -20,8 +22,11 @@ pub(crate) const READ_DEADLINE: Duration = Duration::from_secs(30);
 const STDERR_LIMIT: u64 = 64 * 1024;
 /// Retained stdout for metadata commands (`info`/`ps`/`inspect`).
 const META_LIMIT: u64 = 4 * 1024 * 1024;
-/// Retained stdout for a directory listing's tar stream. A tree whose
-/// archive exceeds this is refused, never presented partially.
+/// Retained metadata for one directory listing: the direct children's
+/// names and kinds. The listing's tar stream itself is consumed
+/// incrementally and never retained, so a subtree's bulk no longer
+/// counts — only a listing with an absurd direct-child set is refused,
+/// never presented partially.
 pub(crate) const LIST_LIMIT: u64 = 16 * 1024 * 1024;
 
 /// The local Docker engine, proven reachable by a bounded probe.
@@ -41,8 +46,9 @@ impl EngineRef {
     }
 }
 
-/// One supervised `docker` run's retained bytes.
-pub(crate) struct Captured {
+/// One supervised `docker` run's retained bytes — public for the
+/// `exec_capture` boundary.
+pub struct Captured {
     pub code: Option<i32>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
@@ -86,6 +92,53 @@ pub(crate) fn capture(
         stdout: output.stdout,
         stderr: output.stderr,
         stdout_dropped: output.stdout_dropped,
+    })
+}
+
+/// One supervised `docker` run whose stdout streamed through a consumer.
+pub(crate) struct Streamed {
+    pub code: Option<i32>,
+    pub stderr: Vec<u8>,
+}
+
+/// Run `docker <args>` under [`capture`]'s supervision while stdout
+/// streams through `consume` chunk by chunk: nothing is retained by the
+/// supervisor, so a transfer larger than any retention limit stays
+/// bounded by what the consumer keeps. Stderr retention, the deadline
+/// and cancellation behave exactly as in [`capture`]; a consumer error
+/// kills the child and surfaces as its own typed [`ContainerError`].
+pub(crate) fn stream(
+    args: &[&str],
+    deadline: Duration,
+    token: &CancelToken,
+    consume: impl FnMut(&[u8]) -> Result<(), ContainerError>,
+) -> Result<Streamed, ContainerError> {
+    let mut command = Command::new("docker");
+    command.args(args);
+    let policy = StreamPolicy {
+        stderr_limit: STDERR_LIMIT,
+        stderr_tail: 0,
+        deadline,
+    };
+    let output =
+        stream_with(&mut command, token, &policy, consume).map_err(|error| match error {
+            StreamError::Spawn(detail) => ContainerError::EngineUnavailable { detail },
+            StreamError::Cancelled => ContainerError::Cancelled,
+            StreamError::TimedOut(deadline) => ContainerError::Io {
+                detail: format!(
+                    "docker {} timed out after {}s",
+                    args.first().copied().unwrap_or("<none>"),
+                    deadline.as_secs()
+                ),
+            },
+            StreamError::Failure(failure) => ContainerError::Io {
+                detail: failure.message,
+            },
+            StreamError::Consumer(error) => error,
+        })?;
+    Ok(Streamed {
+        code: output.status.code(),
+        stderr: output.stderr,
     })
 }
 
@@ -247,6 +300,10 @@ struct InspectConfig {
     image: String,
     #[serde(rename = "User", default)]
     user: String,
+    /// The container's working directory (Config.WorkingDir); empty means
+    /// the image default ("/").
+    #[serde(rename = "WorkingDir", default)]
+    workdir: String,
 }
 
 #[derive(Default, serde::Deserialize)]
@@ -309,6 +366,7 @@ fn identity(record: InspectRecord) -> Result<ContainerIdentity, ContainerError> 
         image: record.config.image,
         started_at: record.state.started_at,
         user: record.config.user,
+        workdir: record.config.workdir,
     })
 }
 

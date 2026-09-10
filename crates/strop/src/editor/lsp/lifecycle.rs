@@ -116,9 +116,12 @@ impl Editor {
                     client: self.remote_client(),
                 }
             }
-            // DC1a: containers are browse/read only; service routing into
-            // a container context is DC1b.
-            Filesystem::Container(_) => return,
+            // The container workspace roots at the document's directory;
+            // the id is the canonical inspect identity.
+            Filesystem::Container(id) => attach::DiscoverPlace::Container {
+                root: doc.path.parent().unwrap_or(Path::new("/")).to_path_buf(),
+                id,
+            },
         };
         let input = attach::DiscoverInput {
             ticket,

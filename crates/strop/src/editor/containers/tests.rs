@@ -12,6 +12,7 @@ fn identity(id: char) -> strop_containers::ContainerIdentity {
         image: "busybox:latest".into(),
         started_at: "2026-09-09T00:00:00Z".into(),
         user: String::new(),
+        workdir: String::new(),
     }
 }
 
@@ -128,4 +129,34 @@ fn engine_failure_surfaces_on_the_status_line() {
         ),
     });
     assert!(e.message.contains("docker engine unavailable"));
+}
+
+#[test]
+fn container_files_refuse_every_write_form() {
+    // 0037 DC1b write policy: no in-container save, no :w! bypass,
+    // never a local-path fallback
+    let mut e = Editor::new(Buffer::from_text("x\n"));
+    e.request_containers();
+    deliver(&mut e, ContainerResult::Containers(vec![identity('a')]));
+    e.close_picker();
+    e.attach_container("a".repeat(64));
+    deliver(
+        &mut e,
+        ContainerResult::File {
+            identity: identity('a'),
+            path: "/init.log".into(),
+            text: "boot ok\n".into(),
+        },
+    );
+    e.feed_text(":w\r");
+    assert!(e.message.contains("read-only"), "{}", e.message);
+    e.feed_text(":w!\r");
+    assert!(
+        e.message.contains("read-only"),
+        "w! refuses too: {}",
+        e.message
+    );
+    e.feed_text(":wq!\r");
+    assert!(e.message.contains("read-only"), "{}", e.message);
+    assert!(!e.should_quit);
 }

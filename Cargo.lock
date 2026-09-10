@@ -1245,7 +1245,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-containers"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1256,7 +1256,7 @@ dependencies = [
 
 [[package]]
 name = "strop-core"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "libc",
  "parking_lot",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "crossterm",
  "indicatif",
@@ -1304,11 +1304,12 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "git2",
  "serde",
  "serde_json",
+ "strop-containers",
  "strop-core",
  "strop-remote",
  "strop-workspace",
@@ -1317,7 +1318,7 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "ropey",
  "serde",
@@ -1326,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "async-lsp",
  "libc",
@@ -1334,6 +1335,7 @@ dependencies = [
  "ropey",
  "serde",
  "serde_json",
+ "strop-containers",
  "strop-core",
  "strop-remote",
  "strop-trace",
@@ -1346,7 +1348,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "ignore",
  "imbl",
@@ -1360,7 +1362,7 @@ dependencies = [
 
 [[package]]
 name = "strop-remote"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "parking_lot",
  "ropey",
@@ -1376,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "strop-syntax"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "imbl",
  "ropey",
@@ -1410,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "parking_lot",
  "serde",
@@ -1422,7 +1424,7 @@ dependencies = [
 
 [[package]]
 name = "strop-workspace"
-version = "0.20.1"
+version = "0.21.0"
 dependencies = [
  "serde",
  "serde_json",

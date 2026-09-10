@@ -12,6 +12,11 @@
 //! codes carry the meaning instead of stderr matching. Unborn HEAD and
 //! absent paths are honest `None`s; transport, tooling and truncation
 //! failures are typed errors.
+//!
+//! Discovery and context are exec-generic cores (`discover_with`,
+//! `context_with`) the in-container backend (0037 DC1b) rides too, so
+//! both non-local worktrees answer identically without one parser or
+//! exit-code mapping being duplicated.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -26,8 +31,9 @@ use crate::ssh::parse_effective_hostname;
 use crate::target::RepoTarget;
 use crate::{GitContext, Hunk};
 
-/// Why a remote Git query failed — typed at this boundary, never a
-/// bare string and never an empty list standing in for "failed".
+/// Why a remote or in-container Git query failed — typed at this
+/// boundary, never a bare string and never an empty list standing in
+/// for "failed".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteGitError {
     /// The remote execution boundary refused or failed; the string is
@@ -143,14 +149,29 @@ pub fn discover(
         endpoint: endpoint.clone(),
         workdir: from,
     };
+    discover_with(&exec, cancel)
+}
+
+/// The exec-generic discovery core: one bounded
+/// `rev-parse --show-toplevel` through any backend, mapped the same
+/// way for every non-local worktree.
+pub(crate) fn discover_with(
+    exec: &GitExec,
+    cancel: &CancelToken,
+) -> Result<Option<PathBuf>, RemoteGitError> {
     let run = exec.run(&["rev-parse".into(), "--show-toplevel".into()], cancel)?;
+    discover_from_run(&run)
+}
+
+/// Map one `rev-parse --show-toplevel` run to the discovery answer:
+/// exit 0 parses the toplevel; 128 with git's stable not-a-repository
+/// fatal is the honest `None`; any other nonzero (unsafe repository,
+/// broken .git, missing git…) stays a typed error.
+pub(crate) fn discover_from_run(run: &GitRun) -> Result<Option<PathBuf>, RemoteGitError> {
     if run.success {
-        let stdout = exit_or_bytes("rev-parse --show-toplevel", &run)?;
+        let stdout = exit_or_bytes("rev-parse --show-toplevel", run)?;
         return parse_toplevel(&stdout).map(Some);
     }
-    // 128 with git's stable not-a-repository fatal: no repository. Any
-    // other nonzero (unsafe repository, broken .git, missing git…)
-    // stays a typed error.
     let stderr = String::from_utf8_lossy(&run.stderr);
     if run.code == Some(128) && stderr.contains("not a git repository") {
         return Ok(None);
@@ -175,8 +196,23 @@ pub fn context(
         endpoint: endpoint.clone(),
         workdir,
     };
+    let repo = RepoTarget::Remote {
+        endpoint: endpoint.clone(),
+        workdir: workdir.to_path_buf(),
+    };
+    context_with(&exec, repo, cancel)
+}
+
+/// The exec-generic context core: the same three bounded runs on any
+/// backend, assembled into the same [`GitContext`] shape — only the
+/// [`RepoTarget`] the caller hands in differs.
+pub(crate) fn context_with(
+    exec: &GitExec,
+    repo: RepoTarget,
+    cancel: &CancelToken,
+) -> Result<GitContext, RemoteGitError> {
     // exit 0 = sha, exit 1 = unborn (no commits), anything else fails.
-    let head_sha = match exec.run(
+    let head_run = exec.run(
         &[
             "rev-parse".into(),
             "--verify".into(),
@@ -184,36 +220,13 @@ pub fn context(
             "HEAD".into(),
         ],
         cancel,
-    )? {
-        run if run.success => Some(parse_sha(&run.stdout, "rev-parse HEAD")?),
-        run if run.code == Some(1) => None,
-        run => {
-            return Err(RemoteGitError::Exit {
-                op: "rev-parse HEAD",
-                code: run.code.unwrap_or(-1),
-                stderr: String::from_utf8_lossy(&run.stderr).trim_end().to_string(),
-            })
-        }
-    };
+    )?;
     // exit 0 = branch name (unborn included: the symref exists), 128 =
     // detached HEAD (no symbolic ref), anything else fails.
-    let head_branch = match exec.run(
+    let branch_run = exec.run(
         &["symbolic-ref".into(), "--short".into(), "HEAD".into()],
         cancel,
-    )? {
-        run if run.success => {
-            let name = String::from_utf8_lossy(&run.stdout).trim().to_string();
-            (!name.is_empty()).then_some(name)
-        }
-        run if run.code == Some(128) => None,
-        run => {
-            return Err(RemoteGitError::Exit {
-                op: "symbolic-ref HEAD",
-                code: run.code.unwrap_or(-1),
-                stderr: String::from_utf8_lossy(&run.stderr).trim_end().to_string(),
-            })
-        }
-    };
+    )?;
     // exit 0 or 1 (no remotes configured): both are data.
     let config_run = exec.run(
         &[
@@ -224,15 +237,51 @@ pub fn context(
         ],
         cancel,
     )?;
-    let remotes = remotes_from_run(&config_run)?;
+    context_from_runs(repo, &head_run, &branch_run, &config_run)
+}
+
+/// Assemble the cached context from the three runs — pure, so both
+/// non-local backends share one mapping and its tests.
+pub(crate) fn context_from_runs(
+    repo: RepoTarget,
+    head_run: &GitRun,
+    branch_run: &GitRun,
+    config_run: &GitRun,
+) -> Result<GitContext, RemoteGitError> {
     Ok(GitContext {
-        repo: RepoTarget::Remote {
-            endpoint: endpoint.clone(),
-            workdir: workdir.to_path_buf(),
-        },
-        head_sha,
-        head_branch,
-        remotes,
+        repo,
+        head_sha: head_sha_from_run(head_run)?,
+        head_branch: head_branch_from_run(branch_run)?,
+        remotes: remotes_from_run(config_run)?,
+    })
+}
+
+fn head_sha_from_run(run: &GitRun) -> Result<Option<String>, RemoteGitError> {
+    if run.success {
+        return parse_sha(&run.stdout, "rev-parse HEAD").map(Some);
+    }
+    if run.code == Some(1) {
+        return Ok(None);
+    }
+    Err(RemoteGitError::Exit {
+        op: "rev-parse HEAD",
+        code: run.code.unwrap_or(-1),
+        stderr: String::from_utf8_lossy(&run.stderr).trim_end().to_string(),
+    })
+}
+
+fn head_branch_from_run(run: &GitRun) -> Result<Option<String>, RemoteGitError> {
+    if run.success {
+        let name = String::from_utf8_lossy(&run.stdout).trim().to_string();
+        return Ok((!name.is_empty()).then_some(name));
+    }
+    if run.code == Some(128) {
+        return Ok(None);
+    }
+    Err(RemoteGitError::Exit {
+        op: "symbolic-ref HEAD",
+        code: run.code.unwrap_or(-1),
+        stderr: String::from_utf8_lossy(&run.stderr).trim_end().to_string(),
     })
 }
 

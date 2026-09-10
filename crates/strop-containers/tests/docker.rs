@@ -238,6 +238,56 @@ fn listings_and_reads_roundtrip_through_the_engine() {
 }
 
 #[test]
+fn listing_streams_subtree_bulk_without_retaining_it() {
+    if !gate("listing_streams_subtree_bulk_without_retaining_it") {
+        return;
+    }
+    let tag = tag();
+    let name = format!("strop-dc1a-stream-{tag}");
+    let fixture = Fixture::launch(&tag, &name);
+    // A direct-child directory whose subtree far exceeds the old 16 MiB
+    // archive bound: 48 MiB across nested files. The listing must
+    // succeed and report only the direct children.
+    run_docker(&[
+        "exec",
+        &fixture.id,
+        "sh",
+        "-c",
+        "mkdir -p /data/deep/a /data/deep/b \
+         && for d in a b; do for i in 1 2 3 4 5 6; do \
+         dd if=/dev/zero of=/data/deep/$d/f$i bs=1M count=4 2>/dev/null; \
+         done; done",
+    ]);
+    with_token(|token| {
+        let engine = engine(&token).expect("engine probes");
+        let (_identity, id) = fixture_ref(&engine, &name, &token);
+
+        let mut entries =
+            list_dir(&engine, &id, "/data", &token).expect("list /data past the old archive bound");
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        let spelling: Vec<(&str, DirEntryKind)> = entries
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.kind))
+            .collect();
+        assert_eq!(
+            spelling,
+            vec![
+                ("big.bin", DirEntryKind::File),
+                ("deep", DirEntryKind::Dir),
+                ("empty", DirEntryKind::Dir),
+                ("hello.txt", DirEntryKind::File),
+                ("link", DirEntryKind::Symlink),
+                ("sub", DirEntryKind::Dir),
+            ],
+            "the 48 MiB subtree lists as one direct child, bulk unretained"
+        );
+
+        let deep = list_dir(&engine, &id, "/data/deep", &token).expect("list the deep dir itself");
+        assert_eq!(deep.len(), 2, "deep's own children still list");
+    });
+}
+
+#[test]
 fn missing_paths_and_capability_mismatches_are_typed() {
     if !gate("missing_paths_and_capability_mismatches_are_typed") {
         return;

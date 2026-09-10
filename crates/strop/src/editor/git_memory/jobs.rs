@@ -240,6 +240,13 @@ impl Editor {
                             &d.source,
                             DocumentSource::Remote(current) if file.absolute_file() == Some(&current.file)
                         ),
+                        FileTarget::Container { container, path } => matches!(
+                            &d.source,
+                            DocumentSource::Container {
+                                container: current_container,
+                                path: current_path
+                            } if current_container == container && current_path == path
+                        ),
                     }
                     && self.git.as_ref().is_some_and(|c| c.repo == key.repo)
             })

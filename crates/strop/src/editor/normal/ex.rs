@@ -242,6 +242,16 @@ impl Editor {
             "w" | "w!" => {
                 // vim: readonly buffers refuse plain :w (surfaces, :view);
                 // :w! forces through the mutation boundary's rule
+                // Container files have no write path (0037 DC1b): refuse
+                // both forms — never a local-path fallback, never w!.
+                if matches!(
+                    self.cur().source,
+                    crate::editor::document::DocumentSource::Container { .. }
+                ) {
+                    self.message =
+                        "container files are read-only (0037 DC1b); no in-container save".into();
+                    return;
+                }
                 if self.buf().readonly && cmd != "w!" && self.remote_file().is_none() {
                     let name = self.buf().name.as_deref().unwrap_or("readonly buffer");
                     self.message = format!("{name}: readonly — :w! to force");
@@ -250,6 +260,14 @@ impl Editor {
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "w!", false);
             }
             "wq" | "wq!" => {
+                if matches!(
+                    self.cur().source,
+                    crate::editor::document::DocumentSource::Container { .. }
+                ) {
+                    self.message =
+                        "container files are read-only (0037 DC1b); no in-container save".into();
+                    return;
+                }
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "wq!", true);
             }
             "set" => {

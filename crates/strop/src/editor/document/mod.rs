@@ -61,6 +61,20 @@ impl Document {
         }
     }
 
+    /// A file read from a container (0037 DC1a/b): readonly derived from
+    /// the source; the path names container bytes, never a local file.
+    pub fn container_file(
+        mut buf: Buffer,
+        container: strop_workspace::ContainerId,
+        path: std::path::PathBuf,
+    ) -> Self {
+        buf.readonly = true;
+        Self {
+            buf,
+            source: DocumentSource::Container { container, path },
+        }
+    }
+
     /// Syntax identity is data; parsers live on the display-analysis worker.
     pub(crate) fn syntax_path(&self) -> Option<&std::path::Path> {
         match &self.source {
@@ -74,6 +88,7 @@ impl Document {
                 _ => None,
             },
             DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
+            DocumentSource::Container { path, .. } => Some(path),
             DocumentSource::RemoteDirectory(_) | DocumentSource::Output => None,
         }
     }

@@ -247,6 +247,12 @@ impl Editor {
                     }
                     Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
                 },
+                // Container documents open through :containers owned jobs;
+                // a container FileTarget never reads a local path.
+                FileTarget::Container { .. } => Outcome::failed(
+                    FailureKind::InvalidInput,
+                    "container documents open through :containers".to_string(),
+                ),
                 FileTarget::Remote(location) => match if browse {
                     client
                         .list(&location, &cancel)

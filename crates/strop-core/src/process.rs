@@ -2,7 +2,10 @@
 //! group promptly; only its owner may revoke the capability and reap the PID.
 mod capture;
 use crate::worker::{CancelToken, Failure, FailureKind};
-pub use capture::{capture, capture_with, CaptureError, CapturePolicy, CommandOutput, StdinPolicy};
+pub use capture::{
+    capture, capture_with, stream_with, CaptureError, CapturePolicy, CommandOutput, StdinPolicy,
+    StreamError, StreamOutput, StreamPolicy,
+};
 use parking_lot::Mutex;
 use std::io;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus};

@@ -1,21 +1,23 @@
-//! The typed repository boundary (0036 RW8): every Git request names
-//! the machine its worktree lives on. A local workdir is openable with
-//! libgit2 and local `git`; a remote workdir is bytes on another host
-//! and only bounded remote `git` commands can read it. Keeping the two
-//! in one enum — instead of a bare path that could mean either — makes
-//! "treated a remote path as local" a type error instead of a bug.
+//! The typed repository boundary (0036 RW8, 0037 DC1b): every Git
+//! request names the machine its worktree lives on. A local workdir is
+//! openable with libgit2 and local `git`; a remote workdir is bytes on
+//! another host and only bounded remote `git` commands can read it; a
+//! container workdir is bytes inside a running container and only
+//! bounded `docker exec` runs can read it. Keeping the three in one
+//! enum — instead of a bare path that could mean any of them — makes
+//! "treated a non-local path as local" a type error instead of a bug.
 //!
 //! The same boundary carries provenance through the memory surfaces:
 //! a log row's dive, a commit's file list and a delta's `]f` step all
-//! replay the [`RepoTarget`] they were launched with, so a remote
-//! surface can never answer from the local cwd.
+//! replay the [`RepoTarget`] they were launched with, so a remote or
+//! container surface can never answer from the local cwd.
 
 use std::path::{Path, PathBuf};
 
-use strop_workspace::{RemoteEndpoint, RemoteFile};
+use strop_workspace::{ContainerId, RemoteEndpoint, RemoteFile};
 
-/// Where a Git query runs. Exactly two real backends exist (0036);
-/// there is deliberately no provider trait behind them.
+/// Where a Git query runs. Exactly three real backends exist (0036,
+/// 0037); there is deliberately no provider trait behind them.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RepoTarget {
@@ -32,32 +34,55 @@ pub enum RepoTarget {
         #[serde(with = "strop_core::path_serde")]
         workdir: PathBuf,
     },
+    /// A worktree inside a running container on the local engine. The
+    /// workdir names a path *inside* the container — it is never a
+    /// valid local path, and no libgit2 handle may be opened against
+    /// it. Identity is the canonical 64-hex inspect id: a stopped or
+    /// restarted container's reads fail typed at the engine boundary.
+    Container {
+        container: ContainerId,
+        #[serde(with = "strop_core::path_serde")]
+        workdir: PathBuf,
+    },
 }
 
 impl RepoTarget {
     /// The repository root as native bytes — locally openable only for
-    /// [`RepoTarget::Local`]; callers that need to open it must match
-    /// on the variant first.
+    /// [`RepoTarget::Local`]; a remote or container workdir names a path
+    /// on another filesystem namespace. Callers that need to open it
+    /// must match on the variant first.
     pub fn workdir(&self) -> &Path {
         match self {
             Self::Local { workdir } | Self::Remote { workdir, .. } => workdir,
+            Self::Container { workdir, .. } => workdir,
         }
     }
 
-    /// The remote-file identity for a repo-relative path (remote
+    /// The remote-file identity for a repo-relative path (SSH-remote
     /// repositories only): endpoint plus native path, the identity an
-    /// open request routes by. A local repository has no remote file.
+    /// open request routes by. Local and container repositories have no
+    /// remote file.
     pub fn remote_file(&self, rel: &Path) -> Option<RemoteFile> {
         match self {
-            Self::Local { .. } => None,
+            Self::Local { .. } | Self::Container { .. } => None,
             Self::Remote { endpoint, workdir } => {
                 RemoteFile::from_path(endpoint.clone(), workdir.join(rel)).ok()
             }
         }
     }
 
+    /// `true` only for an SSH-remote repository. A container repository
+    /// is *not* remote in this sense — it has no endpoint and rides the
+    /// local engine — but it is not local either: callers deciding "can
+    /// I open this path" must not treat `!is_remote()` as local.
     pub fn is_remote(&self) -> bool {
         matches!(self, Self::Remote { .. })
+    }
+
+    /// `true` for a container repository: not locally openable even
+    /// though it shares this machine's engine.
+    pub fn is_container(&self) -> bool {
+        matches!(self, Self::Container { .. })
     }
 
     /// Repo-relative path for a path inside this repository — the
@@ -77,7 +102,7 @@ impl RepoTarget {
 
     pub fn endpoint(&self) -> Option<&RemoteEndpoint> {
         match self {
-            Self::Local { .. } => None,
+            Self::Local { .. } | Self::Container { .. } => None,
             Self::Remote { endpoint, .. } => Some(endpoint),
         }
     }
@@ -170,5 +195,74 @@ mod tests {
         let text = serde_json::to_string(&target).unwrap();
         let back: RepoTarget = serde_json::from_str(&text).unwrap();
         assert_eq!(target, back);
+    }
+
+    fn container_target() -> RepoTarget {
+        RepoTarget::Container {
+            container: ContainerId::canonical("b".repeat(64)).unwrap(),
+            workdir: PathBuf::from("/work/src"),
+        }
+    }
+
+    /// A container repository is neither SSH-remote nor local: no
+    /// endpoint, no remote-file identity, and `!is_remote()` must never
+    /// read as "openable locally".
+    #[test]
+    fn container_target_is_neither_remote_nor_local() {
+        let target = container_target();
+        assert!(target.is_container());
+        assert!(!target.is_remote());
+        assert_eq!(target.endpoint(), None);
+        assert_eq!(target.remote_file(Path::new("a.rs")), None);
+        assert_eq!(target.workdir(), Path::new("/work/src"));
+        assert_eq!(
+            target.rel_of(Path::new("/work/src/lib.rs")),
+            Some(PathBuf::from("lib.rs"))
+        );
+    }
+
+    /// Container identity is the canonical id plus workdir: a different
+    /// incarnation id is a different repository.
+    #[test]
+    fn container_identity_is_id_plus_workdir() {
+        let a = container_target();
+        let other_id = RepoTarget::Container {
+            container: ContainerId::canonical("c".repeat(64)).unwrap(),
+            workdir: PathBuf::from("/work/src"),
+        };
+        assert_ne!(a, other_id);
+        assert_ne!(
+            a,
+            RepoTarget::Local {
+                workdir: PathBuf::from("/work/src")
+            }
+        );
+    }
+
+    /// The container variant is additive on the replay wire: its name
+    /// is "container", and tapes carrying the pre-container variants
+    /// decode unchanged.
+    #[test]
+    fn serde_round_trips_container_and_decodes_legacy_variants() {
+        let target = container_target();
+        let text = serde_json::to_string(&target).unwrap();
+        assert!(text.contains("\"container\":"), "{text}");
+        let back: RepoTarget = serde_json::from_str(&text).unwrap();
+        assert_eq!(target, back);
+
+        // Legacy string-path form (pre-versioned path_serde) still decodes.
+        let legacy_local: RepoTarget =
+            serde_json::from_str(r#"{"local":{"workdir":"/w"}}"#).unwrap();
+        assert_eq!(
+            legacy_local,
+            RepoTarget::Local {
+                workdir: PathBuf::from("/w")
+            }
+        );
+        let legacy_remote: RepoTarget = serde_json::from_str(
+            r#"{"remote":{"endpoint":"ssh://fixture@box.example:2222","workdir":"/srv/proj"}}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy_remote, remote_target());
     }
 }

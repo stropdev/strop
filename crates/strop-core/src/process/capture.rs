@@ -13,6 +13,12 @@
 //!   stderr in addition to the head, so a final status record survives
 //!   a chatty worker.
 //!
+//! [`stream_with`] is the unbounded-stdout counterpart: stdout flows
+//! through a caller's consumer chunk by chunk instead of being retained,
+//! so transfers larger than any sensible retention limit stay
+//! memory-bounded by the consumer, not by the pipe. Stderr retention,
+//! the deadline and cancellation behave exactly as in [`capture_with`].
+//!
 //! Overflowing either limit truncates (head, plus tail for stderr) and
 //! reports the dropped byte count on [`CommandOutput`] rather than
 //! failing: callers decide whether truncation invalidates the result.
@@ -295,6 +301,168 @@ pub fn capture_with(
     })
 }
 
+/// Bounds for one streamed run. Stdout has no retention limit by
+/// construction: the consumer, not the pipe, decides what to keep.
+#[derive(Debug, Clone)]
+pub struct StreamPolicy {
+    /// Retained head of stderr.
+    pub stderr_limit: u64,
+    /// Additional bytes retained from the *end* of stderr, after any
+    /// dropped middle. Zero disables the tail.
+    pub stderr_tail: u64,
+    /// Wall-clock budget for the whole exchange.
+    pub deadline: Duration,
+}
+
+/// One streamed run's outcome: everything except stdout, which the
+/// consumer already saw chunk by chunk.
+pub struct StreamOutput {
+    pub status: ExitStatus,
+    pub stderr: Vec<u8>,
+    /// Stderr bytes discarded between the retained head and tail.
+    pub stderr_dropped: u64,
+}
+
+/// Why a streamed run did not complete. Mirrors [`CaptureError`];
+/// [`StreamError::Consumer`] carries the consumer's own error type so a
+/// parse/shape failure surfaces typed, never flattened to a message.
+#[derive(Debug)]
+pub enum StreamError<E> {
+    Spawn(String),
+    Cancelled,
+    TimedOut(Duration),
+    Failure(Failure),
+    Consumer(E),
+}
+
+enum StreamEvent {
+    Chunk(Vec<u8>),
+    Stdout(io::Result<()>),
+    Stderr(io::Result<Retained>),
+}
+
+/// Read stdout chunk by chunk and forward each; terminal events report
+/// EOF ([`StreamEvent::Stdout`]) and the drained stderr.
+fn stream_stdout(mut pipe: impl Read, tx: &std::sync::mpsc::SyncSender<StreamEvent>) {
+    let mut chunk = vec![0u8; CHUNK];
+    loop {
+        match pipe.read(&mut chunk) {
+            Ok(0) => {
+                let _ = tx.send(StreamEvent::Stdout(Ok(())));
+                return;
+            }
+            Ok(seen) => {
+                if tx.send(StreamEvent::Chunk(chunk[..seen].to_vec())).is_err() {
+                    return; // consumer gone: the supervisor is unwinding
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                let _ = tx.send(StreamEvent::Stdout(Err(error)));
+                return;
+            }
+        }
+    }
+}
+
+/// Run one command to completion while its stdout streams through
+/// `consume`. Supervision is identical to [`capture_with`]: own process
+/// group, cancellation SIGKILLs it, the deadline kills it, stderr is
+/// drained concurrently with bounded retention, stdin is `/dev/null`.
+/// Stdout is never retained — a bounded number of chunks is in flight
+/// between the reader thread and `consume`, so memory stays bounded by
+/// what the consumer keeps. A consumer error kills the child and
+/// surfaces as [`StreamError::Consumer`].
+pub fn stream_with<E>(
+    command: &mut Command,
+    token: &CancelToken,
+    policy: &StreamPolicy,
+    mut consume: impl FnMut(&[u8]) -> Result<(), E>,
+) -> Result<StreamOutput, StreamError<E>> {
+    let failure =
+        |kind: FailureKind, message: String| StreamError::Failure(Failure::new(kind, message));
+    std::thread::scope(|scope| {
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+        command.stdin(Stdio::null());
+        // Owned here, INSIDE scope: unwinding kills pipes before scope joins.
+        let mut process = OwnedProcess::spawn(command, token).map_err(|failure| {
+            if failure.kind == FailureKind::Spawn {
+                StreamError::Spawn(failure.message)
+            } else {
+                StreamError::Failure(failure)
+            }
+        })?;
+        let stdout = process
+            .take_stdout()
+            .ok_or_else(|| failure(FailureKind::Protocol, "missing stdout".into()))?;
+        let stderr = process
+            .take_stderr()
+            .ok_or_else(|| failure(FailureKind::Protocol, "missing stderr".into()))?;
+        // Bounded in flight: the reader runs at most a few chunks ahead
+        // of the consumer, and the pipe itself back-pressures the child.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<StreamEvent>(4);
+        let out_tx = tx.clone();
+        std::thread::Builder::new()
+            .name("stream-stdout".into())
+            .spawn_scoped(scope, move || stream_stdout(stdout, &out_tx))
+            .map_err(|error| failure(FailureKind::ThreadStart, error.to_string()))?;
+        let err_limit = policy.stderr_limit;
+        let err_tail = policy.stderr_tail;
+        std::thread::Builder::new()
+            .name("stream-stderr".into())
+            .spawn_scoped(scope, move || {
+                let _ = tx.send(StreamEvent::Stderr(read_pipe(stderr, err_limit, err_tail)));
+            })
+            .map_err(|error| failure(FailureKind::ThreadStart, error.to_string()))?;
+        let deadline = Instant::now() + policy.deadline;
+        let mut stdout_done = false;
+        let mut stderr: Option<Retained> = None;
+        loop {
+            if token.is_cancelled() {
+                return Err(StreamError::Cancelled);
+            }
+            if Instant::now() >= deadline {
+                return Err(StreamError::TimedOut(policy.deadline));
+            }
+            let exited = process.has_exited().map_err(StreamError::Failure)?;
+            if exited {
+                process.terminate().map_err(StreamError::Failure)?; // descendants cannot retain the pipes
+                if stdout_done {
+                    if let Some(stderr) = stderr.take() {
+                        let status = process.wait().map_err(StreamError::Failure)?;
+                        return Ok(StreamOutput {
+                            status,
+                            stderr: stderr.bytes,
+                            stderr_dropped: stderr.dropped,
+                        });
+                    }
+                }
+            }
+            let event = match rx.recv_timeout(POLL) {
+                Ok(event) => event,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) if !exited => {
+                    std::thread::park_timeout(POLL);
+                    continue;
+                }
+                Err(error) => return Err(failure(FailureKind::Disconnected, error.to_string())),
+            };
+            match event {
+                StreamEvent::Chunk(chunk) => consume(&chunk).map_err(StreamError::Consumer)?,
+                StreamEvent::Stdout(result) => {
+                    result.map_err(|error| failure(FailureKind::Io, error.to_string()))?;
+                    stdout_done = true;
+                }
+                StreamEvent::Stderr(result) => {
+                    stderr =
+                        Some(result.map_err(|error| failure(FailureKind::Io, error.to_string()))?);
+                }
+            }
+        }
+    })
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -393,5 +561,95 @@ mod tests {
             run_capture("read line; echo done", held),
             Err(CaptureError::TimedOut(_))
         ));
+    }
+
+    fn stream_policy(deadline: Duration) -> StreamPolicy {
+        StreamPolicy {
+            stderr_limit: LIMIT,
+            stderr_tail: 0,
+            deadline,
+        }
+    }
+
+    fn run_stream<E: Send + 'static>(
+        script: &'static str,
+        policy: StreamPolicy,
+        consume: impl FnMut(&[u8]) -> Result<(), E> + Send + 'static,
+    ) -> Result<(StreamOutput, Vec<u8>), StreamError<E>>
+    where
+        StreamError<E>: Send,
+    {
+        let (tx, rx) = channel();
+        let _owner = crate::worker::spawn(
+            "stream-oracle",
+            move |outcome| {
+                let _ = tx.send(outcome);
+            },
+            move |token| {
+                let mut seen = Vec::new();
+                let mut consume = consume;
+                let result = stream_with(&mut sh(script), &token, &policy, |chunk| {
+                    seen.extend_from_slice(chunk);
+                    consume(chunk)
+                });
+                crate::worker::Outcome::Success(result.map(|output| (output, seen)))
+            },
+        );
+        match rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("stream settled")
+        {
+            crate::worker::Outcome::Success(result) => result,
+            _ => panic!("stream worker failed"),
+        }
+    }
+
+    #[test]
+    fn streaming_delivers_every_byte_whole_and_unbounded() {
+        // 2 MB — thirty times the old capture ceiling — flows through
+        // the consumer with nothing retained by the supervisor.
+        let (output, seen) = run_stream::<String>(
+            "yes | head -c 2000000; echo err >&2",
+            stream_policy(Duration::from_secs(10)),
+            |_| Ok(()),
+        )
+        .unwrap();
+        assert!(output.status.success());
+        assert_eq!(seen.len(), 2_000_000);
+        assert!(seen.iter().all(|&byte| byte == b'y' || byte == b'\n'));
+        assert_eq!(output.stderr, b"err\n");
+    }
+
+    #[test]
+    fn a_consumer_error_kills_the_child_promptly() {
+        // `yes` never ends on its own; only the consumer's refusal can
+        // end the run, and it must do so well inside the deadline.
+        let mut delivered = 0u64;
+        let result = run_stream(
+            "yes",
+            stream_policy(Duration::from_secs(30)),
+            move |chunk| {
+                delivered += chunk.len() as u64;
+                if delivered >= 100_000 {
+                    Err("enough".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(StreamError::Consumer(error)) if error == "enough"
+        ));
+    }
+
+    #[test]
+    fn a_silent_child_still_times_out() {
+        let result = run_stream::<String>(
+            "sleep 30",
+            stream_policy(Duration::from_secs(1)),
+            |_| Ok(()),
+        );
+        assert!(matches!(result, Err(StreamError::TimedOut(_))));
     }
 }

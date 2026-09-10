@@ -2,11 +2,16 @@
 //!
 //! Supports exactly what the engine emits: ustar headers with the prefix
 //! field, GNU longname (`L`) records, and pax per-file (`x`) `path`
-//! overrides. Entry content is never copied — entries borrow offset ranges
-//! into the captured archive. Structural violations are errors, never
-//! skipped-and-hoped: a listing parsed from a corrupt stream would be a
-//! lie. Base-256 numeric fields (sizes past the octal range) are refused;
-//! `docker cp` of a browsable tree does not produce them.
+//! overrides.
+//!
+//! [`parse`] reads a captured archive whole: entries borrow offset
+//! ranges into it. [`StreamParser`] is the same grammar incrementally,
+//! for archives too large to retain: entry content is consumed and
+//! discarded, only direct consumers of the emitted headers retain.
+//! Structural violations are errors, never skipped-and-hoped: a listing
+//! parsed from a corrupt stream would be a lie. Base-256 numeric fields
+//! (sizes past the octal range) are refused; `docker cp` of a browsable
+//! tree does not produce them.
 
 use std::ops::Range;
 
@@ -23,13 +28,12 @@ pub(crate) enum TarKind {
     Other,
 }
 
-/// One archive entry: name, kind, declared size and where its content
-/// sits in the captured archive (clamped to what was captured).
+/// One archive entry in a captured archive: kind and where its content
+/// sits (clamped to what was captured). Names are validated but not
+/// retained — the bounded read path addresses the first entry only.
 #[derive(Debug)]
 pub(crate) struct TarEntry {
-    pub name: String,
     pub kind: TarKind,
-    pub size: u64,
     pub data: Range<usize>,
     /// The linkname field, kept for symlinks (`docker cp` does not
     /// resolve a symlinked source path — callers resolve one hop).
@@ -81,7 +85,10 @@ pub(crate) fn parse(bytes: &[u8], complete: bool) -> Result<Vec<TarEntry>, Strin
             }
             b'K' | b'g' => {} // longlink / global pax: nothing we consume
             flag => {
-                let name = match pending_name.take() {
+                // Names are strictly validated (longname/pax overrides
+                // included) but not retained: the read path addresses
+                // the archive's first entry only.
+                let _name = match pending_name.take() {
                     Some(name) => name,
                     None => header_name(header)?,
                 };
@@ -95,9 +102,7 @@ pub(crate) fn parse(bytes: &[u8], complete: bool) -> Result<Vec<TarEntry>, Strin
                     .then(|| nul_terminated(&header[157..257]))
                     .transpose()?;
                 entries.push(TarEntry {
-                    name,
                     kind,
-                    size,
                     data: data_start..data_end,
                     link_target,
                 });
@@ -109,6 +114,188 @@ pub(crate) fn parse(bytes: &[u8], complete: bool) -> Result<Vec<TarEntry>, Strin
         offset = block_end;
     }
     Ok(entries)
+}
+
+/// One archive entry's header, as streamed: name, kind, declared size
+/// and (for symlinks) the link target. Content is consumed, never
+/// retained — unlike [`TarEntry`] there is no offset range to borrow.
+#[derive(Debug)]
+pub(crate) struct StreamEntry {
+    pub name: String,
+    pub kind: TarKind,
+    pub size: u64,
+    pub link_target: Option<String>,
+}
+
+/// The incremental counterpart of [`parse`]: the same strict header
+/// grammar over a byte stream of unknown length. Retention is bounded
+/// by the current header block plus the content of an in-flight
+/// longname/pax record — entry content is consumed and discarded, so a
+/// subtree's bulk streams through without being held. Emitted headers
+/// arrive in the stream's pre-order; what a consumer keeps is its own
+/// budget. Structural violations are errors, exactly as in [`parse`].
+pub(crate) struct StreamParser {
+    header: [u8; BLOCK],
+    header_len: usize,
+    /// Retained content of an in-flight longname/pax record only.
+    content: Vec<u8>,
+    /// The current record's declared size — the pad length derives from
+    /// it once the content has been consumed (never before).
+    content_size: u64,
+    /// Unpadded content bytes still expected for the current record.
+    content_left: u64,
+    /// Block padding left after the current record's content.
+    pad_left: u64,
+    /// The current record's content is a longname/pax payload.
+    keep_content: bool,
+    /// Typeflag of the record whose content is in flight.
+    pending_flag: u8,
+    pending_name: Option<String>,
+    /// The end-of-archive marker was seen; trailing bytes are ignored,
+    /// exactly as [`parse`] ignores everything past the marker.
+    ended: bool,
+}
+
+impl Default for StreamParser {
+    fn default() -> Self {
+        Self {
+            header: [0u8; BLOCK],
+            header_len: 0,
+            content: Vec::new(),
+            content_size: 0,
+            content_left: 0,
+            pad_left: 0,
+            keep_content: false,
+            pending_flag: 0,
+            pending_name: None,
+            ended: false,
+        }
+    }
+}
+
+impl StreamParser {
+    /// Consume the next stream bytes, emitting each completed entry
+    /// header to `on_entry`. Errors are structural violations in the
+    /// stream itself; what `on_entry` does with an entry is its own
+    /// business (it cannot fail here — record and stop retaining).
+    pub(crate) fn feed(
+        &mut self,
+        mut bytes: &[u8],
+        on_entry: &mut impl FnMut(StreamEntry),
+    ) -> Result<(), String> {
+        while !bytes.is_empty() {
+            if self.ended {
+                return Ok(());
+            }
+            if self.pad_left > 0 {
+                let take = self.pad_left.min(bytes.len() as u64) as usize;
+                self.pad_left -= take as u64;
+                bytes = &bytes[take..];
+                continue;
+            }
+            if self.content_left > 0 {
+                let take = self.content_left.min(bytes.len() as u64) as usize;
+                if self.keep_content {
+                    self.content.extend_from_slice(&bytes[..take]);
+                }
+                self.content_left -= take as u64;
+                bytes = &bytes[take..];
+                if self.content_left == 0 {
+                    self.pad_left =
+                        (BLOCK as u64 - self.content_size % BLOCK as u64) % BLOCK as u64;
+                    self.finish_record()?;
+                    self.content.clear();
+                }
+                continue;
+            }
+            let take = (BLOCK - self.header_len).min(bytes.len());
+            self.header[self.header_len..self.header_len + take].copy_from_slice(&bytes[..take]);
+            self.header_len += take;
+            bytes = &bytes[take..];
+            if self.header_len == BLOCK {
+                self.on_header(on_entry)?;
+                self.header_len = 0;
+            }
+        }
+        Ok(())
+    }
+
+    /// End of stream. A record cut mid-content or a header cut
+    /// mid-block is a truncation error; a clean entry boundary (with or
+    /// without the end marker) and a final all-zero partial block are
+    /// not — the same tolerance [`parse`] gives a complete capture.
+    pub(crate) fn finish(&self) -> Result<(), String> {
+        if self.ended {
+            return Ok(());
+        }
+        if self.content_left > 0 || self.pad_left > 0 {
+            return Err("truncated tar content".into());
+        }
+        if self.header_len > 0 && self.header[..self.header_len].iter().any(|&b| b != 0) {
+            return Err("truncated tar header".into());
+        }
+        Ok(())
+    }
+
+    /// One full header block: classify it, arm content consumption, and
+    /// emit real entries immediately (their content is skipped, not kept).
+    fn on_header(&mut self, on_entry: &mut impl FnMut(StreamEntry)) -> Result<(), String> {
+        let header = &self.header;
+        if header.iter().all(|&b| b == 0) {
+            self.ended = true;
+            return Ok(());
+        }
+        if &header[257..262] != b"ustar" {
+            return Err("not a ustar archive".into());
+        }
+        let size = octal(&header[124..136])?;
+        let flag = header[156];
+        self.content_size = size;
+        self.content_left = size;
+        self.keep_content = matches!(flag, b'L' | b'x');
+        self.pending_flag = flag;
+        match flag {
+            b'L' | b'x' | b'K' | b'g' => {} // name/pax payloads: handled at content completion
+            flag => {
+                let name = match self.pending_name.take() {
+                    Some(name) => name,
+                    None => header_name(header)?,
+                };
+                let kind = match flag {
+                    b'0' | 0 => TarKind::File,
+                    b'5' => TarKind::Dir,
+                    b'2' => TarKind::Symlink,
+                    _ => TarKind::Other,
+                };
+                let link_target = (kind == TarKind::Symlink)
+                    .then(|| nul_terminated(&header[157..257]))
+                    .transpose()?;
+                on_entry(StreamEntry {
+                    name,
+                    kind,
+                    size,
+                    link_target,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The content of a longname/pax record completed: fold it into the
+    /// pending name override. Longlink/global records carry nothing we
+    /// consume.
+    fn finish_record(&mut self) -> Result<(), String> {
+        match self.pending_flag {
+            b'L' => self.pending_name = Some(nul_terminated(&self.content)?),
+            b'x' => {
+                if let Some(path) = pax_path(&self.content)? {
+                    self.pending_name = Some(path);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 /// The name from the header's own fields: `prefix/name` when the ustar
@@ -203,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_kinds_names_and_content_offsets() {
+    fn parses_kinds_and_content_offsets() {
         let mut link = entry("data/link", b'2', b"");
         link[157..157 + 9].copy_from_slice(b"hello.txt");
         let bytes = archive(&[
@@ -214,10 +401,8 @@ mod tests {
         ]);
         let entries = parse(&bytes, true).unwrap();
         assert_eq!(entries.len(), 4);
-        assert_eq!(entries[0].name, "data");
         assert_eq!(entries[0].kind, TarKind::Dir);
         assert_eq!(entries[1].kind, TarKind::File);
-        assert_eq!(entries[1].size, 12);
         assert_eq!(&bytes[entries[1].data.clone()], b"hello strop\n");
         assert_eq!(entries[2].kind, TarKind::Symlink);
         assert_eq!(entries[2].link_target.as_deref(), Some("hello.txt"));
@@ -232,9 +417,9 @@ mod tests {
             entry("longname", b'L', format!("{long}\0").as_bytes()),
             entry("truncated", b'0', b"abc"),
         ]);
-        let entries = parse(&bytes, true).unwrap();
+        let entries = streamed(&bytes, 65536).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].name, long);
+        assert_eq!(entries[0].0, long);
     }
 
     #[test]
@@ -246,8 +431,8 @@ mod tests {
             entry("pax", b'x', record.as_bytes()),
             entry("field", b'0', b"z"),
         ]);
-        let entries = parse(&bytes, true).unwrap();
-        assert_eq!(entries[0].name, "pax/spelled name.txt");
+        let entries = streamed(&bytes, 65536).unwrap();
+        assert_eq!(entries[0].0, "pax/spelled name.txt");
     }
 
     #[test]
@@ -256,7 +441,6 @@ mod tests {
         let cut = &full[..BLOCK + 400]; // header intact, content cut
         let entries = parse(cut, false).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].size, 1000);
         assert_eq!(entries[0].data.len(), 400);
         assert!(parse(cut, true).is_err(), "complete stream must not lie");
         assert!(parse(&cut[..BLOCK + 100], true).is_err());
@@ -272,5 +456,132 @@ mod tests {
         let mut bad = entry("a", b'0', b"");
         bad[124] = 0x80; // base-256 size field
         assert!(parse(&bad, true).is_err(), "base-256 refused");
+    }
+
+    /// A streamed entry as a comparable tuple: name, kind, size, target.
+    type StreamedEntry = (String, TarKind, u64, Option<String>);
+
+    /// Fold a stream through a parser in `chunk`-sized pieces, collecting
+    /// every emitted header.
+    fn streamed(bytes: &[u8], chunk: usize) -> Result<Vec<StreamedEntry>, String> {
+        let mut parser = StreamParser::default();
+        let mut entries = Vec::new();
+        for piece in bytes.chunks(chunk) {
+            parser.feed(piece, &mut |entry| {
+                entries.push((entry.name, entry.kind, entry.size, entry.link_target));
+            })?;
+        }
+        parser.finish()?;
+        Ok(entries)
+    }
+
+    /// The mixed fixture: dir tree, longname, pax override, symlink and a
+    /// multi-block file body to skip.
+    fn mixed_archive() -> Vec<u8> {
+        let long = format!("data/{}", "x".repeat(120));
+        let mut longname = entry("longname", b'L', format!("{long}\0").as_bytes());
+        let mut link = entry("data/link", b'2', b"");
+        link[157..157 + 9].copy_from_slice(b"hello.txt");
+        let record_body = "path=data/pax name.txt\n";
+        let record = format!("{} {}", record_body.len() + 3, record_body);
+        archive(&[
+            entry("data", b'5', b""),
+            entry("data/hello.txt", b'0', b"hello strop\n"),
+            entry("data/sub", b'5', b""),
+            entry("data/sub/blob.bin", b'0', &[3u8; 3000]),
+            {
+                longname.append(&mut entry("truncated", b'0', b"abc"));
+                longname
+            },
+            entry("pax", b'x', record.as_bytes()),
+            entry("field", b'0', b"z"),
+            link,
+        ])
+    }
+
+    #[test]
+    fn streaming_parses_all_entry_shapes_across_chunkings() {
+        let bytes = mixed_archive();
+        let long = format!("data/{}", "x".repeat(120));
+        let expected: Vec<(String, TarKind, u64, Option<String>)> = vec![
+            ("data".into(), TarKind::Dir, 0, None),
+            ("data/hello.txt".into(), TarKind::File, 12, None),
+            ("data/sub".into(), TarKind::Dir, 0, None),
+            ("data/sub/blob.bin".into(), TarKind::File, 3000, None),
+            (long, TarKind::File, 3, None),
+            ("data/pax name.txt".into(), TarKind::File, 1, None),
+            (
+                "data/link".into(),
+                TarKind::Symlink,
+                0,
+                Some("hello.txt".into()),
+            ),
+        ];
+        for chunk in [1, 7, 100, 511, 512, 513, 4096, bytes.len()] {
+            assert_eq!(
+                streamed(&bytes, chunk).as_deref(),
+                Ok(expected.as_slice()),
+                "chunk size {chunk}"
+            );
+        }
+    }
+
+    #[test]
+    fn stream_parser_reports_truncation() {
+        let full = archive(&[
+            entry("data", b'5', b""),
+            entry("data/big.bin", b'0', &[9u8; 1000]),
+        ]);
+        let mid_content = &full[..BLOCK + BLOCK + 400];
+        assert!(streamed(mid_content, 65536).is_err(), "content cut short");
+        let mid_header = &full[..BLOCK + 100];
+        assert!(streamed(mid_header, 65536).is_err(), "header cut short");
+        // A clean entry boundary without the end marker is not a
+        // truncation — the same tolerance parse() gives.
+        let boundary = &full[..full.len() - BLOCK];
+        let entries = streamed(boundary, 65536).unwrap();
+        assert_eq!(entries.len(), 2);
+        // A final partial all-zero block is tolerated, again like parse().
+        let zero_tail = &full[..full.len() - BLOCK + 100];
+        assert!(streamed(zero_tail, 65536).is_ok());
+    }
+
+    #[test]
+    fn stream_parser_rejects_structural_garbage() {
+        assert!(streamed(b"not a tar at all", 4).is_err());
+        let mut bad = archive(&[entry("a", b'0', b"")]);
+        bad[257..262].copy_from_slice(b"nope!");
+        assert!(streamed(&bad, 65536).is_err(), "bad magic");
+        let mut bad = archive(&[entry("a", b'0', b"")]);
+        bad[124] = 0x80; // base-256 size field
+        assert!(streamed(&bad, 3).is_err(), "base-256 refused");
+    }
+
+    #[test]
+    fn subtree_content_streams_without_shaping_headers() {
+        // A directory's subtree (megabytes of nested content) contributes
+        // its headers only; content never reaches the consumer.
+        let bulk = vec![5u8; 1024 * 1024];
+        let mut parts = vec![entry("data", b'5', b""), entry("data/deep", b'5', b"")];
+        for index in 0..4 {
+            parts.push(entry(&format!("data/deep/f{index}"), b'0', &bulk));
+        }
+        let bytes = archive(&parts);
+        let entries = streamed(&bytes, 65536).unwrap();
+        let names: Vec<&str> = entries.iter().map(|(name, ..)| name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "data",
+                "data/deep",
+                "data/deep/f0",
+                "data/deep/f1",
+                "data/deep/f2",
+                "data/deep/f3"
+            ]
+        );
+        assert!(entries[2..]
+            .iter()
+            .all(|(_, kind, size, _)| { *kind == TarKind::File && *size == 1024 * 1024 }));
     }
 }

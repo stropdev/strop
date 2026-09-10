@@ -2,13 +2,16 @@
 //! paths — no process spawn per keystroke. HEAD vs the *live buffer*
 //! (not the disk file), so gutter signs track unsaved edits.
 //!
-//! Two backends share one typed model (0036 RW8): the local libgit2
-//! repository ([`Repo`]) and the read-oriented remote backend
-//! ([`remote`]) — bounded `git` commands against a worktree that
-//! exists only on an [`strop_workspace::RemoteEndpoint`]. [`RepoTarget`]
-//! is the boundary that keeps a remote workdir from ever reaching a
-//! local Git call.
+//! The typed model is shared across backends (0036 RW8, 0037 DC1b): the
+//! local libgit2 repository ([`Repo`]), the read-oriented remote
+//! backend ([`remote`]) — bounded `git` commands against a worktree
+//! that exists only on an [`strop_workspace::RemoteEndpoint`] — and
+//! the read-oriented in-container backend ([`container`]): bounded
+//! `git` runs via the local engine's `docker exec`, parsed by the same
+//! wire parsers as the remote path. [`RepoTarget`] is the boundary that
+//! keeps a non-local workdir from ever reaching a local Git call.
 
+pub mod container;
 pub mod exec;
 pub mod memory;
 pub mod permalink;
