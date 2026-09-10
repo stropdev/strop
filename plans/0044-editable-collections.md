@@ -1,8 +1,13 @@
 # 0044 — Editable code collections (handoff S5, v1)
 
-Status: v1 implemented below. The differentiating mechanism is landed and
-verified: a collection is a real buffer whose editable excerpts route writes
-back to their source documents through the change-plan gateway (0043).
+Status: v1 + v2 implemented (0.20.0 / 0.21.x). v2 added: multi-region
+write-back (real LCS diff, one plan per sync, batched per source),
+background loading of unopened sources, and remote sources — write-back
+to a permit-less remote buffer refuses naming `:remote edit`; permitted
+buffers edit through the gateway and save via `:w`. The differentiating
+mechanism is landed and verified: a collection is a real buffer whose
+editable excerpts route writes back to their source documents through the
+change-plan gateway (0043).
 
 ## 1. What a v1 collection is
 
