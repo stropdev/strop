@@ -113,6 +113,22 @@ impl Editor {
         }
     }
 
+    /// `:qa` / `:qall` — quit the editor, closing every buffer through the
+    /// real close path (leases, sessions, remote permits all settle). vim:
+    /// refuses while any buffer is dirty; `:qa!` discards.
+    pub(crate) fn quit_all(&mut self, force: bool) {
+        if !force {
+            let dirty = self.docs.iter().filter(|(_, d)| d.buf.dirty).count();
+            if dirty > 0 {
+                self.message = format!("{dirty} unsaved buffer(s) — :qa! to discard");
+                return;
+            }
+        }
+        while !self.docs.is_empty() {
+            self.close_buffer(force);
+        }
+    }
+
     /// `C-w` navigation: h/l/j/k direction, w cycle.
     pub(crate) fn pane_move(&mut self, key: char) {
         let n = self.panes.len();

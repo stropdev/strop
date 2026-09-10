@@ -54,6 +54,17 @@ Current delivery and remaining priorities:
   loud by design; rerun passed. If it recurs, the SSH replay tests should
   tolerate an incomplete trace capture (skip the replay half) rather than
   fail the functional save half.
+- **P2 — one typed input owner, not an ordered if-chain.** `feed_inner`
+  (editor/mod.rs) dispatches through a hand-ordered condition sequence
+  (pending → hover card → blame card → picker → undo browser → mode); each
+  new overlay adds a branch whose position is load-bearing and invisible, and
+  0.20.1's "card swallows the first insert-mode key" bug is the shape of
+  failure that produces. The fix: a single `input_owner()` computing the
+  typed owner from state (Pending / Picker / Card / UndoBrowser / Surface /
+  Mode), with each owner declaring its modal policy (consume vs
+  dismiss-and-forward in insert mode) as data instead of an ordering
+  accident. Feeds S2's frontend-action boundary; the 0.20.1 card fix is the
+  stopgap, not the model.
 - **P3 — `../` row attributes in remote listings.** The parent row renders
   `d?????????` because it is never stat'ed. One SFTP stat in the list job;
   cosmetic, batch with the next listing change.

@@ -17,6 +17,7 @@ mod collections;
 mod containers;
 mod cursor;
 mod diagnostics;
+mod dispatch;
 pub(crate) mod resolution;
 pub use diagnostics::DocumentDiagnostics;
 mod dive;
@@ -488,32 +489,7 @@ impl Editor {
                 buf.push(key);
             }
         }
-        if self.pending.is_active() {
-            return self.feed_pending(key);
-        }
-        if self.hover_card.is_some() {
-            self.hover_card = None;
-            return;
-        }
-        if self.blame_card.is_some() || self.card_request.is_some() {
-            if let Some(card) = self.dismiss_card_authority() {
-                if key == Key::Enter {
-                    self.open_log_at(&card.sha);
-                }
-                return;
-            }
-        }
-        if self.picker_open() {
-            return self.feed_picker(key);
-        }
-        if self.feed_undo_browser(key) {
-            return;
-        }
-        match self.mode {
-            Mode::Insert => self.feed_insert(key),
-            Mode::Visual | Mode::VisualLine | Mode::VisualBlock => self.feed_visual(key),
-            Mode::Normal => self.feed_normal(key),
-        }
+        self.dispatch_owned(key);
     }
 
     /// True when a modal input field sits in normal mode (picker field

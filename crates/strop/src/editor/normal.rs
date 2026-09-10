@@ -51,6 +51,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("format", "format the buffer through the language server"),
     ("rename", "rename the symbol under the cursor: :rename NEW"),
     ("undo-change", "undo the last applied change plan"),
+    ("qa", "quit all (fails on unsaved; :qa! discards)"),
 ];
 
 impl Editor {

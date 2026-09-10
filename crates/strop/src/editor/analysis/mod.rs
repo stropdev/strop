@@ -113,6 +113,7 @@ impl AnalysisState {
             }
         }
     }
+
     pub fn forget(&mut self, target: AnalysisTarget) {
         if let Some(pending) = self.pending.remove(&target) {
             pending.cancel.store(true, Ordering::Release);
@@ -125,6 +126,7 @@ impl AnalysisState {
             }
         }
     }
+
     pub fn stop(&mut self) {
         for pending in self.pending.values() {
             pending.cancel.store(true, Ordering::Release);
@@ -132,6 +134,19 @@ impl AnalysisState {
         self.stopping = self.started;
         self.worker = None;
     }
+}
+
+/// A stale frame served for an interim frame: spans clipped to the live
+/// text length so a shrink can never hand an out-of-range range to the
+/// renderer. Guides/search ride along unclipped — they are approximate
+/// for one frame by design.
+fn clip_stale_frame(frame: Arc<FrameAnalysis>, len: usize) -> Arc<FrameAnalysis> {
+    let mut clipped = (*frame).clone();
+    clipped.spans.retain(|span| span.start < len);
+    for span in &mut clipped.spans {
+        span.end = span.end.min(len);
+    }
+    Arc::new(clipped)
 }
 impl Editor {
     pub(crate) fn document_analysis(
@@ -180,17 +195,40 @@ impl Editor {
         {
             return cached.value.clone();
         }
+        // An edit changes the revision before the worker's fresh frame
+        // lands. Serve the newest older frame for the same window and
+        // signature — highlights track one frame behind (spans clipped
+        // to the live length) instead of blanking for a frame.
+        let stale = self
+            .analysis
+            .cache
+            .get(&key.target)
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .rev()
+                    .find(|entry| {
+                        entry.key.first == key.first
+                            && entry.key.last == key.last
+                            && entry.key.tab == key.tab
+                            && entry.key.search == key.search
+                            && entry.key.revision.get() < key.revision.get()
+                            && entry.value.is_some()
+                    })
+                    .and_then(|entry| entry.value.clone())
+            })
+            .map(|frame| clip_stale_frame(frame, doc.buf.len_bytes()));
         if let Some(pending) = self.analysis.pending.get(&key.target) {
             if pending.ticket.key.revision != key.revision
                 || pending.ticket.key.search != key.search
             {
                 pending.cancel.store(true, Ordering::Release);
             }
-            return None;
+            return stale;
         }
         let rope = doc.buf.snapshot();
         self.request_analysis(key, rope);
-        None
+        stale
     }
 
     pub(crate) fn preview_analysis(
@@ -363,7 +401,11 @@ impl Editor {
             Outcome::Cancelled(_) => return,
         };
         let entries = self.analysis.cache.entry(key.target.clone()).or_default();
-        entries.retain(|entry| entry.key.revision == key.revision && entry.key.tab == key.tab);
+        // Keep the previous revision's frames too: a miss on the current
+        // revision serves the newest older frame for the interim
+        // (document_analysis' stale serve — the no-flicker path).
+        let previous = key.revision.get().saturating_sub(1);
+        entries.retain(|entry| entry.key.revision.get() >= previous && entry.key.tab == key.tab);
         const CACHED_WINDOWS: usize = 8;
         if entries.len() == CACHED_WINDOWS {
             entries.remove(0);
@@ -390,5 +432,73 @@ impl Editor {
                 .expect("analysis completion");
             self.handle_analysis(event);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strop_core::worker::WorkerId;
+    use strop_core::Buffer;
+    use strop_syntax::{Class, Emphasis, Span};
+
+    /// The interim frame (field report: highlights blank for a frame
+    /// after each edit): with a cached frame at revision 0, an edit to
+    /// revision 1 must still serve spans — clipped to the live text.
+    #[test]
+    fn an_edit_serves_the_previous_frame_instead_of_blanking() {
+        let mut e = Editor::new(Buffer::from_text("fn main() {}\n"));
+        e.buf_mut().path = Some(PathBuf::from("/workspace/a.rs"));
+        let doc = e.current();
+        let target = AnalysisTarget::Document(doc);
+        let revision = e.buf().revision();
+        let key = AnalysisKey {
+            target: target.clone(),
+            revision,
+            first: 0,
+            last: 0,
+            tab: 4,
+            guides: true,
+            left: 0,
+            right: 100,
+            syntax_path: Some(PathBuf::from("/workspace/a.rs")),
+            search: None,
+        };
+        let frame = FrameAnalysis {
+            spans: vec![Span {
+                start: 0,
+                end: 2,
+                class: Class::Keyword,
+                emphasis: Emphasis::default(),
+            }],
+            ..Default::default()
+        };
+        e.analysis.pending.insert(
+            target.clone(),
+            Pending {
+                ticket: Ticket {
+                    request: WorkerId::new(1),
+                    key: key.clone(),
+                },
+                cancel: Arc::new(AtomicBool::new(false)),
+            },
+        );
+        e.handle_analysis(AnalysisEvent::Completed(Box::new(Completion {
+            ticket: Ticket {
+                request: WorkerId::new(1),
+                key,
+            },
+            outcome: Outcome::Success(frame),
+        })));
+        assert!(e.document_analysis(doc, 0, 0, 0, 100).is_some());
+        e.feed_text("x"); // revision moves; no fresh frame exists yet
+        let served = e.document_analysis(doc, 0, 0, 0, 100);
+        assert!(
+            served.is_some(),
+            "an interim frame serves the previous analysis"
+        );
+        // shrink the text past the span: clipping keeps it in range
+        e.feed_text("0wD");
+        let _ = e.document_analysis(doc, 0, 0, 0, 100);
     }
 }

@@ -290,6 +290,8 @@ impl Editor {
             "q!" => {
                 self.close_pane_or_buffer(true);
             }
+            "qa" | "qall" => self.quit_all(false),
+            "qa!" | "qall!" => self.quit_all(true),
             _ if cmdline.starts_with("s/") => {
                 // :s without a range = the current line (vim)
                 let line = self.buf().line_of(self.head());

@@ -28,6 +28,12 @@ agent or human working in this repo.
    is a well-established single-pattern artifact (a generated table, a keymap listing).
    Past the ceiling, split by responsibility — rootle's `settings_popup/{mod,render,
    sections}.rs` shape is the pattern: one component, one directory, files by concern.
+   When a change pushes a file toward the ceiling mid-flight, fold the split into
+   the same patch when it is cheap, or record a roadmap item in `plans/0028` in
+   the same commit — never let an over-ceiling file drift uncommented. The same
+   rule applies to complexity, not just size: an if-chain whose branch order is
+   load-bearing is over the limit regardless of its line count; compute typed
+   owners as data instead (see `editor/dispatch.rs`).
    Readability is the test, not the number.
 - **Boring > clever.** No needless abstractions, no speculative generality, no
    dependency for a twenty-line function. Delete weightless code.

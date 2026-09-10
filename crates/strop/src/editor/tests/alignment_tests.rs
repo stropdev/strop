@@ -28,3 +28,21 @@ fn document_set_stays_honest() {
     e.close_buffer(true);
     assert!(e.should_quit, "closing the last document quits");
 }
+
+#[test]
+fn qa_quits_everything_and_refuses_dirty_buffers() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("qa-a.rs");
+    let b = dir.path().join("qa-b.rs");
+    std::fs::write(&a, "a\n").unwrap();
+    std::fs::write(&b, "b\n").unwrap();
+    let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
+    e.open_fixture(&b).unwrap();
+    e.feed_text("x"); // dirty the current buffer
+    e.feed_text(":qa\r");
+    assert!(!e.should_quit, "dirty buffer refuses");
+    assert!(e.message.contains("unsaved"), "{}", e.message);
+    e.feed_text(":qa!\r");
+    assert!(e.should_quit, "forced quit-all quits");
+    assert_eq!(e.docs.len(), 0);
+}

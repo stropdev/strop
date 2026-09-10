@@ -123,6 +123,30 @@ fn equal_revision_documents_do_not_share_hover_ownership() {
 }
 
 #[test]
+fn a_hover_card_arriving_mid_insert_swallows_no_keystroke() {
+    // field report: "esc from insert sometimes needs a second press" —
+    // an async hover reply opened its card over insert mode and the next
+    // key died dismissing it. Now the card dismisses AND the key lands.
+    let mut e = editor("a\n");
+    e.feed_text("i");
+    assert_eq!(e.mode, crate::editor::Mode::Insert);
+    e.hover_card = Some("late answer".into());
+    e.feed(Key::Esc);
+    assert!(e.hover_card.is_none(), "card dismissed");
+    assert_eq!(
+        e.mode,
+        crate::editor::Mode::Normal,
+        "esc still exits insert"
+    );
+    // a typed char dismisses the card and still inserts
+    e.feed_text("i");
+    e.hover_card = Some("late again".into());
+    e.feed_text("z");
+    assert_eq!(e.buf().text().to_string(), "za\n");
+    assert!(e.hover_card.is_none());
+}
+
+#[test]
 fn revision_zero_is_valid_but_does_not_bypass_edit_rejection() {
     let mut e = editor("a\n");
     let zero = arm(&mut e, 0, RequestKind::SwitchHeader, PositionEncoding::Utf8);
