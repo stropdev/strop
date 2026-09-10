@@ -11,6 +11,10 @@ z3 4.16.0) and a required CI job; negative control confirmed the gate
 bites. Proof finds folded in: the no-overflow precondition and
 `start <= new_end` invariant are explicit where they were implicit.
 
+Open: batch-mapping composition (mapping through a validated batch equals
+folding per-edit mappings) was the stretch property and is NOT yet proved —
+the two landed seams do not claim it.
+
 
 Original scope statement: the pilot boundary is the code
 S4 made load-bearing: every change plan, collection write-back, mark,
