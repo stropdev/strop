@@ -131,7 +131,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             if std::mem::take(&mut editor.needs_repaint) {
                 terminal.clear()?;
             }
-            terminal.draw(|frame| editor::trace::frame::draw(&mut editor, frame, true))?;
+            terminal.draw(|frame| crate::render::frame_capture::draw(&mut editor, frame, true))?;
             redraw = false;
             painted_flash = flashing;
             animation_due = std::time::Instant::now() + Duration::from_millis(16);

@@ -182,7 +182,7 @@ impl Drive {
                 self.terminal.clear()?;
             }
             self.terminal.draw(|frame| {
-                crate::editor::trace::frame::draw(&mut self.editor, frame, false);
+                crate::render::frame_capture::draw(&mut self.editor, frame, false);
             })?;
         }
         Ok(())

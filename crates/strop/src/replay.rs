@@ -123,6 +123,6 @@ pub fn write_script(path: &Path, out: &mut dyn Write) -> io::Result<()> {
 pub fn run_full(path: &Path, out: &mut dyn Write) -> io::Result<()> {
     let source = io::BufReader::new(std::fs::File::open(path)?);
     let nodes = strop_trace::export::replay_nodes(source)?;
-    let editor = crate::editor::trace::drive::replay(nodes)?;
-    writeln!(out, "{}", crate::headless::state_json(&editor))
+    let editor = crate::editor::trace::drive::replay(nodes, crate::headless::frame_draw)?;
+    writeln!(out, "{}", crate::editor::state_json(&editor))
 }

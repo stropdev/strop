@@ -18,7 +18,7 @@ mod list;
 mod margins;
 
 pub(crate) use list::surface_list_row;
-pub(crate) use margins::{blame_blank, blame_spans, Sidebar, BLAME_W};
+pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans, BLAME_W};
 
 pub(crate) const ADD_FG: Color = Color::Rgb(0xa9, 0xc4, 0x7c);
 pub(crate) const DEL_FG: Color = Color::Rgb(0xe8, 0x67, 0x7a);

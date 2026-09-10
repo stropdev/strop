@@ -1,16 +1,13 @@
 //! strop: native terminal editing and the same editor in the scripted driver.
 mod bench;
 mod cli;
-mod config;
-mod editor;
-mod files;
 mod headless;
-mod keymap;
 mod render;
 mod replay;
-mod session;
 mod terminal;
 mod update;
+
+use strop_engine::{config, editor, files, keymap, session};
 
 use std::error::Error;
 use std::io::{self, Write};
@@ -172,6 +169,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
                 None => Buffer::from_text(""),
             };
             let mut editor = editor::Editor::new(buffer);
+            editor.frame_draw = Some(headless::frame_draw);
             editor.buf_mut().readonly = readonly;
             let (configuration, error) = config::Config::load();
             editor.config = configuration;

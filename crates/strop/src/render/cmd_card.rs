@@ -134,7 +134,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     let right = usize::from(text_area.x) + usize::from(text_area.width);
     if caret_x < right {
         if let Ok(caret_x) = u16::try_from(caret_x) {
-            crate::editor::trace::frame::place_cursor(frame, (caret_x, text_area.y));
+            crate::render::frame_capture::place_cursor(frame, (caret_x, text_area.y));
         }
     }
 }

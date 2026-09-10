@@ -263,7 +263,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     };
     let caret_x = rows[0].x + caret_len as u16;
     if caret_x < rows[0].x + rows[0].width {
-        crate::editor::trace::frame::place_cursor(frame, (caret_x, rows[0].y + caret_row));
+        crate::render::frame_capture::place_cursor(frame, (caret_x, rows[0].y + caret_row));
     }
 }
 

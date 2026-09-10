@@ -22,9 +22,21 @@ pub fn render_frame(
     record_action: bool,
 ) -> std::io::Result<Terminal<TestBackend>> {
     let mut terminal = Terminal::new(TestBackend::new(cols, rows))?;
-    terminal.draw(|frame| crate::editor::trace::frame::draw(editor, frame, record_action))?;
+    terminal.draw(|frame| crate::render::frame_capture::draw(editor, frame, record_action))?;
     editor.tape.healthy()?;
     Ok(terminal)
+}
+
+/// The injected frame renderer (0046): cell-grid production is the
+/// binary's; the engine's replay consumes recorded frames through this.
+pub fn frame_draw(
+    editor: &mut Editor,
+    cols: u16,
+    rows: u16,
+    record_action: bool,
+) -> std::io::Result<()> {
+    render_frame(editor, cols, rows, record_action)?;
+    Ok(())
 }
 
 pub fn frame_string(editor: &mut Editor, cols: u16, rows: u16) -> std::io::Result<String> {
@@ -57,30 +69,6 @@ pub(super) fn row_symbols(
         column += covered.min(usize::from(right - column)) as u16;
         Some(symbol)
     })
-}
-
-pub fn state_json(editor: &Editor) -> String {
-    if editor.docs.is_empty() {
-        return serde_json::json!({"should_quit":editor.should_quit,"documents":0,"message":editor.message}).to_string();
-    }
-    serde_json::json!({
-        "mode": editor.mode.chip(),
-        "cursor": editor.head(),
-        "line": editor.buf().line_of(editor.head()) + 1,
-        "col": editor.buf().col_of(editor.head()) + 1,
-        "pending": editor.pending.text(),
-        "message": editor.message,
-        "extra_cursors": editor.extra_selections().iter().map(|s| s.head).collect::<Vec<_>>(),
-        "panes": editor.panes.len(),
-        "active_pane": editor.active_pane,
-        "picker": editor.picker_open(),
-        "picker_input": editor.picker.as_ref().map(|g| g.picker.input.text.clone()),
-        "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
-        "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
-        "register": editor.register(None).text,
-        "dirty": editor.buf().dirty,
-    })
-    .to_string()
 }
 
 #[cfg(test)]

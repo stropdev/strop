@@ -15,6 +15,9 @@ mod blame_card;
 mod buffer;
 mod cmd_card;
 pub(crate) mod diff;
+pub(crate) mod frame_capture;
+#[cfg(test)]
+mod frame_tests;
 mod help;
 mod hover_card;
 mod picker_card;
@@ -146,7 +149,7 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
         editor.view_top(),
         editor.view().hscroll,
     ) {
-        crate::editor::trace::frame::place_cursor(frame, at);
+        crate::render::frame_capture::place_cursor(frame, at);
     }
 }
 

@@ -6,28 +6,23 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-strop-trace = { path = "../strop-trace", version = "0.21.0" }
-strop-core = { path = "../strop-core", version = "0.21.0" }
-strop-grammar = { path = "../strop-grammar", version = "0.21.0" }
-strop-picker = { path = "../strop-picker", version = "0.21.0" }
-strop-git = { path = "../strop-git", version = "0.21.0" }
-strop-syntax = { path = "../strop-syntax", version = "0.21.0" }
-strop-lsp = { path = "../strop-lsp", version = "0.21.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.21.0" }
-strop-containers = { path = "../strop-containers", version = "0.21.0" }
-parking_lot = "0.12"
+strop-engine = { path = "../strop-engine", version = "0.22.0" }
+strop-trace = { path = "../strop-trace", version = "0.22.0" }
+strop-core = { path = "../strop-core", version = "0.22.0" }
+strop-grammar = { path = "../strop-grammar", version = "0.22.0" }
+strop-picker = { path = "../strop-picker", version = "0.22.0" }
+strop-git = { path = "../strop-git", version = "0.22.0" }
+strop-syntax = { path = "../strop-syntax", version = "0.22.0" }
+strop-lsp = { path = "../strop-lsp", version = "0.22.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.22.0" }
+strop-remote = { path = "../strop-remote", version = "0.22.0" }
 unicode-segmentation = "1"
-tree-sitter = "0.25"
 crossterm = "0.28"
 ratatui = "0.29"
 ropey = "1"
-serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 indicatif = "0.17"
-toml = "0.8"
 tempfile = "3"
-thiserror = "2"
-strop-remote = { path = "../strop-remote", version = "0.21.0" }
 
 [[bin]]
 name = "strop"
@@ -35,7 +30,5 @@ path = "src/main.rs"
 
 [dev-dependencies]
 vt100 = "0.15"
-strop-trace = { path = "../strop-trace", version = "0.21.0", features = ["test-support"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+strop-engine = { path = "../strop-engine", features = ["test-support"] }
+strop-trace = { path = "../strop-trace", version = "0.22.0", features = ["test-support"] }

@@ -56,7 +56,7 @@ impl Driver<'_> {
                 self.terminal.clear()?;
             }
             self.terminal
-                .draw(|frame| crate::editor::trace::frame::draw(self.editor, frame, true))?;
+                .draw(|frame| crate::render::frame_capture::draw(self.editor, frame, true))?;
         }
         self.editor.tape.healthy()
     }
@@ -143,6 +143,7 @@ pub fn run_script(
         steps.next();
     }
     editor.session_policy = crate::session::SessionPolicy::Disabled;
+    editor.frame_draw = Some(crate::headless::frame_draw);
     if editor.tape.observes() {
         editor.tape.seed(&Seed::capture(editor)?)?;
     }
@@ -246,9 +247,11 @@ pub fn run_script(
                     writeln!(out)?;
                 }
             }
-            DirectiveKind::State => {
-                writeln!(out, "─── state {}", super::state_json(driver.editor))?
-            }
+            DirectiveKind::State => writeln!(
+                out,
+                "─── state {}",
+                strop_engine::editor::state_json(driver.editor)
+            )?,
         }
     }
     driver.apply(Action::Finish)?;

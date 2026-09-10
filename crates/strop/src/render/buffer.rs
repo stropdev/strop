@@ -302,7 +302,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         let mut left: Vec<Span> = Vec::new();
         if let Some((tree, files, current)) = &sidebar {
             left.extend(fixed_spans(
-                tree.row_spans(files, current, line_idx, sidebar_focused),
+                diff::sidebar_row_spans(tree, files, current, line_idx, sidebar_focused),
                 sidebar_w,
                 editor.config.tab_size,
             ));
