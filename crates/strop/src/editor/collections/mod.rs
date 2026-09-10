@@ -45,6 +45,17 @@ pub(crate) struct Collection {
     pub revision: BufferRevision,
 }
 
+/// An in-flight collection build: hits plus the count of background
+/// source loads still outstanding (0044 v2 async source loading).
+#[derive(Debug)]
+pub(crate) struct CollectionBuild {
+    pub title: String,
+    pub hits: Vec<(std::path::PathBuf, usize)>,
+    /// Remote hits resolve against open remote documents at build.
+    pub remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)>,
+    pub waiting: usize,
+}
+
 fn fingerprint(text: &str) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in text.as_bytes() {
@@ -112,22 +123,85 @@ impl Editor {
             self.message = "collections come from a results list".into();
             return;
         }
-        let items: Vec<(std::path::PathBuf, usize)> = glue
-            .picker
-            .items
-            .iter()
-            .filter_map(|item| match &item.payload {
+        // Local hits and remote hits alike; remote ones resolve against
+        // open remote documents (0040 permits gate their write-back).
+        let mut hits: Vec<(std::path::PathBuf, usize)> = Vec::new();
+        let mut remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)> =
+            Vec::new();
+        for item in glue.picker.items.iter() {
+            match &item.payload {
                 strop_picker::Payload::Grep { path, line, .. } => {
-                    Some((path.clone(), line.saturating_sub(1)))
+                    hits.push((path.clone(), line.saturating_sub(1)));
                 }
-                _ => None,
-            })
-            .collect();
+                strop_picker::Payload::Remote {
+                    endpoint,
+                    path,
+                    line,
+                    ..
+                } => remote_hits.push((endpoint.clone(), path.clone(), line.saturating_sub(1))),
+                _ => {}
+            }
+        }
         let title = kind.title().trim().to_string();
         self.close_picker();
+        // Unopened sources load in the background (never switching focus);
+        // the build assembles when the last one lands.
+        let mut to_load: Vec<std::path::PathBuf> = Vec::new();
+        for (path, _) in &hits {
+            let absolute = if path.is_absolute() {
+                path.clone()
+            } else {
+                self.cwd.join(path)
+            };
+            let open = self
+                .docs
+                .iter()
+                .any(|(_, doc)| doc.buf.path.as_ref() == Some(&absolute));
+            if !open && !to_load.contains(&absolute) {
+                to_load.push(absolute);
+            }
+        }
+        let waiting = to_load.len();
+        let build = CollectionBuild {
+            title,
+            hits,
+            remote_hits,
+            waiting,
+        };
+        if to_load.is_empty() {
+            self.build_collection(build);
+            return;
+        }
+        self.collection_build = Some(build);
+        self.message = format!("collection: loading {waiting} source(s)…");
+        for path in to_load {
+            self.request_open(path, crate::editor::io::OpenIntent::Background);
+        }
+    }
+
+    /// A background source load landed (or failed): the pending build
+    /// counts down and assembles when its sources are all in.
+    pub(crate) fn collection_source_ready(&mut self, _document: DocumentId) {
+        let Some(build) = &mut self.collection_build else {
+            return;
+        };
+        build.waiting = build.waiting.saturating_sub(1);
+        if build.waiting == 0 {
+            let build = self.collection_build.take().unwrap();
+            self.build_collection(build);
+        }
+    }
+
+    fn build_collection(&mut self, build: CollectionBuild) {
+        let CollectionBuild {
+            title,
+            hits,
+            remote_hits,
+            ..
+        } = build;
         let mut by_doc: HashMap<DocumentId, Vec<usize>> = HashMap::new();
         let mut skipped = 0;
-        for (path, line) in items {
+        for (path, line) in hits {
             let absolute = if path.is_absolute() {
                 path
             } else {
@@ -143,8 +217,20 @@ impl Editor {
             };
             by_doc.entry(document).or_default().push(line);
         }
+        for (endpoint, path, line) in remote_hits {
+            let document = self.docs.iter().find_map(|(id, doc)| {
+                doc.remote_metadata().and_then(|source| {
+                    (source.file.endpoint() == &endpoint && source.file.path() == path.as_path())
+                        .then_some(id)
+                })
+            });
+            match document {
+                Some(id) => by_doc.entry(id).or_default().push(line),
+                None => skipped += 1,
+            }
+        }
         if by_doc.is_empty() {
-            self.message = "no open local buffers among the results — open them first".into();
+            self.message = "no open buffers among the results — open them first".into();
             return;
         }
         let mut excerpts = Vec::new();
@@ -389,6 +475,12 @@ impl Editor {
                     "collection: a source changed elsewhere — refused; view refreshed".into(),
                 );
             }
+            if source.buf.readonly {
+                return Err(
+                    "collection: a source is read-only (remote sources need :remote edit first) — refused; view refreshed"
+                        .into(),
+                );
+            }
             let lo = excerpt.view_line + 1;
             let hi = excerpt.view_line + excerpt.view_lines + 1;
             let cur_lo = Self::map_line(&hunks, lo, false);
@@ -401,7 +493,13 @@ impl Editor {
                 Range::charwise(excerpt.start, excerpt.end),
                 replacement,
             );
-            let location = ResourceLocation::local(source.buf.path.clone().unwrap_or_default());
+            let location = match &source.source {
+                super::document::DocumentSource::Remote(remote) => ResourceLocation::remote(
+                    remote.file.endpoint().clone(),
+                    remote.file.path().to_path_buf(),
+                ),
+                _ => ResourceLocation::local(source.buf.path.clone().unwrap_or_default()),
+            };
             match by_source
                 .iter_mut()
                 .find(|(id, _, _)| *id == excerpt.source)

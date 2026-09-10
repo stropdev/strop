@@ -46,6 +46,9 @@ pub enum OpenIntent {
         hits: Vec<(usize, usize, usize, String)>,
         replacement: String,
     },
+    /// Open without focus (0044 v2): collection builds load sources in
+    /// the background; the picker keeps focus and focus never moves.
+    Background,
 }
 impl OpenIntent {
     fn requires_file(&self) -> bool {
@@ -210,7 +213,10 @@ impl Editor {
             intent,
             selection,
         };
-        if !matches!(key.intent, OpenIntent::Replace { .. }) {
+        if !matches!(
+            key.intent,
+            OpenIntent::Replace { .. } | OpenIntent::Background
+        ) {
             self.io.navigation = Some(request);
         }
         self.io.open.insert(request, key.clone());
@@ -321,6 +327,9 @@ impl Editor {
                 }
             }
             OpenIntent::Split { vertical } => self.split_document(vertical, document),
+            // Background opens never move focus; a pending collection
+            // build counts down and assembles when its sources land.
+            OpenIntent::Background => self.collection_source_ready(document),
             intent => {
                 self.switch_to(document);
                 self.set_head(0);
@@ -593,6 +602,9 @@ impl Editor {
                         self.finish_open(id, key.intent);
                     }
                     Outcome::Failed { failure, .. } => {
+                        if matches!(key.intent, OpenIntent::Background) {
+                            self.collection_source_ready(key.origin);
+                        }
                         self.message = format!("open {}: {}", key.path, failure.message)
                     }
                     Outcome::Cancelled(_) => {}

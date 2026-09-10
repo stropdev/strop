@@ -207,6 +207,8 @@ pub struct Editor {
     pub(crate) changes: changes::ChangeState,
     /// Open editable code collections by their buffer document (0044).
     pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
+    /// A build waiting on background source loads (0044 v2).
+    pub(crate) collection_build: Option<collections::CollectionBuild>,
     /// Container attach/browse state (0037 DC1a).
     pub(crate) containers: containers::ContainerState,
     /// MRU document order (most recent first); drives `Space b`.
@@ -355,6 +357,7 @@ impl Editor {
             mru: vec![current],
             changes: changes::ChangeState::default(),
             collections: HashMap::new(),
+            collection_build: None,
             mode: Mode::Normal,
             pending: pending::PendingInput::default(),
             walker: input::Walker::new(),

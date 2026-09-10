@@ -232,3 +232,104 @@ fn inserting_between_excerpts_is_refused() {
     e.feed_text("Onope<esc>");
     assert!(e.message.contains("refused"), "{}", e.message);
 }
+
+#[test]
+fn unopened_sources_load_in_the_background_and_assemble() {
+    // 0044 v2: hits on files that are not open load as real buffers,
+    // focus never moves, and the collection assembles when they land
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let a = root.join("late-a.txt");
+    std::fs::write(&a, "late one\n").unwrap();
+    let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
+    e.open_picker(Kind::Grep);
+    if let Some(glue) = e.picker.as_mut() {
+        glue.picker.append(vec![Item {
+            text: "hit".into(),
+            payload: Payload::Grep {
+                path: a.clone(),
+                line: 1,
+                col: 1,
+                match_len: 3,
+                line_text: "late one".into(),
+            },
+        }]);
+    }
+    e.feed(crate::editor::Key::CtrlO);
+    assert!(e.message.contains("loading"), "{}", e.message);
+    assert!(e.collections.is_empty(), "not yet");
+    e.wait_io().unwrap();
+    assert!(e.collections.len() == 1, "assembled after the load");
+    assert!(e.buf().text().to_string().contains("late one"));
+    let text = e.buf().text().to_string();
+    assert!(text.contains("late one"), "{text}");
+}
+
+#[test]
+fn remote_sources_join_collections_and_refuse_without_a_permit() {
+    // 0044 v2 + 0040: a remote hit on an open remote document lands in
+    // the collection; without :remote edit the write-back refuses and
+    // names the way out
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let a = root.join("a.txt");
+    std::fs::write(&a, "alpha one\n").unwrap();
+    let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
+    e.open_fixture(&a).unwrap();
+    let remote_text = "remote one\n";
+    let remote_doc = crate::editor::document::Document::remote(
+        Buffer::from_text(remote_text),
+        crate::editor::document::RemoteDocument {
+            file: strop_workspace::RemoteFile::parse("ssh://fixture/repo/app.log").unwrap(),
+            window: strop_remote::RemoteWindow::resolve(
+                &strop_remote::ReadSelection::Full,
+                strop_remote::RemoteSize::new(remote_text.len() as u64),
+            ),
+            selection: strop_remote::ReadSelection::Full,
+            connection: None,
+            return_to: None,
+            write: None,
+        },
+    );
+    e.docs.insert(remote_doc);
+    e.open_picker(Kind::Grep);
+    if let Some(glue) = e.picker.as_mut() {
+        glue.picker.append(vec![
+            Item {
+                text: "local".into(),
+                payload: Payload::Grep {
+                    path: a.clone(),
+                    line: 1,
+                    col: 1,
+                    match_len: 3,
+                    line_text: "alpha one".into(),
+                },
+            },
+            Item {
+                text: "remote".into(),
+                payload: Payload::Remote {
+                    endpoint: strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
+                    path: "/repo/app.log".into(),
+                    line: 1,
+                    col: 1,
+                },
+            },
+        ]);
+    }
+    e.feed(crate::editor::Key::CtrlO);
+    let text = e.buf().text().to_string();
+    assert!(text.contains("alpha one"), "{text}");
+    assert!(
+        text.contains("remote one"),
+        "remote excerpt in view: {text}"
+    );
+    // edit the remote excerpt's line (the last body line)
+    let at = e.buf().text().to_string().find("remote one").unwrap() + 7;
+    e.set_head(at);
+    e.feed_text("x");
+    assert!(
+        e.message.contains("read-only") && e.message.contains(":remote edit"),
+        "{}",
+        e.message
+    );
+}
