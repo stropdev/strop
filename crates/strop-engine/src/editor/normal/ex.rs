@@ -335,6 +335,8 @@ impl Editor {
             "vs" | "vsplit" => self.split(true, if arg.is_empty() { None } else { Some(arg) }),
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "help" | "h" => self.open_help(),
+            "jumps" => self.open_jumps_picker(),
+            "symbols" => self.lsp_document_symbols_pub(),
             "explain" => self.open_explain(),
             "containers" => self.request_containers(),
             "format" => self.lsp_format(),

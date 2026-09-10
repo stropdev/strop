@@ -538,6 +538,23 @@ impl Editor {
         self.message = format!("mark {mark} set");
     }
 
+    /// (name, 1-based line, trimmed line text) per set mark, name-sorted —
+    /// the which-key mark cards' live rows (0047 §3).
+    pub fn mark_rows(&self) -> Vec<(char, usize, String)> {
+        let mut rows: Vec<_> = self
+            .marks
+            .iter()
+            .filter_map(|(name, (document, offset))| {
+                let doc = self.docs.get(*document)?;
+                let line = doc.buf.line_of(*offset);
+                let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
+                Some((*name, line + 1, text))
+            })
+            .collect();
+        rows.sort_by_key(|row| row.0);
+        rows
+    }
+
     /// `'{a}`: jump to mark a (switches buffer if the mark lives there).
     pub(crate) fn jump_mark(&mut self, mark: char) {
         self.push_jump(); // mark jumps are jumplist entries

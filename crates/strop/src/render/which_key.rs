@@ -38,13 +38,28 @@ pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
     if hints.is_empty() {
         return;
     }
-    render_hints(frame, title, &hints);
+    // Mark prefixes list the live marks below the static hint (0047 §3):
+    // for `'`/` the list IS the menu; for `m` it shows what a letter
+    // would overwrite.
+    let marks = if matches!(pending, "m" | "'" | "`") {
+        editor.mark_rows()
+    } else {
+        Vec::new()
+    };
+    render_hints(frame, title, &hints, &marks);
 }
 
-fn render_hints(frame: &mut Frame, title: &str, hints: &[keymap::Hint]) {
+fn render_hints(
+    frame: &mut Frame,
+    title: &str,
+    hints: &[keymap::Hint],
+    marks: &[(char, usize, String)],
+) {
     let area = frame.area();
     let width = 40u16.min(area.width.saturating_sub(4));
-    let height = (hints.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let extra = if marks.is_empty() { 1 } else { marks.len() } as u16;
+    let extra = if title.contains("mark") { extra } else { 0 };
+    let height = (hints.len() as u16 + extra + 2).min(area.height.saturating_sub(2));
     let card = Rect {
         x: area.width.saturating_sub(width + 2),
         y: area.height.saturating_sub(height + 2),
@@ -64,7 +79,7 @@ fn render_hints(frame: &mut Frame, title: &str, hints: &[keymap::Hint]) {
     let inner = block.inner(card);
     frame.render_widget(block, card);
 
-    let lines: Vec<Line> = hints
+    let mut lines: Vec<Line> = hints
         .iter()
         .map(|h| {
             let key_style = if h.live {
@@ -78,13 +93,38 @@ fn render_hints(frame: &mut Frame, title: &str, hints: &[keymap::Hint]) {
                 Style::default().fg(MUTED)
             };
             let suffix = if h.live { "" } else { "  (soon)" };
+            // Absorb tokens read as jargon (`<a>`); the card speaks
+            // the range the user can type.
+            let key = if h.key == "<a>" { "a-z" } else { &h.key };
             Line::from(vec![
                 Span::raw(" "),
-                Span::styled(format!(" {} ", h.key), key_style.bg(SELECT_BG)),
+                Span::styled(format!(" {} ", key), key_style.bg(SELECT_BG)),
                 Span::styled(format!("  {}{}", h.desc, suffix), desc_style),
             ])
         })
         .collect();
+    if title.contains("mark") {
+        if marks.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  no marks set",
+                Style::default().fg(MUTED),
+            )));
+        } else {
+            for (name, line, text) in marks {
+                lines.push(Line::from(vec![
+                    Span::raw(" "),
+                    Span::styled(
+                        format!(" {} ", name),
+                        Style::default()
+                            .fg(ACCENT)
+                            .add_modifier(Modifier::BOLD)
+                            .bg(SELECT_BG),
+                    ),
+                    Span::styled(format!("  :{}  {}", line, text), Style::default().fg(MUTED)),
+                ]));
+            }
+        }
+    }
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -110,7 +150,7 @@ mod tests {
             "hover docs",
             "paste clipboard before",
             "git…",
-            "jumplist picker  (soon)",
+            "jumplist picker",
             "undo-tree browser",
         ] {
             assert!(frame.contains(present), "space card missing {present:?}");
@@ -135,6 +175,42 @@ mod tests {
         ] {
             assert!(frame.contains(verb), "git card missing {verb:?}");
         }
+    }
+
+    /// The `m` card speaks plainly: `a-z` (never `<a>`), plus the live
+    /// marks with their landing lines — for `'` the list is the menu.
+    #[test]
+    fn mark_card_lists_live_marks() {
+        let mut e = Editor::new(Buffer::from_text(
+            "fn main() {}\nlet x = 1;\nfn helper() {}\n",
+        ));
+        e.feed_text("jma"); // mark a on line 2
+        e.feed_text("jmb"); // mark b on line 3
+        e.feed_text("ggm"); // back to top, pend m
+        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
+        assert!(
+            frame.contains("a-z"),
+            "absorb label reads as a range: {frame}"
+        );
+        assert!(!frame.contains("<a>"), "no table token leaks: {frame}");
+        assert!(frame.contains("set mark at cursor"), "{frame}");
+        assert!(frame.contains(":2  let x = 1;"), "mark a row: {frame}");
+        assert!(frame.contains(":3  fn helper() {}"), "mark b row: {frame}");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("'");
+        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
+        assert!(frame.contains("jump to mark"), "{frame}");
+        assert!(frame.contains(":2  let x = 1;"), "{frame}");
+    }
+
+    /// No marks: the card says so instead of showing an empty list.
+    #[test]
+    fn mark_card_without_marks_says_so() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text("m");
+        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
+        assert!(frame.contains("no marks set"), "{frame}");
+        assert!(frame.contains("a-z"), "{frame}");
     }
 
     /// Prefix cards without table children render nothing (visual mode

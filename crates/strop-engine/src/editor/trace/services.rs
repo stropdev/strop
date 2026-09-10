@@ -167,6 +167,9 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
             LspEvent::WorkspaceEdits { context, edits } => json!({
                 "service":"lsp","result":"workspace_edits","context":context,"targets":edits.len(),
             }),
+            LspEvent::Symbols { context, symbols } => json!({
+                "service":"lsp","result":"symbols","context":context,"count":symbols.len(),
+            }),
             LspEvent::ActionList { context, actions } => json!({
                 "service":"lsp","result":"code_actions","context":context,"count":actions.len(),
             }),

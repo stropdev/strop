@@ -199,6 +199,8 @@ pub enum RequestKind {
     Format,
     Rename,
     CodeAction,
+    /// All symbols in one document — no position rides the request.
+    DocumentSymbols,
 }
 
 impl RequestKind {
@@ -211,6 +213,7 @@ impl RequestKind {
             Self::Format => "format",
             Self::Rename => "rename",
             Self::CodeAction => "code action",
+            Self::DocumentSymbols => "document symbols",
         }
     }
 }
@@ -245,6 +248,18 @@ impl ServerColumn {
 pub struct ServerPosition {
     pub line: LineIndex,
     pub column: ServerColumn,
+}
+
+/// One document-symbol row, flattened from either reply shape:
+/// hierarchical `DocumentSymbol[]` (container = ancestor path) or
+/// legacy flat `SymbolInformation[]` (container = its containerName).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProtoSymbol {
+    pub name: String,
+    pub container: String,
+    /// SymbolKind's LSP name (`Function`, `Struct`, …).
+    pub kind: String,
+    pub location: ServerLocation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -384,6 +399,12 @@ pub enum LspEvent {
     ActionList {
         context: ReplyContext,
         actions: Vec<ProtoAction>,
+    },
+    /// Document-symbol reply: the flattened tree (0047 §1) — both
+    /// server reply shapes land in the same row form.
+    Symbols {
+        context: ReplyContext,
+        symbols: Vec<ProtoSymbol>,
     },
     /// context is the ORIGINAL request's — never re-derived.
     Note {

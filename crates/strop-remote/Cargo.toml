@@ -6,8 +6,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.22.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.22.0" }
+strop-core = { path = "../strop-core", version = "0.23.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.23.0" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 parking_lot = "0.12"

@@ -204,6 +204,83 @@ fn old_server_reply_is_not_accepted_by_replacement_binding() {
 }
 
 #[test]
+fn document_symbols_open_a_picker_and_accepting_jumps() {
+    // 0047 §1: the reply becomes picker rows; Enter lands on the
+    // symbol and records a jumplist entry for ctrl-o.
+    let mut e = editor("struct Foo;\nimpl Foo { fn bar() {} }\nfn main() {}\n");
+    e.feed_text("G"); // cursor to line 3, so the jump back is observable
+    let origin = e.head();
+    let context = arm(
+        &mut e,
+        0,
+        RequestKind::DocumentSymbols,
+        PositionEncoding::Utf8,
+    );
+    e.handle_lsp_event(LspEvent::Symbols {
+        context,
+        symbols: vec![
+            strop_lsp::protocol::ProtoSymbol {
+                name: "Foo".into(),
+                container: String::new(),
+                kind: "Struct".into(),
+                location: strop_lsp::ServerLocation {
+                    doc: strop_workspace::ResourceLocation::local(PathBuf::from(
+                        "/workspace/origin.txt",
+                    )),
+                    position: ServerPosition {
+                        line: LineIndex::new(0),
+                        column: ServerColumn::new(7),
+                    },
+                },
+            },
+            strop_lsp::protocol::ProtoSymbol {
+                name: "bar".into(),
+                container: "Foo".into(),
+                kind: "Method".into(),
+                location: strop_lsp::ServerLocation {
+                    doc: strop_workspace::ResourceLocation::local(PathBuf::from(
+                        "/workspace/origin.txt",
+                    )),
+                    position: ServerPosition {
+                        line: LineIndex::new(1),
+                        column: ServerColumn::new(16),
+                    },
+                },
+            },
+        ],
+    });
+    let glue = e.picker.as_ref().expect("the symbols picker opened");
+    assert_eq!(glue.picker.kind, strop_picker::Kind::Symbols);
+    let texts: Vec<&str> = glue.picker.items.iter().map(|i| i.text.as_str()).collect();
+    assert_eq!(texts.len(), 2);
+    assert!(texts[0].contains("Foo") && texts[0].contains("Struct") && texts[0].contains(":1"));
+    assert!(texts[1].contains("bar") && texts[1].contains("Foo") && texts[1].contains(":2"));
+    e.wait_picker();
+    e.feed(Key::Enter);
+    assert!(!e.picker_open());
+    assert_eq!(e.head(), 7, "landed on the struct identifier");
+    e.feed(Key::CtrlO);
+    assert_eq!(e.head(), origin, "ctrl-o returns to the pre-jump spot");
+}
+
+#[test]
+fn document_symbols_empty_reply_names_the_document() {
+    let mut e = editor("x\n");
+    let context = arm(
+        &mut e,
+        0,
+        RequestKind::DocumentSymbols,
+        PositionEncoding::Utf8,
+    );
+    e.handle_lsp_event(LspEvent::Symbols {
+        context,
+        symbols: Vec::new(),
+    });
+    assert!(!e.picker_open(), "an empty reply opens nothing");
+    assert_eq!(e.message, "no symbols in this document");
+}
+
+#[test]
 fn goto_completion_uses_target_encoding_and_records_original_jump() {
     let mut e = editor("origin text\n");
     e.feed_text("$");

@@ -94,7 +94,9 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ space d` — diagnostics picker
 - `✓ space k` — hover docs
 - `✓ space a` — code actions
-- `· space j` — jumplist picker (soon)
+- `✓ space s` — document symbols picker
+- `· space S` — workspace symbols picker (soon)
+- `✓ space j` — jumplist picker
 - `✓ space u` — undo-tree browser
 - `✓ space c` — cursor on next line too (multicursor)
 

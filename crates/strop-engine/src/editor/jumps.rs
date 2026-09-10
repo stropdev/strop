@@ -51,7 +51,7 @@ impl Editor {
     /// Land on a jumplist position: switch document when needed.
     /// Callers (`jump_back`/`jump_forward`) have already dropped entries
     /// whose document is gone.
-    fn jump_to(&mut self, (buffer, offset): (strop_core::id::DocumentId, usize)) {
+    pub(crate) fn jump_to(&mut self, (buffer, offset): (strop_core::id::DocumentId, usize)) {
         debug_assert!(self.docs.get(buffer).is_some(), "jump_to: dead entry");
         if buffer != self.current() {
             self.switch_to(buffer);

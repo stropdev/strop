@@ -64,6 +64,15 @@ impl ServerCaps {
     pub fn declaration(&self) -> bool {
         self.flag(|c| c.declaration_provider.is_some())
     }
+    pub fn document_symbols(&self) -> bool {
+        self.flag(|c| {
+            matches!(
+                c.document_symbol_provider,
+                Some(async_lsp::lsp_types::OneOf::Left(true))
+                    | Some(async_lsp::lsp_types::OneOf::Right(_))
+            )
+        })
+    }
 
     /// Document formatting supported? (same unknown-is-no rule as hover)
     pub fn formatting(&self) -> bool {
@@ -125,6 +134,7 @@ impl ServerCaps {
             RequestKind::Format => self.formatting(),
             RequestKind::Rename => self.rename(),
             RequestKind::CodeAction => self.code_action(),
+            RequestKind::DocumentSymbols => self.document_symbols(),
         }
     }
 }

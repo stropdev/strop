@@ -67,8 +67,8 @@ fn which_key_children() {
     assert_eq!(g.desc, "git…");
     assert!(g.live);
     assert!(
-        space.iter().any(|h| h.key == "j" && !h.live),
-        "space j renders as soon"
+        space.iter().any(|h| h.key == "j" && h.live),
+        "space j is the live jumplist picker (0047)"
     );
     let git = children_of(" g", Mode::Normal);
     assert_eq!(git.len(), 9); // l h b y o u s S p
@@ -107,6 +107,8 @@ const DISPATCHED: &[&str] = &[
     "space y",
     "space p",
     "space P",
+    "space j",
+    "space s",
     // git namespace
     "space g u",
     "space g s",

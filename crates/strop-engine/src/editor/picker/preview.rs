@@ -43,6 +43,7 @@ impl Editor {
         let (path, focus_line) = match &item.payload {
             Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
+            | Payload::Jump { .. }
             | Payload::CodeAction(_)
             | Payload::Container(_) => return None,
             Payload::Buffer(document) => {

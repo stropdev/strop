@@ -52,6 +52,11 @@ pub enum Payload {
     CodeAction(usize),
     /// A running container's canonical inspect id (0037 DC1a).
     Container(String),
+    /// A jumplist entry: document + byte offset (0047 §2).
+    Jump {
+        document: strop_core::id::DocumentId,
+        offset: usize,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -63,6 +68,10 @@ pub struct Item {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    /// The jumplist as a menu (0047 §2).
+    Jumps,
+    /// A language server's document symbols (0047 §1).
+    Symbols,
     Files,
     Buffers,
     Grep,
@@ -93,6 +102,8 @@ impl Kind {
             Kind::Containers => " containers ",
             Kind::Diagnostics => " diagnostics ",
             Kind::RemoteHosts => " remote destinations ",
+            Kind::Jumps => " jumps ",
+            Kind::Symbols => " symbols ",
             Kind::RemoteAddress => " connect to remote ",
             Kind::CodeActions => " code actions ",
         }

@@ -116,6 +116,66 @@ mod picker_tests {
     }
 
     #[test]
+    fn jumps_picker_walks_history_and_ctrl_o_returns() {
+        // 0047 §2: the jumplist as a menu — past newest-first, the
+        // current position marked, accepting an entry lands there and
+        // records the spot so ctrl-o returns.
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\nfour\n"));
+        e.feed_text("G"); // jump to line 4
+        e.feed_text("gg"); // jump back to line 1
+        e.open_picker(Kind::Jumps);
+        e.wait_picker();
+        let glue = e.picker.as_ref().unwrap();
+        let texts: Vec<&str> = glue.picker.items.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts.len(), 3, "two jumps + the current row: {texts:?}");
+        assert!(
+            texts[0].contains(":4") && texts[0].contains("four"),
+            "newest past entry first: {texts:?}"
+        );
+        assert!(
+            texts[2].starts_with("> "),
+            "the current row is marked: {texts:?}"
+        );
+        e.feed(crate::editor::Key::Enter);
+        assert!(!e.picker_open(), "accept closes the picker");
+        assert_eq!(e.buf().line_of(e.head()), 3, "landed on the accepted entry");
+        e.feed(crate::editor::Key::CtrlO);
+        assert_eq!(
+            e.buf().line_of(e.head()),
+            0,
+            "ctrl-o returns to where the picker was opened"
+        );
+    }
+
+    #[test]
+    fn jumps_picker_filters_dead_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("other.txt");
+        std::fs::write(&path, "x\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\n"));
+        e.open_fixture(&path).unwrap();
+        e.feed_text("G"); // a jump inside other.txt
+        let dead = e.current();
+        e.close_buffer(true);
+        assert!(e.docs.get(dead).is_none(), "the document is gone");
+        e.open_picker(Kind::Jumps);
+        e.wait_picker();
+        let glue = e.picker.as_ref().unwrap();
+        assert!(
+            glue.picker
+                .items
+                .iter()
+                .all(|i| !i.text.contains("other.txt")),
+            "dead-document entries are absent: {:?}",
+            glue.picker
+                .items
+                .iter()
+                .map(|i| i.text.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn remote_hosts_enter_carries_unmatched_text_into_the_address_box() {
         // 0.21.0 field report: a typed hostname that matched no listed
         // destination made Enter a no-op. Now the pinned "Add a host…"

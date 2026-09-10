@@ -14,6 +14,14 @@ impl Editor {
                 super::super::io::OpenIntent::Browse,
             ),
             Payload::RemoteConnect => self.open_remote_address(),
+            // A jumplist menu entry: record the present position first,
+            // so ctrl-o after the picker jump returns here (0047 §2).
+            Payload::Jump { document, offset } => {
+                if self.docs.get(document).is_some() {
+                    self.push_jump();
+                    self.jump_to((document, offset));
+                }
+            }
             Payload::CodeAction(index) => self.accept_code_action(index),
             Payload::Container(id) => self.attach_container(id),
             Payload::File(rel) => {
@@ -36,6 +44,10 @@ impl Editor {
                     self.lsp_jump_from_picker(path, line, col, context);
                     return;
                 }
+                // Grep/symbol hits are jumps in vim's sense (quickfix
+                // jumps enter the jumplist): record first, so ctrl-o
+                // returns to where the picker was accepted (0047 §1).
+                self.push_jump();
                 self.request_open(
                     path,
                     super::super::io::OpenIntent::Grep {

@@ -209,6 +209,62 @@ impl Editor {
                 let plan = self.build_change_plan(producer, edits, context.encoding);
                 self.apply_change_plan(plan);
             }
+            LspEvent::Symbols { context, symbols } => {
+                if !self.finish_lsp_reply(&context) {
+                    trace::services::rejected("lsp", "symbol owner/revision changed");
+                    return;
+                }
+                if symbols.is_empty() {
+                    self.message = "no symbols in this document".into();
+                    return;
+                }
+                use strop_picker::{Item, Payload};
+                let items = symbols
+                    .into_iter()
+                    .filter_map(|symbol| {
+                        let line = symbol.location.position.line.get() + 1;
+                        let col = symbol.location.position.column.get() + 1;
+                        let path = symbol.location.doc.path.clone();
+                        let payload = match symbol.location.doc.filesystem {
+                            strop_workspace::Filesystem::Local => Payload::Grep {
+                                path,
+                                line,
+                                col,
+                                match_len: 1,
+                                line_text: String::new(),
+                            },
+                            strop_workspace::Filesystem::Remote(endpoint) => Payload::Remote {
+                                endpoint,
+                                path,
+                                line,
+                                col,
+                            },
+                            // No container LSP is wired (DC1a); drop with a
+                            // trace rather than aliasing a local path.
+                            strop_workspace::Filesystem::Container(_) => {
+                                trace::services::rejected("lsp", "container symbol dropped");
+                                return None;
+                            }
+                        };
+                        let text = if symbol.container.is_empty() {
+                            format!("{}  · {} · :{}", symbol.name, symbol.kind, line)
+                        } else {
+                            format!(
+                                "{}  {} · {} · :{}",
+                                symbol.name, symbol.container, symbol.kind, line
+                            )
+                        };
+                        Some(Item { text, payload })
+                    })
+                    .collect();
+                self.open_picker(strop_picker::Kind::Symbols);
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.picker.append(items);
+                }
+                // Items landed after the initial (empty-catalog)
+                // ranking: re-rank or the list renders empty.
+                self.request_picker_ranking();
+            }
             LspEvent::ActionList { context, actions } => {
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected("lsp", "code-action owner/revision changed");
@@ -232,6 +288,9 @@ impl Editor {
                 if let Some(glue) = self.picker.as_mut() {
                     glue.picker.append(items);
                 }
+                // Same post-append re-rank as the symbols arm above:
+                // the initial ranking ran over an empty catalog.
+                self.request_picker_ranking();
             }
             LspEvent::GotoLocation { context, location } => {
                 if !self.finish_lsp_reply(&context) {
@@ -454,6 +513,9 @@ impl Editor {
                 context,
             );
         } else if let Some(seed) = self.remote_file_for(endpoint) {
+            // Context-free remote hits (symbol rows) record too —
+            // ctrl-o after the jump returns (0047 §1).
+            self.push_jump();
             match seed.with_path(path.to_owned()) {
                 Ok(file) => self.request_target(
                     crate::files::FileTarget::Remote(file.into()),
@@ -487,6 +549,10 @@ impl Editor {
     /// `:rename <new>` — workspace rename through a change plan.
     pub(crate) fn lsp_rename(&mut self, new_name: &str) {
         self.lsp_change_request(strop_lsp::RequestKind::Rename, Some(new_name.to_string()));
+    }
+    /// `Space s` — the current document's symbols as a picker (0047 §1).
+    pub(crate) fn lsp_document_symbols(&mut self) {
+        self.lsp_request(strop_lsp::RequestKind::DocumentSymbols);
     }
     /// `Space a` — code actions at the cursor, offered as a picker.
     pub(crate) fn lsp_code_actions(&mut self) {
@@ -614,6 +680,9 @@ impl Editor {
     }
     pub fn lsp_code_actions_pub(&mut self) {
         self.lsp_code_actions();
+    }
+    pub fn lsp_document_symbols_pub(&mut self) {
+        self.lsp_document_symbols();
     }
     pub fn lsp_locations_pub(&mut self, kind: strop_lsp::LocKind) {
         self.lsp_locations(kind);

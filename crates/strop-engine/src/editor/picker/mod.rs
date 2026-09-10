@@ -160,6 +160,10 @@ impl Editor {
             self.open_remote_picker();
             return;
         }
+        if kind == Kind::Jumps {
+            self.open_jumps_picker();
+            return;
+        }
         if kind == Kind::RemoteAddress {
             self.open_remote_address();
             return;
@@ -188,6 +192,8 @@ impl Editor {
             | Kind::RemoteAddress
             | Kind::CodeActions
             | Kind::Containers => vec![],
+            Kind::Jumps => unreachable!("the jumplist builds its own items"),
+            Kind::Symbols => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
             }
@@ -196,6 +202,24 @@ impl Editor {
         if kind == Kind::Files {
             self.launch_files_request();
         }
+    }
+
+    /// The jumplist as a menu (0047 §2): past newest-first, the current
+    /// position marked, then the future; dead documents are filtered.
+    pub(crate) fn open_jumps_picker(&mut self) {
+        let mut items = Vec::new();
+        for &entry in self.jumplist_past.iter().rev() {
+            items.extend(jump_row(self, entry, "  "));
+        }
+        items.extend(jump_row(self, (self.current(), self.head()), "> "));
+        for &entry in self.jumplist_future.iter().rev() {
+            items.extend(jump_row(self, entry, "  "));
+        }
+        self.set_picker(PickerGlue::diagnostics(Picker::new(
+            Kind::Jumps,
+            items,
+            false,
+        )));
     }
 
     /// The files walk as an owned request. Registration precedes
@@ -582,3 +606,24 @@ pub enum PreviewSource {
 }
 
 pub type Previews = HashMap<PathBuf, PreviewEntry>;
+
+/// One jumplist row; dead documents drop out (0047 §2).
+fn jump_row(
+    editor: &Editor,
+    (document, offset): (strop_core::id::DocumentId, usize),
+    marker: &str,
+) -> Option<Item> {
+    let doc = editor.docs.get(document)?;
+    let name = doc
+        .buf
+        .path
+        .as_ref()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "[scratch]".into());
+    let line = doc.buf.line_of(offset);
+    let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
+    Some(Item {
+        text: format!("{marker}{name}:{}  {text}", line + 1),
+        payload: Payload::Jump { document, offset },
+    })
+}

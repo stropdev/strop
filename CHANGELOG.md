@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.23.0 — 2026-09-10
+
+Escape is preserved at the terminal boundary (0048), and navigation
+state becomes visible (0047): document symbols, the jumplist as a
+picker, and mark cards that show the marks.
+
+### Fixed
+
+- **Escape could be lost on legacy terminals.** Pressing Esc and typing
+  immediately coalesced into one byte batch that crossterm decodes as
+  Alt+key, and strop dropped the Alt bit — the mode never left Insert
+  and the letters landed in the buffer. The terminal adapter now treats
+  Alt as an Escape prefix consistently (strop has no Alt bindings):
+  Escape, then the base key, in FIFO order. Capable terminals are
+  additionally asked for unambiguous Escape encoding (kitty keyboard
+  protocol `DISAMBIGUATE_ESCAPE_CODES`, popped idempotently on exit),
+  and the CSI-u Control aliases (Ctrl-[/I/M) keep their legacy meanings.
+  Verified on a real PTY: coalesced `ESC hkl` saves the typed text with
+  the letters as Normal-mode motions.
+- Code-action and symbol pickers whose items arrive after the initial
+  ranking now re-rank — the list no longer renders empty until the
+  first keystroke.
+- Grep and symbol hits from a picker now record a jumplist entry
+  (quickfix jumps enter the jumplist in vim), so `Ctrl-O` returns to
+  where the picker was accepted — remote hits included.
+
+### Added
+
+- **Document symbols** (0047 §1): `Space s` or `:symbols` opens the
+  current file's symbols as a streaming picker — flat rows with the
+  container path, kind and line; fuzzy-matches against the container.
+  Both LSP reply shapes (hierarchical and flat) flatten to the same
+  rows. Works over `ssh://` through the workspace URI seam. `Space S`
+  is reserved for workspace symbols.
+- **Jumplist picker** (0047 §2): `Space j` or `:jumps` — vim `:jumps`
+  as a menu: past newest-first, the current position marked, dead
+  documents filtered; Enter jumps and records the spot for `Ctrl-O`.
+- **Mark cards** (0047 §3): `m`, `'` and `` ` `` which-key cards label
+  the absorb key as `a-z` and list the live marks with their landing
+  lines — for the jump cards the list is the menu.
+
 ## 0.22.1 — 2026-09-10
 
 Field-report fixes from a 0.21.0 review against real pyright and remote

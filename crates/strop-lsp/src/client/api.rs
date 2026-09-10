@@ -190,6 +190,9 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
                 ),
             },
             RequestKind::CodeAction => code_actions(env, tdp, context).await,
+            RequestKind::DocumentSymbols => {
+                document_symbols(env, tdp.text_document, context, path).await
+            }
         }
     });
 }
@@ -452,5 +455,129 @@ async fn code_actions(env: WireEnv, tdp: lt::TextDocumentPositionParams, context
             });
         }
         Err(error) => note(&env, context, format!("code action failed: {error}")),
+    }
+}
+
+/// `textDocument/documentSymbol`: both reply shapes flatten into
+/// [`ProtoSymbol`] rows (0047 §1). Hierarchical trees join ancestors
+/// with ` :: ` as the container path; the jump position is the
+/// selection range's start (the identifier, not the block).
+async fn document_symbols(
+    env: WireEnv,
+    text_document: lt::TextDocumentIdentifier,
+    context: ReplyContext,
+    path: std::path::PathBuf,
+) {
+    let params = lt::DocumentSymbolParams {
+        text_document,
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
+    };
+    let response = env
+        .socket
+        .request::<lt::request::DocumentSymbolRequest>(params)
+        .await;
+    let location = |line: u32, character: u32| ServerLocation {
+        doc: ResourceLocation {
+            filesystem: env.workspace.target(),
+            path: path.clone(),
+        },
+        position: ServerPosition {
+            line: LineIndex::new(line as usize),
+            column: ServerColumn::new(character as usize),
+        },
+    };
+    match response {
+        Ok(Some(lt::DocumentSymbolResponse::Flat(informations))) => {
+            let symbols = informations
+                .into_iter()
+                .filter_map(|info| {
+                    let location = wire::to_server_location(info.location, &env.workspace).ok()?;
+                    Some(ProtoSymbol {
+                        name: info.name,
+                        container: info.container_name.unwrap_or_default(),
+                        kind: symbol_kind_label(info.kind).into(),
+                        location,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let _ = env.tx.send(LspEvent::Symbols { context, symbols });
+        }
+        Ok(Some(lt::DocumentSymbolResponse::Nested(tree))) => {
+            let mut symbols = Vec::new();
+            flatten_symbols(&tree, "", &mut |name, container, kind, line, character| {
+                symbols.push(ProtoSymbol {
+                    name,
+                    container,
+                    kind,
+                    location: location(line, character),
+                });
+            });
+            let _ = env.tx.send(LspEvent::Symbols { context, symbols });
+        }
+        Ok(None) => note(&env, context, "no symbols in this document".into()),
+        Err(error) => note(&env, context, format!("document symbols failed: {error}")),
+    }
+}
+
+fn flatten_symbols(
+    symbols: &[lt::DocumentSymbol],
+    ancestors: &str,
+    emit: &mut impl FnMut(String, String, String, u32, u32),
+) {
+    for symbol in symbols {
+        let container = if ancestors.is_empty() {
+            String::new()
+        } else {
+            ancestors.to_string()
+        };
+        let path = if ancestors.is_empty() {
+            symbol.name.clone()
+        } else {
+            format!("{ancestors} :: {}", symbol.name)
+        };
+        emit(
+            symbol.name.clone(),
+            container,
+            symbol_kind_label(symbol.kind).into(),
+            symbol.selection_range.start.line,
+            symbol.selection_range.start.character,
+        );
+        if let Some(children) = symbol.children.as_deref() {
+            flatten_symbols(children, &path, emit);
+        }
+    }
+}
+
+/// SymbolKind's LSP name for the picker row.
+fn symbol_kind_label(kind: lt::SymbolKind) -> &'static str {
+    match kind {
+        lt::SymbolKind::FILE => "File",
+        lt::SymbolKind::MODULE => "Module",
+        lt::SymbolKind::NAMESPACE => "Namespace",
+        lt::SymbolKind::PACKAGE => "Package",
+        lt::SymbolKind::CLASS => "Class",
+        lt::SymbolKind::METHOD => "Method",
+        lt::SymbolKind::PROPERTY => "Property",
+        lt::SymbolKind::FIELD => "Field",
+        lt::SymbolKind::CONSTRUCTOR => "Constructor",
+        lt::SymbolKind::ENUM => "Enum",
+        lt::SymbolKind::INTERFACE => "Interface",
+        lt::SymbolKind::FUNCTION => "Function",
+        lt::SymbolKind::VARIABLE => "Variable",
+        lt::SymbolKind::CONSTANT => "Constant",
+        lt::SymbolKind::STRING => "String",
+        lt::SymbolKind::NUMBER => "Number",
+        lt::SymbolKind::BOOLEAN => "Boolean",
+        lt::SymbolKind::ARRAY => "Array",
+        lt::SymbolKind::OBJECT => "Object",
+        lt::SymbolKind::KEY => "Key",
+        lt::SymbolKind::NULL => "Null",
+        lt::SymbolKind::ENUM_MEMBER => "EnumMember",
+        lt::SymbolKind::STRUCT => "Struct",
+        lt::SymbolKind::EVENT => "Event",
+        lt::SymbolKind::OPERATOR => "Operator",
+        lt::SymbolKind::TYPE_PARAMETER => "TypeParameter",
+        _ => "Symbol",
     }
 }

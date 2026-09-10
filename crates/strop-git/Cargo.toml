@@ -8,16 +8,16 @@ license.workspace = true
 [dependencies]
 git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
-strop-core = { path = "../strop-core", version = "0.22.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.22.0" }
+strop-core = { path = "../strop-core", version = "0.23.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.23.0" }
 # path dependency, no new features: remote Git only needs the bounded
 # remote-execution boundary (0036 RW8); endpoint identity lives in
 # strop-workspace.
-strop-remote = { path = "../strop-remote", version = "0.22.0" }
+strop-remote = { path = "../strop-remote", version = "0.23.0" }
 # path dependency, no new features: container Git only needs the bounded
 # engine-probe/exec-capture boundary (0037 DC1b); container identity lives
 # in strop-workspace.
-strop-containers = { path = "../strop-containers", version = "0.22.0" }
+strop-containers = { path = "../strop-containers", version = "0.23.0" }
 
 [dev-dependencies]
 tempfile = "3"
