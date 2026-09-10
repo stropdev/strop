@@ -181,9 +181,12 @@ impl Editor {
                 .collect(),
             // Grep/Replace stream only once input registers a request;
             // Files launches its walk right after install.
-            Kind::Files | Kind::Grep | Kind::Replace | Kind::RemoteHosts | Kind::RemoteAddress => {
-                vec![]
-            }
+            Kind::Files
+            | Kind::Grep
+            | Kind::Replace
+            | Kind::RemoteHosts
+            | Kind::RemoteAddress
+            | Kind::CodeActions => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
             }

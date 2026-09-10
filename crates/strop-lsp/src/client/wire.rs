@@ -6,7 +6,8 @@ use strop_core::id::LineIndex;
 
 use super::queue::WireEnv;
 use crate::protocol::{
-    LocKind, LspEvent, ReplyContext, ServerColumn, ServerLocation, ServerPosition,
+    LocKind, LspEvent, ReplyContext, ServerColumn, ServerEdit, ServerLocation, ServerPosition,
+    WireVersion,
 };
 
 pub(super) fn is_content_modified<T>(resp: &Result<T, async_lsp::Error>) -> bool {
@@ -24,6 +25,112 @@ pub(super) fn first_location(response: lt::GotoDefinitionResponse) -> Option<lt:
             uri: l.target_uri,
             range: l.target_selection_range,
         }),
+    }
+}
+
+/// A wire text edit → a server-domain replacement span.
+pub(super) fn server_edit(edit: lt::TextEdit) -> ServerEdit {
+    let position = |p: lt::Position| ServerPosition {
+        line: LineIndex::new(p.line as usize),
+        column: ServerColumn::new(p.character as usize),
+    };
+    ServerEdit {
+        start: position(edit.range.start),
+        end: position(edit.range.end),
+        new_text: edit.new_text,
+    }
+}
+
+/// Why a server workspace edit can never be delivered as an applicable
+/// edit set — rename refuses the whole reply, a code action degrades to
+/// an inapplicable entry. Never a partial edit set.
+pub(super) enum WorkspaceEditRefusal {
+    /// The edit creates/renames/deletes files: resource operations are
+    /// unsupported, and applying only the text edits would corrupt the
+    /// change.
+    ResourceOperations,
+    /// A versioned text-document edit named a version this connection
+    /// never sent (stale, or a document we do not hold).
+    VersionMismatch(String),
+    /// A target URI does not decode onto the server's workspace.
+    Undecodable(String),
+}
+
+impl WorkspaceEditRefusal {
+    /// The terminal-note text for a refused whole reply.
+    pub(super) fn note_text(&self, kind_label: &str, workspace_label: &str) -> String {
+        match self {
+            Self::ResourceOperations => format!(
+                "{kind_label} edit carries file operations (create/rename/delete) — refusing the whole edit"
+            ),
+            Self::VersionMismatch(uri) => format!(
+                "{kind_label} targets a version of {uri} this connection never sent — refusing the whole edit"
+            ),
+            Self::Undecodable(uri) => {
+                format!("{kind_label} target is not a file on {workspace_label}: {uri} — refusing the whole edit")
+            }
+        }
+    }
+}
+
+/// Decode a server `WorkspaceEdit` — both the `changes` map and
+/// versioned `documentChanges` — into per-resource server-domain edit
+/// groups on the server's own filesystem. URI decoding is the same
+/// workspace decode as locations; a `changes` map is sorted by path so
+/// delivery order never depends on hash seed (R11).
+pub(super) fn workspace_edits(
+    env: &WireEnv,
+    edit: lt::WorkspaceEdit,
+) -> Result<Vec<(strop_workspace::ResourceLocation, Vec<ServerEdit>)>, WorkspaceEditRefusal> {
+    let location = |uri: &lt::Url| {
+        env.workspace
+            .decode(uri)
+            .map(|path| strop_workspace::ResourceLocation {
+                filesystem: env.workspace.target(),
+                path,
+            })
+    };
+    match edit.document_changes {
+        Some(lt::DocumentChanges::Operations(_)) => Err(WorkspaceEditRefusal::ResourceOperations),
+        Some(lt::DocumentChanges::Edits(documents)) => {
+            let mut out = Vec::with_capacity(documents.len());
+            for document in documents {
+                let uri = document.text_document.uri;
+                let Some(doc) = location(&uri) else {
+                    return Err(WorkspaceEditRefusal::Undecodable(uri.to_string()));
+                };
+                if let Some(version) = document.text_document.version {
+                    if super::sync::sent_version(env, &doc.path) != Some(WireVersion::new(version))
+                    {
+                        return Err(WorkspaceEditRefusal::VersionMismatch(uri.to_string()));
+                    }
+                }
+                let edits = document
+                    .edits
+                    .into_iter()
+                    .map(|e| match e {
+                        lt::OneOf::Left(edit) => server_edit(edit),
+                        lt::OneOf::Right(annotated) => server_edit(annotated.text_edit),
+                    })
+                    .collect();
+                out.push((doc, edits));
+            }
+            Ok(out)
+        }
+        None => {
+            let Some(changes) = edit.changes else {
+                return Ok(Vec::new());
+            };
+            let mut out = Vec::with_capacity(changes.len());
+            for (uri, edits) in changes {
+                let Some(doc) = location(&uri) else {
+                    return Err(WorkspaceEditRefusal::Undecodable(uri.to_string()));
+                };
+                out.push((doc, edits.into_iter().map(server_edit).collect()));
+            }
+            out.sort_by(|a, b| a.0.path.cmp(&b.0.path));
+            Ok(out)
+        }
     }
 }
 

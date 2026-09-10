@@ -14,6 +14,7 @@ impl Editor {
                 super::super::io::OpenIntent::Browse,
             ),
             Payload::RemoteConnect => self.open_remote_address(),
+            Payload::CodeAction(index) => self.accept_code_action(index),
             Payload::File(rel) => {
                 self.request_open(
                     rel,

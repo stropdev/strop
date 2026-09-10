@@ -47,6 +47,9 @@ pub enum Payload {
     RemoteDirectory(strop_workspace::RemoteFile),
     /// Switch the same modal picker to its new-address field.
     RemoteConnect,
+    /// A language-server code action: the editor's pending action list
+    /// index. The action payload itself never crosses the picker.
+    CodeAction(usize),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -70,6 +73,9 @@ pub enum Kind {
     Locations,
     RemoteHosts,
     RemoteAddress,
+    /// Language-server code actions (0043): titles listed, acceptance
+    /// applies the chosen action's edits through a change plan.
+    CodeActions,
 }
 
 impl Kind {
@@ -83,6 +89,7 @@ impl Kind {
             Kind::Diagnostics => " diagnostics ",
             Kind::RemoteHosts => " remote destinations ",
             Kind::RemoteAddress => " connect to remote ",
+            Kind::CodeActions => " code actions ",
         }
     }
 }

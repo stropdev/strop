@@ -12,6 +12,7 @@ pub mod contract_probes;
 pub mod trace;
 
 pub(crate) mod analysis;
+mod changes;
 mod cursor;
 mod diagnostics;
 pub(crate) mod resolution;
@@ -199,6 +200,8 @@ pub struct Editor {
     pub cwd: PathBuf,
     /// Bound workspace contexts (0042 slice 2): one per filesystem in use.
     pub workspaces: workspaces::WorkspaceRegistry,
+    /// Applied change plans and their receipts (0043); grouped undo reads it.
+    pub(crate) changes: changes::ChangeState,
     /// MRU document order (most recent first); drives `Space b`.
     pub mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
@@ -342,6 +345,7 @@ impl Editor {
             shell_requests: HashMap::new(),
             shell_focus: None,
             mru: vec![current],
+            changes: changes::ChangeState::default(),
             mode: Mode::Normal,
             pending: pending::PendingInput::default(),
             walker: input::Walker::new(),

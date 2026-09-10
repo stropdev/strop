@@ -316,6 +316,15 @@ impl Editor {
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "help" | "h" => self.open_help(),
             "explain" => self.open_explain(),
+            "format" => self.lsp_format(),
+            "rename" => {
+                if arg.is_empty() {
+                    self.message = ":rename needs a new name".into();
+                } else {
+                    self.lsp_rename(arg);
+                }
+            }
+            "undo-change" => self.undo_last_change(),
             "e" | "e!" => {
                 if arg.is_empty() && cmd == "e!" && self.refresh_remote() {
                     return;

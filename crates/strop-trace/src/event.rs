@@ -3,9 +3,12 @@
 //! Schema 2 adds the closed forensic substream (`Replay` nodes, captured only
 //! under the `Full` content policy) and the always-present terminal `TraceEnd`
 //! marker that distinguishes a complete capture from a capped or failed one.
+//! Schema 3 adds `ReplayChunk`: a forensic value over the per-record cap
+//! travels as an ordered chunk run instead of refusing the capture. Readers
+//! decode homogeneous schema 2 or 3 files.
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Hard upper bounds a capture may use. They exist so a runaway producer
 /// cannot fill the disk; `start` refuses anything outside them, and the
@@ -35,6 +38,7 @@ pub enum EventKind {
     JobRejected,
     LspMessage,
     Replay,
+    ReplayChunk,
     TraceEnd,
     Error,
     Panic,

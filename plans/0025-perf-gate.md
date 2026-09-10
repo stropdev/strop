@@ -46,6 +46,19 @@ percentiles computed over recorded samples. Rationale:
 | `cursors_1k` | 999× ` c` (stack a cursor per line) then one cascaded `i…Esc` edit across 1000 cursors |
 | `input_frame` | 500 insert-mode keystrokes, each followed by a full frame render at 120×40; p50/p95/p99/max |
 
+Stress scenarios (the async services, driven through the same
+`AppEvent` loop + `async_pending` settle as the headless driver —
+fixtures generated deterministically in a tempdir, no network, no
+sleeps):
+
+| scenario | what it measures |
+|---|---|
+| `picker_100k` | one grep request streaming 100k results (200 files × 500 hits) into the picker, settle + a full-list frame |
+| `line_1mb` | a 1 MiB single-line buffer: `$`/`0`/`500w`, a worst-case `fZ`, and a frame at the far end of the line |
+| `replace_project` | the project-replace path over 300 files × 50 hits: search stream, then apply — unopened files load as real buffers, edit, and write back through the io workers |
+| `reopen_cancel` | superseding an 8 MB file load mid-flight and settling the replacement open (plus a plain worker open as reference) |
+| `drop_stale` | revoking a 50k-item picker stream mid-flight via query edits; the queued backlog drains through ticket rejection while the newer stream delivers |
+
 Report: one aligned table, `scenario op n p50 p95 p99 max` (ms,
 2 decimals). Greppable; the baseline below is a paste of one run.
 

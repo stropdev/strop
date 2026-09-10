@@ -269,6 +269,18 @@ impl Editor {
     }
 
     pub(super) fn lsp_request(&mut self, kind: RequestKind) {
+        self.lsp_request_with(kind, None);
+    }
+
+    /// Change-producing requests (0043): rename carries its new name on
+    /// the admitted input so the tape relaunches the identical payload;
+    /// format is document-wide and records the configured tab width on
+    /// the pending request for the same reason.
+    pub(super) fn lsp_change_request(&mut self, kind: RequestKind, rename_to: Option<String>) {
+        self.lsp_request_with(kind, rename_to);
+    }
+
+    fn lsp_request_with(&mut self, kind: RequestKind, rename_to: Option<String>) {
         let hover = kind == RequestKind::Hover;
         if hover {
             self.lsp_state.hover = None;
@@ -317,6 +329,7 @@ impl Editor {
                     .byte_slice(self.buf().line_start(line)..self.buf().line_end(line)),
             ),
             kind,
+            rename_to,
         };
         let native_input = input.clone();
         let prepared = self.tape.call("lsp.prepare", &input, || {
@@ -326,7 +339,12 @@ impl Editor {
             client.prepare_request(native_input)
         });
         match prepared {
-            Ok(Ok(prepared)) => {
+            Ok(Ok(mut prepared)) => {
+                if kind == RequestKind::Format {
+                    // Rides the admitted record so replay relaunches the
+                    // identical payload (tab width included).
+                    prepared.tab_width = Some(self.config.tab_size);
+                }
                 // Register the owner stamp before launching; replayed
                 // replies validate against exactly this stamp.
                 if hover {
@@ -334,8 +352,18 @@ impl Editor {
                 } else {
                     self.lsp_state.navigation = Some(prepared.stamp);
                 }
-                if let RequestKind::Locations(kind) = kind {
-                    self.message = format!("lsp: {} …", kind.label());
+                if matches!(
+                    kind,
+                    RequestKind::Locations(_)
+                        | RequestKind::Format
+                        | RequestKind::Rename
+                        | RequestKind::CodeAction
+                ) {
+                    let label = match kind {
+                        RequestKind::Locations(k) => k.label(),
+                        other => other.label(),
+                    };
+                    self.message = format!("lsp: {label} …");
                 }
                 match self.tape.request("lsp.launch", &prepared) {
                     Ok(true) => {

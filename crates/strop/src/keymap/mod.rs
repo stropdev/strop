@@ -721,6 +721,14 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| e.lsp_hover_pub()),
     },
     Binding {
+        keys: "space a",
+        desc: "code actions",
+        section: "leader",
+        live: true,
+        id: "code-actions",
+        handler: Handler::Leaf(|e, _| e.lsp_code_actions_pub()),
+    },
+    Binding {
         keys: "space j",
         desc: "jumplist picker",
         section: "leader",

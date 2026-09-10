@@ -1,6 +1,16 @@
 # 0043 — Shared change plans: LSP formatting, code actions, rename
 
-Status: adopted from 0041 (handoff S4), planned against the 0.19.1 tree.
+Status: S4a+S4b core implemented (0.20.0-dev): `:format`, `:rename`, `Space a`
+code actions and `:undo-change` all run through `editor/changes/` — one plan,
+one revision-checked gateway application, one receipt. Verified end-to-end
+against real rust-analyzer (rename across definition+call site, grouped undo
+restoring both, format). Deliberate v1 boundaries: targets are documents open
+on the server (others are named refusals, never implicit opens); code actions
+with external commands or file operations are named inapplicable; project
+replace keeps its verify-per-hit path (its per-match staleness checks are a
+stricter contract than plan application — it shares the gateway, not the plan).
+The ChangePlan TLA+ model and worker-side preparation for very large plans
+remain open below.
 Prerequisite landed: 0042 shared resource identity.
 
 ## 1. What exists and what is new

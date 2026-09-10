@@ -54,6 +54,7 @@ fn main() {
                         byte_col: strop_core::id::ByteColumn::new(8),
                         line_text: line_text.into(),
                         kind: strop_lsp::RequestKind::Hover,
+                        rename_to: None,
                     });
                     if let Err(refusal) = admitted {
                         println!("REFUSED {refusal:?}");

@@ -405,6 +405,142 @@ fn replay_nodes_require_complete_full_content_capture() {
 }
 
 #[test]
+fn oversize_forensic_value_chunks_and_replays_completely() {
+    let _session = SESSION.lock();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("chunked.jsonl");
+    let session = start(
+        &path,
+        TraceOptions {
+            content: ContentPolicy::Full,
+            ..TraceOptions::default()
+        },
+    )
+    .unwrap();
+    record(
+        EventKind::SessionStart,
+        &serde_json::json!({"full_content":true}),
+    );
+    let tape = replay::Tape::live();
+    tape.seed(&serde_json::json!({"documents":1})).unwrap();
+    let huge = "xyzzy".repeat(100_000); // 500_000 bytes, well over the record cap
+    tape.check(&serde_json::json!({"completion": huge}))
+        .unwrap();
+    tape.finish().unwrap();
+    // The capture completes: an oversize forensic value no longer refuses it.
+    session.finish().unwrap();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("\"replay_chunk\""));
+    let nodes =
+        export::replay_nodes(io::BufReader::new(std::fs::File::open(&path).unwrap())).unwrap();
+    assert_eq!(nodes.len(), 3, "seed, oversized check, end");
+    let replayed = replay::Tape::replay(nodes);
+    let seed: serde_json::Value = replayed.take_seed().unwrap();
+    assert_eq!(seed["documents"], 1);
+    replayed
+        .check(&serde_json::json!({"completion": huge}))
+        .unwrap();
+    assert!(replayed.next::<serde_json::Value>().unwrap().is_none());
+    replayed.healthy().unwrap();
+
+    // The metadata export of the same file projects categories only: the
+    // chunk carriers and the payload bytes never survive the projection.
+    let mut out = Vec::new();
+    export::metadata(
+        io::BufReader::new(std::fs::File::open(&path).unwrap()),
+        &mut out,
+    )
+    .unwrap();
+    let exported = String::from_utf8(out).unwrap();
+    assert!(exported.contains("\"category\":\"replay\""));
+    assert!(!exported.contains("replay_chunk"));
+    assert!(!exported.contains("xyzzy"));
+}
+
+#[test]
+fn value_at_record_cap_boundary_chunks_exactly_when_over() {
+    let _session = SESSION.lock();
+    let directory = tempfile::tempdir().unwrap();
+    // A Check node serializes as {"kind":"check","value":{"d":"…"}}.
+    let envelope = r#"{"kind":"check","value":{"d":""}}"#.len();
+    for (path, extra, chunked) in [("exact.jsonl", 0, false), ("over.jsonl", 1, true)] {
+        let path = directory.path().join(path);
+        let session = start(
+            &path,
+            TraceOptions {
+                content: ContentPolicy::Full,
+                ..TraceOptions::default()
+            },
+        )
+        .unwrap();
+        let node = replay::Node::Check {
+            value: serde_json::json!({"d": "x".repeat(MAX_RECORD_BYTES - envelope + extra)}),
+        };
+        assert_eq!(
+            serde_json::to_vec(&node).unwrap().len(),
+            MAX_RECORD_BYTES + extra
+        );
+        record(EventKind::Replay, &node);
+        session.finish().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.contains("\"replay_chunk\""), chunked);
+        let mut rows = Vec::new();
+        let complete = export::scan(
+            io::BufReader::new(std::fs::File::open(&path).unwrap()),
+            |row| {
+                rows.push(row);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(complete);
+        assert_eq!(rows.len(), 2, "one logical record plus the terminal");
+        assert_eq!(rows[0].event, EventKind::Replay);
+        let decoded: replay::Node = serde_json::from_value(rows.remove(0).fields).unwrap();
+        assert_eq!(decoded, node);
+    }
+}
+
+#[test]
+fn metadata_mode_never_writes_chunked_payloads() {
+    let _session = SESSION.lock();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("meta.jsonl");
+    let session = start(&path, TraceOptions::default()).unwrap();
+    let needle = "confidential-".repeat(30_000);
+    record(EventKind::Replay, &serde_json::json!({"data": needle}));
+    // Same honest refusal as today: metadata capture never carries payloads,
+    // chunked or otherwise.
+    assert!(session.finish().is_err());
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("replay_chunk"));
+    assert!(!text.contains("confidential"));
+}
+
+#[test]
+fn schema_two_traces_read_unchanged() {
+    let rows = [
+        r#"{"schema_version":2,"seq":1,"elapsed_us":0,"event":"session_start","fields":{"full_content":true}}"#,
+        r#"{"schema_version":2,"seq":2,"elapsed_us":1,"event":"replay","fields":{"kind":"seed","value":{"documents":0}}}"#,
+        r#"{"schema_version":2,"seq":3,"elapsed_us":2,"event":"replay","fields":{"kind":"end"}}"#,
+        r#"{"schema_version":2,"seq":4,"elapsed_us":3,"event":"trace_end","fields":{"complete":true,"reason":"complete"}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    assert!(export::scan(rows.as_bytes(), |_| Ok(())).unwrap());
+    let nodes = export::replay_nodes(rows.as_bytes()).unwrap();
+    assert!(matches!(nodes.first(), Some(replay::Node::Seed { .. })));
+    assert!(matches!(nodes.last(), Some(replay::Node::End)));
+    // A file mixing schema versions is refused, not guessed at.
+    let mixed = rows.replace(
+        r#""schema_version":2,"seq":4"#,
+        r#""schema_version":3,"seq":4"#,
+    );
+    assert!(export::scan(mixed.as_bytes(), |_| Ok(())).is_err());
+}
+
+#[test]
 fn tape_divergences_are_sticky_and_never_reach_native() {
     let nodes = vec![
         replay::Node::Seed {

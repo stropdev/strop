@@ -65,6 +65,36 @@ impl ServerCaps {
         self.flag(|c| c.declaration_provider.is_some())
     }
 
+    /// Document formatting supported? (same unknown-is-no rule as hover)
+    pub fn formatting(&self) -> bool {
+        use async_lsp::lsp_types::OneOf;
+        self.flag(|c| {
+            matches!(
+                c.document_formatting_provider,
+                Some(OneOf::Left(true)) | Some(OneOf::Right(_))
+            )
+        })
+    }
+    pub fn rename(&self) -> bool {
+        use async_lsp::lsp_types::OneOf;
+        self.flag(|c| {
+            matches!(
+                c.rename_provider,
+                Some(OneOf::Left(true)) | Some(OneOf::Right(_))
+            )
+        })
+    }
+    pub fn code_action(&self) -> bool {
+        use async_lsp::lsp_types::CodeActionProviderCapability;
+        self.flag(|c| {
+            matches!(
+                c.code_action_provider,
+                Some(CodeActionProviderCapability::Simple(true))
+                    | Some(CodeActionProviderCapability::Options(_))
+            )
+        })
+    }
+
     /// The negotiated column encoding (spec default UTF-16 until the
     /// initialize result says otherwise).
     pub fn encoding(&self) -> PositionEncoding {
@@ -92,6 +122,9 @@ impl ServerCaps {
             RequestKind::Locations(LocKind::Implementation) => self.implementation(),
             RequestKind::Locations(LocKind::TypeDefinition) => self.type_definition(),
             RequestKind::Locations(LocKind::Declaration) => self.declaration(),
+            RequestKind::Format => self.formatting(),
+            RequestKind::Rename => self.rename(),
+            RequestKind::CodeAction => self.code_action(),
         }
     }
 }

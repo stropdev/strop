@@ -161,6 +161,15 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
             LspEvent::Diagnostics { context, diags, .. } => json!({
                 "service":"lsp","result":"diagnostics","context":context,"count":diags.len(),
             }),
+            LspEvent::Edits { context, edits } => json!({
+                "service":"lsp","result":"edits","context":context,"count":edits.len(),
+            }),
+            LspEvent::WorkspaceEdits { context, edits } => json!({
+                "service":"lsp","result":"workspace_edits","context":context,"targets":edits.len(),
+            }),
+            LspEvent::ActionList { context, actions } => json!({
+                "service":"lsp","result":"code_actions","context":context,"count":actions.len(),
+            }),
             LspEvent::HoverText { context, text } => json!({
                 "service":"lsp","result":"hover","context":context,"bytes":text.len(),
             }),

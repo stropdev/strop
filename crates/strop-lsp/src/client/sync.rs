@@ -78,6 +78,16 @@ pub(super) fn owns(env: &WireEnv, stamp: &RequestStamp, path: &Path) -> bool {
             .is_some_and(|open| open.document == stamp.document && open.revision == stamp.revision)
 }
 
+/// The wire version this connection last sent for `path` — the only
+/// version a server may legitimately name in a versioned edit.
+pub(super) fn sent_version(env: &WireEnv, path: &Path) -> Option<WireVersion> {
+    env.sync
+        .lock()
+        .documents
+        .get(path)
+        .and_then(|open| open.version)
+}
+
 impl Client {
     pub fn did_open(
         &self,

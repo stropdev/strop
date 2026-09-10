@@ -2,7 +2,8 @@
 //! ends in exactly one terminal event (R9) — success, empty, error or
 //! cancellation — carrying its ORIGINAL stamp and negotiated encoding
 use crate::protocol::*;
-use strop_core::id::LineIndex;
+use std::path::PathBuf;
+use strop_core::id::{BufferRevision, ByteColumn, DocumentId, LineIndex};
 use strop_workspace::ResourceLocation;
 
 use super::queue::{WireEnv, WireJob, RETRY_DELAY};
@@ -42,7 +43,11 @@ impl Client {
             document: input.document,
             revision: input.revision,
         };
-        Ok(PendingRequest { stamp, input })
+        Ok(PendingRequest {
+            stamp,
+            input,
+            tab_width: None,
+        })
     }
 
     /// Launch an admitted request: onto the ordered wire when ready,
@@ -63,6 +68,48 @@ impl Client {
         let stamp = request.stamp;
         self.launch_request(request);
         Ok(stamp)
+    }
+
+    /// Formatting admission: no cursor position — the input records
+    /// document identity only, and the tab width rides the admission
+    /// record so a replay relaunches the identical payload.
+    pub fn format(
+        &self,
+        document: DocumentId,
+        revision: BufferRevision,
+        path: PathBuf,
+        tab_width: usize,
+    ) -> Result<RequestStamp, RequestRefusal> {
+        let mut request = self.prepare_request(RequestInput {
+            document,
+            revision,
+            path,
+            line: LineIndex::new(0),
+            byte_col: ByteColumn::new(0),
+            line_text: crate::FrozenLine::from(""),
+            kind: RequestKind::Format,
+            rename_to: None,
+        })?;
+        request.tab_width = Some(tab_width);
+        let stamp = request.stamp;
+        self.launch_request(request);
+        Ok(stamp)
+    }
+
+    /// Rename admission: the new name is recorded on the input so the
+    /// replay tape relaunches against the identical payload.
+    pub fn rename(
+        &self,
+        mut input: RequestInput,
+        new_name: &str,
+    ) -> Result<RequestStamp, RequestRefusal> {
+        input.rename_to = Some(new_name.to_owned());
+        self.request(input)
+    }
+
+    /// Code-action admission at the input's position.
+    pub fn code_actions(&self, input: RequestInput) -> Result<RequestStamp, RequestRefusal> {
+        self.request(input)
     }
 }
 
@@ -107,6 +154,8 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
         text_document: lt::TextDocumentIdentifier { uri },
         position: lt::Position { line, character },
     };
+    let tab_width = request.tab_width;
+    let rename_to = request.input.rename_to.clone();
     let handle = env.handle.clone();
     let env = env.clone();
     handle.spawn(async move {
@@ -124,6 +173,23 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
                 wire::request_locations(&env, kind, tdp, context, path).await
             }
             RequestKind::SwitchHeader => switch_header(env, tdp, context).await,
+            RequestKind::Format => match tab_width {
+                Some(tab_width) => format(env, tdp.text_document.uri, context, tab_width).await,
+                None => note(
+                    &env,
+                    context,
+                    "format request is missing its tab width".into(),
+                ),
+            },
+            RequestKind::Rename => match rename_to {
+                Some(new_name) => rename(env, tdp, context, new_name).await,
+                None => note(
+                    &env,
+                    context,
+                    "rename request is missing its new name".into(),
+                ),
+            },
+            RequestKind::CodeAction => code_actions(env, tdp, context).await,
         }
     });
 }
@@ -260,5 +326,131 @@ async fn switch_header(env: WireEnv, tdp: lt::TextDocumentPositionParams, contex
             context,
             format!("switch source/header failed: {error}"),
         ),
+    }
+}
+
+/// `textDocument/formatting`: the reply's whole-document edits in
+/// server-domain positions. A null reply is an explicit empty edit set,
+/// like the locations family's empty lists.
+async fn format(env: WireEnv, uri: lt::Url, context: ReplyContext, tab_width: usize) {
+    let Ok(tab_size) = u32::try_from(tab_width) else {
+        return note(&env, context, "tab width is out of protocol range".into());
+    };
+    let params = lt::DocumentFormattingParams {
+        text_document: lt::TextDocumentIdentifier { uri },
+        options: lt::FormattingOptions {
+            tab_size,
+            insert_spaces: true,
+            ..Default::default()
+        },
+        work_done_progress_params: Default::default(),
+    };
+    match env.socket.request::<lt::request::Formatting>(params).await {
+        Ok(edits) => {
+            let edits = edits
+                .unwrap_or_default()
+                .into_iter()
+                .map(wire::server_edit)
+                .collect();
+            let _ = env.tx.send(LspEvent::Edits { context, edits });
+        }
+        Err(error) => note(&env, context, format!("format failed: {error}")),
+    }
+}
+
+/// `textDocument/rename`: both `changes` and `documentChanges` decode
+/// to per-resource edit groups; resource operations and foreign
+/// versions refuse the whole reply with a note — never a partial set.
+async fn rename(
+    env: WireEnv,
+    tdp: lt::TextDocumentPositionParams,
+    context: ReplyContext,
+    new_name: String,
+) {
+    let params = lt::RenameParams {
+        text_document_position: tdp,
+        new_name,
+        work_done_progress_params: Default::default(),
+    };
+    match env.socket.request::<lt::request::Rename>(params).await {
+        Ok(Some(edit)) => match wire::workspace_edits(&env, edit) {
+            Ok(edits) => {
+                let _ = env.tx.send(LspEvent::WorkspaceEdits { context, edits });
+            }
+            Err(refusal) => note(
+                &env,
+                context,
+                refusal.note_text("rename", &env.workspace.label()),
+            ),
+        },
+        // A null reply is an explicit empty edit set.
+        Ok(None) => {
+            let _ = env.tx.send(LspEvent::WorkspaceEdits {
+                context,
+                edits: Vec::new(),
+            });
+        }
+        Err(error) => note(&env, context, format!("rename failed: {error}")),
+    }
+}
+
+/// `textDocument/codeAction` at a zero-width range with an empty
+/// diagnostics context: the actions available at the cursor.
+async fn code_actions(env: WireEnv, tdp: lt::TextDocumentPositionParams, context: ReplyContext) {
+    let params = lt::CodeActionParams {
+        text_document: tdp.text_document,
+        range: lt::Range {
+            start: tdp.position,
+            end: tdp.position,
+        },
+        context: lt::CodeActionContext {
+            diagnostics: Vec::new(),
+            only: None,
+            trigger_kind: None,
+        },
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
+    };
+    match env
+        .socket
+        .request::<lt::request::CodeActionRequest>(params)
+        .await
+    {
+        Ok(Some(items)) => {
+            let actions = items
+                .into_iter()
+                .map(|item| match item {
+                    lt::CodeActionOrCommand::Command(command) => ProtoAction {
+                        title: command.title,
+                        edits: None,
+                        has_external_command: true,
+                    },
+                    lt::CodeActionOrCommand::CodeAction(action) => {
+                        // An action whose edit carries file operations,
+                        // unverifiable versions or undecodable targets
+                        // cannot be applied: it stays listed by title
+                        // with `edits: None`, and the editor marks it
+                        // inapplicable.
+                        let edits = action
+                            .edit
+                            .and_then(|edit| wire::workspace_edits(&env, edit).ok());
+                        ProtoAction {
+                            title: action.title,
+                            edits,
+                            has_external_command: action.command.is_some(),
+                        }
+                    }
+                })
+                .collect();
+            let _ = env.tx.send(LspEvent::ActionList { context, actions });
+        }
+        // A null reply is an explicit empty action list.
+        Ok(None) => {
+            let _ = env.tx.send(LspEvent::ActionList {
+                context,
+                actions: Vec::new(),
+            });
+        }
+        Err(error) => note(&env, context, format!("code action failed: {error}")),
     }
 }

@@ -9,9 +9,10 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 /// Schemas the input extractor understands. Schema 2 adds the forensic
-/// `replay` substream and the terminal `trace_end` marker; input-only
-/// extraction works on both.
-const EXTRACT_SCHEMAS: [u32; 2] = [1, 2];
+/// `replay` substream and the terminal `trace_end` marker; schema 3 adds
+/// chunked oversize carriers, which input extraction skips — a chunked
+/// seed still refuses loudly as "no initial document snapshot".
+const EXTRACT_SCHEMAS: [u32; 3] = [1, 2, 3];
 
 pub fn write_script(path: &Path, out: &mut dyn Write) -> io::Result<()> {
     let source = io::BufReader::new(std::fs::File::open(path)?);

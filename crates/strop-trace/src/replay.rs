@@ -238,10 +238,11 @@ impl Tape {
         }
     }
 
-    /// Serialize through the same bounded encoder admission uses, so an
-    /// oversize forensic value can never become a sliced JSON line.
+    /// Serialize through a bounded encoder sized to the assembled-value
+    /// bound: admission chunks whatever exceeds one record, and only a
+    /// value beyond a whole capture still degrades the session.
     fn value<T: Serialize>(&self, value: &T) -> io::Result<Value> {
-        let mut bytes = crate::bounded::Bytes::new(crate::MAX_RECORD_BYTES);
+        let mut bytes = crate::bounded::Bytes::new(crate::chunk::MAX_VALUE_BYTES);
         if serde_json::to_writer(&mut bytes, value).is_err() {
             if self.is_replay() || self.has_fixture() {
                 return self.fail("replay value exceeds capture bound");

@@ -159,6 +159,74 @@ impl Editor {
                 }
                 self.message = text;
             }
+            LspEvent::Edits { context, edits } => {
+                if !self.finish_lsp_reply(&context) {
+                    trace::services::rejected("lsp", "edit request owner/revision changed");
+                    return;
+                }
+                if edits.is_empty() {
+                    self.message = "already formatted".into();
+                    return;
+                }
+                let Some(location) =
+                    self.lsp_state
+                        .bindings
+                        .get(&context.stamp.document)
+                        .map(|binding| ResourceLocation {
+                            filesystem: binding.target.clone(),
+                            path: binding.path.clone(),
+                        })
+                else {
+                    trace::services::rejected("lsp", "edits for an unbound document");
+                    return;
+                };
+                let plan = self.build_change_plan(
+                    super::changes::ChangeProducer::Format,
+                    vec![(location, edits)],
+                    context.encoding,
+                );
+                self.apply_change_plan(plan);
+            }
+            LspEvent::WorkspaceEdits { context, edits } => {
+                if !self.finish_lsp_reply(&context) {
+                    trace::services::rejected("lsp", "workspace-edit owner/revision changed");
+                    return;
+                }
+                if edits.is_empty() {
+                    self.message = format!("lsp: {} made no edits", context.kind.label());
+                    return;
+                }
+                let producer = match context.kind {
+                    strop_lsp::RequestKind::Rename => super::changes::ChangeProducer::Rename,
+                    _ => super::changes::ChangeProducer::CodeAction,
+                };
+                let plan = self.build_change_plan(producer, edits, context.encoding);
+                self.apply_change_plan(plan);
+            }
+            LspEvent::ActionList { context, actions } => {
+                if !self.finish_lsp_reply(&context) {
+                    trace::services::rejected("lsp", "code-action owner/revision changed");
+                    return;
+                }
+                if actions.is_empty() {
+                    self.message = "no code actions here".into();
+                    return;
+                }
+                let items = actions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, action)| strop_picker::Item {
+                        text: action.title.clone(),
+                        payload: strop_picker::Payload::CodeAction(index),
+                    })
+                    .collect();
+                self.changes.pending_actions = actions;
+                self.open_picker(strop_picker::Kind::CodeActions);
+                self.changes.pending_encoding = context.encoding;
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.picker.append(items);
+                }
+            }
             LspEvent::GotoLocation { context, location } => {
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected(
@@ -391,6 +459,18 @@ impl Editor {
     pub(crate) fn lsp_switch_source_header(&mut self) {
         self.lsp_request(strop_lsp::RequestKind::SwitchHeader);
     }
+    /// `:format` — server formatting through a change plan (0043).
+    pub(crate) fn lsp_format(&mut self) {
+        self.lsp_change_request(strop_lsp::RequestKind::Format, None);
+    }
+    /// `:rename <new>` — workspace rename through a change plan.
+    pub(crate) fn lsp_rename(&mut self, new_name: &str) {
+        self.lsp_change_request(strop_lsp::RequestKind::Rename, Some(new_name.to_string()));
+    }
+    /// `Space a` — code actions at the cursor, offered as a picker.
+    pub(crate) fn lsp_code_actions(&mut self) {
+        self.lsp_change_request(strop_lsp::RequestKind::CodeAction, None);
+    }
 
     pub(crate) fn jump_diagnostic(&mut self, forward: bool) {
         let Some(diags) = self
@@ -501,6 +581,9 @@ impl Editor {
     }
     pub(crate) fn lsp_hover_pub(&mut self) {
         self.lsp_hover();
+    }
+    pub fn lsp_code_actions_pub(&mut self) {
+        self.lsp_code_actions();
     }
     pub fn lsp_locations_pub(&mut self, kind: strop_lsp::LocKind) {
         self.lsp_locations(kind);

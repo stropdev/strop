@@ -106,7 +106,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             configuration.print_knobs();
         }
         cli::Command::Update { check_only } => update::update(check_only)?,
-        cli::Command::Bench { scenario } => bench::run(&scenario),
+        cli::Command::Bench { scenario } => bench::run(&scenario)?,
         cli::Command::Replay { trace } => replay::write_script(&trace, &mut io::stdout().lock())?,
         cli::Command::ReplayFull { .. } | cli::Command::ExportMetadata { .. } => {
             return Err("replay/export must run outside live startup".into());

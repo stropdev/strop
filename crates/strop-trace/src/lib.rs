@@ -1,10 +1,12 @@
 //! One opt-in diagnostic sink for all strop crates. Producers never perform file
 //! I/O or wait for the writer; an incomplete trace is always reported as such.
-//!
 //! Capture is bounded (total bytes, total events, per-record bytes) and every
 //! finished file ends with an explicit terminal `TraceEnd` marker, so a capped
-//! or failed capture can never be mistaken for a complete one.
+//! or failed capture can never be mistaken for a complete one. Forensic values
+//! over the per-record cap travel as ordered `replay_chunk` runs (schema 3)
+//! that the reader reassembles strictly — or refuses loudly.
 mod bounded;
+mod chunk;
 mod event;
 pub mod export;
 pub mod replay;
@@ -156,34 +158,67 @@ pub fn record<T: Serialize>(kind: EventKind, fields: &T) {
         return;
     }
     let mut bytes = bounded::Bytes::new(recorder.max_record);
-    if serde_json::to_writer(&mut bytes, fields).is_err() {
-        recorder
-            .failure
-            .set(|| "record exceeds cap or cannot serialize".into());
-        sender.take();
+    if serde_json::to_writer(&mut bytes, fields).is_ok() {
+        let record = Record {
+            kind,
+            elapsed_us: recorder.started.elapsed().as_micros(),
+            fields: bytes.into_vec(),
+        };
+        if sender
+            .as_ref()
+            .expect("checked sender")
+            .try_send(record)
+            .is_err()
+        {
+            recorder
+                .failure
+                .set(|| "capture queue full or writer unavailable".into());
+            sender.take();
+        }
         return;
     }
-    let record = Record {
-        kind,
-        elapsed_us: recorder.started.elapsed().as_micros(),
-        fields: bytes.into_vec(),
-    };
-    if sender
-        .as_ref()
-        .expect("checked sender")
-        .try_send(record)
-        .is_err()
-    {
-        recorder
-            .failure
-            .set(|| "capture queue full or writer unavailable".into());
-        sender.take();
+    // Only the forensic substream chunks: replay completeness is contractual
+    // there, and the Full content policy is what may carry payloads at all.
+    // Every other oversize record keeps the honest refusal below.
+    if kind == EventKind::Replay && CONTENT.load(Ordering::Relaxed) {
+        if let Some(chunks) = chunk::serialize(kind, fields, recorder.max_record) {
+            let mut admitted = true;
+            for fields in chunks {
+                let record = Record {
+                    kind: EventKind::ReplayChunk,
+                    elapsed_us: recorder.started.elapsed().as_micros(),
+                    fields,
+                };
+                if sender
+                    .as_ref()
+                    .expect("checked sender")
+                    .try_send(record)
+                    .is_err()
+                {
+                    admitted = false;
+                    break;
+                }
+            }
+            if admitted {
+                return;
+            }
+            recorder
+                .failure
+                .set(|| "capture queue full or writer unavailable".into());
+            sender.take();
+            return;
+        }
     }
+    recorder
+        .failure
+        .set(|| "record exceeds cap or cannot serialize".into());
+    sender.take();
 }
 
-/// End the capture visibly (used when a forensic value exceeds its cap
-/// mid-session): no further records are admitted and the terminal marker
-/// reports the capture incomplete instead of silently shrinking.
+/// End the capture visibly when honest continuation is impossible (a value
+/// beyond even the assembled-value bound, a writer failure): no further
+/// records are admitted and the terminal marker reports the capture
+/// incomplete instead of silently shrinking.
 pub fn mark_incomplete(message: &'static str) {
     let Some(recorder) = ACTIVE.lock().clone() else {
         return;

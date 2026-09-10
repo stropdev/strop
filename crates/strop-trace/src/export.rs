@@ -28,11 +28,20 @@ const TOTAL_LIMIT: usize = MAX_CAPTURE_BYTES;
 /// Stream the rows of a trace. Verifies schema, sequence continuity, a
 /// single terminal `TraceEnd` and bounded size. Returns whether the file
 /// ended complete (`TraceEnd` present with `complete: true`).
+///
+/// Schema 2 and 3 are both accepted (homogeneously per file). Schema-3
+/// chunk carriers are reassembled before delivery: visitors see logical
+/// records only, an assembled record keeps its first chunk's sequence, and
+/// every corruption of a chunk run is an explicit error. A run abandoned
+/// by the stream makes the trace incomplete — an error when the terminal
+/// marker claims otherwise — and its partial bytes are never delivered.
 pub fn scan(
     mut input: impl BufRead,
     mut visit: impl FnMut(Row) -> io::Result<()>,
 ) -> io::Result<bool> {
     let (mut total, mut seq, mut ended, mut complete) = (0usize, 1u64, false, false);
+    let mut version: Option<u32> = None;
+    let mut chunks = crate::chunk::Assembler::new();
     loop {
         let mut bytes = Vec::new();
         let read = Read::by_ref(&mut input)
@@ -52,15 +61,40 @@ pub fn scan(
         }
         let row: Row =
             serde_json::from_slice(&bytes).map_err(|_| io::Error::other("invalid trace record"))?;
-        if row.schema_version != SCHEMA_VERSION || row.seq != seq {
+        // Schemas 2 and 3 decode identically apart from chunk records, and
+        // a file never mixes versions.
+        if version.is_none() {
+            version = Some(row.schema_version);
+        }
+        let supported = row.schema_version == SCHEMA_VERSION || row.schema_version == 2;
+        if !supported || version != Some(row.schema_version) || row.seq != seq {
             return Err(io::Error::other("unsupported schema or missing sequence"));
         }
         seq = seq
             .checked_add(1)
             .ok_or_else(|| io::Error::other("sequence overflow"))?;
+        if row.event == EventKind::ReplayChunk {
+            if row.schema_version < 3 {
+                return Err(io::Error::other("chunk record in pre-chunk schema"));
+            }
+            if let Some((first, event, fields)) = chunks.accept(row.seq, row.fields)? {
+                visit(Row {
+                    schema_version: row.schema_version,
+                    seq: first,
+                    event,
+                    fields,
+                })?;
+            }
+            continue;
+        }
         if row.event == EventKind::TraceEnd {
             ended = true;
             complete = row.fields["complete"] == true;
+            if complete && chunks.is_open() {
+                return Err(io::Error::other(
+                    "complete trace cannot abandon a chunk run",
+                ));
+            }
         }
         visit(row)?;
     }

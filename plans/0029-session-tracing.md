@@ -46,6 +46,16 @@ Schema 2 reserves a terminal `TraceEnd` record. Hard limits are 64 MiB total,
 100,000 records and 256 KiB per record. A cap, queue failure or writer failure
 cannot masquerade as a complete capture; full replay rejects incomplete input.
 
+Schema 3 adds `ReplayChunk` (0028 P2): a forensic value whose serialized fields
+exceed the per-record cap travels as an ordered run of chunk records sharing a
+capture id, each declaring the original event, assembled byte total, chunk
+count, index and the SHA-256 digest of the assembled bytes. Assembly is bounded
+by the declared total (capped at the whole-capture limit) and refuses missing,
+duplicated, reordered or foreign chunks, wrong totals, bad digests and runs the
+stream abandons; a partial run is never presented as a complete value. Readers
+decode homogeneous schema 2 and 3 files alike; metadata capture and metadata
+export carry no payloads, chunked or otherwise.
+
 Event payloads have explicit units and retain document slot AND generation
 alongside a buffer-incarnation identity. Service receipts and rejection reasons
 are distinct; applied outcomes appear in subsequent state/mutation records.

@@ -196,6 +196,9 @@ pub enum RequestKind {
     Hover,
     SwitchHeader,
     Locations(LocKind),
+    Format,
+    Rename,
+    CodeAction,
 }
 
 impl RequestKind {
@@ -205,6 +208,9 @@ impl RequestKind {
             Self::Hover => "hover",
             Self::SwitchHeader => "switch source/header",
             Self::Locations(kind) => kind.label(),
+            Self::Format => "format",
+            Self::Rename => "rename",
+            Self::CodeAction => "code action",
         }
     }
 }
@@ -249,6 +255,28 @@ pub struct ServerLocation {
     pub position: ServerPosition,
 }
 
+/// One text replacement in the server domain: lines/columns are the
+/// server's negotiated coordinates until the editor resolves them
+/// against its rope, exactly like [`Diag`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ServerEdit {
+    pub start: ServerPosition,
+    pub end: ServerPosition,
+    pub new_text: String,
+}
+
+/// A code action's usable payload. Command-only actions carry
+/// `edits: None` with `has_external_command: true`. An action whose
+/// edit cannot be applied (file operations, unverifiable versions)
+/// keeps its title with `edits: None` and `has_external_command:
+/// false` — the editor lists it but marks it inapplicable.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProtoAction {
+    pub title: String,
+    pub edits: Option<Vec<(ResourceLocation, Vec<ServerEdit>)>>,
+    pub has_external_command: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReplyContext {
     pub stamp: RequestStamp,
@@ -269,6 +297,10 @@ pub struct RequestInput {
     pub byte_col: ByteColumn,
     pub line_text: crate::FrozenLine,
     pub kind: RequestKind,
+    /// The rename target; `None` for every non-rename request. Old
+    /// tapes decode without it.
+    #[serde(default)]
+    pub rename_to: Option<String>,
 }
 
 /// An admitted request: its owning stamp plus the captured input.
@@ -276,6 +308,13 @@ pub struct RequestInput {
 pub struct PendingRequest {
     pub stamp: RequestStamp,
     pub input: RequestInput,
+    /// Format options ride the admission record, not the input: a
+    /// formatting request has no cursor position, and the tape
+    /// serializes this record at `lsp.launch`, so a replayed format
+    /// relaunches with the recorded tab width. `None` for non-format
+    /// requests; old tapes decode without it.
+    #[serde(default)]
+    pub tab_width: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -328,7 +367,24 @@ pub enum LspEvent {
         kind: LocKind,
         items: Vec<ServerLocation>,
     },
-    /// Terminal note: empty result, typed failure or cancellation. The
+    /// Formatting reply: the document's replacement spans in
+    /// server-domain positions (empty when the server has no changes).
+    Edits {
+        context: ReplyContext,
+        edits: Vec<ServerEdit>,
+    },
+    /// Rename or an edit-bearing code action: per-resource edit groups
+    /// in server-domain positions.
+    WorkspaceEdits {
+        context: ReplyContext,
+        edits: Vec<(ResourceLocation, Vec<ServerEdit>)>,
+    },
+    /// Code-action reply: the server's listed actions with their
+    /// usable payloads.
+    ActionList {
+        context: ReplyContext,
+        actions: Vec<ProtoAction>,
+    },
     /// context is the ORIGINAL request's — never re-derived.
     Note {
         context: ReplyContext,
