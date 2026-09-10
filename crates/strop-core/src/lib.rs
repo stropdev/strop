@@ -3,6 +3,7 @@
 
 mod buffer;
 pub mod diagnostics;
+pub mod editmap;
 pub mod history;
 pub mod id;
 pub mod layout;

@@ -20,3 +20,7 @@ jobs:
       # (0024 — the 0023 probe classes as protocol invariants)
       - name: Protocol model (TLC)
         run: docker compose run --build --rm model
+
+      # the verified edit-geometry kernel (0045) — pinned Verus/z3 image
+      - name: Edit geometry proof (Verus)
+        run: docker compose run --build --rm verify

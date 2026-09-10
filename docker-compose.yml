@@ -29,6 +29,15 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     command: cargo test --locked -p strop-containers
+
+  # The Verus pilot gate (0045): its own pinned toolchain image,
+  # never in the shipping build graph.
+  verify:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: verify
+    command: 'echo "gate passed: edit-geometry kernel verified (Verus)"'
   build:
     build:
       context: .

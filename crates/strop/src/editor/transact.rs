@@ -129,12 +129,15 @@ impl super::Editor {
 
 fn map_position(position: usize, change: &Change) -> usize {
     let edit = change.edit;
-    if position < edit.start_byte {
-        position
-    } else if position >= edit.old_end_byte {
-        edit.new_end_byte
-            .saturating_add(position - edit.old_end_byte)
-    } else {
-        edit.start_byte
-    }
+    debug_assert!(edit.start_byte <= edit.old_end_byte);
+    // The verified kernel (strop_core::editmap, 0045): positions are
+    // byte offsets bounded by the buffer length, so its no-overflow
+    // precondition is established by the rope, not by this caller.
+    debug_assert!(edit.new_end_byte >= edit.start_byte);
+    strop_core::editmap::map_position(
+        position,
+        edit.start_byte,
+        edit.old_end_byte,
+        edit.new_end_byte,
+    )
 }

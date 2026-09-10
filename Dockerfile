@@ -50,3 +50,23 @@ ADD --checksum=sha256:${TLA_TOOLS_SHA256} https://github.com/tlaplus/tlaplus/rel
 WORKDIR /work
 COPY specs ./specs
 RUN sh specs/gate.sh
+
+# The Verus pilot (0045): proves the edit-geometry kernel in strop-core.
+# Deliberately NOT rust:alpine — the verifier pins its own compiler
+# (1.98.0) and solver (z3 4.16.0); the shipping TUI toolchain is
+# untouched. Tooling is checksum-pinned like the model stage.
+FROM rust:1.98.0-slim AS verify
+ARG VERUS_SHA256=13d01e134c0620c3b29770874707d16c33b3d227c843a489c8ceb744d43c0a16
+ARG Z3_SHA256=7288c49a5bd6dbafd7b0b0d1f65956b91672da24b08f09242919af159be3418e
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ADD --checksum=sha256:${VERUS_SHA256} https://github.com/verus-lang/verus/releases/download/release/0.2026.09.06.8dea4a2/verus-0.2026.09.06.8dea4a2-x86-linux.zip /opt/verus.zip
+ADD --checksum=sha256:${Z3_SHA256} https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip /opt/z3.zip
+RUN cd /opt && unzip -q verus.zip && unzip -q z3.zip -d z3
+ENV PATH=/opt/verus-x86-linux:$PATH
+ENV VERUS_Z3_PATH=/opt/z3/z3-4.16.0-x64-glibc-2.39/bin/z3
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+# Only strop-core carries verus! blocks today; verify it alone.
+RUN cargo verus verify -p strop-core
