@@ -316,6 +316,7 @@ impl Editor {
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "help" | "h" => self.open_help(),
             "explain" => self.open_explain(),
+            "containers" => self.request_containers(),
             "format" => self.lsp_format(),
             "rename" => {
                 if arg.is_empty() {

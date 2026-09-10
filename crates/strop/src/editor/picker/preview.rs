@@ -41,9 +41,10 @@ impl Editor {
     pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
         let item = self.picker.as_ref()?.picker.current()?;
         let (path, focus_line) = match &item.payload {
-            Payload::RemoteDirectory(_) | Payload::RemoteConnect | Payload::CodeAction(_) => {
-                return None
-            }
+            Payload::RemoteDirectory(_)
+            | Payload::RemoteConnect
+            | Payload::CodeAction(_)
+            | Payload::Container(_) => return None,
             Payload::Buffer(document) => {
                 let name = self
                     .docs

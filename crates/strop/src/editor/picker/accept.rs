@@ -15,6 +15,7 @@ impl Editor {
             ),
             Payload::RemoteConnect => self.open_remote_address(),
             Payload::CodeAction(index) => self.accept_code_action(index),
+            Payload::Container(id) => self.attach_container(id),
             Payload::File(rel) => {
                 self.request_open(
                     rel,

@@ -6,14 +6,17 @@
 //! editor, LSP, Git and the picker instead of one per consumer. The serde
 //! wire shape is unchanged (`Local` / `Remote`), so traces and sessions
 //! written before the move still decode.
-
 use crate::addr::RemoteEndpoint;
+use crate::container::ContainerId;
 
 /// The filesystem a path names.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Filesystem {
     Local,
     Remote(RemoteEndpoint),
+    /// A running container on the local engine (0037 DC1a) — paths inside
+    /// it are never local paths.
+    Container(ContainerId),
 }
 
 impl Default for Filesystem {
@@ -26,10 +29,13 @@ impl Default for Filesystem {
 
 impl Filesystem {
     /// Modeline/trace form: bare for local, the endpoint URI otherwise.
+    /// Modeline/trace form: bare for local, the endpoint URI or the
+    /// short container id otherwise.
     pub fn label(&self) -> String {
         match self {
             Self::Local => "local".to_string(),
             Self::Remote(endpoint) => endpoint.to_string(),
+            Self::Container(id) => format!("container:{}", &id.as_str()[..12]),
         }
     }
 
@@ -39,8 +45,8 @@ impl Filesystem {
 
     pub fn endpoint(&self) -> Option<&RemoteEndpoint> {
         match self {
-            Self::Local => None,
             Self::Remote(endpoint) => Some(endpoint),
+            _ => None,
         }
     }
 }

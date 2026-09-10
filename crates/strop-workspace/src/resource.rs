@@ -39,7 +39,7 @@ impl ResourceLocation {
     pub fn label(&self) -> String {
         match &self.filesystem {
             Filesystem::Local => self.path.display().to_string(),
-            Filesystem::Remote(endpoint) => format!("{endpoint}{}", self.path.display()),
+            other => format!("{}{}", other.label(), self.path.display()),
         }
     }
 
@@ -48,7 +48,7 @@ impl ResourceLocation {
     pub fn local_path(&self) -> Option<&std::path::Path> {
         match &self.filesystem {
             Filesystem::Local => Some(&self.path),
-            Filesystem::Remote(_) => None,
+            _ => None,
         }
     }
 }

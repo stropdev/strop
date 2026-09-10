@@ -14,6 +14,7 @@ strop-git = { path = "../strop-git", version = "0.19.1" }
 strop-syntax = { path = "../strop-syntax", version = "0.19.1" }
 strop-lsp = { path = "../strop-lsp", version = "0.19.1" }
 strop-workspace = { path = "../strop-workspace", version = "0.19.1" }
+strop-containers = { path = "../strop-containers", version = "0.19.1" }
 parking_lot = "0.12"
 unicode-segmentation = "1"
 tree-sitter = "0.25"

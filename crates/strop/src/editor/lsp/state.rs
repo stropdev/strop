@@ -308,6 +308,9 @@ impl Editor {
                         "no language server on {endpoint} — install it there or fix languages.toml"
                     )
                 }
+                strop_workspace::Filesystem::Container(_) => {
+                    self.message = "language services in containers are not wired yet".into()
+                }
             }
             return;
         };

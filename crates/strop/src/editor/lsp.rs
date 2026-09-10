@@ -259,7 +259,7 @@ impl Editor {
                         use strop_picker::{Item, Kind, Payload};
                         let items = items
                             .into_iter()
-                            .map(|location| {
+                            .filter_map(|location| {
                                 let line = location.position.line.get() + 1;
                                 let col = location.position.column.get() + 1;
                                 let text = format!("{}:{}:{}", location.doc.label(), line, col);
@@ -277,8 +277,19 @@ impl Editor {
                                         line,
                                         col,
                                     },
+                                    // DC1a wires no container LSP, so a container
+                                    // location cannot arrive; if one ever does, it
+                                    // is dropped with a trace, never aliased to a
+                                    // local path.
+                                    Filesystem::Container(_) => {
+                                        trace::services::rejected(
+                                            "lsp",
+                                            "location in a container namespace (unwired)",
+                                        );
+                                        return None;
+                                    }
                                 };
-                                Item { text, payload }
+                                Some(Item { text, payload })
                             })
                             .collect();
                         let mut glue = super::PickerGlue::diagnostics(strop_picker::Picker::new(
@@ -329,6 +340,10 @@ impl Editor {
                             "lsp: the remote workspace for this target was closed".into();
                     }
                 }
+            }
+            Filesystem::Container(_) => {
+                trace::services::rejected("lsp", "navigation into a container namespace (unwired)");
+                self.message = "lsp: container locations are not navigable yet".into();
             }
         }
     }
@@ -559,6 +574,15 @@ impl Editor {
                             col,
                         },
                     }),
+                    // Unreachable in DC1a (no container bindings); if one
+                    // ever arrives it is dropped with a trace, never
+                    // aliased to a local path.
+                    Filesystem::Container(_) => {
+                        trace::services::rejected(
+                            "lsp",
+                            "diagnostic in a container namespace (unwired)",
+                        );
+                    }
                 }
             }
         }

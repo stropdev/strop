@@ -15,6 +15,20 @@ services:
     # exists, the gate passed. The command is just a confirmation.
     command: 'echo "gate passed: fmt + clippy -D warnings + cargo test"'
 
+
+  # Container integration tests (0037 DC1a): run on the HOST engine via
+  # the socket; fixtures are uniquely labelled and self-cleaning, and
+  # only the strop-containers gated tests run here.
+  container-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bin
+    environment:
+      - STROP_CONTAINER_TESTS=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: cargo test --locked -p strop-containers
   build:
     build:
       context: .

@@ -43,6 +43,14 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
         "remote",
         "choose remote destination; edit/verify/root/home/connect/disconnect/clear/list",
     ),
+    (
+        "explain",
+        "why: workspaces, LSP readiness, effective config",
+    ),
+    ("containers", "attach to a running container (read-only)"),
+    ("format", "format the buffer through the language server"),
+    ("rename", "rename the symbol under the cursor: :rename NEW"),
+    ("undo-change", "undo the last applied change plan"),
 ];
 
 impl Editor {

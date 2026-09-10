@@ -11,9 +11,11 @@
 //! - [`ResourceLocation`]: one resolved path on one filesystem.
 
 pub mod addr;
+mod container;
 mod filesystem;
 mod resource;
 
 pub use addr::{AddressError, RemoteEndpoint, RemoteFile, RemoteLocation};
+pub use container::{ContainerId, ContainerIdError};
 pub use filesystem::Filesystem;
 pub use resource::ResourceLocation;

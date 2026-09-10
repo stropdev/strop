@@ -50,6 +50,8 @@ pub enum Payload {
     /// A language-server code action: the editor's pending action list
     /// index. The action payload itself never crosses the picker.
     CodeAction(usize),
+    /// A running container's canonical inspect id (0037 DC1a).
+    Container(String),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -76,6 +78,8 @@ pub enum Kind {
     /// Language-server code actions (0043): titles listed, acceptance
     /// applies the chosen action's edits through a change plan.
     CodeActions,
+    /// Running containers on the local engine (0037 DC1a).
+    Containers,
 }
 
 impl Kind {
@@ -86,6 +90,7 @@ impl Kind {
             Kind::Grep => " grep ",
             Kind::Replace => " replace ",
             Kind::Locations => " locations ",
+            Kind::Containers => " containers ",
             Kind::Diagnostics => " diagnostics ",
             Kind::RemoteHosts => " remote destinations ",
             Kind::RemoteAddress => " connect to remote ",

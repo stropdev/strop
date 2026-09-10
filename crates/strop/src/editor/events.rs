@@ -33,6 +33,7 @@ pub enum AppEvent {
     Shell(ShellResult),
     Io(super::io::IoEvent),
     RemoteCompletion(super::remote_completion::RemoteCompletionEvent),
+    Container(super::containers::ContainerEvent),
     Git(super::GitJob),
     Picker(super::picker::PickerEvent),
     PickerRanking(super::picker::ranking::Event),
@@ -68,6 +69,9 @@ impl Editor {
         }
         if let Some(rx) = self.remote_completion.rx.take() {
             forward(rx, tx.clone(), AppEvent::RemoteCompletion);
+        }
+        if let Some(rx) = self.containers.take_rx() {
+            forward(rx, tx.clone(), AppEvent::Container);
         }
         if let Some(rx) = self.shell_rx.take() {
             forward(rx, tx.clone(), AppEvent::Shell);
@@ -136,6 +140,7 @@ impl Editor {
             AppEvent::Shell(r) => self.handle_shell_result(r),
             AppEvent::Io(event) => self.handle_io(event),
             AppEvent::RemoteCompletion(event) => self.handle_remote_completion(event),
+            AppEvent::Container(event) => self.handle_container_event(event),
             AppEvent::Git(job) => self.handle_git_job(job),
             AppEvent::Picker(event) => self.handle_picker_event(event),
             AppEvent::PickerRanking(event) => self.handle_picker_ranking(event),
@@ -177,6 +182,7 @@ impl Editor {
                 .blame_gutters
                 .values()
                 .any(|gutter| gutter.request.is_some())
+            || self.containers.pending.is_some()
             || !self.lsp_state.attach.pending.is_empty()
             || self.remote_completion.pending.is_some()
             || (!self.finishing

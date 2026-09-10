@@ -14,6 +14,7 @@ pub mod trace;
 pub(crate) mod analysis;
 mod changes;
 mod collections;
+mod containers;
 mod cursor;
 mod diagnostics;
 pub(crate) mod resolution;
@@ -205,6 +206,8 @@ pub struct Editor {
     pub(crate) changes: changes::ChangeState,
     /// Open editable code collections by their buffer document (0044).
     pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
+    /// Container attach/browse state (0037 DC1a).
+    pub(crate) containers: containers::ContainerState,
     /// MRU document order (most recent first); drives `Space b`.
     pub mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
@@ -347,6 +350,7 @@ impl Editor {
             git_mutation: None,
             shell_requests: HashMap::new(),
             shell_focus: None,
+            containers: containers::ContainerState::default(),
             mru: vec![current],
             changes: changes::ChangeState::default(),
             collections: HashMap::new(),

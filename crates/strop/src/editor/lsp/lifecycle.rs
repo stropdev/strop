@@ -116,6 +116,9 @@ impl Editor {
                     client: self.remote_client(),
                 }
             }
+            // DC1a: containers are browse/read only; service routing into
+            // a container context is DC1b.
+            Filesystem::Container(_) => return,
         };
         let input = attach::DiscoverInput {
             ticket,
@@ -409,7 +412,7 @@ impl Editor {
             .filter(|a| {
                 let endpoint = match &a.target {
                     Filesystem::Remote(endpoint) => endpoint,
-                    Filesystem::Local => return false,
+                    _ => return false,
                 };
                 !self.docs.iter().any(|(id, document)| {
                     document.remote_metadata().is_some_and(|source| {

@@ -186,7 +186,8 @@ impl Editor {
             | Kind::Replace
             | Kind::RemoteHosts
             | Kind::RemoteAddress
-            | Kind::CodeActions => vec![],
+            | Kind::CodeActions
+            | Kind::Containers => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
             }

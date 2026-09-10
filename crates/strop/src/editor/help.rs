@@ -68,6 +68,7 @@ impl Editor {
             "  directory columns       kind, POSIX permissions, server bytes, name; ? = unknown\n",
             "  :explain                 Why: workspaces, LSP readiness/refusals, effective config\n",
             "  ctrl-o in a results list  Open hits as an editable collection (edits write back)\n",
+            "  :containers               Attach to a running container (read-only browse)\n",
         ));
         let mut buf = Buffer::from_text(&text);
         buf.name = Some("help".into());

@@ -279,6 +279,9 @@ impl Editor {
         if self.remote_directory_key(key) {
             return;
         }
+        if self.container_key(key) {
+            return;
+        }
         match key {
             Key::Char('q') => self.close_surface(),
             Key::CtrlL => self.needs_repaint = true,

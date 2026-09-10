@@ -126,6 +126,19 @@ pretend rollback. No resident privileged shell is introduced.
 
 ### DC1 — Existing-container context (P3; depends on RW11 container backend)
 
+Split in two for delivery (9 Sep 2026): **DC1a — browse/read**: `strop-containers`
+owns local-engine probe, canonical container identity (inspect resolves
+name/prefix to the 64-hex id; a name that later resolves differently is a
+stale-identity refusal), supervised `docker exec` reads/lists with deadlines
+and bounded output, and read-only editor buffers for listings and files.
+`Filesystem::Container(ContainerId)` joins the shared namespace identity
+(0042); the engine is local-only until a remote-engine field is earned.
+Accept: no SSH daemon, no analogous local path accessed, restart between
+inspect and read detected where cheap, detach closes only what strop opened,
+nothing is ever stopped or removed. **DC1b — LSP/Git/writes policy** remains
+open: service routing into a container context, and the write capability
+decision (likely refuse, like early SFTP).
+
 Attach without provisioning. Resolve immutable engine/container/user/workspace
 identity; browse/read files and run the same LSP/Git paths in that context. Accept:
 no SSH daemon is required; no analogous local path is accessed; container restart or
