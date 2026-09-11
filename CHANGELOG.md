@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.27.0 — 2026-09-11
+
+The multibuffer gets its presentation (0049 §6), and picker rows gain
+structure coloring.
+
+### Added
+
+- **Collection cards**: one rounded card per source file — top border
+  with the path in accent, language and modified badges, excerpt bodies
+  guttering their SOURCE line numbers, a `⋮ N source lines omitted` gap
+  row between disjoint excerpts of one file, and a full-width bottom
+  border. Cards present in path order. The title row reports matches,
+  files and dirty sources. Chrome rows are typed, addressable and
+  protected (edits refuse and the view refreshes) — structure is data
+  (`CollectionRow`), never parsed back from text.
+- **Picker locator dimming**: file rows dim the directory portion and
+  keep the name bright; grep/jump/remote hits dim the `path:line`
+  locator — computed from payload fields, not text parsing.
+
 ## 0.26.0 — 2026-09-11
 
 ### Fixed

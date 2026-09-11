@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-strop-trace = { path = "../strop-trace", version = "0.26.0" }
+strop-trace = { path = "../strop-trace", version = "0.27.0" }
 ropey = "1"
 serde = { version = "1", features = ["derive", "rc"] }
 unicode-segmentation = "1"

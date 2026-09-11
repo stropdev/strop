@@ -80,7 +80,7 @@ fn collection_builds_from_picker_hits() {
     let text = current_text(&e);
     assert!(text.contains("alpha one"), "{text}");
     assert!(text.contains("beta two"), "{text}");
-    assert!(text.contains("a.txt:1"), "{text}");
+    assert!(text.contains("╭─ a.txt"), "card top: {text}");
     assert_eq!(e.message, "collection: 2 excerpt(s)");
 }
 
@@ -114,7 +114,7 @@ fn editing_a_header_is_refused_and_the_view_refreshes() {
     e.feed(crate::editor::Key::CtrlO);
     // land on the 'a' of "a.txt" inside the header line
     let header_text = e.buf().text().to_string();
-    let at = header_text.find("a.txt:1").unwrap();
+    let at = header_text.find("a.txt").unwrap();
     e.set_head(at);
     e.feed_text("x");
     assert!(
@@ -122,7 +122,7 @@ fn editing_a_header_is_refused_and_the_view_refreshes() {
         "header edit refused: {}",
         e.message
     );
-    assert!(current_text(&e).contains("──"), "{}", current_text(&e));
+    assert!(current_text(&e).contains("╭─"), "{}", current_text(&e));
 }
 
 #[test]
@@ -226,8 +226,8 @@ fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
 fn one_commit_across_excerpts_writes_back_to_both_sources() {
     let (mut e, a, b) = two_file_fixture();
     e.feed(crate::editor::Key::CtrlO);
-    // title 1, header-a 2, body-a 3, header-b 4, body-b 5 (1-based)
-    e.feed_text(":3,5s/one/1/\r");
+    // title 1, card-a 2, body-a 3, bottom 4, card-b 5, body-b 6 (0049 §6)
+    e.feed_text(":3,6s/one/1/\r");
     assert_eq!(e.message, "collection edit: applied to 2 buffer(s)");
     for (path, want) in [(&a, "alpha 1\n"), (&b, "beta 1\n")] {
         let text = e
@@ -442,7 +442,7 @@ fn collection_undo_restores_sources_and_the_view() {
     let text = |e: &Editor, id| e.docs.get(id).unwrap().buf.text().to_string();
     e.set_head(e.buf().line_start(2));
     e.feed_text("rx"); // group 1: a.txt alpha -> xlpha
-    e.set_head(e.buf().line_start(4));
+    e.set_head(e.buf().line_start(5));
     e.feed_text("rx"); // group 2: b.txt beta -> xeta
     assert!(text(&e, a_id).starts_with("xlpha"));
     assert!(text(&e, b_id).contains("xeta two"));
@@ -688,4 +688,62 @@ fn collection_loads_unopened_sources_in_the_background() {
         "both sources assembled: {text}"
     );
     assert_eq!(e.buf().name.as_deref(), Some("collection: grep"));
+}
+
+/// 0049 §6: one card per file — disjoint excerpts of one source share a
+/// card, the omitted span between them is a gap row, and gap/card rows
+/// are protected chrome (edits refuse, view refreshes).
+#[test]
+fn one_card_per_file_with_gap_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.txt");
+    std::fs::write(&a, "l1\nl2\nalpha three\nl4\nl5\nalpha six\nl7\n").unwrap();
+    let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
+    e.open_fixture(&a).unwrap();
+    e.open_picker(Kind::Grep);
+    if let Some(glue) = e.picker.as_mut() {
+        glue.picker.append(vec![
+            Item {
+                text: "a.txt:3".into(),
+                badge: None,
+                payload: Payload::Grep {
+                    path: a.clone(),
+                    line: 3,
+                    col: 1,
+                    match_len: 5,
+                    line_text: "alpha three".into(),
+                },
+            },
+            Item {
+                text: "a.txt:6".into(),
+                badge: None,
+                payload: Payload::Grep {
+                    path: a.clone(),
+                    line: 6,
+                    col: 1,
+                    match_len: 5,
+                    line_text: "alpha six".into(),
+                },
+            },
+        ]);
+    }
+    e.feed(crate::editor::Key::CtrlO);
+    let text = current_text(&e);
+    assert_eq!(
+        text.matches("╭─").count(),
+        1,
+        "one card for the file: {text}"
+    );
+    assert!(text.contains("⋮ 2 source lines omitted"), "gap row: {text}");
+    // the gap row is protected chrome
+    let gap_line = text.lines().position(|l| l.starts_with('⋮')).unwrap();
+    e.set_head(e.buf().line_start(gap_line));
+    e.feed_text("x");
+    assert!(
+        e.message.contains("refused"),
+        "gap row refuses: {}",
+        e.message
+    );
+    // and the bottom border closes the card
+    assert!(text.contains('╰'), "card closes: {text}");
 }

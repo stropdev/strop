@@ -429,11 +429,32 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                     None => format!("{:>digits$} ", line_idx + 1, digits = number_width - 2),
                 };
                 left.push(Span::styled(number_cell, num_style));
-                // Collection chrome rows (title, per-file headers) read
-                // as structure: accent text, never editable content
-                // (0049 §6).
-                if editor.collection_source_lineno(view.doc, line_idx) == Some(None) {
-                    style.row_fg = Some(ACCENT);
+                // Collection cards (0049 §6): the title reads strong,
+                // card borders mute, the gap rows whisper, and the top
+                // border's path carries the accent.
+                match editor.collection_row_kind(view.doc, line_idx) {
+                    Some(crate::editor::CollectionRow::Title) => style.row_fg = Some(TEXT),
+                    Some(crate::editor::CollectionRow::CardTop(_)) => {
+                        style.row_fg = Some(MUTED);
+                        // close the box: pad with ─ and the ╮ corner at
+                        // the card's right edge (0049 §6)
+                        let text = text.to_string();
+                        let pad = width.saturating_sub(text.chars().count() + 2);
+                        let text = format!("{}─{}╮", text, "─".repeat(pad));
+                        style.decorations = collection_card_top_spans(&text);
+                    }
+                    Some(crate::editor::CollectionRow::Gap) => {
+                        style.row_fg = Some(MUTED);
+                    }
+                    Some(crate::editor::CollectionRow::CardBottom) => {
+                        style.row_fg = Some(MUTED);
+                        let pad = width.saturating_sub(2);
+                        style.decorations = vec![Span::styled(
+                            format!("╰{}╯", "─".repeat(pad)),
+                            Style::default().fg(MUTED),
+                        )];
+                    }
+                    _ => {}
                 }
                 if let Some(row) =
                     diff::surface_list_row(surface, line_idx, width, line_idx == cur_line)
@@ -809,3 +830,23 @@ fn fixed_spans(input: Vec<Span<'static>>, width: usize, tab: usize) -> Vec<Span<
 #[cfg(test)]
 #[path = "buffer_tests.rs"]
 mod tests;
+
+/// A card top border's spans: the path in accent, the border and badges
+/// muted (0049 §6).
+fn collection_card_top_spans(text: &str) -> Vec<Span<'static>> {
+    let border = Style::default().fg(MUTED);
+    match (text.find("╭─ "), text.find(" ──")) {
+        (Some(lo), Some(hi)) => {
+            let path_start = lo + "╭─ ".len();
+            vec![
+                Span::styled(text[..path_start].to_string(), border),
+                Span::styled(
+                    text[path_start..hi].to_string(),
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(text[hi..].to_string(), border),
+            ]
+        }
+        _ => vec![Span::styled(text.to_string(), border)],
+    }
+}

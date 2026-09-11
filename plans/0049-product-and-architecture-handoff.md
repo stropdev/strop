@@ -3,8 +3,9 @@
 Status: **§4 landed in 0.24.0; §§5–8 core landed in 0.25.0** (collection
 correctness: identity, scoped undo/redo, projection invalidation,
 save/close, g<Space>; occurrence selection in buffers and collections;
-review for multi-target rename/code-action). Remaining on the roadmap
-(0028 "Current program"): §6 syntax projection + boxed cards, §8 bounded
+review for multi-target rename/code-action). Boxed per-file cards with badges, gap rows,
+path ordering and picker locator polish landed in 0.27.0. Remaining on
+the roadmap (0028 "Current program"): §6 syntax projection, §8 bounded
 delivery + project-replace migration + applyEdit, §9 accompanying work,
 §10 later. Known limit vs §5: write-back happens at action boundaries;
 journal-driven per-keystroke write-back is the named follow-up.

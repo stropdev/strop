@@ -310,8 +310,15 @@ fn render_results(frame: &mut Frame, area: Rect, picker: &strop_picker::Picker, 
         } else {
             Color::Rgb(0xb8, 0xb4, 0xa9)
         };
+        // locator prefixes dim from the payload's own fields — the
+        // directory of a file row, the path:line of a hit — content
+        // stays bright (rootle/fzf presentation, no text parsing)
+        let dim_prefix = locator_prefix_chars(item);
         for (ci, ch) in text.chars().enumerate() {
             let mut st = Style::default().fg(base_fg);
+            if ci < dim_prefix {
+                st = st.fg(MUTED);
+            }
             if match_cols.contains(&(ci as u32)) {
                 st = st.fg(ACCENT).add_modifier(Modifier::BOLD);
             }
@@ -558,4 +565,55 @@ fn highlight_lines_owned(
         out.push(Line::from(spans_out));
     }
     out
+}
+
+/// Chars of the row text that form the locator (dimmed): computed from
+/// the payload's structured fields, never by parsing the text.
+fn locator_prefix_chars(item: &strop_picker::Item) -> usize {
+    use strop_picker::Payload;
+    match &item.payload {
+        // file rows: dim the directory portion, the name stays bright
+        Payload::File(path) => {
+            let text = path.display().to_string();
+            text.rfind('/').map_or(0, |i| i + 1)
+        }
+        // grep hits render "{path}:{line} · …": dim through the number
+        Payload::Grep { path, line, .. } => {
+            path.display().to_string().chars().count() + 1 + digits(*line)
+        }
+        // jumplist rows carry a 2-char marker before "{name}:{line}"
+        Payload::Jump { .. } => item
+            .text
+            .find(':')
+            .map(|i| {
+                i + 1
+                    + item.text[i + 1..]
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .count()
+            })
+            .unwrap_or(0),
+        // remote hits render "{endpoint}{path}:{line}"
+        Payload::Remote {
+            endpoint,
+            path,
+            line,
+            ..
+        } => {
+            endpoint.to_string().chars().count()
+                + path.display().to_string().chars().count()
+                + 1
+                + digits(*line)
+        }
+        _ => 0,
+    }
+}
+
+fn digits(mut n: usize) -> usize {
+    let mut d = 1;
+    while n >= 10 {
+        n /= 10;
+        d += 1;
+    }
+    d
 }

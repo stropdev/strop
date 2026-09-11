@@ -105,10 +105,10 @@ Deferred, in 0049's own order (§1, §11):
 
 1. **Collection presentation, rest of (0049 §6)** — per-source syntax
    projection into excerpt rows (analysis of source ranges, never a
-   synthetic combined file) and Rootle-style boxed file cards as render
-   chrome, with the reusable excerpt seam serving grep preview and
-   change review. Source line numbers, provenance naming and chrome
-   styling landed in 0.25.0; projection and cards remain.
+   synthetic combined file). The boxed per-file cards, omitted-line gap
+   rows, language/modified badges, path-ordered cards and picker locator
+   dimming landed in 0.27.0; source line numbers, provenance and chrome
+   styling landed in 0.25.0.
 2. **Reviewable project changes, rest of (0049 §8)** — proposal review
    for rename/code-action landed in 0.25.0. Remaining: bounded
    multi-document delivery, project-replace migration onto the shared

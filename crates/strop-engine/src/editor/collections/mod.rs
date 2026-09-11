@@ -17,6 +17,20 @@ use super::changes::{ChangePlan, ChangeProducer, PlannedDocument};
 use super::document::Document;
 use super::Editor;
 
+/// What a collection view row IS (0049 §6): the renderer styles chrome
+/// from this — never by parsing row text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectionRow {
+    Title,
+    /// A file card's top border; carries the excerpt index it precedes.
+    CardTop(usize),
+    /// An omitted-lines gap between two excerpts of one file.
+    Gap,
+    /// A file card's bottom border.
+    CardBottom,
+    Body,
+}
+
 /// One excerpt: a whole-line span of a source document, remapped through
 /// the source's change journal like any other saved anchor.
 #[derive(Debug, Clone)]
@@ -52,6 +66,8 @@ pub(crate) struct Collection {
     /// The buffer revision at last sync — the cheap no-change check that
     /// keeps motions from materializing rope text on the input path.
     pub revision: BufferRevision,
+    /// Row roles parallel to the view text (0049 §6), rebuilt at render.
+    pub rows: Vec<CollectionRow>,
 }
 
 /// An in-flight collection build: hits plus the count of background
@@ -73,50 +89,122 @@ fn fingerprint(text: &str) -> u64 {
     hash
 }
 
-/// The canonical rendering: title, then per excerpt a header line and its
-/// source text. Re-anchors each excerpt's view span as it is emitted. An
-/// associated function over disjoint fields, so the map entry can be
-/// re-anchored while the editor borrows `docs` and `cwd`.
+/// The canonical rendering (0049 §6): a title row with counts, then ONE
+/// CARD PER FILE — top border with path and badges, excerpt bodies with
+/// a "⋮ N source lines omitted" gap between disjoint spans, and a bottom
+/// border. Row roles are recorded in `collection.rows` for the renderer;
+/// chrome rows are protected (write-back refuses them) and keep the
+/// excerpt's `view_line` invariant: the row before the body.
 fn render(
     docs: &Arena<DocumentKind, Document>,
     cwd: &std::path::Path,
     collection: &mut Collection,
 ) -> String {
+    let files = {
+        let mut seen = Vec::new();
+        for excerpt in &collection.excerpts {
+            if !seen.contains(&excerpt.source) {
+                seen.push(excerpt.source);
+            }
+        }
+        seen.len()
+    };
+    let matches = collection.excerpts.len();
+    let dirty = {
+        let mut n = 0;
+        let mut seen = Vec::new();
+        for excerpt in &collection.excerpts {
+            if !seen.contains(&excerpt.source) {
+                seen.push(excerpt.source);
+                if docs.get(excerpt.source).is_some_and(|d| d.buf.dirty) {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
     let mut text = format!(
-        "collection: {} — {} excerpt(s) (edits write back at action boundaries; g<Space> opens source)\n",
+        "collection: {} — {} match(es) · {} file(s){}{}\n",
         collection.title,
-        collection.excerpts.len()
+        matches,
+        files,
+        if dirty > 0 { " · " } else { "" },
+        if dirty > 0 {
+            format!("{dirty} modified")
+        } else {
+            String::new()
+        },
     );
+    let mut rows = vec![CollectionRow::Title];
     let mut line = 1;
-    for excerpt in &mut collection.excerpts {
-        let source = &docs.get(excerpt.source).unwrap().buf;
-        let path = source
+    let mut at = 0;
+    while at < collection.excerpts.len() {
+        let source = collection.excerpts[at].source;
+        let mut card_end = at;
+        while card_end + 1 < collection.excerpts.len()
+            && collection.excerpts[card_end + 1].source == source
+        {
+            card_end += 1;
+        }
+        let doc = docs.get(source).unwrap();
+        let path = doc
+            .buf
             .path
             .as_ref()
             .map(|path| path.strip_prefix(cwd).unwrap_or(path).display().to_string())
             .unwrap_or_else(|| "[scratch]".into());
-        let first = source.line_of(excerpt.start) + 1;
-        text.push_str(&format!("── {path}:{first} ──\n"));
-        let body = source
-            .text()
-            .byte_slice(excerpt.start..excerpt.end)
-            .to_string();
-        #[cfg(test)]
-        eprintln!(
-            "render excerpt src={:?} span={}..{} body={body:?}",
-            excerpt.source, excerpt.start, excerpt.end
-        );
-        excerpt.view_line = line;
-        excerpt.view_start = text.len();
-        excerpt.view_lines = body.lines().count().max(1);
-        excerpt.fingerprint = fingerprint(&body);
-        text.push_str(&body);
-        if !body.ends_with('\n') {
-            text.push('\n');
+        let lang = doc
+            .buf
+            .path
+            .as_ref()
+            .and_then(|p| p.extension().map(|e| format!(".{}", e.to_string_lossy())))
+            .and_then(|ext| strop_lsp::registry::language_for_extension(&ext));
+        let count = card_end - at + 1;
+        let modified = doc.buf.dirty;
+        let lang_badge = lang.map(|l| format!("{l} · ")).unwrap_or_default();
+        let dirty_badge = if modified { " · modified" } else { "" };
+        text.push_str(&format!(
+            "╭─ {path} ── {lang_badge}{count} excerpt(s){dirty_badge}\n"
+        ));
+        rows.push(CollectionRow::CardTop(at));
+        line += 1;
+        for i in at..=card_end {
+            if i > at {
+                let prev = &collection.excerpts[i - 1];
+                let here = &collection.excerpts[i];
+                let gap_lines = doc
+                    .buf
+                    .line_of(here.start)
+                    .saturating_sub(doc.buf.line_of(prev.end));
+                text.push_str(&format!("⋮ {gap_lines} source lines omitted\n"));
+                rows.push(CollectionRow::Gap);
+                line += 1;
+            }
+            let start = collection.excerpts[i].start;
+            let end = collection.excerpts[i].end;
+            let body = doc.buf.text().byte_slice(start..end).to_string();
+            let excerpt = &mut collection.excerpts[i];
+            excerpt.view_line = line - 1; // the chrome row before the body
+            excerpt.view_start = text.len();
+            excerpt.view_lines = body.lines().count().max(1);
+            excerpt.fingerprint = fingerprint(&body);
+            text.push_str(&body);
+            if !body.ends_with('\n') {
+                text.push('\n');
+            }
+            excerpt.view_end = text.len();
+            for _ in 0..excerpt.view_lines {
+                rows.push(CollectionRow::Body);
+            }
+            line += excerpt.view_lines;
         }
-        excerpt.view_end = text.len();
-        line += 1 + excerpt.view_lines;
+        text.push_str("╰\n");
+        rows.push(CollectionRow::CardBottom);
+        line += 1;
+        at = card_end + 1;
     }
+    collection.rows = rows;
+    let _ = line;
     text
 }
 
@@ -292,7 +380,16 @@ impl Editor {
                 });
             }
         }
-        excerpts.sort_by_key(|excerpt| (excerpt.source, excerpt.start));
+        // Cards present in path order, not document-id order (0049 §6).
+        excerpts.sort_by_key(|excerpt| {
+            let path = self
+                .docs
+                .get(excerpt.source)
+                .and_then(|d| d.buf.path.clone())
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            (path, excerpt.start)
+        });
         let excerpt_count = excerpts.len();
         let title_for_trace = title.clone();
         let id = self.docs.insert(Document::output(Buffer::from_text("")));
@@ -303,6 +400,7 @@ impl Editor {
             excerpts,
             pending_saves: 0,
             close_when_saved: false,
+            rows: Vec::new(),
             shadow: String::new(),
             revision: BufferRevision::new(0),
         };
@@ -975,6 +1073,16 @@ impl Editor {
 }
 
 impl Editor {
+    /// A collection view row's role (0049 §6) for the renderer —
+    /// structure as data, never text parsing.
+    pub fn collection_row_kind(
+        &self,
+        doc: strop_core::id::DocumentId,
+        line: usize,
+    ) -> Option<CollectionRow> {
+        self.collections.get(&doc)?.rows.get(line).copied()
+    }
+
     /// The SOURCE line number for a collection view row (0049 §6):
     /// Some(Some(n)) for body rows, Some(None) for chrome (title,
     /// headers — the gutter stays blank there), None for ordinary

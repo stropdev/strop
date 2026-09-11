@@ -13,7 +13,7 @@ pub mod trace;
 
 pub(crate) mod analysis;
 mod changes;
-mod collections;
+pub mod collections;
 mod containers;
 mod cursor;
 mod diagnostics;
@@ -54,6 +54,7 @@ pub mod view;
 mod visual;
 mod workspaces;
 
+pub use collections::CollectionRow;
 pub use document::Document;
 pub use document::{DiffRow, DocumentSource, RemoteDirectory, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};
