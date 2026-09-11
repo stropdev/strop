@@ -50,6 +50,9 @@ pub(crate) struct Excerpt {
     /// source changes splice this span directly).
     pub view_start: usize,
     pub view_end: usize,
+    /// Query hit spans in SOURCE bytes within this excerpt (the picker's
+    /// match evidence paints in the view, 0050 §7).
+    pub matches: Vec<(usize, usize)>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,12 +73,25 @@ pub(crate) struct Collection {
     pub rows: Vec<CollectionRow>,
 }
 
+/// One collection hit: path, 0-based line, and the query submatch's
+/// (byte column, length) when the source was a real rg match.
+pub(crate) type CollectionHit = (std::path::PathBuf, usize, Option<(usize, usize)>);
+
+/// A hit line plus its optional submatch span.
+type LineHit = (usize, Option<(usize, usize)>);
+/// Per-document collected hits.
+type DocHits = Vec<LineHit>;
+/// One merged excerpt span with its hits: (start line, end line, hits).
+type SpanWithHits = (usize, usize, Vec<Option<(usize, usize)>>);
+
 /// An in-flight collection build: hits plus the count of background
 /// source loads still outstanding (0044 v2 async source loading).
 #[derive(Debug)]
+
 pub(crate) struct CollectionBuild {
     pub title: String,
-    pub hits: Vec<(std::path::PathBuf, usize)>,
+    /// (path, line, match col+len in source bytes when known)
+    pub hits: Vec<CollectionHit>,
     /// Remote hits resolve against open remote documents at build.
     pub remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)>,
     pub waiting: usize,
@@ -229,13 +245,21 @@ impl Editor {
         }
         // Local hits and remote hits alike; remote ones resolve against
         // open remote documents (0040 permits gate their write-back).
-        let mut hits: Vec<(std::path::PathBuf, usize)> = Vec::new();
+        let mut hits: Vec<CollectionHit> = Vec::new();
         let mut remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)> =
             Vec::new();
         for item in glue.picker.items.iter() {
             match &item.payload {
-                strop_picker::Payload::Grep { path, line, .. } => {
-                    hits.push((path.clone(), line.saturating_sub(1)));
+                strop_picker::Payload::Grep {
+                    path,
+                    line,
+                    col,
+                    match_len,
+                    ..
+                } => {
+                    let hit = (kind == strop_picker::Kind::Grep)
+                        .then(|| (col.saturating_sub(1), *match_len));
+                    hits.push((path.clone(), line.saturating_sub(1), hit));
                 }
                 strop_picker::Payload::Remote {
                     endpoint,
@@ -251,7 +275,7 @@ impl Editor {
         // Unopened sources load in the background (never switching focus);
         // the build assembles when the last one lands.
         let mut to_load: Vec<std::path::PathBuf> = Vec::new();
-        for (path, _) in &hits {
+        for (path, ..) in &hits {
             let absolute = if path.is_absolute() {
                 path.clone()
             } else {
@@ -310,9 +334,10 @@ impl Editor {
             remote_hits,
             ..
         } = build;
-        let mut by_doc: HashMap<DocumentId, Vec<usize>> = HashMap::new();
+        #[allow(clippy::type_complexity)]
+        let mut by_doc: HashMap<DocumentId, DocHits> = HashMap::new();
         let mut skipped = 0;
-        for (path, line) in hits {
+        for (path, line, hit) in hits {
             let absolute = if path.is_absolute() {
                 path
             } else {
@@ -325,7 +350,7 @@ impl Editor {
                 skipped += 1;
                 continue;
             };
-            by_doc.entry(document).or_default().push(line);
+            by_doc.entry(document).or_default().push((line, hit));
         }
         for (endpoint, path, line) in remote_hits {
             let document = self.docs.iter().find_map(|(id, doc)| {
@@ -335,7 +360,7 @@ impl Editor {
                 })
             });
             match document {
-                Some(id) => by_doc.entry(id).or_default().push(line),
+                Some(id) => by_doc.entry(id).or_default().push((line, None)),
                 None => skipped += 1,
             }
         }
@@ -346,21 +371,24 @@ impl Editor {
         let mut excerpts = Vec::new();
         for (source, mut lines) in by_doc {
             lines.sort_unstable();
-            lines.dedup();
+            lines.dedup_by_key(|(line, _)| *line);
             let buf = &self.docs.get(source).unwrap().buf;
             // Merge adjacent lines into one excerpt so an edit never
-            // applies twice to overlapping spans.
-            let mut spans: Vec<(usize, usize)> = Vec::new();
-            for line in lines {
+            // applies twice to overlapping spans; the hits ride along.
+            let mut spans: Vec<SpanWithHits> = Vec::new();
+            for (line, hit) in lines {
                 if line >= buf.len_lines() {
                     continue;
                 }
                 match spans.last_mut() {
-                    Some((_, end)) if line <= *end => *end = line + 1,
-                    _ => spans.push((line, line + 1)),
+                    Some((_, end, hits)) if line <= *end => {
+                        *end = line + 1;
+                        hits.push(hit);
+                    }
+                    _ => spans.push((line, line + 1, vec![hit])),
                 }
             }
-            for (start_line, end_line) in spans {
+            for (start_line, end_line, hits) in spans {
                 let start = buf.line_start(start_line);
                 let end = if end_line >= buf.len_lines() {
                     buf.len_bytes()
@@ -368,6 +396,15 @@ impl Editor {
                     buf.line_start(end_line)
                 };
                 let text = buf.text().byte_slice(start..end).to_string();
+                // the hits inside this span, in source bytes (0050 §7:
+                // the query's evidence paints in the view)
+                let matches = hits
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, hit)| {
+                        hit.map(|(col, len)| (buf.line_start(start_line + i) + col, len))
+                    })
+                    .collect();
                 excerpts.push(Excerpt {
                     source,
                     start,
@@ -377,6 +414,7 @@ impl Editor {
                     view_lines: 0,
                     view_start: 0,
                     view_end: 0,
+                    matches,
                 });
             }
         }
@@ -1073,6 +1111,71 @@ impl Editor {
 }
 
 impl Editor {
+    /// Per-row source facts for the renderer (0049 §6): the row's role,
+    /// and for body rows the source document + this row's source byte
+    /// span + the query hits inside it (source bytes) + whether the
+    /// caret sits in this card.
+    pub fn collection_row_info(
+        &self,
+        doc: strop_core::id::DocumentId,
+        line: usize,
+    ) -> Option<CollectionRowInfo> {
+        let collection = self.collections.get(&doc)?;
+        let kind = *collection.rows.get(line)?;
+        let caret_line = if doc == self.current() {
+            self.buf().line_of(self.head())
+        } else {
+            usize::MAX
+        };
+        let mut info = CollectionRowInfo {
+            kind,
+            source: None,
+            source_matches: Vec::new(),
+            card_active: false,
+        };
+        for (index, excerpt) in collection.excerpts.iter().enumerate() {
+            let body_lo = excerpt.view_line + 1;
+            let body_hi = excerpt.view_line + excerpt.view_lines + 1;
+            // card rows: the CardTop before this excerpt through the next
+            // excerpt's card top (or bottom row) — group by source runs
+            if kind == CollectionRow::CardTop(index) {
+                // the card is active when the caret is anywhere within it
+                let mut rows_end = collection.rows.len();
+                for (later, next) in collection.excerpts.iter().enumerate().skip(index + 1) {
+                    if next.source != excerpt.source {
+                        rows_end = next.view_line;
+                        break;
+                    }
+                    let _ = later;
+                }
+                if let Some(b) = collection
+                    .rows
+                    .iter()
+                    .position(|r| *r == CollectionRow::CardTop(index))
+                {
+                    let _ = b;
+                }
+                info.card_active = caret_line >= excerpt.view_line && caret_line < rows_end;
+            }
+            if kind == CollectionRow::Body && line >= body_lo && line < body_hi {
+                let source = self.docs.get(excerpt.source)?;
+                let source_line = source.buf.line_of(excerpt.start) + (line - body_lo);
+                let s = source.buf.line_start(source_line);
+                let e = source.buf.line_end(source_line);
+                info.source = Some((excerpt.source, s, e));
+                info.source_matches = excerpt
+                    .matches
+                    .iter()
+                    .copied()
+                    .filter(|(m, len)| *m >= s && m + len <= e)
+                    .collect();
+                // body inside the active card
+                info.card_active = caret_line >= excerpt.view_line && caret_line < body_hi;
+            }
+        }
+        Some(info)
+    }
+
     /// A collection view row's role (0049 §6) for the renderer —
     /// structure as data, never text parsing.
     pub fn collection_row_kind(
@@ -1104,5 +1207,52 @@ impl Editor {
             }
         }
         Some(None) // title row
+    }
+}
+
+/// What the renderer needs per collection row (0049 §6).
+pub struct CollectionRowInfo {
+    pub kind: CollectionRow,
+    /// Body rows: (source document, source byte start, source byte end).
+    pub source: Option<(strop_core::id::DocumentId, usize, usize)>,
+    /// Query hit spans within the row, in SOURCE bytes (0050 §7).
+    pub source_matches: Vec<(usize, usize)>,
+    /// The caret sits inside this row's card (focus chrome).
+    pub card_active: bool,
+}
+
+impl Editor {
+    /// `]f` / `[f` in a collection: next / previous file card (0049 §5's
+    /// excerpt navigation through the command registry).
+    pub fn collection_file_step_pub(&mut self, forward: bool) {
+        self.collection_file_step(forward);
+    }
+
+    pub(crate) fn collection_file_step(&mut self, forward: bool) {
+        let id = self.current();
+        let Some(collection) = self.collections.get(&id) else {
+            self.message = "file cards live in collections".into();
+            return;
+        };
+        let caret = self.buf().line_of(self.head());
+        let mut tops: Vec<usize> = Vec::new();
+        for (row, kind) in collection.rows.iter().enumerate() {
+            if matches!(kind, CollectionRow::CardTop(_)) {
+                tops.push(row);
+            }
+        }
+        let target = if forward {
+            tops.iter().copied().find(|row| *row > caret)
+        } else {
+            tops.iter().copied().rev().find(|row| *row < caret)
+        };
+        let Some(row) = target else {
+            self.message = if forward { "last card" } else { "first card" }.into();
+            return;
+        };
+        self.push_jump();
+        self.set_head(self.buf().line_start(row));
+        self.clamp_cursor();
+        self.scroll_to_cursor(self.view_rows());
     }
 }

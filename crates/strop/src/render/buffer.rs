@@ -248,6 +248,68 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
     } else {
         &[]
     };
+    // Collection body rows (0049 §6): per-row source facts, with the
+    // source analysis fetched up front (the row loop borrows the rope).
+    let collection_rows: Vec<Option<crate::editor::CollectionRowInfo>> = (0..rows)
+        .map(|row| editor.collection_row_info(view.doc, view.view_top.saturating_add(row)))
+        .collect();
+    let row_analyses: Vec<_> = collection_rows
+        .iter()
+        .map(|info| {
+            info.as_ref().and_then(|info| {
+                info.source.and_then(|(source, s, e)| {
+                    editor
+                        .document_analysis(source, s, e, 0, area.width as usize)
+                        .map(|analysis| (analysis, s))
+                })
+            })
+        })
+        .collect();
+    // Translate into view coordinates ONCE per frame (borrowed by the
+    // row loop, which must not re-admit jobs).
+    let view_buf = &editor.doc(view.doc).buf;
+    let translated_spans: Vec<Option<Vec<strop_syntax::Span>>> = collection_rows
+        .iter()
+        .enumerate()
+        .map(|(row, info)| {
+            let info = info.as_ref()?;
+            let (_, src_start, src_end) = info.source?;
+            let (analysis, analysis_start) = row_analyses.get(row)?.as_ref()?;
+            let row_start = view_buf.line_start(view.view_top.saturating_add(row));
+            Some(
+                analysis
+                    .spans
+                    .iter()
+                    .filter(|span| span.start < src_end && span.end > src_start)
+                    .map(|span| strop_syntax::Span {
+                        start: span.start - analysis_start + row_start,
+                        end: span.end - analysis_start + row_start,
+                        ..*span
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    let translated_hits: Vec<Vec<strop_grammar::SearchMatch>> = collection_rows
+        .iter()
+        .enumerate()
+        .map(|(row, info)| {
+            let Some(info) = info else {
+                return Vec::new();
+            };
+            let Some((_, src_start, _)) = info.source else {
+                return Vec::new();
+            };
+            let row_start = view_buf.line_start(view.view_top.saturating_add(row));
+            info.source_matches
+                .iter()
+                .map(|(m, len)| strop_grammar::SearchMatch {
+                    start: strop_core::id::ByteOffset::new(row_start + (m - src_start)),
+                    end: strop_core::id::ByteOffset::new(row_start + (m - src_start) + len),
+                })
+                .collect()
+        })
+        .collect();
     let buf = &editor.doc(view.doc).buf;
     let surface = editor.doc(view.doc).surface_payload();
 
@@ -290,6 +352,7 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         find: view.overlays.then(|| editor.find_candidates()).flatten(),
         ..Default::default()
     };
+
     // 0011 left-margin columns: the commit file sidebar (Diff surfaces
     // from the dive chain) and the blame gutter (file buffers) prepend
     // to every row; content width shrinks by what they take. The tree
@@ -384,6 +447,17 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                 });
         style.decorations.clear();
         style.note = None;
+        // Collection body rows: source-projected syntax + query hits
+        if let Some(Some(_)) = collection_rows.get(row) {
+            if let Some(spans) = translated_spans.get(row).and_then(Option::as_deref) {
+                style.syn_spans = spans;
+            }
+            if let Some(hits) = translated_hits.get(row) {
+                if !hits.is_empty() && search_hits.is_empty() {
+                    style.search_hits = hits;
+                }
+            }
+        }
         style.diags = if view.overlays {
             editor.diag_ranges_at(view.doc, line_idx + 1)
         } else {
@@ -435,9 +509,13 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                 match editor.collection_row_kind(view.doc, line_idx) {
                     Some(crate::editor::CollectionRow::Title) => style.row_fg = Some(TEXT),
                     Some(crate::editor::CollectionRow::CardTop(_)) => {
-                        style.row_fg = Some(MUTED);
-                        // close the box: pad with ─ and the ╮ corner at
-                        // the card's right edge (0049 §6)
+                        // 0049 §6: focus reads through the active card's
+                        // border + path, not a selection-colored chip
+                        let focused = collection_rows
+                            .get(row)
+                            .and_then(Option::as_ref)
+                            .is_some_and(|info| info.card_active);
+                        style.row_fg = Some(if focused { TEXT } else { MUTED });
                         let text = text.to_string();
                         let pad = width.saturating_sub(text.chars().count() + 2);
                         let text = format!("{}─{}╮", text, "─".repeat(pad));

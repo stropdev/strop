@@ -112,6 +112,8 @@ const DISPATCHED: &[&str] = &[
     "g<space>",
     "gb",
     "gB",
+    "]f",
+    "[f",
     // git namespace
     "space g u",
     "space g s",

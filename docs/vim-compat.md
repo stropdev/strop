@@ -39,6 +39,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ / ?` — literal search forward / backward (live as you type or delete)
 - `✓ n` — next match
 - `✓ N` — previous match
+- `✓ ]f [f` — next / prev file card (collections)
 - `✓ ]c [c` — next / prev git hunk
 - `✓ m<a>` — set mark at cursor
 - `✓ '<a> `<a>` — jump to mark

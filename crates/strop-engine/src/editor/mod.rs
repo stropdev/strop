@@ -54,7 +54,7 @@ pub mod view;
 mod visual;
 mod workspaces;
 
-pub use collections::CollectionRow;
+pub use collections::{CollectionRow, CollectionRowInfo};
 pub use document::Document;
 pub use document::{DiffRow, DocumentSource, RemoteDirectory, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};

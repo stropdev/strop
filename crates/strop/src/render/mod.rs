@@ -20,7 +20,8 @@ pub(crate) mod frame_capture;
 mod frame_tests;
 mod help;
 mod hover_card;
-mod picker_card;
+#[path = "picker/mod.rs"]
+mod picker;
 mod statusline;
 #[cfg(test)]
 mod terminal_tests;
@@ -35,6 +36,8 @@ pub const ACCENT: Color = Color::Rgb(0xf0, 0xa3, 0x5e);
 pub const PREVIEW_BG: Color = Color::Rgb(0x4a, 0x33, 0x1c); // accent, dimmed
 pub const FLASH_BG: Color = Color::Rgb(0x6b, 0x47, 0x22); // accent, stronger
 pub const SELECT_BG: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
+/// Useful secondary context (0050 §4): between TEXT and MUTED.
+pub const SECONDARY: Color = Color::Rgb(0x9b, 0xa0, 0xb1);
 
 /// Diagnostic severity → color (LSP typed severity; one source for
 /// the gutter sign and the cursor-line end-of-line note).
@@ -102,7 +105,7 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
         place_cursor(editor, frame, pane_area);
     }
     render_welcome(editor, frame);
-    picker_card::render_picker(editor, frame);
+    picker::render_picker(editor, frame);
     blame_card::render_blame_card(editor, frame);
     hover_card::render_hover_card(editor, frame);
     which_key::render_which_key(editor, frame);

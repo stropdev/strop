@@ -77,7 +77,24 @@ impl Editor {
             }
         };
         let full = self.cwd.join(&path);
-        let title = path.display().to_string();
+        // 0050: the header identifies filename + line first; the parent
+        // directory follows only while it fits the card.
+        let title = {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            let parent = path
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            match focus_line {
+                Some(line) => format!("{name}:{line}  {parent}"),
+                None => format!("{name}  {parent}"),
+            }
+            .trim_end()
+            .to_string()
+        };
         if let Some((document, _)) = self
             .docs
             .iter()

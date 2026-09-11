@@ -747,3 +747,29 @@ fn one_card_per_file_with_gap_rows() {
     // and the bottom border closes the card
     assert!(text.contains('╰'), "card closes: {text}");
 }
+
+/// 0049 §5: ]f/[f walk file cards.
+#[test]
+fn file_card_navigation_steps_between_cards() {
+    let (mut e, _, _) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    let tops: Vec<usize> = e
+        .collections
+        .get(&e.current())
+        .unwrap()
+        .rows
+        .iter()
+        .enumerate()
+        .filter_map(|(row, kind)| {
+            matches!(kind, crate::editor::CollectionRow::CardTop(_)).then_some(row)
+        })
+        .collect();
+    assert_eq!(tops.len(), 2, "two file cards");
+    e.set_head(e.buf().line_start(tops[0] + 1)); // inside card A
+    e.collection_file_step(true);
+    assert_eq!(e.buf().line_of(e.head()), tops[1], "next card");
+    e.collection_file_step(true);
+    assert_eq!(e.message, "last card");
+    e.collection_file_step(false);
+    assert_eq!(e.buf().line_of(e.head()), tops[0], "previous card");
+}

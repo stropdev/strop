@@ -358,6 +358,14 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| e.repeat_search_pub(true)),
     },
     Binding {
+        keys: "]f [f",
+        desc: "next / prev file card (collections)",
+        sections: &["normal"],
+        live: true,
+        id: "collection-file-nav",
+        handler: Handler::Leaf(|e, k| e.collection_file_step_pub(k != '[')),
+    },
+    Binding {
         keys: "]c [c",
         desc: "next / prev git hunk",
         sections: &["normal"],

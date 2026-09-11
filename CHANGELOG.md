@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.28.0 — 2026-09-11
+
+Picker visual polish (0050) and the multibuffer's missing paint.
+
+### Added — picker rows rebuilt per kind (0050)
+
+- **Symbols**: fixed-width quiet kind chips (all names share one left
+  edge across `fn`/`field`/`variant`), container in the secondary role,
+  location right-aligned. Four quiet kind families (callables/types/
+  data/modules); chips are passive type info, never bright buttons.
+- **Files**: basename first and bright, the parent path secondary at the
+  right edge, middle-elided without dropping the disambiguator; query
+  matches emphasize in whichever field they hit.
+- **Grep**: two-line hits — filename + directory, then a code window
+  built around the REAL `rg` submatch (never the first 80 chars of the
+  line), with the match amber/bold. Line numbers in the secondary role.
+- **Selection is one band**: the whole allocated row — marker, fields,
+  blanks — carries the selection background; query evidence survives on
+  top of it.
+- **Honest counts and states**: filtered lists show `visible / total`;
+  an empty filter explains itself (`No symbols match “zzz”` + the way
+  out); errors stay actionable.
+- **Responsive layout**: the decision list takes ~60% (65% for grep) of
+  the card; narrow terminals stack a short preview below instead of two
+  slivers; the scrollbar column is reserved before text budgets and
+  never overwrites evidence. Preview headers identify `file:line` first.
+
+### Added — multibuffer paint (0049 §6 remainder)
+
+- **Syntax highlighting in excerpts**: body rows project the source
+  document's own analysis spans into the view — never a synthetic
+  combined parse.
+- **Query hits paint in excerpt bodies** (amber/bold), sourced from the
+  picker's real submatch geometry; LSP/symbol navigation payloads never
+  fabricate a one-byte match.
+- **Focused card**: the caret's card brightens its border and path.
+- **`]f` / `[f`** walk file cards (next/previous), recorded in the
+  jumplist.
+
+The picker renderer split into `render/picker/{mod,rows,preview}.rs` by
+responsibility (0050 §9).
 ## 0.27.0 — 2026-09-11
 
 The multibuffer gets its presentation (0049 §6), and picker rows gain
