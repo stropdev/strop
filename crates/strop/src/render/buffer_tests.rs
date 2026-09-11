@@ -254,18 +254,19 @@ fn collection_view_gutters_source_line_numbers() {
     let mut terminal = viewport_terminal(50, 8);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     let grid = terminal.backend().buffer();
-    let row1: String = row_symbols(grid, 0, 1, 20).concat();
+    // the gutter's number cell (after the sign bar) is the first cells
+    // of the row: blank on chrome rows, the source line on body rows
+    let gutter1: String = row_symbols(grid, 0, 1, 4).concat();
+    let gutter2: String = row_symbols(grid, 0, 2, 4).concat();
+    assert!(
+        gutter1.trim().is_empty(),
+        "header row has no line number: {gutter1:?}"
+    );
+    assert!(
+        gutter2.trim().ends_with('3'),
+        "body rows gutter the source line: {gutter2:?}"
+    );
     let row2: String = row_symbols(grid, 0, 2, 20).concat();
-    // row 1 = the file header (blank gutter), row 2 = the body with
-    // the source line number 3
-    assert!(
-        !row1.contains('3'),
-        "header row has no line number: {row1:?}"
-    );
-    assert!(
-        row2.contains('3'),
-        "body rows gutter the source line: {row2:?}"
-    );
     assert!(row2.contains("alpha three"), "{row2:?}");
 }
 
