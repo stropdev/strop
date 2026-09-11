@@ -217,12 +217,14 @@ impl Editor {
 
 fn new_host_item() -> Item {
     Item {
+        badge: None,
         text: "Add a host…".into(),
         payload: Payload::RemoteConnect,
     }
 }
 fn destination_item(directory: RemoteFile, origin: &str) -> Item {
     Item {
+        badge: None,
         text: format!("{directory}  [{origin}]"),
         payload: Payload::RemoteDirectory(directory),
     }

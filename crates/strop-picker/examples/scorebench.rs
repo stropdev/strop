@@ -8,6 +8,7 @@ fn main() {
     for count in [10_000usize, 100_000, 1_000_000] {
         let items = (0..count)
             .map(|index| Item {
+                badge: None,
                 text: format!("crates/package_{index:06}/src/main_{index}.rs"),
                 payload: Payload::File(format!("{index}.rs").into()),
             })

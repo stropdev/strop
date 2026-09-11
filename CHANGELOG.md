@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.26.0 — 2026-09-11
+
+### Fixed
+
+- `gb`/`gB` work in Visual mode: occurrence seeding enters Visual, so
+  the repeat key must dispatch there — the visual walker now runs
+  visual-section Leaf rows (with the path replayed into the grammar on
+  fall-through, so `gg` & friends parse whole), and keymap rows declare
+  their modes (`sections`), letting one binding live in both.
+
+### Added
+
+- The symbol picker renders a colored kind chip before each row
+  (`fn`, `struct`, `enum`, `mod`, …) — the icon column without an icon
+  font. Rows slim to name · container · line.
+
 ## 0.25.0 — 2026-09-11
 
 The multibuffer becomes trustworthy (0049 §§5–8 core): collections undo,

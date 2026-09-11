@@ -66,6 +66,7 @@ pub fn spawn_files(cwd: PathBuf, tx: Sender<PickerMsg>) -> CancelHandle {
                     continue;
                 }
                 batch.push(Item {
+                    badge: None,
                     text: rel.display().to_string(),
                     payload: Payload::File(rel.to_path_buf()),
                 });

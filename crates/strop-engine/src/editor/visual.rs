@@ -277,6 +277,14 @@ impl Editor {
                 self.mode = Mode::Normal;
                 self.clamp_cursor();
             }
+            // Visual-mode Leaf rows (0049 §7: gb/gB occurrence adding)
+            // execute their handler; the leader/git ids above keep
+            // their bespoke arms.
+            Action::Row { row, key, .. } if row.sections.contains(&"visual") => {
+                if let crate::keymap::Handler::Leaf(f) = row.handler {
+                    f(self, key);
+                }
+            }
             Action::Row { .. } => self.message = "command unavailable in visual mode".into(),
             Action::VisualSurround(c) => {
                 if self.buf().readonly {

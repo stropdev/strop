@@ -226,7 +226,8 @@ impl Editor {
                 use strop_picker::{Item, Payload};
                 let items = symbols
                     .into_iter()
-                    .filter_map(|symbol| {
+                    .map(|symbol| (short_kind(&symbol.kind), symbol))
+                    .filter_map(|(badge, symbol)| {
                         let line = symbol.location.position.line.get() + 1;
                         let col = symbol.location.position.column.get() + 1;
                         let path = symbol.location.doc.path.clone();
@@ -251,15 +252,18 @@ impl Editor {
                                 return None;
                             }
                         };
+                        // The kind moves into the chip; the row text is
+                        // name, container path, line.
                         let text = if symbol.container.is_empty() {
-                            format!("{}  · {} · :{}", symbol.name, symbol.kind, line)
+                            format!("{}  · :{}", symbol.name, line)
                         } else {
-                            format!(
-                                "{}  {} · {} · :{}",
-                                symbol.name, symbol.container, symbol.kind, line
-                            )
+                            format!("{}  {} · :{}", symbol.name, symbol.container, line)
                         };
-                        Some(Item { text, payload })
+                        Some(Item {
+                            badge: Some(badge.into()),
+                            text,
+                            payload,
+                        })
                     })
                     .collect();
                 self.open_picker(strop_picker::Kind::Symbols);
@@ -283,6 +287,7 @@ impl Editor {
                     .iter()
                     .enumerate()
                     .map(|(index, action)| strop_picker::Item {
+                        badge: None,
                         text: action.title.clone(),
                         payload: strop_picker::Payload::CodeAction(index),
                     })
@@ -359,7 +364,11 @@ impl Editor {
                                         return None;
                                     }
                                 };
-                                Some(Item { text, payload })
+                                Some(Item {
+                                    badge: None,
+                                    text,
+                                    payload,
+                                })
                             })
                             .collect();
                         let mut glue = super::PickerGlue::diagnostics(strop_picker::Picker::new(
@@ -685,6 +694,7 @@ impl Editor {
                 let col = d.col.get() + 1;
                 match &doc.filesystem {
                     Filesystem::Local => items.push(Item {
+                        badge: None,
                         text: format!(
                             "{}:{} {} {}",
                             doc.path.display(),
@@ -704,6 +714,7 @@ impl Editor {
                     // preview stays local-clean and acceptance opens
                     // the remote target (0036).
                     Filesystem::Remote(endpoint) => items.push(Item {
+                        badge: None,
                         text: format!(
                             "{}{}:{} {} {}",
                             endpoint,
@@ -786,5 +797,28 @@ pub(crate) fn lang_id(path: &Path) -> &'static str {
         Some("c") | Some("h") => "c",
         Some("cpp") | Some("cc") | Some("cxx") | Some("hpp") | Some("hh") => "cpp",
         _ => "plaintext",
+    }
+}
+
+/// Compact chip text for a symbol kind (the picker's badge column).
+fn short_kind(kind: &str) -> &'static str {
+    match kind {
+        "Function" => "fn",
+        "Method" => "meth",
+        "Constructor" => "new",
+        "Struct" => "struct",
+        "Class" => "class",
+        "Interface" => "iface",
+        "Enum" => "enum",
+        "EnumMember" => "variant",
+        "Constant" => "const",
+        "Variable" => "var",
+        "Field" => "field",
+        "Property" => "prop",
+        "Module" => "mod",
+        "Namespace" => "ns",
+        "Package" => "pkg",
+        "TypeParameter" => "T",
+        _ => "sym",
     }
 }

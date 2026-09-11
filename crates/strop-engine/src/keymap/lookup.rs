@@ -300,7 +300,7 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
     let plen = prefix.chars().count();
     for seq in &INDEX.hints {
         let b = &BINDINGS[seq.row];
-        if !sections.contains(&b.section) {
+        if !b.sections.iter().any(|s| sections.contains(s)) {
             continue;
         }
         if let Some(key) = seq.child_key(prefix, plen) {
@@ -324,7 +324,7 @@ pub fn compat_report() -> String {
     );
     for section in SECTIONS {
         out.push_str(&format!("\n## {section}\n\n"));
-        for b in BINDINGS.iter().filter(|b| b.section == *section) {
+        for b in BINDINGS.iter().filter(|b| b.sections.contains(section)) {
             let mark = if b.live { "✓" } else { "·" };
             let soon = if b.live { "" } else { " (soon)" };
             out.push_str(&format!("- `{mark} {}` — {}{}\n", b.keys, b.desc, soon));

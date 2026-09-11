@@ -71,8 +71,9 @@ pub enum AbsorbKind {
 pub struct Binding {
     pub keys: &'static str,
     pub desc: &'static str,
-    /// Sidebar section: normal · visual · insert · leader · git · ex+panes
-    pub section: &'static str,
+    /// Sidebar sections a row lives in: normal · visual · insert ·
+    /// leader · git · ex+panes (multi-mode rows like gb list both).
+    pub sections: &'static [&'static str],
     /// false = planned slot: no dispatch yet, renders muted "(soon)".
     pub live: bool,
     /// Stable identity per row; per-sequence ids derive as `{id}:{key}`.
@@ -87,7 +88,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "h j k l",
         desc: "move (never off the line)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "move",
         handler: Handler::Motion,
@@ -95,7 +96,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "w b e W B E",
         desc: "word / WORD motions",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "word-motions",
         handler: Handler::Motion,
@@ -103,7 +104,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "zz zt zb",
         desc: "center/top/bottom the cursor line",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "view-place",
         handler: Handler::Leaf(|e, k| e.view_place(k)),
@@ -111,7 +112,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "H M L",
         desc: "top/middle/bottom visible line",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "visible-jumps",
         handler: Handler::Leaf(|e, k| e.jump_visible(k, 1)),
@@ -119,7 +120,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ZZ",
         desc: "write + close window",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "write-quit",
         handler: Handler::Leaf(|e, _| e.write_quit()),
@@ -127,7 +128,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gv",
         desc: "reselect last visual",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "reselect-visual",
         handler: Handler::Leaf(|e, _| e.reselect_visual()),
@@ -135,7 +136,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gi",
         desc: "insert at last insert",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "insert-at-last",
         handler: Handler::Leaf(|e, _| e.insert_at_last()),
@@ -143,7 +144,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "g;",
         desc: "older change (changelist)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "change-back",
         handler: Handler::Leaf(|e, _| e.change_jump(true)),
@@ -151,7 +152,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "g,",
         desc: "newer change (changelist)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "change-forward",
         handler: Handler::Leaf(|e, _| e.change_jump(false)),
@@ -159,7 +160,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ge gE { }",
         desc: "word-end back / paragraph motions",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "paragraph-motions",
         handler: Handler::Motion,
@@ -167,7 +168,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "0 $ G %",
         desc: "line/file/pair jumps",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "line-jumps",
         handler: Handler::Motion,
@@ -175,7 +176,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "g<space>",
         desc: "collection: open full source at caret",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "collection-source",
         handler: Handler::Leaf(|e, _| e.collection_open_source_pub()),
@@ -183,7 +184,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gb",
         desc: "select next occurrence of word/selection",
-        section: "normal",
+        sections: &["normal", "visual"],
         live: true,
         id: "occurrence-next",
         handler: Handler::Leaf(|e, _| e.occurrence_next_pub()),
@@ -191,7 +192,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gB",
         desc: "select all occurrences in buffer",
-        section: "normal",
+        sections: &["normal", "visual"],
         live: true,
         id: "occurrence-all",
         handler: Handler::Leaf(|e, _| e.occurrence_all_pub()),
@@ -199,7 +200,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gg",
         desc: "top of file",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "top",
         handler: Handler::Motion,
@@ -207,7 +208,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "enter",
         desc: "line down, first non-blank (blame gutter: dive)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "enter",
         handler: Handler::Leaf(|e, _| e.enter_pub()),
@@ -215,7 +216,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "tab",
         desc: "jump list forward (ctrl-i)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "jump-forward",
         handler: Handler::Leaf(|e, _| e.jump_forward()),
@@ -223,7 +224,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-r",
         desc: "redo",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "redo",
         handler: Handler::Leaf(|e, _| e.redo()),
@@ -231,7 +232,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-d ctrl-u ctrl-f ctrl-b",
         desc: "half/full page scroll (count = lines)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "scroll-pages",
         handler: Handler::Leaf(|_, _| {}), // count-aware: dispatch_row
@@ -239,7 +240,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-^",
         desc: "alternate buffer",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "alternate-buffer",
         handler: Handler::Leaf(|e, _| e.alternate_buffer()),
@@ -247,7 +248,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "q<a>",
         desc: "record macro into register",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "macro-record",
         handler: Handler::AbsorbChar(AbsorbKind::MacroRecord),
@@ -255,7 +256,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "@<a>",
         desc: "play macro (count repeats)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "macro-play",
         handler: Handler::AbsorbChar(AbsorbKind::MacroPlay),
@@ -263,7 +264,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gr",
         desc: "references (LSP)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "references",
         handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::References)),
@@ -271,7 +272,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gI",
         desc: "implementation (LSP)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "implementation",
         handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::Implementation)),
@@ -279,7 +280,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gy",
         desc: "type definition (LSP)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "type-definition",
         handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::TypeDefinition)),
@@ -287,7 +288,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gD",
         desc: "declaration (LSP)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "declaration",
         handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::Declaration)),
@@ -295,7 +296,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "]d [d",
         desc: "next/prev diagnostic",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "diagnostic-jumps",
         handler: Handler::Leaf(|e, k| e.jump_diagnostic_pub(k != '[')),
@@ -303,7 +304,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gd",
         desc: "goto definition (LSP)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "goto-definition",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::lsp_goto_definition_pub(e)),
@@ -311,7 +312,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "gs",
         desc: "switch source/header (clangd)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "switch-source-header",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::lsp_switch_source_header_pub(e)),
@@ -319,7 +320,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "f<c> F<c> t<c> T<c>",
         desc: "find/till char (candidates light up)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "find-char",
         handler: Handler::AbsorbChar(AbsorbKind::Find),
@@ -327,7 +328,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: ":",
         desc: "ex command line",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "ex-line",
         handler: Handler::TextLine,
@@ -335,7 +336,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "/ ?",
         desc: "literal search forward / backward (live as you type or delete)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "search",
         handler: Handler::TextLine,
@@ -343,7 +344,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "n",
         desc: "next match",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "search-next",
         handler: Handler::Leaf(|e, _| e.repeat_search_pub(false)),
@@ -351,7 +352,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "N",
         desc: "previous match",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "search-prev",
         handler: Handler::Leaf(|e, _| e.repeat_search_pub(true)),
@@ -359,7 +360,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "]c [c",
         desc: "next / prev git hunk",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "hunk-nav",
         handler: Handler::Leaf(|e, k| e.jump_hunk_pub(k != '[')),
@@ -367,7 +368,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "m<a>",
         desc: "set mark at cursor",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "mark-set",
         handler: Handler::AbsorbChar(AbsorbKind::MarkSet),
@@ -375,7 +376,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "'<a> `<a>",
         desc: "jump to mark",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "mark-jump",
         handler: Handler::AbsorbChar(AbsorbKind::MarkJump),
@@ -383,7 +384,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "* #",
         desc: "word under cursor, forward / backward",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "word-search",
         handler: Handler::Leaf(|e, k| e.search_word_under_cursor_pub(k == '#')),
@@ -391,7 +392,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "; ,",
         desc: "repeat find, same / reversed",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "find-repeat",
         handler: Handler::Leaf(|e, k| e.repeat_find_pub(k == ',')),
@@ -399,7 +400,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "|",
         desc: "column motion (vim); pipe moved to space |",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "column-motion",
         handler: Handler::Motion,
@@ -407,7 +408,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space |",
         desc: "pipe line/selection through shell (:! runs)",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "pipe-shell",
         handler: Handler::TextLine,
@@ -415,7 +416,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "Q",
         desc: "toggle cursor at point (multicursor)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "cursor-toggle",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::toggle_cursor(e)),
@@ -424,7 +425,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "d y c > <",
         desc: "operators + motion/object (live preview)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "operators",
         handler: Handler::Operator,
@@ -432,7 +433,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "dd yy cc",
         desc: "line delete/yank/change",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "line-ops",
         handler: Handler::Operator,
@@ -440,7 +441,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "D",
         desc: "delete to line end",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "op-alias-d",
         handler: Handler::Alias("d$"),
@@ -448,7 +449,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "C",
         desc: "change to line end",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "op-alias-c",
         handler: Handler::Alias("c$"),
@@ -456,7 +457,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "Y",
         desc: "yank line",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "op-alias-y",
         handler: Handler::Alias("yy"),
@@ -464,7 +465,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "s",
         desc: "substitute char",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "op-alias-s",
         handler: Handler::Alias("cl"),
@@ -472,7 +473,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "x X",
         desc: "delete char / char back",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "char-delete",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::delete_char(e)),
@@ -480,7 +481,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "iw i\" i' i( i[ i{",
         desc: "inner objects (quotes scan the line)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "objects",
         handler: Handler::ObjectPrefix,
@@ -488,7 +489,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ds\" cs\"' ysiw\"",
         desc: "surround: delete / change / add",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "surround",
         handler: Handler::ObjectPrefix,
@@ -496,7 +497,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "i a A o O I",
         desc: "insert (auto-indent)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "insert-entries",
         handler: Handler::Leaf(crate::editor::Editor::insert_entry_pub),
@@ -504,7 +505,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "p P",
         desc: "paste after / before",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "paste",
         handler: Handler::Leaf(|e, k| e.paste_named_pub(None, 1, k == 'P')),
@@ -512,7 +513,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "r<c>",
         desc: "replace char",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "replace-char",
         handler: Handler::AbsorbChar(AbsorbKind::Replace),
@@ -520,7 +521,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "J .",
         desc: "join lines · repeat change",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "join-repeat",
         handler: Handler::Leaf(crate::editor::Editor::join_or_repeat),
@@ -528,7 +529,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "^",
         desc: "first non-blank",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "first-non-blank",
         handler: Handler::Motion,
@@ -536,7 +537,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "~",
         desc: "toggle case",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "toggle-case",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::toggle_case_pub(e)),
@@ -544,7 +545,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "S",
         desc: "change line",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "subst-line",
         handler: Handler::Alias("cc"),
@@ -552,7 +553,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "u ctrl-r",
         desc: "undo / redo (one unit per command)",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "undo-redo",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::undo(e)),
@@ -560,7 +561,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "\"+y \"+p \"+P",
         desc: "system clipboard: yank / paste after / before",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "reg-clipboard",
         handler: Handler::AbsorbRegister,
@@ -568,7 +569,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "\"xy \"xp",
         desc: "named register: yank / paste",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "reg-named",
         handler: Handler::AbsorbRegister,
@@ -576,7 +577,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-v",
         desc: "visual block",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "visual-block",
         handler: Handler::Leaf(|e, _| e.enter_block_pub()),
@@ -584,7 +585,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "v V",
         desc: "visual / visual-line",
-        section: "normal",
+        sections: &["normal"],
         live: true,
         id: "visual-enter",
         handler: Handler::Leaf(|e, k| e.enter_visual_pub(k)),
@@ -593,7 +594,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "d y c x > <",
         desc: "operate on selection",
-        section: "visual",
+        sections: &["visual"],
         live: true,
         id: "visual-ops",
         handler: Handler::Operator,
@@ -601,7 +602,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "S<c>",
         desc: "wrap selection in pair",
-        section: "visual",
+        sections: &["visual"],
         live: true,
         id: "visual-surround",
         handler: Handler::AbsorbChar(AbsorbKind::Replace),
@@ -609,7 +610,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "i<a> a<a>",
         desc: "objects select (vi[ works)",
-        section: "visual",
+        sections: &["visual"],
         live: true,
         id: "visual-objects",
         handler: Handler::ObjectPrefix,
@@ -617,7 +618,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space y",
         desc: "yank selection → clipboard",
-        section: "visual",
+        sections: &["visual"],
         live: true,
         id: "clip-yank",
         handler: Handler::Leaf(|e, _| e.clipboard_yank_pub()),
@@ -626,7 +627,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "esc",
         desc: "normal mode (session = one undo unit)",
-        section: "insert",
+        sections: &["insert"],
         live: true,
         id: "insert-esc",
         handler: Handler::Prefix,
@@ -634,7 +635,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "backspace",
         desc: "delete back",
-        section: "insert",
+        sections: &["insert"],
         live: true,
         id: "insert-bs",
         handler: Handler::Prefix,
@@ -642,7 +643,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "enter",
         desc: "new line (auto-indent)",
-        section: "insert",
+        sections: &["insert"],
         live: true,
         id: "insert-enter",
         handler: Handler::Prefix,
@@ -650,7 +651,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "} ] )",
         desc: "closer on indent-only line dedents",
-        section: "insert",
+        sections: &["insert"],
         live: true,
         id: "insert-closers",
         handler: Handler::Prefix,
@@ -659,7 +660,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space f",
         desc: "file finder",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "files",
         handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Files)),
@@ -667,7 +668,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space o",
         desc: "open remote destination",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "remote-open",
         handler: Handler::Leaf(|e, _| e.open_remote_picker()),
@@ -675,7 +676,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space b",
         desc: "buffers (MRU)",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "buffers",
         handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Buffers)),
@@ -683,7 +684,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space /",
         desc: "live grep",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "grep",
         handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Grep)),
@@ -691,7 +692,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space R",
         desc: "global search & replace",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "replace-global",
         handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Replace)),
@@ -699,7 +700,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space ?",
         desc: "this popup",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "help",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::open_help(e)),
@@ -707,7 +708,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space y",
         desc: "yank motion → system clipboard",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "clip-yank",
         handler: Handler::Leaf(|e, _| e.clipboard_yank_pub()),
@@ -715,7 +716,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space p",
         desc: "paste clipboard after",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "clip-paste",
         handler: Handler::Leaf(|e, k| e.clipboard_paste_pub(k == 'P')),
@@ -723,7 +724,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space P",
         desc: "paste clipboard before",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "clip-paste-before",
         handler: Handler::Leaf(|e, k| e.clipboard_paste_pub(k == 'P')),
@@ -731,7 +732,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space d",
         desc: "diagnostics picker",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "diagnostics",
         handler: Handler::Leaf(|e, _| e.open_diagnostics_picker()),
@@ -739,7 +740,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space k",
         desc: "hover docs",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "hover",
         handler: Handler::Leaf(|e, _| e.lsp_hover_pub()),
@@ -747,7 +748,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space a",
         desc: "code actions",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "code-actions",
         handler: Handler::Leaf(|e, _| e.lsp_code_actions_pub()),
@@ -755,7 +756,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space s",
         desc: "document symbols picker",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "document-symbols",
         handler: Handler::Leaf(|e, _| e.lsp_document_symbols_pub()),
@@ -763,7 +764,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space S",
         desc: "workspace symbols picker",
-        section: "leader",
+        sections: &["leader"],
         live: false,
         id: "workspace-symbols",
         handler: Handler::Soon,
@@ -771,7 +772,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space j",
         desc: "jumplist picker",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "jumplist-picker",
         handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Jumps)),
@@ -779,7 +780,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space u",
         desc: "undo-tree browser",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "undo-tree",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::open_undo_tree(e)),
@@ -787,7 +788,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space c",
         desc: "cursor on next line too (multicursor)",
-        section: "leader",
+        sections: &["leader"],
         live: true,
         id: "cursor-stack",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::add_cursor_next_line(e)),
@@ -796,7 +797,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g",
         desc: "git…",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-prefix",
         handler: Handler::Prefix,
@@ -804,7 +805,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g l",
         desc: "commit browser",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-log",
         handler: Handler::Leaf(|e, _| e.open_log_pub(false)),
@@ -812,7 +813,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g h",
         desc: "file history (visual: selected lines)",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-file-history",
         handler: Handler::Leaf(|e, _| e.open_log_pub(true)),
@@ -820,7 +821,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g b",
         desc: "toggle blame gutter / card",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-blame",
         handler: Handler::Leaf(|e, _| e.toggle_blame_gutter()),
@@ -828,7 +829,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g y",
         desc: "permalink: copy",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-permalink-yank",
         handler: Handler::Leaf(|e, _| e.yank_permalink()),
@@ -836,7 +837,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g o",
         desc: "permalink: open",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-permalink-open",
         handler: Handler::Leaf(|e, _| e.open_permalink()),
@@ -844,7 +845,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g u",
         desc: "hunk: undo unstaged (restore from index)",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-hunk-undo",
         handler: Handler::Leaf(|e, _| e.undo_hunk()),
@@ -852,7 +853,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g s",
         desc: "hunk: stage (live→index)",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-hunk-stage",
         handler: Handler::Leaf(|e, _| e.stage_hunk()),
@@ -860,7 +861,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g S",
         desc: "hunk: unstage (index→HEAD)",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-hunk-unstage",
         handler: Handler::Leaf(|e, _| e.unstage_hunk()),
@@ -868,7 +869,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "space g p",
         desc: "hunk: preview",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "git-hunk-preview",
         handler: Handler::Leaf(|e, _| e.preview_hunk()),
@@ -876,7 +877,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "]f [f",
         desc: "next / prev file in commit diff",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "commit-file-nav",
         handler: Handler::Soon,
@@ -884,7 +885,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "enter",
         desc: "dive into the line's commit (blame gutter)",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "surface-dive",
         handler: Handler::Prefix,
@@ -892,7 +893,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "q",
         desc: "close surface (readonly buffers)",
-        section: "git",
+        sections: &["git"],
         live: true,
         id: "surface-close",
         handler: Handler::Prefix,
@@ -901,7 +902,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: ":w :q :q! :wq :w {file} :trust",
         desc: "write / quit (force) / write-quit / write-as",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "ex-write-quit",
         handler: Handler::TextLine,
@@ -909,7 +910,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: ":[range]s/a/b/[g] :N :% :N,Md :N,My",
         desc: "substitute (literal) / goto line / ranged delete+yank",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "ex-ranges",
         handler: Handler::TextLine,
@@ -917,7 +918,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-d ctrl-u ctrl-f ctrl-b",
         desc: "half/full page scroll (count = lines)",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "scroll-pages",
         handler: Handler::TextLine,
@@ -925,7 +926,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: ":e",
         desc: "edit file",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "ex-edit",
         handler: Handler::TextLine,
@@ -933,7 +934,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: ":help",
         desc: "help buffer (this text — / searches it)",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "ex-help",
         handler: Handler::TextLine,
@@ -941,7 +942,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: ":vs :sp",
         desc: "split vertical / horizontal",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "ex-split",
         handler: Handler::TextLine,
@@ -949,7 +950,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-w h / l / j / k / w",
         desc: "pane move / cycle",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "pane-nav",
         handler: Handler::Leaf(crate::editor::Editor::pane_move_pub),
@@ -957,7 +958,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-o / ctrl-i (tab)",
         desc: "jump back / forward (jumplist)",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "jumplist",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::jump_back(e)),
@@ -965,7 +966,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-w v / s",
         desc: "pane split (vs / sp)",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "pane-split",
         handler: Handler::Leaf(crate::editor::Editor::split_pub),
@@ -973,7 +974,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: ":view :set",
         desc: "readonly browsing (:set ro/noro; CLI: -R)",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "readonly",
         handler: Handler::TextLine,
@@ -981,7 +982,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-w q",
         desc: "close pane (last → buffer)",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "pane-close",
         handler: Handler::Leaf(|e, _| crate::editor::Editor::pane_close_pub(e)),
@@ -989,7 +990,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "up down left right tab s-tab",
         desc: "picker navigation / arrows = hjkl everywhere",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "picker-nav",
         handler: Handler::Prefix,
@@ -997,7 +998,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-x",
         desc: "replace picker: exclude/include match",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "replace-exclude",
         handler: Handler::Prefix,
@@ -1005,7 +1006,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: "ctrl-l",
         desc: "redraw: full repaint when the terminal desyncs",
-        section: "ex+panes",
+        sections: &["ex+panes"],
         live: true,
         id: "redraw",
         handler: Handler::Leaf(|e, _| e.needs_repaint = true),

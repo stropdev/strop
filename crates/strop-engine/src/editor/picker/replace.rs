@@ -228,6 +228,7 @@ mod tests {
             Kind::Replace,
             vec![
                 Item {
+                    badge: None,
                     text: "a".into(),
                     payload: Payload::Grep {
                         path: PathBuf::from("a"),
@@ -238,6 +239,7 @@ mod tests {
                     },
                 },
                 Item {
+                    badge: None,
                     text: "b".into(),
                     payload: Payload::Grep {
                         path: PathBuf::from("b"),

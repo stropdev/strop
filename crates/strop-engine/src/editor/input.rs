@@ -235,6 +235,45 @@ impl Walker {
                 _ => {}
             }
         }
+        // Visual-section table rows (0049 §7: gb/gB) dispatch like the
+        // normal walker's leaves; the grammar keeps everything else. A
+        // path that fails the table replays into the grammar stream, so
+        // "gg" & friends parse whole.
+        if self.motion.is_empty() {
+            let token = key_token(key);
+            let mut path = self.path.clone();
+            path.push(token);
+            if let Some(row) = keymap::find_row(&path) {
+                if row.sections.contains(&"visual")
+                    && matches!(row.handler, crate::keymap::Handler::Leaf(_))
+                {
+                    let key = path.last().and_then(|t| t.chars().last()).unwrap_or('\0');
+                    self.path.clear();
+                    self.state = ParserState::default();
+                    return Action::Row {
+                        row,
+                        count: None,
+                        register: None,
+                        arg: None,
+                        key,
+                    };
+                }
+            }
+            if keymap::any_child(&path) {
+                self.path = path;
+                return Action::Pending;
+            }
+            // not a visual table row: replay the pending path into the
+            // grammar so the sequence parses as one motion
+            let pending = std::mem::take(&mut self.path);
+            for token in pending {
+                if token.chars().count() == 1 {
+                    self.motion.push_str(&token);
+                } else if token == "space" {
+                    self.motion.push(' ');
+                }
+            }
+        }
         // Visual i/a are grammar object prefixes, not insert rows;
         // arrows speak hjkl at the key layer like everywhere else.
         let c = match key {

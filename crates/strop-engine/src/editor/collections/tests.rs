@@ -41,6 +41,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
     e.open_picker(Kind::Grep);
     let items = vec![
         Item {
+            badge: None,
             text: "a.txt:1: alpha one".into(),
             payload: Payload::Grep {
                 path: a.clone(),
@@ -51,6 +52,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
             },
         },
         Item {
+            badge: None,
             text: "b.txt:2: beta two".into(),
             payload: Payload::Grep {
                 path: b.clone(),
@@ -204,6 +206,7 @@ fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
     e.open_fixture(&b).unwrap();
     e.open_picker(Kind::Grep);
     let item = |path: &std::path::Path| Item {
+        badge: None,
         text: "hit".into(),
         payload: Payload::Grep {
             path: path.to_path_buf(),
@@ -277,6 +280,7 @@ fn unopened_sources_load_in_the_background_and_assemble() {
     e.open_picker(Kind::Grep);
     if let Some(glue) = e.picker.as_mut() {
         glue.picker.append(vec![Item {
+            badge: None,
             text: "hit".into(),
             payload: Payload::Grep {
                 path: a.clone(),
@@ -328,6 +332,7 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
     if let Some(glue) = e.picker.as_mut() {
         glue.picker.append(vec![
             Item {
+                badge: None,
                 text: "local".into(),
                 payload: Payload::Grep {
                     path: a.clone(),
@@ -338,6 +343,7 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
                 },
             },
             Item {
+                badge: None,
                 text: "remote".into(),
                 payload: Payload::Remote {
                     endpoint: strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
@@ -380,6 +386,7 @@ fn relative_startup_path_collects_all_hits() {
     e.open_picker(Kind::Grep);
     let items = vec![
         Item {
+            badge: None,
             text: "a.txt:1".into(),
             payload: Payload::Grep {
                 path: root.join("a.txt"),
@@ -390,6 +397,7 @@ fn relative_startup_path_collects_all_hits() {
             },
         },
         Item {
+            badge: None,
             text: "b.txt:1".into(),
             payload: Payload::Grep {
                 path: root.join("b.txt"),
@@ -644,6 +652,7 @@ fn collection_loads_unopened_sources_in_the_background() {
     if let Some(glue) = e.picker.as_mut() {
         glue.picker.append(vec![
             Item {
+                badge: None,
                 text: "a.txt:1".into(),
                 payload: Payload::Grep {
                     path: a.clone(),
@@ -654,6 +663,7 @@ fn collection_loads_unopened_sources_in_the_background() {
                 },
             },
             Item {
+                badge: None,
                 text: "b.txt:1".into(),
                 payload: Payload::Grep {
                     path: b.clone(),

@@ -435,10 +435,16 @@ fn document_symbols_open_a_picker_and_accepting_jumps() {
     });
     let glue = e.picker.as_ref().expect("the symbols picker opened");
     assert_eq!(glue.picker.kind, strop_picker::Kind::Symbols);
-    let texts: Vec<&str> = glue.picker.items.iter().map(|i| i.text.as_str()).collect();
-    assert_eq!(texts.len(), 2);
-    assert!(texts[0].contains("Foo") && texts[0].contains("Struct") && texts[0].contains(":1"));
-    assert!(texts[1].contains("bar") && texts[1].contains("Foo") && texts[1].contains(":2"));
+    let items = &glue.picker.items;
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].badge.as_deref(), Some("struct"), "kind chip");
+    assert!(items[0].text.contains("Foo") && items[0].text.contains(":1"));
+    assert_eq!(items[1].badge.as_deref(), Some("meth"));
+    assert!(
+        items[1].text.contains("bar")
+            && items[1].text.contains("Foo")
+            && items[1].text.contains(":2")
+    );
     e.wait_picker();
     e.feed(Key::Enter);
     assert!(!e.picker_open());

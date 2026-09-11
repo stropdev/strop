@@ -10,7 +10,7 @@ use strop_core::Buffer;
 fn coverage_shape() {
     for section in SECTIONS {
         assert!(
-            BINDINGS.iter().any(|b| b.section == *section),
+            BINDINGS.iter().any(|b| b.sections.contains(section)),
             "section {section} is empty"
         );
     }

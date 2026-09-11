@@ -178,6 +178,7 @@ impl Editor {
                         None => "[scratch]".into(),
                     };
                     Item {
+                        badge: None,
                         text: name,
                         payload: Payload::Buffer(i),
                     }
@@ -623,6 +624,7 @@ fn jump_row(
     let line = doc.buf.line_of(offset);
     let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
     Some(Item {
+        badge: None,
         text: format!("{marker}{name}:{}  {text}", line + 1),
         payload: Payload::Jump { document, offset },
     })

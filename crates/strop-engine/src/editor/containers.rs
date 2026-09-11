@@ -191,6 +191,7 @@ impl Editor {
                 let items = list
                     .into_iter()
                     .map(|identity| strop_picker::Item {
+                        badge: None,
                         text: format!(
                             "{}  {}  {}",
                             &identity.id[..12],

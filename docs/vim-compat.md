@@ -70,6 +70,8 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 
 ## visual
 
+- `✓ gb` — select next occurrence of word/selection
+- `✓ gB` — select all occurrences in buffer
 - `✓ d y c x > <` — operate on selection
 - `✓ S<c>` — wrap selection in pair
 - `✓ i<a> a<a>` — objects select (vi[ works)

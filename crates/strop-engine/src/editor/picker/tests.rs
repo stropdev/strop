@@ -186,6 +186,7 @@ mod picker_tests {
         let mut picker = Picker::new(
             Kind::RemoteHosts,
             vec![Item {
+                badge: None,
                 text: "Add a host\u{2026}".into(),
                 payload: Payload::RemoteConnect,
             }],
@@ -222,6 +223,7 @@ mod picker_tests {
         let mut picker = Picker::new(
             Kind::RemoteHosts,
             vec![Item {
+                badge: None,
                 text: "Add a host\u{2026}".into(),
                 payload: Payload::RemoteConnect,
             }],
@@ -271,6 +273,7 @@ mod worker_lifecycle_tests {
 
     fn item(text: &str) -> Item {
         Item {
+            badge: None,
             text: text.into(),
             payload: Payload::File(PathBuf::from(text)),
         }

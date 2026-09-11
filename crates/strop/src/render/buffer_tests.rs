@@ -235,6 +235,7 @@ fn collection_view_gutters_source_line_numbers() {
     e.open_picker(strop_picker::Kind::Grep);
     if let Some(glue) = e.picker.as_mut() {
         glue.picker.append(vec![strop_picker::Item {
+            badge: None,
             text: "a.txt:3".into(),
             payload: strop_picker::Payload::Grep {
                 path: a.clone(),

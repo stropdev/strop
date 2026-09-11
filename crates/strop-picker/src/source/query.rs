@@ -71,6 +71,7 @@ pub fn parse_json_match(line: &str) -> Vec<Item> {
             let start = s["start"].as_u64()? as usize;
             let end = s["end"].as_u64()? as usize;
             Some(Item {
+                badge: None,
                 text: format!("{}:{line_no} · {short}", path),
                 payload: Payload::Grep {
                     path: PathBuf::from(path),

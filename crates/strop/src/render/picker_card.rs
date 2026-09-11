@@ -285,7 +285,25 @@ fn render_results(frame: &mut Frame, area: Rect, picker: &strop_picker::Picker, 
         let Some(item) = picker.items.get(row.item) else {
             continue;
         };
-        let text = super::text::clip_end(&item.text, area.width.saturating_sub(1) as usize);
+        // kind chips (symbol picker): a colored field before the text —
+        // the icon column without the icon font
+        let chip_w = item
+            .badge
+            .as_ref()
+            .map_or(0, |badge| badge.chars().count() + 2);
+        if let Some(badge) = &item.badge {
+            spans.push(Span::styled(
+                format!(" {} ", badge),
+                Style::default()
+                    .fg(BASE)
+                    .bg(kind_chip_color(badge))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        let text = super::text::clip_end(
+            &item.text,
+            area.width.saturating_sub(1 + chip_w as u16) as usize,
+        );
         let match_cols = picker.match_columns(row);
         let base_fg = if active {
             TEXT
@@ -305,6 +323,20 @@ fn render_results(frame: &mut Frame, area: Rect, picker: &strop_picker::Picker, 
         lines.push(Line::from(spans));
     }
     frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
+}
+
+/// Chip color per symbol-kind badge (house palette, no icon font).
+fn kind_chip_color(badge: &str) -> Color {
+    match badge {
+        "fn" | "meth" | "new" => Color::Rgb(0x89, 0xb4, 0xfa), // blue
+        "struct" | "class" | "iface" => ACCENT,                // amber
+        "enum" | "variant" => Color::Rgb(0xcb, 0xa6, 0xf7),    // mauve
+        "const" => Color::Rgb(0xfa, 0xb3, 0x87),               // peach
+        "var" | "field" | "prop" => Color::Rgb(0xa6, 0xe3, 0xa1), // green
+        "mod" | "ns" | "pkg" => Color::Rgb(0x94, 0xe2, 0xd5),  // teal
+        "T" => Color::Rgb(0xf5, 0xc2, 0xe7),                   // pink
+        _ => MUTED,
+    }
 }
 
 /// Replace-mode rows (0007 §2): the replacement previews inline — the

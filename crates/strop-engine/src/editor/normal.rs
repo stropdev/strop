@@ -130,7 +130,7 @@ impl Editor {
             let allowed = match row.handler {
                 Handler::Alias(_) => true, // resolved typed op is checked by dispatch_grammar
                 Handler::Leaf(_) => {
-                    row.section == "git"
+                    row.sections.contains(&"git")
                         || matches!(
                             row.id,
                             "search-next"

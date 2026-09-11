@@ -64,6 +64,10 @@ pub struct Item {
     /// What the results list renders.
     pub text: String,
     pub payload: Payload,
+    /// A short visual chip rendered before the text (symbol kind, e.g.
+    /// `fn`/`struct`) — plain text, colored by the renderer; None for
+    /// ordinary rows.
+    pub badge: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -429,14 +433,17 @@ mod tests {
     fn filter_and_rank() {
         let items = vec![
             Item {
+                badge: None,
                 text: "src/main.rs".into(),
                 payload: Payload::File("src/main.rs".into()),
             },
             Item {
+                badge: None,
                 text: "src/render.rs".into(),
                 payload: Payload::File("src/render.rs".into()),
             },
             Item {
+                badge: None,
                 text: "tests/e2e.py".into(),
                 payload: Payload::File("tests/e2e.py".into()),
             },
@@ -457,10 +464,12 @@ mod tests {
         // match ranks above it.
         let items = vec![
             Item {
+                badge: None,
                 text: "prtdv-pw-846".into(),
                 payload: Payload::RemoteConnect,
             },
             Item {
+                badge: None,
                 text: "Add a host\u{2026}".into(),
                 payload: Payload::RemoteConnect,
             },
@@ -477,10 +486,12 @@ mod tests {
             Kind::RemoteHosts,
             vec![
                 Item {
+                    badge: None,
                     text: "prtdv-pw-846".into(),
                     payload: Payload::RemoteConnect,
                 },
                 Item {
+                    badge: None,
                     text: "Add a host\u{2026}".into(),
                     payload: Payload::RemoteConnect,
                 },
@@ -506,6 +517,7 @@ mod tests {
             strop_core::id::Arena::default();
         let items: Vec<Item> = (0..3)
             .map(|i| Item {
+                badge: None,
                 text: format!("f{i}"),
                 payload: Payload::Buffer(arena.insert(())),
             })
@@ -521,6 +533,7 @@ mod tests {
     #[test]
     fn ctrl_d_excludes_a_whole_file() {
         let hit = |path: &str| Item {
+            badge: None,
             text: path.into(),
             payload: Payload::Grep {
                 path: PathBuf::from(path),
@@ -550,14 +563,17 @@ mod tests {
             Kind::Grep,
             vec![
                 Item {
+                    badge: None,
                     text: "a.rs:1 foo".into(),
                     payload: Payload::File("a.rs".into()),
                 },
                 Item {
+                    badge: None,
                     text: "b.rs:2 bar".into(),
                     payload: Payload::File("b.rs".into()),
                 },
                 Item {
+                    badge: None,
                     text: "c.rs:3 baz".into(),
                     payload: Payload::File("c.rs".into()),
                 },

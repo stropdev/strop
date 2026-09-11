@@ -162,6 +162,7 @@ fn stale_picker_terminal_cannot_end_recorded_new_query() {
             ticket: second.clone(),
             msg: PickerMsg::Items(
                 vec![Item {
+                    badge: None,
                     text: "matching row".into(),
                     payload: Payload::File("hit".into()),
                 }]

@@ -27,7 +27,7 @@ impl Editor {
             text.push_str(&format!("\n[{section}]\n"));
             let rows: Vec<_> = crate::keymap::BINDINGS
                 .iter()
-                .filter(|b| b.section == *section)
+                .filter(|b| b.sections.contains(section))
                 .collect();
             let width = rows
                 .iter()
