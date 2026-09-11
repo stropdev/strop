@@ -69,6 +69,12 @@ impl Editor {
                     Key::Char('y') => Op::Yank,
                     _ => Op::Change,
                 };
+                // occurrence selections (0049 §7.4): real stretched
+                // ranges cascade the operator over every occurrence
+                if self.mode == Mode::Visual && self.sels().count() > 1 {
+                    self.visual_operate_cascade(op);
+                    return;
+                }
                 if self.buf().readonly && op != Op::Yank {
                     self.message = "readonly buffer".into();
                     self.mode = Mode::Normal;
@@ -131,22 +137,103 @@ impl Editor {
         ) {
             return;
         }
-        match self
-            .resolved_many(command, &self.all_cursors())
-            .map(|resolved| resolved.into_iter().next().flatten())
-        {
-            Ok(Some(resolved)) => {
-                let head = self.head();
-                self.sels_mut()
-                    .stretch_primary(resolved.range.start.get(), head);
-                self.set_head(
-                    self.buf()
-                        .clamp_boundary(resolved.range.end.get().saturating_sub(1)),
-                );
+        match self.resolved_many(command, &self.all_cursors()) {
+            Ok(resolutions) => {
+                if let Some(Some(resolved)) = resolutions.first() {
+                    let head = self.head();
+                    self.sels_mut()
+                        .stretch_primary(resolved.range.start.get(), head);
+                    self.set_head(
+                        self.buf()
+                            .clamp_boundary(resolved.range.end.get().saturating_sub(1)),
+                    );
+                }
+                // occurrence selections are real: every extra re-anchors
+                // on ITS object (0049 §7.4 — this was primary-only)
+                let olds = self.extra_selections().to_vec();
+                let extras: Vec<strop_core::selection::Selection> = olds
+                    .iter()
+                    .zip(resolutions.iter().skip(1))
+                    .map(|(old, resolved)| match resolved {
+                        Some(resolved) => strop_core::selection::Selection {
+                            anchor: resolved.range.start.get(),
+                            head: self
+                                .buf()
+                                .clamp_boundary(resolved.range.end.get().saturating_sub(1)),
+                        },
+                        None => *old,
+                    })
+                    .collect();
+                self.sels_mut().set_extra_selections(extras);
             }
-            Ok(None) => {}
             Err(error) => self.message = error,
         }
+    }
+
+    /// d/y/c/x over every charwise selection (0049 §7.4): occurrence
+    /// selections are real ranges, so each one is yanked/deleted/
+    /// changed — the batch is ONE undo unit, the register one
+    /// newline-joined characterwise text (the normal cascade's rule).
+    fn visual_operate_cascade(&mut self, op: Op) {
+        if self.buf().readonly && op != Op::Yank {
+            self.message = "readonly buffer".into();
+            self.mode = Mode::Normal;
+            return;
+        }
+        let mut spans: Vec<((usize, usize), bool)> = std::iter::once((self.sels().primary(), true))
+            .chain(self.extra_selections().iter().copied().map(|s| (s, false)))
+            .map(|(selection, primary)| (self.selection_span(selection), primary))
+            .collect();
+        spans.sort_by_key(|(span, _)| span.0);
+        spans.dedup_by_key(|(span, _)| *span); // identical ranges edit once
+        let texts: Vec<String> = spans
+            .iter()
+            .map(|((start, end), _)| self.buf().slice_string(Range::charwise(*start, *end)))
+            .collect();
+        if op == Op::Yank {
+            self.set_register(None, super::Register::characterwise(texts.join("\n")));
+            // helix rule: yank keeps the selections (and Visual mode)
+            let flash = spans
+                .iter()
+                .find(|(_, primary)| *primary)
+                .map_or(spans[0].0, |(span, _)| *span);
+            self.flash(Range::charwise(flash.0, flash.1));
+            return;
+        }
+        self.tx_begin();
+        for ((start, end), _) in spans.iter().rev() {
+            self.buf_mut().delete(Range::charwise(*start, *end));
+        }
+        self.set_register(None, super::Register::characterwise(texts.join("\n")));
+        // landings: each range start minus what lower deletes removed
+        // (deletes applied bottom-up above)
+        let mut shift = 0usize;
+        let mut landings: Vec<(usize, bool)> = Vec::with_capacity(spans.len());
+        for ((start, end), primary) in &spans {
+            landings.push((*start - shift, *primary));
+            shift += end - start;
+        }
+        let head = landings
+            .iter()
+            .find(|(_, primary)| *primary)
+            .map(|(start, _)| *start)
+            .unwrap_or(self.head());
+        self.set_head(head);
+        self.sels_mut().set_extra_selections(
+            landings
+                .iter()
+                .filter(|(_, primary)| !*primary)
+                .map(|(start, _)| strop_core::selection::Selection::cursor(*start)),
+        );
+        self.mode = Mode::Normal;
+        if op == Op::Change {
+            // no commit: the insert session closes the undo unit
+            self.enter_insert_from("v...");
+        } else {
+            self.tx_commit();
+        }
+        self.clamp_cursor();
+        self.flash(Range::charwise(self.head(), self.head()));
     }
 
     /// One typed visual action: motions extend, objects select, the

@@ -222,6 +222,53 @@ fn cursor_cell_tracks_wide_chars() {
 // arithmetic (configured stops, wide=2, combining=0, control→1-cell
 // replacement), not from observed passes.
 
+#[test]
+fn collection_view_gutters_source_line_numbers() {
+    // 0049 §6: body rows gutter their SOURCE line numbers; the title
+    // and file-header rows keep the gutter blank; the modeline names
+    // the collection, never [scratch].
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.txt");
+    std::fs::write(&a, "alpha one\nalpha two\nalpha three\n").unwrap();
+    let mut e = Editor::new(Buffer::from_text("scratch\n"));
+    e.open_fixture(&a).unwrap();
+    e.open_picker(strop_picker::Kind::Grep);
+    if let Some(glue) = e.picker.as_mut() {
+        glue.picker.append(vec![strop_picker::Item {
+            text: "a.txt:3".into(),
+            payload: strop_picker::Payload::Grep {
+                path: a.clone(),
+                line: 3,
+                col: 1,
+                match_len: 5,
+                line_text: "alpha three".into(),
+            },
+        }]);
+    }
+    e.feed(crate::editor::Key::CtrlO);
+    assert_eq!(
+        e.buf().name.as_deref(),
+        Some("collection: grep"),
+        "the modeline names the collection"
+    );
+    let mut terminal = viewport_terminal(50, 8);
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    let grid = terminal.backend().buffer();
+    let row1: String = row_symbols(grid, 0, 1, 20).concat();
+    let row2: String = row_symbols(grid, 0, 2, 20).concat();
+    // row 1 = the file header (blank gutter), row 2 = the body with
+    // the source line number 3
+    assert!(
+        !row1.contains('3'),
+        "header row has no line number: {row1:?}"
+    );
+    assert!(
+        row2.contains('3'),
+        "body rows gutter the source line: {row2:?}"
+    );
+    assert!(row2.contains("alpha three"), "{row2:?}");
+}
+
 fn viewport_terminal(width: u16, height: u16) -> ratatui::Terminal<ratatui::backend::TestBackend> {
     ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap()
 }
@@ -240,6 +287,7 @@ fn long_line_tabs_unicode_and_native_caret_share_origin() {
             "x".repeat(70_000)
         )));
         e.config.tab_size = tab;
+        e.reresolve_indents(); // config changes re-resolve open documents
         e.set_head(70_010); // Z, after a CJK cluster, combining cluster and ESC
         let mut terminal = viewport_terminal(11, 4); // 5 fixed + 6 content cells
         terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();

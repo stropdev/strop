@@ -56,6 +56,10 @@ pub(crate) struct ChangeReceipt {
     pub applied: Vec<(DocumentId, BufferRevision, BufferRevision)>,
     /// (target, reason) for everything NOT applied.
     pub refused: Vec<(ResourceLocation, String)>,
+    /// Per-member history depth after this group was undone (0049 §5):
+    /// revisions are monotonic and cannot name an undone position; the
+    /// depth can. Set by the undoer, preflighted by the redoer.
+    pub redo_depths: Option<Vec<usize>>,
 }
 
 /// A validated plan ready to apply. Building resolves server positions to
@@ -71,6 +75,10 @@ pub(crate) struct ChangePlan {
 pub(crate) struct ChangeState {
     /// Newest-last; grouped undo pops from the back.
     receipts: VecDeque<ChangeReceipt>,
+    /// Groups undone since the last apply — `collection redo` replays
+    /// them newest-first. A new receipt clears the redo branch, like
+    /// any history fork.
+    undone: VecDeque<ChangeReceipt>,
     /// Code actions offered by the open picker (0043); acceptance applies
     /// the chosen action's edits as a change plan.
     pub(crate) pending_actions: Vec<strop_lsp::ProtoAction>,
@@ -83,6 +91,7 @@ impl Default for ChangeState {
     fn default() -> Self {
         Self {
             receipts: VecDeque::new(),
+            undone: VecDeque::new(),
             pending_actions: Vec::new(),
             pending_encoding: strop_lsp::PositionEncoding::Utf16,
         }
@@ -93,12 +102,47 @@ impl ChangeState {
     const RETAINED: usize = 16;
 
     fn record(&mut self, receipt: ChangeReceipt) {
+        self.undone.clear(); // a new change forks history — redo dies
         self.receipts.push_back(receipt);
         while self.receipts.len() > Self::RETAINED {
             self.receipts.pop_front();
         }
     }
+
+    /// Take the newest receipt matching `pred` (0049 §5: a collection's
+    /// undo scopes to its own edit groups, never the global tail).
+    pub(crate) fn take_newest_matching(
+        &mut self,
+        pred: impl Fn(&ChangeReceipt) -> bool,
+    ) -> Option<(usize, ChangeReceipt)> {
+        let index = self.receipts.iter().rposition(pred)?;
+        self.receipts.remove(index).map(|receipt| (index, receipt))
+    }
+
+    /// Return a refused receipt to its exact place (preflight failure
+    /// must not consume it, 0049 §5).
+    pub(crate) fn restore(&mut self, index: usize, receipt: ChangeReceipt) {
+        self.receipts
+            .insert(index.min(self.receipts.len()), receipt);
+    }
+
+    /// Redo stack access for the scoped redo.
+    pub(crate) fn take_undone_matching(
+        &mut self,
+        pred: impl Fn(&ChangeReceipt) -> bool,
+    ) -> Option<ChangeReceipt> {
+        let index = self.undone.iter().rposition(pred)?;
+        self.undone.remove(index)
+    }
+    pub(crate) fn push_undone(&mut self, receipt: ChangeReceipt) {
+        self.undone.push_back(receipt);
+    }
+    pub(crate) fn push_receipt_back(&mut self, receipt: ChangeReceipt) {
+        self.receipts.push_back(receipt);
+    }
 }
+
+pub(crate) mod review;
 
 #[cfg(test)]
 mod tests;
@@ -126,7 +170,7 @@ impl Editor {
         }
         let encoding = self.changes.pending_encoding;
         let plan = self.build_change_plan(ChangeProducer::CodeAction, edits, encoding);
-        self.apply_change_plan(plan);
+        self.present_change_plan(plan);
     }
 }
 
@@ -238,6 +282,7 @@ impl Editor {
             producer: producer.clone(),
             applied: Vec::new(),
             refused: plan.refused,
+            redo_depths: None,
         };
         for target in plan.documents {
             let changes = super::transact::ChangeSet {

@@ -41,7 +41,7 @@ impl Editor {
             .byte_slice(start..self.buf().line_end(line));
         let relative = byte.saturating_sub(start);
         let mut end = DisplayColumn::new(0);
-        for (span, cluster) in RopeGraphemes::new(slice, self.config.tab_size) {
+        for (span, cluster) in RopeGraphemes::new(slice, self.cur_indent().width) {
             end = span.cell + span.width;
             if relative < span.byte + cluster.len() {
                 return (span.cell, span.cell + span.width.max(1));
@@ -103,7 +103,7 @@ impl Editor {
         let mut last = start;
         let mut selected = String::new();
         let mut remaining = String::new();
-        for (span, text) in RopeGraphemes::new(slice, self.config.tab_size) {
+        for (span, text) in RopeGraphemes::new(slice, self.cur_indent().width) {
             let end = span.cell + span.width;
             if end <= left || span.cell >= right || span.width == 0 {
                 continue;
@@ -135,7 +135,7 @@ impl Editor {
         let end = self.buf().line_end(line);
         let byte = RopeGraphemes::new(
             self.buf().text().byte_slice(start..end),
-            self.config.tab_size,
+            self.cur_indent().width,
         )
         .find_map(|(span, _)| (span.cell + span.width > column).then_some(start + span.byte))
         .unwrap_or(end);
@@ -230,7 +230,7 @@ impl Editor {
         let mut width = DisplayColumn::new(0);
         for (span, cluster) in RopeGraphemes::new(
             self.buf().text().byte_slice(start..end),
-            self.config.tab_size,
+            self.cur_indent().width,
         ) {
             if span.cell == column {
                 return Some(Replacement::new(

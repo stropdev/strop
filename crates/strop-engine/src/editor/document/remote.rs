@@ -144,6 +144,7 @@ impl Document {
         buffer.readonly = true;
         Self {
             buf: buffer,
+            indent: super::Indent::default(),
             source: DocumentSource::Remote(Box::new(source)),
         }
     }
@@ -188,6 +189,7 @@ impl Document {
         buffer.readonly = true;
         Self {
             buf: buffer,
+            indent: super::Indent::default(),
             source: DocumentSource::RemoteDirectory(Box::new(source)),
         }
     }

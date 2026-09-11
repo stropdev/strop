@@ -84,6 +84,18 @@ impl super::Editor {
         map_active: bool,
         position: impl Fn(usize, &Change) -> usize,
     ) {
+        // Snapshot clean views before the mutable document borrow: a
+        // view with an unsynced user edit is never regenerated (0049 §5).
+        let clean_views: std::collections::HashSet<DocumentId> = self
+            .collections
+            .iter()
+            .filter(|(cid, collection)| {
+                self.docs
+                    .get(**cid)
+                    .is_some_and(|doc| doc.buf.revision() == collection.revision)
+            })
+            .map(|(cid, _)| *cid)
+            .collect();
         let Some(document) = self.docs.get_mut(id) else {
             return;
         };
@@ -91,7 +103,43 @@ impl super::Editor {
             return;
         }
         let active = self.active_pane;
+        // 0049 §5: classify dependent collection excerpts against each
+        // change BEFORE the remap moves their source spans. A change
+        // strictly inside one excerpt splices that excerpt's view rows;
+        // anything touching an edge re-renders the whole view. Views
+        // with an unsynced user edit are never regenerated underneath
+        // the typist — the next write-back's render covers them.
+        let mut splices: Vec<(DocumentId, usize)> = Vec::new();
+        let mut renders: Vec<DocumentId> = Vec::new();
         for change in document.buf.changes() {
+            let (start, end) = (change.edit.start_byte, change.edit.old_end_byte);
+            for (collection_id, collection) in self.collections.iter() {
+                if renders.contains(collection_id) {
+                    continue;
+                }
+                if !clean_views.contains(collection_id) {
+                    continue;
+                }
+                for (index, excerpt) in collection.excerpts.iter().enumerate() {
+                    if excerpt.source != id {
+                        continue;
+                    }
+                    // Insertions at a boundary belong to the span (the
+                    // remap grows it onto the new bytes) — only a
+                    // change strictly outside skips the refresh.
+                    if end < excerpt.start || start > excerpt.end {
+                        continue;
+                    }
+                    if start > excerpt.start && end < excerpt.end {
+                        if !splices.contains(&(*collection_id, index)) {
+                            splices.push((*collection_id, index));
+                        }
+                    } else {
+                        renders.push(*collection_id);
+                        break;
+                    }
+                }
+            }
             let map = |offset| position(offset, change);
             for (owner, position) in self.marks.values_mut() {
                 if *owner == id {
@@ -112,18 +160,62 @@ impl super::Editor {
                     pane.sels.map_positions(map);
                 }
             }
-            // Collection excerpts anchor into sources like any other mark.
+            // Collection excerpts are SPANS, not points (0049 §5): an
+            // edit replacing the span's first byte keeps the start —
+            // the pointwise collapse rule would slide the anchor past
+            // the new text and drop it from the view.
             for collection in self.collections.values_mut() {
                 for excerpt in &mut collection.excerpts {
                     if excerpt.source == id {
-                        excerpt.start = map(excerpt.start);
-                        excerpt.end = map(excerpt.end);
+                        let (s, e) = (change.edit.start_byte, change.edit.old_end_byte);
+                        let new_len = change.edit.new_end_byte - change.edit.start_byte;
+                        let delta = new_len as isize - (e - s) as isize;
+                        let shift = |p: usize| (p as isize + delta) as usize;
+                        let insertion = s == e;
+                        excerpt.start = if excerpt.start <= s {
+                            excerpt.start
+                        } else if excerpt.start >= e {
+                            shift(excerpt.start)
+                        } else {
+                            s
+                        };
+                        excerpt.end = if excerpt.end < s {
+                            excerpt.end
+                        } else if excerpt.end > e || (excerpt.end == e && !insertion) {
+                            shift(excerpt.end)
+                        } else {
+                            // covered (or a boundary insertion — deleted-
+                            // then-reinserted text regrows the span)
+                            s + new_len
+                        };
                     }
                 }
             }
         }
         self.analysis.edits(id, document.buf.changes());
         document.buf.clear_changes();
+        // Refresh the dependent views after the journal is consumed.
+        #[cfg(test)]
+        if !renders.is_empty() || !splices.is_empty() {
+            eprintln!("hook on doc {id:?}: renders={renders:?} splices={splices:?}");
+        }
+        for collection_id in renders {
+            self.collection_render_view(collection_id);
+        }
+        for (collection_id, index) in splices {
+            // A collection re-rendered above already shows the new text.
+            if self
+                .collections
+                .get(&collection_id)
+                .is_some_and(|collection| {
+                    self.docs
+                        .get(collection_id)
+                        .is_some_and(|doc| doc.buf.revision() == collection.revision)
+                })
+            {
+                self.collection_splice_excerpt(collection_id, index);
+            }
+        }
     }
 }
 

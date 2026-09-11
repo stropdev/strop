@@ -300,7 +300,14 @@ impl Editor {
         if self.finishing {
             return false;
         }
-        if matches!(key.intent, OpenIntent::Replace { .. }) {
+        // Background source loads never take focus, so origin/focus
+        // freshness does not apply (0049 §5: an old load must still
+        // count down the build — cancellation is the cancel path's job,
+        // not a focus accident).
+        if matches!(
+            key.intent,
+            OpenIntent::Replace { .. } | OpenIntent::Background
+        ) {
             return true;
         }
         if let OpenIntent::LspLocation { context, .. } = &key.intent {
@@ -314,7 +321,37 @@ impl Editor {
             && self.buf().revision() == key.revision
     }
 
+    /// Re-resolve every open document (config lands after the startup
+    /// buffer's construction in main).
+    pub fn reresolve_indents(&mut self) {
+        let ids: Vec<_> = self.docs.iter().map(|(id, _)| id).collect();
+        for id in ids {
+            self.resolve_indent_for(id);
+        }
+    }
+
+    /// Indent resolution at open: the config default, or the content's
+    /// own convention when `indent_detect` finds a clear majority.
+    pub(crate) fn resolve_indent_for(&mut self, document: DocumentId) {
+        let fallback = super::document::Indent {
+            style: self.config.indent_style,
+            width: self.config.tab_size,
+        };
+        let indent = if self.config.indent_detect {
+            self.docs
+                .get(document)
+                .and_then(|doc| super::document::detect_indent(doc.buf.text()))
+                .unwrap_or(fallback)
+        } else {
+            fallback
+        };
+        if let Some(doc) = self.docs.get_mut(document) {
+            doc.indent = indent;
+        }
+    }
+
     fn finish_open(&mut self, document: DocumentId, intent: OpenIntent) {
+        self.resolve_indent_for(document);
         match intent {
             OpenIntent::LspLocation { context, position } => {
                 self.finish_lsp_jump(document, position, context)
@@ -384,6 +421,17 @@ impl Editor {
     }
 
     pub fn request_save(&mut self, target: Option<PathBuf>, force: bool, close: bool) {
+        // auto_format (helix parity): a plain `:w` formats through the
+        // language server first; the save chains on the reply. A
+        // formatter failure or refusal never holds the save hostage.
+        if self.config.auto_format && target.is_none() && self.lsp_format_available() {
+            self.lsp_state.after_format = Some(crate::editor::lsp::state::AfterFormat::Save {
+                document: self.current(),
+                close,
+            });
+            self.lsp_format();
+            return;
+        }
         self.request_save_document(self.current(), target, force, close);
     }
 
@@ -576,6 +624,10 @@ impl Editor {
                             }
                             id
                         } else {
+                            // Background loads never steal the view: the
+                            // pristine scratch stays until a foreground
+                            // open or the built collection replaces it.
+                            let takes_focus = !matches!(key.intent, OpenIntent::Background);
                             // A first open on an endpoint binds its workspace
                             // context (0042 slice 2); rebinds are idempotent.
                             let endpoint = opened
@@ -593,7 +645,9 @@ impl Editor {
                                     .bind(strop_workspace::Filesystem::Remote(endpoint), None);
                             }
                             let id = self.docs.insert(opened.document);
-                            self.drop_stale_scratch(id);
+                            if takes_focus {
+                                self.drop_stale_scratch(id);
+                            }
                             self.generation += 1;
                             self.mru.push(id);
                             id
@@ -639,6 +693,7 @@ impl Editor {
                         }
                         .into();
                         self.request_session_save();
+                        self.collection_save_progress(key.document, saved);
                         if saved
                             && key.close
                             && !self.docs.is_empty()
@@ -649,6 +704,7 @@ impl Editor {
                         }
                     }
                     Outcome::Failed { failure, .. } => {
+                        self.collection_save_progress(key.document, false);
                         self.message = format!("write failed: {}", failure.message)
                     }
                     Outcome::Cancelled(_) => self.message = "write cancelled".into(),

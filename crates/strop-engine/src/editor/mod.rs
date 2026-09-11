@@ -37,6 +37,9 @@ pub mod macros;
 #[cfg(test)]
 mod multicursor_tests;
 pub(crate) mod normal;
+mod occurrence;
+#[cfg(test)]
+mod occurrence_tests;
 mod panes;
 pub mod pending;
 mod permalink;
@@ -176,6 +179,8 @@ pub struct Editor {
     /// Armed by `/`/`?`/`*`/`#` searches. `n`/`N` replay it; the render
     /// highlights matches persistently (rootle: current match underlined).
     pub last_search: Option<LastSearch>,
+    /// Live occurrence selection (0049 §7): needle + add-order ranges.
+    pub(crate) occurrence: Option<occurrence::OccurrenceState>,
     pub registers: HashMap<char, Register>,
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
     pub marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
@@ -217,6 +222,7 @@ pub struct Editor {
     pub workspaces: workspaces::WorkspaceRegistry,
     /// Applied change plans and their receipts (0043); grouped undo reads it.
     pub(crate) changes: changes::ChangeState,
+    pub(crate) review: changes::review::ReviewState,
     /// Open editable code collections by their buffer document (0044).
     pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
     /// A build waiting on background source loads (0044 v2).
@@ -372,9 +378,11 @@ impl Editor {
             containers: containers::ContainerState::default(),
             mru: vec![current],
             changes: changes::ChangeState::default(),
+            review: changes::review::ReviewState::default(),
             collections: HashMap::new(),
             collection_build: None,
             mode: Mode::Normal,
+            occurrence: None,
             pending: pending::PendingInput::default(),
             walker: input::Walker::new(),
             last_search: None,
@@ -528,6 +536,12 @@ impl Editor {
     /// is a pipe, not a search).
     pub fn pending_sigil(&self) -> Option<char> {
         self.pending.sigil()
+    }
+
+    /// The current document's indent (config default or detected at
+    /// open — resolved eagerly, so reads never rescan).
+    pub(crate) fn cur_indent(&self) -> document::Indent {
+        self.cur().indent
     }
 
     // ---- shared helpers -------------------------------------------------

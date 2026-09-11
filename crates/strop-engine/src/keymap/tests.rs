@@ -74,7 +74,7 @@ fn which_key_children() {
     assert_eq!(git.len(), 9); // l h b y o u s S p
     assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
     assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
-    assert_eq!(children_of("g", Mode::Normal).len(), 13); // gg gd gs ge gE gv gi g; g, gr gI gy gD
+    assert_eq!(children_of("g", Mode::Normal).len(), 16); // + gb gB g␣
                                                           // visual mode: only the visual table feeds the card
     let v = children_of(" ", Mode::Visual);
     assert_eq!(v.len(), 1);
@@ -109,6 +109,9 @@ const DISPATCHED: &[&str] = &[
     "space P",
     "space j",
     "space s",
+    "g<space>",
+    "gb",
+    "gB",
     // git namespace
     "space g u",
     "space g s",
@@ -215,6 +218,16 @@ fn every_dispatched_sequence_has_a_row() {
         for tok in concretized.split(' ') {
             if NAMED.contains(&tok) || tok.starts_with(':') {
                 toks.push(tok.to_string());
+            } else if let Some(pos) = tok.find('<') {
+                // g<space> style: leading chars, then the named token in
+                // the walker's vocabulary
+                toks.extend(tok[..pos].chars().map(|c| c.to_string()));
+                let named = &tok[pos..];
+                toks.push(if named == "<space>" {
+                    "space".to_string()
+                } else {
+                    named.to_string()
+                });
             } else {
                 toks.extend(tok.chars().map(|c| c.to_string()));
             }
@@ -240,6 +253,11 @@ fn live_rows_dispatch_through_the_table() {
                     "<c>" => "x".into(),
                     t if t.starts_with("ctrl-") || t == "up" || t == "down" || t == "tab" => {
                         String::new() // key events, not walker chars
+                    }
+                    t if t.contains("<space>") => {
+                        // "g<space>": the key, then a literal space
+                        let i = t.find('<').unwrap();
+                        format!("{} ", &t[..i])
                     }
                     t if t.contains('<') => {
                         // "f<c>": the key, then a concrete char

@@ -37,7 +37,14 @@ impl Editor {
         if !before.chars().all(|c| c == ' ' || c == '\t') {
             return; // real text before the cursor — never reindent
         }
-        let width = self.config.tab_size;
+        // Strip exactly one indent unit: a tab, or `width` spaces.
+        if start < self.head() && self.buf().byte(start) == b'\t' {
+            self.buf_mut()
+                .delete(strop_core::Range::charwise(start, start + 1));
+            self.set_head(self.head() - 1);
+            return;
+        }
+        let width = self.cur_indent().width;
         let mut strip = 0;
         while strip < width && start + strip < self.head() && self.buf().byte(start + strip) == b' '
         {
@@ -72,7 +79,7 @@ impl Editor {
             || trimmed.ends_with(':');
         let mut indent = base;
         if deeper {
-            indent.push_str(&self.config.indent());
+            indent.push_str(&self.cur_indent().unit());
         }
         indent
     }
@@ -93,7 +100,7 @@ impl Editor {
             || trimmed.ends_with(':');
         let mut indent = base;
         if deeper {
-            indent.push_str(&self.config.indent());
+            indent.push_str(&self.cur_indent().unit());
         }
         indent
     }
@@ -133,12 +140,15 @@ impl Editor {
             Key::Esc => {
                 self.mode = Mode::Normal;
                 self.set_head(self.head().saturating_sub(1));
-                let extras: Vec<usize> = self
+                let extras: Vec<strop_core::selection::Selection> = self
                     .extra_selections()
                     .iter()
-                    .map(|s| s.head.saturating_sub(1))
+                    .map(|s| strop_core::selection::Selection {
+                        anchor: s.anchor,
+                        head: s.head.saturating_sub(1),
+                    })
                     .collect();
-                self.sels_mut().set_extras(extras);
+                self.sels_mut().set_extra_selections(extras);
                 // vim insert counts: `3iX` types X three times — the
                 // replay joins the session's undo unit (commit after)
                 let count = std::mem::replace(&mut self.insert_count, 1);
@@ -247,8 +257,21 @@ impl Editor {
             | Key::CtrlB
             | Key::CtrlCaret
             | Key::CtrlV
-            | Key::Tab
             | Key::Backtab => {}
+            Key::Tab => {
+                // vim: Tab inserts the indent unit — a tab or the
+                // document's spaces (config indent_style; detection may
+                // have resolved this buffer's own).
+                let unit = self.cur_indent().unit();
+                let mut positions = self.all_cursors();
+                positions.sort_unstable();
+                positions.dedup();
+                let width = unit.len();
+                for &pos in positions.iter().rev() {
+                    self.buf_mut().insert(pos, &unit);
+                }
+                self.remap_after_mirrored_edit(&positions, width as isize);
+            }
             Key::Char(c) => {
                 // smartindent (vim/helix behavior): a closer typed on an
                 // indent-only line dedents one level first — typing `}`

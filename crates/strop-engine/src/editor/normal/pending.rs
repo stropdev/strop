@@ -290,6 +290,19 @@ impl Editor {
         if self.dive_from_blame() {
             return;
         }
+        // 0049 §5: Enter on a collection's header row opens the source;
+        // inside an excerpt body Enter keeps its vim meaning.
+        if self.collections.contains_key(&self.current()) {
+            let line = self.buf().line_of(self.head());
+            let on_header = self
+                .collections
+                .get(&self.current())
+                .is_some_and(|c| c.excerpts.iter().any(|e| e.view_line == line));
+            if on_header {
+                self.collection_open_source();
+                return;
+            }
+        }
         let n = self.walker.state.count1.unwrap_or(1);
         let line = (self.buf().line_of(self.head()) + n).min(self.buf().last_content_line());
         let s = self.buf().line_start(line);

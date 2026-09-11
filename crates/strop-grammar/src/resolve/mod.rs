@@ -17,7 +17,8 @@ use motions::*;
 use objects::*;
 
 use crate::query::{search_backward, search_forward};
-pub use objects::match_pair;
+pub use objects::{match_pair, word_run};
+pub use search::literal_from;
 
 /// Unwrap an Option helper's None into the command resolving to
 /// nothing (Ok(None)) — the body keeps its `?` shape where helpers

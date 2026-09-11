@@ -123,6 +123,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             let mut editor = editor::Editor::new(buffer);
             let (configuration, error) = config::Config::load();
             editor.config = configuration;
+            editor.reresolve_indents();
             editor.state_dir = session::state_root();
             if let Some(error) = error {
                 editor.message = error;
@@ -173,6 +174,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             editor.buf_mut().readonly = readonly;
             let (configuration, error) = config::Config::load();
             editor.config = configuration;
+            editor.reresolve_indents();
             editor.state_dir = session::state_root();
             if path.is_none() {
                 if let Err(error) = session::restore(&mut editor) {

@@ -10,15 +10,17 @@ use crate::query::exec::{first_from, visit_matches, Matcher};
 use crate::query::{CompiledQuery, QueryError, SearchMatch};
 
 /// KMP over rope chunks for a plain byte needle (the program is a
-/// case-sensitive literal — the common `/word` search).
-fn visit(
+/// case-sensitive literal — the common `/word` search, and occurrence
+/// selection's matcher). `cancelled` is the work owner's cooperative
+/// stop; occurrence scans pass a never-cancelled flag.
+fn kmp(
     buf: &Buffer,
     needle: &[u8],
     from: usize,
-    query: &CompiledQuery,
+    cancelled: &dyn Fn() -> bool,
     mut matched: impl FnMut(usize) -> std::ops::ControlFlow<()>,
 ) -> Result<(), QueryError> {
-    if query.cancelled() {
+    if cancelled() {
         return Err(QueryError::Cancelled);
     }
     if needle.is_empty() {
@@ -40,7 +42,7 @@ fn visit(
     let mut offset = from;
     let suffix = buf.text().byte_slice(from..);
     for chunk in suffix.chunks() {
-        if query.cancelled() {
+        if cancelled() {
             return Err(QueryError::Cancelled);
         }
         for &byte in chunk.as_bytes() {
@@ -59,11 +61,36 @@ fn visit(
             }
         }
     }
-    if query.cancelled() {
+    if cancelled() {
         Err(QueryError::Cancelled)
     } else {
         Ok(())
     }
+}
+
+fn visit(
+    buf: &Buffer,
+    needle: &[u8],
+    from: usize,
+    query: &CompiledQuery,
+    matched: impl FnMut(usize) -> std::ops::ControlFlow<()>,
+) -> Result<(), QueryError> {
+    kmp(buf, needle, from, &|| query.cancelled(), matched)
+}
+
+/// Occurrence selection's matcher (0049 §7): plain bytes, no pattern
+/// syntax, never cancelled — the same chunk-streaming KMP a literal
+/// `/word` search uses, so punctuation in the needle is just bytes.
+/// Returns the first `[start, end)` at or after `from` (clamped up to
+/// a char boundary).
+pub fn literal_from(buf: &Buffer, from: usize, needle: &[u8]) -> Option<(usize, usize)> {
+    let mut found = None;
+    // infallible: no query engine, no cancellation
+    let _ = kmp(buf, needle, from, &|| false, |offset| {
+        found = Some((offset, offset + needle.len()));
+        std::ops::ControlFlow::Break(())
+    });
+    found
 }
 
 fn literal_hit(needle: &[u8], at: usize) -> SearchMatch {

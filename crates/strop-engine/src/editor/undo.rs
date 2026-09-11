@@ -127,12 +127,20 @@ impl Editor {
 }
 
 impl Editor {
-    /// `u`: undo one revision. Readonly buffers never record.
+    /// `u`: undo one revision. Readonly buffers never record. In a
+    /// collection, `u` undoes the collection's own edit group across
+    /// its sources (0049 §5) — the view's presentation history is not
+    /// user history.
     pub(crate) fn undo(&mut self) {
+        if self.collections.contains_key(&self.current()) {
+            self.collection_undo();
+            return;
+        }
         let result = self.buf_mut().undo();
         match result {
             Ok(Some(moved)) => {
                 self.set_head(moved.start.get());
+                self.reland_extras();
                 self.clamp_cursor();
                 self.flash(Range::charwise(self.head(), self.head()));
             }
@@ -141,12 +149,34 @@ impl Editor {
         }
     }
 
-    /// `ctrl-r`: redo along the last-visited branch.
+    /// Every selection re-lands inside the text after undo/redo (0049
+    /// §7.4): positions clamp to the restored length and char
+    /// boundaries, anchors and direction survive.
+    fn reland_extras(&mut self) {
+        let len = self.buf().len_bytes();
+        let extras: Vec<strop_core::selection::Selection> = self
+            .extra_selections()
+            .iter()
+            .map(|s| strop_core::selection::Selection {
+                anchor: self.buf().clamp_boundary(s.anchor.min(len)),
+                head: self.buf().clamp_boundary(s.head.min(len)),
+            })
+            .collect();
+        self.sels_mut().set_extra_selections(extras);
+    }
+
+    /// `ctrl-r`: redo along the last-visited branch (the collection's
+    /// group redo in a collection, 0049 §5).
     pub(crate) fn redo(&mut self) {
+        if self.collections.contains_key(&self.current()) {
+            self.collection_redo();
+            return;
+        }
         let result = self.buf_mut().redo();
         match result {
             Ok(Some(moved)) => {
                 self.set_head(moved.end.get());
+                self.reland_extras();
                 self.clamp_cursor();
                 self.flash(Range::charwise(self.head(), self.head()));
             }

@@ -347,7 +347,7 @@ impl Editor {
         count: usize,
         before: bool,
     ) {
-        let tab = self.config.tab_size.max(1);
+        let tab = self.cur_indent().width.max(1);
         // rectangles are primary-only (vim has no multicursor block):
         // extras collapse, the head anchors the column
         self.sels_mut().collapse_extras();

@@ -16,6 +16,9 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ g,` — newer change (changelist)
 - `✓ ge gE { }` — word-end back / paragraph motions
 - `✓ 0 $ G %` — line/file/pair jumps
+- `✓ g<space>` — collection: open full source at caret
+- `✓ gb` — select next occurrence of word/selection
+- `✓ gB` — select all occurrences in buffer
 - `✓ gg` — top of file
 - `✓ enter` — line down, first non-blank (blame gutter: dive)
 - `✓ tab` — jump list forward (ctrl-i)

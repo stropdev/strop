@@ -156,6 +156,7 @@ impl Editor {
                 self.hover_card = Some(text);
             }
             LspEvent::Note { context, text } => {
+                self.continue_after_format();
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected(
                         "lsp",
@@ -168,10 +169,12 @@ impl Editor {
             LspEvent::Edits { context, edits } => {
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected("lsp", "edit request owner/revision changed");
+                    self.continue_after_format();
                     return;
                 }
                 if edits.is_empty() {
                     self.message = "already formatted".into();
+                    self.continue_after_format();
                     return;
                 }
                 let Some(location) =
@@ -184,6 +187,7 @@ impl Editor {
                         })
                 else {
                     trace::services::rejected("lsp", "edits for an unbound document");
+                    self.continue_after_format();
                     return;
                 };
                 let plan = self.build_change_plan(
@@ -192,6 +196,7 @@ impl Editor {
                     context.encoding,
                 );
                 self.apply_change_plan(plan);
+                self.continue_after_format();
             }
             LspEvent::WorkspaceEdits { context, edits } => {
                 if !self.finish_lsp_reply(&context) {
@@ -207,7 +212,7 @@ impl Editor {
                     _ => super::changes::ChangeProducer::CodeAction,
                 };
                 let plan = self.build_change_plan(producer, edits, context.encoding);
-                self.apply_change_plan(plan);
+                self.present_change_plan(plan);
             }
             LspEvent::Symbols { context, symbols } => {
                 if !self.finish_lsp_reply(&context) {
@@ -591,6 +596,26 @@ impl Editor {
         self.lsp_request(strop_lsp::RequestKind::SwitchHeader);
     }
     /// `:format` — server formatting through a change plan (0043).
+    /// auto_format admission: a binding with a live, formatting-capable
+    /// client. Anything less saves without formatting.
+    pub(crate) fn lsp_format_available(&self) -> bool {
+        let Some(binding) = self.lsp_state.bindings.get(&self.current()) else {
+            return false;
+        };
+        self.lsp_live_client(binding.server)
+            .is_some_and(|client| client.caps().formatting())
+    }
+
+    /// The format reply concluded: run the save that was waiting on it
+    /// (config auto_format). Never fires twice — the slot is taken.
+    pub(crate) fn continue_after_format(&mut self) {
+        let Some(state::AfterFormat::Save { document, close }) = self.lsp_state.after_format.take()
+        else {
+            return;
+        };
+        self.request_save_document(document, None, false, close);
+    }
+
     pub(crate) fn lsp_format(&mut self) {
         self.lsp_change_request(strop_lsp::RequestKind::Format, None);
     }

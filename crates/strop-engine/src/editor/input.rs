@@ -553,6 +553,13 @@ mod tests {
                         "ctrl-x" => out.push(Key::CtrlX),
                         "ctrl-l" => out.push(Key::CtrlL),
                         "enter" => out.push(Key::Enter),
+                        t if t.contains("<space>") => {
+                            let i = t.find('<').unwrap();
+                            for c in t[..i].chars() {
+                                out.push(Key::Char(c));
+                            }
+                            out.push(Key::Char(' '));
+                        }
                         t if t.contains('<') => {
                             let i = t.find('<').unwrap();
                             for c in t[..i].chars() {

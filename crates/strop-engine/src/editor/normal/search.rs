@@ -54,12 +54,15 @@ impl Editor {
             }
             Some(landing(target.get()))
         };
-        let extras: Vec<usize> = self
+        let extras: Vec<strop_core::selection::Selection> = self
             .extra_selections()
             .iter()
-            .map(|s| seek(self.buf(), s.head).unwrap_or(s.head))
+            .map(|s| strop_core::selection::Selection {
+                anchor: s.anchor,
+                head: seek(self.buf(), s.head).unwrap_or(s.head),
+            })
             .collect();
-        self.sels_mut().set_extras(extras);
+        self.sels_mut().set_extra_selections(extras);
         match seek(self.buf(), self.head()) {
             Some(h) => {
                 self.set_head(h);

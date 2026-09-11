@@ -15,8 +15,95 @@ use super::Editor;
 /// One document: the text buffer plus everything that used to live in
 /// parallel vectors keyed by buffer index (0014 wave 2). One struct,
 /// one arena — the alignment invariant is the type system now.
+/// One document's indent: the config default, or detected from the
+/// content on open (config `indent_detect`). Resolved once; reloads
+/// re-resolve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Indent {
+    pub style: crate::config::IndentStyle,
+    pub width: usize,
+}
+
+impl Default for Indent {
+    /// The pre-config fallback (spaces, 4); the Editor re-resolves from
+    /// config/content at open and reload.
+    fn default() -> Self {
+        Self {
+            style: crate::config::IndentStyle::Spaces,
+            width: 4,
+        }
+    }
+}
+
+impl Indent {
+    /// The unit auto-indent, `>>` and the Tab key emit.
+    pub fn unit(&self) -> String {
+        match self.style {
+            crate::config::IndentStyle::Spaces => " ".repeat(self.width),
+            crate::config::IndentStyle::Tabs => "\t".into(),
+        }
+    }
+}
+
+/// Detect a buffer's indent from its leading whitespace (majority vote
+/// over up to 1000 lines): tabs when tab-indented lines dominate, else
+/// the dominant space unit among 2/3/4/8 needing ≥60% coverage. No
+/// clear winner → the caller falls back to config. Streams rope lines —
+/// no materialization.
+pub fn detect_indent(text: &ropey::Rope) -> Option<Indent> {
+    use crate::config::IndentStyle;
+    let mut tabs = 0usize;
+    let mut spaced = 0usize;
+    let mut hist = [0usize; 9]; // indents 1..=8
+    for line in text.lines().take(1000) {
+        let mut bytes = line.bytes();
+        match bytes.next() {
+            Some(b'\t') => {
+                tabs += 1;
+                continue;
+            }
+            Some(b' ') => {}
+            _ => continue,
+        }
+        let spaces = 1 + bytes.take_while(|b| *b == b' ').count();
+        // A whitespace-only line is not a vote.
+        if line
+            .bytes()
+            .nth(spaces)
+            .is_some_and(|b| b != b'\n' && b != b'\r')
+        {
+            spaced += 1;
+            if spaces <= 8 {
+                hist[spaces] += 1;
+            }
+        }
+    }
+    if tabs == 0 && spaced == 0 {
+        return None;
+    }
+    if tabs > spaced {
+        return Some(Indent {
+            style: IndentStyle::Tabs,
+            width: 4, // display width only; the unit is one tab
+        });
+    }
+    let (covered, unit) = [2usize, 3, 4, 8]
+        .into_iter()
+        .map(|unit| {
+            let covered: usize = (unit..=8).filter(|n| n % unit == 0).map(|n| hist[n]).sum();
+            (covered, unit)
+        })
+        .max()?;
+    (covered * 5 >= spaced * 3).then_some(Indent {
+        style: IndentStyle::Spaces,
+        width: unit,
+    })
+}
+
 pub struct Document {
     pub buf: Buffer,
+    /// Resolved at open/reload (config default or content-detected).
+    pub indent: Indent,
     /// What backs this document (0021 §4): the surface payload lives in
     /// the source variant; readonly derives from it at construction.
     pub source: DocumentSource,
@@ -26,6 +113,7 @@ impl Document {
     pub fn new(buf: Buffer) -> Self {
         Self {
             buf,
+            indent: Indent::default(),
             source: DocumentSource::File,
         }
     }
@@ -34,6 +122,7 @@ impl Document {
     pub fn scratch(buf: Buffer) -> Self {
         Self {
             buf,
+            indent: Indent::default(),
             source: DocumentSource::Scratch,
         }
     }
@@ -44,6 +133,7 @@ impl Document {
         buf.readonly = true;
         Self {
             buf,
+            indent: Indent::default(),
             source: DocumentSource::Surface(Box::new(surfaces::GitSurface {
                 context,
                 content: surface,
@@ -57,6 +147,7 @@ impl Document {
         buf.readonly = true;
         Self {
             buf,
+            indent: Indent::default(),
             source: DocumentSource::Output,
         }
     }
@@ -71,6 +162,7 @@ impl Document {
         buf.readonly = true;
         Self {
             buf,
+            indent: Indent::default(),
             source: DocumentSource::Container { container, path },
         }
     }
@@ -282,7 +374,10 @@ impl Editor {
     /// Returns false when unsaved changes block the close. Generational
     /// ids mean no reindexing anywhere (0014 wave 2).
     pub fn close_buffer(&mut self, force: bool) -> bool {
-        if self.buf().dirty && !force {
+        // A collection's dirty bit is presentation state (0049 §5): the
+        // sources hold the real unsaved edits — the view always closes.
+        let view_only = self.collections.contains_key(&self.current());
+        if self.buf().dirty && !force && !view_only {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }

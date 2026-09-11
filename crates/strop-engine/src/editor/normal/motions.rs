@@ -46,22 +46,28 @@ impl Editor {
         }
         let head = primary
             .map(|resolved| grammar::cursor_after(self.buf(), self.head(), command, resolved));
-        let extras: Vec<_> = cursors
-            .iter()
-            .zip(&resolutions)
-            .skip(1)
-            .map(|(&cursor, resolved)| {
-                let head = resolved.as_ref().map_or(cursor, |resolved| {
-                    grammar::cursor_after(self.buf(), cursor, command, resolved)
-                });
-                self.clamp_pos(head)
-            })
-            .collect();
+        let extras: Vec<_> = {
+            let olds = self.extra_selections().to_vec();
+            olds.iter()
+                .zip(resolutions.iter().skip(1))
+                .map(|(old, resolved)| {
+                    // stretched extras (occurrences, 0049 §7.4) move
+                    // their head and keep their anchor and direction
+                    let head = resolved.as_ref().map_or(old.head, |resolved| {
+                        grammar::cursor_after(self.buf(), old.head, command, resolved)
+                    });
+                    strop_core::selection::Selection {
+                        anchor: old.anchor,
+                        head: self.clamp_pos(head),
+                    }
+                })
+                .collect()
+        };
         self.note_search(command);
         if let Some(head) = head {
             self.set_head(head);
         }
-        self.sels_mut().set_extras(extras);
+        self.sels_mut().set_extra_selections(extras);
         self.clamp_cursor();
         self.normalize_cursors();
         if is_search && primary.is_none() {

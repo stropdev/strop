@@ -239,6 +239,9 @@ impl Editor {
         }
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
+            "w" | "w!" if self.collections.contains_key(&self.current()) => {
+                self.collection_save((!arg.is_empty()).then(|| arg.into()), cmd == "w!", false);
+            }
             "w" | "w!" => {
                 // vim: readonly buffers refuse plain :w (surfaces, :view);
                 // :w! forces through the mutation boundary's rule
@@ -258,6 +261,9 @@ impl Editor {
                     return;
                 }
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "w!", false);
+            }
+            "wq" | "wq!" if self.collections.contains_key(&self.current()) => {
+                self.collection_save(None, cmd == "wq!", true);
             }
             "wq" | "wq!" => {
                 if matches!(
@@ -336,6 +342,16 @@ impl Editor {
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "help" | "h" => self.open_help(),
             "jumps" => self.open_jumps_picker(),
+            "apply-change" => self.review_apply_pub(),
+            "select-next" => self.occurrence_next_pub(),
+            "select-all" => self.occurrence_all_pub(),
+            "select-skip" => self.occurrence_skip_pub(),
+            "select-pop" => self.occurrence_pop_pub(),
+            "cancel-change" => self.review_cancel_pub(),
+            "collection" if arg == "source" => self.collection_open_source(),
+            "collection" => {
+                self.message = ":collection source — open the full source at the caret".into()
+            }
             "symbols" => self.lsp_document_symbols_pub(),
             "explain" => self.open_explain(),
             "containers" => self.request_containers(),

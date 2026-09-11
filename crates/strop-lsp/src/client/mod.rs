@@ -69,6 +69,12 @@ impl async_lsp::lsp_types::request::Request for SwitchSourceHeader {
 }
 
 impl Client {
+    /// The negotiated capabilities (shared slot; unknown-is-no rules live
+    /// on ServerCaps).
+    pub fn caps(&self) -> &ServerCaps {
+        &self.caps
+    }
+
     pub fn id(&self) -> ServerId {
         self.id
     }

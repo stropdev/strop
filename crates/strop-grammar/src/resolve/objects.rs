@@ -208,6 +208,29 @@ pub(crate) fn word_object(
     Some((s, e))
 }
 
+/// The occurrence-selection seed (0049 §7): the word or punctuation
+/// run under `pos` by vim's small-word classes — `gb` selects exactly
+/// what `iw` classifies, and a caret on whitespace seeds nothing.
+pub fn word_run(buf: &Buffer, pos: usize) -> Option<(usize, usize)> {
+    let n = buf.len_bytes();
+    if pos >= n {
+        return None;
+    }
+    let class = object_class(buf, pos, false);
+    if class == BLANK {
+        return None;
+    }
+    let mut start = pos;
+    while start > 0 && object_class(buf, start - 1, false) == class {
+        start -= 1;
+    }
+    let mut end = pos + 1;
+    while end < n && object_class(buf, end, false) == class {
+        end += 1;
+    }
+    Some((start, end))
+}
+
 /// Search forward for `pat` (prototype: plain substring; 0001 §2.5's
 /// transpiled regex lands with the real search layer).
 /// Map a surround char to its pair (sandwich aliases b/B/r/a).

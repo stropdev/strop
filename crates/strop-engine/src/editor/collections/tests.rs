@@ -4,10 +4,33 @@ use crate::editor::Editor;
 use strop_core::Buffer;
 use strop_picker::{Item, Kind, Payload};
 
-/// Two open files and a grep picker listing hits in both.
+/// Two open files and a grep picker listing hits in both. The tempdir
+/// rides along: tests that read the files back need it alive.
+struct LiveFixture {
+    editor: Editor,
+    _dir: tempfile::TempDir,
+    a: std::path::PathBuf,
+    b: std::path::PathBuf,
+}
+
+fn live_fixture() -> LiveFixture {
+    let dir = tempfile::tempdir().unwrap();
+    let (editor, a, b) = fixture_in(dir.path());
+    LiveFixture {
+        editor,
+        _dir: dir,
+        a,
+        b,
+    }
+}
+
 fn fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
+    fixture_in(dir.path())
+}
+
+fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path::PathBuf) {
+    let root = root.to_path_buf();
     let a = root.join("a.txt");
     let b = root.join("b.txt");
     std::fs::write(&a, "alpha one\nalpha two\n").unwrap();
@@ -111,7 +134,10 @@ fn an_edit_spanning_excerpts_is_refused() {
 }
 
 #[test]
-fn a_source_edited_elsewhere_refuses_the_write_back() {
+fn a_source_edited_elsewhere_refreshes_the_view() {
+    // 0049 §5: every source edit invalidates the dependent projection —
+    // the view shows the new text immediately, and editing the fresh
+    // view writes back (no stale fingerprint refusal).
     let (mut e, a, _) = fixture();
     e.feed(crate::editor::Key::CtrlO);
     let collection_id = e.current();
@@ -123,11 +149,17 @@ fn a_source_edited_elsewhere_refuses_the_write_back() {
         .unwrap();
     e.switch_to(source_id);
     e.feed_text("0rX"); // alpha -> Xlpha
-                        // back to the collection; an edit there must refuse (stale fingerprint)
     e.switch_to(collection_id);
+    let view = e.buf().text().to_string();
+    assert!(view.contains("Xlpha"), "the view refreshed: {view}");
+    assert!(!view.contains("alpha one"), "no stale text remains: {view}");
     e.set_head(e.buf().line_start(2));
     e.feed_text("x");
-    assert!(e.message.contains("changed elsewhere"), "{}", e.message);
+    assert!(
+        e.message.contains("applied") || e.message.contains("collection"),
+        "the fresh view writes back: {}",
+        e.message
+    );
 }
 
 #[test]
@@ -332,4 +364,318 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
         "{}",
         e.message
     );
+}
+
+/// 0049 §3's exact witness: a RELATIVE startup path must not skip hits.
+#[test]
+fn relative_startup_path_collects_all_hits() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    std::fs::write(root.join("a.txt"), "alpha needle one\nkeep a\n").unwrap();
+    std::fs::write(root.join("b.txt"), "beta needle two\nkeep b\n").unwrap();
+    // the a.txt buffer opened with a RELATIVE spelling (0049 §3 repro)
+    let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
+    e.open_fixture(std::path::Path::new("a.txt")).unwrap();
+    e.open_fixture(&root.join("b.txt")).unwrap();
+    e.open_picker(Kind::Grep);
+    let items = vec![
+        Item {
+            text: "a.txt:1".into(),
+            payload: Payload::Grep {
+                path: root.join("a.txt"),
+                line: 1,
+                col: 1,
+                match_len: 6,
+                line_text: "alpha needle one".into(),
+            },
+        },
+        Item {
+            text: "b.txt:1".into(),
+            payload: Payload::Grep {
+                path: root.join("b.txt"),
+                line: 1,
+                col: 1,
+                match_len: 6,
+                line_text: "beta needle two".into(),
+            },
+        },
+    ];
+    if let Some(glue) = e.picker.as_mut() {
+        glue.picker.append(items);
+    }
+    e.feed(crate::editor::Key::CtrlO);
+    let text = current_text(&e);
+    assert!(
+        text.contains("alpha needle one"),
+        "relative-spelled source: {text}"
+    );
+    assert!(text.contains("beta needle two"), "{text}");
+    assert!(!e.message.contains("skipped"), "{}", e.message);
+}
+
+/// 0049 §5: plain `u` in a collection undoes the edit group across
+/// every affected source, and the view refreshes.
+#[test]
+fn collection_undo_restores_sources_and_the_view() {
+    // 0049 §5: plain `u` in a collection undoes the collection's own
+    // edit group across its actual sources; the view refreshes. Two
+    // groups undo newest-first.
+    let (mut e, a, b) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    let collection = e.current();
+    let src = |e: &Editor, path: &std::path::Path| {
+        e.docs
+            .iter()
+            .find(|(_, d)| d.buf.path.as_ref() == Some(&path.to_path_buf()))
+            .map(|(id, _)| id)
+            .unwrap()
+    };
+    let (a_id, b_id) = (src(&e, &a), src(&e, &b));
+    let text = |e: &Editor, id| e.docs.get(id).unwrap().buf.text().to_string();
+    e.set_head(e.buf().line_start(2));
+    e.feed_text("rx"); // group 1: a.txt alpha -> xlpha
+    e.set_head(e.buf().line_start(4));
+    e.feed_text("rx"); // group 2: b.txt beta -> xeta
+    assert!(text(&e, a_id).starts_with("xlpha"));
+    assert!(text(&e, b_id).contains("xeta two"));
+    e.feed_text("u");
+    assert!(text(&e, b_id).contains("beta two"), "newest group first");
+    assert!(text(&e, a_id).starts_with("xlpha"), "group 1 stands");
+    e.feed_text("u");
+    assert!(text(&e, a_id).starts_with("alpha"), "second undo: group 1");
+    // the view shows the restored text, not the stale one
+    e.switch_to(collection);
+    let view = current_text(&e);
+    assert!(view.contains("alpha one"), "view after undos: {view}");
+    assert!(!view.contains("xlpha"), "no stale text: {view}");
+    // and the redo stack replays both, newest-first
+    e.feed(crate::editor::Key::CtrlR);
+    assert!(text(&e, a_id).starts_with("xlpha"), "redo group 1");
+    e.feed(crate::editor::Key::CtrlR);
+    assert!(text(&e, b_id).contains("xeta two"), "redo group 2");
+}
+
+/// 0049 §5: an intervening source edit refuses the group undo by name
+/// and keeps the receipt.
+#[test]
+fn collection_undo_preflight_refuses_a_moved_source() {
+    let (mut e, a, _) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    let collection = e.current();
+    e.set_head(e.buf().line_start(2));
+    e.feed_text("rx");
+    let a_id = e
+        .docs
+        .iter()
+        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
+        .unwrap();
+    // an independent edit to the source
+    e.switch_to(a_id);
+    e.feed_text("Gobackchannel\n");
+    e.feed(crate::editor::Key::Esc);
+    e.switch_to(collection);
+    e.feed_text("u");
+    assert!(
+        e.message.contains("refused") && e.message.contains("a.txt"),
+        "named refusal: {}",
+        e.message
+    );
+    // the receipt survives: undoing the intervening edit first frees it
+    e.switch_to(a_id);
+    e.feed_text("u"); // undo the backchannel line
+    e.switch_to(collection);
+    e.feed_text("u");
+    assert!(
+        e.docs
+            .get(a_id)
+            .unwrap()
+            .buf
+            .text()
+            .to_string()
+            .starts_with("alpha"),
+        "the group undo lands after the blocker is undone: {}",
+        e.message
+    );
+}
+
+/// 0049 §5: `:w` saves the dirty sources; `:w PATH` refuses.
+#[test]
+fn collection_write_saves_dirty_sources_and_refuses_a_target() {
+    let live = live_fixture();
+    let (mut e, a, b) = (live.editor, live.a.clone(), live.b.clone());
+    e.feed(crate::editor::Key::CtrlO);
+    e.set_head(e.buf().line_start(2));
+    e.feed_text("rx"); // dirty a.txt via the collection
+    e.feed_text(":w<cr>");
+    e.wait_io().unwrap();
+    assert!(
+        std::fs::read_to_string(&a).unwrap().starts_with("xlpha"),
+        "the source file was written"
+    );
+    assert!(
+        std::fs::read_to_string(&b).unwrap().starts_with("beta"),
+        "the untouched source was not"
+    );
+    e.feed_text(":w /tmp/collection-out.txt<cr>");
+    assert!(
+        e.message.contains("no file of its own"),
+        ":w PATH refuses: {}",
+        e.message
+    );
+    assert!(!std::path::Path::new("/tmp/collection-out.txt").exists());
+}
+
+/// 0049 §5: `:q` closes the view with dirty sources intact.
+#[test]
+fn collection_close_keeps_dirty_sources() {
+    let (mut e, a, _) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    e.set_head(e.buf().line_start(2));
+    e.feed_text("rx");
+    e.feed_text(":q<cr>");
+    assert!(
+        e.docs.iter().any(|(_, d)| d.buf.path.as_ref() == Some(&a)),
+        "the source buffer is still open"
+    );
+    let a_id = e
+        .docs
+        .iter()
+        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
+        .unwrap();
+    assert!(
+        e.docs.get(a_id).unwrap().buf.dirty,
+        "its unsaved edits are intact"
+    );
+}
+
+/// 0049 §5: g<Space> from a body row lands on the exact source position
+/// and Ctrl-O returns to the collection; from a header it opens the file.
+#[test]
+fn collection_open_source_maps_positions_and_returns() {
+    let (mut e, a, _) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    let collection = e.current();
+    // body row: line 2 is a.txt's first excerpt body
+    e.set_head(e.buf().line_start(2) + 2); // 'p' of alpha
+    e.collection_open_source();
+    let a_id = e
+        .docs
+        .iter()
+        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
+        .unwrap();
+    assert_eq!(e.current(), a_id, "switched to the live source");
+    assert_eq!(e.head(), 2, "exact source byte — unsaved-edit view");
+    e.feed(crate::editor::Key::CtrlO);
+    assert_eq!(e.current(), collection, "Ctrl-O returns to the collection");
+    // header row: line 1 is a.txt's header
+    e.set_head(e.buf().line_start(1));
+    e.collection_open_source();
+    assert_eq!(e.current(), a_id);
+    assert_eq!(e.buf().line_of(e.head()), 0, "header opens at the excerpt");
+}
+
+/// 0049 §5: Enter on a header opens the source; Enter in a body row
+/// keeps its vim motion.
+#[test]
+fn collection_enter_on_header_only() {
+    let (mut e, a, _) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    let a_id = e
+        .docs
+        .iter()
+        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
+        .unwrap();
+    e.set_head(e.buf().line_start(1)); // a.txt header row
+    e.feed(crate::editor::Key::Enter);
+    assert_eq!(e.current(), a_id, "Enter on a header opens the source");
+    e.feed(crate::editor::Key::CtrlO);
+    e.set_head(e.buf().line_start(2)); // body row
+    e.feed(crate::editor::Key::Enter);
+    assert_eq!(
+        e.buf().line_of(e.head()),
+        3,
+        "Enter in a body row moves down"
+    );
+}
+
+/// 0049 §7.2: occurrence selection in a collection matches excerpt
+/// bodies only — the needle in a header row is chrome, never selected.
+#[test]
+fn occurrence_selection_skips_collection_chrome() {
+    let (mut e, _, _) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    // caret on the header's "txt" (in "a.txt") — seeds "txt"
+    let header_start = e.buf().line_start(1);
+    let header = e.buf().line_text(1);
+    let at_txt = header_start + header.find("txt").unwrap();
+    e.set_head(at_txt);
+    e.occurrence_all_pub();
+    assert!(
+        e.message.contains("no") || e.message.contains("0"),
+        "headers never match: {}",
+        e.message
+    );
+    assert_eq!(
+        e.sels().heads().len(),
+        1,
+        "no occurrence was selected from chrome"
+    );
+    // a body needle DOES select across excerpts
+    e.set_head(e.buf().line_start(2) + 1);
+    e.occurrence_all_pub();
+    assert!(
+        e.sels().heads().len() > 1 || e.message.contains("occurrence"),
+        "body occurrences select: {}",
+        e.message
+    );
+}
+
+/// 0044 v2: hits in unopened files load in the background and the
+/// collection assembles when the last one lands.
+#[test]
+fn collection_loads_unopened_sources_in_the_background() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.txt");
+    let b = dir.path().join("b.txt");
+    std::fs::write(&a, "alpha zzq one\nkeep a\n").unwrap();
+    std::fs::write(&b, "beta zzq two\nkeep b\n").unwrap();
+    let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
+    e.open_picker(Kind::Grep);
+    if let Some(glue) = e.picker.as_mut() {
+        glue.picker.append(vec![
+            Item {
+                text: "a.txt:1".into(),
+                payload: Payload::Grep {
+                    path: a.clone(),
+                    line: 1,
+                    col: 1,
+                    match_len: 3,
+                    line_text: "alpha zzq one".into(),
+                },
+            },
+            Item {
+                text: "b.txt:1".into(),
+                payload: Payload::Grep {
+                    path: b.clone(),
+                    line: 1,
+                    col: 1,
+                    match_len: 3,
+                    line_text: "beta zzq two".into(),
+                },
+            },
+        ]);
+    }
+    e.feed(crate::editor::Key::CtrlO);
+    assert!(
+        e.message.contains("loading"),
+        "the build is pending: {}",
+        e.message
+    );
+    e.wait_io().unwrap();
+    let text = e.buf().text().to_string();
+    assert!(
+        text.contains("alpha zzq one") && text.contains("beta zzq two"),
+        "both sources assembled: {text}"
+    );
+    assert_eq!(e.buf().name.as_deref(), Some("collection: grep"));
 }

@@ -36,6 +36,7 @@ fn tab_size_from_config() {
         tab_size: 2,
         ..Default::default()
     };
+    e.reresolve_indents();
     e.feed_text(">>");
     assert_eq!(e.buf().text().to_string(), "  a\nb\n");
     e.feed_text("<<");
@@ -53,4 +54,60 @@ fn new_file_opens_empty_and_saves() {
     e.feed_text(":w<cr>");
     e.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh");
+}
+
+#[test]
+fn tab_key_inserts_the_documents_indent_unit() {
+    // spaces document: Tab inserts the width in spaces
+    let mut e = Editor::new(Buffer::from_text("x\n"));
+    e.feed_text("i");
+    e.feed(crate::editor::Key::Tab);
+    assert_eq!(e.buf().text().to_string(), "    x\n");
+    e.feed(crate::editor::Key::Esc);
+    // tabs document (detected from content): Tab inserts one tab
+    let mut e = Editor::new(Buffer::from_text("\t\tx = 1\n"));
+    e.reresolve_indents();
+    assert_eq!(e.cur().indent.style, crate::config::IndentStyle::Tabs);
+    e.feed_text("Gi");
+    e.feed(crate::editor::Key::Tab);
+    assert_eq!(e.buf().text().to_string(), "\t\t\tx = 1\n");
+}
+
+#[test]
+fn detection_follows_the_files_own_convention() {
+    // a two-space file: >> adds two, not the config default four
+    let mut e = Editor::new(Buffer::from_text(
+        "fn f() {\n  let x = 1;\n  let y = 2;\n  let z = 3;\n}\n",
+    ));
+    e.reresolve_indents();
+    assert_eq!(e.cur().indent.width, 2);
+    e.feed_text(">>");
+    assert_eq!(e.buf().line_text(0), "  fn f() {");
+}
+
+#[test]
+fn detection_off_uses_config_despite_content() {
+    let mut e = Editor::new(Buffer::from_text(
+        "fn f() {\n  let x = 1;\n  let y = 2;\n  let z = 3;\n}\n",
+    ));
+    e.config = crate::config::Config {
+        indent_detect: false,
+        ..Default::default()
+    };
+    e.reresolve_indents();
+    assert_eq!(e.cur().indent.width, 4, "config wins when detection is off");
+}
+
+#[test]
+fn tabs_style_config_indents_with_tabs() {
+    let mut e = Editor::new(Buffer::from_text("a\nb\n"));
+    e.config = crate::config::Config {
+        indent_style: crate::config::IndentStyle::Tabs,
+        ..Default::default()
+    };
+    e.reresolve_indents();
+    e.feed_text(">>");
+    assert_eq!(e.buf().line_text(0), "\ta");
+    e.feed_text("<<");
+    assert_eq!(e.buf().line_text(0), "a");
 }

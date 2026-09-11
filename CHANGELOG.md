@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.25.0 — 2026-09-11
+
+The multibuffer becomes trustworthy (0049 §§5–8 core): collections undo,
+redo, save, navigate and never show stale text — plus occurrence
+selection, reviewable changes, indent inference and format-on-save.
+
+### Added
+
+- **Occurrence selection** (0049 §7): `gb` selects the word under the
+  caret, then the next occurrence per press (wraps once, exhaustion
+  named); `gB` selects all. A visual selection seeds its literal text.
+  `:select-next|:select-all|:select-skip|:select-pop` for help and
+  completion. Selections are real anchor/head ranges through motions,
+  `c`/`d`/`y`, insert and undo — one edit group per action. In a
+  collection, only editable excerpt bodies can match or seed.
+- **Reviewable changes** (0049 §8): multi-file rename/code-action plans
+  open a real-buffer diff review first — per-file unified diffs, named
+  refusals, pinned base revisions. `:apply-change` applies exactly what
+  was shown (a source edited since is refused by name; nothing is
+  recomputed silently), `:cancel-change` discards. Single-document plans
+  keep applying directly. The review buffer stays as the receipt.
+- **Indent inference and style config** — `indent_style = "spaces"|"tabs"`,
+  `indent_detect = true` (per-document detection from content on open),
+  `tab_size` as the fallback width. Tab in insert mode now inserts the
+  document's indent unit; `>>`/`<<`, auto-indent, guides, display width
+  and the LSP format request all follow the document.
+- **Format on save** (helix parity): `auto_format = true` formats through
+  the language server before a plain `:w`; a formatter failure or
+  refusal never blocks the write. Local documents.
+
+### Fixed — the multibuffer correctness contract (0049 §5)
+
+- A relative startup path no longer drops collection hits — excerpt
+  identity uses the owner-aware `matches_target`/`file_identity` rule
+  like ordinary open dedup.
+- Plain `u`/`Ctrl-R` in a collection undo/redo the collection's own edit
+  group across its actual sources (scoped receipts; the global
+  `:undo-change` tail is not consulted). Preflight refuses by name when
+  a source moved on; the receipt is never consumed on refusal. Redo
+  preflights history depth — a monotonic revision cannot name an undone
+  position.
+- Every source edit — pane, undo/redo, LSP, reload — refreshes dependent
+  collection views immediately (single-excerpt splice, full re-render at
+  span edges), preserving the logical caret; unsynced user input is
+  never regenerated away. No stale text survives an acknowledged undo.
+- `:w` in a collection saves the dirty sources through their own save
+  paths with per-file outcomes; `:w PATH` refuses (the view is not a
+  file); `:wq` closes only after every scoped save confirms; `:q` closes
+  the view with the sources and their edits intact. The false "q
+  closes" title is gone — macros are intact.
+- `g<Space>`, Enter on a header row, and `:collection source` open the
+  full source at the caret — the live document, unsaved edits included —
+  recording the jump so `Ctrl-O` returns to the collection context.
+- Collection background source loading no longer stalls: parallel loads
+  no longer supersede each other, and a background open never steals
+  focus from the pristine scratch.
+- The 2,000-excerpt sync stall: line diffs trim common prefix/suffix
+  first; the quadratic LCS only ever sees the changed middle.
+- Collection views present source line numbers in the gutter, accent
+  chrome on title/header rows, and a real provenance name in the
+  modeline — never `[scratch]`. (Full per-source syntax projection and
+  boxed cards remain on the roadmap.)
 ## 0.24.0 — 2026-09-10
 
 External-header LSP continuity (0049 §4): a definition jump out of the

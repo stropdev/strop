@@ -57,8 +57,15 @@ pub(crate) struct JumpContext {
     pub target: strop_workspace::Filesystem,
 }
 
+/// What follows a format reply (config auto_format): the save that
+/// triggered it (0049-adjacent; helix's auto-format).
+pub(crate) enum AfterFormat {
+    Save { document: DocumentId, close: bool },
+}
+
 pub(crate) struct LspState {
     pub bindings: HashMap<DocumentId, Binding>,
+    pub after_format: Option<AfterFormat>,
     /// Carried contexts for jumped-to documents not yet opened on the
     /// originating server. Consumed into a binding by didOpen.
     pub jump_contexts: HashMap<DocumentId, JumpContext>,
@@ -71,6 +78,7 @@ impl Default for LspState {
     fn default() -> Self {
         Self {
             bindings: HashMap::new(),
+            after_format: None,
             jump_contexts: HashMap::new(),
             hover: None,
             navigation: None,
@@ -397,7 +405,7 @@ impl Editor {
                 if kind == RequestKind::Format {
                     // Rides the admitted record so replay relaunches the
                     // identical payload (tab width included).
-                    prepared.tab_width = Some(self.config.tab_size);
+                    prepared.tab_width = Some(self.cur_indent().width);
                 }
                 // Register the owner stamp before launching; replayed
                 // replies validate against exactly this stamp.

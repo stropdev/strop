@@ -289,6 +289,23 @@ impl UserEdit<'_> {
 }
 
 impl SystemEdit<'_> {
+    /// A partial generated-surface edit (0049 §5 collection view
+    /// splices): system origin, never undoable, and it never dirties the
+    /// buffer.
+    pub fn replace(&mut self, range: Range, text: &str) -> Result<(), EditError> {
+        self.buffer.validate_range(range)?;
+        if range.is_empty() && text.is_empty() {
+            return Ok(());
+        }
+        self.buffer
+            .epoch
+            .checked_add(1)
+            .ok_or(EditError::RevisionExhausted)?;
+        self.buffer
+            .replace_validated(range, text, ChangeOrigin::System);
+        Ok(())
+    }
+
     /// A generated surface is a new system snapshot, never an undoable user edit.
     pub fn replace_all(&mut self, text: &str) -> Result<(), EditError> {
         self.buffer

@@ -165,7 +165,7 @@ impl Editor {
             && key.document == self.current()
             && key.revision == self.buf().revision()
             && key.pane == self.active_pane
-            && key.tab == self.config.tab_size.max(1)
+            && key.tab == self.cur_indent().width.max(1)
             && &key.command == command
             && key.cursors == cursors
     }
@@ -252,7 +252,7 @@ impl Editor {
             pane: self.active_pane,
             command: command.clone(),
             cursors,
-            tab: self.config.tab_size.max(1),
+            tab: self.cur_indent().width.max(1),
         };
         let ticket = Ticket { request, key };
         let cancel = Arc::new(AtomicBool::new(false));

@@ -1,9 +1,13 @@
 # 0049 — Product and architecture handoff: finish the multibuffer experience
 
-Status: **§4 landed in 0.24.0; the multibuffer milestone (§§5–7) is the
-active program, queued on the roadmap (0028 "Current program")**,
-10 September 2026. §§8–10 follow in the order §1 sets. This document's
-evidence and contracts stand; what remains is execution, not re-review.
+Status: **§4 landed in 0.24.0; §§5–8 core landed in 0.25.0** (collection
+correctness: identity, scoped undo/redo, projection invalidation,
+save/close, g<Space>; occurrence selection in buffers and collections;
+review for multi-target rename/code-action). Remaining on the roadmap
+(0028 "Current program"): §6 syntax projection + boxed cards, §8 bounded
+delivery + project-replace migration + applyEdit, §9 accompanying work,
+§10 later. Known limit vs §5: write-back happens at action boundaries;
+journal-driven per-keystroke write-back is the named follow-up.
 
 Baseline: `fc3fbfa673171e4260530f45f0b170dac2d25f68`, Strop 0.22.1.
 Plan 0047's symbol/jumplist/mark work is in flight in the shared checkout;

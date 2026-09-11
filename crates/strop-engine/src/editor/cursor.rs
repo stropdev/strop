@@ -69,6 +69,19 @@ impl Editor {
         self.buf().clamp_boundary(pos.clamp(start, max.max(start)))
     }
 
+    /// The charwise-inclusive `[start, end)` byte span a selection
+    /// covers (visual mode's rule: the head char is inside, 0049 §7).
+    pub(crate) fn selection_span(
+        &self,
+        selection: strop_core::selection::Selection,
+    ) -> (usize, usize) {
+        let (start, last) = selection.range();
+        let end = self
+            .buf()
+            .ceil_boundary((last + 1).min(self.buf().len_bytes()));
+        (start, end.min(self.buf().len_bytes()))
+    }
+
     /// Every cursor position, primary first (0013 §3).
     pub(crate) fn all_cursors(&self) -> Vec<usize> {
         self.sels().heads()
@@ -90,13 +103,9 @@ impl Editor {
             let own = usize::from(positions.contains(&old));
             (old as isize + delta * (below + own) as isize).max(0) as usize
         };
-        self.set_head(map(self.head()));
-        let extras: Vec<usize> = self
-            .extra_selections()
-            .iter()
-            .map(|s| map(s.head))
-            .collect();
-        self.sels_mut().set_extras(extras);
+        // remap every endpoint: stretched selections (occurrences, 0049
+        // §7.4) keep their anchors and direction through mirrored edits
+        self.sels_mut().map_positions(map);
     }
 
     /// `Q`: drop the cursor under point when one exists, else plant one.
@@ -141,11 +150,20 @@ impl Editor {
         self.message = format!("{n} cursors");
     }
 
-    /// Normal-mode Esc: collapse to the primary cursor (0013 §3).
+    /// Normal-mode Esc: collapse to the primary cursor (0013 §3) and
+    /// end any occurrence session (0049 §7) — the stretched seed
+    /// collapses with it.
     pub(crate) fn collapse_cursors(&mut self) {
+        let occurrence = self.occurrence.take().is_some();
+        if occurrence {
+            let head = self.head();
+            self.sels_mut().collapse_primary(head);
+        }
         if self.sels().count() > 1 {
             self.sels_mut().collapse_extras();
             self.message = "1 cursor".into();
+        } else if occurrence {
+            self.message = "occurrence selection cleared".into();
         }
     }
 

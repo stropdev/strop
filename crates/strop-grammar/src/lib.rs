@@ -16,8 +16,8 @@ pub use query::{
     SearchMatch,
 };
 pub use resolve::{
-    cursor_after, find_character, plan, resolve, resolve_many, resolve_many_cancellable,
-    ActionPlan, PlannedTarget,
+    cursor_after, find_character, literal_from, plan, resolve, resolve_many,
+    resolve_many_cancellable, word_run, ActionPlan, PlannedTarget,
 };
 
 pub use types::*;

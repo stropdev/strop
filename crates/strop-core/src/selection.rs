@@ -122,6 +122,39 @@ impl SelectionSet {
         self.normalize();
     }
 
+    /// Plant a real (stretched) extra selection — occurrence selection
+    /// (0049 §7) keeps anchor/head, unlike the collapsed `Space c`
+    /// cursor. Skips ranges already owned by the primary or an extra.
+    pub fn plant_extra_selection(&mut self, anchor: usize, head: usize) {
+        let selection = Selection { anchor, head };
+        if selection.range() == self.primary.range()
+            || self
+                .extras
+                .iter()
+                .any(|extra| extra.range() == selection.range())
+        {
+            return;
+        }
+        self.extras.push(selection);
+        self.normalize();
+    }
+
+    /// Replace the extras wholesale, keeping each anchor/head and
+    /// direction — occurrence selections are real ranges, so the
+    /// motion/insert cascades replant full selections where the plain
+    /// cursor flow replants heads.
+    pub fn set_extra_selections(&mut self, selections: impl IntoIterator<Item = Selection>) {
+        self.extras = selections.into_iter().collect();
+        self.normalize();
+    }
+
+    /// Drop one extra by exact identity (occurrence pop, 0049 §7).
+    /// Returns the removed selection when one matched.
+    pub fn remove_extra(&mut self, selection: Selection) -> Option<Selection> {
+        let at = self.extras.iter().position(|extra| *extra == selection)?;
+        Some(self.extras.remove(at))
+    }
+
     /// Map every endpoint in place, preserving selection direction and capacity.
     pub fn map_positions(&mut self, mut map: impl FnMut(usize) -> usize) {
         self.primary.anchor = map(self.primary.anchor);

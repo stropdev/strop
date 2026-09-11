@@ -431,11 +431,11 @@ impl Editor {
         for l in line..last {
             let start = self.buf().line_start(l);
             if right {
-                let indent = self.config.indent();
+                let indent = self.cur_indent().unit();
                 self.buf_mut().insert(start, &indent);
             } else {
                 let end = self.buf().line_end(l);
-                let width = self.config.tab_size;
+                let width = self.cur_indent().width;
                 let mut strip = 0;
                 while strip < width && start + strip < end && self.buf().byte(start + strip) == b' '
                 {

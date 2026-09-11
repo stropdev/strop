@@ -57,10 +57,22 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
 fn per_key(seq: &[&str]) -> Vec<String> {
     let mut out = Vec::new();
     for &t in seq {
+        if t == "<space>" {
+            // A literal Space mid-sequence (the walker's token for
+            // Key::Char(' ') is "space") — "g<space>" is g then Space.
+            out.push("space".to_string());
+            continue;
+        }
         if t.len() > 1 && !t.starts_with('<') && !t.starts_with(':') && !NAMED.contains(&t) {
             if let Some(i) = t.find('<') {
                 out.extend(t[..i].chars().map(|c| c.to_string()));
-                out.push(t[i..].to_string());
+                // "<space>" is the walker's literal space token, not a
+                // placeholder wildcard (a wildcard under g would eat gg).
+                out.push(if t[i..] == *"<space>" {
+                    "space".to_string()
+                } else {
+                    t[i..].to_string()
+                });
             } else {
                 out.extend(t.chars().map(|c| c.to_string()));
             }

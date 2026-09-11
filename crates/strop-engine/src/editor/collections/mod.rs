@@ -7,6 +7,7 @@
 mod tests;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use strop_core::id::{Arena, BufferRevision, DocumentId, DocumentKind};
 use strop_core::{Buffer, Range};
@@ -31,12 +32,20 @@ pub(crate) struct Excerpt {
     pub view_line: usize,
     /// Source line count as rendered into the shadow.
     pub view_lines: usize,
+    /// Body byte span in the view/shadow text (0049 §5 invalidation:
+    /// source changes splice this span directly).
+    pub view_start: usize,
+    pub view_end: usize,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct Collection {
     pub title: String,
     pub excerpts: Vec<Excerpt>,
+    /// Source saves in flight from a collection `:w`/`:wq`; the view
+    /// closes only when every one confirms (0049 §5).
+    pub pending_saves: usize,
+    pub close_when_saved: bool,
     /// The canonical rendering as of the last sync. The sync diff is
     /// shadow vs current — no hidden state.
     pub shadow: String,
@@ -74,7 +83,7 @@ fn render(
     collection: &mut Collection,
 ) -> String {
     let mut text = format!(
-        "collection: {} — {} excerpt(s) (edits write back at action boundaries; q closes)\n",
+        "collection: {} — {} excerpt(s) (edits write back at action boundaries; g<Space> opens source)\n",
         collection.title,
         collection.excerpts.len()
     );
@@ -92,13 +101,20 @@ fn render(
             .text()
             .byte_slice(excerpt.start..excerpt.end)
             .to_string();
+        #[cfg(test)]
+        eprintln!(
+            "render excerpt src={:?} span={}..{} body={body:?}",
+            excerpt.source, excerpt.start, excerpt.end
+        );
         excerpt.view_line = line;
+        excerpt.view_start = text.len();
         excerpt.view_lines = body.lines().count().max(1);
         excerpt.fingerprint = fingerprint(&body);
         text.push_str(&body);
         if !body.ends_with('\n') {
             text.push('\n');
         }
+        excerpt.view_end = text.len();
         line += 1 + excerpt.view_lines;
     }
     text
@@ -153,10 +169,9 @@ impl Editor {
             } else {
                 self.cwd.join(path)
             };
-            let open = self
-                .docs
-                .iter()
-                .any(|(_, doc)| doc.buf.path.as_ref() == Some(&absolute));
+            let open = self.docs.iter().any(|(_, doc)| {
+                doc.matches_target(&crate::files::FileTarget::Local(absolute.clone()))
+            });
             if !open && !to_load.contains(&absolute) {
                 to_load.push(absolute);
             }
@@ -183,9 +198,17 @@ impl Editor {
     /// counts down and assembles when its sources are all in.
     pub(crate) fn collection_source_ready(&mut self, _document: DocumentId) {
         let Some(build) = &mut self.collection_build else {
+            strop_trace::record_with(
+                strop_trace::EventKind::JobFinished,
+                || serde_json::json!({"service":"collection","result":"ready-without-build"}),
+            );
             return;
         };
         build.waiting = build.waiting.saturating_sub(1);
+        strop_trace::record_with(
+            strop_trace::EventKind::JobFinished,
+            || serde_json::json!({"service":"collection","result":"source-ready","waiting":build.waiting}),
+        );
         if build.waiting == 0 {
             let build = self.collection_build.take().unwrap();
             self.build_collection(build);
@@ -207,11 +230,10 @@ impl Editor {
             } else {
                 self.cwd.join(path)
             };
-            let Some(document) = self
-                .docs
-                .iter()
-                .find_map(|(id, doc)| (doc.buf.path.as_ref() == Some(&absolute)).then_some(id))
-            else {
+            let Some(document) = self.docs.iter().find_map(|(id, doc)| {
+                doc.matches_target(&crate::files::FileTarget::Local(absolute.clone()))
+                    .then_some(id)
+            }) else {
                 skipped += 1;
                 continue;
             };
@@ -265,15 +287,22 @@ impl Editor {
                     fingerprint: fingerprint(&text),
                     view_line: 0,
                     view_lines: 0,
+                    view_start: 0,
+                    view_end: 0,
                 });
             }
         }
         excerpts.sort_by_key(|excerpt| (excerpt.source, excerpt.start));
         let excerpt_count = excerpts.len();
+        let title_for_trace = title.clone();
         let id = self.docs.insert(Document::output(Buffer::from_text("")));
+        // The modeline names the collection, never [scratch] (0049 §6).
+        self.docs.get_mut(id).unwrap().buf.name = Some(format!("collection: {title}"));
         let mut collection = Collection {
             title,
             excerpts,
+            pending_saves: 0,
+            close_when_saved: false,
             shadow: String::new(),
             revision: BufferRevision::new(0),
         };
@@ -284,6 +313,12 @@ impl Editor {
         self.docs.get_mut(id).unwrap().buf.readonly = false;
         let revision = self.docs.get(id).unwrap().buf.revision();
         self.collections.get_mut(&id).unwrap().revision = revision;
+        strop_trace::record_with(strop_trace::EventKind::JobFinished, || {
+            serde_json::json!({
+                "service":"collection","result":"built","excerpts":excerpt_count,
+                "skipped":skipped,"title":title_for_trace,
+            })
+        });
         self.drop_stale_scratch(id);
         self.switch_to(id);
         self.set_head(0);
@@ -330,6 +365,22 @@ impl Editor {
         }
         // The source is authoritative: regenerate the view and reset the
         // shadow whether or not the write-back landed.
+        self.collection_render_view(id);
+    }
+
+    /// Re-render the collection view from its sources and reset shadow +
+    /// revision together (0049 §5: no stale text may be presented).
+    pub(crate) fn collection_render_view(&mut self, id: DocumentId) {
+        // Preserve the logical caret across the regeneration (0049 §5):
+        // same row/column clamped into the new text.
+        let caret = if self.current() == id {
+            Some((
+                self.buf().line_of(self.head()),
+                self.buf().col_of(self.head()),
+            ))
+        } else {
+            None
+        };
         let text = {
             let entry = self.collections.get_mut(&id).unwrap();
             render(&self.docs, &self.cwd, entry)
@@ -339,13 +390,141 @@ impl Editor {
             entry.shadow = text.clone();
         }
         let _ = self.doc_mut(id).buf.system_edit().replace_all(&text);
+        if let Some((line, col)) = caret {
+            let line = line.min(self.docs.get(id).unwrap().buf.len_lines().saturating_sub(1));
+            let head = self.docs.get(id).unwrap().buf.clamp_boundary(
+                self.docs
+                    .get(id)
+                    .unwrap()
+                    .buf
+                    .line_start(line)
+                    .saturating_add(col),
+            );
+            if self.current() == id {
+                self.set_head(head);
+                self.clamp_cursor();
+            }
+        }
+        let revision = self.docs.get(id).unwrap().buf.revision();
+        self.collections.get_mut(&id).unwrap().revision = revision;
+        // The view is a presentation: its dirty bit is never the story
+        // (0049 §5 — the sources own unsaved state).
+        self.docs.get_mut(id).unwrap().buf.dirty = false;
+    }
+
+    /// A source change strictly inside one excerpt (0049 §5): splice the
+    /// excerpt's view span with the new source body instead of
+    /// re-rendering the whole view. The caller gates on a clean view
+    /// (no unsynced user edit) — the spans assume shadow == view.
+    pub(crate) fn collection_splice_excerpt(&mut self, id: DocumentId, index: usize) {
+        let (source, view_start, view_end, view_lines) = {
+            let entry = &self.collections[&id];
+            let excerpt = &entry.excerpts[index];
+            (
+                excerpt.source,
+                excerpt.view_start,
+                excerpt.view_end,
+                excerpt.view_lines,
+            )
+        };
+        let Some(source_doc) = self.docs.get(source) else {
+            return;
+        };
+        let excerpt_span = {
+            let entry = &self.collections[&id];
+            let excerpt = &entry.excerpts[index];
+            (excerpt.start, excerpt.end)
+        };
+        let mut body = source_doc
+            .buf
+            .text()
+            .byte_slice(excerpt_span.0..excerpt_span.1)
+            .to_string();
+        #[cfg(test)]
+        eprintln!("splice coll={id:?} ex={index} span={excerpt_span:?} view={view_start}..{view_end} body={body:?}");
+        if !body.ends_with('\n') {
+            body.push('\n');
+        }
+        let new_lines = body.lines().count().max(1);
+        // Splice the collection buffer at the excerpt's view span; the
+        // view is clean, so the spans index it directly.
+        {
+            let doc = self.docs.get_mut(id).unwrap();
+            let _ = doc
+                .buf
+                .system_edit()
+                .replace(Range::charwise(view_start, view_end), &body);
+        }
+        // The splice's own journal entry feeds the view analysis and is
+        // then consumed: the write-back diff must never see it.
+        {
+            let doc = self.docs.get_mut(id).unwrap();
+            let changes: Vec<_> = doc.buf.changes().to_vec();
+            self.analysis.edits(id, &changes);
+            doc.buf.clear_changes();
+        }
+        let byte_delta = body.len() as isize - (view_end - view_start) as isize;
+        let line_delta = new_lines as isize - view_lines as isize;
+        let entry = self.collections.get_mut(&id).unwrap();
+        // Shadow moves with the view, byte-identical region.
+        entry.shadow.replace_range(view_start..view_end, &body);
+        let mut seen = false;
+        for excerpt in &mut entry.excerpts {
+            if seen {
+                excerpt.view_start = (excerpt.view_start as isize + byte_delta) as usize;
+                excerpt.view_end = (excerpt.view_end as isize + byte_delta) as usize;
+                excerpt.view_line = (excerpt.view_line as isize + line_delta) as usize;
+            } else if excerpt.view_start == view_start {
+                seen = true;
+                excerpt.view_lines = new_lines;
+                excerpt.view_end = view_start + body.len();
+                excerpt.fingerprint = fingerprint(&body);
+            }
+        }
         let revision = self.docs.get(id).unwrap().buf.revision();
         self.collections.get_mut(&id).unwrap().revision = revision;
     }
-    /// Line-level diff (LCS over lines): changed regions as ordered
-    /// (shadow range, current range) hunk pairs. Collection views are
-    /// small; the DP table is O(view²) by design.
+    /// Line-level diff: common prefix/suffix lines trim first (0049 §5 —
+    /// the 2,000-excerpt audit stall was the full-view O(n²) LCS on a
+    /// one-line edit); the dynamic table only ever sees the changed
+    /// middle. Disjoint edit regions in one batch fall back to the LCS
+    /// over that middle only.
     fn diff_lines(
+        shadow: &[&str],
+        current: &[&str],
+    ) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+        let prefix = shadow
+            .iter()
+            .zip(current.iter())
+            .take_while(|(a, b)| a == b)
+            .count();
+        let suffix = shadow[prefix..]
+            .iter()
+            .rev()
+            .zip(current[prefix.min(current.len())..].iter().rev())
+            .take_while(|(a, b)| a == b)
+            .count();
+        let smid = &shadow[prefix..shadow.len() - suffix.min(shadow.len() - prefix)];
+        let cmid = &current[prefix..current.len() - suffix.min(current.len() - prefix)];
+        if smid.is_empty() && cmid.is_empty() {
+            return Vec::new();
+        }
+        Self::diff_lines_middle(
+            &shadow[prefix..prefix + smid.len()],
+            &current[prefix..prefix + cmid.len()],
+        )
+        .into_iter()
+        .map(|(old, new)| {
+            (
+                old.start + prefix..old.end + prefix,
+                new.start + prefix..new.end + prefix,
+            )
+        })
+        .collect()
+    }
+
+    /// The LCS table over the changed middle only.
+    fn diff_lines_middle(
         shadow: &[&str],
         current: &[&str],
     ) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
@@ -524,5 +703,298 @@ impl Editor {
         };
         self.apply_change_plan(plan);
         Ok(())
+    }
+}
+
+impl Editor {
+    /// `u` in a collection (0049 §5): undo the newest edit group that
+    /// came FROM this collection, across its actual sources. Preflight
+    /// every member — a source edited since refuses the whole group by
+    /// name, and the receipt is never consumed on refusal.
+    pub(crate) fn collection_undo(&mut self) {
+        let id = self.current();
+        let Some(sources) = self
+            .collections
+            .get(&id)
+            .map(|c| c.excerpts.iter().map(|e| e.source).collect::<Vec<_>>())
+        else {
+            return;
+        };
+        let Some((index, mut receipt)) = self.changes.take_newest_matching(|receipt| {
+            receipt.producer == "collection edit"
+                && receipt
+                    .applied
+                    .iter()
+                    .any(|(document, ..)| sources.contains(document))
+        }) else {
+            self.message = "already at oldest change".into();
+            return;
+        };
+        let mut moved = 0;
+        for (document, _before, after) in &receipt.applied {
+            match self.docs.get(*document) {
+                Some(doc) if doc.buf.revision() == *after => {}
+                Some(_) => {
+                    let name = self
+                        .docs
+                        .get(*document)
+                        .and_then(|d| d.buf.path.clone())
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "a source".into());
+                    self.changes.restore(index, receipt);
+                    self.message =
+                        format!("collection undo refused: {name} changed since — resolve it first");
+                    return;
+                }
+                None => {
+                    self.changes.restore(index, receipt);
+                    self.message = "collection undo refused: a source buffer was closed".into();
+                    return;
+                }
+            }
+        }
+        let mut depths = Vec::with_capacity(receipt.applied.len());
+        for (document, ..) in &receipt.applied {
+            let undone_ok = matches!(self.doc_mut(*document).buf.undo(), Ok(Some(_)));
+            if undone_ok {
+                moved += 1;
+            }
+            depths.push(
+                self.docs
+                    .get(*document)
+                    .map(|doc| doc.buf.history().depth())
+                    .unwrap_or(0),
+            );
+        }
+        receipt.redo_depths = Some(depths);
+        // The undo's own journal refreshes the dependent views (0049 §5
+        // invalidation) — no explicit render here.
+        self.changes.push_undone(receipt);
+        self.message = format!("undid collection edit across {moved} buffer(s)");
+    }
+
+    /// `ctrl-r` in a collection: redo the newest undone group of this
+    /// collection, same preflight rules as undo.
+    pub(crate) fn collection_redo(&mut self) {
+        let id = self.current();
+        let Some(sources) = self
+            .collections
+            .get(&id)
+            .map(|c| c.excerpts.iter().map(|e| e.source).collect::<Vec<_>>())
+        else {
+            return;
+        };
+        let Some(receipt) = self.changes.take_undone_matching(|receipt| {
+            receipt
+                .applied
+                .iter()
+                .any(|(document, ..)| sources.contains(document))
+        }) else {
+            self.message = "nothing to redo".into();
+            return;
+        };
+        // Revisions are monotonic — an undo never returns to one — so
+        // preflight the undone position by history depth (0049 §5).
+        let depths = receipt.redo_depths.clone();
+        for (member, (document, ..)) in receipt.applied.iter().enumerate() {
+            let at = self
+                .docs
+                .get(*document)
+                .map(|doc| doc.buf.history().depth());
+            if at != depths.as_ref().map(|d| d[member]) {
+                self.changes.push_undone(receipt);
+                self.message = "collection redo refused: a source changed since the undo".into();
+                return;
+            }
+        }
+        let mut moved = 0;
+        for (document, ..) in &receipt.applied {
+            if matches!(self.doc_mut(*document).buf.redo(), Ok(Some(_))) {
+                moved += 1;
+            }
+        }
+        self.changes.push_receipt_back(receipt);
+        self.message = format!("redid collection edit across {moved} buffer(s)");
+    }
+}
+
+impl Editor {
+    /// `:w` in a collection (0049 §5): save the dirty SOURCES through
+    /// their own save paths — never the presentation. `:w PATH` refuses:
+    /// the view is not a file and exporting it is not this operation.
+    pub(crate) fn collection_save(&mut self, target: Option<PathBuf>, force: bool, close: bool) {
+        let id = self.current();
+        if target.is_some() {
+            self.message = "a collection has no file of its own — :w saves its sources;                             exporting the view is unsupported"
+                .into();
+            return;
+        }
+        let Some(sources) = self.collections.get(&id).map(|c| {
+            let mut seen: Vec<DocumentId> = c.excerpts.iter().map(|e| e.source).collect();
+            seen.dedup();
+            seen
+        }) else {
+            return;
+        };
+        let mut queued = 0;
+        let mut refused: Vec<String> = Vec::new();
+        for source in sources {
+            let Some(doc) = self.docs.get(source) else {
+                continue;
+            };
+            if !doc.buf.dirty {
+                continue;
+            }
+            let name = doc
+                .buf
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "[scratch]".into());
+            if doc.buf.readonly {
+                refused.push(name);
+                continue;
+            }
+            // Readonly/remote-permit refusals stay authoritative inside
+            // the save path itself (0040); :w! grants no new capability.
+            self.request_save_document(source, None, force, false);
+            queued += 1;
+        }
+        if let Some(collection) = self.collections.get_mut(&id) {
+            collection.pending_saves = queued;
+            collection.close_when_saved = close && refused.is_empty() && queued > 0;
+        }
+        if queued == 0 && refused.is_empty() {
+            if close {
+                self.close_pane_or_buffer(false);
+            } else {
+                self.message = "collection: all sources are saved".into();
+            }
+            return;
+        }
+        if !refused.is_empty() {
+            self.message = format!(
+                "collection: saving {queued} source(s); read-only skipped: {}",
+                refused.join(", ")
+            );
+        } else {
+            self.message = format!("collection: saving {queued} source(s)");
+        }
+    }
+
+    /// A source save completed (0049 §5): count down; the `:wq` view
+    /// closes only when every save confirmed. A failure cancels the
+    /// close and stays visible.
+    pub(crate) fn collection_save_progress(&mut self, document: DocumentId, saved: bool) {
+        let mut close: Option<DocumentId> = None;
+        for (id, collection) in self.collections.iter_mut() {
+            if collection.pending_saves == 0
+                || !collection.excerpts.iter().any(|e| e.source == document)
+            {
+                continue;
+            }
+            if !saved {
+                collection.pending_saves = 0;
+                collection.close_when_saved = false;
+                continue;
+            }
+            collection.pending_saves = collection.pending_saves.saturating_sub(1);
+            if collection.pending_saves == 0 && collection.close_when_saved {
+                close = Some(*id);
+            }
+        }
+        if let Some(id) = close {
+            if self.current() == id {
+                self.close_pane_or_buffer(false);
+            } else if let Some(collection) = self.collections.get_mut(&id) {
+                collection.close_when_saved = false;
+                self.message = "collection: sources saved".into();
+            }
+        }
+    }
+}
+
+impl Editor {
+    /// `g<Space>` in a collection, Enter on a header row, and
+    /// `:collection source` (0049 §5): open the full source under the
+    /// caret — the live document with its unsaved edits, never a disk
+    /// reload. A body row maps to the exact source position; a header
+    /// row opens the file at that excerpt's first line. The jump is
+    /// recorded so Ctrl-O returns to the collection working context.
+    pub fn collection_open_source_pub(&mut self) {
+        self.collection_open_source();
+    }
+
+    pub(crate) fn collection_open_source(&mut self) {
+        let id = self.current();
+        let cursor_line = self.buf().line_of(self.head());
+        let cursor_col = self.buf().col_of(self.head());
+        let Some(collection) = self.collections.get(&id) else {
+            return;
+        };
+        let mut target: Option<(DocumentId, usize)> = None;
+        for excerpt in &collection.excerpts {
+            if cursor_line == excerpt.view_line {
+                // header row: the file, at this excerpt's first line
+                target = Some((excerpt.source, excerpt.start));
+                break;
+            }
+            if cursor_line > excerpt.view_line
+                && cursor_line <= excerpt.view_line + excerpt.view_lines
+            {
+                // body row: same line-in-excerpt, same column
+                let Some(source) = self.docs.get(excerpt.source) else {
+                    break;
+                };
+                let source_line =
+                    source.buf.line_of(excerpt.start) + (cursor_line - excerpt.view_line - 1);
+                let line = source_line.min(source.buf.len_lines().saturating_sub(1));
+                target = Some((
+                    excerpt.source,
+                    source
+                        .buf
+                        .clamp_boundary(source.buf.line_start(line).saturating_add(cursor_col)),
+                ));
+                break;
+            }
+        }
+        let Some((document, head)) = target else {
+            self.message = "not on an excerpt".into();
+            return;
+        };
+        if self.docs.get(document).is_none() {
+            self.message = "collection: that source was closed".into();
+            return;
+        }
+        self.push_jump();
+        self.switch_to(document);
+        self.set_head(head);
+        self.clamp_cursor();
+        self.scroll_to_cursor(self.view_rows());
+    }
+}
+
+impl Editor {
+    /// The SOURCE line number for a collection view row (0049 §6):
+    /// Some(Some(n)) for body rows, Some(None) for chrome (title,
+    /// headers — the gutter stays blank there), None for ordinary
+    /// buffers.
+    pub fn collection_source_lineno(
+        &self,
+        doc: strop_core::id::DocumentId,
+        line: usize,
+    ) -> Option<Option<usize>> {
+        let collection = self.collections.get(&doc)?;
+        for excerpt in &collection.excerpts {
+            if line == excerpt.view_line {
+                return Some(None); // header row
+            }
+            if line > excerpt.view_line && line <= excerpt.view_line + excerpt.view_lines {
+                let source = self.docs.get(excerpt.source)?;
+                let first = source.buf.line_of(excerpt.start);
+                return Some(Some(first + (line - excerpt.view_line - 1) + 1));
+            }
+        }
+        Some(None) // title row
     }
 }

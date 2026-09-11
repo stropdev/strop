@@ -264,6 +264,27 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
         },
         flash: view.overlays.then(|| editor.flash_range()).flatten(),
         selection: view.overlays.then(|| editor.visual_range()).flatten(),
+        // occurrence selections (0049 §7): every stretched extra paints
+        // its range like the primary's visual selection
+        extra_selections: if view.overlays
+            && view.doc == editor.current()
+            && matches!(editor.mode, crate::editor::Mode::Visual)
+        {
+            editor
+                .extra_selections()
+                .iter()
+                .filter(|s| !s.collapsed())
+                .map(|s| {
+                    let (start, last) = s.range();
+                    let end = editor
+                        .buf()
+                        .ceil_boundary((last + 1).min(editor.buf().len_bytes()));
+                    strop_core::Range::charwise(start, end.min(editor.buf().len_bytes()))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
         block: view.overlays.then(|| editor.block_rect_pub()).flatten(),
         search_hits,
         find: view.overlays.then(|| editor.find_candidates()).flatten(),
@@ -400,10 +421,20 @@ fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneVi
                     bar,
                     Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
                 ));
-                left.push(Span::styled(
-                    format!("{:>digits$} ", line_idx + 1, digits = number_width - 2),
-                    num_style,
-                ));
+                // Collection views gutter the SOURCE line number; chrome
+                // rows (title/headers) stay blank (0049 §6).
+                let number_cell = match editor.collection_source_lineno(view.doc, line_idx) {
+                    Some(Some(n)) => format!("{:>digits$} ", n, digits = number_width - 2),
+                    Some(None) => " ".repeat(number_width - 1),
+                    None => format!("{:>digits$} ", line_idx + 1, digits = number_width - 2),
+                };
+                left.push(Span::styled(number_cell, num_style));
+                // Collection chrome rows (title, per-file headers) read
+                // as structure: accent text, never editable content
+                // (0049 §6).
+                if editor.collection_source_lineno(view.doc, line_idx) == Some(None) {
+                    style.row_fg = Some(ACCENT);
+                }
                 if let Some(row) =
                     diff::surface_list_row(surface, line_idx, width, line_idx == cur_line)
                 {
@@ -507,6 +538,9 @@ struct RowStyle<'a> {
     preview: Vec<strop_core::Range>,
     flash: Option<strop_core::Range>,
     selection: Option<strop_core::Range>,
+    /// Occurrence selections' extra ranges (0049 §7): same paint as
+    /// the primary selection, only on the active pane in Visual mode.
+    extra_selections: Vec<strop_core::Range>,
     /// ctrl-v rectangle (0013 §4): cell columns (0031 R6) — a grapheme
     /// selects when its nonzero absolute cell interval intersects the
     /// inclusive rectangle.
@@ -641,9 +675,11 @@ fn content_spans(
                     && glyph.cell <= block.right_cell
                     && end_cell > block.left_cell
             } else {
-                style
-                    .selection
-                    .is_some_and(|r| r.start.get() < pos + grapheme.len() && pos < r.end.get())
+                let covers = |r: &strop_core::Range| {
+                    r.start.get() < pos + grapheme.len() && pos < r.end.get()
+                };
+                style.selection.as_ref().is_some_and(covers)
+                    || style.extra_selections.iter().any(covers)
             };
             if selected {
                 cell = cell.bg(SELECT_BG);

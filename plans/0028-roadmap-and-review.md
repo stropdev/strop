@@ -92,32 +92,33 @@ Landed from [0049](0049-product-and-architecture-handoff.md):
   binding-first resolution with root-scan fallback; manual opens without
   context get a truthful route instead of install advice.
 
+Landed in 0.25.0 (0049 §§5–8 core): the collection correctness contract
+(identity, scoped undo/redo with depth preflight, immediate projection
+invalidation with caret preservation, save/close semantics, g<Space>
+navigation, prefix/suffix diff fast path), occurrence selection in
+ordinary buffers and collections, and reviewable rename/code-action
+proposals. Known limit: collection typing writes back at normal-mode
+action boundaries, not per keystroke (§5's live-mirror ideal); journal-
+driven write-back is the follow-up.
+
 Deferred, in 0049's own order (§1, §11):
 
-1. **Multibuffer correctness (0049 §5)** — source-backed collection
-   transactions replacing the scratch-history contract: versioned
-   source/projection map, typed protected rows, projection invalidation on
-   every source edit path, collection undo/redo as source-history groups,
-   `:w`/`:q` semantics, `g<Space>` source navigation with Ctrl-O working-set
-   restore, and elimination of the quadratic full-view diff (the measured
-   1,000/2,000-excerpt stall). Sign-off requires behavior + selection +
-   presentation together; no partial claims.
-2. **Presentation (0049 §6)** — Rootle-inspired source-excerpt cards with
-   per-source syntax projection, original line numbers, provenance/dirty/
-   conflict states; one card per source file. A reusable excerpt seam for
-   grep preview, collections and change review — not a widget framework.
-3. **Occurrence selection (0049 §7)** — `gb` next / `gB` all with
-   `:select-next|:select-all|:select-skip|:select-pop`, real anchor/head
-   ranges in ordinary buffers and collections, one edit group per action.
-4. **Reviewable project changes (0049 §8)** — prepared-proposal review
-   before rename/code-action/project application, bounded delivery,
-   inspectable receipts, project-replace migration onto the shared
-   semantics, `workspace/applyEdit` with truthful response timing.
-5. **Accompanying architecture (0049 §9)** — engine public-surface
+1. **Collection presentation, rest of (0049 §6)** — per-source syntax
+   projection into excerpt rows (analysis of source ranges, never a
+   synthetic combined file) and Rootle-style boxed file cards as render
+   chrome, with the reusable excerpt seam serving grep preview and
+   change review. Source line numbers, provenance naming and chrome
+   styling landed in 0.25.0; projection and cards remain.
+2. **Reviewable project changes, rest of (0049 §8)** — proposal review
+   for rename/code-action landed in 0.25.0. Remaining: bounded
+   multi-document delivery, project-replace migration onto the shared
+   proposal/receipt semantics (retaining per-hit content checks), and
+   `workspace/applyEdit` with truthful response timing.
+3. **Accompanying architecture (0049 §9)** — engine public-surface
    tightening, render-side job admission removal (0046 stage C),
    `collections/mod.rs` split, `:explain` decision provenance, arena
    exhaustion checks, pinned base images, required-mode container gate.
-6. **Later (0049 §10)** — structural selections before recipe syntax;
+4. **Later (0049 §10)** — structural selections before recipe syntax;
    saved working sets/named investigations; tasks with source-bound
    evidence; selective checkpoints; Dev Container lifecycle, daemon and
    GUI keep their existing evidence gates.
