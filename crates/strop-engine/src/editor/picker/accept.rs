@@ -14,16 +14,38 @@ impl Editor {
                 super::super::io::OpenIntent::Browse,
             ),
             Payload::RemoteConnect => self.open_remote_address(),
+            // R03: the toggle flips the session default and the row
+            // re-renders with the new value
+            Payload::SearchOption(setting) => {
+                match setting {
+                    strop_picker::SearchSetting::Hidden => {
+                        self.config.search_show_hidden = !self.config.search_show_hidden;
+                    }
+                    strop_picker::SearchSetting::RespectIgnore => {
+                        self.config.search_respect_ignore = !self.config.search_respect_ignore;
+                    }
+                }
+                // SearchOption payloads only exist in that picker:
+                // reopen it with the fresh values
+                self.open_search_options();
+            }
             // A jumplist menu entry: record the present position first,
             // so ctrl-o after the picker jump returns here (0047 §2).
             Payload::Jump { document, offset } => {
                 if self.docs.get(document).is_some() {
                     self.push_jump();
-                    self.jump_to((document, offset));
+                    // accepting a menu entry is a new landing (0051 §7):
+                    // deliberate placement, not a ctrl-o view restore
+                    self.jump_land(document, offset);
                 }
             }
             Payload::CodeAction(index) => self.accept_code_action(index),
             Payload::Container(id) => self.attach_container(id),
+            // Indentation choices retain a captured source owner and are
+            // handled before closing the selector, never against current focus.
+            Payload::IndentChoice(_) => {
+                self.message = "indentation choice requires its original selector".into()
+            }
             Payload::File(rel) => {
                 self.request_open(
                     rel,

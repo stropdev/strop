@@ -55,11 +55,11 @@ table (muted "jumplist picker (soon)") — this flips it live.
   when needed, and lands on the entry — the same steps as `jump_to`,
   so `Ctrl-O` after a picker jump returns to where the picker was
   opened.
-- Entries are byte offsets captured at jump time and can drift across
-  edits (existing jumplist behavior; marks map through edits, jumps
-  don't). Rows compute line/text at build time; the accept lands on the
-  offset clamped into the live document. Mapping the jumplist through
-  the transaction gateway is a separate change, out of scope here.
+- Under 0051, jumplist entries and temporary-surface return points share one full
+  `JumpRecord`: document incarnation, caret/anchor, extra selections, byte-anchored
+  viewport top and horizontal display origin. Source journals remap those records.
+  New targets use deliberate placement; Ctrl-O/Ctrl-I and closing temporary
+  outputs restore the recorded view, clamped to the live document and geometry.
 
 ## 3. Mark cards — `m`, `'`, `` ` ``
 

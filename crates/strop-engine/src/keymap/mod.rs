@@ -48,6 +48,8 @@ pub enum Handler {
     AbsorbChar(AbsorbKind),
     /// `"x` — register selection.
     AbsorbRegister,
+    /// Implemented by a modal field or Ex host, not the document trie.
+    Contextual,
     /// Planned slot: no dispatch yet (renders muted "(soon)").
     Soon,
 }
@@ -364,6 +366,14 @@ pub const BINDINGS: &[Binding] = &[
         live: true,
         id: "collection-file-nav",
         handler: Handler::Leaf(|e, k| e.collection_file_step_pub(k != '[')),
+    },
+    Binding {
+        keys: "]e [e",
+        desc: "next / prev excerpt (collections; +/- context)",
+        sections: &["normal"],
+        live: true,
+        id: "collection-excerpt-nav",
+        handler: Handler::Leaf(|e, k| e.collection_excerpt_step(k != '[')),
     },
     Binding {
         keys: "]c [c",
@@ -707,7 +717,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "space ?",
-        desc: "this popup",
+        desc: "help buffer",
         sections: &["leader"],
         live: true,
         id: "help",
@@ -1009,7 +1019,39 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "replace-exclude",
-        handler: Handler::Prefix,
+        handler: Handler::Contextual,
+    },
+    Binding {
+        keys: "ctrl-space",
+        desc: "query field: qualifier, language and value suggestions",
+        sections: &["ex+panes"],
+        live: true,
+        id: "query-suggestions",
+        handler: Handler::Contextual,
+    },
+    Binding {
+        keys: "ctrl-d",
+        desc: "replace picker: exclude/include file",
+        sections: &["ex+panes"],
+        live: true,
+        id: "replace-file-exclude",
+        handler: Handler::Contextual,
+    },
+    Binding {
+        keys: ":tab-size :indent-style :search-options",
+        desc: "source indentation and search visibility controls",
+        sections: &["ex+panes"],
+        live: true,
+        id: "source-and-search-settings",
+        handler: Handler::Contextual,
+    },
+    Binding {
+        keys: ":apply-change :cancel-change :save-change",
+        desc: "review: apply buffers, cancel, or save the changed files",
+        sections: &["ex+panes"],
+        live: true,
+        id: "change-review-actions",
+        handler: Handler::Contextual,
     },
     Binding {
         keys: "ctrl-l",

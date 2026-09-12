@@ -110,14 +110,16 @@ fn recorded_reordered_shell_outputs_keep_both_but_only_newest_focus() {
     let focused = editor.current();
     action(&mut editor, first);
     assert_eq!(editor.current(), focused);
-    assert_eq!(editor.buf().text().to_string(), "B\n");
+    let displayed = editor.buf().text().to_string();
+    assert!(displayed.lines().any(|line| line == "B"));
     let replayed = replay_fixture(&editor);
     assert_eq!(replayed.current(), focused);
-    assert_eq!(replayed.buf().text().to_string(), "B\n");
-    assert!(replayed
-        .docs
-        .iter()
-        .any(|(_, document)| document.buf.text() == "A\n"));
+    assert_eq!(replayed.buf().text().to_string(), displayed);
+    assert!(replayed.docs.iter().any(|(_, document)| document
+        .buf
+        .text()
+        .lines()
+        .any(|line| line == "A\n")));
     assert!(replayed.shell_requests.is_empty());
 }
 

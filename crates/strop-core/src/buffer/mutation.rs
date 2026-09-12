@@ -62,6 +62,10 @@ impl PreparedReplacements {
     pub fn is_empty(&self) -> bool {
         self.edits.is_empty()
     }
+    /// The exact validated order shared by preview and application.
+    pub fn edits(&self) -> &[Replacement] {
+        &self.edits
+    }
 }
 
 pub struct UserEdit<'a> {
@@ -119,6 +123,7 @@ impl Buffer {
         for edit in &replacements {
             self.validate_range(edit.range)?;
         }
+        replacements.sort_unstable_by_key(|edit| (edit.range.start.get(), edit.range.end.get()));
         // The verified geometry kernel (0045, crate::editmap): sorted by
         // start, strictly non-overlapping, in-bounds — proven, and the
         // error here can only be an overlap (bounds checked above).
@@ -128,18 +133,12 @@ impl Buffer {
             .collect();
         let sorted = crate::editmap::check_batch(self.len_bytes(), pairs)
             .map_err(|()| EditError::Overlap)?;
-        // Validated batches carry unique ranges, so each pair names its
-        // Replacement unambiguously.
-        let mut rest = replacements;
-        let mut ordered = Vec::with_capacity(sorted.len());
-        for pair in sorted {
-            let at = rest
-                .iter()
-                .position(|edit| edit.range.start.get() == pair.0 && edit.range.end.get() == pair.1)
-                .expect("a validated batch contains only input ranges");
-            ordered.push(rest.remove(at));
-        }
-        replacements = ordered;
+        // Keep the payloads beside their sorted geometry. Searching/removing
+        // each payload by range made large reviewed batches quadratic.
+        debug_assert!(replacements
+            .iter()
+            .zip(sorted)
+            .all(|(edit, pair)| (edit.range.start.get(), edit.range.end.get()) == pair));
         self.epoch
             .checked_add(replacements.len() as u64)
             .ok_or(EditError::RevisionExhausted)?;
@@ -367,19 +366,40 @@ impl Buffer {
     pub fn restore_revision(&mut self, revision: usize) -> Result<Option<HistoryMove>, EditError> {
         self.move_history(crate::history::HistoryAction::Jump(revision))
     }
+    /// Preflight a grouped undo without changing history or buffer contents.
+    pub fn check_undo(&self) -> Result<bool, EditError> {
+        self.check_history_move(crate::history::HistoryAction::Undo)
+            .map(|cost| cost.is_some())
+    }
+
+    /// Preflight a grouped history restore, including authority and revision capacity.
+    pub fn check_restore_revision(&self, revision: usize) -> Result<bool, EditError> {
+        self.check_history_move(crate::history::HistoryAction::Jump(revision))
+            .map(|cost| cost.is_some())
+    }
+
+    fn check_history_move(
+        &self,
+        action: crate::history::HistoryAction,
+    ) -> Result<Option<usize>, EditError> {
+        if self.readonly {
+            return Err(EditError::ReadOnly);
+        }
+        let cost = self.history.movement_cost(action);
+        if let Some(cost) = cost {
+            self.epoch
+                .checked_add(cost as u64)
+                .ok_or(EditError::RevisionExhausted)?;
+        }
+        Ok(cost)
+    }
     fn move_history(
         &mut self,
         action: crate::history::HistoryAction,
     ) -> Result<Option<HistoryMove>, EditError> {
-        if self.readonly {
-            return Err(EditError::ReadOnly);
-        }
-        let Some(cost) = self.history.movement_cost(action) else {
+        let Some(cost) = self.check_history_move(action)? else {
             return Ok(None);
         };
-        self.epoch
-            .checked_add(cost as u64)
-            .ok_or(EditError::RevisionExhausted)?;
         // A valid history is guaranteed by construction and validated at restore.
         let Some(ops) = self.history.navigate(action) else {
             return Ok(None);

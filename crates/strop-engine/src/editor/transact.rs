@@ -84,6 +84,30 @@ impl super::Editor {
         map_active: bool,
         position: impl Fn(usize, &Change) -> usize,
     ) {
+        // A collection buffer's own edits write back to their sources
+        // through the journal — live, per keystroke (0051 R05). System
+        // regenerations (render/splice) and history moves never do.
+        if self.collections.contains_key(&id)
+            && self.docs.get(id).is_some_and(|doc| {
+                doc.buf
+                    .changes()
+                    .iter()
+                    .any(|c| c.origin == strop_core::ChangeOrigin::User)
+            })
+        {
+            self.sync_collection_write_back(id, map_active, &position);
+            return;
+        }
+        let change_count = self.docs.get(id).map_or(0, |doc| doc.buf.changes().len());
+        if change_count == 0 {
+            return;
+        }
+        // Copy one small journal entry at a time: return views live in
+        // other documents, so remap before borrowing the source mutably.
+        for index in 0..change_count {
+            let change = self.doc(id).buf.changes()[index];
+            self.map_navigation_records(id, |offset| position(offset, &change));
+        }
         // Snapshot clean views before the mutable document borrow: a
         // view with an unsynced user edit is never regenerated (0049 §5).
         let clean_views: std::collections::HashSet<DocumentId> = self
@@ -96,6 +120,7 @@ impl super::Editor {
             })
             .map(|(cid, _)| *cid)
             .collect();
+        let collection_updates = self.prepare_collection_updates(id, &clean_views);
         let Some(document) = self.docs.get_mut(id) else {
             return;
         };
@@ -103,54 +128,9 @@ impl super::Editor {
             return;
         }
         let active = self.active_pane;
-        // 0049 §5: classify dependent collection excerpts against each
-        // change BEFORE the remap moves their source spans. A change
-        // strictly inside one excerpt splices that excerpt's view rows;
-        // anything touching an edge re-renders the whole view. Views
-        // with an unsynced user edit are never regenerated underneath
-        // the typist — the next write-back's render covers them.
-        let mut splices: Vec<(DocumentId, usize)> = Vec::new();
-        let mut renders: Vec<DocumentId> = Vec::new();
         for change in document.buf.changes() {
-            let (start, end) = (change.edit.start_byte, change.edit.old_end_byte);
-            for (collection_id, collection) in self.collections.iter() {
-                if renders.contains(collection_id) {
-                    continue;
-                }
-                if !clean_views.contains(collection_id) {
-                    continue;
-                }
-                for (index, excerpt) in collection.excerpts.iter().enumerate() {
-                    if excerpt.source != id {
-                        continue;
-                    }
-                    // Insertions at a boundary belong to the span (the
-                    // remap grows it onto the new bytes) — only a
-                    // change strictly outside skips the refresh.
-                    if end < excerpt.start || start > excerpt.end {
-                        continue;
-                    }
-                    if start > excerpt.start && end < excerpt.end {
-                        if !splices.contains(&(*collection_id, index)) {
-                            splices.push((*collection_id, index));
-                        }
-                    } else {
-                        renders.push(*collection_id);
-                        break;
-                    }
-                }
-            }
             let map = |offset| position(offset, change);
             for (owner, position) in self.marks.values_mut() {
-                if *owner == id {
-                    *position = map(*position);
-                }
-            }
-            for (owner, position) in self
-                .jumplist_past
-                .iter_mut()
-                .chain(self.jumplist_future.iter_mut())
-            {
                 if *owner == id {
                     *position = map(*position);
                 }
@@ -188,34 +168,26 @@ impl super::Editor {
                             // then-reinserted text regrows the span)
                             s + new_len
                         };
+                        for anchor in &mut excerpt.hit_anchors {
+                            *anchor = map(*anchor);
+                        }
+                        excerpt.matches.retain_mut(|(start, length)| {
+                            let finish = start.saturating_add(*length);
+                            if s < finish && e > *start {
+                                return false;
+                            }
+                            let mapped = map(*start);
+                            *length = map(finish).saturating_sub(mapped);
+                            *start = mapped;
+                            true
+                        });
                     }
                 }
             }
         }
         self.analysis.edits(id, document.buf.changes());
         document.buf.clear_changes();
-        // Refresh the dependent views after the journal is consumed.
-        #[cfg(test)]
-        if !renders.is_empty() || !splices.is_empty() {
-            eprintln!("hook on doc {id:?}: renders={renders:?} splices={splices:?}");
-        }
-        for collection_id in renders {
-            self.collection_render_view(collection_id);
-        }
-        for (collection_id, index) in splices {
-            // A collection re-rendered above already shows the new text.
-            if self
-                .collections
-                .get(&collection_id)
-                .is_some_and(|collection| {
-                    self.docs
-                        .get(collection_id)
-                        .is_some_and(|doc| doc.buf.revision() == collection.revision)
-                })
-            {
-                self.collection_splice_excerpt(collection_id, index);
-            }
-        }
+        self.publish_collection_updates(collection_updates);
     }
 }
 

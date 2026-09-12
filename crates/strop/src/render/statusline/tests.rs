@@ -57,6 +57,19 @@ fn a_long_path_cannot_crowd_out_status_or_position() {
     assert!(width(&row) <= 48, "the row fits its cells: {row:?}");
 }
 
+/// 0051 R08: the modeline carries the effective indent setting.
+#[test]
+fn modeline_shows_the_effective_indent() {
+    let e = editor("x\n", None);
+    let out = row(&e, 60, 4);
+    assert!(out.contains("Spaces:4"), "the default: {out:?}");
+    let mut e = editor("x\n", None);
+    e.config.indent_style = strop_engine::config::IndentStyle::Tabs;
+    e.reresolve_indents();
+    let out = row(&e, 60, 4);
+    assert!(out.contains("Tabs:4"), "the configured style: {out:?}");
+}
+
 #[test]
 fn wide_and_control_labels_stay_printable_whole_graphemes() {
     let mut editor = editor("a\n", None);
@@ -135,7 +148,8 @@ fn git_marks_and_flags_render_quietly_beside_the_message() {
     });
     editor.hunks_untracked = true;
     editor.message = "wrote f.rs".into();
-    let row = row(&editor, 60, 4);
+    // 72 cells: the 0051 R08 indent segment joined the required set
+    let row = row(&editor, 72, 4);
     assert!(
         row.contains("main*"),
         "branch quiet, worktree dirt marked: {row:?}"

@@ -11,6 +11,8 @@ mod find;
 mod motions;
 pub use find::find_character;
 mod objects;
+mod pairs;
+pub use pairs::{delimiter_pair, matching_delimiter_at, MatchCancelled};
 pub(crate) mod search;
 
 use motions::*;

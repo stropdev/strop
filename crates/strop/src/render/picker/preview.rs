@@ -16,10 +16,10 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
     };
     let visible = area.height as usize;
     let width = usize::from(area.width.saturating_sub(1));
-    let tab = editor.config.tab_size;
 
     let lines: Vec<Line> = match source {
         PreviewSource::Buffer(document) => {
+            let tab = editor.doc(document).indent.width;
             let rope = editor.doc(document).buf.snapshot();
             let window = preview_window(&rope, focus_line, visible);
             let analysis = editor.document_analysis(
@@ -39,6 +39,10 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
             )
         }
         PreviewSource::Cached(path) => {
+            // 0051 R08: a cached path's hard-tab display resolves like
+            // its buffer's would — the open document's setting when one
+            // matches, else the configured fallback; never a second source.
+            let tab = editor.tab_width_for_path(&path);
             let Some(entry) = editor.previews.get(&path) else {
                 return;
             };
@@ -74,7 +78,10 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
         .border_style(Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d)))
         .style(Style::default().bg(BASE))
         .title(Span::styled(
-            format!(" {title} "),
+            format!(
+                " {} ",
+                super::super::text::clip_end(&title, area.width.saturating_sub(2) as usize)
+            ),
             Style::default().fg(MUTED),
         ));
     frame.render_widget(Paragraph::new(lines).block(block), area);

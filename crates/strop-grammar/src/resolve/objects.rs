@@ -6,37 +6,11 @@ use strop_core::Buffer;
 /// % — matching pair. On a bracket: its mate. Else: first bracket on the
 /// line right of cursor, then its mate (vim semantics).
 pub fn match_pair(buf: &Buffer, pos: usize) -> Option<usize> {
-    const PAIRS: &[(u8, u8)] = &[(b'(', b')'), (b'[', b']'), (b'{', b'}'), (b'<', b'>')];
-
-    let on = buf
-        .byte_at(pos)
-        .and_then(|b| PAIRS.iter().find(|(o, c)| *o == b || *c == b));
-    let (open, close, from) = match on {
-        Some(&(o, c)) => (o as char, c as char, pos),
-        None => {
-            let end = buf.line_end(buf.line_of(pos));
-            let mut i = pos;
-            loop {
-                if i >= end {
-                    return None;
-                }
-                if let Some(&(o, c)) = PAIRS
-                    .iter()
-                    .find(|(o, c)| *o == buf.byte(i) || *c == buf.byte(i))
-                {
-                    break (o as char, c as char, i);
-                }
-                i += 1;
-            }
-        }
-    };
-    let (o, c) = bracket_pair(buf, from, open, close)?;
-    let b = buf.byte_at(from)?;
-    if b == open as u8 {
-        Some(c)
-    } else {
-        Some(o)
-    }
+    let end = buf.line_end(buf.line_of(pos));
+    let from = (pos..end).find(|&at| super::pairs::delimiter_pair(buf.byte(at)).is_some())?;
+    super::pairs::matching_delimiter_at(buf, from, || false)
+        .ok()
+        .flatten()
 }
 
 /// Find the enclosing bracket pair around `pos` (nesting-aware scan).

@@ -199,6 +199,9 @@ pub fn picker(event: &crate::editor::picker::PickerEvent) {
         let outcome = match &event.msg {
             PickerMsg::Items(items) => json!({"result":"items","count":items.len()}),
             PickerMsg::Warning(warning) => json!({"result":"warning","bytes":warning.len()}),
+            PickerMsg::QueryError(diagnostic) => {
+                json!({"result":"query-error","range":diagnostic.range})
+            }
             PickerMsg::Finished(outcome) => match outcome {
                 strop_core::worker::Outcome::Success(()) => json!({"result":"finished"}),
                 strop_core::worker::Outcome::Failed { failure, .. } => {

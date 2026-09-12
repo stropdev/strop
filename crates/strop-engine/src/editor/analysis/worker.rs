@@ -2,14 +2,23 @@
 //! journals arrive in order; parser/query cancellation is cooperative, never a
 //! join on the input thread.
 use super::{AnalysisEvent, AnalysisKey, AnalysisTarget, FrameAnalysis};
+use crate::editor::matching::{match_delimiters, MatchKey, PairMatch};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use strop_core::worker::{CancelReason, Completion, FailureKind, Outcome, Ticket};
+use strop_grammar::MatchCancelled;
 use strop_syntax::{HighlightError, Highlighter, IndentGuides};
 
-pub(super) struct Work {
+pub(crate) struct Work {
     pub ticket: Ticket<AnalysisKey>,
+    pub rope: ropey::Rope,
+    pub cancel: Arc<AtomicBool>,
+}
+/// A matching-delimiter job (0051 §7 R09): same actor, same slot parser
+/// state, same cooperative cancellation as viewport analysis.
+pub(crate) struct MatchWork {
+    pub ticket: Ticket<MatchKey>,
     pub rope: ropey::Rope,
     pub cancel: Arc<AtomicBool>,
 }
@@ -21,10 +30,37 @@ pub struct Slot {
 }
 enum Message {
     Analyze(Work),
+    Match(MatchWork),
     Edits(AnalysisTarget, Vec<strop_core::Change>),
     Forget(AnalysisTarget),
 }
-pub(super) struct Worker {
+
+/// The target's parser slot, created on first use and rebound when the
+/// syntax identity changes. Guides/layouts survive a rebind: they key
+/// on revision, not on the path.
+fn slot_for<'a>(
+    slots: &'a mut HashMap<AnalysisTarget, Slot>,
+    target: &AnalysisTarget,
+    syntax_path: &Option<std::path::PathBuf>,
+    rope: &ropey::Rope,
+) -> &'a mut Slot {
+    let slot = slots.entry(target.clone()).or_insert_with(|| Slot {
+        highlighter: syntax_path
+            .as_ref()
+            .and_then(|path| Highlighter::for_path(path, rope)),
+        syntax_path: syntax_path.clone(),
+        guides: None,
+        layouts: super::layouts::LayoutCache::default(),
+    });
+    if slot.syntax_path != *syntax_path {
+        slot.highlighter = syntax_path
+            .as_ref()
+            .and_then(|path| Highlighter::for_path(path, rope));
+        slot.syntax_path = syntax_path.clone();
+    }
+    slot
+}
+pub(crate) struct Worker {
     sender: mpsc::Sender<Message>,
 }
 impl Worker {
@@ -65,22 +101,12 @@ impl Worker {
                                     if cancelled() {
                                         return Err(HighlightError::Cancelled);
                                     }
-                                    let slot =
-                                        slots.entry(key.target.clone()).or_insert_with(|| Slot {
-                                            highlighter: key.syntax_path.as_ref().and_then(
-                                                |path| Highlighter::for_path(path, &work.rope),
-                                            ),
-                                            syntax_path: key.syntax_path.clone(),
-                                            guides: None,
-                                            layouts: super::layouts::LayoutCache::default(),
-                                        });
-                                    if slot.syntax_path != key.syntax_path {
-                                        slot.highlighter =
-                                            key.syntax_path.as_ref().and_then(|path| {
-                                                Highlighter::for_path(path, &work.rope)
-                                            });
-                                        slot.syntax_path = key.syntax_path.clone();
-                                    }
+                                    let slot = slot_for(
+                                        &mut slots,
+                                        &key.target,
+                                        &key.syntax_path,
+                                        &work.rope,
+                                    );
                                     let spans = match slot.highlighter.as_mut() {
                                         Some(highlighter) => highlighter.highlight_while(
                                             &work.rope,
@@ -184,6 +210,48 @@ impl Worker {
                                 return;
                             }
                         }
+                        Message::Match(work) => {
+                            let key = &work.ticket.key;
+                            let cancelled = || work.cancel.load(Ordering::Acquire);
+                            let result =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    if cancelled() {
+                                        return Err(HighlightError::Cancelled);
+                                    }
+                                    let buffer =
+                                        strop_core::Buffer::from_snapshot(work.rope.clone());
+                                    match match_delimiters(
+                                        &buffer, key.caret, key.insert, cancelled,
+                                    ) {
+                                        Ok(pair) => {
+                                            Ok(pair
+                                                .map(|(first, second)| PairMatch { first, second }))
+                                        }
+                                        Err(MatchCancelled) => Err(HighlightError::Cancelled),
+                                    }
+                                }));
+                            let outcome = match result {
+                                Ok(Ok(pair)) => Outcome::Success(pair),
+                                Ok(Err(HighlightError::Cancelled)) => {
+                                    Outcome::Cancelled(CancelReason::Superseded)
+                                }
+                                Ok(Err(error)) => {
+                                    Outcome::failed(FailureKind::Io, error.to_string())
+                                }
+                                Err(_) => {
+                                    Outcome::failed(FailureKind::Panic, "display analysis failed")
+                                }
+                            };
+                            if events
+                                .send(AnalysisEvent::Matched(Box::new(Completion {
+                                    ticket: work.ticket,
+                                    outcome,
+                                })))
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
                     }
                 }
                 drop(slots);
@@ -197,6 +265,14 @@ impl Worker {
             .map_err(|error| match error.0 {
                 Message::Analyze(work) => Box::new(work),
                 _ => unreachable!("sent an analysis request"),
+            })
+    }
+    pub fn match_work(&self, work: MatchWork) -> Result<(), Box<MatchWork>> {
+        self.sender
+            .send(Message::Match(work))
+            .map_err(|error| match error.0 {
+                Message::Match(work) => Box::new(work),
+                _ => unreachable!("sent a match request"),
             })
     }
     pub fn edits(&self, target: AnalysisTarget, edits: Vec<strop_core::Change>) -> bool {

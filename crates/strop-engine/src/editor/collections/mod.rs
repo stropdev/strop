@@ -1,21 +1,25 @@
-//! Editable code collections (0044): picker results as one real buffer of
-//! source excerpts. Edits to an excerpt write back to its source document
-//! through the change-plan gateway at action boundaries; generated headers
-//! are protected, and a source that moved on refuses by name.
+//! Source-backed editable collections. Journal edits publish immediately;
+//! generated chrome is protected and source undo groups commit at action boundaries.
 
+mod context;
+mod editing;
+mod history;
+mod journal;
+mod navigation;
+mod projection;
 #[cfg(test)]
 mod tests;
+mod updates;
+mod view_positions;
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use projection::render;
 
-use strop_core::id::{Arena, BufferRevision, DocumentId, DocumentKind};
-use strop_core::{Buffer, Range};
-use strop_workspace::ResourceLocation;
+use std::collections::{HashMap, HashSet};
 
-use super::changes::{ChangePlan, ChangeProducer, PlannedDocument};
 use super::document::Document;
 use super::Editor;
+use strop_core::id::{BufferRevision, DocumentId};
+use strop_core::Buffer;
 
 /// What a collection view row IS (0049 §6): the renderer styles chrome
 /// from this — never by parsing row text.
@@ -39,15 +43,15 @@ pub(crate) struct Excerpt {
     /// Source byte span (whole lines), remapped on every source mutation.
     pub start: usize,
     pub end: usize,
-    /// FNV-1a of the span's bytes at build/regeneration — the write-back
-    /// staleness check.
-    pub fingerprint: u64,
-    /// Header line index in the shadow text (the title is line 0).
+    /// Context radius around the query's source hits.
+    pub context: usize,
+    /// Original hit line anchors, remapped with source edits.
+    pub hit_anchors: Vec<usize>,
+    /// Header line index in the view (the title is line 0).
     pub view_line: usize,
-    /// Source line count as rendered into the shadow.
+    /// Source line count as rendered.
     pub view_lines: usize,
-    /// Body byte span in the view/shadow text (0049 §5 invalidation:
-    /// source changes splice this span directly).
+    /// Editable source body byte span in the view, excluding synthetic newline.
     pub view_start: usize,
     pub view_end: usize,
     /// Query hit spans in SOURCE bytes within this excerpt (the picker's
@@ -59,30 +63,30 @@ pub(crate) struct Excerpt {
 pub(crate) struct Collection {
     pub title: String,
     pub excerpts: Vec<Excerpt>,
+    pub skipped: usize,
     /// Source saves in flight from a collection `:w`/`:wq`; the view
     /// closes only when every one confirms (0049 §5).
-    pub pending_saves: usize,
+    pub pending_saves: HashSet<DocumentId>,
     pub close_when_saved: bool,
-    /// The canonical rendering as of the last sync. The sync diff is
-    /// shadow vs current — no hidden state.
-    pub shadow: String,
+    /// Query provenance: matches are counted independently of merged excerpts.
+    pub match_count: usize,
     /// The buffer revision at last sync — the cheap no-change check that
     /// keeps motions from materializing rope text on the input path.
     pub revision: BufferRevision,
     /// Row roles parallel to the view text (0049 §6), rebuilt at render.
     pub rows: Vec<CollectionRow>,
+    pub pending_commit: Vec<(DocumentId, BufferRevision)>,
 }
 
 /// One collection hit: path, 0-based line, and the query submatch's
 /// (byte column, length) when the source was a real rg match.
 pub(crate) type CollectionHit = (std::path::PathBuf, usize, Option<(usize, usize)>);
 
-/// A hit line plus its optional submatch span.
-type LineHit = (usize, Option<(usize, usize)>);
-/// Per-document collected hits.
-type DocHits = Vec<LineHit>;
-/// One merged excerpt span with its hits: (start line, end line, hits).
-type SpanWithHits = (usize, usize, Vec<Option<(usize, usize)>>);
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct SourceHit {
+    line: usize,
+    span: Option<(usize, usize)>,
+}
 
 /// An in-flight collection build: hits plus the count of background
 /// source loads still outstanding (0044 v2 async source loading).
@@ -95,144 +99,46 @@ pub(crate) struct CollectionBuild {
     /// Remote hits resolve against open remote documents at build.
     pub remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)>,
     pub waiting: usize,
-}
-
-fn fingerprint(text: &str) -> u64 {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in text.as_bytes() {
-        hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
-    }
-    hash
-}
-
-/// The canonical rendering (0049 §6): a title row with counts, then ONE
-/// CARD PER FILE — top border with path and badges, excerpt bodies with
-/// a "⋮ N source lines omitted" gap between disjoint spans, and a bottom
-/// border. Row roles are recorded in `collection.rows` for the renderer;
-/// chrome rows are protected (write-back refuses them) and keep the
-/// excerpt's `view_line` invariant: the row before the body.
-fn render(
-    docs: &Arena<DocumentKind, Document>,
-    cwd: &std::path::Path,
-    collection: &mut Collection,
-) -> String {
-    let files = {
-        let mut seen = Vec::new();
-        for excerpt in &collection.excerpts {
-            if !seen.contains(&excerpt.source) {
-                seen.push(excerpt.source);
-            }
-        }
-        seen.len()
-    };
-    let matches = collection.excerpts.len();
-    let dirty = {
-        let mut n = 0;
-        let mut seen = Vec::new();
-        for excerpt in &collection.excerpts {
-            if !seen.contains(&excerpt.source) {
-                seen.push(excerpt.source);
-                if docs.get(excerpt.source).is_some_and(|d| d.buf.dirty) {
-                    n += 1;
-                }
-            }
-        }
-        n
-    };
-    let mut text = format!(
-        "collection: {} — {} match(es) · {} file(s){}{}\n",
-        collection.title,
-        matches,
-        files,
-        if dirty > 0 { " · " } else { "" },
-        if dirty > 0 {
-            format!("{dirty} modified")
-        } else {
-            String::new()
-        },
-    );
-    let mut rows = vec![CollectionRow::Title];
-    let mut line = 1;
-    let mut at = 0;
-    while at < collection.excerpts.len() {
-        let source = collection.excerpts[at].source;
-        let mut card_end = at;
-        while card_end + 1 < collection.excerpts.len()
-            && collection.excerpts[card_end + 1].source == source
-        {
-            card_end += 1;
-        }
-        let doc = docs.get(source).unwrap();
-        let path = doc
-            .buf
-            .path
-            .as_ref()
-            .map(|path| path.strip_prefix(cwd).unwrap_or(path).display().to_string())
-            .unwrap_or_else(|| "[scratch]".into());
-        let lang = doc
-            .buf
-            .path
-            .as_ref()
-            .and_then(|p| p.extension().map(|e| format!(".{}", e.to_string_lossy())))
-            .and_then(|ext| strop_lsp::registry::language_for_extension(&ext));
-        let count = card_end - at + 1;
-        let modified = doc.buf.dirty;
-        let lang_badge = lang.map(|l| format!("{l} · ")).unwrap_or_default();
-        let dirty_badge = if modified { " · modified" } else { "" };
-        text.push_str(&format!(
-            "╭─ {path} ── {lang_badge}{count} excerpt(s){dirty_badge}\n"
-        ));
-        rows.push(CollectionRow::CardTop(at));
-        line += 1;
-        for i in at..=card_end {
-            if i > at {
-                let prev = &collection.excerpts[i - 1];
-                let here = &collection.excerpts[i];
-                let gap_lines = doc
-                    .buf
-                    .line_of(here.start)
-                    .saturating_sub(doc.buf.line_of(prev.end));
-                text.push_str(&format!("⋮ {gap_lines} source lines omitted\n"));
-                rows.push(CollectionRow::Gap);
-                line += 1;
-            }
-            let start = collection.excerpts[i].start;
-            let end = collection.excerpts[i].end;
-            let body = doc.buf.text().byte_slice(start..end).to_string();
-            let excerpt = &mut collection.excerpts[i];
-            excerpt.view_line = line - 1; // the chrome row before the body
-            excerpt.view_start = text.len();
-            excerpt.view_lines = body.lines().count().max(1);
-            excerpt.fingerprint = fingerprint(&body);
-            text.push_str(&body);
-            if !body.ends_with('\n') {
-                text.push('\n');
-            }
-            excerpt.view_end = text.len();
-            for _ in 0..excerpt.view_lines {
-                rows.push(CollectionRow::Body);
-            }
-            line += excerpt.view_lines;
-        }
-        text.push_str("╰\n");
-        rows.push(CollectionRow::CardBottom);
-        line += 1;
-        at = card_end + 1;
-    }
-    collection.rows = rows;
-    let _ = line;
-    text
+    pub owner: strop_core::worker::WorkerId,
+    pub origin: DocumentId,
+    pub revision: BufferRevision,
+    pub focus_on_ready: bool,
 }
 
 impl Editor {
+    fn collection_local_sources(&self) -> HashMap<std::path::PathBuf, DocumentId> {
+        let mut sources = HashMap::new();
+        for (id, document) in self.docs.iter() {
+            if matches!(document.source, super::document::DocumentSource::File) {
+                for path in document
+                    .buf
+                    .path
+                    .as_deref()
+                    .into_iter()
+                    .chain(document.buf.file_identity())
+                {
+                    sources.insert(self.cwd.join(path), id);
+                }
+            }
+        }
+        sources
+    }
+
     /// `ctrl-o` in a result picker: open the listed hits as an editable
-    /// collection. Hits whose files are not open local documents are
-    /// counted and skipped with a message; remote hits carry no local
-    /// payload, so they are skipped the same way.
+    /// collection. Unopened local sources load as owned background work;
+    /// remote hits resolve only against their already-open endpoint.
     pub(crate) fn open_collection_from_picker(&mut self) {
         let Some(glue) = &self.picker else {
             return;
         };
+        if let Some(error) = &glue.picker.error {
+            self.message = format!("collection refused: {error}");
+            return;
+        }
+        if glue.picker.streaming || glue.rank_pending.is_some() {
+            self.message = "results are still updating — retry Ctrl-O when ready".into();
+            return;
+        }
         let kind = glue.picker.kind;
         if !matches!(
             kind,
@@ -248,7 +154,12 @@ impl Editor {
         let mut hits: Vec<CollectionHit> = Vec::new();
         let mut remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)> =
             Vec::new();
-        for item in glue.picker.items.iter() {
+        for item in glue
+            .picker
+            .rows
+            .iter()
+            .filter_map(|row| glue.picker.items.get(row.item))
+        {
             match &item.payload {
                 strop_picker::Payload::Grep {
                     path,
@@ -271,20 +182,20 @@ impl Editor {
             }
         }
         let title = kind.title().trim().to_string();
+        let owner = glue.id.0;
         self.close_picker();
         // Unopened sources load in the background (never switching focus);
         // the build assembles when the last one lands.
         let mut to_load: Vec<std::path::PathBuf> = Vec::new();
+        let open_sources = self.collection_local_sources();
+        let mut requested = std::collections::HashSet::new();
         for (path, ..) in &hits {
             let absolute = if path.is_absolute() {
                 path.clone()
             } else {
                 self.cwd.join(path)
             };
-            let open = self.docs.iter().any(|(_, doc)| {
-                doc.matches_target(&crate::files::FileTarget::Local(absolute.clone()))
-            });
-            if !open && !to_load.contains(&absolute) {
+            if !open_sources.contains_key(&absolute) && requested.insert(absolute.clone()) {
                 to_load.push(absolute);
             }
         }
@@ -294,6 +205,10 @@ impl Editor {
             hits,
             remote_hits,
             waiting,
+            owner,
+            origin: self.current(),
+            revision: self.buf().revision(),
+            focus_on_ready: true,
         };
         if to_load.is_empty() {
             self.build_collection(build);
@@ -302,14 +217,21 @@ impl Editor {
         self.collection_build = Some(build);
         self.message = format!("collection: loading {waiting} source(s)…");
         for path in to_load {
-            self.request_open(path, crate::editor::io::OpenIntent::Background);
+            self.request_open(
+                path,
+                crate::editor::io::OpenIntent::CollectionSource { owner },
+            );
         }
     }
 
     /// A background source load landed (or failed): the pending build
     /// counts down and assembles when its sources are all in.
-    pub(crate) fn collection_source_ready(&mut self, _document: DocumentId) {
-        let Some(build) = &mut self.collection_build else {
+    pub(crate) fn collection_source_ready(&mut self, owner: strop_core::worker::WorkerId) {
+        let Some(build) = self
+            .collection_build
+            .as_mut()
+            .filter(|build| build.owner == owner)
+        else {
             strop_trace::record_with(
                 strop_trace::EventKind::JobFinished,
                 || serde_json::json!({"service":"collection","result":"ready-without-build"}),
@@ -328,14 +250,23 @@ impl Editor {
     }
 
     fn build_collection(&mut self, build: CollectionBuild) {
+        let take_focus = build.focus_on_ready
+            && self
+                .panes
+                .get(self.active_pane)
+                .is_some_and(|pane| pane.doc == build.origin)
+            && self
+                .docs
+                .get(build.origin)
+                .is_some_and(|document| document.buf.revision() == build.revision);
         let CollectionBuild {
             title,
             hits,
             remote_hits,
             ..
         } = build;
-        #[allow(clippy::type_complexity)]
-        let mut by_doc: HashMap<DocumentId, DocHits> = HashMap::new();
+        let mut by_doc: HashMap<DocumentId, Vec<SourceHit>> = HashMap::new();
+        let open_sources = self.collection_local_sources();
         let mut skipped = 0;
         for (path, line, hit) in hits {
             let absolute = if path.is_absolute() {
@@ -343,14 +274,14 @@ impl Editor {
             } else {
                 self.cwd.join(path)
             };
-            let Some(document) = self.docs.iter().find_map(|(id, doc)| {
-                doc.matches_target(&crate::files::FileTarget::Local(absolute.clone()))
-                    .then_some(id)
-            }) else {
+            let Some(&document) = open_sources.get(&absolute) else {
                 skipped += 1;
                 continue;
             };
-            by_doc.entry(document).or_default().push((line, hit));
+            by_doc
+                .entry(document)
+                .or_default()
+                .push(SourceHit { line, span: hit });
         }
         for (endpoint, path, line) in remote_hits {
             let document = self.docs.iter().find_map(|(id, doc)| {
@@ -360,7 +291,10 @@ impl Editor {
                 })
             });
             match document {
-                Some(id) => by_doc.entry(id).or_default().push((line, None)),
+                Some(id) => by_doc
+                    .entry(id)
+                    .or_default()
+                    .push(SourceHit { line, span: None }),
                 None => skipped += 1,
             }
         }
@@ -368,65 +302,59 @@ impl Editor {
             self.message = "no open buffers among the results — open them first".into();
             return;
         }
-        let mut excerpts = Vec::new();
-        for (source, mut lines) in by_doc {
-            lines.sort_unstable();
-            lines.dedup_by_key(|(line, _)| *line);
+        let mut excerpts: Vec<Excerpt> = Vec::new();
+        let mut match_count = 0;
+        for (source, mut hits) in by_doc {
+            hits.sort_unstable();
+            hits.dedup();
             let buf = &self.docs.get(source).unwrap().buf;
-            // Merge adjacent lines into one excerpt so an edit never
-            // applies twice to overlapping spans; the hits ride along.
-            let mut spans: Vec<SpanWithHits> = Vec::new();
-            for (line, hit) in lines {
+            for SourceHit { line, span: hit } in hits {
                 if line >= buf.len_lines() {
                     continue;
                 }
-                match spans.last_mut() {
-                    Some((_, end, hits)) if line <= *end => {
-                        *end = line + 1;
-                        hits.push(hit);
-                    }
-                    _ => spans.push((line, line + 1, vec![hit])),
-                }
-            }
-            for (start_line, end_line, hits) in spans {
-                let start = buf.line_start(start_line);
+                match_count += 1;
+                let hit_start = buf.line_start(line);
+                let start = buf.line_start(line.saturating_sub(2));
+                let end_line = line.saturating_add(3);
                 let end = if end_line >= buf.len_lines() {
                     buf.len_bytes()
                 } else {
                     buf.line_start(end_line)
                 };
-                let text = buf.text().byte_slice(start..end).to_string();
-                // the hits inside this span, in source bytes (0050 §7:
-                // the query's evidence paints in the view)
-                let matches = hits
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(i, hit)| {
-                        hit.map(|(col, len)| (buf.line_start(start_line + i) + col, len))
-                    })
-                    .collect();
-                excerpts.push(Excerpt {
-                    source,
-                    start,
-                    end,
-                    fingerprint: fingerprint(&text),
-                    view_line: 0,
-                    view_lines: 0,
-                    view_start: 0,
-                    view_end: 0,
-                    matches,
-                });
+                let span = hit.map(|(column, length)| (hit_start + column, length));
+                if let Some(previous) = excerpts
+                    .last_mut()
+                    .filter(|e| e.source == source && e.end >= start)
+                {
+                    previous.end = previous.end.max(end);
+                    if !previous.hit_anchors.contains(&hit_start) {
+                        previous.hit_anchors.push(hit_start);
+                    }
+                    previous.matches.extend(span);
+                } else {
+                    excerpts.push(Excerpt {
+                        source,
+                        start,
+                        end,
+                        context: 2,
+                        hit_anchors: vec![hit_start],
+                        view_line: 0,
+                        view_lines: 0,
+                        view_start: 0,
+                        view_end: 0,
+                        matches: span.into_iter().collect(),
+                    });
+                }
             }
         }
         // Cards present in path order, not document-id order (0049 §6).
-        excerpts.sort_by_key(|excerpt| {
-            let path = self
+        excerpts.sort_by_cached_key(|excerpt| {
+            let label = self
                 .docs
                 .get(excerpt.source)
-                .and_then(|d| d.buf.path.clone())
-                .map(|p| p.display().to_string())
+                .map(|document| document.label(&self.cwd))
                 .unwrap_or_default();
-            (path, excerpt.start)
+            (label, excerpt.source.index(), excerpt.start)
         });
         let excerpt_count = excerpts.len();
         let title_for_trace = title.clone();
@@ -436,14 +364,15 @@ impl Editor {
         let mut collection = Collection {
             title,
             excerpts,
-            pending_saves: 0,
+            pending_saves: HashSet::new(),
             close_when_saved: false,
             rows: Vec::new(),
-            shadow: String::new(),
+            pending_commit: Vec::new(),
+            match_count,
+            skipped,
             revision: BufferRevision::new(0),
         };
         let text = render(&self.docs, &self.cwd, &mut collection);
-        collection.shadow = text.clone();
         self.collections.insert(id, collection);
         let _ = self.doc_mut(id).buf.system_edit().replace_all(&text);
         self.docs.get_mut(id).unwrap().buf.readonly = false;
@@ -455,758 +384,18 @@ impl Editor {
                 "skipped":skipped,"title":title_for_trace,
             })
         });
-        self.drop_stale_scratch(id);
-        self.switch_to(id);
-        self.set_head(0);
+        if take_focus {
+            self.drop_stale_scratch(id);
+            self.switch_to(id);
+            self.set_head(0);
+        }
         self.message = match skipped {
             0 => format!("collection: {excerpt_count} excerpt(s)"),
             _ => format!("collection built; {skipped} hit(s) skipped (not open local buffers)"),
         };
-    }
-
-    /// Every normal-mode action boundary in a collection buffer is a
-    /// write-back attempt — gated on the buffer revision so motions and
-    /// in-progress insert typing never materialize rope text.
-    pub(crate) fn maybe_sync_collection(&mut self) {
-        if self.docs.is_empty() {
-            return;
+        if !take_focus {
+            self.message.push_str(" — ready in Space b");
         }
-        let id = self.current();
-        let revision = self.buf().revision();
-        let Some(stored) = self.collections.get(&id).map(|c| c.revision) else {
-            return;
-        };
-        if revision == stored {
-            return;
-        }
-        let current = self.buf().text().to_string();
-        if current == self.collections[&id].shadow {
-            self.collections.get_mut(&id).unwrap().revision = revision;
-            return;
-        }
-        // Write-back against a working copy; the entry stays in the map
-        // so the change-journal remap still tracks its anchors mid-apply.
-        let working = self.collections[&id].clone();
-        if let Err(reason) = self.collection_write_back(&working, &current) {
-            self.message = reason;
-        }
-        let open = working
-            .excerpts
-            .iter()
-            .all(|excerpt| self.docs.get(excerpt.source).is_some());
-        if !open {
-            self.message = "collection: a source buffer was closed — view dropped".into();
-            self.collections.remove(&id);
-            return;
-        }
-        // The source is authoritative: regenerate the view and reset the
-        // shadow whether or not the write-back landed.
-        self.collection_render_view(id);
-    }
-
-    /// Re-render the collection view from its sources and reset shadow +
-    /// revision together (0049 §5: no stale text may be presented).
-    pub(crate) fn collection_render_view(&mut self, id: DocumentId) {
-        // Preserve the logical caret across the regeneration (0049 §5):
-        // same row/column clamped into the new text.
-        let caret = if self.current() == id {
-            Some((
-                self.buf().line_of(self.head()),
-                self.buf().col_of(self.head()),
-            ))
-        } else {
-            None
-        };
-        let text = {
-            let entry = self.collections.get_mut(&id).unwrap();
-            render(&self.docs, &self.cwd, entry)
-        };
-        {
-            let entry = self.collections.get_mut(&id).unwrap();
-            entry.shadow = text.clone();
-        }
-        let _ = self.doc_mut(id).buf.system_edit().replace_all(&text);
-        if let Some((line, col)) = caret {
-            let line = line.min(self.docs.get(id).unwrap().buf.len_lines().saturating_sub(1));
-            let head = self.docs.get(id).unwrap().buf.clamp_boundary(
-                self.docs
-                    .get(id)
-                    .unwrap()
-                    .buf
-                    .line_start(line)
-                    .saturating_add(col),
-            );
-            if self.current() == id {
-                self.set_head(head);
-                self.clamp_cursor();
-            }
-        }
-        let revision = self.docs.get(id).unwrap().buf.revision();
-        self.collections.get_mut(&id).unwrap().revision = revision;
-        // The view is a presentation: its dirty bit is never the story
-        // (0049 §5 — the sources own unsaved state).
-        self.docs.get_mut(id).unwrap().buf.dirty = false;
-    }
-
-    /// A source change strictly inside one excerpt (0049 §5): splice the
-    /// excerpt's view span with the new source body instead of
-    /// re-rendering the whole view. The caller gates on a clean view
-    /// (no unsynced user edit) — the spans assume shadow == view.
-    pub(crate) fn collection_splice_excerpt(&mut self, id: DocumentId, index: usize) {
-        let (source, view_start, view_end, view_lines) = {
-            let entry = &self.collections[&id];
-            let excerpt = &entry.excerpts[index];
-            (
-                excerpt.source,
-                excerpt.view_start,
-                excerpt.view_end,
-                excerpt.view_lines,
-            )
-        };
-        let Some(source_doc) = self.docs.get(source) else {
-            return;
-        };
-        let excerpt_span = {
-            let entry = &self.collections[&id];
-            let excerpt = &entry.excerpts[index];
-            (excerpt.start, excerpt.end)
-        };
-        let mut body = source_doc
-            .buf
-            .text()
-            .byte_slice(excerpt_span.0..excerpt_span.1)
-            .to_string();
-        #[cfg(test)]
-        eprintln!("splice coll={id:?} ex={index} span={excerpt_span:?} view={view_start}..{view_end} body={body:?}");
-        if !body.ends_with('\n') {
-            body.push('\n');
-        }
-        let new_lines = body.lines().count().max(1);
-        // Splice the collection buffer at the excerpt's view span; the
-        // view is clean, so the spans index it directly.
-        {
-            let doc = self.docs.get_mut(id).unwrap();
-            let _ = doc
-                .buf
-                .system_edit()
-                .replace(Range::charwise(view_start, view_end), &body);
-        }
-        // The splice's own journal entry feeds the view analysis and is
-        // then consumed: the write-back diff must never see it.
-        {
-            let doc = self.docs.get_mut(id).unwrap();
-            let changes: Vec<_> = doc.buf.changes().to_vec();
-            self.analysis.edits(id, &changes);
-            doc.buf.clear_changes();
-        }
-        let byte_delta = body.len() as isize - (view_end - view_start) as isize;
-        let line_delta = new_lines as isize - view_lines as isize;
-        let entry = self.collections.get_mut(&id).unwrap();
-        // Shadow moves with the view, byte-identical region.
-        entry.shadow.replace_range(view_start..view_end, &body);
-        let mut seen = false;
-        for excerpt in &mut entry.excerpts {
-            if seen {
-                excerpt.view_start = (excerpt.view_start as isize + byte_delta) as usize;
-                excerpt.view_end = (excerpt.view_end as isize + byte_delta) as usize;
-                excerpt.view_line = (excerpt.view_line as isize + line_delta) as usize;
-            } else if excerpt.view_start == view_start {
-                seen = true;
-                excerpt.view_lines = new_lines;
-                excerpt.view_end = view_start + body.len();
-                excerpt.fingerprint = fingerprint(&body);
-            }
-        }
-        let revision = self.docs.get(id).unwrap().buf.revision();
-        self.collections.get_mut(&id).unwrap().revision = revision;
-    }
-    /// Line-level diff: common prefix/suffix lines trim first (0049 §5 —
-    /// the 2,000-excerpt audit stall was the full-view O(n²) LCS on a
-    /// one-line edit); the dynamic table only ever sees the changed
-    /// middle. Disjoint edit regions in one batch fall back to the LCS
-    /// over that middle only.
-    fn diff_lines(
-        shadow: &[&str],
-        current: &[&str],
-    ) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
-        let prefix = shadow
-            .iter()
-            .zip(current.iter())
-            .take_while(|(a, b)| a == b)
-            .count();
-        let suffix = shadow[prefix..]
-            .iter()
-            .rev()
-            .zip(current[prefix.min(current.len())..].iter().rev())
-            .take_while(|(a, b)| a == b)
-            .count();
-        let smid = &shadow[prefix..shadow.len() - suffix.min(shadow.len() - prefix)];
-        let cmid = &current[prefix..current.len() - suffix.min(current.len() - prefix)];
-        if smid.is_empty() && cmid.is_empty() {
-            return Vec::new();
-        }
-        Self::diff_lines_middle(
-            &shadow[prefix..prefix + smid.len()],
-            &current[prefix..prefix + cmid.len()],
-        )
-        .into_iter()
-        .map(|(old, new)| {
-            (
-                old.start + prefix..old.end + prefix,
-                new.start + prefix..new.end + prefix,
-            )
-        })
-        .collect()
-    }
-
-    /// The LCS table over the changed middle only.
-    fn diff_lines_middle(
-        shadow: &[&str],
-        current: &[&str],
-    ) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
-        let (n, m) = (shadow.len(), current.len());
-        // lcs[i][j] = LCS length of shadow[i..] vs current[j..]
-        let mut lcs = vec![vec![0usize; m + 1]; n + 1];
-        for i in (0..n).rev() {
-            for j in (0..m).rev() {
-                lcs[i][j] = if shadow[i] == current[j] {
-                    lcs[i + 1][j + 1] + 1
-                } else {
-                    lcs[i + 1][j].max(lcs[i][j + 1])
-                };
-            }
-        }
-        let mut hunks = Vec::new();
-        let (mut i, mut j) = (0, 0);
-        while i < n || j < m {
-            if i < n && j < m && shadow[i] == current[j] {
-                i += 1;
-                j += 1;
-                continue;
-            }
-            let (si, sj) = (i, j);
-            while i < n || j < m {
-                if i < n && j < m && shadow[i] == current[j] {
-                    break;
-                }
-                if i < n && (j == m || lcs[i + 1][j] >= lcs[i][j + 1]) {
-                    i += 1;
-                } else {
-                    j += 1;
-                }
-            }
-            hunks.push((si..i, sj..j));
-        }
-        hunks
-    }
-
-    /// A shadow line's position in the current text, given the hunks.
-    /// An insertion exactly AT the line attaches forward: span starts map
-    /// without it (the inserted text joins the span), span ends with it.
-    fn map_line(
-        hunks: &[(std::ops::Range<usize>, std::ops::Range<usize>)],
-        line: usize,
-        count_at_boundary: bool,
-    ) -> usize {
-        let mut current = line;
-        for (old, new) in hunks {
-            let counts =
-                old.end < line || (old.end == line && (!old.is_empty() || count_at_boundary));
-            if counts {
-                current += new.len() - old.len();
-            } else {
-                break;
-            }
-        }
-        current
-    }
-
-    /// Diff shadow vs current and write back every touched excerpt as one
-    /// change plan (0044 v2: multiple regions across excerpts, one batch
-    /// per source document). Structure lines (title, headers) are never
-    /// editable; a hunk touching one refuses the whole sync.
-    fn collection_write_back(
-        &mut self,
-        collection: &Collection,
-        current: &str,
-    ) -> Result<(), String> {
-        let shadow_lines: Vec<&str> = collection.shadow.split_inclusive('\n').collect();
-        let current_lines: Vec<&str> = current.split_inclusive('\n').collect();
-        let hunks = Self::diff_lines(&shadow_lines, &current_lines);
-        if hunks.is_empty() {
-            return Ok(());
-        }
-        // Every hunk must sit fully inside one excerpt's body span.
-        let mut touched: Vec<usize> = Vec::new();
-        for (old, _) in &hunks {
-            let mut owner = None;
-            for (index, excerpt) in collection.excerpts.iter().enumerate() {
-                let lo = excerpt.view_line + 1;
-                let hi = excerpt.view_line + excerpt.view_lines + 1;
-                let inside = if old.is_empty() {
-                    // an insertion belongs to a body only inside it
-                    old.start >= lo && old.start < hi
-                } else {
-                    old.start >= lo && old.end <= hi
-                };
-                if inside {
-                    owner = Some(index);
-                    break;
-                }
-                // Overlap without containment crosses a boundary.
-                if !old.is_empty() && old.start < hi && old.end > lo {
-                    return Err(
-                        "edit touches a header or spans excerpts — refused; view refreshed".into(),
-                    );
-                }
-            }
-            let Some(index) = owner else {
-                return Err(
-                    "edit touches the title, a header, or the collection's structure — refused; view refreshed"
-                        .into(),
-                );
-            };
-            if !touched.contains(&index) {
-                touched.push(index);
-            }
-        }
-        // One replacement per touched excerpt: its whole body span as it
-        // currently reads — partial hunks carry their unchanged context.
-        let mut by_source: Vec<(DocumentId, Vec<strop_core::Replacement>, ResourceLocation)> =
-            Vec::new();
-        for index in touched {
-            let excerpt = &collection.excerpts[index];
-            let source = self
-                .docs
-                .get(excerpt.source)
-                .ok_or_else(|| "collection: a source buffer was closed".to_string())?;
-            let present = source
-                .buf
-                .text()
-                .byte_slice(excerpt.start..excerpt.end)
-                .to_string();
-            if fingerprint(&present) != excerpt.fingerprint {
-                return Err(
-                    "collection: a source changed elsewhere — refused; view refreshed".into(),
-                );
-            }
-            if source.buf.readonly {
-                return Err(
-                    "collection: a source is read-only (remote sources need :remote edit first) — refused; view refreshed"
-                        .into(),
-                );
-            }
-            let lo = excerpt.view_line + 1;
-            let hi = excerpt.view_line + excerpt.view_lines + 1;
-            let cur_lo = Self::map_line(&hunks, lo, false);
-            let cur_hi = Self::map_line(&hunks, hi, true);
-            let mut replacement: String = current_lines[cur_lo..cur_hi].concat();
-            if !replacement.is_empty() && !replacement.ends_with('\n') {
-                replacement.push('\n');
-            }
-            let edit = strop_core::Replacement::new(
-                Range::charwise(excerpt.start, excerpt.end),
-                replacement,
-            );
-            let location = match &source.source {
-                super::document::DocumentSource::Remote(remote) => ResourceLocation::remote(
-                    remote.file.endpoint().clone(),
-                    remote.file.path().to_path_buf(),
-                ),
-                _ => ResourceLocation::local(source.buf.path.clone().unwrap_or_default()),
-            };
-            match by_source
-                .iter_mut()
-                .find(|(id, _, _)| *id == excerpt.source)
-            {
-                Some((_, edits, _)) => edits.push(edit),
-                None => by_source.push((excerpt.source, vec![edit], location)),
-            }
-        }
-        let documents = by_source
-            .into_iter()
-            .map(|(document, edits, location)| PlannedDocument {
-                location,
-                document,
-                base: self.docs.get(document).unwrap().buf.revision(),
-                edits,
-            })
-            .collect();
-        let plan = ChangePlan {
-            producer: ChangeProducer::CollectionEdit,
-            documents,
-            refused: Vec::new(),
-        };
-        self.apply_change_plan(plan);
-        Ok(())
-    }
-}
-
-impl Editor {
-    /// `u` in a collection (0049 §5): undo the newest edit group that
-    /// came FROM this collection, across its actual sources. Preflight
-    /// every member — a source edited since refuses the whole group by
-    /// name, and the receipt is never consumed on refusal.
-    pub(crate) fn collection_undo(&mut self) {
-        let id = self.current();
-        let Some(sources) = self
-            .collections
-            .get(&id)
-            .map(|c| c.excerpts.iter().map(|e| e.source).collect::<Vec<_>>())
-        else {
-            return;
-        };
-        let Some((index, mut receipt)) = self.changes.take_newest_matching(|receipt| {
-            receipt.producer == "collection edit"
-                && receipt
-                    .applied
-                    .iter()
-                    .any(|(document, ..)| sources.contains(document))
-        }) else {
-            self.message = "already at oldest change".into();
-            return;
-        };
-        let mut moved = 0;
-        for (document, _before, after) in &receipt.applied {
-            match self.docs.get(*document) {
-                Some(doc) if doc.buf.revision() == *after => {}
-                Some(_) => {
-                    let name = self
-                        .docs
-                        .get(*document)
-                        .and_then(|d| d.buf.path.clone())
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| "a source".into());
-                    self.changes.restore(index, receipt);
-                    self.message =
-                        format!("collection undo refused: {name} changed since — resolve it first");
-                    return;
-                }
-                None => {
-                    self.changes.restore(index, receipt);
-                    self.message = "collection undo refused: a source buffer was closed".into();
-                    return;
-                }
-            }
-        }
-        let mut depths = Vec::with_capacity(receipt.applied.len());
-        for (document, ..) in &receipt.applied {
-            let undone_ok = matches!(self.doc_mut(*document).buf.undo(), Ok(Some(_)));
-            if undone_ok {
-                moved += 1;
-            }
-            depths.push(
-                self.docs
-                    .get(*document)
-                    .map(|doc| doc.buf.history().depth())
-                    .unwrap_or(0),
-            );
-        }
-        receipt.redo_depths = Some(depths);
-        // The undo's own journal refreshes the dependent views (0049 §5
-        // invalidation) — no explicit render here.
-        self.changes.push_undone(receipt);
-        self.message = format!("undid collection edit across {moved} buffer(s)");
-    }
-
-    /// `ctrl-r` in a collection: redo the newest undone group of this
-    /// collection, same preflight rules as undo.
-    pub(crate) fn collection_redo(&mut self) {
-        let id = self.current();
-        let Some(sources) = self
-            .collections
-            .get(&id)
-            .map(|c| c.excerpts.iter().map(|e| e.source).collect::<Vec<_>>())
-        else {
-            return;
-        };
-        let Some(receipt) = self.changes.take_undone_matching(|receipt| {
-            receipt
-                .applied
-                .iter()
-                .any(|(document, ..)| sources.contains(document))
-        }) else {
-            self.message = "nothing to redo".into();
-            return;
-        };
-        // Revisions are monotonic — an undo never returns to one — so
-        // preflight the undone position by history depth (0049 §5).
-        let depths = receipt.redo_depths.clone();
-        for (member, (document, ..)) in receipt.applied.iter().enumerate() {
-            let at = self
-                .docs
-                .get(*document)
-                .map(|doc| doc.buf.history().depth());
-            if at != depths.as_ref().map(|d| d[member]) {
-                self.changes.push_undone(receipt);
-                self.message = "collection redo refused: a source changed since the undo".into();
-                return;
-            }
-        }
-        let mut moved = 0;
-        for (document, ..) in &receipt.applied {
-            if matches!(self.doc_mut(*document).buf.redo(), Ok(Some(_))) {
-                moved += 1;
-            }
-        }
-        self.changes.push_receipt_back(receipt);
-        self.message = format!("redid collection edit across {moved} buffer(s)");
-    }
-}
-
-impl Editor {
-    /// `:w` in a collection (0049 §5): save the dirty SOURCES through
-    /// their own save paths — never the presentation. `:w PATH` refuses:
-    /// the view is not a file and exporting it is not this operation.
-    pub(crate) fn collection_save(&mut self, target: Option<PathBuf>, force: bool, close: bool) {
-        let id = self.current();
-        if target.is_some() {
-            self.message = "a collection has no file of its own — :w saves its sources;                             exporting the view is unsupported"
-                .into();
-            return;
-        }
-        let Some(sources) = self.collections.get(&id).map(|c| {
-            let mut seen: Vec<DocumentId> = c.excerpts.iter().map(|e| e.source).collect();
-            seen.dedup();
-            seen
-        }) else {
-            return;
-        };
-        let mut queued = 0;
-        let mut refused: Vec<String> = Vec::new();
-        for source in sources {
-            let Some(doc) = self.docs.get(source) else {
-                continue;
-            };
-            if !doc.buf.dirty {
-                continue;
-            }
-            let name = doc
-                .buf
-                .path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "[scratch]".into());
-            if doc.buf.readonly {
-                refused.push(name);
-                continue;
-            }
-            // Readonly/remote-permit refusals stay authoritative inside
-            // the save path itself (0040); :w! grants no new capability.
-            self.request_save_document(source, None, force, false);
-            queued += 1;
-        }
-        if let Some(collection) = self.collections.get_mut(&id) {
-            collection.pending_saves = queued;
-            collection.close_when_saved = close && refused.is_empty() && queued > 0;
-        }
-        if queued == 0 && refused.is_empty() {
-            if close {
-                self.close_pane_or_buffer(false);
-            } else {
-                self.message = "collection: all sources are saved".into();
-            }
-            return;
-        }
-        if !refused.is_empty() {
-            self.message = format!(
-                "collection: saving {queued} source(s); read-only skipped: {}",
-                refused.join(", ")
-            );
-        } else {
-            self.message = format!("collection: saving {queued} source(s)");
-        }
-    }
-
-    /// A source save completed (0049 §5): count down; the `:wq` view
-    /// closes only when every save confirmed. A failure cancels the
-    /// close and stays visible.
-    pub(crate) fn collection_save_progress(&mut self, document: DocumentId, saved: bool) {
-        let mut close: Option<DocumentId> = None;
-        for (id, collection) in self.collections.iter_mut() {
-            if collection.pending_saves == 0
-                || !collection.excerpts.iter().any(|e| e.source == document)
-            {
-                continue;
-            }
-            if !saved {
-                collection.pending_saves = 0;
-                collection.close_when_saved = false;
-                continue;
-            }
-            collection.pending_saves = collection.pending_saves.saturating_sub(1);
-            if collection.pending_saves == 0 && collection.close_when_saved {
-                close = Some(*id);
-            }
-        }
-        if let Some(id) = close {
-            if self.current() == id {
-                self.close_pane_or_buffer(false);
-            } else if let Some(collection) = self.collections.get_mut(&id) {
-                collection.close_when_saved = false;
-                self.message = "collection: sources saved".into();
-            }
-        }
-    }
-}
-
-impl Editor {
-    /// `g<Space>` in a collection, Enter on a header row, and
-    /// `:collection source` (0049 §5): open the full source under the
-    /// caret — the live document with its unsaved edits, never a disk
-    /// reload. A body row maps to the exact source position; a header
-    /// row opens the file at that excerpt's first line. The jump is
-    /// recorded so Ctrl-O returns to the collection working context.
-    pub fn collection_open_source_pub(&mut self) {
-        self.collection_open_source();
-    }
-
-    pub(crate) fn collection_open_source(&mut self) {
-        let id = self.current();
-        let cursor_line = self.buf().line_of(self.head());
-        let cursor_col = self.buf().col_of(self.head());
-        let Some(collection) = self.collections.get(&id) else {
-            return;
-        };
-        let mut target: Option<(DocumentId, usize)> = None;
-        for excerpt in &collection.excerpts {
-            if cursor_line == excerpt.view_line {
-                // header row: the file, at this excerpt's first line
-                target = Some((excerpt.source, excerpt.start));
-                break;
-            }
-            if cursor_line > excerpt.view_line
-                && cursor_line <= excerpt.view_line + excerpt.view_lines
-            {
-                // body row: same line-in-excerpt, same column
-                let Some(source) = self.docs.get(excerpt.source) else {
-                    break;
-                };
-                let source_line =
-                    source.buf.line_of(excerpt.start) + (cursor_line - excerpt.view_line - 1);
-                let line = source_line.min(source.buf.len_lines().saturating_sub(1));
-                target = Some((
-                    excerpt.source,
-                    source
-                        .buf
-                        .clamp_boundary(source.buf.line_start(line).saturating_add(cursor_col)),
-                ));
-                break;
-            }
-        }
-        let Some((document, head)) = target else {
-            self.message = "not on an excerpt".into();
-            return;
-        };
-        if self.docs.get(document).is_none() {
-            self.message = "collection: that source was closed".into();
-            return;
-        }
-        self.push_jump();
-        self.switch_to(document);
-        self.set_head(head);
-        self.clamp_cursor();
-        self.scroll_to_cursor(self.view_rows());
-    }
-}
-
-impl Editor {
-    /// Per-row source facts for the renderer (0049 §6): the row's role,
-    /// and for body rows the source document + this row's source byte
-    /// span + the query hits inside it (source bytes) + whether the
-    /// caret sits in this card.
-    pub fn collection_row_info(
-        &self,
-        doc: strop_core::id::DocumentId,
-        line: usize,
-    ) -> Option<CollectionRowInfo> {
-        let collection = self.collections.get(&doc)?;
-        let kind = *collection.rows.get(line)?;
-        let caret_line = if doc == self.current() {
-            self.buf().line_of(self.head())
-        } else {
-            usize::MAX
-        };
-        let mut info = CollectionRowInfo {
-            kind,
-            source: None,
-            source_matches: Vec::new(),
-            card_active: false,
-        };
-        for (index, excerpt) in collection.excerpts.iter().enumerate() {
-            let body_lo = excerpt.view_line + 1;
-            let body_hi = excerpt.view_line + excerpt.view_lines + 1;
-            // card rows: the CardTop before this excerpt through the next
-            // excerpt's card top (or bottom row) — group by source runs
-            if kind == CollectionRow::CardTop(index) {
-                // the card is active when the caret is anywhere within it
-                let mut rows_end = collection.rows.len();
-                for (later, next) in collection.excerpts.iter().enumerate().skip(index + 1) {
-                    if next.source != excerpt.source {
-                        rows_end = next.view_line;
-                        break;
-                    }
-                    let _ = later;
-                }
-                if let Some(b) = collection
-                    .rows
-                    .iter()
-                    .position(|r| *r == CollectionRow::CardTop(index))
-                {
-                    let _ = b;
-                }
-                info.card_active = caret_line >= excerpt.view_line && caret_line < rows_end;
-            }
-            if kind == CollectionRow::Body && line >= body_lo && line < body_hi {
-                let source = self.docs.get(excerpt.source)?;
-                let source_line = source.buf.line_of(excerpt.start) + (line - body_lo);
-                let s = source.buf.line_start(source_line);
-                let e = source.buf.line_end(source_line);
-                info.source = Some((excerpt.source, s, e));
-                info.source_matches = excerpt
-                    .matches
-                    .iter()
-                    .copied()
-                    .filter(|(m, len)| *m >= s && m + len <= e)
-                    .collect();
-                // body inside the active card
-                info.card_active = caret_line >= excerpt.view_line && caret_line < body_hi;
-            }
-        }
-        Some(info)
-    }
-
-    /// A collection view row's role (0049 §6) for the renderer —
-    /// structure as data, never text parsing.
-    pub fn collection_row_kind(
-        &self,
-        doc: strop_core::id::DocumentId,
-        line: usize,
-    ) -> Option<CollectionRow> {
-        self.collections.get(&doc)?.rows.get(line).copied()
-    }
-
-    /// The SOURCE line number for a collection view row (0049 §6):
-    /// Some(Some(n)) for body rows, Some(None) for chrome (title,
-    /// headers — the gutter stays blank there), None for ordinary
-    /// buffers.
-    pub fn collection_source_lineno(
-        &self,
-        doc: strop_core::id::DocumentId,
-        line: usize,
-    ) -> Option<Option<usize>> {
-        let collection = self.collections.get(&doc)?;
-        for excerpt in &collection.excerpts {
-            if line == excerpt.view_line {
-                return Some(None); // header row
-            }
-            if line > excerpt.view_line && line <= excerpt.view_line + excerpt.view_lines {
-                let source = self.docs.get(excerpt.source)?;
-                let first = source.buf.line_of(excerpt.start);
-                return Some(Some(first + (line - excerpt.view_line - 1) + 1));
-            }
-        }
-        Some(None) // title row
     }
 }
 
@@ -1219,40 +408,6 @@ pub struct CollectionRowInfo {
     pub source_matches: Vec<(usize, usize)>,
     /// The caret sits inside this row's card (focus chrome).
     pub card_active: bool,
-}
-
-impl Editor {
-    /// `]f` / `[f` in a collection: next / previous file card (0049 §5's
-    /// excerpt navigation through the command registry).
-    pub fn collection_file_step_pub(&mut self, forward: bool) {
-        self.collection_file_step(forward);
-    }
-
-    pub(crate) fn collection_file_step(&mut self, forward: bool) {
-        let id = self.current();
-        let Some(collection) = self.collections.get(&id) else {
-            self.message = "file cards live in collections".into();
-            return;
-        };
-        let caret = self.buf().line_of(self.head());
-        let mut tops: Vec<usize> = Vec::new();
-        for (row, kind) in collection.rows.iter().enumerate() {
-            if matches!(kind, CollectionRow::CardTop(_)) {
-                tops.push(row);
-            }
-        }
-        let target = if forward {
-            tops.iter().copied().find(|row| *row > caret)
-        } else {
-            tops.iter().copied().rev().find(|row| *row < caret)
-        };
-        let Some(row) = target else {
-            self.message = if forward { "last card" } else { "first card" }.into();
-            return;
-        };
-        self.push_jump();
-        self.set_head(self.buf().line_start(row));
-        self.clamp_cursor();
-        self.scroll_to_cursor(self.view_rows());
-    }
+    pub source_dirty: bool,
+    pub source_readonly: bool,
 }

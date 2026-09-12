@@ -16,6 +16,14 @@
 
 use serde::Deserialize;
 
+/// Supported indent-width range (0051 R08): manual `:tab-size`
+/// overrides AND the `tab_size` config value. Zero would make Tab a
+/// no-op with a hangover of stale guides; huge values are allocation
+/// and layout hazards — both are refused visibly, never clamped
+/// silently.
+pub const TAB_SIZE_MIN: usize = 1;
+pub const TAB_SIZE_MAX: usize = 16;
+
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Config {
@@ -34,6 +42,12 @@ pub struct Config {
     /// Format through the language server before writing (helix's
     /// auto-format). A formatter failure never blocks the write.
     pub auto_format: bool,
+    /// Search surfaces show unignored dotfiles/dotfolders by default
+    /// (0051 R03). `hidden:include|exclude` in a query overrides.
+    pub search_show_hidden: bool,
+    /// Search surfaces respect .gitignore/.ignore/.rgignore (0051 R03).
+    /// `ignored:include|exclude` in a query overrides.
+    pub search_respect_ignore: bool,
 }
 
 /// `indent_style` in config.toml.
@@ -52,6 +66,8 @@ impl Default for Config {
             indent_style: IndentStyle::Spaces,
             indent_detect: true,
             auto_format: true,
+            search_show_hidden: true,
+            search_respect_ignore: true,
         }
     }
 }
@@ -90,20 +106,41 @@ pub const KNOBS: &[Knob] = &[
         kind: "bool",
         desc: "format through the language server before :w",
     },
+    Knob {
+        key: "search_show_hidden",
+        kind: "bool",
+        desc: "search shows dotfiles by default",
+    },
+    Knob {
+        key: "search_respect_ignore",
+        kind: "bool",
+        desc: "search respects ignore files",
+    },
 ];
 
 impl Config {
+    /// The one typed knob→value projection (0051 R10): `print_knobs`,
+    /// `:explain` and selectors read real values from this path. A key
+    /// absent from KNOBS is `None` — never a fabricated "?" placeholder.
+    pub fn knob_value(&self, key: &str) -> Option<String> {
+        Some(match key {
+            "tab_size" => self.tab_size.to_string(),
+            "indent_guides" => self.indent_guides.to_string(),
+            "indent_style" => format!("{:?}", self.indent_style).to_lowercase(),
+            "indent_detect" => self.indent_detect.to_string(),
+            "auto_format" => self.auto_format.to_string(),
+            "search_show_hidden" => self.search_show_hidden.to_string(),
+            "search_respect_ignore" => self.search_respect_ignore.to_string(),
+            _ => return None,
+        })
+    }
+
     /// `strop config`: the knobs with live values (KNOBS is the data
     /// source; this is its first consumer — the settings popup is next).
     pub fn print_knobs(&self) {
         for k in KNOBS {
-            let value = match k.key {
-                "tab_size" => self.tab_size.to_string(),
-                "indent_guides" => self.indent_guides.to_string(),
-                "indent_style" => format!("{:?}", self.indent_style).to_lowercase(),
-                "indent_detect" => self.indent_detect.to_string(),
-                "auto_format" => self.auto_format.to_string(),
-                _ => "?".into(),
+            let Some(value) = self.knob_value(k.key) else {
+                continue; // tests pin every KNOBS key to a value
             };
             println!("  {:<16} {:<7} {:<8} {}", k.key, k.kind, value, k.desc);
         }
@@ -118,12 +155,29 @@ impl Config {
         let Ok(text) = std::fs::read_to_string(&path) else {
             return (Self::default(), None); // absent is fine
         };
-        match toml::from_str::<Config>(&text) {
+        let parsed = toml::from_str::<Config>(&text)
+            .map_err(|e| e.to_string())
+            .and_then(Config::validated);
+        match parsed {
             Ok(c) => (c, None),
             Err(e) => (
                 Self::default(),
                 Some(format!("config {}: {e} — using defaults", path.display())),
             ),
+        }
+    }
+
+    /// `tab_size` outside the supported range (0051 R08): refused
+    /// visibly like any malformed config — never a silent clamp, never
+    /// a zero-width Tab or an enormous indent allocation.
+    fn validated(self) -> Result<Self, String> {
+        if (TAB_SIZE_MIN..=TAB_SIZE_MAX).contains(&self.tab_size) {
+            Ok(self)
+        } else {
+            Err(format!(
+                "tab_size must be {TAB_SIZE_MIN}–{TAB_SIZE_MAX}, got {}",
+                self.tab_size
+            ))
         }
     }
 
@@ -192,9 +246,27 @@ mod tests {
         }
         assert_eq!(
             KNOBS.len(),
-            5,
-            "tab_size, indent_guides, indent_style, indent_detect, auto_format"
+            7,
+            "tab_size, indent_guides, indent_style, indent_detect, auto_format, search_show_hidden, search_respect_ignore"
         );
+    }
+
+    #[test]
+    fn every_knob_resolves_a_real_value() {
+        // 0051 R10: one typed access path; a knob that resolves to
+        // None would render as a placeholder or vanish from :explain.
+        let config = Config::default();
+        for knob in KNOBS {
+            let value = config.knob_value(knob.key);
+            assert!(value.is_some(), "knob {:?} has no value", knob.key);
+            assert_ne!(
+                value.as_deref(),
+                Some("?"),
+                "knob {:?} is a placeholder",
+                knob.key
+            );
+        }
+        assert!(config.knob_value("not_a_knob").is_none());
     }
 
     #[test]

@@ -71,7 +71,23 @@ impl Editor {
         let appended = matches!(&event.msg, PickerMsg::Items(_));
         match event.msg {
             PickerMsg::Items(items) => glue.picker.append(items.into_items()),
-            PickerMsg::Warning(message) => glue.picker.error = Some(message),
+            PickerMsg::Warning(message) => glue.picker.warning = Some(message),
+            PickerMsg::QueryError(diagnostic) => {
+                let range = match (&glue.query, &glue.file_scope) {
+                    (Some(current), Some(previous)) => {
+                        current.diagnostic_range_from(previous, &diagnostic)
+                    }
+                    _ => diagnostic.range.clone(),
+                };
+                glue.query_highlights
+                    .push(strop_picker::query::HighlightSpan {
+                        range,
+                        role: strop_picker::query::Role::Error,
+                    });
+                glue.picker.error = Some(diagnostic.message);
+                glue.accept_when_ranked = false;
+                glue.file_scope = None;
+            }
             PickerMsg::Finished(outcome) => {
                 // exactly-once terminal: settle streaming, drop the
                 // worker (its Drop kills/reaps any live rg), keep
@@ -84,6 +100,7 @@ impl Editor {
                 if let Outcome::Failed { failure, .. } = outcome {
                     glue.picker.error = Some(failure.message);
                     glue.accept_when_ranked = false;
+                    glue.file_scope = None;
                 }
             }
         }
@@ -136,6 +153,19 @@ impl Editor {
         let key = result.ticket.key;
         match result.outcome {
             Outcome::Success(prepared) => {
+                const CACHED_PREVIEWS: usize = 32;
+                if self.previews.len() >= CACHED_PREVIEWS && !self.previews.contains_key(&path) {
+                    if let Some(old) = self.previews.keys().next().cloned() {
+                        self.previews.remove(&old);
+                        self.preview_loads.remove(&old);
+                        self.analysis
+                            .forget(super::super::analysis::AnalysisTarget::Preview(old));
+                    }
+                }
+                self.analysis
+                    .forget(super::super::analysis::AnalysisTarget::Preview(
+                        path.clone(),
+                    ));
                 self.previews.insert(
                     path.clone(),
                     PreviewEntry {

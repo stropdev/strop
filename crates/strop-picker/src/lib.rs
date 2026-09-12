@@ -4,6 +4,7 @@
 
 mod catalog;
 pub use catalog::Catalog;
+pub mod query;
 pub mod rank;
 pub use rank::{FilterRequest, Ranking, RankingEvent, RankingWorker, Row};
 mod line_edit;
@@ -13,7 +14,9 @@ mod source;
 pub use line_edit::LineEdit;
 
 pub use score::fuzzy_score;
-pub use source::{spawn_files, GrepWorker, PickerMsg};
+pub use source::{
+    display_path, spawn_files, GrepWorker, PickerMsg, SelectionPolicy, SourceSnapshot,
+};
 
 use std::path::PathBuf;
 
@@ -52,11 +55,40 @@ pub enum Payload {
     CodeAction(usize),
     /// A running container's canonical inspect id (0037 DC1a).
     Container(String),
+    /// A search-visibility setting toggle (0051 R03).
+    SearchOption(SearchSetting),
     /// A jumplist entry: document + byte offset (0047 §2).
     Jump {
         document: strop_core::id::DocumentId,
         offset: usize,
     },
+    /// A `:tab-size` selector row (0051 R08).
+    IndentChoice(IndentChoice),
+}
+
+/// A `:tab-size` selector row's action (0051 R08): the width/style
+/// override the row applies to the current buffer, or Auto to clear it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum IndentChoice {
+    /// A common width in spaces.
+    Width(usize),
+    /// Clear the width override (detect/configure).
+    AutoWidth,
+    /// Force spaces.
+    Spaces,
+    /// Force tabs.
+    Tabs,
+    /// Clear the style override (detect/configure).
+    AutoStyle,
+    /// The width typed into the filter field, validated on accept.
+    CustomWidth,
+}
+
+/// Which search-visibility setting a SearchOption row toggles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SearchSetting {
+    Hidden,
+    RespectIgnore,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -74,6 +106,8 @@ pub struct Item {
 pub enum Kind {
     /// The jumplist as a menu (0047 §2).
     Jumps,
+    /// Hidden/ignore visibility controls for search surfaces (R03).
+    SearchOptions,
     /// A language server's document symbols (0047 §1).
     Symbols,
     Files,
@@ -93,6 +127,8 @@ pub enum Kind {
     CodeActions,
     /// Running containers on the local engine (0037 DC1a).
     Containers,
+    /// The `:tab-size` indent selector (0051 R08).
+    TabSize,
 }
 
 impl Kind {
@@ -107,6 +143,8 @@ impl Kind {
             Kind::Diagnostics => " diagnostics ",
             Kind::RemoteHosts => " remote destinations ",
             Kind::Jumps => " jumps ",
+            Kind::SearchOptions => " search options ",
+            Kind::TabSize => " tab size ",
             Kind::Symbols => " symbols ",
             Kind::RemoteAddress => " connect to remote ",
             Kind::CodeActions => " code actions ",
@@ -144,9 +182,19 @@ pub struct Picker {
     pub streaming: bool,
     /// A source error (rg's stderr, a dead worker): sticky in the card —
     /// the transient modeline clears on the next keystroke, this doesn't.
+    /// An error blocks accepting results.
     pub error: Option<String>,
+    /// A successful source's advisory (rg's exit-0 stderr chatter, e.g.
+    /// a malformed ignore line): displayed like the error headline, but
+    /// the streamed results remain valid and accepting stays possible
+    /// (0051 §3: named boundaries, not blocked operations).
+    pub warning: Option<String>,
     /// Trailing catalog items that filtering never hides (pinned_tail).
     pub pinned_tail: usize,
+    /// The ranking needle when it differs from the raw input (0051:
+    /// qualifiers never fuzzy-match paths — only the free text ranks).
+    pub rank_query: Option<String>,
+    pub rank_mode: rank::MatchMode,
 }
 
 #[derive(Default)]
@@ -172,7 +220,10 @@ impl Picker {
             selected: 0,
             streaming,
             error: None,
+            warning: None,
             pinned_tail: 0,
+            rank_query: None,
+            rank_mode: rank::MatchMode::default(),
         };
         p.append(items);
         p
@@ -336,9 +387,13 @@ impl Picker {
     pub fn filter_request(&self) -> FilterRequest {
         FilterRequest {
             catalog: self.items.clone(),
-            query: self.input.text.clone(),
+            query: self
+                .rank_query
+                .clone()
+                .unwrap_or_else(|| self.input.text.clone()),
             upstream_filtered: matches!(self.kind, Kind::Grep | Kind::Replace),
             pinned_tail: self.pinned_tail,
+            mode: self.rank_mode.clone(),
         }
     }
 
@@ -405,7 +460,7 @@ pub fn replace_span(line_text: &str, col: usize, match_len: usize) -> (usize, us
     while start > 0 && !line_text.is_char_boundary(start) {
         start -= 1;
     }
-    let mut end = (start + match_len).min(line_text.len());
+    let mut end = start.saturating_add(match_len).min(line_text.len());
     while end > start && !line_text.is_char_boundary(end) {
         end -= 1;
     }
@@ -452,7 +507,7 @@ mod tests {
         for c in "render".chars() {
             p.push_char(c);
         }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
         assert_eq!(p.rows.len(), 1);
         assert_eq!(p.current().unwrap().text, "src/render.rs");
     }
@@ -479,7 +534,7 @@ mod tests {
         for c in "ewosd".chars() {
             p.push_char(c);
         }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
         assert_eq!(p.rows.len(), 1, "the pinned row survives a dead query");
         assert_eq!(p.current().unwrap().text, "Add a host\u{2026}");
         let mut p = Picker::new(
@@ -502,7 +557,7 @@ mod tests {
         for c in "prtdv".chars() {
             p.push_char(c);
         }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
         assert_eq!(p.rows.len(), 2);
         assert_eq!(
             p.current().unwrap().text,
@@ -523,7 +578,7 @@ mod tests {
             })
             .collect();
         let mut p = Picker::new(Kind::Buffers, items, false);
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
         p.move_by(-1);
         assert_eq!(p.selected, 2);
         p.move_by(1);
@@ -548,7 +603,7 @@ mod tests {
             vec![hit("a.rs"), hit("a.rs"), hit("b.rs")],
             false,
         );
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
         p.toggle_file_excluded(); // row 0 -> a.rs
         assert_eq!(p.accepted().count(), 1);
         assert_eq!(p.accepted().next().unwrap().text, "b.rs");
@@ -583,7 +638,7 @@ mod tests {
         for c in "foo|bar".chars() {
             p.push_char(c);
         }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap());
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
         assert_eq!(p.rows.len(), 3);
         // and the apply set is exactly those rows
         assert_eq!(p.accepted().count(), 3);

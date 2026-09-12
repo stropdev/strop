@@ -184,8 +184,6 @@ pub struct Highlighter {
 }
 
 impl Highlighter {
-    /// Drop the kept tree (0023: a mutation path that can't produce
-    /// exact edit coordinates invalidates rather than lying).
     pub fn invalidate(&mut self) {
         self.tree = None;
         self.source_hash = None;
@@ -311,37 +309,7 @@ impl Highlighter {
         if cancelled() {
             return Err(HighlightError::Cancelled);
         }
-        if Some(revision) != self.source_hash {
-            // A skipped edit journal must never make an unchanged old tree
-            // masquerade as the new rope. Exact journals retain incremental parse.
-            if self.tree_revision != revision {
-                self.tree = None;
-            }
-            let mut progress = |_: &tree_sitter::ParseState| cancelled();
-            let tree = self.parser.parse_with_options(
-                &mut |byte: usize, _| {
-                    if byte >= rope.len_bytes() {
-                        return "";
-                    }
-                    let (chunk, start, _, _) = rope.chunk_at_byte(byte);
-                    &chunk[byte - start..]
-                },
-                self.tree.as_ref(),
-                Some(tree_sitter::ParseOptions::new().progress_callback(&mut progress)),
-            );
-            let Some(tree) = tree else {
-                self.parser.reset();
-                return Err(if cancelled() {
-                    HighlightError::Cancelled
-                } else {
-                    HighlightError::Parse
-                });
-            };
-            self.tree = Some(tree);
-            self.tree_revision = revision;
-            self.source_hash = Some(revision);
-            self.span_window = None;
-        }
+        self.ensure_tree(rope, revision, cancelled)?;
         let window = (
             first_byte.min(rope.len_bytes()),
             last_byte.min(rope.len_bytes()),
@@ -388,6 +356,50 @@ impl Highlighter {
             self.span_window = Some(window);
         }
         Ok(self.spans.clone())
+    }
+
+    /// Parse (incrementally against the kept tree) until `revision` is
+    /// covered. Cancellation and parse failure stay typed; the lexical
+    /// cache drops with the tree it was captured from.
+    fn ensure_tree(
+        &mut self,
+        rope: &Rope,
+        revision: BufferRevision,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), HighlightError> {
+        if Some(revision) == self.source_hash {
+            return Ok(());
+        }
+        // A skipped edit journal must never make an unchanged old tree
+        // masquerade as the new rope. Exact journals retain incremental parse.
+        if self.tree_revision != revision {
+            self.tree = None;
+        }
+        let mut progress = |_: &tree_sitter::ParseState| cancelled();
+        let tree = self.parser.parse_with_options(
+            &mut |byte: usize, _| {
+                if byte >= rope.len_bytes() {
+                    return "";
+                }
+                let (chunk, start, _, _) = rope.chunk_at_byte(byte);
+                &chunk[byte - start..]
+            },
+            self.tree.as_ref(),
+            Some(tree_sitter::ParseOptions::new().progress_callback(&mut progress)),
+        );
+        let Some(tree) = tree else {
+            self.parser.reset();
+            return Err(if cancelled() {
+                HighlightError::Cancelled
+            } else {
+                HighlightError::Parse
+            });
+        };
+        self.tree = Some(tree);
+        self.tree_revision = revision;
+        self.source_hash = Some(revision);
+        self.span_window = None;
+        Ok(())
     }
 }
 

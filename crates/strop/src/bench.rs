@@ -437,45 +437,75 @@ fn bench_picker_100k() -> io::Result<()> {
     Ok(())
 }
 
-/// Large project edit through the project-replace path: grep the whole
-/// fixture tree, then apply one replacement to every hit — unopened
-/// files load as real buffers, edit bottom-up, and write back through
-/// the owned io workers.
+/// Measure the actual Search -> Review -> Apply -> Save cutover separately.
+/// Repeated fresh editor instances include cold source loading; on-disk
+/// witnesses prevent reporting a fast refusal/no-op as successful replacement.
 fn bench_replace_project() -> io::Result<()> {
     const FILES: usize = 300;
     const HITS: usize = 50;
+    const RUNS: usize = 8;
     let fixture = Fixture::new("replace-project")?;
-    for f in 0..FILES {
-        let mut text = String::with_capacity(HITS * 64);
-        for i in 0..HITS {
-            text.push_str(&format!(
-                "// needle_todo {f:03}/{i:03} padding padding padding\n"
-            ));
-        }
-        fixture.write(&format!("mod_{f:03}.txt"), &text)?;
-    }
-    let mut drive = Drive::new(
-        Editor::new_in(Buffer::from_text(""), fixture.dir.clone()),
-        120,
-        40,
-    )?;
     let mut search = Op::new("search+settle");
-    let mut apply = Op::new("apply+write");
-    drive.editor.open_picker(Kind::Replace);
-    search.try_time(|| {
-        drive.input(AppEvent::Paste("needle_todo".into()))?;
-        drive.settle(SETTLE)
-    })?;
-    picker_settled_ok(&drive)?;
-    apply.try_time(|| {
-        drive.key(Key::Tab)?;
-        drive.input(AppEvent::Paste("fixed_done".into()))?;
-        drive.key(Key::Enter)?;
-        drive.settle(SETTLE)
-    })?;
-    println!("replace_project ({FILES} files x {HITS} hits)");
+    let mut review = Op::new("review+settle");
+    let mut apply = Op::new("apply+frame");
+    let mut save = Op::new("save+settle");
+    let mut retire = Op::new("retire");
+    for _ in 0..RUNS {
+        for f in 0..FILES {
+            let mut text = String::with_capacity(HITS * 64);
+            for i in 0..HITS {
+                text.push_str(&format!(
+                    "// needle_todo {f:03}/{i:03} padding padding padding\n"
+                ));
+            }
+            fixture.write(&format!("mod_{f:03}.txt"), &text)?;
+        }
+        let mut drive = Drive::new(
+            Editor::new_in(Buffer::from_text(""), fixture.dir.clone()),
+            120,
+            40,
+        )?;
+        drive.editor.open_picker(Kind::Replace);
+        search.try_time(|| {
+            drive.input(AppEvent::Paste("needle_todo".into()))?;
+            drive.settle(SETTLE)
+        })?;
+        picker_settled_ok(&drive)?;
+        review.try_time(|| {
+            drive.key(Key::Tab)?;
+            drive.input(AppEvent::Paste("fixed_done".into()))?;
+            drive.key(Key::Enter)?;
+            drive.settle(SETTLE)
+        })?;
+        apply.try_time(|| {
+            for character in ":apply-change".chars() {
+                drive.key(Key::Char(character))?;
+            }
+            drive.key(Key::Enter)
+        })?;
+        save.try_time(|| {
+            for character in ":save-change".chars() {
+                drive.key(Key::Char(character))?;
+            }
+            drive.key(Key::Enter)?;
+            drive.settle(SETTLE)
+        })?;
+        for f in 0..FILES {
+            let text = std::fs::read_to_string(fixture.dir.join(format!("mod_{f:03}.txt")))?;
+            if text.matches("fixed_done").count() != HITS || text.contains("needle_todo") {
+                return Err(io::Error::other(format!(
+                    "replacement/save did not reach mod_{f:03}.txt"
+                )));
+            }
+        }
+        retire.time(|| drop(drive));
+    }
+    println!("replace_project ({FILES} files x {HITS} hits; {RUNS} fresh runs)");
     search.report();
+    review.report();
     apply.report();
+    save.report();
+    retire.report();
     Ok(())
 }
 

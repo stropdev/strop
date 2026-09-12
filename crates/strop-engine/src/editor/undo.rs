@@ -5,7 +5,7 @@
 
 use strop_core::{Buffer, Range};
 
-use super::{Document, Editor, Key};
+use super::{Editor, Key};
 
 /// Live browser state: which buffer is the browser, which buffer it
 /// describes, and the revision index per text row (after the header).
@@ -45,16 +45,10 @@ impl Editor {
             text.push_str(&format!("{}* {}#{}{cur}\n", indent, branch, r.index));
             row_rev.push(Some(r.index));
         }
-        self.push_jump(); // opening the browser is a jumplist entry
         let mut buf = Buffer::from_text(&text);
         buf.readonly = true;
         buf.name = Some("undo tree".into());
-        let id = self.docs.insert(Document::output(buf));
-        self.drop_stale_scratch(id);
-        self.switch_to(id);
-        self.set_head(0);
-        self.view_mut().view_top = 0;
-        self.view_mut().hscroll = strop_core::id::DisplayColumn::new(0);
+        self.open_temporary_output(buf);
         // land on the current revision's row
         if let Some(line) = rows.iter().position(|r| r.is_current) {
             self.set_head(self.buf().line_start(line + 1));

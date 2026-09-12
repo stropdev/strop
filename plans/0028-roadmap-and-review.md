@@ -54,17 +54,11 @@ Current delivery and remaining priorities:
   loud by design; rerun passed. If it recurs, the SSH replay tests should
   tolerate an incomplete trace capture (skip the replay half) rather than
   fail the functional save half.
-- **P2 — one typed input owner, not an ordered if-chain.** `feed_inner`
-  (editor/mod.rs) dispatches through a hand-ordered condition sequence
-  (pending → hover card → blame card → picker → undo browser → mode); each
-  new overlay adds a branch whose position is load-bearing and invisible, and
-  0.20.1's "card swallows the first insert-mode key" bug is the shape of
-  failure that produces. The fix: a single `input_owner()` computing the
-  typed owner from state (Pending / Picker / Card / UndoBrowser / Surface /
-  Mode), with each owner declaring its modal policy (consume vs
-  dismiss-and-forward in insert mode) as data instead of an ordering
-  accident. Feeds S2's frontend-action boundary; the 0.20.1 card fix is the
-  stopgap, not the model.
+- **P2 delivered for 0.29 — typed input ownership and shared fields.**
+  Dispatch and modeline presentation use the effective input owner; query
+  suggestions, literal replacement/address fields and late cards retain their
+  own acceptance/dismissal rules. The remaining engine API/render-admission
+  tightening stays under 0046 rather than being claimed by this release.
 - **P3 — `../` row attributes in remote listings.** The parent row renders
   `d?????????` because it is never stat'ed. One SFTP stat in the list job;
   cosmetic, batch with the next listing change.
@@ -72,9 +66,13 @@ Current delivery and remaining priorities:
   ROI ranking live in [0041](0041-handoff-adoption-and-roadmap.md), pending
   the joint review session. Next adopted slice proposal: shared resource
   identity (handoff S1).
-- **P3 — optional surfaces.** GUI, Dev Containers, writable directory operations,
-  additional transports and arbitrary remote shell/debugger work retain their
-  separate plans and safety/platform prerequisites below.
+- **Requested filesystem milestone.** Local/remote Directory buffers, file
+  creation, rename/move and reviewed modal filename editing now have the explicit
+  [0054](0054-unified-filesystem-workspace.md) delivery contract below; they are
+  no longer an unnamed optional-directory-operations bullet.
+- **P3 — optional surfaces.** GUI, Dev Containers, additional transports and
+  arbitrary remote shell/debugger work retain their separate safety/platform
+  prerequisites below.
 
 Production source modules remain below the approximate 800-line ceiling; the
 972-line keymap is the intentional single-pattern command listing. Keep domain
@@ -97,31 +95,130 @@ Landed in 0.25.0 (0049 §§5–8 core): the collection correctness contract
 invalidation with caret preservation, save/close semantics, g<Space>
 navigation, prefix/suffix diff fast path), occurrence selection in
 ordinary buffers and collections, and reviewable rename/code-action
-proposals. Known limit: collection typing writes back at normal-mode
-action boundaries, not per keystroke (§5's live-mirror ideal); journal-
-driven write-back is the follow-up.
+proposals. 0.29.0 completes the 0051 live source/view contract: journal-derived
+source and projection edits publish while typing, and structural source refreshes
+retain source-owned caret/history positions instead of whole-view byte offsets.
 
-Deferred, in 0049's own order (§1, §11):
+Remaining work from 0049, in its original order. The 0051 release contract
+below supersedes prior deferral status for its explicit R01–R11 requirements:
 
-1. **Collection presentation, rest of (0049 §6)** — per-source syntax
-   projection into excerpt rows (analysis of source ranges, never a
-   synthetic combined file). The boxed per-file cards, omitted-line gap
-   rows, language/modified badges, path-ordered cards and picker locator
-   dimming landed in 0.27.0; source line numbers, provenance and chrome
-   styling landed in 0.25.0.
-2. **Reviewable project changes, rest of (0049 §8)** — proposal review
-   for rename/code-action landed in 0.25.0. Remaining: bounded
-   multi-document delivery, project-replace migration onto the shared
-   proposal/receipt semantics (retaining per-hit content checks), and
-   `workspace/applyEdit` with truthful response timing.
+1. **Collection presentation (0049 §6), delivered through 0.29.0** — real
+   source syntax, context, source coordinates, live split views, grouped history,
+   explicit save/close and deliberate source returns are covered by 0051 R05.
+2. **Reviewable project changes (0049 §8)** — rename/code-action review landed
+   in 0.25.0; project replacement, exact shared diffs, consistent Apply/Save and
+   per-file persistence receipts land in 0.29.0. `workspace/applyEdit` response
+   timing and the broader remaining delivery work retain their separate scope.
 3. **Accompanying architecture (0049 §9)** — engine public-surface
-   tightening, render-side job admission removal (0046 stage C),
-   `collections/mod.rs` split, `:explain` decision provenance, arena
-   exhaustion checks, pinned base images, required-mode container gate.
+   tightening and render-side job-admission removal (0046 stage C), arena
+   exhaustion checks, pinned base images and required-mode container gate.
+   Collection/LSP/render/test responsibility splits and explain provenance are
+   implemented under 0051; they are not remaining work.
 4. **Later (0049 §10)** — structural selections before recipe syntax;
    saved working sets/named investigations; tasks with source-bound
    evidence; selective checkpoints; Dev Container lifecycle, daemon and
    GUI keep their existing evidence gates.
+
+## 0.29.0 — whole-editor finish (0051)
+
+[0051 — whole-editor polish and one query language](0051-whole-editor-polish-and-query-language.md)
+is implemented for 0.29.0. Its §12 ledger records implementation paths, actual
+surface coverage, regression evidence, measured work and explicit limitations.
+
+**R01–R11 are all release requirements**, including uniform file/grep/replace
+filters, parser-driven highlighting and query suggestions, hidden-file controls,
+replacement review/apply/save consistency, complete source-backed collections,
+the entire UI coverage matrix, deliberate jump/view restoration, indentation
+inference and explicit controls, matching delimiters, readable module boundaries,
+and integrated evidence. Severity labels do not grant permission to defer them.
+
+The release integration owner maintains a checked acceptance ledger per R ID:
+assigned owner, implementation paths, behavior, failure/cancel semantics,
+exercised checks/captures, limitations and status. Reusing an already-correct
+surface is fine; skipping its inspection/evidence is not.
+
+An R requirement may move out of the release **only with explicit user approval**,
+recorded here with reason, evidence, user impact, re-entry condition and linked
+target plan. A roadmap bullet alone does not authorize scope reduction. Do not
+call an incomplete release “v1/core/foundation complete.”
+
+### Authorized deferral ledger
+
+The integration owner owns these entries until a concrete implementation owner
+is assigned. They are not unimplemented parts of the 0051 release contract.
+
+| ID | Deferred scope / reason | Re-entry condition and destination |
+| --- | --- | --- |
+| D01 | Multi-source code completion: explicitly authorized by the user as a separate larger release | [0052](0052-nonblocking-code-completion.md), after the source/view/input foundations from 0051. Its C01–C09 gates require real LSP + current-buffer sources, nonblocking cancellation/freshness, safe edits and disable/manual-only config. Query-field suggestions remain required in 0051. |
+| D02 | Full Boolean/GitHub-style query language, semantic symbol predicates, arbitrary provider qualifiers: unnecessary for the bounded uniform filters | A concrete unmet workflow after 0051's grammar, highlighting and filter-parity corpus are stable; amend/write the query plan before implementation. Do not advertise these forms meanwhile. |
+| D03 | Clickable modeline/general mouse interaction: needs coherent terminal capture and hit-region ownership | A tested pointer contract that does not swallow unrelated mouse input. Keyboard `:tab-size`, its selector and visible effective setting ship in 0051 regardless. |
+| D04 | General theme engine, experimental terminal typography, GUI and additional provisioning/backends: not required to finish the current TUI | Existing architecture/platform/0037/0049 evidence gates. The whole existing UI still receives the 0051 quality pass. |
+| D05 | Completion extensions: rich snippets, additional providers, heterogeneous semantic multicursor completion and commit-character/prediction behavior | After 0052 C01–C09, under its §12 extension ledger and a concrete supported interaction/ownership contract. Do not silently approximate unsupported edits. |
+| D06 | Embedded terminal implementation: explicitly requested as a later program, TUI first and GUI next when the GUI is tackled; not a dependency of current polish or filesystem work | [0055](0055-embedded-terminal-tui-and-gui.md): preflight emulator/PTY/packaging comparison, then T01–T10 for the real TUI integration and G01–G07 for the later shared-core GUI surface. Published Alacritty is the provisional first candidate, libghostty-vt the strongest challenger; no dependency or implementation is committed yet. |
+
+Earlier plans for named investigations, structural recipes, Dev Container
+lifecycle, installed remote services and GUI retain their own gates. They must
+not displace the required improvements to today's editor.
+
+## Requested follow-ons — search and filesystem workspaces (0053/0054)
+
+These handoffs were requested while another session implements 0051. They are
+design contracts, not evidence that that session finished or authorization to
+remove its R01–R11 obligations. The integration owner schedules them explicitly;
+completion work in 0052 retains its own C01–C09 ledger.
+
+### One Search workspace — 0053
+The user requested this as the next separate release after 0.29.0, with its own
+complete S01–S10 implementation and green gate before publication.
+
+
+[0053](0053-unified-search-workspace.md) requires **S01–S10**: one large stable
+Search card, optional replacement toggled in place with Ctrl-R, retained
+query/draft/result/workset/view state, common source rows with deliberate file
+identity/line information/backgrounds, and explicit review rather than direct
+replacement from the search field. Space-/ and Space-R are entry intents into
+the same model, not separate catalogs. Collection promotion uses the same visible
+included workset in either mode.
+
+Keep 0051's parser, suggestions, hidden/ignored controls, source authority,
+preview/review/Apply/Save semantics, whole-editor coverage and owned-worker rules.
+Remove obsolete separate-kind/render/apply paths instead of keeping compatibility
+branches. The S ledger requires actual surface and state-transition evidence.
+
+### One filesystem workspace — 0054
+
+[0054](0054-unified-filesystem-workspace.md) requires **F01–F12**: a common local/
+SSH Directory buffer and read-only container adapter, coherent `:e`/`:browse`/
+CLI/current-file reveal and path completion, useful file/line/metadata presentation,
+exclusive create/mkdir, no-clobber rename/move, regular-file copy, honest Trash/
+permanent removal, modal filename drafts and reviewed operations, local/SSH
+Search-here routing, and live-document relocation without losing dirty text.
+
+The original Oil/Dired filename-editing promise remains required. A read-only
+tree plus dialogs is not the completed filesystem milestone. Modal drafts and
+explicit actions consume one checked planner/receipt owner. Supported SSH hosts
+must exercise real operations; always returning Unsupported is not capability
+gating. Containers, SFTP-only hosts and unsafe operations retain named refusals.
+
+The filesystem integration owner owns the F ledger, operation authority and
+relocation boundary until concrete owners are assigned. Its evidence includes
+dirty/open descendants, no-clobber conflicts, saves racing relocation, lost
+acknowledgements, partial batches and mutation receipts arriving after the browser
+closed. UI freshness must not erase an already-committed filesystem outcome.
+
+### Extension boundaries, not silent scope reductions
+
+0054 §12 records bounded follow-ons: recursive copy/permanent recursive deletion,
+cross-namespace transfers, cyclic rename staging, link/metadata editing, active
+workspace-root relocation, semantic LSP file-rename edits, remote Trash/bulk
+replacement and durable named operation sessions. These are explicit design
+boundaries, **not user-approved removal of an F requirement**. Moving required
+work out needs the user's approval, impact/re-entry evidence and a ledger update.
+
+GUI remains separately gated. Embedded-terminal work now has the canonical
+[0055](0055-embedded-terminal-tui-and-gui.md) handoff under D06: **TUI integration
+first, GUI integration next when the GUI is ready**, using one shared session/core.
+Neither milestone is needed to deliver useful local/remote file operations.
 
 ## Closed in 0.14.1
 
@@ -307,6 +404,32 @@ large-document latency and packaging on Linux/macOS/Windows. AccessKit in a
 dependency tree does not prove a custom editor is accessible. Pixels must remain
 outside byte-domain grammar and terminal display-cell geometry. A failed prototype
 can still produce a no-go verdict. No GUI implementation is part of 0038's release.
+
+### Embedded terminal program — TUI first, GUI later (0055)
+
+The user requested a separate future handoff, not immediate implementation:
+[0055](0055-embedded-terminal-tui-and-gui.md). **T01–T10** require a real local
+PTY-backed TUI terminal, full supported input routing before editor normalization,
+normal-mode text navigation, bounded snapshots/queues, process/session cleanup,
+private capture/replay and actual nested-application/physical-terminal evidence.
+The TUI milestone does not wait for a GUI and does not import GUI dependencies.
+
+After the GUI's own platform gate, **G01–G07** add native rendering, input/IME,
+pointer ownership, mixed-DPI geometry and accessibility over the same terminal
+session/emulator/process contract. WSL is not native Windows/ConPTY evidence.
+Sharing implementation does not imply cross-process live-session transfer.
+
+The provisional engine choice is published `alacritty_terminal`; evaluate its
+application-side input-encoding cost against `libghostty-vt` in a real preflight.
+`portable-pty` is the independent PTY candidate, not a complete supervisor.
+Zed's terminal crates are GPL/internal/GPUI-coupled, while WezTerm's full core has
+an unpublished Git/API boundary: neither is a drop-in published MIT editor widget.
+Crates.io packageability, static builds, licenses and native process ownership are
+selection gates alongside terminal correctness, not post-release details.
+
+The terminal integration owner maintains separate T and G evidence ledgers.
+Removing a required milestone behavior needs explicit user approval and a roadmap
+update. Current 0051–0054 requirements are not displaced by this future program.
 
 ## Verification status
 

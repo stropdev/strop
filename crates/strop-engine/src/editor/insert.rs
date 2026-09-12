@@ -132,7 +132,7 @@ impl Editor {
         // final position behind)
         self.last_insert_pos = Some(self.head());
         match key {
-            Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO | Key::CtrlL => {
+            Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO | Key::CtrlL | Key::CtrlSpace => {
                 if key == Key::CtrlL {
                     self.needs_repaint = true; // desync recovery
                 }

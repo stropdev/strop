@@ -172,11 +172,8 @@ impl Editor {
             Outcome::Success(ControlResult::Listing(text)) if focused => {
                 let mut buffer = strop_core::Buffer::from_text(&text);
                 buffer.name = Some("remote connections".into());
-                let id = self.docs.insert(Document::output(buffer));
+                self.open_temporary_output(buffer);
                 self.generation += 1;
-                self.mru.push(id);
-                self.switch_to(id);
-                self.set_head(0);
                 self.message.clear();
             }
             Outcome::Failed { failure, .. } if focused => self.message = failure.message,

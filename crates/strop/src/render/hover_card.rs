@@ -12,6 +12,9 @@ use crate::editor::Editor;
 use super::{ACCENT, BASE, MUTED, TEXT};
 
 pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
+    if editor.input_owner() != crate::editor::InputOwner::HoverCard {
+        return;
+    }
     let Some(text) = &editor.hover_card else {
         return;
     };
@@ -41,7 +44,7 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
             Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         ))
         .title_bottom(Span::styled(
-            " any key dismisses ",
+            " enter full documentation · other key dismisses ",
             Style::default().fg(MUTED),
         ));
     frame.render_widget(&block, card);

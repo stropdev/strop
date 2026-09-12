@@ -5,7 +5,7 @@
 
 use strop_core::Buffer;
 
-use super::{Document, Editor};
+use super::Editor;
 
 impl Editor {
     /// Open the generated help buffer (`:help` / `Space ?`).
@@ -17,6 +17,7 @@ impl Editor {
             .find(|(_, d)| d.buf.name.as_deref() == Some("help"))
             .map(|(id, _)| id);
         if let Some(i) = existing {
+            self.push_jump();
             self.switch_to(i);
             self.set_head(0);
             self.view_mut().view_top = 0;
@@ -67,17 +68,82 @@ impl Editor {
             "  :e!                     Refresh the remote snapshot and revoke write authority\n",
             "  directory columns       kind, POSIX permissions, server bytes, name; ? = unknown\n",
             "  :explain                 Why: workspaces, LSP readiness/refusals, effective config\n",
+            "\n",
+            "\n[query]\n",
+            "  One local-workspace qualifier language for Space f / Space / / Space R\n",
+            "  language:rust           Include a language family (alias: language:rs)\n",
+            "  scope                   Regular local files; directory links and special files are not searched\n",
+            "  SSH/container listings  Hidden entries included; no ignore-file filtering (local search defaults do not apply)\n",
+            "  path:src/               Literal substring in the workspace-relative path\n",
+            "  glob:\"**/*.rs\"        Explicit path glob; quote values with spaces\n",
+            "  -language: -glob: -path:  Exclude; exclusions win\n",
+            "  hidden:include|exclude  Show/hide dotfiles (default: shown)\n",
+            "  ignored:include|exclude Include/respect ignored files (default: respected)\n",
+            "  case:smart|sensitive|ignore  Case behavior of the search expression\n",
+            "  text:\"...\"             Explicit literal content expression (default for bare words)\n",
+            "  regex:\"...\"            Explicit Rust-regex expression\n",
+            "  ctrl-space              Manual qualifier/language/value suggestions\n",
+            "  filter-only grep        Needs a search expression; file find lists matches\n",
+            "  quoted text             Stays literal — never a filter (\"language:rust\" searches that text)\n",
+            "  old -t / -g flags       Now ordinary literal text; use language: and glob:\n",
+            "  file expressions        Bare words are fuzzy; quoted/text: are literal; regex: is explicit\n",
+            "  quotes                  Single/double quotes; escape the active quote or backslash\n",
+            "  With                    Always literal replacement text; $1 is not a capture expansion\n",
             "  ctrl-o in a results list  Open hits as an editable collection (edits write back)\n",
+            "\n[collections]\n",
+            "  Ctrl-O                  Collect the complete, currently listed results\n",
+            "  + / -                   Expand/contract the current excerpt's context\n",
+            "  ]e / [e                 Next/previous excerpt; ]f / [f move file cards\n",
+            "  g<Space>                Open the real source; Ctrl-O restores the collection view\n",
+            "  u / Ctrl-R              Scoped source undo/redo; typing is live and one Insert group\n",
+            "  :w / :wq                Save source files, never the generated view\n",
+            "\n[indentation]\n",
+            "  :tab-size [N|auto]      Source width, 1-16; no argument opens the selector\n",
+            "  :indent-style [spaces|tabs|auto]  Source style or configured/detected policy\n",
+            "  Detection              Bounded open/reload sample; ambiguity keeps the configured fallback\n",
+            "\n[review]\n",
+            "  Enter in Replace        Prepare the exact review, without changing or saving sources\n",
+            "  :apply-change           Apply to source buffers; results remain dirty until saved\n",
+            "  :cancel-change          Cancel and restore the query/draft/exclusions\n",
+            "  :save-change            Save files from the most recent applied operation\n",
+            "  :undo-change            Undo verified targets; conflicted receipt members remain recoverable\n",
+            "\n[documentation]\n",
+            "  Enter on hover          Open full searchable documentation; Ctrl-O returns\n",
             "  :containers               Attach to a running container (read-only browse)\n",
         ));
+        text.push_str("\nSupported language filters:\n  ");
+        for (index, language) in strop_core::languages::language_names().enumerate() {
+            if index > 0 {
+                text.push_str(if index % 8 == 0 { "\n  " } else { " " });
+            }
+            text.push_str(language);
+        }
+        text.push('\n');
         let mut buf = Buffer::from_text(&text);
         buf.name = Some("help".into());
-        self.push_jump(); // opening help is a jumplist entry
-        let id = self.docs.insert(Document::output(buf));
-        self.drop_stale_scratch(id);
-        self.switch_to(id);
-        self.set_head(0);
-        self.view_mut().view_top = 0;
+        // a temporary surface (0051 §7 R07): ctrl-o AND `:q` restore
+        // the exact view the user came from
+        self.open_temporary_output(buf);
+    }
+
+    pub(crate) fn open_help_topic(&mut self, topic: &str) {
+        self.open_help();
+        let topic = topic.trim();
+        if topic.is_empty() {
+            return;
+        }
+        let heading = format!("[{topic}]");
+        let line = self.buf().text().lines().position(|line| {
+            line.chars()
+                .take_while(|&c| c != '\n' && c != '\r')
+                .eq(heading.chars())
+        });
+        if let Some(line) = line {
+            self.set_head(self.buf().line_start(line));
+            self.view_mut().view_top = line;
+        } else {
+            self.message = format!("no help topic {topic:?}; :help shows the index");
+        }
     }
 }
 

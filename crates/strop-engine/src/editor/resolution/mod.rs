@@ -421,7 +421,7 @@ impl Editor {
             // Collections write back at normal-mode action boundaries
             // (0044); the revision gate keeps this free for motions.
             if self.mode == super::Mode::Normal {
-                self.maybe_sync_collection();
+                self.commit_collection_sources();
             }
         }
     }

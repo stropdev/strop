@@ -27,7 +27,7 @@ pub(crate) const DEL_FG: Color = Color::Rgb(0xe8, 0x67, 0x7a);
 const ADD_BG: Color = Color::Rgb(0x1b, 0x26, 0x20);
 const DEL_BG: Color = Color::Rgb(0x2a, 0x1d, 0x20);
 /// Structural rows (stats, hunk headers) sit on a band, not an accent.
-const BAND_BG: Color = Color::Rgb(0x22, 0x24, 0x2e);
+pub(crate) const BAND_BG: Color = Color::Rgb(0x22, 0x24, 0x2e);
 
 pub(crate) fn origin_fg(origin: LineOrigin) -> Color {
     match origin {

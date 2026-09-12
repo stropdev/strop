@@ -106,6 +106,7 @@ pub(crate) const NAMED: &[&str] = &[
     "ctrl-^",
     "ctrl-v",
     "ctrl-l",
+    "ctrl-space",
 ];
 
 /// The single-key operator `<` is literal, not a placeholder.
@@ -189,7 +190,7 @@ impl Index {
         };
         for (row, binding) in BINDINGS.iter().enumerate() {
             for tokens in expand(binding.keys) {
-                if binding.live {
+                if binding.live && !matches!(binding.handler, super::Handler::Contextual) {
                     index.insert(row, per_key(&tokens));
                 }
                 index.hints.push(HintSequence::new(row, tokens));

@@ -49,7 +49,7 @@ for 23 languages (including CMake, Markdown, TOML, YAML, HTML and CSS), git gutt
 blame + commit dive chains, SHA-resolved permalinks over OSC52, and helix-flavored
 `.strop/languages.toml` LSP config.
 
-Search supports a bounded Vim-magic regex dialect (and `\v` very magic), including
+In-buffer `/` and `?` support a bounded Vim-magic regex dialect (and `\v` very magic), including
 collections, groups, alternation, repetition and backreferences. Unsupported
 constructs report an error instead of being treated as literals. Search previews
 and Enter use the same counted resolver. Horizontal views, block selection and
@@ -67,6 +67,44 @@ use private atomic files and lossless native paths, including undo history.
 The modeline keeps filenames, live status and position legible at narrow widths.
 Git history uses quieter metadata, clear file hierarchy and native-path-safe
 navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
+
+## Workspace search and source editing
+
+`Space f`, `Space /`, and the Find field of `Space R` share one local-workspace
+query language. Bare file queries are fuzzy; content queries are literal unless
+you explicitly choose `regex:`:
+
+```text
+language:rust
+language:cpp path:src/ request_id
+glob:"src/my files/**/*.rs" -path:generated/ text:"request-id"
+language:rust regex:"\brequest_(id|name)\b"
+hidden:exclude ignored:include text:"-test.rs"
+```
+
+Filter-only file finding lists eligible files. Content search needs an expression.
+Unignored dotfiles are included by default; ignore rules still apply, and `.git`
+metadata is excluded. `:search-options` shows the separate visibility controls.
+`Ctrl-Space` offers parser-driven query suggestions; `:help query` explains
+quoting, supported languages, errors and examples. Old `-t`/`-g` UI flags are
+ordinary text now. Replacement text is literal, including `$1` and backslashes.
+
+Replacement Enter prepares a review. `:apply-change` edits buffers;
+`:save-change` separately saves the changed files and opens a per-file receipt.
+Open and previously unopened files obey the same policy. Dirty open source text
+wins over disk, stale witnesses refuse, and Cancel restores the query and draft.
+
+`Ctrl-O` from source results opens an editable collection with surrounding context,
+source syntax, match evidence and source line numbers. `+`/`-` adjusts context;
+`g<Space>` opens the source. Edits update source buffers and their other views
+while typing. Undo/redo retains source groups; `:w` saves sources and `:wq`
+closes the view only after its admitted saves confirm.
+
+`:tab-size` opens source-specific width/style controls; `:tab-size 3`,
+`:tab-size auto`, and `:indent-style tabs|spaces|auto` are direct forms.
+Changing indentation settings never rewrites existing bytes. The modeline names
+the effective input owner and source setting. Matching delimiters use the same
+cancellable source resolver as `%`, without moving the view.
 
 ## SSH workspaces
 
@@ -112,6 +150,9 @@ server-reported byte size and native filename columns. Missing attributes show
 totals. Links and special entries have distinct type markers. Enter opens an entry;
 `-`, Backspace or `../` returns to the parent and restores the selected child.
 `:filter` narrows names, and an empty filter restores the full listing.
+SSH and container listings include hidden entries and do not evaluate ignore files;
+the modeline names this fixed policy. Local `:search-options` defaults do not filter
+another filesystem namespace.
 Tab completes SSH hosts and paths without starting authentication: remote candidates
 need a live authorized connection or cached data. Connections are shared by endpoint
 and held by documents or explicit `:remote connect` pins; clear/disconnect retires
@@ -140,8 +181,9 @@ thread; a receipt for an older revision never clears newer unsaved edits.
 The write path checks content and metadata, stages inside a private 0700 transaction
 directory, preserves mode/ownership/mtime/extended attributes, atomically replaces
 the file, and syncs the file and changed directories. Unsupported preservation
-refuses the save. It requires an owned regular single-link file, exact stored path
-spelling, and no symlink components. Edited snapshots remain bounded to 256 MiB.
+refuses the save. It requires an owned regular single-link file and exact stored
+path spelling. Symlinked ancestor directories are resolved and revalidated;
+a symlink as the final component is refused. Edited snapshots remain bounded to 256 MiB.
 Protocol lock/staging paths are reserved; private lock files remain to keep a stable
 lock identity. Do not delete active locks.
 

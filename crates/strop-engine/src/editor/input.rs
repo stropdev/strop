@@ -493,7 +493,7 @@ impl Walker {
                         key,
                     }
                 }
-                Handler::AbsorbRegister | Handler::Soon => self.invalid(),
+                Handler::AbsorbRegister | Handler::Soon | Handler::Contextual => self.invalid(),
             }
         } else if keymap::any_child(&self.path) {
             Action::Pending
@@ -537,6 +537,7 @@ fn key_token(key: Key) -> String {
     match key {
         Key::Char(' ') => "space".into(), // the table's leader token
         Key::Char(c) => c.to_string(),
+        Key::CtrlSpace => "ctrl-space".into(),
         Key::Esc => "esc".into(),
         Key::Enter => "enter".into(),
         Key::Backspace => "backspace".into(),
@@ -668,10 +669,13 @@ mod tests {
     /// grounds afterwards (no state leaks into the next command).
     #[test]
     fn every_row_completes_and_grounds() {
-        for b in crate::keymap::BINDINGS
-            .iter()
-            .filter(|b| b.live && !matches!(b.handler, crate::keymap::Handler::Soon))
-        {
+        for b in crate::keymap::BINDINGS.iter().filter(|b| {
+            b.live
+                && !matches!(
+                    b.handler,
+                    crate::keymap::Handler::Soon | crate::keymap::Handler::Contextual
+                )
+        }) {
             // Soon rows are surface-only verbs — they dispatch in the
             // readonly layer, not on plain buffers
             for events in row_events(b.keys) {

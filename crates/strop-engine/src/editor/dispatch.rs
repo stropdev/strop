@@ -7,11 +7,10 @@
 use super::{Editor, Key, Mode};
 
 /// Who consumes the next key. Priority is fixed by `input_owner`'s
-/// evaluation order — cards overlay the picker, the picker overlays the
-/// document, the pending line outranks everything — never an ordering
-/// accident in an if-chain.
+/// evaluation order: pending fields, pickers, transient cards, document.
+/// A late hover/blame reply never steals a modal field's input or paint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InputOwner {
+pub enum InputOwner {
     /// A live `: / ? |` line.
     Pending,
     /// The LSP hover card — a transient overlay.
@@ -38,18 +37,18 @@ impl InputOwner {
 
 impl Editor {
     /// The typed owner of the next key, computed from state.
-    pub(crate) fn input_owner(&self) -> InputOwner {
+    pub fn input_owner(&self) -> InputOwner {
         if self.pending.is_active() {
             return InputOwner::Pending;
+        }
+        if self.picker_open() {
+            return InputOwner::Picker;
         }
         if self.hover_card.is_some() {
             return InputOwner::HoverCard;
         }
         if self.blame_card.is_some() || self.card_request.is_some() {
             return InputOwner::BlameCard;
-        }
-        if self.picker_open() {
-            return InputOwner::Picker;
         }
         // The undo browser owns keys only while its buffer is live and
         // current (the stale-state guard stays in feed_undo_browser).
@@ -76,7 +75,11 @@ impl Editor {
         match owner {
             InputOwner::Pending => self.feed_pending(key),
             InputOwner::HoverCard => {
-                self.hover_card = None;
+                if key == Key::Enter {
+                    self.open_hover_document();
+                } else {
+                    self.hover_card = None;
+                }
             }
             InputOwner::BlameCard => {
                 let had_card = self.blame_card.is_some();
@@ -129,26 +132,12 @@ mod tests {
     use strop_core::Buffer;
 
     #[test]
-    fn owner_priority_is_computed_not_ordered() {
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        assert_eq!(e.input_owner(), InputOwner::Document);
-        e.hover_card = Some("docs".into());
-        assert_eq!(e.input_owner(), InputOwner::HoverCard);
-        e.hover_card = None; // the card consumes the next key by design
-        e.feed_text(":");
-        assert_eq!(
-            e.input_owner(),
-            InputOwner::Pending,
-            "the line outranks a card"
-        );
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.open_picker(strop_picker::Kind::Files);
-        e.hover_card = Some("docs".into());
-        assert_eq!(
-            e.input_owner(),
-            InputOwner::HoverCard,
-            "a card overlays the picker"
-        );
+    fn late_cards_cannot_consume_modal_field_input() {
+        let mut editor = Editor::new(Buffer::from_text("x\n"));
+        editor.open_picker(strop_picker::Kind::RemoteAddress);
+        editor.hover_card = Some("late docs".into());
+        editor.feed_text("host");
+        assert_eq!(editor.picker.as_ref().unwrap().picker.input.text, "host");
     }
 
     #[test]

@@ -31,7 +31,7 @@ use strop_git::exec::GitExec;
 use strop_git::memory::{self, BlameLine};
 use strop_git::{Hunk, LineOrigin, RepoTarget};
 
-use super::document::{ReturnPoint, Surface};
+use super::document::Surface;
 use super::{trace, Editor, Key};
 /// The commit a Diff surface's file belongs to, with the commit's full
 /// changed-file list — the sidebar's data (typed numstat rows, the same
@@ -97,12 +97,7 @@ impl Editor {
         // surfaces stack: only the first one opened from a plain buffer
         // carries a return point (closing the deepest unwinds the chain)
         if self.surface().is_none() {
-            surface.set_return_point(ReturnPoint {
-                buffer: self.current(),
-                cursor: self.head(),
-                view_top: self.view_top(),
-                hscroll: self.view().hscroll,
-            });
+            surface.set_return_point(self.jump_record());
         }
         let mut buf = strop_core::Buffer::from_snapshot(text);
         buf.name = name.map(|n| n.to_string());

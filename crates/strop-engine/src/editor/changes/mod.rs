@@ -17,14 +17,13 @@ use strop_workspace::ResourceLocation;
 use super::Editor;
 
 /// Who produced the plan — provenance for the receipt and the message.
-/// Who produced the plan — provenance for the receipt and the message.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ChangeProducer {
     Format,
     Rename,
     CodeAction,
-    /// An edit written back from an editable code collection (0044).
-    CollectionEdit,
+    /// A global replace accepted from the picker review (0051 §6 R04).
+    Replace,
 }
 
 impl ChangeProducer {
@@ -33,7 +32,7 @@ impl ChangeProducer {
             Self::Format => "format",
             Self::Rename => "rename",
             Self::CodeAction => "code action",
-            Self::CollectionEdit => "collection edit",
+            Self::Replace => "replace",
         }
     }
 }
@@ -54,12 +53,11 @@ pub(crate) struct ChangeReceipt {
     pub producer: String,
     /// (document, revision before, revision after) per applied target.
     pub applied: Vec<(DocumentId, BufferRevision, BufferRevision)>,
+    pub applied_positions: Vec<usize>,
     /// (target, reason) for everything NOT applied.
     pub refused: Vec<(ResourceLocation, String)>,
-    /// Per-member history depth after this group was undone (0049 §5):
-    /// revisions are monotonic and cannot name an undone position; the
-    /// depth can. Set by the undoer, preflighted by the redoer.
-    pub redo_depths: Option<Vec<usize>>,
+    /// Exact history nodes after undo, not tree size or nesting depth.
+    pub redo_positions: Option<Vec<usize>>,
 }
 
 /// A validated plan ready to apply. Building resolves server positions to
@@ -101,7 +99,8 @@ impl Default for ChangeState {
 impl ChangeState {
     const RETAINED: usize = 16;
 
-    fn record(&mut self, receipt: ChangeReceipt) {
+    pub(crate) fn record(&mut self, receipt: ChangeReceipt) {
+        debug_assert_eq!(receipt.applied.len(), receipt.applied_positions.len());
         self.undone.clear(); // a new change forks history — redo dies
         self.receipts.push_back(receipt);
         while self.receipts.len() > Self::RETAINED {
@@ -281,19 +280,27 @@ impl Editor {
         let mut receipt = ChangeReceipt {
             producer: producer.clone(),
             applied: Vec::new(),
+            applied_positions: Vec::new(),
             refused: plan.refused,
-            redo_depths: None,
+            redo_positions: None,
         };
         for target in plan.documents {
             let changes = super::transact::ChangeSet {
                 edits: target.edits,
-                undo_open: true,
+                undo_open: false,
             };
             match self.apply(target.document, target.base, changes) {
                 Ok(committed) => {
                     receipt
                         .applied
-                        .push((target.document, target.base, committed.revision))
+                        .push((target.document, target.base, committed.revision));
+                    if let Some(position) = self
+                        .docs
+                        .get(target.document)
+                        .and_then(|doc| doc.buf.history().committed_position())
+                    {
+                        receipt.applied_positions.push(position);
+                    }
                 }
                 Err(error) => receipt
                     .refused
@@ -313,32 +320,35 @@ impl Editor {
     /// buffer must still sit at the receipt's after-revision: intervening
     /// edits refuse that buffer by name, never a blind history walk.
     pub(crate) fn undo_last_change(&mut self) {
-        let Some(receipt) = self.changes.receipts.pop_back() else {
+        let Some(mut receipt) = self.changes.receipts.pop_back() else {
             self.message = "no change to undo".into();
             return;
         };
         let mut undone = 0;
-        let mut skipped = 0;
-        for (document, _before, after) in &receipt.applied {
-            let Some(doc) = self.docs.get(*document) else {
-                skipped += 1;
-                continue;
-            };
-            if doc.buf.revision() != *after {
-                skipped += 1;
-                continue;
-            }
-            match self.doc_mut(*document).buf.undo() {
-                Ok(Some(_)) => undone += 1,
-                _ => skipped += 1,
+        let mut remaining = Vec::new();
+        let mut positions = Vec::new();
+        for (member, &(document, before, after)) in receipt.applied.iter().enumerate() {
+            let expected = receipt.applied_positions[member];
+            let ready = self.docs.get(document).is_some_and(|doc| {
+                !doc.buf.readonly && doc.buf.history().committed_position() == Some(expected)
+            });
+            if ready && matches!(self.doc_mut(document).buf.undo(), Ok(Some(_))) {
+                undone += 1;
+            } else {
+                remaining.push((document, before, after));
+                positions.push(expected);
             }
         }
-        self.message = match skipped {
-            0 => format!("undid {} across {undone} buffer(s)", receipt.producer),
-            _ => format!(
-                "undid {} in {undone} buffer(s); {skipped} skipped (edited or closed since)",
-                receipt.producer
-            ),
+        let skipped = remaining.len();
+        self.message = if skipped == 0 {
+            format!("undid {} across {undone} buffer(s)", receipt.producer)
+        } else {
+            format!("undid {} in {undone} buffer(s); {skipped} skipped (edited, read-only or closed); receipt retained", receipt.producer)
         };
+        if skipped > 0 {
+            receipt.applied = remaining;
+            receipt.applied_positions = positions;
+            self.changes.receipts.push_back(receipt);
+        }
     }
 }

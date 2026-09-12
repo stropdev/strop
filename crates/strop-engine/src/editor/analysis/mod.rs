@@ -2,7 +2,8 @@
 //! immutable, revision-matched viewport results. Native parser state stays there.
 pub(crate) mod layouts;
 mod search;
-mod worker;
+pub(crate) mod worker;
+use super::matching::{MatchKey, PairMatch, PairState};
 use super::{document::DocumentSource, Editor};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -45,6 +46,8 @@ pub struct SearchSummary {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum AnalysisEvent {
     Completed(Box<Completion<AnalysisKey, FrameAnalysis>>),
+    /// A matching-delimiter job landed (0051 §7 R09).
+    Matched(Box<Completion<MatchKey, Option<PairMatch>>>),
     Stopped,
 }
 struct Pending {
@@ -62,6 +65,9 @@ pub(crate) struct AnalysisState {
     registered: HashSet<AnalysisTarget>,
     pending: HashMap<AnalysisTarget, Pending>,
     cache: HashMap<AnalysisTarget, Vec<Cached>>,
+    /// Matching-delimiter jobs/results (0051 §7 R09) — same worker,
+    /// same lifecycle.
+    pub(crate) pair: PairState,
     started: bool,
     stopping: bool,
 }
@@ -75,6 +81,7 @@ impl Default for AnalysisState {
             registered: HashSet::new(),
             pending: HashMap::new(),
             cache: HashMap::new(),
+            pair: PairState::default(),
             started: false,
             stopping: false,
         }
@@ -82,9 +89,9 @@ impl Default for AnalysisState {
 }
 impl AnalysisState {
     pub fn pending(&self) -> bool {
-        !self.pending.is_empty() || self.stopping
+        !self.pending.is_empty() || !self.pair.pending_empty() || self.stopping
     }
-    fn start(&mut self, tape: &strop_trace::replay::Tape) -> Result<(), String> {
+    pub(crate) fn start(&mut self, tape: &strop_trace::replay::Tape) -> Result<(), String> {
         if self.started {
             return Ok(());
         }
@@ -99,8 +106,21 @@ impl AnalysisState {
         self.started = true;
         Ok(())
     }
+
+    /// Match jobs share the worker and its edit journal (0051 §7 R09).
+    pub(crate) fn register(&mut self, target: AnalysisTarget) {
+        self.registered.insert(target);
+    }
+
+    pub(crate) fn worker(&self) -> Option<&worker::Worker> {
+        self.worker.as_ref()
+    }
     pub fn edits(&mut self, document: DocumentId, changes: &[strop_core::Change]) {
         let target = AnalysisTarget::Document(document);
+        // a queued match scan for text that just changed is unwanted
+        // work (0051 §7 R09): its delivery would fail the revision
+        // recheck anyway — cancel the scan itself, not only the guard
+        self.pair.cancel_target(&target);
         if !self.registered.contains(&target) {
             return;
         }
@@ -118,6 +138,7 @@ impl AnalysisState {
         if let Some(pending) = self.pending.remove(&target) {
             pending.cancel.store(true, Ordering::Release);
         }
+        self.pair.forget(&target);
         self.cache.remove(&target);
         self.registered.remove(&target);
         if let Some(worker) = &self.worker {
@@ -131,6 +152,7 @@ impl AnalysisState {
         for pending in self.pending.values() {
             pending.cancel.store(true, Ordering::Release);
         }
+        self.pair.cancel_all();
         self.stopping = self.started;
         self.worker = None;
     }
@@ -180,7 +202,7 @@ impl Editor {
             revision: doc.buf.revision(),
             first,
             last,
-            tab: self.cur_indent().width.max(1),
+            tab: doc.indent.width.max(1),
             guides,
             left,
             right: left.saturating_add(width),
@@ -354,10 +376,17 @@ impl Editor {
     }
 
     pub(crate) fn handle_analysis(&mut self, event: AnalysisEvent) {
-        let AnalysisEvent::Completed(completion) = event else {
-            self.analysis.stopping = false;
-            self.analysis.started = false;
-            return;
+        let completion = match event {
+            AnalysisEvent::Stopped => {
+                self.analysis.stopping = false;
+                self.analysis.started = false;
+                return;
+            }
+            AnalysisEvent::Matched(completion) => {
+                self.handle_match(*completion);
+                return;
+            }
+            AnalysisEvent::Completed(completion) => completion,
         };
         let key = completion.ticket.key;
         if !self

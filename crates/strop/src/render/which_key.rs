@@ -145,7 +145,6 @@ mod tests {
             "buffers (MRU)",
             "live grep",
             "global search & replace",
-            "this popup",
             "diagnostics picker",
             "hover docs",
             "paste clipboard before",

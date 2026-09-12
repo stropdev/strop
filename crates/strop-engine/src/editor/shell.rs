@@ -244,35 +244,37 @@ impl Editor {
                 if self.shell_focus == Some(focus) {
                     self.shell_focus = None;
                 }
-                let output = match result.outcome {
-                    Outcome::Success(output) => output,
-                    Outcome::Failed { failure, partial } => {
-                        // a failed command's output is still shown —
-                        // failure explains itself in the stderr section
-                        let mut output = partial.unwrap_or_default();
-                        if output.stderr.is_empty() {
-                            output.stderr = failure.message;
-                        }
-                        output
-                    }
+                let (output, status) = match result.outcome {
+                    Outcome::Success(output) => (output, "completed (exit 0)".to_string()),
+                    Outcome::Failed { failure, partial } => (
+                        partial.unwrap_or_default(),
+                        format!("failed: {}", failure.message),
+                    ),
                     // cancellation revoked publication: no buffer, no switch
                     Outcome::Cancelled(_) => return,
                 };
-                let text = if output.stderr.is_empty() {
-                    output.stdout
-                } else {
-                    format!("{}\n--- stderr ---\n{}", output.stdout, output.stderr)
-                };
+                let command = strop_core::layout::printable_text(intent.command.as_str());
+                let cwd = strop_core::layout::printable_text(intent.cwd.to_string_lossy());
+                let status = strop_core::layout::printable_text(status);
+                let mut text = format!(
+                    "shell — {status}\ncommand: {command}\ncwd: {cwd}\n\n--- stdout ---\n{}",
+                    output.stdout,
+                );
+                if !output.stderr.is_empty() {
+                    text.push_str("\n--- stderr ---\n");
+                    text.push_str(&output.stderr);
+                }
                 let mut buffer = strop_core::Buffer::from_text(&text);
                 buffer.name = Some(format!("sh: {}", intent.command));
-                let doc = self.docs.insert(Document::output(buffer));
-                self.generation += 1;
-                self.mru.push(doc);
                 if may_focus {
-                    self.switch_to(doc);
-                    self.set_head(0);
-                    self.view_mut().view_top = 0;
-                    self.message = format!("sh: {} — q closes", intent.command);
+                    self.open_temporary_output(buffer);
+                } else {
+                    let doc = self.docs.insert(Document::output(buffer));
+                    self.mru.push(doc);
+                }
+                self.generation += 1;
+                if may_focus {
+                    self.message = format!("sh: {status} — q closes");
                 }
             }
             ShellKey::Pipe {

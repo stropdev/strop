@@ -235,7 +235,13 @@ fn every_dispatched_sequence_has_a_row() {
             }
         }
         assert!(
-            find_row(&toks).is_some(),
+            find_row(&toks).is_some()
+                || BINDINGS.iter().any(|row| {
+                    matches!(row.handler, Handler::Contextual)
+                        && expand(row.keys)
+                            .iter()
+                            .any(|keys| keys.iter().copied().eq(toks.iter().map(String::as_str)))
+                }),
             "{entry} dispatches but has no BINDINGS row (0003 §5.7)"
         );
     }
@@ -272,7 +278,7 @@ fn live_rows_dispatch_through_the_table() {
             if keys.is_empty() || keys.starts_with(':') || keys.starts_with('-') {
                 continue; // event-layer, ex-line, and CLI-flag rows
             }
-            if matches!(b.handler, Handler::Soon) {
+            if matches!(b.handler, Handler::Soon | Handler::Contextual) {
                 continue; // surface-only verbs (]f/[f) dispatch in the
                           // readonly layer, not on plain buffers
             }

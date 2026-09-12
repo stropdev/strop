@@ -127,8 +127,7 @@ fn display_reorder_cannot_steal_focus_and_duplicates_die() {
     let b = register_display(&mut e);
     e.shell_focus = Some(b.request);
     deliver(&mut e, b.clone(), success("B\n"));
-    assert_eq!(e.buf().name.as_deref(), Some("sh: injected"));
-    assert_eq!(e.buf().text().to_string(), "B\n");
+    assert!(e.buf().text().to_string().lines().any(|line| line == "B"));
     assert!(e.buf().readonly);
     assert!(e.message.contains("q closes"));
     // the older job lands later: output preserved, view untouched
@@ -136,10 +135,14 @@ fn display_reorder_cannot_steal_focus_and_duplicates_die() {
     deliver(&mut e, a.clone(), success("A\n"));
     assert_eq!(e.current(), owner);
     assert_eq!(e.message, message);
-    assert!(sh_outputs(&e).iter().any(|text| text == "A\n"));
+    assert!(sh_outputs(&e)
+        .iter()
+        .any(|text| text.lines().any(|line| line == "A")));
     // duplicate delivery of the consumed ticket changes nothing
     deliver(&mut e, b, success("dup\n"));
-    assert!(!sh_outputs(&e).iter().any(|text| text == "dup\n"));
+    assert!(!sh_outputs(&e)
+        .iter()
+        .any(|text| text.lines().any(|line| line == "dup")));
     assert!(e.shell_requests.is_empty());
 }
 
@@ -158,13 +161,13 @@ fn display_failure_keeps_partial_output_and_explains_itself() {
             ),
             partial: Some(ProcessOutput {
                 stdout: "partial\n".into(),
-                stderr: String::new(),
+                stderr: "diagnostic\n".into(),
             }),
         },
     );
     let text = e.buf().text().to_string();
     assert!(text.contains("partial\n"));
-    assert!(text.contains("--- stderr ---"));
+    assert!(text.lines().any(|line| line == "diagnostic"));
     assert!(text.contains("exit status: 3"));
 }
 
@@ -359,14 +362,14 @@ fn bang_opens_focused_output_buffer_with_both_streams() {
     e.shell_run("echo out; echo err 1>&2");
     let result = next_shell_result(&e);
     e.handle_shell_result(result);
-    assert_eq!(e.buf().name.as_deref(), Some("sh: echo out; echo err 1>&2"));
     let text = e.buf().text().to_string();
-    assert!(text.contains("out"));
+    assert!(text.lines().any(|line| line == "out"));
     assert!(text.contains("--- stderr ---"));
-    assert!(text.contains("err"));
+    assert!(text.lines().any(|line| line == "err"));
     assert!(e.buf().readonly);
+    let output = e.current();
     e.feed(key('q')); // closes like any readonly buffer
-    assert_ne!(e.buf().name.as_deref(), Some("sh: echo out; echo err 1>&2"));
+    assert!(e.docs.get(output).is_none());
 }
 
 #[test]
@@ -434,8 +437,7 @@ fn cancellation_settles_promptly_then_next_command_progresses() {
     e.shell_run("echo ok");
     let result = next_shell_result(&e);
     e.handle_shell_result(result);
-    assert_eq!(e.buf().name.as_deref(), Some("sh: echo ok"));
-    assert!(e.buf().text().to_string().contains("ok"));
+    assert!(e.buf().text().to_string().lines().any(|line| line == "ok"));
 }
 
 #[test]

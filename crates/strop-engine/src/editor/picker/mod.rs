@@ -15,6 +15,9 @@ use super::{Editor, Key};
 mod accept;
 mod drain;
 mod preview;
+mod query;
+#[cfg(test)]
+mod query_tests;
 pub(crate) mod ranking;
 mod replace;
 #[cfg(test)]
@@ -85,9 +88,26 @@ pub struct PickerGlue {
     pub(crate) lsp_context: Option<strop_lsp::ReplyContext>,
     pub(crate) rank_worker: Option<strop_picker::RankingWorker<ranking::Key>>,
     pub rank_pending: Option<Ticket<ranking::Key>>,
+    /// Coalesce catalog/query changes while one rank snapshot is in flight.
+    pub(crate) rank_dirty: bool,
     pub(crate) ranked_query: Option<String>,
     pub(crate) rank_alive: bool,
     pub(crate) accept_when_ranked: bool,
+    /// The manual query-suggestion list (0051 R02): ctrl-space opens
+    /// it; it owns accept/cancel keys until dismissed.
+    pub suggestions: Option<SuggestionList>,
+    pub query_highlights: Vec<strop_picker::query::HighlightSpan>,
+    pub query_summary: String,
+    pub(crate) query: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
+    file_scope: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
+    pub(crate) indent_target: Option<strop_core::id::DocumentId>,
+}
+
+/// The visible suggestion list: static candidates from the query's own
+/// parse position — never an LSP or a filesystem scan.
+pub struct SuggestionList {
+    pub items: Vec<strop_picker::query::suggest::Suggestion>,
+    pub selected: usize,
 }
 
 impl PickerGlue {
@@ -105,9 +125,16 @@ impl PickerGlue {
             lsp_context: None,
             rank_worker: None,
             rank_pending: None,
+            rank_dirty: false,
             ranked_query: None,
             rank_alive: false,
             accept_when_ranked: false,
+            suggestions: None,
+            query_highlights: Vec::new(),
+            query_summary: String::new(),
+            file_scope: None,
+            query: None,
+            indent_target: None,
         }
     }
 
@@ -168,6 +195,10 @@ impl Editor {
             self.open_remote_address();
             return;
         }
+        if kind == Kind::TabSize {
+            self.open_tab_size_picker();
+            return;
+        }
         let items = match kind {
             Kind::Buffers => self
                 .mru
@@ -194,6 +225,8 @@ impl Editor {
             | Kind::CodeActions
             | Kind::Containers => vec![],
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
+            Kind::SearchOptions => unreachable!("search options build their own items"),
+            Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
             Kind::Symbols => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
@@ -201,19 +234,55 @@ impl Editor {
         };
         self.set_picker(PickerGlue::diagnostics(Picker::new(kind, items, false)));
         if kind == Kind::Files {
-            self.launch_files_request();
+            self.picker_input_changed();
         }
+    }
+
+    /// `:search-options` (0051 R03): the hidden/ignore controls with
+    /// their live values; Enter toggles and the row updates in place.
+    pub(crate) fn open_search_options(&mut self) {
+        let item = |setting: strop_picker::SearchSetting, on: bool| strop_picker::Item {
+            badge: None,
+            text: format!(
+                "{}: {}",
+                match setting {
+                    strop_picker::SearchSetting::Hidden => "hidden (dotfiles)",
+                    strop_picker::SearchSetting::RespectIgnore => "ignored entries",
+                },
+                match (setting, on) {
+                    (strop_picker::SearchSetting::Hidden, true)
+                    | (strop_picker::SearchSetting::RespectIgnore, false) => "include",
+                    _ => "exclude",
+                },
+            ),
+            payload: strop_picker::Payload::SearchOption(setting),
+        };
+        let items = vec![
+            item(
+                strop_picker::SearchSetting::Hidden,
+                self.config.search_show_hidden,
+            ),
+            item(
+                strop_picker::SearchSetting::RespectIgnore,
+                self.config.search_respect_ignore,
+            ),
+        ];
+        self.set_picker(PickerGlue::diagnostics(Picker::new(
+            Kind::SearchOptions,
+            items,
+            false,
+        )));
     }
 
     /// The jumplist as a menu (0047 §2): past newest-first, the current
     /// position marked, then the future; dead documents are filtered.
     pub(crate) fn open_jumps_picker(&mut self) {
         let mut items = Vec::new();
-        for &entry in self.jumplist_past.iter().rev() {
+        for entry in self.jumplist_past.iter().rev() {
             items.extend(jump_row(self, entry, "  "));
         }
-        items.extend(jump_row(self, (self.current(), self.head()), "> "));
-        for &entry in self.jumplist_future.iter().rev() {
+        items.extend(jump_row(self, &self.jump_record(), "> "));
+        for entry in self.jumplist_future.iter().rev() {
             items.extend(jump_row(self, entry, "  "));
         }
         self.set_picker(PickerGlue::diagnostics(Picker::new(
@@ -221,63 +290,6 @@ impl Editor {
             items,
             false,
         )));
-    }
-
-    /// The files walk as an owned request. Registration precedes
-    /// launch: the worker can only post onto its stream, and nothing
-    /// reaches the model until the ticket is the active owner. Replay
-    /// mode stops after registration (Main's service seam).
-    fn launch_files_request(&mut self) {
-        let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
-            return;
-        };
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                self.message = error.message;
-                return;
-            }
-        };
-        let ticket = Ticket {
-            request,
-            key: PickerKey {
-                picker,
-                cwd: self.cwd.clone(),
-            },
-        };
-        if let Some(glue) = self.picker.as_mut() {
-            glue.active = Some(ticket.clone());
-            glue.picker.streaming = true;
-        }
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({
-                "service":"picker","source":"files","id":picker.0.get(),
-                "request":request.get(),"cwd":self.cwd.to_string_lossy(),
-            })
-        });
-        match self
-            .tape
-            .request("picker-files", &serde_json::json!({"ticket":ticket}))
-        {
-            Ok(false) => return,
-            Ok(true) => {}
-            Err(error) => {
-                self.handle_picker_event(PickerEvent {
-                    ticket,
-                    msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
-                        strop_core::worker::FailureKind::Protocol,
-                        error.to_string(),
-                    )),
-                });
-                return;
-            }
-        }
-        let (tx, rx) = channel();
-        let worker = spawn_files(self.cwd.clone(), tx);
-        if let Some(glue) = self.picker.as_mut() {
-            glue.worker = Some(PickerWorker::Files(worker));
-        }
-        self.attach_picker_stream(ticket, rx);
     }
 
     /// Hand a launched request's stream to the app event loop (TUI) or
@@ -313,7 +325,7 @@ impl Editor {
 
     /// Close the picker: revoke its active request, stop its worker,
     /// and cancel/forget the previews it owns (failed reads become
-    /// retryable on reopen; successful caches survive).
+    /// retryable on reopen; retained successful bytes must be revalidated).
     pub fn close_picker(&mut self) {
         let Some(mut glue) = self.picker.take() else {
             return;
@@ -338,7 +350,7 @@ impl Editor {
     /// Cancel/forget every preview this picker instance owns. Running
     /// requests are cancelled; Failed/Cancelled loads and their blank
     /// cache entries are removed so an explicit reopen retries; Ready
-    /// caches stay (a successful read is still a successful read).
+    /// bytes stay within the cache bound but are not current in a new picker.
     fn revoke_picker_previews(&mut self, picker: PickerId) {
         let mut cancelled = Vec::new();
         let mut forgotten = Vec::new();
@@ -373,7 +385,36 @@ impl Editor {
             glue.accept_when_ranked = false;
         }
         let replace = glue.picker.kind == Kind::Replace;
+        // the suggestion list owns accept/cancel while open (0051 R02)
+        if glue.suggestions.is_some() {
+            match key {
+                Key::Up => {
+                    let list = glue.suggestions.as_mut().unwrap();
+                    list.selected = list.selected.saturating_sub(1);
+                    return;
+                }
+                Key::Down | Key::Tab => {
+                    let list = glue.suggestions.as_mut().unwrap();
+                    list.selected = (list.selected + 1).min(list.items.len().saturating_sub(1));
+                    return;
+                }
+                Key::Enter => {
+                    self.accept_suggestion();
+                    return;
+                }
+                Key::Esc => {
+                    glue.suggestions = None;
+                    return;
+                }
+                _ => {
+                    glue.suggestions = None;
+                }
+            }
+        }
         match key {
+            Key::CtrlSpace => {
+                self.open_suggestions();
+            }
             Key::Esc => {
                 if glue.picker.input_normal() {
                     self.close_picker();
@@ -454,9 +495,15 @@ impl Editor {
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
+        if matches!(glue.picker.kind, Kind::Files | Kind::Grep | Kind::Replace) {
+            if let Some(error) = &glue.picker.error {
+                self.message = error.clone();
+                return;
+            }
+        }
         let replacing = glue.picker.kind == Kind::Replace;
-        if (replacing || glue.picker.current().is_none())
-            && (glue.rank_pending.is_some() || glue.picker.streaming)
+        if glue.rank_pending.is_some()
+            || ((replacing || glue.picker.current().is_none()) && glue.picker.streaming)
         {
             glue.accept_when_ranked = true;
             return;
@@ -494,6 +541,23 @@ impl Editor {
             }
             return;
         }
+        // TabSize: every row is an IndentChoice; the typed filter text
+        // rides along so the pinned custom row can validate it as a
+        // width (the RemoteHosts draft pattern, 0.21.0).
+        if glue.picker.kind == Kind::TabSize {
+            let draft = glue.picker.input.text.trim().to_string();
+            let Some(Payload::IndentChoice(choice)) = payload else {
+                self.message = "no matching entries".into();
+                return;
+            };
+            let Some(document) = glue.indent_target else {
+                self.message = "indentation selector lost its source — reopen :tab-size".into();
+                return;
+            };
+            self.close_picker();
+            self.accept_indent_choice(document, choice, &draft);
+            return;
+        }
         let Some(payload) = payload else {
             self.message = "no matching entries".into();
             return;
@@ -512,86 +576,6 @@ impl Editor {
             self.accept_current_picker();
         }
     }
-
-    /// Grep/Replace: every input change is a new owned request — the
-    /// previous one is superseded, its items/rows/exclusions cleared,
-    /// and a fresh ticket + worker launched. Other kinds just refilter.
-    fn picker_input_changed(&mut self) {
-        let (query, picker) = {
-            let Some(glue) = &mut self.picker else {
-                return;
-            };
-            if glue.picker.kind == Kind::RemoteAddress {
-                glue.picker.error = None;
-                return;
-            }
-            if !matches!(glue.picker.kind, Kind::Grep | Kind::Replace) {
-                self.request_picker_ranking();
-                return;
-            }
-            let query = glue.picker.input.text.clone();
-            let picker = glue.id;
-            glue.revoke(CancelReason::Superseded);
-            glue.picker.error = None;
-            glue.picker.clear_items();
-            glue.ranked_query = None;
-            glue.rank_pending = None;
-            (query, picker)
-        };
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                // no identity: settle as not streaming; the next
-                // keystroke retries with a fresh allocation
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.picker.streaming = false;
-                }
-                self.message = error.message;
-                return;
-            }
-        };
-        let ticket = Ticket {
-            request,
-            key: PickerKey {
-                picker,
-                cwd: self.cwd.clone(),
-            },
-        };
-        // registration precedes launch (replay stops here)
-        if let Some(glue) = self.picker.as_mut() {
-            glue.active = Some(ticket.clone());
-            glue.picker.streaming = true;
-        }
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({
-                "service":"picker","source":"grep","id":picker.0.get(),
-                "request":request.get(),"query":query,"streaming":true,
-            })
-        });
-        match self.tape.request(
-            "picker-grep",
-            &serde_json::json!({"ticket":ticket,"query":query}),
-        ) {
-            Ok(false) => return,
-            Ok(true) => {}
-            Err(error) => {
-                self.handle_picker_event(PickerEvent {
-                    ticket,
-                    msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
-                        strop_core::worker::FailureKind::Protocol,
-                        error.to_string(),
-                    )),
-                });
-                return;
-            }
-        }
-        let (tx, rx) = channel();
-        let worker = GrepWorker::spawn(&query, &self.cwd, tx);
-        if let Some(glue) = self.picker.as_mut() {
-            glue.worker = Some(PickerWorker::Grep(worker));
-        }
-        self.attach_picker_stream(ticket, rx);
-    }
 }
 
 pub struct PreviewEntry {
@@ -608,24 +592,25 @@ pub enum PreviewSource {
 
 pub type Previews = HashMap<PathBuf, PreviewEntry>;
 
-/// One jumplist row; dead documents drop out (0047 §2).
-fn jump_row(
-    editor: &Editor,
-    (document, offset): (strop_core::id::DocumentId, usize),
-    marker: &str,
-) -> Option<Item> {
-    let doc = editor.docs.get(document)?;
+/// One jumplist row; dead documents drop out (0047 §2). The payload
+/// stays a plain destination — accepting a menu entry is a NEW jump
+/// landing (0051 §7), not a ctrl-o view restore.
+fn jump_row(editor: &Editor, record: &super::jumps::JumpRecord, marker: &str) -> Option<Item> {
+    let doc = editor.docs.get(record.document)?;
     let name = doc
         .buf
         .path
         .as_ref()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_else(|| "[scratch]".into());
-    let line = doc.buf.line_of(offset);
+    let line = doc.buf.line_of(record.offset.min(doc.buf.len_bytes()));
     let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
     Some(Item {
         badge: None,
         text: format!("{marker}{name}:{}  {text}", line + 1),
-        payload: Payload::Jump { document, offset },
+        payload: Payload::Jump {
+            document: record.document,
+            offset: record.offset,
+        },
     })
 }

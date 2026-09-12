@@ -68,4 +68,5 @@ const TOKENS: &[(&str, Key)] = &[
     ("c-w", Key::CtrlW),
     ("c-o", Key::CtrlO),
     ("c-l", Key::CtrlL),
+    ("c-space", Key::CtrlSpace),
 ];

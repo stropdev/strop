@@ -60,7 +60,12 @@ pub(crate) struct JumpContext {
 /// What follows a format reply (config auto_format): the save that
 /// triggered it (0049-adjacent; helix's auto-format).
 pub(crate) enum AfterFormat {
-    Save { document: DocumentId, close: bool },
+    Save {
+        document: DocumentId,
+        close: bool,
+        force: bool,
+        request: RequestStamp,
+    },
 }
 
 pub(crate) struct LspState {

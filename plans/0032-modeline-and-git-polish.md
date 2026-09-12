@@ -32,6 +32,10 @@ primary content. Borrow the hierarchy, not its font-dependent icons or agent UI.
    dirty/read-only/multicursor/diagnostic signals and the existing preview/message
    precedence. Adapt by display-cell width; essential live status and position must
    not disappear behind a long path. A last content line reports 100 percent.
+   0051 extends the mode segment to the effective input owner (`FILES INSERT`,
+   `REPLACE NORMAL`, and prompt owners) without changing the underlying buffer
+   mode. Source indentation and safety state take priority over secondary context;
+   split panes share identity-strip geometry with their caret/content layout.
 2. Keep all Git surfaces real buffers with unchanged text, motions, search and yank.
    Emphasize commit subjects, quiet metadata, and make the current log/file row clear.
    Improve diff bands and file hierarchy without adding modal controls or fake rows.

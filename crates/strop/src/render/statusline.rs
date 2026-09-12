@@ -46,7 +46,7 @@ const MIN_GROUP: usize = 4;
 const MIN_STATUS: usize = 3;
 
 pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
-    if area.width == 0 || area.height == 0 {
+    if area.width == 0 || area.height == 0 || editor.panes.is_empty() {
         return; // a 0-sized resize must not underflow (0027 §2)
     }
     let cells = area.width as usize;
@@ -86,6 +86,7 @@ struct Modeline {
     line: usize,
     col: usize,
     percent: Option<usize>,
+    indent: String,   // "Spaces:4" — the effective setting (0051 R08)
     bare: bool,       // degenerate layout: mode accent · position only
     bare_chip: usize, // cells the chip may occupy in that layout
 }
@@ -121,7 +122,21 @@ impl Modeline {
                 .unwrap_or_default(),
         };
         Self {
-            chip: format!(" {} ", editor.mode.chip()),
+            chip: if let Some(glue) = editor.picker.as_ref() {
+                format!(
+                    " {} {} ",
+                    glue.picker.kind.title().trim().to_uppercase(),
+                    if glue.picker.input_normal() {
+                        "NORMAL"
+                    } else {
+                        "INSERT"
+                    }
+                )
+            } else if let Some(sigil) = editor.pending_sigil() {
+                format!(" {sigil} INPUT ")
+            } else {
+                format!(" {} ", editor.mode.chip())
+            },
             accent: mode_color(editor.mode),
             git_context: printable(git_context),
             worktree_dirty: commit.is_none()
@@ -129,7 +144,7 @@ impl Modeline {
             staged_mark: commit.is_none() && !editor.staged_hunks.is_empty(),
             dir: printable(dir),
             name: printable(name),
-            dirty: buf.dirty,
+            dirty: buf.dirty || editor.collection_unsaved(editor.current()),
             readonly: buf.readonly,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
             status: printable(transient(editor)),
@@ -139,6 +154,7 @@ impl Modeline {
             line,
             col,
             percent: Some(percent),
+            indent: editor.indent_label(),
             bare: false,
             bare_chip: 0,
         }
@@ -175,19 +191,17 @@ impl Modeline {
         if self.used() <= cells {
             return;
         }
-        self.multicursor = None;
-        if self.used() <= cells {
-            return;
-        }
-        self.readonly = false;
-        if self.used() <= cells {
-            return;
-        }
         self.percent = None;
         if self.used() <= cells {
             return;
         }
         self.show_diag = false;
+        if self.used() <= cells {
+            return;
+        }
+        // R06's essential tail is mode · indentation · position: the
+        // indent segment yields only to the incompressible ends.
+        self.indent.clear();
         if self.used() <= cells {
             return;
         }
@@ -228,25 +242,11 @@ impl Modeline {
     /// (clipped from the end, whole graphemes only), then whichever
     /// signals still fit behind it.
     fn fit_file(&mut self, budget: usize) {
-        if width(&self.name) > budget {
-            self.name = clip_end(&self.name, budget).into_owned();
-        }
-        let mut room = budget.saturating_sub(width(&self.name));
-        if self.dirty && room >= 2 {
-            room -= 2;
-        } else {
-            self.dirty = false;
-        }
-        if self.readonly && room >= 5 {
-            room -= 5;
-        } else {
-            self.readonly = false;
-        }
-        if let Some(mark) = self.multicursor.as_ref() {
-            if room < 1 + width(mark) {
-                self.multicursor = None;
-            }
-        }
+        let reserved = 2 * usize::from(self.dirty)
+            + 5 * usize::from(self.readonly)
+            + self.multicursor.as_ref().map_or(0, |mark| 1 + width(mark));
+        let name_budget = budget.saturating_sub(reserved);
+        self.name = clip_end(&self.name, name_budget).into_owned();
     }
 
     /// Degenerate widths: not even the accent, a separator and the
@@ -254,6 +254,16 @@ impl Modeline {
     /// the row between them — never an empty row.
     fn ultra(&mut self, cells: usize) {
         self.git_context.clear();
+        // Even at degenerate widths, put safety before decorative mode text.
+        let safety = format!(
+            "{}{}{}",
+            if self.dirty { "*" } else { "" },
+            if self.readonly { "RO" } else { "" },
+            self.multicursor.as_deref().unwrap_or("")
+        );
+        if !safety.is_empty() {
+            self.chip = format!("{safety} {}", self.chip.trim());
+        }
         self.dir.clear();
         self.name.clear();
         self.status.clear();
@@ -262,6 +272,7 @@ impl Modeline {
         self.multicursor = None;
         self.percent = None;
         self.show_diag = false;
+        self.indent.clear();
         self.bare = true;
         let pos_budget = self.position_width().min((cells / 2).max(MIN_GROUP));
         self.bare_chip = cells.saturating_sub(pos_budget);
@@ -293,7 +304,12 @@ impl Modeline {
                 + usize::from(self.worktree_dirty)
                 + usize::from(self.staged_mark);
         }
-        if !self.dir.is_empty() || !self.name.is_empty() {
+        if !self.dir.is_empty()
+            || !self.name.is_empty()
+            || self.dirty
+            || self.readonly
+            || self.multicursor.is_some()
+        {
             left += SEP_W + self.file_w();
         }
         let mut right = self.position_width();
@@ -313,6 +329,9 @@ impl Modeline {
                     0
                 }
                 + usize::from(self.errors > 0 && self.warnings > 0);
+        }
+        if !self.indent.is_empty() {
+            right += SEP_W + width(&self.indent);
         }
         left + GAP + right
     }
@@ -375,7 +394,12 @@ impl Modeline {
                 left.push(Span::styled("+", Style::default().fg(HELD)));
             }
         }
-        if !self.dir.is_empty() || !self.name.is_empty() {
+        if !self.dir.is_empty()
+            || !self.name.is_empty()
+            || self.dirty
+            || self.readonly
+            || self.multicursor.is_some()
+        {
             left.push(Span::styled(SEP, quiet));
             left.extend(self.file_spans());
         }
@@ -405,6 +429,15 @@ impl Modeline {
                     Style::default().fg(severity_color(Severity::Warning)),
                 ));
             }
+        }
+        if !self.indent.is_empty() {
+            if !right.is_empty() {
+                right.push(Span::styled(SEP, quiet));
+            }
+            right.push(Span::styled(
+                self.indent.as_str(),
+                Style::default().fg(MUTED),
+            ));
         }
         if !right.is_empty() {
             right.push(Span::styled(SEP, quiet));
@@ -570,5 +603,6 @@ fn transient(editor: &Editor) -> String {
         })
         .or_else(|| editor.io_status().map(str::to_owned))
         .or_else(|| (!editor.message.is_empty()).then(|| editor.message.clone()))
+        .or_else(|| editor.directory_visibility_summary().map(str::to_owned))
         .unwrap_or_default()
 }

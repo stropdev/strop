@@ -161,3 +161,87 @@ fn cancellation_does_not_discard_a_save_receipt_already_queued() {
     );
     assert_eq!(editor.buf().text(), "before draft\n");
 }
+
+fn publish_rank(editor: &mut Editor) {
+    let glue = editor.picker.as_ref().unwrap();
+    let ticket = glue.rank_pending.clone().unwrap();
+    let ranking = strop_picker::rank::rank(&glue.picker.filter_request(), || false)
+        .unwrap()
+        .unwrap();
+    editor.handle_picker_ranking(crate::editor::picker::ranking::Event {
+        picker: glue.id,
+        update: strop_picker::RankingEvent::Completed(Completion {
+            ticket,
+            outcome: Outcome::Success(ranking),
+        }),
+    });
+}
+
+fn remote_collection(editor: &mut Editor) -> DocumentId {
+    editor.open_picker(strop_picker::Kind::Grep);
+    publish_rank(editor);
+    editor
+        .picker
+        .as_mut()
+        .unwrap()
+        .picker
+        .append(vec![strop_picker::Item {
+            badge: None,
+            text: "remote source".into(),
+            payload: strop_picker::Payload::Remote {
+                endpoint: strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
+                path: "/work/file.txt".into(),
+                line: 1,
+                col: 1,
+            },
+        }]);
+    // The fixture tape suppresses native actors. Publish the real pure
+    // ranker's result through its registered owner, rather than waiting
+    // for an intentionally unlaunched worker.
+    editor.request_picker_ranking();
+    publish_rank(editor);
+    editor.feed(Key::CtrlO);
+    editor.current()
+}
+
+#[test]
+fn collection_write_and_quit_waits_for_the_remote_receipt() {
+    let mut editor = fixture(ReadSelection::Full);
+    enable(&mut editor);
+    let source = editor.current();
+    editor.feed_text("A draft<esc>");
+    let collection = remote_collection(&mut editor);
+    editor.feed_text(":wq<cr>");
+    assert_eq!(editor.current(), collection);
+    let ticket = editor.remote.writes.pending[&source].clone();
+    let saved = receipt(&editor, &ticket);
+    editor.remote_write_done(Completion {
+        ticket,
+        outcome: Outcome::Success(RemoteWriteResult::Saved(saved)),
+    });
+    assert!(
+        editor.docs.get(collection).is_none(),
+        "confirmed source write closes the view"
+    );
+    assert!(editor.docs.get(source).is_some_and(|doc| !doc.buf.dirty));
+}
+
+#[test]
+fn refused_collection_save_cannot_close_on_an_unrelated_old_receipt() {
+    let mut editor = fixture(ReadSelection::Full);
+    enable(&mut editor);
+    let source = editor.current();
+    editor.feed_text("A draft<esc>");
+    editor.request_save(None, false, false);
+    let ticket = editor.remote.writes.pending[&source].clone();
+    let saved = receipt(&editor, &ticket);
+    let collection = remote_collection(&mut editor);
+    editor.feed_text(":wq<cr>");
+    assert!(editor.message.contains("pending"), "{}", editor.message);
+    editor.remote_write_done(Completion {
+        ticket,
+        outcome: Outcome::Success(RemoteWriteResult::Saved(saved)),
+    });
+    assert_eq!(editor.current(), collection);
+    assert!(editor.docs.get(collection).is_some());
+}

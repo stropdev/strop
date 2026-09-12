@@ -341,6 +341,21 @@ impl History {
         self.revisions.len()
     }
 
+    /// Stable node identity only when no uncommitted edits are pending.
+    /// Unlike depth or the monotonic buffer revision, this identifies a
+    /// restored branch position after undo without accepting another branch.
+    pub fn committed_position(&self) -> Option<usize> {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|(undo, _)| !undo.is_empty())
+        {
+            None
+        } else {
+            Some(self.current)
+        }
+    }
+
     /// Persist only the newest linear undo path, bounded before cloning text.
     /// Branches remain in memory. If the newest transaction exceeds the byte
     /// limit, no history is retained: skipping it would make older edits invalid.

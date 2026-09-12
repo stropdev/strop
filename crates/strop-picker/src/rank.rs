@@ -57,6 +57,18 @@ impl<'de> serde::Deserialize<'de> for Ranking {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum MatchMode {
+    Fuzzy(crate::query::CaseMode),
+    Exact(Arc<crate::query::ContentExpr>, crate::query::CaseMode),
+}
+
+impl Default for MatchMode {
+    fn default() -> Self {
+        Self::Fuzzy(crate::query::CaseMode::Smart)
+    }
+}
+
 #[derive(Clone)]
 pub struct FilterRequest {
     pub catalog: Catalog,
@@ -67,13 +79,30 @@ pub struct FilterRequest {
     /// report: filtering hid the only way to enter a new destination).
     /// Pinned rows score 0: real matches always rank above them.
     pub pinned_tail: usize,
+    pub mode: MatchMode,
 }
 
 /// Shared by the actor, hermetic oracles and the scoring benchmark. Pattern
 /// parsing and Unicode scratch allocation are per pass, not per candidate.
-pub fn rank(request: &FilterRequest, cancelled: impl Fn() -> bool) -> Option<Ranking> {
-    let pattern = Pattern::parse(&request.query, CaseMatching::Smart, Normalization::Smart);
-    let mut matcher = nucleo_matcher::Matcher::new(nucleo_matcher::Config::DEFAULT);
+pub fn rank(
+    request: &FilterRequest,
+    cancelled: impl Fn() -> bool,
+) -> Result<Option<Ranking>, crate::query::QueryDiagnostic> {
+    if cancelled() {
+        return Ok(None);
+    }
+    let exact = match &request.mode {
+        MatchMode::Exact(expression, case) => Some(crate::query::ContentPlan::compile_expression(
+            expression, *case,
+        )?),
+        _ => None,
+    };
+    let case = match request.mode {
+        MatchMode::Fuzzy(crate::query::CaseMode::Sensitive) => CaseMatching::Respect,
+        MatchMode::Fuzzy(crate::query::CaseMode::Ignore) => CaseMatching::Ignore,
+        _ => CaseMatching::Smart,
+    };
+    let mut fuzzy = None;
     let mut unicode = Vec::new();
     let mut matched = Vec::new();
     let mut ranking = Ranking {
@@ -83,14 +112,34 @@ pub fn rank(request: &FilterRequest, cancelled: impl Fn() -> bool) -> Option<Ran
     let pinned_from = request.catalog.len().saturating_sub(request.pinned_tail);
     for (index, item) in request.catalog.iter().enumerate() {
         if index % 128 == 0 && cancelled() {
-            return None;
+            return Ok(None);
         }
         let start = ranking.columns.len();
         matched.clear();
         let score = if index >= pinned_from || request.upstream_filtered || request.query.is_empty()
         {
             Some(0)
+        } else if let Some(regex) = &exact {
+            let mut found = false;
+            for hit in regex.find_iter(&item.text) {
+                found = true;
+                let first = item.text[..hit.start()].chars().count();
+                let length = item.text[hit.start()..hit.end()].chars().count();
+                matched.extend((first..first + length).map(|column| column as u32));
+            }
+            found.then_some(1)
         } else {
+            let (pattern, matcher) = fuzzy.get_or_insert_with(|| {
+                (
+                    Pattern::new(
+                        &request.query,
+                        case,
+                        Normalization::Smart,
+                        nucleo_matcher::pattern::AtomKind::Fuzzy,
+                    ),
+                    nucleo_matcher::Matcher::new(nucleo_matcher::Config::DEFAULT),
+                )
+            });
             let text = if item.text.is_ascii() {
                 nucleo_matcher::Utf32Str::Ascii(item.text.as_bytes())
             } else {
@@ -98,7 +147,7 @@ pub fn rank(request: &FilterRequest, cancelled: impl Fn() -> bool) -> Option<Ran
                 unicode.extend(item.text.chars());
                 nucleo_matcher::Utf32Str::Unicode(&unicode)
             };
-            pattern.indices(text, &mut matcher, &mut matched)
+            pattern.indices(text, matcher, &mut matched)
         };
         if let Some(score) = score {
             ranking.columns.extend_from_slice(&matched);
@@ -112,14 +161,14 @@ pub fn rank(request: &FilterRequest, cancelled: impl Fn() -> bool) -> Option<Ran
         }
     }
     if cancelled() {
-        return None;
+        return Ok(None);
     }
     if !request.upstream_filtered && !request.query.is_empty() {
         ranking
             .rows
             .sort_unstable_by(|a, b| b.score.cmp(&a.score).then(a.item.cmp(&b.item)));
     }
-    (!cancelled()).then_some(ranking)
+    Ok((!cancelled()).then_some(ranking))
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -187,8 +236,11 @@ impl<K: Send + 'static> RankingWorker<K> {
                         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             rank(&work.request, cancelled)
                         })) {
-                            Ok(Some(ranking)) => Outcome::Success(ranking),
-                            Ok(None) => Outcome::Cancelled(CancelReason::Superseded),
+                            Ok(Ok(Some(ranking))) => Outcome::Success(ranking),
+                            Ok(Ok(None)) => Outcome::Cancelled(CancelReason::Superseded),
+                            Ok(Err(diagnostic)) => {
+                                Outcome::failed(FailureKind::Protocol, diagnostic.message)
+                            }
                             Err(_) => Outcome::failed(FailureKind::Panic, "picker ranking failed"),
                         };
                     if !emit(RankingEvent::Completed(Completion {
@@ -206,6 +258,10 @@ impl<K: Send + 'static> RankingWorker<K> {
             latest,
             closed,
         })
+    }
+    /// Revoke the current CPU pass without enqueueing another catalog snapshot.
+    pub fn cancel_pending(&self) {
+        self.latest.fetch_add(1, Ordering::AcqRel);
     }
     pub fn submit(&self, ticket: Ticket<K>, request: FilterRequest) -> io::Result<()> {
         self.latest.store(ticket.request.get(), Ordering::Release);

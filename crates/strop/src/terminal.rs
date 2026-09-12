@@ -265,6 +265,8 @@ fn key_from_event(ev: crossterm::event::KeyEvent) -> Option<editor::Key> {
         KeyCode::Char('6') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlCaret,
         KeyCode::Char('\x1e') => Key::CtrlCaret,
         KeyCode::Char('\x04') => Key::CtrlD,
+        KeyCode::Char(' ') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlSpace,
+        KeyCode::Null | KeyCode::Char('\0') => Key::CtrlSpace,
         KeyCode::Char('o') if ev.modifiers.contains(KeyModifiers::CONTROL) => Key::CtrlO,
         KeyCode::Char('\x0f') => Key::CtrlO,
         KeyCode::Backspace => Key::Backspace,
@@ -452,6 +454,24 @@ mod tests {
             editor.buf().text().to_string(),
             "writewrit",
             "x deleted a char"
+        );
+    }
+    #[test]
+    fn legacy_nul_opens_query_suggestions_in_the_real_input_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = crate::editor::Editor::new_in(
+            strop_core::Buffer::from_text(""),
+            dir.path().to_path_buf(),
+        );
+        editor.open_picker(strop_picker::Kind::Files);
+        editor.feed_text("lang");
+        for event in expanded(expand_key_event(key(KeyCode::Null, KeyModifiers::NONE))) {
+            editor.handle_app_event(event);
+        }
+        editor.feed(crate::editor::Key::Enter);
+        assert_eq!(
+            editor.picker.as_ref().unwrap().picker.input.text,
+            "language:"
         );
     }
 }

@@ -14,6 +14,10 @@ use strop_core::{Buffer, BufferSeed};
 use crate::editor::document::DocumentSource;
 use crate::editor::{Document, Editor, LayoutDir, Pane};
 
+// 0.29 changes query interpretation and delimiter matching. Old input must
+// never be silently replayed under the new semantics; metadata export is separate.
+const SEMANTIC_VERSION: u32 = 1;
+
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.
 #[derive(Serialize, Deserialize)]
@@ -24,6 +28,8 @@ struct DocSeed {
 
 #[derive(Serialize, Deserialize)]
 pub struct Seed {
+    #[serde(default)]
+    semantic_version: u32,
     documents: ArenaSeed<DocSeed>,
     panes: Vec<Pane>,
     mru: Vec<DocumentId>,
@@ -45,6 +51,15 @@ pub struct Seed {
 }
 
 impl Seed {
+    fn validate_semantics(&self) -> io::Result<()> {
+        if self.semantic_version != SEMANTIC_VERSION {
+            return Err(io::Error::other(format!(
+                "unsupported editor semantics version {}; expected {SEMANTIC_VERSION}; re-record with this version",
+                self.semantic_version)));
+        }
+        Ok(())
+    }
+
     /// Capture the startup state. This is only legal at the seed boundary:
     /// pickers, LSP servers, git surfaces and in-flight discovery mean
     /// services already started and the recording is not a full replay.
@@ -62,6 +77,7 @@ impl Seed {
             return Err(io::Error::other("seed must precede service startup"));
         }
         Ok(Self {
+            semantic_version: SEMANTIC_VERSION,
             documents: editor.docs.seed_with(|document| DocSeed {
                 buffer: document.buf.seed(),
                 file: matches!(document.source, DocumentSource::File),
@@ -87,6 +103,7 @@ impl Seed {
     /// Input-only extraction begins with the active startup document, not
     /// a lazily emitted diagnostic snapshot after the first key.
     pub fn input_text(&self) -> io::Result<&str> {
+        self.validate_semantics()?;
         let pane = self
             .panes
             .get(self.active)
@@ -104,6 +121,7 @@ impl Seed {
     /// Rebuild the editor: same identities, same revisions, same history,
     /// pure `new_in` construction, the given tape installed.
     pub fn into_editor(self, tape: std::rc::Rc<strop_trace::replay::Tape>) -> io::Result<Editor> {
+        self.validate_semantics()?;
         let mut slots = Vec::with_capacity(self.documents.slots.len());
         for (generation, value) in self.documents.slots {
             let document = value
@@ -165,5 +183,26 @@ impl Seed {
         editor.message = self.message;
         editor.tape = tape;
         Ok(editor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_input_capture_is_not_reinterpreted_as_the_new_query_language() {
+        let editor = Editor::new_in(Buffer::from_text("seed\n"), PathBuf::from("/virtual"));
+        let mut serialized = serde_json::to_value(Seed::capture(&editor).unwrap()).unwrap();
+        serialized
+            .as_object_mut()
+            .unwrap()
+            .remove("semantic_version");
+        let legacy: Seed = serde_json::from_value(serialized).unwrap();
+        assert!(legacy
+            .input_text()
+            .unwrap_err()
+            .to_string()
+            .contains("editor semantics"));
     }
 }

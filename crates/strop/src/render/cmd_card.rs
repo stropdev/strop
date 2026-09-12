@@ -63,14 +63,27 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
 
     // body: the payload, not the prefix — ":w" shows "w", "/foo" shows "foo"
     let body = pending.strip_prefix(kind).unwrap_or(pending);
-    let mut spans = vec![
-        Span::styled(
-            format!("{kind} "),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(body.to_string(), Style::default().fg(TEXT)),
-        Span::styled("▏", Style::default().fg(ACCENT)),
-    ];
+    let text_area = Rect {
+        x: inner.x.saturating_add(1),
+        y: inner.y,
+        width: inner.width.saturating_sub(1),
+        height: inner.height.min(1),
+    };
+    let caret_byte = editor
+        .pending
+        .cursor()
+        .saturating_sub(kind.len_utf8())
+        .min(body.len());
+    let field = super::field::project(
+        &kind.to_string(),
+        body,
+        caret_byte,
+        true,
+        text_area.width,
+        &[],
+    );
+    let caret = field.cursor;
+    let mut spans = field.line.spans;
 
     // search rides with a live match count
     if matches!(kind, '/' | '?') {
@@ -90,12 +103,6 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         spans.push(Span::styled(label, Style::default().fg(MUTED)));
     }
 
-    let text_area = Rect {
-        x: inner.x + 1,
-        y: inner.y,
-        width: inner.width.saturating_sub(1),
-        height: 1,
-    };
     frame.render_widget(Paragraph::new(Line::from(spans)), text_area);
 
     // completion rows: first candidate accent (Tab cycles to it), the
@@ -127,14 +134,9 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         );
     }
 
-    // caret goes in the card, not the buffer
-    let caret_byte = editor.pending.cursor().saturating_sub(1).min(body.len());
-    let layout = strop_core::layout::LineLayout::build(body, editor.config.tab_size);
-    let caret_x = usize::from(text_area.x) + 2 + layout.cell_at_byte(caret_byte).get();
-    let right = usize::from(text_area.x) + usize::from(text_area.width);
-    if caret_x < right {
-        if let Ok(caret_x) = u16::try_from(caret_x) {
-            crate::render::frame_capture::place_cursor(frame, (caret_x, text_area.y));
+    if let Some(column) = caret {
+        if column < text_area.width && text_area.height != 0 {
+            crate::render::frame_capture::place_cursor(frame, (text_area.x + column, text_area.y));
         }
     }
 }

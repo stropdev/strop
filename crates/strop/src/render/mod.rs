@@ -36,6 +36,9 @@ pub const ACCENT: Color = Color::Rgb(0xf0, 0xa3, 0x5e);
 pub const PREVIEW_BG: Color = Color::Rgb(0x4a, 0x33, 0x1c); // accent, dimmed
 pub const FLASH_BG: Color = Color::Rgb(0x6b, 0x47, 0x22); // accent, stronger
 pub const SELECT_BG: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
+/// Matching-delimiter overlay (0051 §7 R09): quiet — a slate wash one
+/// step above the selection, never the accent's urgency.
+pub const PAIR_BG: Color = Color::Rgb(0x3a, 0x3d, 0x4d);
 /// Useful secondary context (0050 §4): between TEXT and MUTED.
 pub const SECONDARY: Color = Color::Rgb(0x9b, 0xa0, 0xb1);
 
@@ -91,8 +94,13 @@ pub(crate) fn syntax_style(span: &strop_syntax::Span) -> Style {
     style
 }
 
+mod field;
+
 pub fn render(editor: &mut Editor, frame: &mut Frame) {
     let area = frame.area();
+    if editor.panes.is_empty() {
+        return;
+    }
     // pane geometry (heights feed the vertical viewport, widths the
     // horizontal origin) is decided per pane inside render_panes —
     // the full-area numbers were wrong in splits (0031 R6)

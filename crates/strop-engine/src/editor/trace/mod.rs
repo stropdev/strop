@@ -74,6 +74,7 @@ pub fn replay_token(key: Key) -> String {
         Key::Char('>') => "<gt>".into(),
         Key::Char(c) => c.to_string(),
         Key::Esc => "<esc>".into(),
+        Key::CtrlSpace => "<c-space>".into(),
         Key::Enter => "<cr>".into(),
         Key::Backspace => "<bs>".into(),
         Key::Up => "<up>".into(),

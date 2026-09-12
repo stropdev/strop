@@ -73,11 +73,13 @@ fn auto_format_chains_the_save_after_formatting() {
     // formatting happens, then the write (helix's auto-format).
     let dir = tempfile::tempdir().unwrap();
     let (mut e, document) = file_editor(&dir, "chain.txt", "hello   world\n");
+    let context = arm(&mut e, document, 1, RequestKind::Format);
     e.lsp_state.after_format = Some(crate::editor::lsp::state::AfterFormat::Save {
         document,
         close: false,
+        force: false,
+        request: context.stamp,
     });
-    let context = arm(&mut e, document, 1, RequestKind::Format);
     e.handle_app_event(AppEvent::Lsp(LspEvent::Edits {
         context,
         edits: vec![edit(0, 0, 0, 13, "hello world")],
@@ -94,11 +96,13 @@ fn auto_format_chains_the_save_after_formatting() {
 fn auto_format_chains_the_save_when_already_formatted() {
     let dir = tempfile::tempdir().unwrap();
     let (mut e, document) = file_editor(&dir, "chain2.txt", "hello world\n");
+    let context = arm(&mut e, document, 1, RequestKind::Format);
     e.lsp_state.after_format = Some(crate::editor::lsp::state::AfterFormat::Save {
         document,
         close: false,
+        force: false,
+        request: context.stamp,
     });
-    let context = arm(&mut e, document, 1, RequestKind::Format);
     e.handle_app_event(AppEvent::Lsp(LspEvent::Edits {
         context,
         edits: Vec::new(),
@@ -116,11 +120,13 @@ fn auto_format_chains_the_save_on_formatter_refusal() {
     // A refused/failed format never holds the save hostage.
     let dir = tempfile::tempdir().unwrap();
     let (mut e, document) = file_editor(&dir, "chain3.txt", "hello world\n");
+    let context = arm(&mut e, document, 1, RequestKind::Format);
     e.lsp_state.after_format = Some(crate::editor::lsp::state::AfterFormat::Save {
         document,
         close: false,
+        force: false,
+        request: context.stamp,
     });
-    let context = arm(&mut e, document, 1, RequestKind::Format);
     e.handle_app_event(AppEvent::Lsp(LspEvent::Note {
         context,
         text: "format is not supported by this language server".into(),
@@ -130,6 +136,7 @@ fn auto_format_chains_the_save_on_formatter_refusal() {
         std::fs::read_to_string(dir.path().join("chain3.txt")).unwrap(),
         "hello world\n"
     );
+    assert!(e.message.contains("format warning") && e.message.contains("not supported"));
 }
 
 #[test]
@@ -310,4 +317,33 @@ fn grouped_undo_skips_buffers_edited_since_the_receipt() {
         e.docs.get(first).unwrap().buf.text().to_string(),
         "alpha here\n"
     );
+}
+
+#[test]
+fn a_stale_formatter_does_not_save_newer_user_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut editor, document) = file_editor(&dir, "typing.txt", "original\n");
+    let context = arm(&mut editor, document, 1, RequestKind::Format);
+    editor.lsp_state.after_format = Some(crate::editor::lsp::state::AfterFormat::Save {
+        document,
+        close: false,
+        force: false,
+        request: context.stamp,
+    });
+    editor.feed_text("iNEW <esc>");
+    editor.handle_app_event(AppEvent::Lsp(LspEvent::Edits {
+        context,
+        edits: vec![edit(0, 0, 0, 8, "formatted")],
+    }));
+    editor.wait_io().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("typing.txt")).unwrap(),
+        "original\n"
+    );
+    assert_eq!(
+        editor.doc(document).buf.text().to_string(),
+        "NEW original\n"
+    );
+    assert!(editor.doc(document).buf.dirty);
+    assert!(editor.message.contains("write not started"));
 }

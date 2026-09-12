@@ -1,5 +1,7 @@
 use crate::editor::Editor;
 use strop_core::Buffer;
+#[path = "buffer/matching_tests.rs"]
+mod matching;
 
 #[test]
 fn cursor_line_shows_eol_diagnostic() {
@@ -233,19 +235,17 @@ fn collection_view_gutters_source_line_numbers() {
     let mut e = Editor::new(Buffer::from_text("scratch\n"));
     e.open_fixture(&a).unwrap();
     e.open_picker(strop_picker::Kind::Grep);
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(vec![strop_picker::Item {
-            badge: None,
-            text: "a.txt:3".into(),
-            payload: strop_picker::Payload::Grep {
-                path: a.clone(),
-                line: 3,
-                col: 1,
-                match_len: 5,
-                line_text: "alpha three".into(),
-            },
-        }]);
-    }
+    e.picker_items_fixture(vec![strop_picker::Item {
+        badge: None,
+        text: "a.txt:3".into(),
+        payload: strop_picker::Payload::Grep {
+            path: a.clone(),
+            line: 3,
+            col: 1,
+            match_len: 5,
+            line_text: "alpha three".into(),
+        },
+    }]);
     e.feed(crate::editor::Key::CtrlO);
     assert_eq!(
         e.buf().name.as_deref(),
@@ -258,7 +258,10 @@ fn collection_view_gutters_source_line_numbers() {
     // the gutter's number cell (after the sign bar) is the first cells
     // of the row: blank on chrome rows, the source line on body rows
     let gutter1: String = row_symbols(grid, 0, 1, 4).concat();
-    let gutter2: String = row_symbols(grid, 0, 2, 4).concat();
+    let source_row =
+        e.buf()
+            .line_of(e.buf().text().to_string().find("alpha three").unwrap()) as u16;
+    let gutter2: String = row_symbols(grid, 0, source_row, 4).concat();
     assert!(
         gutter1.trim().is_empty(),
         "header row has no line number: {gutter1:?}"
@@ -267,7 +270,7 @@ fn collection_view_gutters_source_line_numbers() {
         gutter2.trim().ends_with('3'),
         "body rows gutter the source line: {gutter2:?}"
     );
-    let row2: String = row_symbols(grid, 0, 2, 20).concat();
+    let row2: String = row_symbols(grid, 0, source_row, 20).concat();
     assert!(row2.contains("alpha three"), "{row2:?}");
 }
 
@@ -286,19 +289,17 @@ fn collection_bodies_project_syntax_and_paint_hits() {
     let mut e = Editor::new(Buffer::from_text("scratch\n"));
     e.open_fixture(&a).unwrap();
     e.open_picker(strop_picker::Kind::Grep);
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(vec![strop_picker::Item {
-            badge: None,
-            text: "a.rs:1 · fn send_request".into(),
-            payload: strop_picker::Payload::Grep {
-                path: a.clone(),
-                line: 1,
-                col: 4,
-                match_len: 12,
-                line_text: "fn send_request(retries: u32) -> bool {".into(),
-            },
-        }]);
-    }
+    e.picker_items_fixture(vec![strop_picker::Item {
+        badge: None,
+        text: "a.rs:1 · fn send_request".into(),
+        payload: strop_picker::Payload::Grep {
+            path: a.clone(),
+            line: 1,
+            col: 4,
+            match_len: 12,
+            line_text: "fn send_request(retries: u32) -> bool {".into(),
+        },
+    }]);
     e.feed(crate::editor::Key::CtrlO);
     let mut terminal = viewport_terminal(60, 8);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
@@ -381,20 +382,20 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
         (0, 11)
     );
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 5, 0, 10),
+        row_symbols(terminal.backend().buffer(), 5, 1, 10),
         ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
     );
     // the inactive pane's saved cursor (head 3 → cell 3) paints a
     // muted block, pane-local, through its own zero origin
     assert_eq!(
-        terminal.backend().buffer()[(8, 0)].bg,
+        terminal.backend().buffer()[(8, 1)].bg,
         ratatui::style::Color::Rgb(0x3a, 0x3d, 0x4d)
     );
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 21, 0, 10),
+        row_symbols(terminal.backend().buffer(), 21, 1, 10),
         ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]
     );
-    terminal.backend_mut().assert_cursor_position((30, 0));
+    terminal.backend_mut().assert_cursor_position((30, 1));
     e.active_pane = 0;
     e.set_head(25);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
@@ -403,7 +404,7 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
         (16, 11)
     );
     assert_eq!(
-        terminal.backend().buffer()[(30, 0)].bg,
+        terminal.backend().buffer()[(30, 1)].bg,
         ratatui::style::Color::Rgb(0x3a, 0x3d, 0x4d)
     );
     terminal.backend_mut().resize(21, 5);
@@ -412,22 +413,22 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
         (21, 11)
     );
-    terminal.backend_mut().assert_cursor_position((9, 0));
+    terminal.backend_mut().assert_cursor_position((9, 1));
     e.active_pane = 1;
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
         (21, 16)
     );
-    terminal.backend_mut().assert_cursor_position((20, 0));
+    terminal.backend_mut().assert_cursor_position((20, 1));
     terminal.backend_mut().resize(61, 5);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
         (21, 16)
     );
-    assert_eq!(terminal.backend().buffer()[(36, 0)].symbol(), "G");
-    terminal.backend_mut().assert_cursor_position((40, 0));
+    assert_eq!(terminal.backend().buffer()[(36, 1)].symbol(), "G");
+    terminal.backend_mut().assert_cursor_position((40, 1));
 }
 
 #[test]

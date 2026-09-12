@@ -3,6 +3,7 @@
 //! Git-memory surfaces carry their typed payload here; the editor's
 //! surface bookkeeping reads one place.
 
+use super::JumpRecord;
 use crate::editor::git_memory::{CommitFiles, HunkOrigin};
 use strop_git::memory::LogRow;
 use strop_git::Hunk;
@@ -27,8 +28,10 @@ pub enum DocumentSource {
     },
     /// A git-memory surface: job-owned content, readonly.
     Surface(Box<GitSurface>),
-    /// `:!cmd` output / help: named virtual content, readonly.
-    Output,
+    /// `:!cmd` output / help: named virtual content, readonly. The
+    /// return point is where `:q` hands the view back (0051 §7 R07) —
+    /// temporary surfaces restore their origin, not the MRU's line 1.
+    Output { return_to: Option<JumpRecord> },
 }
 
 #[derive(Debug, Clone)]
@@ -44,12 +47,12 @@ pub enum Surface {
         /// Sha to land the cursor on once rows arrive (the blame dive
         /// opens the browser *at* a commit, 0011 §3).
         focus: Option<String>,
-        return_to: Option<ReturnPoint>,
+        return_to: Option<JumpRecord>,
     },
     ChangedFiles {
         sha: String,
         files: crate::editor::git_memory::PreparedFiles,
-        return_to: Option<ReturnPoint>,
+        return_to: Option<JumpRecord>,
     },
     /// A diff as a readonly buffer (0010 §2): the file's delta at a
     /// commit, or the `Space g p` hunk preview. The buffer's rows mirror
@@ -67,7 +70,7 @@ pub enum Surface {
         /// tuicr-style: Tab moves focus between the file sidebar and
         /// the diff content (j/k step files when the sidebar has focus).
         sidebar_focus: bool,
-        return_to: Option<ReturnPoint>,
+        return_to: Option<JumpRecord>,
     },
 }
 
@@ -86,11 +89,11 @@ impl Surface {
         hunks.row(row)
     }
 
-    pub(crate) fn set_return_point(&mut self, ret: ReturnPoint) {
+    pub(crate) fn set_return_point(&mut self, ret: JumpRecord) {
         *self.return_slot() = Some(ret);
     }
 
-    pub(crate) fn return_point(&self) -> Option<&ReturnPoint> {
+    pub(crate) fn return_point(&self) -> Option<&JumpRecord> {
         match self {
             Surface::CommitLog { return_to, .. }
             | Surface::ChangedFiles { return_to, .. }
@@ -98,20 +101,11 @@ impl Surface {
         }
     }
 
-    pub(crate) fn return_slot(&mut self) -> &mut Option<ReturnPoint> {
+    pub(crate) fn return_slot(&mut self) -> &mut Option<JumpRecord> {
         match self {
             Surface::CommitLog { return_to, .. }
             | Surface::ChangedFiles { return_to, .. }
             | Surface::Diff { return_to, .. } => return_to,
         }
     }
-}
-
-/// this, `q` dumps you on line 1).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ReturnPoint {
-    pub buffer: strop_core::id::DocumentId,
-    pub cursor: usize,
-    pub view_top: usize,
-    pub hscroll: strop_core::id::DisplayColumn,
 }

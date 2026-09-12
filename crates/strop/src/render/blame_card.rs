@@ -12,6 +12,9 @@ use crate::editor::Editor;
 use super::{ACCENT, BASE, MUTED, TEXT};
 
 pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
+    if editor.input_owner() != crate::editor::InputOwner::BlameCard {
+        return;
+    }
     let Some(card) = &editor.blame_card else {
         return;
     };

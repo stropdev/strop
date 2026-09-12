@@ -13,6 +13,8 @@ pub mod trace;
 
 pub(crate) mod analysis;
 mod changes;
+pub use changes::review::ReviewRow;
+pub use dispatch::InputOwner;
 pub mod collections;
 mod containers;
 mod cursor;
@@ -27,6 +29,7 @@ mod explain;
 mod git;
 mod git_memory;
 mod help;
+mod indent;
 mod input;
 mod insert;
 pub mod io;
@@ -34,6 +37,7 @@ mod jumps;
 pub mod keys;
 mod lsp;
 pub mod macros;
+pub(crate) mod matching;
 #[cfg(test)]
 mod multicursor_tests;
 pub(crate) mod normal;
@@ -118,6 +122,8 @@ pub enum Key {
     CtrlR,
     /// vim's jump-back (ctrl-i forward is Tab in a terminal).
     CtrlO,
+    /// ctrl-space: query suggestions in a query field (0051 R02).
+    CtrlSpace,
     CtrlW,
     /// Replace picker: exclude/include the selected match (0007 §2).
     CtrlX,
@@ -163,10 +169,11 @@ pub struct Editor {
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,
     pub git_mutations: std::collections::VecDeque<git_memory::GitMutation>,
     pub git_mutation: Option<strop_core::worker::Ticket<git_memory::MutationKey>>,
-    /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks of
-    /// (document, byte offset) (jumps.rs).
-    pub jumplist_past: Vec<(strop_core::id::DocumentId, usize)>,
-    pub jumplist_future: Vec<(strop_core::id::DocumentId, usize)>,
+    /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks of named
+    /// navigation/view records — caret, selection, viewport and
+    /// horizontal origin (0051 §7, jumps.rs).
+    pub jumplist_past: Vec<jumps::JumpRecord>,
+    pub jumplist_future: Vec<jumps::JumpRecord>,
     pub mode: Mode,
     pub pending: pending::PendingInput,
     /// The input walker (0008 stage 2): typed parser state for
@@ -496,6 +503,10 @@ impl Editor {
     }
 
     fn feed_inner(&mut self, key: Key) {
+        self.lsp_state.hover = None;
+        if let Some(build) = self.collection_build.as_mut() {
+            build.focus_on_ready = false;
+        }
         self.revoke_shell_focus();
         self.message.clear();
         if key == Key::Esc
@@ -542,7 +553,7 @@ impl Editor {
     /// The current document's indent (config default or detected at
     /// open — resolved eagerly, so reads never rescan).
     pub(crate) fn cur_indent(&self) -> document::Indent {
-        self.cur().indent
+        self.indentation_at(self.current(), self.head())
     }
 
     // ---- shared helpers -------------------------------------------------
@@ -585,6 +596,9 @@ impl Editor {
                             .clamp_boundary(offset.min(self.buf().len_bytes())),
                     );
                     self.clamp_cursor();
+                    // mark jumps use the 0051 §7 landing placement:
+                    // center unless comfortably visible
+                    self.place_jump_target();
                 }
             }
             None => self.message = format!("mark {mark} not set"),

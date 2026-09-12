@@ -195,9 +195,7 @@ mod picker_tests {
         picker.pinned_tail = 1;
         e.set_picker(PickerGlue::diagnostics(picker));
         e.feed_text("ewosd-tt-925");
-        let filter = e.picker.as_ref().unwrap().picker.filter_request();
-        let ranking = strop_picker::rank::rank(&filter, || false).unwrap();
-        e.picker.as_mut().unwrap().picker.install_ranking(ranking);
+        e.wait_picker();
         assert_eq!(
             e.picker
                 .as_ref()
@@ -231,9 +229,7 @@ mod picker_tests {
         );
         picker.pinned_tail = 1;
         e.set_picker(PickerGlue::diagnostics(picker));
-        let filter = e.picker.as_ref().unwrap().picker.filter_request();
-        let ranking = strop_picker::rank::rank(&filter, || false).unwrap();
-        e.picker.as_mut().unwrap().picker.install_ranking(ranking);
+        e.wait_picker();
         e.accept_current_picker();
         assert_eq!(
             e.picker.as_ref().map(|glue| glue.picker.kind),
@@ -253,12 +249,119 @@ mod picker_tests {
             "ssh://user@example.com:2222/tmp/dir"
         );
     }
-}
 
+    /// 0051 §3: the qualifier language end to end — language filter +
+    /// literal content, rows install, accept opens the hit.
+    #[test]
+    fn grep_query_language_end_to_end() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "fn send() {}\nlet x = send;\n").unwrap();
+        std::fs::write(dir.path().join("b.py"), "send = 1\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.cwd = dir.path().to_path_buf();
+        e.open_picker(Kind::Grep);
+        e.feed_text("language:rust send");
+        e.wait_picker();
+        let p = &e.picker.as_ref().unwrap().picker;
+        assert_eq!(p.items.len(), 2, "rust-only hits: {:?}", p.items.len());
+        assert_eq!(p.rows.len(), 2, "rows install for grep hits");
+        assert!(
+            p.items.iter().all(|i| !format!("{i:?}").contains("b.py")),
+            "no python hit leaks through"
+        );
+        e.feed(crate::editor::Key::Enter);
+        assert!(!e.picker_open(), "Enter accepts the first hit");
+    }
+
+    /// An invalid query never broadens the search (0051 §4): no worker
+    /// launches, the diagnostic shows, and previous state stays.
+    #[test]
+    fn invalid_query_never_launches() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "fn send() {}\n").unwrap();
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.cwd = dir.path().to_path_buf();
+        e.open_picker(Kind::Grep);
+        e.feed_text("langauge:rust send");
+        let p = &e.picker.as_ref().unwrap().picker;
+        assert!(
+            p.error
+                .as_ref()
+                .is_some_and(|e| e.contains("unknown qualifier")),
+            "the correction shows: {:?}",
+            p.error
+        );
+        assert_eq!(p.items.len(), 0, "nothing searched");
+    }
+
+    /// 0051 R02: ctrl-space offers manual suggestions from the parse
+    /// position; Enter replaces the exact token span.
+    #[test]
+    fn ctrl_space_suggests_and_enter_completes() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::Grep);
+        e.feed_text("lang");
+        e.feed(crate::editor::Key::CtrlSpace);
+        let glue = e.picker.as_ref().unwrap();
+        let list = glue.suggestions.as_ref().expect("suggestions open");
+        assert_eq!(list.items.len(), 1);
+        assert_eq!(list.items[0].insert, "language:");
+        e.feed(crate::editor::Key::Enter);
+        assert_eq!(
+            e.picker.as_ref().unwrap().picker.input.text,
+            "language:",
+            "the span replaced"
+        );
+        // Esc in the suggestion list dismisses IT, not the picker
+        e.feed(crate::editor::Key::CtrlSpace);
+        e.feed(crate::editor::Key::Esc);
+        assert!(e.picker_open(), "esc dismissed only the list");
+        assert!(e.picker.as_ref().unwrap().suggestions.is_none());
+    }
+
+    /// The replacement With field and non-query fields keep literal
+    /// semantics — no suggestions there.
+    #[test]
+    fn suggestions_stay_out_of_literal_fields() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::Replace);
+        e.feed_text("foo");
+        e.feed(crate::editor::Key::Tab); // With field
+        e.feed_text("lang");
+        e.feed(crate::editor::Key::CtrlSpace);
+        assert!(
+            e.picker.as_ref().unwrap().suggestions.is_none(),
+            "no suggestions in the With field"
+        );
+    }
+
+    /// 0051 R03: the search-options selector shows live values and toggles
+    /// the session default.
+    #[test]
+    fn search_options_toggle_the_session_default() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_search_options();
+        e.wait_picker();
+        let p = &e.picker.as_ref().unwrap().picker;
+        assert!(p.items[0].text.contains("hidden (dotfiles): include"));
+        e.feed(crate::editor::Key::Enter);
+        assert!(!e.config.search_show_hidden, "the toggle flipped");
+        let p = &e.picker.as_ref().unwrap().picker;
+        assert!(p.items[0].text.contains("hidden (dotfiles): exclude"));
+        // and the qualifier still overrides the session default per query
+        e.config.search_show_hidden = true;
+        let policy = strop_picker::SelectionPolicy {
+            hidden: e.config.search_show_hidden,
+            respect_ignore: e.config.search_respect_ignore,
+        };
+        let query = strop_picker::query::SearchQuery::parse("hidden:exclude");
+        let plan = strop_picker::query::FileSelectionPlan::compile(&query).unwrap();
+        assert!(!policy.effective(&plan).hidden, "the query qualifier wins");
+    }
+}
 // Worker lifecycle: injected terminal events (deterministic — no real
 // rg, no sleeps, no HOME assumptions; the supervisor's own decisions
 // are unit-tested in strop-picker).
-#[cfg(test)]
 mod worker_lifecycle_tests {
     use super::super::preview::read_preview;
     use super::super::*;
@@ -281,7 +384,9 @@ mod worker_lifecycle_tests {
 
     fn rank_fixture(e: &mut Editor) {
         let picker = &mut e.picker.as_mut().unwrap().picker;
-        let ranking = strop_picker::rank::rank(&picker.filter_request(), || false).unwrap();
+        let ranking = strop_picker::rank::rank(&picker.filter_request(), || false)
+            .unwrap()
+            .unwrap();
         assert!(picker.install_ranking(ranking));
     }
 

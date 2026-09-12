@@ -4,6 +4,7 @@ pub(super) mod native;
 mod remote;
 #[cfg(test)]
 mod remote_tests;
+mod save;
 use super::{Document, Editor};
 use crate::files::FileTarget;
 use std::collections::HashMap;
@@ -45,10 +46,15 @@ pub enum OpenIntent {
     Replace {
         hits: Vec<(usize, usize, usize, String)>,
         replacement: String,
+        /// The pending replace review this open feeds (0051 §6 R04);
+        /// a stale generation merges nowhere.
+        review: usize,
     },
     /// Open without focus (0044 v2): collection builds load sources in
     /// the background; the picker keeps focus and focus never moves.
-    Background,
+    CollectionSource {
+        owner: WorkerId,
+    },
 }
 impl OpenIntent {
     fn requires_file(&self) -> bool {
@@ -110,6 +116,7 @@ pub struct IoState {
     queued_session: Option<crate::session::SaveRequest>,
     native: HashMap<WorkerId, native::NativeKey>,
     pub session_error: Option<String>,
+    pub(crate) format_warnings: HashMap<DocumentId, String>,
 }
 
 impl Default for IoState {
@@ -125,6 +132,7 @@ impl Default for IoState {
             queued_session: None,
             native: HashMap::new(),
             session_error: None,
+            format_warnings: HashMap::new(),
         }
     }
 }
@@ -215,7 +223,7 @@ impl Editor {
         };
         if !matches!(
             key.intent,
-            OpenIntent::Replace { .. } | OpenIntent::Background
+            OpenIntent::Replace { .. } | OpenIntent::CollectionSource { .. }
         ) {
             self.io.navigation = Some(request);
         }
@@ -300,15 +308,24 @@ impl Editor {
         if self.finishing {
             return false;
         }
-        // Background source loads never take focus, so origin/focus
-        // freshness does not apply (0049 §5: an old load must still
-        // count down the build — cancellation is the cancel path's job,
-        // not a focus accident).
-        if matches!(
-            key.intent,
-            OpenIntent::Replace { .. } | OpenIntent::Background
-        ) {
-            return true;
+        // Background work owns its operation generation, not the current focus.
+        match key.intent {
+            OpenIntent::CollectionSource { owner } => {
+                return !self.docs.is_empty()
+                    && self
+                        .collection_build
+                        .as_ref()
+                        .is_some_and(|build| build.owner == owner)
+            }
+            OpenIntent::Replace { review, .. } => {
+                return !self.docs.is_empty()
+                    && self
+                        .review
+                        .replace
+                        .as_ref()
+                        .is_some_and(|pending| pending.id == review)
+            }
+            _ => {}
         }
         if let OpenIntent::LspLocation { context, .. } = &key.intent {
             if !self.lsp_context_fresh(context) {
@@ -330,24 +347,52 @@ impl Editor {
         }
     }
 
-    /// Indent resolution at open: the config default, or the content's
-    /// own convention when `indent_detect` finds a clear majority.
+    /// Indent resolution (0051 R08): manual override → confident
+    /// detection → config, decided independently for style and width.
+    /// Overrides live on the document, so reloads and config refreshes
+    /// preserve them; a detected Tab style never dictates a width —
+    /// display width falls through to the configured/manual width.
     pub(crate) fn resolve_indent_for(&mut self, document: DocumentId) {
-        let fallback = super::document::Indent {
+        use super::document::{Detection, IndentSource};
+        let detection = if self.config.indent_detect {
+            self.docs.get(document).and_then(|doc| doc.detection)
+        } else {
+            None
+        };
+        let configured = super::document::Indent {
             style: self.config.indent_style,
             width: self.config.tab_size,
+            style_source: IndentSource::Configured,
+            width_source: IndentSource::Configured,
         };
-        let indent = if self.config.indent_detect {
-            self.docs
-                .get(document)
-                .and_then(|doc| super::document::detect_indent(doc.buf.text()))
-                .unwrap_or(fallback)
-        } else {
-            fallback
+        let Some(doc) = self.docs.get_mut(document) else {
+            return;
         };
-        if let Some(doc) = self.docs.get_mut(document) {
-            doc.indent = indent;
-        }
+        let (style, style_source) = match (doc.indent_override.style, detection) {
+            (Some(style), _) => (style, IndentSource::Manual),
+            (None, Some(Detection::Tabs { .. })) => {
+                (crate::config::IndentStyle::Tabs, IndentSource::Detected)
+            }
+            (None, Some(Detection::Spaces { .. })) => {
+                (crate::config::IndentStyle::Spaces, IndentSource::Detected)
+            }
+            (None, _) => (configured.style, IndentSource::Configured),
+        };
+        let (width, width_source) = match (doc.indent_override.width, detection, style_source) {
+            (Some(width), _, _) => (width, IndentSource::Manual),
+            // A detected width is meaningful only with the detected
+            // spaces style it was measured on.
+            (None, Some(Detection::Spaces { width, .. }), IndentSource::Detected) => {
+                (width, IndentSource::Detected)
+            }
+            (None, _, _) => (configured.width, IndentSource::Configured),
+        };
+        doc.indent = super::document::Indent {
+            style,
+            width,
+            style_source,
+            width_source,
+        };
     }
 
     fn finish_open(&mut self, document: DocumentId, intent: OpenIntent) {
@@ -356,17 +401,18 @@ impl Editor {
             OpenIntent::LspLocation { context, position } => {
                 self.finish_lsp_jump(document, position, context)
             }
-            OpenIntent::Replace { hits, replacement } => {
-                let (_, applied, stale) = self.replace_in_buffer(document, &hits, &replacement);
-                self.message = format!("replaced {applied}; {stale} stale matches skipped");
-                if applied > 0 {
-                    self.request_save_document(document, None, true, false);
-                }
-            }
+            // 0051 §6 R04: the loaded target joins the pending review —
+            // verified against its fresh text, never auto-applied and
+            // never auto-saved.
+            OpenIntent::Replace {
+                hits,
+                replacement,
+                review,
+            } => self.complete_replace_open(document, &hits, &replacement, review),
             OpenIntent::Split { vertical } => self.split_document(vertical, document),
             // Background opens never move focus; a pending collection
             // build counts down and assembles when its sources land.
-            OpenIntent::Background => self.collection_source_ready(document),
+            OpenIntent::CollectionSource { owner } => self.collection_source_ready(owner),
             intent => {
                 self.switch_to(document);
                 self.set_head(0);
@@ -410,6 +456,9 @@ impl Editor {
                             .saturating_add(column.get())
                             .min(self.buf().line_end(line));
                         self.set_head(self.buf().clamp_boundary(offset));
+                        // grep/symbol landings use the 0051 §7
+                        // placement: center unless comfortably visible
+                        self.place_jump_target();
                     }
                     _ => {}
                 }
@@ -418,107 +467,6 @@ impl Editor {
                 self.lsp_maybe_attach();
             }
         }
-    }
-
-    pub fn request_save(&mut self, target: Option<PathBuf>, force: bool, close: bool) {
-        // auto_format (helix parity): a plain `:w` formats through the
-        // language server first; the save chains on the reply. A
-        // formatter failure or refusal never holds the save hostage.
-        if self.config.auto_format && target.is_none() && self.lsp_format_available() {
-            self.lsp_state.after_format = Some(crate::editor::lsp::state::AfterFormat::Save {
-                document: self.current(),
-                close,
-            });
-            self.lsp_format();
-            return;
-        }
-        self.request_save_document(self.current(), target, force, close);
-    }
-
-    pub(crate) fn request_save_document(
-        &mut self,
-        document: DocumentId,
-        target: Option<PathBuf>,
-        force: bool,
-        close: bool,
-    ) {
-        if self.docs.get(document).is_some_and(|doc| {
-            matches!(
-                doc.source,
-                super::document::DocumentSource::Remote(_)
-                    | super::document::DocumentSource::RemoteDirectory(_)
-            )
-        }) {
-            self.request_remote_save(document, target, force, close);
-            return;
-        }
-        if target
-            .as_ref()
-            .and_then(|path| path.to_str())
-            .is_some_and(|path| path.starts_with("ssh://"))
-        {
-            self.message = "remote save-as is unsupported; no local fallback".into();
-            return;
-        }
-        if self.io.saves.contains_key(&document) {
-            self.message = "write already in progress".into();
-            return;
-        }
-        let Some(buffer) = self.docs.get(document).map(|doc| &doc.buf) else {
-            return;
-        };
-        let revision = buffer.revision();
-        let target = target.map(|path| self.cwd.join(path));
-        let work = match buffer.prepare_save(target.clone(), force) {
-            Ok(work) => work,
-            Err(error) => {
-                self.message = format!("write failed: {error}");
-                return;
-            }
-        };
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                self.message = error.message;
-                return;
-            }
-        };
-        let ticket = Ticket {
-            request,
-            key: SaveKey {
-                document,
-                revision,
-                focus: self.focus_epoch,
-                close,
-                target,
-                force,
-            },
-        };
-        self.io.saves.insert(document, ticket.clone());
-        self.message = "saving".into();
-        match self.tape.request("io.save", &ticket) {
-            Ok(false) => return,
-            Ok(true) => {}
-            Err(error) => {
-                self.handle_io(IoEvent::Save(Box::new(Completion {
-                    ticket,
-                    outcome: Outcome::failed(FailureKind::Protocol, error.to_string()),
-                })));
-                return;
-            }
-        }
-        let tx = self.io.tx.clone();
-        let handle = worker::spawn(
-            "strop-save",
-            move |outcome| {
-                let _ = tx.send(IoEvent::Save(Box::new(Completion { ticket, outcome })));
-            },
-            move |_| match work.execute() {
-                Ok(receipt) => Outcome::Success(receipt),
-                Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
-            },
-        );
-        self.worker_handles.insert(request, handle);
     }
 
     pub(crate) fn request_session_save(&mut self) {
@@ -594,14 +542,7 @@ impl Editor {
                             self.finish_remote_refresh(key.origin, opened.document);
                             return;
                         }
-                        opened
-                            .document
-                            .set_return_point(super::document::ReturnPoint {
-                                buffer: key.origin,
-                                cursor: self.head(),
-                                view_top: self.view_top(),
-                                hscroll: self.view().hscroll,
-                            });
+                        opened.document.set_return_point(self.jump_record());
                         let existing = self.docs.iter().find_map(|(id, document)| {
                             (document.matches_target(&opened.canonical)
                                 && document
@@ -627,7 +568,10 @@ impl Editor {
                             // Background loads never steal the view: the
                             // pristine scratch stays until a foreground
                             // open or the built collection replaces it.
-                            let takes_focus = !matches!(key.intent, OpenIntent::Background);
+                            let takes_focus = !matches!(
+                                key.intent,
+                                OpenIntent::CollectionSource { .. } | OpenIntent::Replace { .. }
+                            );
                             // A first open on an endpoint binds its workspace
                             // context (0042 slice 2); rebinds are idempotent.
                             let endpoint = opened
@@ -656,10 +600,24 @@ impl Editor {
                         self.finish_open(id, key.intent);
                     }
                     Outcome::Failed { failure, .. } => {
-                        if matches!(key.intent, OpenIntent::Background) {
-                            self.collection_source_ready(key.origin);
+                        if let OpenIntent::CollectionSource { owner } = key.intent {
+                            self.collection_source_ready(owner);
                         }
-                        self.message = format!("open {}: {}", key.path, failure.message)
+                        // 0051 §6 R04: a failed replace target is a named
+                        // refusal in the pending review, never a silent drop.
+                        if let OpenIntent::Replace { review, .. } = &key.intent {
+                            let path = match &key.path {
+                                FileTarget::Local(path) => path.clone(),
+                                other => PathBuf::from(other.to_string()),
+                            };
+                            self.refuse_replace_open(
+                                &path,
+                                format!("open failed: {}", failure.message),
+                                *review,
+                            );
+                        } else {
+                            self.message = format!("open {}: {}", key.path, failure.message);
+                        }
                     }
                     Outcome::Cancelled(_) => {}
                 }
@@ -675,6 +633,9 @@ impl Editor {
                 match completion.outcome {
                     Outcome::Success(receipt) => {
                         let Some(document) = self.docs.get_mut(key.document) else {
+                            self.message = "snapshot written; source buffer closed".into();
+                            self.finish_save_feedback(key.document);
+                            self.collection_save_progress(key.document, false);
                             return;
                         };
                         let previous_path = document.buf.path.clone();
@@ -707,8 +668,12 @@ impl Editor {
                         self.collection_save_progress(key.document, false);
                         self.message = format!("write failed: {}", failure.message)
                     }
-                    Outcome::Cancelled(_) => self.message = "write cancelled".into(),
+                    Outcome::Cancelled(_) => {
+                        self.collection_save_progress(key.document, false);
+                        self.message = "write cancelled".into();
+                    }
                 }
+                self.finish_save_feedback(key.document);
             }
             IoEvent::Session { request, outcome } => {
                 if self.io.session != Some(request) {

@@ -89,6 +89,17 @@ impl ContainerState {
 }
 
 impl Editor {
+    /// Listing providers expose dotfiles but do not evaluate project ignore files.
+    /// Keep this distinct from configurable local-workspace search visibility.
+    pub fn directory_visibility_summary(&self) -> Option<&'static str> {
+        if self.docs.is_empty() {
+            return None;
+        }
+        (self.cur().directory_metadata_ref().is_some()
+            || self.containers.entries.contains_key(&self.current()))
+        .then_some("hidden on · no ignores")
+    }
+
     /// `:containers` — probe the local engine and offer running
     /// containers as a picker.
     pub(crate) fn request_containers(&mut self) {
@@ -244,14 +255,11 @@ impl Editor {
                 }
                 let mut buffer = Buffer::from_text(&text);
                 buffer.name = Some(format!("container:{short}:{path}"));
-                let id = self.docs.insert(Document::output(buffer));
-                self.drop_stale_scratch(id);
+                let id = self.open_temporary_output(buffer);
                 self.containers
                     .buffers
                     .insert(id, (identity.id.clone(), path));
                 self.containers.entries.insert(id, entries);
-                self.switch_to(id);
-                self.set_head(0);
             }
             Outcome::Success(ContainerResult::File {
                 identity,
@@ -266,6 +274,7 @@ impl Editor {
                     self.message = "container identity failed validation".into();
                     return;
                 };
+                self.push_jump();
                 let id = self.docs.insert(Document::container_file(
                     buffer,
                     container,

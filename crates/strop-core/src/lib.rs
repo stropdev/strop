@@ -6,6 +6,7 @@ pub mod diagnostics;
 pub mod editmap;
 pub mod history;
 pub mod id;
+pub mod languages;
 pub mod layout;
 pub mod path_serde;
 pub mod process;

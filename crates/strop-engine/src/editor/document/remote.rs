@@ -1,5 +1,5 @@
 //! Remote provenance stays with its real buffer. Live leases never cross replay.
-use super::{Document, DocumentSource, ReturnPoint};
+use super::{Document, DocumentSource, JumpRecord};
 use std::fmt::Write;
 use strop_core::Buffer;
 use strop_remote::{
@@ -14,7 +14,7 @@ pub struct RemoteDocument {
     pub window: RemoteWindow,
     pub selection: ReadSelection,
     pub connection: Option<ConnectionLease>,
-    pub return_to: Option<ReturnPoint>,
+    pub return_to: Option<JumpRecord>,
     pub(crate) write: Option<crate::editor::remote::save::WritePermit>,
 }
 impl std::fmt::Debug for RemoteDocument {
@@ -37,7 +37,7 @@ pub struct RemoteDirectory {
     pub visible: Vec<usize>,
     pub filter: String,
     pub connection: Option<ConnectionLease>,
-    pub return_to: Option<ReturnPoint>,
+    pub return_to: Option<JumpRecord>,
 }
 impl std::fmt::Debug for RemoteDirectory {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -142,9 +142,13 @@ impl Document {
         );
         buffer.name = Some(source.file.to_string());
         buffer.readonly = true;
+        let detection = Some(super::detect_indent(buffer.text()));
         Self {
             buf: buffer,
+            syntax_hint: None,
             indent: super::Indent::default(),
+            indent_override: super::IndentOverride::default(),
+            detection,
             source: DocumentSource::Remote(Box::new(source)),
         }
     }
@@ -189,7 +193,10 @@ impl Document {
         buffer.readonly = true;
         Self {
             buf: buffer,
+            syntax_hint: None,
             indent: super::Indent::default(),
+            indent_override: super::IndentOverride::default(),
+            detection: None,
             source: DocumentSource::RemoteDirectory(Box::new(source)),
         }
     }
@@ -208,19 +215,30 @@ impl Document {
 }
 
 impl Document {
-    pub(crate) fn return_point(&self) -> Option<&ReturnPoint> {
+    pub(crate) fn return_point(&self) -> Option<&JumpRecord> {
         match &self.source {
             DocumentSource::Surface(surface) => surface.content.return_point(),
             DocumentSource::Remote(source) => source.return_to.as_ref(),
             DocumentSource::RemoteDirectory(source) => source.return_to.as_ref(),
+            DocumentSource::Output { return_to } => return_to.as_ref(),
             _ => None,
         }
     }
-    pub(crate) fn set_return_point(&mut self, point: ReturnPoint) {
+    pub(crate) fn return_point_mut(&mut self) -> Option<&mut JumpRecord> {
+        match &mut self.source {
+            DocumentSource::Surface(surface) => surface.content.return_slot().as_mut(),
+            DocumentSource::Remote(source) => source.return_to.as_mut(),
+            DocumentSource::RemoteDirectory(source) => source.return_to.as_mut(),
+            DocumentSource::Output { return_to } => return_to.as_mut(),
+            _ => None,
+        }
+    }
+    pub(crate) fn set_return_point(&mut self, point: JumpRecord) {
         match &mut self.source {
             DocumentSource::Surface(surface) => surface.content.set_return_point(point),
             DocumentSource::Remote(source) => source.return_to = Some(point),
             DocumentSource::RemoteDirectory(source) => source.return_to = Some(point),
+            DocumentSource::Output { return_to } => *return_to = Some(point),
             _ => {}
         }
     }

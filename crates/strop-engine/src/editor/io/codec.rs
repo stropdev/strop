@@ -1,6 +1,6 @@
 //! Pure completion data crosses replay; parsers, clients and leases never do.
 use super::Opened;
-use crate::editor::document::{DocumentSource, RemoteDirectory, RemoteDocument, ReturnPoint};
+use crate::editor::document::{DocumentSource, JumpRecord, RemoteDirectory, RemoteDocument};
 use crate::editor::Document;
 use crate::files::FileTarget;
 use serde::{Deserialize, Serialize};
@@ -12,13 +12,13 @@ enum RemoteRecord {
     File {
         window: RemoteWindow,
         selection: ReadSelection,
-        return_to: Option<ReturnPoint>,
+        return_to: Option<JumpRecord>,
     },
     Directory {
         entries: Vec<RemoteEntry>,
         visible: Vec<usize>,
         filter: String,
-        return_to: Option<ReturnPoint>,
+        return_to: Option<JumpRecord>,
     },
 }
 #[derive(Deserialize)]
@@ -35,13 +35,13 @@ enum RemoteRecordRef<'a> {
     File {
         window: RemoteWindow,
         selection: ReadSelection,
-        return_to: &'a Option<ReturnPoint>,
+        return_to: &'a Option<JumpRecord>,
     },
     Directory {
         entries: &'a [RemoteEntry],
         visible: &'a [usize],
         filter: &'a str,
-        return_to: &'a Option<ReturnPoint>,
+        return_to: &'a Option<JumpRecord>,
     },
 }
 #[derive(Serialize)]

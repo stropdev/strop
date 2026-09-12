@@ -4,125 +4,84 @@
 
 use strop_core::Buffer;
 
+mod indentation;
 pub(crate) mod remote;
 pub mod surfaces;
+pub use indentation::{detect_indent, Detection, Indent, IndentOverride, IndentSource};
 pub use remote::{RemoteDirectory, RemoteDocument};
 
-pub use surfaces::{DiffRow, DocumentSource, ReturnPoint, Surface};
+pub use super::jumps::JumpRecord;
+pub use surfaces::{DiffRow, DocumentSource, Surface};
 
 use super::Editor;
 
 /// One document: the text buffer plus everything that used to live in
 /// parallel vectors keyed by buffer index (0014 wave 2). One struct,
 /// one arena — the alignment invariant is the type system now.
-/// One document's indent: the config default, or detected from the
-/// content on open (config `indent_detect`). Resolved once; reloads
-/// re-resolve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Indent {
-    pub style: crate::config::IndentStyle,
-    pub width: usize,
-}
-
-impl Default for Indent {
-    /// The pre-config fallback (spaces, 4); the Editor re-resolves from
-    /// config/content at open and reload.
-    fn default() -> Self {
-        Self {
-            style: crate::config::IndentStyle::Spaces,
-            width: 4,
-        }
-    }
-}
-
-impl Indent {
-    /// The unit auto-indent, `>>` and the Tab key emit.
-    pub fn unit(&self) -> String {
-        match self.style {
-            crate::config::IndentStyle::Spaces => " ".repeat(self.width),
-            crate::config::IndentStyle::Tabs => "\t".into(),
-        }
-    }
-}
-
-/// Detect a buffer's indent from its leading whitespace (majority vote
-/// over up to 1000 lines): tabs when tab-indented lines dominate, else
-/// the dominant space unit among 2/3/4/8 needing ≥60% coverage. No
-/// clear winner → the caller falls back to config. Streams rope lines —
-/// no materialization.
-pub fn detect_indent(text: &ropey::Rope) -> Option<Indent> {
-    use crate::config::IndentStyle;
-    let mut tabs = 0usize;
-    let mut spaced = 0usize;
-    let mut hist = [0usize; 9]; // indents 1..=8
-    for line in text.lines().take(1000) {
-        let mut bytes = line.bytes();
-        match bytes.next() {
-            Some(b'\t') => {
-                tabs += 1;
-                continue;
-            }
-            Some(b' ') => {}
-            _ => continue,
-        }
-        let spaces = 1 + bytes.take_while(|b| *b == b' ').count();
-        // A whitespace-only line is not a vote.
-        if line
-            .bytes()
-            .nth(spaces)
-            .is_some_and(|b| b != b'\n' && b != b'\r')
-        {
-            spaced += 1;
-            if spaces <= 8 {
-                hist[spaces] += 1;
-            }
-        }
-    }
-    if tabs == 0 && spaced == 0 {
-        return None;
-    }
-    if tabs > spaced {
-        return Some(Indent {
-            style: IndentStyle::Tabs,
-            width: 4, // display width only; the unit is one tab
-        });
-    }
-    let (covered, unit) = [2usize, 3, 4, 8]
-        .into_iter()
-        .map(|unit| {
-            let covered: usize = (unit..=8).filter(|n| n % unit == 0).map(|n| hist[n]).sum();
-            (covered, unit)
-        })
-        .max()?;
-    (covered * 5 >= spaced * 3).then_some(Indent {
-        style: IndentStyle::Spaces,
-        width: unit,
-    })
-}
-
 pub struct Document {
     pub buf: Buffer,
-    /// Resolved at open/reload (config default or content-detected).
+    pub(crate) syntax_hint: Option<std::path::PathBuf>,
+    /// Resolved at open/reload and after `:tab-size`/`:indent-style`
+    /// (0051 R08): manual override → confident detection → config.
     pub indent: Indent,
+    /// Explicit `:tab-size N` / `:indent-style …` choices; they survive
+    /// reloads and config refreshes, and other buffers never touch them.
+    pub indent_override: IndentOverride,
+    /// What the last detection pass concluded (None when `indent_detect`
+    /// is off) — `:explain` reports it with its confidence or reason.
+    pub detection: Option<Detection>,
     /// What backs this document (0021 §4): the surface payload lives in
     /// the source variant; readonly derives from it at construction.
     pub source: DocumentSource,
 }
 
 impl Document {
+    pub fn label(&self, cwd: &std::path::Path) -> String {
+        if let Some(remote) = self.remote_metadata() {
+            remote.file.to_string()
+        } else if let DocumentSource::Container { container, path } = &self.source {
+            strop_workspace::ResourceLocation {
+                filesystem: strop_workspace::Filesystem::Container(container.clone()),
+                path: path.clone(),
+            }
+            .label()
+        } else {
+            self.buf
+                .path
+                .as_ref()
+                .map(|path| path.strip_prefix(cwd).unwrap_or(path).display().to_string())
+                .or_else(|| self.buf.name.clone())
+                .unwrap_or_else(|| "[scratch]".into())
+        }
+    }
+
+    pub(crate) fn documentation(mut buffer: Buffer) -> Self {
+        buffer.name = Some("documentation".into());
+        let mut document = Self::output(buffer);
+        document.syntax_hint = Some(std::path::PathBuf::from("documentation.md"));
+        document
+    }
     pub fn new(buf: Buffer) -> Self {
+        let detection = Some(detect_indent(buf.text()));
         Self {
             buf,
+            syntax_hint: None,
             indent: Indent::default(),
+            indent_override: IndentOverride::default(),
+            detection,
             source: DocumentSource::File,
         }
     }
 
     /// A scratch document (no file).
     pub fn scratch(buf: Buffer) -> Self {
+        let detection = Some(detect_indent(buf.text()));
         Self {
             buf,
+            syntax_hint: None,
             indent: Indent::default(),
+            indent_override: IndentOverride::default(),
+            detection,
             source: DocumentSource::Scratch,
         }
     }
@@ -133,22 +92,30 @@ impl Document {
         buf.readonly = true;
         Self {
             buf,
+            syntax_hint: None,
             indent: Indent::default(),
             source: DocumentSource::Surface(Box::new(surfaces::GitSurface {
                 context,
                 content: surface,
             })),
+            indent_override: IndentOverride::default(),
+            detection: None,
         }
     }
 
     /// Named virtual content (`:!cmd` output, help, the undo browser):
-    /// readonly derived from the source.
+    /// readonly derived from the source. Temporary surfaces opened
+    /// through [`Editor::open_temporary_output`] also carry the return
+    /// point `:q` restores (0051 §7 R07).
     pub fn output(mut buf: Buffer) -> Self {
         buf.readonly = true;
         Self {
             buf,
+            syntax_hint: None,
             indent: Indent::default(),
-            source: DocumentSource::Output,
+            indent_override: IndentOverride::default(),
+            detection: None,
+            source: DocumentSource::Output { return_to: None },
         }
     }
 
@@ -160,15 +127,22 @@ impl Document {
         path: std::path::PathBuf,
     ) -> Self {
         buf.readonly = true;
+        let detection = Some(detect_indent(buf.text()));
         Self {
             buf,
+            syntax_hint: None,
             indent: Indent::default(),
+            indent_override: IndentOverride::default(),
+            detection,
             source: DocumentSource::Container { container, path },
         }
     }
 
     /// Syntax identity is data; parsers live on the display-analysis worker.
     pub fn syntax_path(&self) -> Option<&std::path::Path> {
+        if let Some(path) = &self.syntax_hint {
+            return Some(path);
+        }
         match &self.source {
             DocumentSource::Remote(source) => Some(source.file.path()),
             DocumentSource::Surface(source) => match &source.content {
@@ -181,7 +155,7 @@ impl Document {
             },
             DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
             DocumentSource::Container { path, .. } => Some(path),
-            DocumentSource::RemoteDirectory(_) | DocumentSource::Output => None,
+            DocumentSource::RemoteDirectory(_) | DocumentSource::Output { .. } => None,
         }
     }
 
@@ -344,8 +318,36 @@ impl Editor {
         self.cancel_pending();
         self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.focus_epoch += 1;
+        if self.current() != id {
+            let view = self.view_mut();
+            view.sels = strop_core::selection::SelectionSet::default();
+            view.view_top = 0;
+            view.hscroll = strop_core::id::DisplayColumn::new(0);
+            view.desired_column = None;
+        }
         self.view_mut().doc = id;
         self.touch_mru(id);
+    }
+
+    /// Open a temporary readonly output surface — help, explain, the
+    /// undo browser, a review or save report (0051 §7 R07): the jump is
+    /// recorded AND the new document carries the exact origin view as
+    /// its navigation record, so ctrl-o AND `:q` hand back the caret,
+    /// viewport and horizontal origin the user came from. A stale
+    /// scratch origin dies with its buffer; close_buffer skips dead
+    /// return points on its own.
+    pub(crate) fn open_temporary_output(
+        &mut self,
+        buf: strop_core::Buffer,
+    ) -> strop_core::id::DocumentId {
+        self.push_jump();
+        let mut document = Document::output(buf);
+        document.set_return_point(self.jump_record());
+        let id = self.docs.insert(document);
+        self.drop_stale_scratch(id);
+        self.switch_to(id);
+        self.set_head(0);
+        id
     }
 
     /// The active view's selections.
@@ -387,6 +389,24 @@ impl Editor {
             self.request_session_save();
         }
         let closed = self.current();
+        let mut affected_collections = Vec::new();
+        for (id, collection) in &mut self.collections {
+            let before = collection.excerpts.len();
+            collection
+                .excerpts
+                .retain(|excerpt| excerpt.source != closed);
+            collection
+                .pending_commit
+                .retain(|(source, _)| *source != closed);
+            if collection.excerpts.len() != before {
+                collection.match_count = collection
+                    .excerpts
+                    .iter()
+                    .map(|excerpt| excerpt.matches.len().max(excerpt.hit_anchors.len()))
+                    .sum();
+                affected_collections.push(*id);
+            }
+        }
         self.revoke_remote_write(closed);
         self.analysis
             .forget(super::analysis::AnalysisTarget::Document(closed));
@@ -397,6 +417,7 @@ impl Editor {
         self.revoke_git_requests_for(closed);
         self.blame_gutters.remove(&closed);
         self.collections.remove(&closed);
+        self.review.forget(closed);
         self.containers.buffers.remove(&closed);
         self.containers.entries.remove(&closed);
         let return_to = self
@@ -404,6 +425,7 @@ impl Editor {
             .remove(closed)
             .and_then(|document| document.return_point().cloned());
         if self.docs.is_empty() {
+            self.collection_build = None;
             self.panes.clear();
             self.active_pane = 0;
             self.should_quit = true;
@@ -433,16 +455,13 @@ impl Editor {
             // a closing surface hands the cursor and view back to the
             // document it opened from — by id, no index math (0011 §1)
             if let Some(ret) = return_to {
-                if self.docs.get(ret.buffer).is_some() {
-                    if ret.buffer != self.current() {
-                        self.view_mut().doc = ret.buffer;
-                        self.touch_mru(ret.buffer);
-                    }
-                    self.set_head(ret.cursor.min(self.buf().len_bytes()));
-                    self.view_mut().view_top = ret.view_top;
-                    self.view_mut().hscroll = ret.hscroll;
+                if self.docs.get(ret.document).is_some() {
+                    self.jump_to(ret);
                 }
             }
+        }
+        for collection in affected_collections {
+            self.collection_render_view(collection);
         }
         self.lsp_retire_remote_servers();
         true

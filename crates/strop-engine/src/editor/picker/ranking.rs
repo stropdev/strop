@@ -70,9 +70,27 @@ impl Editor {
         if !glue.rank_alive {
             return;
         }
-        if glue.ranked_query.as_deref() != Some(glue.picker.input.text.as_str()) {
+        // staleness compares against the EFFECTIVE rank query, like the
+        // install check below (0051: qualifiers never rank — `language:rust`
+        // edits must not clear results while the needle is unchanged)
+        let effective = glue
+            .picker
+            .rank_query
+            .clone()
+            .unwrap_or_else(|| glue.picker.input.text.clone());
+        if glue.ranked_query.as_deref() != Some(effective.as_str()) {
             glue.picker.clear_results();
         }
+        if glue.rank_pending.is_some() {
+            if !glue.rank_dirty {
+                if let Some(worker) = &glue.rank_worker {
+                    worker.cancel_pending();
+                }
+            }
+            glue.rank_dirty = true;
+            return;
+        }
+        glue.rank_dirty = false;
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
             Err(error) => {
@@ -133,17 +151,41 @@ impl Editor {
                     return;
                 }
                 glue.rank_pending = None;
+                if std::mem::take(&mut glue.rank_dirty) {
+                    self.request_picker_ranking();
+                    return;
+                }
                 match completion.outcome {
                     Outcome::Success(ranking) => {
-                        if completion.ticket.key.query != glue.picker.input.text
+                        // staleness compares against the EFFECTIVE rank
+                        // query (0051: qualifiers never rank — the needle
+                        // may differ from the raw input)
+                        let effective = glue
+                            .picker
+                            .rank_query
+                            .clone()
+                            .unwrap_or_else(|| glue.picker.input.text.clone());
+                        if completion.ticket.key.query != effective
                             || !glue.picker.install_ranking(ranking)
                         {
                             return;
                         }
                         glue.ranked_query = Some(completion.ticket.key.query);
                     }
-                    Outcome::Failed { failure, .. } => glue.picker.error = Some(failure.message),
-                    Outcome::Cancelled(_) => {}
+                    Outcome::Failed { failure, .. } => {
+                        if failure.kind == strop_core::worker::FailureKind::Protocol {
+                            if let Some(query) = &glue.query {
+                                glue.query_highlights
+                                    .push(strop_picker::query::HighlightSpan {
+                                        range: query.content_range(),
+                                        role: strop_picker::query::Role::Error,
+                                    });
+                            }
+                        }
+                        glue.picker.error = Some(failure.message);
+                        glue.accept_when_ranked = false;
+                    }
+                    Outcome::Cancelled(_) => glue.accept_when_ranked = false,
                 }
             }
             RankingEvent::Stopped => {

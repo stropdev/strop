@@ -1,47 +1,13 @@
-//! Query parsing: the rg pattern/filters split and the JSON match
-//! decoder (unchanged behavior, isolated for reuse by the grep
-//! supervisor).
+//! The rg `--json` match decoder (0051: the UI query language lives in
+//! `crate::query`; this file is only the wire format adapter).
 
+use base64::Engine;
 use std::path::PathBuf;
 
 use crate::{Item, Payload};
 
-/// Split a grep query into the rg pattern and passthrough filter args:
-/// `-t rs` / `--type rs` / `--type=rs`, `-g 'glob'` / `--glob 'glob'` /
-/// `--glob=glob`. Everything else joins back into the pattern.
-pub fn split_query(input: &str) -> (String, Vec<String>) {
-    let mut pattern: Vec<&str> = Vec::new();
-    let mut args: Vec<String> = Vec::new();
-    let mut it = input.split_whitespace().peekable();
-    while let Some(tok) = it.next() {
-        match tok {
-            "-t" | "--type" => {
-                if let Some(v) = it.next() {
-                    args.extend(["--type".to_string(), v.to_string()]);
-                }
-            }
-            "-g" | "--glob" => {
-                if let Some(v) = it.next() {
-                    args.extend(["--glob".to_string(), v.to_string()]);
-                }
-            }
-            _ if tok.starts_with("-t") && tok.len() > 2 => {
-                args.extend(["--type".to_string(), tok[2..].to_string()]);
-            }
-            _ if tok.starts_with("-g") && tok.len() > 2 => {
-                args.extend(["--glob".to_string(), tok[2..].to_string()]);
-            }
-            _ if tok.starts_with("--type=") || tok.starts_with("--glob=") => {
-                args.push(tok.to_string());
-            }
-            _ => pattern.push(tok),
-        }
-    }
-    (pattern.join(" "), args)
-}
-
 /// One rg --json event line → one item per submatch (a line can hold
-/// several). Non-match events and byte-encoded paths are skipped.
+/// several). Native path bytes are preserved separately from display text.
 pub fn parse_json_match(line: &str) -> Vec<Item> {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
         return Vec::new();
@@ -50,8 +16,26 @@ pub fn parse_json_match(line: &str) -> Vec<Item> {
         return Vec::new();
     }
     let data = &v["data"];
-    let Some(path) = data["path"]["text"].as_str() else {
-        return Vec::new(); // invalid-UTF8 path names arrive as bytes
+    let path = if let Some(path) = data["path"]["text"].as_str() {
+        PathBuf::from(path)
+    } else if let Some(bytes) = data["path"]["bytes"].as_str() {
+        let Ok(bytes) = base64::prelude::BASE64_STANDARD.decode(bytes) else {
+            return Vec::new();
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            PathBuf::from(std::ffi::OsString::from_vec(bytes))
+        }
+        #[cfg(not(unix))]
+        {
+            let Ok(path) = String::from_utf8(bytes) else {
+                return Vec::new();
+            };
+            PathBuf::from(path)
+        }
+    } else {
+        return Vec::new();
     };
     let Some(line_no) = data["line_number"].as_u64() else {
         return Vec::new();
@@ -72,9 +56,9 @@ pub fn parse_json_match(line: &str) -> Vec<Item> {
             let end = s["end"].as_u64()? as usize;
             Some(Item {
                 badge: None,
-                text: format!("{}:{line_no} · {short}", path),
+                text: format!("{}:{line_no} · {short}", path.display()),
                 payload: Payload::Grep {
-                    path: PathBuf::from(path),
+                    path: path.clone(),
                     line: line_no as usize,
                     col: start + 1,
                     match_len: end.saturating_sub(start),
@@ -109,18 +93,5 @@ mod tests {
         }
         assert!(parse_json_match("not json").is_empty());
         assert!(parse_json_match(r#"{"type":"begin","data":{}}"#).is_empty());
-    }
-
-    #[test]
-    fn query_filters_split_out() {
-        let (pat, args) = split_query("sharpen -t rs --glob !target/*");
-        assert_eq!(pat, "sharpen");
-        assert_eq!(args, ["--type", "rs", "--glob", "!target/*"]);
-        let (pat, args) = split_query("foo bar -trs");
-        assert_eq!(pat, "foo bar");
-        assert_eq!(args, ["--type", "rs"]);
-        let (pat, args) = split_query("--type=py read");
-        assert_eq!(pat, "read");
-        assert_eq!(args, ["--type=py"]);
     }
 }

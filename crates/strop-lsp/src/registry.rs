@@ -175,24 +175,14 @@ pub(crate) fn is_embedded(name: &str) -> bool {
 /// File extension (with dot) → language name — the keys users write in
 /// `[language.NAME]` and the registry's language vocabulary.
 pub fn language_for_extension(ext_with_dot: &str) -> Option<&'static str> {
-    language_for_extension_name(ext_with_dot.strip_prefix('.')?)
+    strop_core::languages::language_for_extension(ext_with_dot)
 }
 
 /// Bare extension (no dot) → language name. Pure table lookup, safe on
-/// any keystroke path.
+/// any keystroke path — the canonical catalog lives in strop-core
+/// (0051 §3), shared with the query compiler.
 pub fn language_for_extension_name(ext: &str) -> Option<&'static str> {
-    Some(match ext {
-        "rs" => "rust",
-        "c" | "h" => "c",
-        "cpp" | "cc" | "cxx" | "hpp" | "hh" => "cpp",
-        "py" | "pyi" => "python",
-        "go" => "go",
-        "js" | "jsx" | "mjs" | "cjs" => "javascript",
-        "ts" | "tsx" => "typescript",
-        "json" => "json",
-        "sh" | "bash" => "shellscript",
-        _ => return None,
-    })
+    strop_core::languages::language_for_extension_name(ext)
 }
 
 fn embedded_name_for_language(lang: &str) -> Option<&'static str> {

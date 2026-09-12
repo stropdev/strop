@@ -6,7 +6,6 @@
 
 use std::fmt::Write;
 
-use super::document::Document;
 use super::lsp::attach::AttachDecision;
 use super::Editor;
 
@@ -101,10 +100,11 @@ impl Editor {
 
         text.push_str("\n[configuration]\n");
         for knob in crate::config::KNOBS {
-            let value = match knob.key {
-                "tab_size" => self.config.tab_size.to_string(),
-                "indent_guides" => self.config.indent_guides.to_string(),
-                _ => "?".into(),
+            // 0051 R10: real values from the one typed access path —
+            // a knob that resolves to nothing is a test failure, never
+            // a "?" in front of the user.
+            let Some(value) = self.config.knob_value(knob.key) else {
+                continue;
             };
             let _ = writeln!(text, "  {} = {}  — {}", knob.key, value, knob.desc);
         }
@@ -112,12 +112,69 @@ impl Editor {
             "  (config.toml layers over embedded defaults; :trust gates project layers)\n",
         );
 
+        // 0051 R08: the current document's effective indent with its
+        // per-side provenance, the override state, and what detection
+        // concluded (or why it stayed Unknown).
+        let doc = self.cur();
+        let indent = doc.indent;
+        text.push_str("\n[indentation]\n");
+        let _ = writeln!(
+            text,
+            "  effective: {} (style {}, width {})",
+            indent.label(),
+            indent.style_source.label(),
+            indent.width_source.label(),
+        );
+        match (doc.indent_override.style, doc.indent_override.width) {
+            (None, None) => text.push_str("  override: none (:tab-size / :indent-style set one)\n"),
+            (style, width) => {
+                let mut parts = Vec::new();
+                if let Some(style) = style {
+                    parts.push(format!("style {style:?}"));
+                }
+                if let Some(width) = width {
+                    parts.push(format!("width {width}"));
+                }
+                let _ = writeln!(text, "  override: {}", parts.join(", "));
+            }
+        }
+        match doc.detection {
+            None => text.push_str("  detection: disabled (indent_detect = false)\n"),
+            Some(crate::editor::document::Detection::Unknown(reason)) => {
+                let _ = writeln!(
+                    text,
+                    "  detection: unknown — {} (configured fallback applies)",
+                    reason.reason()
+                );
+            }
+            Some(crate::editor::document::Detection::Tabs {
+                evidence,
+                confidence,
+            }) => {
+                let _ = writeln!(
+                    text,
+                    "  detection: tabs — {} confidence ({evidence} evidence lines)",
+                    confidence.label()
+                );
+            }
+            Some(crate::editor::document::Detection::Spaces {
+                width,
+                evidence,
+                confidence,
+            }) => {
+                let _ = writeln!(
+                    text,
+                    "  detection: spaces, width {width} — {} confidence ({evidence} evidence lines)",
+                    confidence.label()
+                );
+            }
+        }
+
         let mut buffer = strop_core::Buffer::from_text(&text);
         buffer.name = Some("explain".into());
-        let id = self.docs.insert(Document::output(buffer));
-        self.drop_stale_scratch(id);
-        self.switch_to(id);
-        self.set_head(0);
+        // a temporary surface (0051 §7 R07): ctrl-o AND `:q` restore
+        // the exact view the user came from, like :help
+        self.open_temporary_output(buffer);
     }
 }
 
@@ -157,5 +214,31 @@ mod tests {
         assert!(e.buf().readonly, "explain is a real readonly buffer");
         e.feed_text("/[language servers]\r");
         assert!(e.head() > 0, "searchable like any buffer");
+    }
+    /// 0051 R08: the indentation section shows the effective setting,
+    /// per-side provenance, the override, and detection's confidence —
+    /// and the once-placeholder knobs show real values.
+    #[test]
+    fn explain_shows_indent_provenance_and_detection() {
+        let mut e = Editor::new(Buffer::from_text(
+            "fn f() {\n  let x = 1;\n  let y = 2;\n  let z = 3;\n  let w = 4;\n}\n",
+        ));
+        e.reresolve_indents();
+        e.tab_size_command("8");
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(text.contains("[indentation]"), "{text}");
+        assert!(text.contains("effective: Spaces:8"), "{text}");
+        assert!(text.contains("style detected"), "{text}");
+        assert!(text.contains("width manual"), "{text}");
+        assert!(text.contains("override: width 8"), "{text}");
+        assert!(text.contains("detection: spaces, width 2"), "{text}");
+        assert!(text.contains("high confidence"), "{text}");
+        assert!(text.contains("indent_style = spaces"), "{text}");
+        assert!(text.contains("indent_detect = true"), "{text}");
+        assert!(text.contains("auto_format = true"), "{text}");
+        assert!(text.contains("search_show_hidden = true"), "{text}");
+        assert!(text.contains("search_respect_ignore = true"), "{text}");
+        assert!(!text.contains("= ?"), "no placeholder values: {text}");
     }
 }

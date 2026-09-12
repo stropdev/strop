@@ -44,17 +44,12 @@ impl Editor {
             Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
             | Payload::Jump { .. }
+            | Payload::SearchOption(_)
             | Payload::CodeAction(_)
-            | Payload::Container(_) => return None,
+            | Payload::Container(_)
+            | Payload::IndentChoice(_) => return None,
             Payload::Buffer(document) => {
-                let name = self
-                    .docs
-                    .get(*document)?
-                    .buf
-                    .path
-                    .as_ref()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "[scratch]".into());
+                let name = self.docs.get(*document)?.label(&self.cwd);
                 return Some((name, None, PreviewSource::Buffer(*document)));
             }
             Payload::File(path) => (path.clone(), None),
@@ -95,10 +90,11 @@ impl Editor {
             .trim_end()
             .to_string()
         };
+        let target = crate::files::FileTarget::Local(full.clone());
         if let Some((document, _)) = self
             .docs
             .iter()
-            .find(|(_, document)| document.buf.path.as_ref() == Some(&full))
+            .find(|(_, document)| document.matches_target(&target))
         {
             return Some((title, focus_line, PreviewSource::Buffer(document)));
         }
@@ -125,9 +121,6 @@ impl Editor {
     /// request for this picker instance (cancelling any stale one) and
     /// launches the bounded read; the next tick picks the result up.
     fn preview_ready(&mut self, path: &Path) -> bool {
-        if self.previews.contains_key(path) {
-            return true;
-        }
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return false;
         };
@@ -135,6 +128,11 @@ impl Editor {
             picker,
             path: path.to_path_buf(),
         };
+        if self.previews.contains_key(path)
+            && matches!(self.preview_loads.get(path), Some(Load::Ready(owner)) if owner == &key)
+        {
+            return true;
+        }
         // a request from this instance — running, failed or cancelled —
         // owns the path: frames never silently retry
         if self

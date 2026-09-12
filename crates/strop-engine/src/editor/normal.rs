@@ -51,6 +51,22 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("format", "format the buffer through the language server"),
     ("rename", "rename the symbol under the cursor: :rename NEW"),
     ("undo-change", "undo the last applied change plan"),
+    (
+        "save-change",
+        "save files changed by the latest reviewed operation",
+    ),
+    ("apply-change", "apply the prepared proposal"),
+    ("cancel-change", "cancel the prepared proposal"),
+    ("search-options", "choose hidden and ignored search policy"),
+    ("tab-size", "choose indentation width: N or auto"),
+    (
+        "indent-style",
+        "choose indentation style: spaces, tabs or auto",
+    ),
+    (
+        "collection",
+        "source, expand or contract the excerpt at the caret",
+    ),
     ("qa", "quit all (fails on unsaved; :qa! discards)"),
 ];
 
@@ -60,6 +76,21 @@ impl Editor {
         // their surface-specific keys live in feed_readonly (0001 §3)
         if self.buf().readonly {
             return self.feed_readonly(key);
+        }
+        // 0051 R05: +/- in a collection grow/shrink excerpt context —
+        // a collection override of the vim line motions, named as such
+        if self.walker.is_ground() && self.collections.contains_key(&self.current()) {
+            match key {
+                Key::Char('+') => {
+                    self.collection_context_step(true);
+                    return;
+                }
+                Key::Char('-') => {
+                    self.collection_context_step(false);
+                    return;
+                }
+                _ => {}
+            }
         }
         // Esc is a mode-level key: collapse to the primary cursor and
         // ground the machine (0013 §3) — it never walks the trie
@@ -158,6 +189,18 @@ impl Editor {
                                 | "diagnostic-jumps"
                                 | "hover"
                                 | "remote-open"
+                                | "files"
+                                | "buffers"
+                                | "grep"
+                                | "replace-global"
+                                | "help"
+                                | "alternate-buffer"
+                                | "word-search"
+                                | "document-symbols"
+                                | "diagnostics"
+                                | "code-actions"
+                                | "jumplist-picker"
+                                | "undo-tree"
                         )
                 }
                 Handler::AbsorbChar(
@@ -228,7 +271,8 @@ impl Editor {
             | Handler::ObjectPrefix
             | Handler::TextLine
             | Handler::AbsorbRegister
-            | Handler::Soon => {}
+            | Handler::Soon
+            | Handler::Contextual => {}
         }
     }
 

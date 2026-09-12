@@ -182,17 +182,24 @@ fn rg_error_is_sticky_in_the_card() {
     let mut e = Editor::new(Buffer::from_text("x\n"));
     e.cwd = dir.path().to_path_buf();
     e.open_picker(strop_picker::Kind::Replace);
-    e.feed_text("foo --glob/**/bad[");
+    // Semantic compilation belongs to the owned worker, never input/render.
+    e.feed_text("foo glob:\"**/bad[\"");
     e.wait_picker();
-    let err = e.picker.as_ref().unwrap().picker.error.clone();
-    assert!(err.is_some(), "rg error captured");
+    let err = e
+        .picker
+        .as_ref()
+        .unwrap()
+        .picker
+        .error
+        .clone()
+        .expect("query error captured");
     // navigation, not a query edit: the error survives (a query
     // edit clears it — the new search might be valid)
     e.feed(Key::Esc); // field normal mode
     e.feed(Key::Char('j'));
     let frame = crate::headless::frame_string(&mut e, 80, 20).unwrap();
     assert!(
-        frame.contains("unclosed character class"),
+        frame.contains(&err.chars().take(24).collect::<String>()),
         "error in the card: {frame}"
     );
 }
@@ -241,6 +248,11 @@ fn directory_metadata_preserves_unknown_zero_and_native_row_identity() {
     assert!(frame.contains("??????????     ? missing"), "{frame}");
     assert!(frame.contains("----------     0 zero"), "{frame}");
     assert!(frame.contains("lrwxrwxrwx     7 line�break@"), "{frame}");
+    let wide = crate::headless::frame_string(&mut editor, 140, 10).unwrap();
+    assert!(
+        wide.contains("hidden on") && wide.contains("no ignores"),
+        "{wide}"
+    );
     editor.feed_text("3Gyy");
     assert!(editor
         .register(None)
@@ -283,4 +295,34 @@ fn pipe_prompt_owns_a_visible_input_card_on_normal_and_visual_surfaces() {
         assert!(frame.contains("tr a-z A-Z"), "{frame}");
         assert_eq!(e.buf().text().to_string(), "unchanged\n");
     }
+}
+
+#[test]
+fn same_line_replacements_share_one_exact_styled_review() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.txt");
+    std::fs::write(&path, "foo foo\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    let source = editor.open_fixture(&path).unwrap();
+    editor.open_picker(strop_picker::Kind::Replace);
+    editor.paste_bracketed("foo");
+    editor.wait_picker();
+    editor.feed(Key::Tab);
+    editor.paste_bracketed("bar");
+    editor.feed(Key::Enter);
+    let text = editor.buf().text().to_string();
+    assert_eq!(text.matches("-foo foo").count(), 1, "{text}");
+    assert_eq!(text.matches("+bar bar").count(), 1, "{text}");
+    let removed = editor.buf().line_of(text.find("-foo foo").unwrap()) as u16;
+    let added = editor.buf().line_of(text.find("+bar bar").unwrap()) as u16;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|frame| crate::render::render(&mut editor, frame))
+        .unwrap();
+    let grid = terminal.backend().buffer();
+    assert_eq!(grid[(5, removed)].fg, crate::render::diff::DEL_FG);
+    assert_eq!(grid[(5, added)].fg, crate::render::diff::ADD_FG);
+    assert_ne!(grid[(5, removed)].bg, grid[(5, added)].bg);
+    editor.feed_text(":apply-change<cr>");
+    assert_eq!(editor.doc(source).buf.text().to_string(), "bar bar\n");
 }

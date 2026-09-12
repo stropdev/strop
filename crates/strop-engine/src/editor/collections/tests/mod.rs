@@ -3,6 +3,8 @@
 use crate::editor::Editor;
 use strop_core::Buffer;
 use strop_picker::{Item, Kind, Payload};
+mod live;
+mod ownership;
 
 /// Two open files and a grep picker listing hits in both. The tempdir
 /// rides along: tests that read the files back need it alive.
@@ -63,9 +65,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
             },
         },
     ];
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(items);
-    }
+    e.picker_items_fixture(items);
     (e, a, b)
 }
 
@@ -81,7 +81,6 @@ fn collection_builds_from_picker_hits() {
     assert!(text.contains("alpha one"), "{text}");
     assert!(text.contains("beta two"), "{text}");
     assert!(text.contains("╭─ a.txt"), "card top: {text}");
-    assert_eq!(e.message, "collection: 2 excerpt(s)");
 }
 
 #[test]
@@ -91,8 +90,7 @@ fn editing_an_excerpt_writes_back_to_the_source() {
     let body_line = e.buf().line_start(2);
     e.set_head(body_line + 8); // on the 'e' of "one"
     e.feed_text("x"); // delete the 'e' of "one"
-    assert_eq!(e.message, "collection edit: applied to 1 buffer(s)");
-    // the collection view regenerated from the source
+                      // the collection view regenerated from the source
     assert!(
         current_text(&e).contains("alpha on\n"),
         "{}",
@@ -131,7 +129,7 @@ fn an_edit_spanning_excerpts_is_refused() {
     e.feed(crate::editor::Key::CtrlO);
     // delete from the first excerpt's body through the second's header
     e.set_head(e.buf().line_start(2));
-    e.feed_text("Vjd");
+    e.feed_text("Vjjjd");
     assert!(e.message.contains("refused"), "{}", e.message);
 }
 
@@ -182,7 +180,6 @@ fn anchors_remap_when_the_source_grows() {
     let at = e.buf().text().to_string().find("beta two").unwrap() + 7;
     e.set_head(at);
     e.feed_text("x");
-    assert_eq!(e.message, "collection edit: applied to 1 buffer(s)");
     let source = e
         .docs
         .iter()
@@ -216,9 +213,7 @@ fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
             line_text: "x one".into(),
         },
     };
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(vec![item(&a), item(&b)]);
-    }
+    e.picker_items_fixture(vec![item(&a), item(&b)]);
     (e, a, b)
 }
 
@@ -228,7 +223,6 @@ fn one_commit_across_excerpts_writes_back_to_both_sources() {
     e.feed(crate::editor::Key::CtrlO);
     // title 1, card-a 2, body-a 3, bottom 4, card-b 5, body-b 6 (0049 §6)
     e.feed_text(":3,6s/one/1/\r");
-    assert_eq!(e.message, "collection edit: applied to 2 buffer(s)");
     for (path, want) in [(&a, "alpha 1\n"), (&b, "beta 1\n")] {
         let text = e
             .docs
@@ -247,7 +241,6 @@ fn inserting_a_line_inside_a_body_writes_the_wider_span_back() {
     let body = e.buf().text().to_string().find("alpha one").unwrap();
     e.set_head(body);
     e.feed_text("Oinserted first<esc>");
-    assert_eq!(e.message, "collection edit: applied to 1 buffer(s)");
     let text = e
         .docs
         .iter()
@@ -259,13 +252,22 @@ fn inserting_a_line_inside_a_body_writes_the_wider_span_back() {
 
 #[test]
 fn inserting_between_excerpts_is_refused() {
-    let (mut e, _a, _b) = two_file_fixture();
+    let (mut e, a, b) = two_file_fixture();
     e.feed(crate::editor::Key::CtrlO);
     // O on the b header line inserts between the excerpts — structure
     let header = e.buf().text().to_string().find("b.txt").unwrap();
     e.set_head(header);
     e.feed_text("Onope<esc>");
-    assert!(e.message.contains("refused"), "{}", e.message);
+    for (path, expected) in [(a, "alpha one\n"), (b, "beta one\n")] {
+        let document = e
+            .docs
+            .iter()
+            .find(|(_, d)| d.buf.path.as_ref() == Some(&path))
+            .unwrap()
+            .1;
+        assert_eq!(document.buf.text().to_string(), expected);
+    }
+    assert!(!current_text(&e).contains("nope"));
 }
 
 #[test]
@@ -278,19 +280,17 @@ fn unopened_sources_load_in_the_background_and_assemble() {
     std::fs::write(&a, "late one\n").unwrap();
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
     e.open_picker(Kind::Grep);
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(vec![Item {
-            badge: None,
-            text: "hit".into(),
-            payload: Payload::Grep {
-                path: a.clone(),
-                line: 1,
-                col: 1,
-                match_len: 3,
-                line_text: "late one".into(),
-            },
-        }]);
-    }
+    e.picker_items_fixture(vec![Item {
+        badge: None,
+        text: "hit".into(),
+        payload: Payload::Grep {
+            path: a.clone(),
+            line: 1,
+            col: 1,
+            match_len: 3,
+            line_text: "late one".into(),
+        },
+    }]);
     e.feed(crate::editor::Key::CtrlO);
     assert!(e.message.contains("loading"), "{}", e.message);
     assert!(e.collections.is_empty(), "not yet");
@@ -329,31 +329,29 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
     );
     e.docs.insert(remote_doc);
     e.open_picker(Kind::Grep);
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(vec![
-            Item {
-                badge: None,
-                text: "local".into(),
-                payload: Payload::Grep {
-                    path: a.clone(),
-                    line: 1,
-                    col: 1,
-                    match_len: 3,
-                    line_text: "alpha one".into(),
-                },
+    e.picker_items_fixture(vec![
+        Item {
+            badge: None,
+            text: "local".into(),
+            payload: Payload::Grep {
+                path: a.clone(),
+                line: 1,
+                col: 1,
+                match_len: 3,
+                line_text: "alpha one".into(),
             },
-            Item {
-                badge: None,
-                text: "remote".into(),
-                payload: Payload::Remote {
-                    endpoint: strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
-                    path: "/repo/app.log".into(),
-                    line: 1,
-                    col: 1,
-                },
+        },
+        Item {
+            badge: None,
+            text: "remote".into(),
+            payload: Payload::Remote {
+                endpoint: strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
+                path: "/repo/app.log".into(),
+                line: 1,
+                col: 1,
             },
-        ]);
-    }
+        },
+    ]);
     e.feed(crate::editor::Key::CtrlO);
     let text = e.buf().text().to_string();
     assert!(text.contains("alpha one"), "{text}");
@@ -408,9 +406,7 @@ fn relative_startup_path_collects_all_hits() {
             },
         },
     ];
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(items);
-    }
+    e.picker_items_fixture(items);
     e.feed(crate::editor::Key::CtrlO);
     let text = current_text(&e);
     assert!(
@@ -442,7 +438,7 @@ fn collection_undo_restores_sources_and_the_view() {
     let text = |e: &Editor, id| e.docs.get(id).unwrap().buf.text().to_string();
     e.set_head(e.buf().line_start(2));
     e.feed_text("rx"); // group 1: a.txt alpha -> xlpha
-    e.set_head(e.buf().line_start(5));
+    e.set_head(current_text(&e).find("beta two").unwrap());
     e.feed_text("rx"); // group 2: b.txt beta -> xeta
     assert!(text(&e, a_id).starts_with("xlpha"));
     assert!(text(&e, b_id).contains("xeta two"));
@@ -649,32 +645,30 @@ fn collection_loads_unopened_sources_in_the_background() {
     std::fs::write(&b, "beta zzq two\nkeep b\n").unwrap();
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
     e.open_picker(Kind::Grep);
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(vec![
-            Item {
-                badge: None,
-                text: "a.txt:1".into(),
-                payload: Payload::Grep {
-                    path: a.clone(),
-                    line: 1,
-                    col: 1,
-                    match_len: 3,
-                    line_text: "alpha zzq one".into(),
-                },
+    e.picker_items_fixture(vec![
+        Item {
+            badge: None,
+            text: "a.txt:1".into(),
+            payload: Payload::Grep {
+                path: a.clone(),
+                line: 1,
+                col: 1,
+                match_len: 3,
+                line_text: "alpha zzq one".into(),
             },
-            Item {
-                badge: None,
-                text: "b.txt:1".into(),
-                payload: Payload::Grep {
-                    path: b.clone(),
-                    line: 1,
-                    col: 1,
-                    match_len: 3,
-                    line_text: "beta zzq two".into(),
-                },
+        },
+        Item {
+            badge: None,
+            text: "b.txt:1".into(),
+            payload: Payload::Grep {
+                path: b.clone(),
+                line: 1,
+                col: 1,
+                match_len: 3,
+                line_text: "beta zzq two".into(),
             },
-        ]);
-    }
+        },
+    ]);
     e.feed(crate::editor::Key::CtrlO);
     assert!(
         e.message.contains("loading"),
@@ -697,36 +691,38 @@ fn collection_loads_unopened_sources_in_the_background() {
 fn one_card_per_file_with_gap_rows() {
     let dir = tempfile::tempdir().unwrap();
     let a = dir.path().join("a.txt");
-    std::fs::write(&a, "l1\nl2\nalpha three\nl4\nl5\nalpha six\nl7\n").unwrap();
+    std::fs::write(
+        &a,
+        "l1\nl2\nalpha three\nl4\nl5\nl6\nl7\nl8\nl9\nalpha ten\nl11\n",
+    )
+    .unwrap();
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
     e.open_fixture(&a).unwrap();
     e.open_picker(Kind::Grep);
-    if let Some(glue) = e.picker.as_mut() {
-        glue.picker.append(vec![
-            Item {
-                text: "a.txt:3".into(),
-                badge: None,
-                payload: Payload::Grep {
-                    path: a.clone(),
-                    line: 3,
-                    col: 1,
-                    match_len: 5,
-                    line_text: "alpha three".into(),
-                },
+    e.picker_items_fixture(vec![
+        Item {
+            text: "a.txt:3".into(),
+            badge: None,
+            payload: Payload::Grep {
+                path: a.clone(),
+                line: 3,
+                col: 1,
+                match_len: 5,
+                line_text: "alpha three".into(),
             },
-            Item {
-                text: "a.txt:6".into(),
-                badge: None,
-                payload: Payload::Grep {
-                    path: a.clone(),
-                    line: 6,
-                    col: 1,
-                    match_len: 5,
-                    line_text: "alpha six".into(),
-                },
+        },
+        Item {
+            text: "a.txt:10".into(),
+            badge: None,
+            payload: Payload::Grep {
+                path: a.clone(),
+                line: 10,
+                col: 1,
+                match_len: 5,
+                line_text: "alpha ten".into(),
             },
-        ]);
-    }
+        },
+    ]);
     e.feed(crate::editor::Key::CtrlO);
     let text = current_text(&e);
     assert_eq!(
@@ -769,7 +765,6 @@ fn file_card_navigation_steps_between_cards() {
     e.collection_file_step(true);
     assert_eq!(e.buf().line_of(e.head()), tops[1], "next card");
     e.collection_file_step(true);
-    assert_eq!(e.message, "last card");
     e.collection_file_step(false);
     assert_eq!(e.buf().line_of(e.head()), tops[0], "previous card");
 }

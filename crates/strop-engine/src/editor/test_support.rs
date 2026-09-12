@@ -70,6 +70,15 @@ impl Editor {
         }
     }
 
+    /// Publish fixture candidates through the real owned ranking actor.
+    pub fn picker_items_fixture(&mut self, items: Vec<strop_picker::Item>) {
+        if let Some(glue) = self.picker.as_mut() {
+            glue.picker.append(items);
+        }
+        self.request_picker_ranking();
+        self.wait_picker();
+    }
+
     pub fn wait_analysis(&mut self) {
         while self.analysis.pending() {
             let event = self

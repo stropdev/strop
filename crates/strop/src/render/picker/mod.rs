@@ -13,11 +13,12 @@ use crate::editor::Editor;
 
 mod preview;
 mod rows;
+mod window;
 
 use rows::render_replace_results;
 use rows::render_results;
 
-use super::{dim_color, ACCENT, BASE, MUTED, TEXT};
+use super::{dim_color, ACCENT, BASE, MUTED, SECONDARY, SELECT_BG, TEXT};
 
 /// Dim the backdrop: the editor stays readable under the card (0003 §2.1
 /// live backdrop), with fg colors pulled toward the base.
@@ -88,7 +89,10 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         total,
         excluded,
         normal_mode,
-        picker_error,
+        // 0051: a source failure headlines; a non-blocking warning
+        // (rg's exit-0 stderr) shows when there is no failure — it
+        // must not block Enter on valid results like an error would.
+        picker_notice,
     ) = {
         let glue = editor.picker.as_ref().expect("picker open");
         let p = &glue.picker;
@@ -106,7 +110,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             // row + file exclusions both count (0007)
             p.excluded_count(),
             p.input_normal(),
-            p.error.clone(),
+            p.error.clone().or_else(|| p.warning.clone()),
         )
     };
     let replace_mode = kind == strop_picker::Kind::Replace;
@@ -120,15 +124,33 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         strop_picker::Kind::Locations | strop_picker::Kind::Diagnostics | strop_picker::Kind::Grep
     );
     let narrow_card = card.width < 64;
-    let hint = if narrow_card {
+    let suggestions_open = editor
+        .picker
+        .as_ref()
+        .is_some_and(|glue| glue.suggestions.is_some());
+    let hint = if suggestions_open {
+        if narrow_card {
+            " enter · esc cancel "
+        } else {
+            " enter accept suggestion · esc dismiss · ↑↓ choose "
+        }
+    } else if narrow_card {
         // whole groups by priority; never cut through a chord (0050 §8)
-        if collectable {
+        if replace_mode {
+            " enter review · tab field · esc "
+        } else if kind == strop_picker::Kind::RemoteAddress {
+            " enter connect · esc "
+        } else if collectable {
             " enter open · ctrl-o collect · esc "
         } else {
             " enter open · esc "
         }
     } else if replace_mode {
-        " enter apply · tab field · ctrl-x row · ctrl-d file · esc  —  -t rs / --glob filters "
+        if field == strop_picker::Field::Search {
+            " enter review · tab field · ctrl-x match · ctrl-d file · esc · ctrl-space suggest "
+        } else {
+            " enter review · tab field · ctrl-x match · ctrl-d file · esc normal/close "
+        }
     } else if collectable {
         " enter open · ctrl-o collect · esc normal/close · ↑↓/tab move "
     } else if kind == strop_picker::Kind::RemoteAddress {
@@ -138,10 +160,11 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     } else {
         " enter open · esc normal/close · ↑↓/tab move · j/k after esc "
     };
-    let count = if let Some(e) = &picker_error {
+    let count = if let Some(notice) = &picker_notice {
         // a failed source is the headline, not the count (0014: rg's
-        // bad-flag stderr reads like an empty project otherwise)
-        format!(" {e} ")
+        // bad-flag stderr reads like an empty project otherwise); a
+        // warning takes the slot only when there is no failure
+        format!(" {notice} ")
     } else if replace_mode {
         format!(" {excluded}/{total} excluded ")
     } else if streaming {
@@ -152,6 +175,24 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     } else {
         format!(" {total} ")
     };
+    let count = strop_core::layout::printable_text(count);
+    let count = super::text::clip_end(
+        &count,
+        usize::from(card.width).saturating_sub(super::text::width(kind.title()) + 4),
+    );
+    // Fit whole action groups; ratatui's raw title clipping can cut a chord.
+    let mut hint_end = 0;
+    let mut hint_cells = 0;
+    for group in hint.split(" · ") {
+        let separator = if hint_end == 0 { "" } else { " · " };
+        let cells = super::text::width(separator) + super::text::width(group);
+        if hint_cells + cells > usize::from(card.width.saturating_sub(2)) {
+            break;
+        }
+        hint_cells += cells;
+        hint_end += separator.len() + group.len();
+    }
+    let hint = &hint[..hint_end];
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -179,46 +220,63 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(input_h), Constraint::Min(1)])
         .split(inner);
-    let field_prompt = |label: &str, value: &str, active: bool| {
-        let fg = if active { ACCENT } else { MUTED };
-        let caret = if active { "▏" } else { " " };
-        Line::from(vec![
-            Span::styled(format!("{label} "), Style::default().fg(fg)),
-            Span::styled(value.to_string(), Style::default().fg(TEXT)),
-            Span::styled(caret, Style::default().fg(fg)),
-        ])
-    };
-    // the prompt glyph is the mode indicator: ❯ types into the field,
-    // ▮ means Esc parked you in normal mode (j/k walk the results)
     let glyph = if normal_mode { "▮" } else { "❯" };
-    if replace_mode {
-        let search_label = if normal_mode {
-            "▮ find   "
-        } else {
-            "❯ find   "
-        };
-        let replace_label = if normal_mode {
-            "▮ replace"
-        } else {
-            "❯ replace"
-        };
-        let search = field_prompt(search_label, &input, field == strop_picker::Field::Search);
-        let replace = field_prompt(
-            replace_label,
-            &replace_input,
-            field == strop_picker::Field::Replace,
-        );
-        frame.render_widget(Paragraph::new(vec![search, replace]), rows[0]);
+    let query_roles = matches!(
+        kind,
+        strop_picker::Kind::Files | strop_picker::Kind::Grep | strop_picker::Kind::Replace
+    );
+    let highlights = editor
+        .picker
+        .as_ref()
+        .map(|glue| glue.query_highlights.as_slice())
+        .unwrap_or(&[]);
+    let search_active = !replace_mode || field == strop_picker::Field::Search;
+    let search_label = if replace_mode {
+        format!("{glyph} Find")
     } else {
-        let prompt = field_prompt(glyph, &input, true);
-        frame.render_widget(Paragraph::new(vec![prompt]), rows[0]);
+        glyph.to_string()
+    };
+    let search = super::field::project(
+        &search_label,
+        &input,
+        input_cursor,
+        search_active,
+        rows[0].width,
+        if query_roles { highlights } else { &[] },
+    );
+    let mut field_caret = search.cursor.map(|column| (column, 0u16));
+    let mut fields = vec![search.line];
+    if replace_mode {
+        let replacement = super::field::project(
+            &format!("{glyph} With"),
+            &replace_input,
+            replace_cursor,
+            !search_active,
+            rows[0].width,
+            &[],
+        );
+        if let Some(column) = replacement.cursor {
+            field_caret = Some((column, 1));
+        }
+        fields.push(replacement.line);
     }
+    frame.render_widget(Paragraph::new(fields), rows[0]);
     // section definition: a rule separates where you type from results
     let rule_y = rows[0].y + input_h - 1;
     if rule_y < rows[1].y {
-        let rule: String = "─".repeat(rows[0].width as usize);
+        let rule = editor
+            .picker
+            .as_ref()
+            .filter(|_| query_roles)
+            .map(|glue| glue.query_summary.clone())
+            .filter(|summary| !summary.is_empty())
+            .unwrap_or_else(|| "─".repeat(rows[0].width as usize));
         frame.render_widget(
-            Paragraph::new(rule).style(Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d))),
+            Paragraph::new(rule).style(Style::default().fg(if query_roles {
+                MUTED
+            } else {
+                Color::Rgb(0x3a, 0x3d, 0x4d)
+            })),
             Rect {
                 y: rule_y,
                 height: 1,
@@ -268,7 +326,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         );
     } else if replace_mode {
         let p = &editor.picker.as_ref().expect("picker open").picker;
-        render_replace_results(frame, results, p);
+        render_replace_results(frame, results, p, &|path| editor.tab_width_for_path(path));
     } else {
         let p = &editor.picker.as_ref().expect("picker open").picker;
         // the scrollbar track is reserved BEFORE text budgets (0050 §8)
@@ -276,7 +334,9 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             width: results.width.saturating_sub(1),
             ..results
         };
-        render_results(frame, text_area, p, selected);
+        render_results(frame, text_area, p, selected, &|path| {
+            editor.tab_width_for_path(path)
+        });
     }
     // border-column scrollbar for the results list (0003 §5.5)
     if !results.is_empty() && row_count > results.height as usize {
@@ -298,16 +358,59 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     if let Some(preview_area) = preview_area {
         preview::render_preview(editor, frame, preview_area);
     }
-    let _ = streaming; // spinner lands with the 100ms rule (0001 §4)
-    let (caret_len, caret_row) = if replace_mode && field == strop_picker::Field::Replace {
-        (10 + replace_input[..replace_cursor].chars().count(), 1u16)
-    } else if replace_mode {
-        (10 + input[..input_cursor].chars().count(), 0u16)
-    } else {
-        (2 + input[..input_cursor].chars().count(), 0u16)
-    };
-    let caret_x = rows[0].x + caret_len as u16;
-    if caret_x < rows[0].x + rows[0].width {
-        crate::render::frame_capture::place_cursor(frame, (caret_x, rows[0].y + caret_row));
+    // Manual suggestions own focus without resizing the underlying card.
+    {
+        let glue = editor.picker.as_ref().expect("picker open");
+        if let Some(list) = &glue.suggestions {
+            let available = frame.area().bottom().saturating_sub(rows[0].y + input_h);
+            let show = (list.items.len().min(6) as u16).min(available.saturating_sub(2));
+            let area = Rect {
+                x: rows[0].x,
+                y: rows[0].y + input_h,
+                width: rows[0].width.min(40),
+                height: (show + 2).min(available),
+            };
+            let mut lines: Vec<Line> = Vec::with_capacity(show as usize);
+            let first = list
+                .selected
+                .saturating_sub(show.saturating_sub(1) as usize);
+            for (i, suggestion) in list
+                .items
+                .iter()
+                .enumerate()
+                .skip(first)
+                .take(show as usize)
+            {
+                let active = i == list.selected;
+                let style = if active {
+                    Style::default().fg(TEXT).bg(SELECT_BG)
+                } else {
+                    Style::default().fg(SECONDARY)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(if active { "▌" } else { " " }, style),
+                    Span::styled(suggestion.insert.clone(), style),
+                    Span::styled(
+                        format!("  {}", suggestion.detail),
+                        Style::default().fg(MUTED),
+                    ),
+                ]));
+            }
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(MUTED))
+                .style(Style::default().bg(BASE));
+            frame.render_widget(Clear, area);
+            frame.render_widget(Paragraph::new(lines).block(block), area);
+        }
+    }
+    if let Some((column, row)) = field_caret {
+        if column < rows[0].width && row < rows[0].height {
+            crate::render::frame_capture::place_cursor(
+                frame,
+                (rows[0].x + column, rows[0].y + row),
+            );
+        }
     }
 }

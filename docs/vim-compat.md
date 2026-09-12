@@ -40,6 +40,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ n` — next match
 - `✓ N` — previous match
 - `✓ ]f [f` — next / prev file card (collections)
+- `✓ ]e [e` — next / prev excerpt (collections; +/- context)
 - `✓ ]c [c` — next / prev git hunk
 - `✓ m<a>` — set mark at cursor
 - `✓ '<a> `<a>` — jump to mark
@@ -93,7 +94,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ space b` — buffers (MRU)
 - `✓ space /` — live grep
 - `✓ space R` — global search & replace
-- `✓ space ?` — this popup
+- `✓ space ?` — help buffer
 - `✓ space y` — yank motion → system clipboard
 - `✓ space p` — paste clipboard after
 - `✓ space P` — paste clipboard before
@@ -137,4 +138,8 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ ctrl-w q` — close pane (last → buffer)
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
 - `✓ ctrl-x` — replace picker: exclude/include match
+- `✓ ctrl-space` — query field: qualifier, language and value suggestions
+- `✓ ctrl-d` — replace picker: exclude/include file
+- `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
+- `✓ :apply-change :cancel-change :save-change` — review: apply buffers, cancel, or save the changed files
 - `✓ ctrl-l` — redraw: full repaint when the terminal desyncs

@@ -11,14 +11,26 @@
 //! never recomputes from newer text. After Apply/Cancel the review buffer
 //! stays around as the receipt: outcomes per target, refusals with reasons.
 //!
-//! Integration wiring (reported to 0049's integrator, none done here):
-//! `changes/mod.rs` declares `pub(crate) mod review;`, `editor/mod.rs`
 use strop_core::id::DocumentId;
-use strop_core::{Buffer, Replacement};
+use strop_core::Buffer;
 
-use super::{ChangePlan, ChangeReceipt};
+use super::{ChangePlan, ChangeReceipt, PlannedDocument};
 use crate::editor::transact::ChangeSet;
-use crate::editor::{Document, Editor};
+use crate::editor::Editor;
+mod render;
+mod save;
+use render::ReviewBuffer;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReviewRow {
+    Heading,
+    File,
+    Hunk,
+    Context,
+    Removed,
+    Added,
+    Warning,
+}
 
 /// The command names the review buffer advertises. Integration wires these
 /// exact names to `review_apply_pub` / `review_cancel_pub`.
@@ -30,12 +42,60 @@ const CONTEXT: usize = 3;
 
 /// Pending-proposal state. One proposal is reviewable at a time; a newer
 /// proposal supersedes the older one's buffer with a visible note.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(crate) struct ReviewState {
     /// Monotone proposal identity; receipt headers name it.
     seq: usize,
     /// The proposal awaiting Apply/Cancel, if any.
     pending: Option<ChangeProposal>,
+    /// A global replace assembling while its unopened targets load
+    /// (0051 §6 R04); the review presents when the last target resolves.
+    pub(crate) replace: Option<PendingReplace>,
+    /// Monotone replace identity: a newer Enter supersedes, and opens
+    /// issued for the older one merge nowhere.
+    replace_seq: usize,
+    pub(crate) replace_context: Option<ReplaceContext>,
+    rows: std::collections::HashMap<DocumentId, Vec<ReviewRow>>,
+    saves: std::collections::HashMap<DocumentId, save::PendingChangeSave>,
+}
+
+impl ReviewState {
+    pub(crate) fn forget(&mut self, document: DocumentId) {
+        self.rows.remove(&document);
+        self.saves.retain(|_, pending| pending.report != document);
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|proposal| proposal.buffer == document)
+        {
+            self.pending = None;
+            if self.replace.is_none() {
+                self.replace_context = None;
+            }
+        }
+    }
+}
+
+pub(crate) struct ReplaceContext {
+    pub picker: strop_picker::Picker,
+    pub origin: crate::editor::jumps::JumpRecord,
+}
+
+/// A global replace (Space R Enter) assembling its prepared review:
+/// open buffers planned at Enter, unopened targets joining as their
+/// owned open jobs land. Nothing here mutates a buffer.
+#[derive(Debug)]
+pub(crate) struct PendingReplace {
+    /// Generation from `replace_seq`; late opens for a superseded
+    /// replace are ignored.
+    pub id: usize,
+    /// Targets prepared so far, each with its pinned base revision.
+    pub documents: Vec<PlannedDocument>,
+    /// Every target that will not change, named with its reason:
+    /// stale witnesses, read-only buffers, failed opens.
+    pub refused: Vec<(strop_workspace::ResourceLocation, String)>,
+    /// Owned opens still in flight; the review presents at zero.
+    pub pending_opens: usize,
 }
 
 /// An immutable prepared proposal (0049 §8): identity, provenance, the
@@ -51,6 +111,7 @@ pub(crate) struct ChangeProposal {
     /// The real (read-only) buffer showing the diff review; it becomes the
     /// receipt after Apply/Cancel.
     pub buffer: DocumentId,
+    pub view_revision: strop_core::id::BufferRevision,
 }
 
 impl Editor {
@@ -62,38 +123,7 @@ impl Editor {
             self.apply_change_plan(plan);
             return;
         }
-        if let Some(old) = self.review.pending.take() {
-            let note = format!(
-                "strop change proposal {}: {} — SUPERSEDED by a newer proposal\n",
-                old.id,
-                old.plan.producer.label()
-            );
-            if let Err(error) = self.replace_system(old.buffer, &note) {
-                self.message = format!("could not retire proposal {}: {error}", old.id);
-            }
-        }
-        self.review.seq += 1;
-        let id = self.review.seq;
-        let text = self.render_proposal(id, &plan);
-        let producer = plan.producer.label().to_string();
-        let files = plan.documents.len();
-        let refused = plan.refused.len();
-        let mut buf = Buffer::from_text(&text);
-        buf.name = Some(format!("change proposal {id}"));
-        let buffer = self.docs.insert(Document::output(buf));
-        self.drop_stale_scratch(buffer);
-        self.switch_to(buffer);
-        self.set_head(0);
-        self.view_mut().view_top = 0;
-        self.review.pending = Some(ChangeProposal { id, plan, buffer });
-        self.message = match refused {
-            0 => format!(
-                "{producer}: proposal {id} reviews {files} file(s) — {APPLY_COMMAND} or {CANCEL_COMMAND}"
-            ),
-            _ => format!(
-                "{producer}: proposal {id} reviews {files} file(s), {refused} refused — {APPLY_COMMAND} or {CANCEL_COMMAND}"
-            ),
-        };
+        self.review_change_plan(plan);
     }
 
     /// Apply the reviewed proposal. Each target's base revision is checked
@@ -107,12 +137,23 @@ impl Editor {
             self.message = "no change proposal awaiting review".into();
             return;
         };
+        if self
+            .docs
+            .get(proposal.buffer)
+            .is_none_or(|doc| doc.buf.revision() != proposal.view_revision)
+        {
+            self.review.pending = Some(proposal);
+            self.message = "review changed; prepare a new proposal before applying".into();
+            return;
+        }
+        self.review.replace_context = None;
         let producer = proposal.plan.producer.label().to_string();
         let mut receipt = ChangeReceipt {
             producer: producer.clone(),
             applied: Vec::new(),
+            applied_positions: Vec::new(),
             refused: proposal.plan.refused.clone(),
-            redo_depths: None,
+            redo_positions: None,
         };
         let mut lines: Vec<String> = proposal
             .plan
@@ -140,7 +181,7 @@ impl Editor {
                 Some(_) => {
                     let changes = ChangeSet {
                         edits: target.edits,
-                        undo_open: true,
+                        undo_open: false,
                     };
                     match self.apply(target.document, target.base, changes) {
                         Ok(committed) => {
@@ -149,6 +190,13 @@ impl Editor {
                                 target.base,
                                 committed.revision,
                             ));
+                            if let Some(position) = self
+                                .docs
+                                .get(target.document)
+                                .and_then(|doc| doc.buf.history().committed_position())
+                            {
+                                receipt.applied_positions.push(position);
+                            }
                             lines.push(format!(
                                 "applied: {label} (revision {} -> {})",
                                 target.base, committed.revision
@@ -163,8 +211,15 @@ impl Editor {
                 }
             }
         }
+        let status = if receipt.refused.is_empty() {
+            "APPLIED"
+        } else if receipt.applied.is_empty() {
+            "REFUSED"
+        } else {
+            "PARTIAL"
+        };
         let mut text = format!(
-            "strop change proposal {}: {producer} — APPLIED\n{} buffer(s) applied, {} target(s) refused\n:undo-change reverts the applied group\n\n",
+            "strop change proposal {}: {producer} — {status}\n{} buffer(s) applied, {} target(s) refused\n:undo-change reverts the applied group; :save-change saves changed files\n\n",
             proposal.id,
             receipt.applied.len(),
             receipt.refused.len()
@@ -174,6 +229,21 @@ impl Editor {
             text.push('\n');
         }
         let publish = self.replace_system(proposal.buffer, &text);
+        self.review.rows.insert(
+            proposal.buffer,
+            text.lines()
+                .enumerate()
+                .map(|(line, _)| {
+                    if line == 0 && !receipt.refused.is_empty() {
+                        ReviewRow::Warning
+                    } else if line == 0 {
+                        ReviewRow::Heading
+                    } else {
+                        ReviewRow::Context
+                    }
+                })
+                .collect(),
+        );
         if self.current() == proposal.buffer {
             self.set_head(0);
             self.view_mut().view_top = 0;
@@ -193,6 +263,11 @@ impl Editor {
     /// Cancel the reviewed proposal: nothing is applied, ever. The review
     /// buffer becomes a cancelled receipt and stays open.
     pub(crate) fn review_cancel_pub(&mut self) {
+        if self.review.replace.take().is_some() {
+            self.restore_replace_context();
+            self.message = "replace cancelled while loading; nothing applied".into();
+            return;
+        }
         let Some(proposal) = self.review.pending.take() else {
             self.message = "no change proposal awaiting review".into();
             return;
@@ -210,6 +285,19 @@ impl Editor {
             }
         }
         let publish = self.replace_system(proposal.buffer, &text);
+        self.review.rows.insert(
+            proposal.buffer,
+            text.lines()
+                .enumerate()
+                .map(|(line, _)| {
+                    if line == 0 {
+                        ReviewRow::Heading
+                    } else {
+                        ReviewRow::Context
+                    }
+                })
+                .collect(),
+        );
         if self.current() == proposal.buffer {
             self.set_head(0);
             self.view_mut().view_top = 0;
@@ -221,475 +309,148 @@ impl Editor {
         if let Err(error) = publish {
             self.message = format!("change receipt publish failed: {error}");
         }
+        self.restore_replace_context();
     }
 
     /// Render the review buffer: header, per-file unified diffs computed
     /// from each target's pinned base, and every refused target named with
     /// its reason.
-    fn render_proposal(&self, id: usize, plan: &ChangePlan) -> String {
+    fn render_proposal(&self, id: usize, plan: &ChangePlan) -> ReviewBuffer {
         let producer = plan.producer.label();
-        let mut text = format!(
-            "strop change proposal {id}: {producer}\n{} file(s) to change, {} target(s) refused\n{APPLY_COMMAND} applies exactly what is shown; {CANCEL_COMMAND} discards it\nbases are pinned — editing a source invalidates that file at apply\n",
-            plan.documents.len(),
-            plan.refused.len()
+        let mut view = ReviewBuffer::default();
+        view.line(
+            &format!("strop change proposal {id}: {producer}"),
+            ReviewRow::Heading,
+        );
+        view.line(
+            &format!(
+                "{} file(s) to change, {} target(s) refused",
+                plan.documents.len(),
+                plan.refused.len()
+            ),
+            ReviewRow::Context,
+        );
+        view.line(
+            &format!("{APPLY_COMMAND} applies exactly what is shown; {CANCEL_COMMAND} discards it"),
+            ReviewRow::Context,
+        );
+        view.line(
+            "bases are pinned — editing a source invalidates that file at apply",
+            ReviewRow::Context,
         );
         for target in &plan.documents {
-            text.push('\n');
-            let label = target.location.label();
+            view.line("", ReviewRow::Context);
+            let label = match target.location.filesystem {
+                strop_workspace::Filesystem::Local => target
+                    .location
+                    .path
+                    .strip_prefix(&self.cwd)
+                    .unwrap_or(&target.location.path)
+                    .display()
+                    .to_string(),
+                _ => target.location.label(),
+            };
             match self.docs.get(target.document) {
                 Some(document) => {
-                    let base = document.buf.text().to_string();
-                    text.push_str(&render_file_diff(&label, &base, &target.edits));
+                    match render::file_diff(&label, &document.buf, target.base, &target.edits) {
+                        Ok(diff) => view.append(diff),
+                        Err(error) => {
+                            view.line(&format!("refused: {label} — {error}"), ReviewRow::Warning)
+                        }
+                    }
                 }
-                None => {
-                    text.push_str(&format!("--- {label}: document closed since the plan\n"));
-                }
+                None => view.line(
+                    &format!("refused: {label} — document closed"),
+                    ReviewRow::Warning,
+                ),
             }
         }
         if !plan.refused.is_empty() {
-            text.push_str("\nrefused targets:\n");
+            view.line("", ReviewRow::Context);
+            view.line("refused targets:", ReviewRow::Warning);
             for (location, reason) in &plan.refused {
-                text.push_str(&format!("  {} — {reason}\n", location.label()));
+                view.line(
+                    &format!("  {} — {reason}", location.label()),
+                    ReviewRow::Warning,
+                );
             }
         }
-        text
+        view
     }
 }
-
-/// A changed line span in the base text plus its replacement lines.
-struct Span {
-    /// First affected base line (0-based).
-    first: usize,
-    /// Last affected base line, inclusive.
-    last: usize,
-    /// The lines replacing that span (content, no terminators).
-    added: Vec<String>,
-}
-
-/// Line starts of `text`; an empty text is one empty line.
-fn line_layout(text: &str) -> (Vec<usize>, Vec<&str>) {
-    let lines: Vec<&str> = if text.is_empty() {
-        vec![""]
-    } else {
-        text.split_inclusive('\n').collect()
-    };
-    let mut starts = Vec::with_capacity(lines.len());
-    let mut offset = 0;
-    for line in &lines {
-        starts.push(offset);
-        offset += line.len();
+impl Editor {
+    /// Begin a replace review assembly (0051 §6 R04); returns the
+    /// generation the owned opens carry. A newer call supersedes the
+    /// old assembly — its late opens merge nowhere.
+    pub(crate) fn begin_replace(
+        &mut self,
+        documents: Vec<PlannedDocument>,
+        refused: Vec<(strop_workspace::ResourceLocation, String)>,
+        pending_opens: usize,
+    ) -> usize {
+        self.review.replace_seq += 1;
+        let id = self.review.replace_seq;
+        self.review.replace = Some(PendingReplace {
+            id,
+            documents,
+            refused,
+            pending_opens,
+        });
+        id
     }
-    (starts, lines)
-}
 
-/// The 0-based line containing byte offset `byte`.
-fn line_of(starts: &[usize], byte: usize) -> usize {
-    starts
-        .partition_point(|start| *start <= byte)
-        .saturating_sub(1)
-}
-
-/// Clamp `byte` down to a char boundary (prepared ranges are boundaries
-/// already; this keeps rendering total for any server oddity).
-fn floor_boundary(text: &str, byte: usize) -> usize {
-    let mut byte = byte.min(text.len());
-    while byte > 0 && !text.is_char_boundary(byte) {
-        byte -= 1;
-    }
-    byte
-}
-
-/// A line's content without its terminator.
-fn strip_newline(line: &str) -> &str {
-    line.strip_suffix('\n').unwrap_or(line)
-}
-
-/// Per-file unified diff of the prepared edits against the pinned base
-/// text. Hunks come from the known edit spans (not a text re-diff), so the
-/// review always shows exactly what apply will do.
-fn render_file_diff(label: &str, base: &str, edits: &[Replacement]) -> String {
-    let mut out = format!("--- a/{label}\n+++ b/{label}\n");
-    let (starts, lines) = line_layout(base);
-    let last_line = lines.len() - 1;
-    let mut spans: Vec<Span> = Vec::with_capacity(edits.len());
-    for edit in edits {
-        let start = floor_boundary(base, edit.range.start.get());
-        let end = floor_boundary(base, edit.range.end.get());
-        let (start, end) = if start <= end {
-            (start, end)
-        } else {
-            (end, start)
+    /// Present a prepared plan as a review ALWAYS (0051 §6 R04): a
+    /// global replace never applies straight from the picker's text
+    /// fields, even when the plan is a single file. Same review shape
+    /// as `present_change_plan` — kept separate so that method's
+    /// direct-apply fast path stays untouched for LSP producers.
+    pub(crate) fn review_change_plan(&mut self, plan: ChangePlan) {
+        if let Some(old) = self.review.pending.take() {
+            let note = format!(
+                "strop change proposal {}: {} — SUPERSEDED by a newer proposal\n",
+                old.id,
+                old.plan.producer.label()
+            );
+            if let Err(error) = self.replace_system(old.buffer, &note) {
+                self.message = format!("could not retire proposal {}: {error}", old.id);
+            }
+            self.review
+                .rows
+                .insert(old.buffer, vec![ReviewRow::Heading]);
+        }
+        self.review.seq += 1;
+        let id = self.review.seq;
+        let text = self.render_proposal(id, &plan);
+        let producer = plan.producer.label().to_string();
+        let files = plan.documents.len();
+        let refused = plan.refused.len();
+        let mut buf = Buffer::from_text(&text.text);
+        buf.name = Some(format!("change proposal {id}"));
+        let view_revision = buf.revision();
+        let buffer = self.open_temporary_output(buf);
+        self.review.rows.insert(buffer, text.rows);
+        self.review.pending = Some(ChangeProposal {
+            id,
+            plan,
+            buffer,
+            view_revision,
+        });
+        self.message = match refused {
+            0 => format!(
+                "{producer}: proposal {id} reviews {files} file(s) — {APPLY_COMMAND} or {CANCEL_COMMAND}"
+            ),
+            _ => format!(
+                "{producer}: proposal {id} reviews {files} file(s), {refused} refused — {APPLY_COMMAND} or {CANCEL_COMMAND}"
+            ),
         };
-        let first = line_of(&starts, start).min(last_line);
-        let last = if end > start {
-            line_of(&starts, end - 1).min(last_line)
-        } else {
-            first
-        };
-        // The replacement plus the unchanged fragments of the boundary
-        // lines gives the span's added lines exactly.
-        let line_end = starts.get(last + 1).copied().unwrap_or(base.len());
-        let joined = format!(
-            "{}{}{}",
-            &base[starts[first]..start],
-            edit.text,
-            &base[end..line_end]
-        );
-        let mut added: Vec<String> = joined.split('\n').map(str::to_string).collect();
-        if joined.ends_with('\n') {
-            added.pop();
-        }
-        spans.push(Span { first, last, added });
     }
-    // Merge context windows that touch; spans are start-sorted.
-    let mut windows: Vec<(usize, usize, usize, usize)> = Vec::new();
-    for (index, span) in spans.iter().enumerate() {
-        let window_first = span.first.saturating_sub(CONTEXT);
-        let window_last = (span.last + CONTEXT).min(last_line);
-        match windows.last_mut() {
-            Some(window) if window_first <= window.1 + 1 => {
-                window.1 = window.1.max(window_last);
-                window.3 = index + 1;
-            }
-            _ => windows.push((window_first, window_last, index, index + 1)),
-        }
-    }
-    let mut delta: isize = 0;
-    for (window_first, window_last, span_lo, span_hi) in windows {
-        let window_spans = &spans[span_lo..span_hi];
-        let removed: usize = window_spans
-            .iter()
-            .map(|span| span.last + 1 - span.first)
-            .sum();
-        let added: usize = window_spans.iter().map(|span| span.added.len()).sum();
-        let base_count = window_last + 1 - window_first;
-        let new_count = base_count - removed + added;
-        let new_first = (window_first as isize + delta + 1).max(1);
-        out.push_str(&format!(
-            "@@ -{},{} +{},{} @@\n",
-            window_first + 1,
-            base_count,
-            new_first,
-            new_count
-        ));
-        let mut cursor = window_first;
-        for span in window_spans {
-            for line in &lines[cursor..span.first.max(cursor)] {
-                out.push(' ');
-                out.push_str(strip_newline(line));
-                out.push('\n');
-            }
-            for line in &lines[span.first..=span.last] {
-                out.push('-');
-                out.push_str(strip_newline(line));
-                out.push('\n');
-            }
-            for line in &span.added {
-                out.push('+');
-                out.push_str(line);
-                out.push('\n');
-            }
-            cursor = cursor.max(span.last + 1);
-        }
-        for line in &lines[cursor..=window_last] {
-            out.push(' ');
-            out.push_str(strip_newline(line));
-            out.push('\n');
-        }
-        delta += added as isize - removed as isize;
-    }
-    out
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::ChangeProducer;
-    use super::*;
-    use std::path::PathBuf;
-    use strop_core::id::LineIndex;
-    use strop_lsp::{PositionEncoding, ServerColumn, ServerEdit, ServerId, ServerPosition};
-    use strop_workspace::ResourceLocation;
+mod tests;
 
-    fn at(line: usize, col: usize) -> ServerPosition {
-        ServerPosition {
-            line: LineIndex::new(line),
-            column: ServerColumn::new(col),
-        }
-    }
-
-    fn edit(sl: usize, sc: usize, el: usize, ec: usize, text: &str) -> ServerEdit {
-        ServerEdit {
-            start: at(sl, sc),
-            end: at(el, ec),
-            new_text: text.into(),
-        }
-    }
-
-    fn file_editor(dir: &tempfile::TempDir, name: &str, text: &str) -> (Editor, DocumentId) {
-        std::fs::write(dir.path().join(name), text).unwrap();
-        let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
-        e.open_fixture(&dir.path().join(name)).unwrap();
-        let document = e.current();
-        (e, document)
-    }
-
-    fn open_second(e: &mut Editor, dir: &tempfile::TempDir, name: &str, text: &str) -> DocumentId {
-        std::fs::write(dir.path().join(name), text).unwrap();
-        e.open_fixture(&dir.path().join(name)).unwrap();
-        e.current()
-    }
-
-    /// Bind the document to a server so `build_change_plan` resolves its
-    /// location — the inverse map the live LSP path maintains.
-    fn bind(e: &mut Editor, document: DocumentId) {
-        let (revision, path) = {
-            let doc = e.docs.get(document).unwrap();
-            (doc.buf.revision(), doc.buf.path.clone().unwrap())
-        };
-        e.lsp_state.bindings.insert(
-            document,
-            crate::editor::lsp::state::Binding {
-                server: ServerId::new(7),
-                revision,
-                path,
-                root: PathBuf::from("/workspace"),
-                language: "rust".into(),
-                target: strop_workspace::Filesystem::Local,
-            },
-        );
-    }
-
-    fn text_of(e: &Editor, document: DocumentId) -> String {
-        e.docs.get(document).unwrap().buf.text().to_string()
-    }
-
-    /// A two-document rename proposal with one unopened (refused) target.
-    fn two_file_editor() -> (Editor, tempfile::TempDir, DocumentId, DocumentId) {
-        let dir = tempfile::tempdir().unwrap();
-        let (mut e, first) = file_editor(&dir, "a.txt", "alpha here\n");
-        let second = open_second(&mut e, &dir, "b.txt", "alpha there\n");
-        bind(&mut e, first);
-        bind(&mut e, second);
-        let plan = e.build_change_plan(
-            ChangeProducer::Rename,
-            vec![
-                (
-                    ResourceLocation::local(dir.path().join("a.txt")),
-                    vec![edit(0, 0, 0, 5, "omega")],
-                ),
-                (
-                    ResourceLocation::local(dir.path().join("b.txt")),
-                    vec![edit(0, 0, 0, 5, "omega")],
-                ),
-                (
-                    ResourceLocation::local(dir.path().join("ghost.txt")),
-                    vec![edit(0, 0, 0, 3, "x")],
-                ),
-            ],
-            PositionEncoding::Utf8,
-        );
-        e.present_change_plan(plan);
-        (e, dir, first, second)
-    }
-
-    #[test]
-    fn multi_target_plan_opens_a_diff_review_without_mutating() {
-        let (e, _dir, first, _second) = two_file_editor();
-        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
-        let review = e.current();
-        assert_ne!(review, first, "the review buffer takes focus");
-        assert!(e.buf().readonly, "the review is a real read-only buffer");
-        let text = e.buf().text().to_string();
-        assert!(text.contains("strop change proposal 1: rename"), "{text}");
-        assert!(text.contains(APPLY_COMMAND), "{text}");
-        assert!(text.contains(CANCEL_COMMAND), "{text}");
-        // Per-file unified diffs against the pinned bases.
-        assert!(text.contains("--- a/"), "{text}");
-        assert!(text.contains("+++ b/"), "{text}");
-        assert!(text.contains("@@ -1,1 +1,1 @@"), "{text}");
-        assert!(text.contains("-alpha here"), "{text}");
-        assert!(text.contains("+omega here"), "{text}");
-        assert!(text.contains("-alpha there"), "{text}");
-        assert!(text.contains("+omega there"), "{text}");
-        // The unopened target is named with its reason, never dropped.
-        assert!(text.contains("ghost.txt"), "{text}");
-        assert!(text.contains("not open on the server"), "{text}");
-        // Nothing has mutated yet.
-        assert_eq!(text_of(&e, first), "alpha here\n");
-        assert!(e.message.contains("proposal 1"), "{}", e.message);
-    }
-
-    #[test]
-    fn apply_mutates_exactly_the_planned_sources_and_leaves_a_receipt() {
-        let (mut e, _dir, first, second) = two_file_editor();
-        let review = e.current();
-        e.review_apply_pub();
-        assert_eq!(text_of(&e, first), "omega here\n");
-        assert_eq!(text_of(&e, second), "omega there\n");
-        assert_eq!(
-            e.message,
-            "rename: 2 buffer(s) applied, 1 target(s) refused"
-        );
-        // The review buffer stays around as the receipt.
-        let receipt = text_of(&e, review);
-        assert!(receipt.contains("— APPLIED"), "{receipt}");
-        assert!(receipt.contains("applied: "), "{receipt}");
-        assert!(receipt.contains("a.txt"), "{receipt}");
-        assert!(receipt.contains("b.txt"), "{receipt}");
-        assert!(receipt.contains("refused: "), "{receipt}");
-        assert!(receipt.contains("ghost.txt"), "{receipt}");
-        assert!(receipt.contains("not open on the server"), "{receipt}");
-        // The recorded receipt anchors grouped undo across both buffers.
-        e.feed_text(":undo-change\r");
-        assert_eq!(text_of(&e, first), "alpha here\n");
-        assert_eq!(text_of(&e, second), "alpha there\n");
-    }
-
-    #[test]
-    fn cancel_mutates_nothing_and_leaves_a_cancelled_receipt() {
-        let (mut e, _dir, first, second) = two_file_editor();
-        let review = e.current();
-        e.review_cancel_pub();
-        assert_eq!(text_of(&e, first), "alpha here\n");
-        assert_eq!(text_of(&e, second), "alpha there\n");
-        let receipt = text_of(&e, review);
-        assert!(receipt.contains("— CANCELLED"), "{receipt}");
-        assert!(receipt.contains("nothing applied"), "{receipt}");
-        assert!(receipt.contains("ghost.txt"), "{receipt}");
-        assert!(e.message.contains("cancelled"), "{}", e.message);
-        // No receipt was recorded: there is nothing to undo.
-        e.feed_text(":undo-change\r");
-        assert_eq!(e.message, "no change to undo");
-        // A second cancel is a named no-op, not a panic or a stale apply.
-        e.review_cancel_pub();
-        assert_eq!(e.message, "no change proposal awaiting review");
-    }
-
-    #[test]
-    fn a_source_edited_since_the_proposal_is_refused_by_name() {
-        let (mut e, _dir, first, second) = two_file_editor();
-        let review = e.current();
-        e.switch_to(first);
-        e.feed_text("0rx"); // revision moves past the proposal's base
-        e.review_apply_pub();
-        // The user's edit stands; the proposal never recomputes onto it.
-        assert_eq!(text_of(&e, first), "xlpha here\n");
-        assert_eq!(text_of(&e, second), "omega there\n");
-        assert_eq!(
-            e.message,
-            "rename: 1 buffer(s) applied, 2 target(s) refused"
-        );
-        let receipt = text_of(&e, review);
-        assert!(receipt.contains("a.txt"), "{receipt}");
-        assert!(receipt.contains("edited since the proposal"), "{receipt}");
-        assert!(receipt.contains("re-run the rename"), "{receipt}");
-    }
-
-    #[test]
-    fn a_source_closed_since_the_proposal_is_refused_by_name() {
-        let (mut e, _dir, first, second) = two_file_editor();
-        let review = e.current();
-        e.switch_to(second);
-        e.close_buffer(true); // close b.txt after the proposal
-        assert_eq!(text_of(&e, first), "alpha here\n");
-        e.review_apply_pub();
-        assert_eq!(text_of(&e, first), "omega here\n");
-        let receipt = text_of(&e, review);
-        assert!(receipt.contains("closed since the proposal"), "{receipt}");
-        assert_eq!(
-            e.message,
-            "rename: 1 buffer(s) applied, 2 target(s) refused"
-        );
-    }
-
-    #[test]
-    fn a_single_clean_document_applies_directly_with_the_existing_receipt() {
-        let dir = tempfile::tempdir().unwrap();
-        let (mut e, document) = file_editor(&dir, "a.txt", "alpha here\n");
-        bind(&mut e, document);
-        let plan = e.build_change_plan(
-            ChangeProducer::Rename,
-            vec![(
-                ResourceLocation::local(dir.path().join("a.txt")),
-                vec![edit(0, 0, 0, 5, "omega")],
-            )],
-            PositionEncoding::Utf8,
-        );
-        e.present_change_plan(plan);
-        assert_eq!(e.current(), document, "focus stays on the edited file");
-        assert_eq!(text_of(&e, document), "omega here\n");
-        assert_eq!(e.message, "rename: applied to 1 buffer(s)");
-    }
-
-    #[test]
-    fn a_newer_proposal_supersedes_the_older_buffer_visibly() {
-        let (mut e, dir, first, _second) = two_file_editor();
-        let stale = e.current();
-        let plan = e.build_change_plan(
-            ChangeProducer::CodeAction,
-            vec![
-                (
-                    ResourceLocation::local(dir.path().join("a.txt")),
-                    vec![edit(0, 0, 0, 5, "sigma")],
-                ),
-                (
-                    ResourceLocation::local(dir.path().join("b.txt")),
-                    vec![edit(0, 0, 0, 5, "sigma")],
-                ),
-            ],
-            PositionEncoding::Utf8,
-        );
-        e.present_change_plan(plan);
-        assert_ne!(e.current(), stale);
-        let retired = text_of(&e, stale);
-        assert!(retired.contains("SUPERSEDED"), "{retired}");
-        assert!(e.buf().text().to_string().contains("change proposal 2"));
-        e.review_apply_pub();
-        assert_eq!(text_of(&e, first), "sigma here\n");
-    }
-
-    #[test]
-    fn nearby_edits_share_one_hunk_with_context_on_both_sides() {
-        // Rendering is exercised through the public review buffer, so the
-        // hunk layout a user sees is what is asserted.
-        let dir = tempfile::tempdir().unwrap();
-        let (mut e, document) = file_editor(
-            &dir,
-            "a.txt",
-            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n",
-        );
-        bind(&mut e, document);
-        let plan = e.build_change_plan(
-            ChangeProducer::CodeAction,
-            vec![
-                (
-                    ResourceLocation::local(dir.path().join("a.txt")),
-                    vec![edit(1, 0, 1, 3, "TWO"), edit(2, 0, 2, 5, "THREE")],
-                ),
-                (
-                    ResourceLocation::local(dir.path().join("ghost.txt")),
-                    vec![edit(0, 0, 0, 1, "x")],
-                ),
-            ],
-            PositionEncoding::Utf8,
-        );
-        e.present_change_plan(plan);
-        let text = e.buf().text().to_string();
-        // Adjacent edits merge into one hunk with context on both sides.
-        assert!(text.contains("@@ -1,6 +1,6 @@"), "{text}");
-        assert!(
-            text.contains(" one\n-two\n+TWO\n-three\n+THREE\n four\n five\n six\n"),
-            "{text}"
-        );
-        assert_eq!(
-            text.lines().filter(|line| line.starts_with("@@")).count(),
-            1,
-            "{text}"
-        );
-        e.review_apply_pub();
-        assert_eq!(
-            text_of(&e, document),
-            "one\nTWO\nTHREE\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
-        );
+impl Editor {
+    pub fn review_row(&self, document: DocumentId, row: usize) -> Option<ReviewRow> {
+        self.review.rows.get(&document)?.get(row).copied()
     }
 }

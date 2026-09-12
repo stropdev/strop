@@ -8,14 +8,15 @@ use super::{trace, Editor};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 
-use strop_lsp::protocol::ResolvedDiag;
 use strop_lsp::registry;
 use strop_lsp::{LspEvent, ServerId};
 use strop_workspace::{Filesystem, ResourceLocation};
 
 pub(crate) mod attach;
 mod lifecycle;
+mod navigation;
 pub(crate) mod remote;
+mod routing;
 pub(crate) mod state;
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,22 @@ pub struct LspServer {
     pub client: Option<strop_lsp::Client>,
     pub rx: Receiver<LspEvent>,
     pub ready: bool,
+}
+
+impl Editor {
+    pub(crate) fn open_hover_document(&mut self) {
+        let Some(text) = self.hover_card.take() else {
+            return;
+        };
+        self.push_jump();
+        let mut document = super::Document::documentation(strop_core::Buffer::from_text(&text));
+        document.set_return_point(self.jump_record());
+        let id = self.docs.insert(document);
+        self.switch_to(id);
+        self.set_head(0);
+        self.view_mut().view_top = 0;
+        self.message = "documentation: search/scroll normally; Ctrl-O returns".into();
+    }
 }
 
 impl Editor {
@@ -80,518 +97,6 @@ impl Editor {
         })
     }
 
-    pub(crate) fn handle_lsp_event(&mut self, event: LspEvent) {
-        trace::services::lsp(&event);
-        match event {
-            LspEvent::Ready { server, name } => {
-                if let Some(owner) = self.lsp_servers.iter_mut().find(|owner| owner.id == server) {
-                    owner.ready = true;
-                    // Success must not erase a configuration warning
-                    // (0033 §2): readiness is reported alongside it.
-                    self.message = match self.layer_warning() {
-                        Some(warning) => format!("lsp: {name} ready — {warning}"),
-                        None => format!("lsp: {name} ready"),
-                    };
-                }
-            }
-            LspEvent::Failed { server, name, hint } => {
-                if self.lsp_servers.iter().any(|s| s.id == server) {
-                    self.lsp_failed(server);
-                    self.message = format!("lsp: {name} failed — {hint}");
-                } else {
-                    trace::services::rejected("lsp", "failure for an unowned server");
-                }
-            }
-            LspEvent::ServerMessage { server, name, text } => {
-                if self.lsp_servers.iter().any(|s| s.id == server) {
-                    self.message = format!("lsp: {name}: {text}");
-                } else {
-                    trace::services::rejected("lsp", "message for an unowned server");
-                }
-            }
-            LspEvent::Diagnostics {
-                context,
-                doc,
-                diags,
-            } => {
-                let valid = self
-                    .lsp_state
-                    .bindings
-                    .get(&context.document)
-                    .is_some_and(|b| {
-                        b.server == context.server
-                            && b.path == doc.path
-                            && b.target == doc.filesystem
-                            && b.revision == context.revision
-                    });
-                let Some(doc_buffer) = self
-                    .docs
-                    .get(context.document)
-                    .filter(|d| valid && d.buf.revision() == context.revision)
-                else {
-                    trace::services::rejected("lsp", "diagnostic owner/revision changed");
-                    return;
-                };
-                let buffer = &doc_buffer.buf;
-                let resolved: Vec<ResolvedDiag> = diags
-                    .into_iter()
-                    .map(|d| d.resolve(context.encoding, buffer))
-                    .collect();
-                self.diags.insert(
-                    context.document,
-                    super::diagnostics::DocumentDiagnostics {
-                        revision: context.revision,
-                        items: resolved,
-                    },
-                );
-            }
-            LspEvent::HoverText { context, text } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected(
-                        "lsp",
-                        "hover request/server/document/revision changed",
-                    );
-                    return;
-                }
-                self.hover_card = Some(text);
-            }
-            LspEvent::Note { context, text } => {
-                self.continue_after_format();
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected(
-                        "lsp",
-                        "navigation request/server/document/revision changed",
-                    );
-                    return;
-                }
-                self.message = text;
-            }
-            LspEvent::Edits { context, edits } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected("lsp", "edit request owner/revision changed");
-                    self.continue_after_format();
-                    return;
-                }
-                if edits.is_empty() {
-                    self.message = "already formatted".into();
-                    self.continue_after_format();
-                    return;
-                }
-                let Some(location) =
-                    self.lsp_state
-                        .bindings
-                        .get(&context.stamp.document)
-                        .map(|binding| ResourceLocation {
-                            filesystem: binding.target.clone(),
-                            path: binding.path.clone(),
-                        })
-                else {
-                    trace::services::rejected("lsp", "edits for an unbound document");
-                    self.continue_after_format();
-                    return;
-                };
-                let plan = self.build_change_plan(
-                    super::changes::ChangeProducer::Format,
-                    vec![(location, edits)],
-                    context.encoding,
-                );
-                self.apply_change_plan(plan);
-                self.continue_after_format();
-            }
-            LspEvent::WorkspaceEdits { context, edits } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected("lsp", "workspace-edit owner/revision changed");
-                    return;
-                }
-                if edits.is_empty() {
-                    self.message = format!("lsp: {} made no edits", context.kind.label());
-                    return;
-                }
-                let producer = match context.kind {
-                    strop_lsp::RequestKind::Rename => super::changes::ChangeProducer::Rename,
-                    _ => super::changes::ChangeProducer::CodeAction,
-                };
-                let plan = self.build_change_plan(producer, edits, context.encoding);
-                self.present_change_plan(plan);
-            }
-            LspEvent::Symbols { context, symbols } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected("lsp", "symbol owner/revision changed");
-                    return;
-                }
-                if symbols.is_empty() {
-                    self.message = "no symbols in this document".into();
-                    return;
-                }
-                use strop_picker::{Item, Payload};
-                let items = symbols
-                    .into_iter()
-                    .map(|symbol| (short_kind(&symbol.kind), symbol))
-                    .filter_map(|(badge, symbol)| {
-                        let line = symbol.location.position.line.get() + 1;
-                        let col = symbol.location.position.column.get() + 1;
-                        let path = symbol.location.doc.path.clone();
-                        let payload = match symbol.location.doc.filesystem {
-                            strop_workspace::Filesystem::Local => Payload::Grep {
-                                path,
-                                line,
-                                col,
-                                match_len: 1,
-                                line_text: String::new(),
-                            },
-                            strop_workspace::Filesystem::Remote(endpoint) => Payload::Remote {
-                                endpoint,
-                                path,
-                                line,
-                                col,
-                            },
-                            // No container LSP is wired (DC1a); drop with a
-                            // trace rather than aliasing a local path.
-                            strop_workspace::Filesystem::Container(_) => {
-                                trace::services::rejected("lsp", "container symbol dropped");
-                                return None;
-                            }
-                        };
-                        // The kind moves into the chip; the row text is
-                        // name, container path, line.
-                        let text = if symbol.container.is_empty() {
-                            format!("{}  · :{}", symbol.name, line)
-                        } else {
-                            format!("{}  {} · :{}", symbol.name, symbol.container, line)
-                        };
-                        Some(Item {
-                            badge: Some(badge.into()),
-                            text,
-                            payload,
-                        })
-                    })
-                    .collect();
-                self.open_picker(strop_picker::Kind::Symbols);
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.picker.append(items);
-                }
-                // Items landed after the initial (empty-catalog)
-                // ranking: re-rank or the list renders empty.
-                self.request_picker_ranking();
-            }
-            LspEvent::ActionList { context, actions } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected("lsp", "code-action owner/revision changed");
-                    return;
-                }
-                if actions.is_empty() {
-                    self.message = "no code actions here".into();
-                    return;
-                }
-                let items = actions
-                    .iter()
-                    .enumerate()
-                    .map(|(index, action)| strop_picker::Item {
-                        badge: None,
-                        text: action.title.clone(),
-                        payload: strop_picker::Payload::CodeAction(index),
-                    })
-                    .collect();
-                self.changes.pending_actions = actions;
-                self.open_picker(strop_picker::Kind::CodeActions);
-                self.changes.pending_encoding = context.encoding;
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.picker.append(items);
-                }
-                // Same post-append re-rank as the symbols arm above:
-                // the initial ranking ran over an empty catalog.
-                self.request_picker_ranking();
-            }
-            LspEvent::GotoLocation { context, location } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected(
-                        "lsp",
-                        "navigation request/server/document/revision changed",
-                    );
-                    return;
-                }
-                self.jump_to_location(location, context);
-            }
-            LspEvent::Locations {
-                context,
-                kind,
-                items,
-            } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected("lsp", "location-list owner changed");
-                    return;
-                }
-                match items.len() {
-                    0 => {
-                        self.message = format!("no {}", kind.label());
-                    }
-                    1 => {
-                        if let Some(location) = items.into_iter().next() {
-                            self.jump_to_location(location, context);
-                        }
-                    }
-                    count => {
-                        use strop_picker::{Item, Kind, Payload};
-                        let items = items
-                            .into_iter()
-                            .filter_map(|location| {
-                                let line = location.position.line.get() + 1;
-                                let col = location.position.column.get() + 1;
-                                let text = format!("{}:{}:{}", location.doc.label(), line, col);
-                                let payload = match location.doc.filesystem {
-                                    Filesystem::Local => Payload::Grep {
-                                        path: location.doc.path,
-                                        line,
-                                        col,
-                                        match_len: 1,
-                                        line_text: String::new(),
-                                    },
-                                    Filesystem::Remote(endpoint) => Payload::Remote {
-                                        endpoint,
-                                        path: location.doc.path,
-                                        line,
-                                        col,
-                                    },
-                                    // DC1a wires no container LSP, so a container
-                                    // location cannot arrive; if one ever does, it
-                                    // is dropped with a trace, never aliased to a
-                                    // local path.
-                                    Filesystem::Container(_) => {
-                                        trace::services::rejected(
-                                            "lsp",
-                                            "location in a container namespace (unwired)",
-                                        );
-                                        return None;
-                                    }
-                                };
-                                Some(Item {
-                                    badge: None,
-                                    text,
-                                    payload,
-                                })
-                            })
-                            .collect();
-                        let mut glue = super::PickerGlue::diagnostics(strop_picker::Picker::new(
-                            Kind::Locations,
-                            items,
-                            false,
-                        ));
-                        glue.lsp_context = Some(context);
-                        self.set_picker(glue);
-                        self.message = format!("{count} {}", kind.label());
-                    }
-                }
-            }
-        }
-    }
-
-    pub(crate) fn jump_to_location(
-        &mut self,
-        location: strop_lsp::ServerLocation,
-        context: strop_lsp::ReplyContext,
-    ) {
-        if !self.lsp_context_fresh(&context) {
-            return;
-        }
-        let intent = super::io::OpenIntent::LspLocation {
-            context,
-            position: location.position,
-        };
-        match location.doc.filesystem {
-            Filesystem::Local => self.request_open(location.doc.path, intent),
-            Filesystem::Remote(endpoint) => {
-                // The target is a file on the replying server's host:
-                // resolve it through an open document's canonical seed
-                // (`with_path` keeps endpoint + native bytes) — the
-                // analogous local path is never opened or probed.
-                match self.remote_file_for(&endpoint) {
-                    Some(seed) => match seed.with_path(location.doc.path.clone()) {
-                        Ok(file) => self
-                            .request_target(crate::files::FileTarget::Remote(file.into()), intent),
-                        Err(error) => {
-                            trace::services::rejected("lsp", "remote navigation target invalid");
-                            self.message = format!("lsp: remote target invalid: {error}");
-                        }
-                    },
-                    None => {
-                        trace::services::rejected("lsp", "remote navigation endpoint lost");
-                        self.message =
-                            "lsp: the remote workspace for this target was closed".into();
-                    }
-                }
-            }
-            Filesystem::Container(_) => {
-                trace::services::rejected("lsp", "navigation into a container namespace (unwired)");
-                self.message = "lsp: container locations are not navigable yet".into();
-            }
-        }
-    }
-
-    pub(crate) fn finish_lsp_jump(
-        &mut self,
-        target: strop_core::id::DocumentId,
-        position: strop_lsp::ServerPosition,
-        context: strop_lsp::ReplyContext,
-    ) {
-        if !self.lsp_context_fresh(&context) {
-            trace::services::rejected("lsp", "navigation changed while target was loading");
-            return;
-        }
-        let Some(target_doc) = self.docs.get(target) else {
-            return;
-        };
-        let Some(binding) = self.lsp_state.bindings.get(&context.stamp.document) else {
-            return;
-        };
-        let outside = match &target_doc.source {
-            // A remote target is outside the workspace when its remote
-            // path leaves the binding's remote root — never by
-            // comparing against local paths.
-            crate::editor::document::DocumentSource::Remote(file) => {
-                !file.file.path().starts_with(&binding.root)
-            }
-            _ => target_doc
-                .buf
-                .path
-                .as_ref()
-                .is_some_and(|path| !self.cwd.join(path).starts_with(&binding.root)),
-        };
-        let line = position
-            .line
-            .get()
-            .min(target_doc.buf.len_lines().saturating_sub(1));
-        let text = target_doc
-            .buf
-            .text()
-            .byte_slice(target_doc.buf.line_start(line)..target_doc.buf.line_end(line));
-        let col = strop_lsp::to_byte_col_slice(text, position.column, context.encoding).get();
-        let head = target_doc
-            .buf
-            .clamp_boundary(target_doc.buf.line_start(line).saturating_add(col));
-        self.push_jump();
-        self.lsp_state.navigation = None;
-        self.switch_to(target);
-        if outside && !self.buf().readonly {
-            self.buf_mut().readonly = true;
-            self.message = "readonly — outside workspace (:set noro to edit)".into();
-        }
-        self.set_head(head);
-        self.clamp_cursor();
-        // A server-originated jump carries its language-service context
-        // (0049 §4.1): the replying server keeps answering inside the
-        // target. A live binding another navigation established is never
-        // switched (0049 §4.5), and namespaces never cross (0049 §4.7).
-        let origin = self
-            .lsp_state
-            .bindings
-            .get(&context.stamp.document)
-            .map(|b| {
-                (
-                    b.server,
-                    b.root.clone(),
-                    b.target.clone(),
-                    b.language.clone(),
-                )
-            });
-        if let Some((server, root, origin_target, language)) = origin {
-            let target_bound = self.lsp_state.bindings.contains_key(&target);
-            let doc = self.lsp_doc_path(target);
-            // C and C++ headers are interchangeable for the server that
-            // serves both (0049 §4.4: an ambiguous `.h` inherits).
-            let language_compatible = doc
-                .as_ref()
-                .and_then(|doc| lsp_language(&doc.path))
-                .is_none_or(|known| {
-                    known == language
-                        || (matches!(known, "c" | "cpp")
-                            && matches!(language.as_str(), "c" | "cpp"))
-                });
-            let context_free = !self.lsp_state.jump_contexts.contains_key(&target);
-            if let (false, true, Some(doc), true) =
-                (target_bound, context_free, doc, language_compatible)
-            {
-                if doc.filesystem == origin_target {
-                    // A routing hint, not open state: didOpen follows in
-                    // lsp_maybe_attach and becomes the real binding.
-                    self.lsp_state.jump_contexts.insert(
-                        target,
-                        state::JumpContext {
-                            server,
-                            root,
-                            language,
-                            target: origin_target,
-                        },
-                    );
-                }
-            }
-        }
-        self.scroll_to_cursor(self.view_rows());
-        self.lsp_maybe_attach();
-    }
-
-    /// A local picker hit with a live LSP request context: the server
-    /// that produced the list owns the target's filesystem.
-    pub(crate) fn lsp_jump_from_picker(
-        &mut self,
-        path: PathBuf,
-        line: usize,
-        col: usize,
-        context: strop_lsp::ReplyContext,
-    ) {
-        self.jump_to_location(
-            strop_lsp::ServerLocation {
-                doc: ResourceLocation::local(path),
-                position: strop_lsp::ServerPosition {
-                    line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
-                    column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
-                },
-            },
-            context,
-        );
-    }
-
-    /// A remote picker hit (locations or diagnostics): re-parse the
-    /// endpoint and route through the endpoint's file identity — with
-    /// a live request context through the freshness-checked navigation
-    /// path (server columns), without one as a direct remote open at a
-    /// byte column. The analogous local path is never touched.
-    pub(crate) fn lsp_open_remote_hit(
-        &mut self,
-        endpoint: &strop_workspace::RemoteEndpoint,
-        path: &Path,
-        line: usize,
-        col: usize,
-        context: Option<strop_lsp::ReplyContext>,
-    ) {
-        if let Some(context) = context {
-            self.jump_to_location(
-                strop_lsp::ServerLocation {
-                    doc: ResourceLocation::remote(endpoint.clone(), path.to_owned()),
-                    position: strop_lsp::ServerPosition {
-                        line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
-                        column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),
-                    },
-                },
-                context,
-            );
-        } else if let Some(seed) = self.remote_file_for(endpoint) {
-            // Context-free remote hits (symbol rows) record too —
-            // ctrl-o after the jump returns (0047 §1).
-            self.push_jump();
-            match seed.with_path(path.to_owned()) {
-                Ok(file) => self.request_target(
-                    crate::files::FileTarget::Remote(file.into()),
-                    super::io::OpenIntent::Grep {
-                        line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
-                        column: strop_core::id::ByteColumn::new(col.saturating_sub(1)),
-                    },
-                ),
-                Err(error) => self.message = format!("lsp remote location: {error}"),
-            }
-        } else {
-            self.message = "lsp: the remote workspace for this hit was closed".into();
-        }
-    }
     pub(crate) fn lsp_locations(&mut self, kind: strop_lsp::LocKind) {
         self.lsp_request(strop_lsp::RequestKind::Locations(kind));
     }
@@ -617,12 +122,46 @@ impl Editor {
 
     /// The format reply concluded: run the save that was waiting on it
     /// (config auto_format). Never fires twice — the slot is taken.
-    pub(crate) fn continue_after_format(&mut self) {
-        let Some(state::AfterFormat::Save { document, close }) = self.lsp_state.after_format.take()
+    pub(crate) fn continue_after_format(
+        &mut self,
+        context: &strop_lsp::ReplyContext,
+        warning: Option<String>,
+    ) {
+        if context.kind != strop_lsp::RequestKind::Format
+            || !matches!(
+                self.lsp_state.after_format.as_ref(),
+                Some(state::AfterFormat::Save { request, .. }) if *request == context.stamp
+            )
+        {
+            return;
+        }
+        let Some(state::AfterFormat::Save {
+            document,
+            close,
+            force,
+            request,
+        }) = self.lsp_state.after_format.take()
         else {
             return;
         };
-        self.request_save_document(document, None, false, close);
+        if warning.is_some()
+            && self
+                .docs
+                .get(document)
+                .is_none_or(|source| source.buf.revision() != request.revision)
+        {
+            self.message = "write not started: source changed while formatting — repeat :w to save newer edits".into();
+            return;
+        }
+        let admitted = self.request_save_document(document, None, force, close);
+        if let Some(warning) = warning {
+            if admitted {
+                self.io.format_warnings.insert(document, warning);
+            } else {
+                self.message
+                    .push_str(&format!(" — format warning: {warning}"));
+            }
+        }
     }
 
     pub(crate) fn lsp_format(&mut self) {
@@ -797,28 +336,5 @@ pub(crate) fn lang_id(path: &Path) -> &'static str {
         Some("c") | Some("h") => "c",
         Some("cpp") | Some("cc") | Some("cxx") | Some("hpp") | Some("hh") => "cpp",
         _ => "plaintext",
-    }
-}
-
-/// Compact chip text for a symbol kind (the picker's badge column).
-fn short_kind(kind: &str) -> &'static str {
-    match kind {
-        "Function" => "fn",
-        "Method" => "meth",
-        "Constructor" => "new",
-        "Struct" => "struct",
-        "Class" => "class",
-        "Interface" => "iface",
-        "Enum" => "enum",
-        "EnumMember" => "variant",
-        "Constant" => "const",
-        "Variable" => "var",
-        "Field" => "field",
-        "Property" => "prop",
-        "Module" => "mod",
-        "Namespace" => "ns",
-        "Package" => "pkg",
-        "TypeParameter" => "T",
-        _ => "sym",
     }
 }

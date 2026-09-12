@@ -139,6 +139,11 @@ impl<K, T> Arena<K, T> {
         })
     }
 
+    /// Mutable values without copying keys or exposing vacant slots.
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.slots.iter_mut().filter_map(|slot| slot.value.as_mut())
+    }
+
     pub fn len(&self) -> usize {
         self.slots.iter().filter(|s| s.value.is_some()).count()
     }

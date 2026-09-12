@@ -1,73 +1,68 @@
-# 0044 — Editable code collections (handoff S5, v1)
+# 0044 — Editable source collections
 
-Status: v1 + v2 implemented (0.20.0 / 0.21.x). v2 added: multi-region
-write-back (real LCS diff, one plan per sync, batched per source),
-background loading of unopened sources, and remote sources — write-back
-to a permit-less remote buffer refuses naming `:remote edit`; permitted
-buffers edit through the gateway and save via `:w`. The differentiating
-mechanism is landed and verified: a collection is a real buffer whose
-editable excerpts route writes back to their source documents through the
-change-plan gateway (0043).
+Status: implemented in 0.20/0.21 and extended by 0051 for 0.29.0. The live
+journal-based protocol below supersedes the original commit-only/LCS design.
+A collection is a real buffer; its editable bodies refer to real source documents.
 
-## 1. What a v1 collection is
+## 1. Source and view identity
 
-From a Locations/diagnostics/grep picker, `ctrl-o` opens the listed hits as a
-**collection**: one editable buffer of source excerpts under generated headers.
+Ctrl-O from locations, diagnostics or grep opens the listed source hits. Unopened
+local sources load on owned background requests. Remote hits retain their endpoint
+identity and use the existing remote document/write-permit contract (0040).
+Late loads can finish the requested collection but cannot steal a newer focus.
+Unavailable sources are counted and named; a partial build is not silent success.
 
-```text
-collection: references — 3 excerpts (edits write back on commit; q closes)
-── src/main.rs:1-3 ──
-fn helper() -> i32 {
-    41
-}
-── src/lib.rs:9-11 ──
-…
-```
+Each excerpt retains a source DocumentId, source byte span, view byte span, source
+line range and independent match spans. Nearby context merges; match counts do not
+collapse into excerpt counts. The default context is two lines; `+`/`-` adjusts it.
+Cards, source numbers and omitted-line gaps are typed projection rows, not strings
+parsed back into write authority. Names, syntax and indentation belong to the source.
 
-- The collection buffer is a REAL buffer (0001 §4): motions, `/`, operators
-  all work. Headers and separators are generated content, not editable spans.
-- Excerpt anchors are byte ranges into the source document, remapped through
-  the same change-journal position mapping as marks and jumplists
-  (`sync_document_positions`), so unrelated source edits keep anchors true.
-- A source edit made elsewhere moves anchors; a source edit that *invalidates*
-  an excerpt (its recorded content no longer matches) makes the next write-back
-  refuse that excerpt by name — never a blind write over newer work.
+## 2. Live publication
 
-## 2. Write-back protocol (the heart)
+1. Collection mutation journals retain each sequential user operation. Even a
+   net-zero change that touched generated chrome is not an authorized source edit.
+2. Every edit must project into one editable excerpt body. Headers, gaps and edits
+   crossing excerpt boundaries refuse visibly and refresh from authoritative sources.
+3. The journal derives source replacements. Preflight every affected source through
+   the shared core prepared-replacement boundary before publishing any source change.
+   Readonly, closed, stale and unauthorized remote sources refuse without partial edits.
+4. Publish through source mutation leases. Keep the ordinary Insert undo group open,
+   while source journals immediately remap and update every dependent collection view.
+   Ordinary typing splices affected excerpts rather than flattening/rebuilding the view.
+5. Synthetic final-newline separators remain projection data, never file bytes.
+   Source buffers stay dirty until an explicit, confirmed save.
 
-Every commit in the collection buffer syncs (there is no hidden state: the
-shadow text is the last-synced canonical rendering):
+Source changes outside the collection use the same journal invalidation path.
+Syntax requests are aggregated by visible source window; a collection is never
+parsed as if unrelated files were one language unit. Delimiter endpoints project
+only through excerpts of the same source. Unknown/offscreen results do not scroll.
 
-1. Diff shadow vs current text (contiguous middle change: shared line prefix
-   and suffix; v1 deliberately supports one contiguous changed region per
-   commit — one user action).
-2. The changed region must map fully inside ONE excerpt's view span:
-   - Inside one excerpt → the replacement text becomes a change plan
-     (`ChangeProducer::CollectionEdit`) against that excerpt's source byte
-     span, applied through the revision-checked gateway.
-   - Touching a header, a separator, or two excerpts → refused: the view
-     regenerates from sources and the message says why. No partial magic.
-3. After a successful write-back the view regenerates from the source (the
-   source buffer, not the user's text, is authoritative), and the shadow
-  resets. Dirty source buffers remain the user's to save — collections never
-   save behind the user's back.
+## 3. History, persistence and navigation
 
-## 3. Deliberate v1 boundaries
+Collection `u`/Ctrl-R use retained source-group receipts and exact history positions.
+Preflight source liveness, write authority, history position and revision capacity
+before moving a group. A refusal retains the receipt so resolving the blocker and
+retrying remains possible. Intervening independent source edits are not undone blindly.
 
-- Sources are documents already open in the editor; picker hits whose files
-  are not open are counted and skipped with a message (async collection build
-  over unopened files is the next slice).
-- Local documents only; remote sources refuse at build with a named reason
-  (remote write authority is a separate admission, 0040).
-- One contiguous changed region per commit; overlapping excerpts of one source
-  are merged at build so an edit never applies twice.
-- Source closes invalidate the collection at next sync (named message).
-- No persistence of collection definitions yet (saved collections are S7).
+`:w` saves dirty source documents, not the projection. An explicit output path is
+refused. Only successfully admitted source writes enter the collection's pending set;
+an unrelated or duplicate completion cannot count toward it. `:wq` closes the active
+view only when all admitted saves confirm current source revisions. Refusal, failure,
+cancellation, remote uncertainty or newer edits keeps the view and unsaved text.
+`:q` closes the view without discarding source buffers or implicitly saving them.
 
-## 4. Tests
+`g<Space>` opens the full source at the projected position; Enter on a file header
+opens its source. Ctrl-O/Ctrl-I use the shared full navigation record, preserving
+caret/selection, byte-anchored viewport and horizontal origin across edits and resize.
 
-Two excerpts of one document (merged overlap), header edit refused, cross-
-excerpt edit refused, single-excerpt edit lands on the source through the
-gateway with a receipt, source edited elsewhere remaps anchors, source
-content divergence refuses write-back, source closed refuses, regeneration
-matches source after write-back, `q` closes.
+## 4. Boundaries and verification
+
+Collection definitions are not persisted as named investigations. Visibility is
+not a write grant: remote permits, partial snapshots and container readonly policy
+remain authoritative. No local-path fallback is introduced for another namespace.
+
+Behavioral coverage lives in `editor/collections/tests/{mod,live,ownership}.rs`,
+remote save receipt tests, shared transaction conformance and renderer cell-grid
+regressions. The 0051 acceptance ledger records real source-colored collections,
+live split editing, context/source round trips, grouped history and save evidence.

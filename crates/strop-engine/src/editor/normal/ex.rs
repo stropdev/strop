@@ -188,39 +188,41 @@ impl Editor {
         let s0 = self.buf().line_start(lo);
         let e0 = self.buf().line_end(hi);
         let text = self.buf().text().byte_slice(s0..e0).to_string();
-        let mut out = String::with_capacity(text.len());
-        let mut hits = 0usize;
-        for (i, line) in text.split('\n').enumerate() {
-            if i > 0 {
-                out.push('\n');
+        let mut edits = Vec::new();
+        let mut offset = s0;
+        for line in text.split_inclusive('\n') {
+            for (start, _) in line.match_indices(pat) {
+                edits.push(strop_core::Replacement::new(
+                    strop_core::Range::charwise(offset + start, offset + start + pat.len()),
+                    repl,
+                ));
+                if !global {
+                    break;
+                }
             }
-            if global {
-                let n = line.matches(pat).count();
-                hits += n;
-                out.push_str(&line.replace(pat, repl));
-            } else if let Some(p) = line.find(pat) {
-                hits += 1;
-                out.push_str(&line[..p]);
-                out.push_str(repl);
-                out.push_str(&line[p + pat.len()..]);
-            } else {
-                out.push_str(line);
-            }
+            offset += line.len();
         }
+        let hits = edits.len();
         if hits == 0 {
             self.message = format!("pattern not found: {pat}");
             return;
         }
-        self.tx_begin();
-        {
-            let mut b = self.buf_mut();
-            b.delete(strop_core::Range::charwise(s0, e0));
-            b.insert(s0, &out);
+        if let Err(error) = self.apply(
+            self.current(),
+            self.buf().revision(),
+            crate::editor::transact::ChangeSet {
+                edits,
+                undo_open: false,
+            },
+        ) {
+            self.message = format!("substitution failed: {error}");
+            return;
         }
-        self.tx_commit();
         self.set_head(self.buf().clamp_boundary(s0));
         self.clamp_cursor();
-        let end = (s0 + out.len()).min(self.buf().len_bytes());
+        let end = e0
+            .saturating_add_signed((repl.len() as isize - pat.len() as isize) * hits as isize)
+            .min(self.buf().len_bytes());
         self.flash(strop_core::Range::charwise(s0, end));
         self.message = format!("{hits} substitution{}", if hits == 1 { "" } else { "s" });
     }
@@ -340,8 +342,11 @@ impl Editor {
             }
             "vs" | "vsplit" => self.split(true, if arg.is_empty() { None } else { Some(arg) }),
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
-            "help" | "h" => self.open_help(),
+            "help" | "h" => self.open_help_topic(arg),
             "jumps" => self.open_jumps_picker(),
+            "search-options" => self.open_search_options(),
+            "tab-size" => self.tab_size_command(arg),
+            "indent-style" => self.indent_style_command(arg),
             "apply-change" => self.review_apply_pub(),
             "select-next" => self.occurrence_next_pub(),
             "select-all" => self.occurrence_all_pub(),
@@ -349,6 +354,8 @@ impl Editor {
             "select-pop" => self.occurrence_pop_pub(),
             "cancel-change" => self.review_cancel_pub(),
             "collection" if arg == "source" => self.collection_open_source(),
+            "collection" if arg == "expand" => self.collection_context_step(true),
+            "collection" if arg == "contract" => self.collection_context_step(false),
             "collection" => {
                 self.message = ":collection source — open the full source at the caret".into()
             }
@@ -364,6 +371,7 @@ impl Editor {
                 }
             }
             "undo-change" => self.undo_last_change(),
+            "save-change" => self.save_changed_files_pub(),
             "e" | "e!" => {
                 if arg.is_empty() && cmd == "e!" && self.refresh_remote() {
                     return;

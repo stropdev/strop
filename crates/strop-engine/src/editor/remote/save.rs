@@ -148,10 +148,13 @@ impl Editor {
         target: Option<std::path::PathBuf>,
         force: bool,
         close: bool,
-    ) {
-        let result = self.prepare_remote_save(document, target, force, close);
-        if let Err(error) = result {
-            self.message = error;
+    ) -> bool {
+        match self.prepare_remote_save(document, target, force, close) {
+            Ok(()) => true,
+            Err(error) => {
+                self.message = error;
+                false
+            }
         }
     }
     fn prepare_remote_save(
@@ -339,12 +342,17 @@ impl Editor {
                     }
             });
         if !valid {
+            self.collection_save_progress(document, false);
             if key.action == WriteAction::Enable
                 && !self.docs.is_empty()
                 && self.current() == document
             {
                 self.message =
                     "remote edit admission cancelled: snapshot or follow state changed".into();
+            }
+            if matches!(key.action, WriteAction::Save { .. }) {
+                self.message = "remote save result discarded: source authority changed; disk outcome unconfirmed".into();
+                self.finish_save_feedback(document);
             }
             return;
         }
@@ -369,12 +377,12 @@ impl Editor {
             Outcome::Success(RemoteWriteResult::Saved(receipt))
                 if matches!(key.action, WriteAction::Save { .. }) =>
             {
-                self.accept_remote_receipt(key, receipt)
+                return self.accept_remote_receipt(key, receipt);
             }
             Outcome::Success(RemoteWriteResult::Verified(Verification::Written(receipt)))
                 if key.action == WriteAction::Verify =>
             {
-                self.accept_remote_receipt(key, receipt)
+                return self.accept_remote_receipt(key, receipt);
             }
             Outcome::Success(RemoteWriteResult::Verified(Verification::Unchanged(version)))
                 if key.action == WriteAction::Verify =>
@@ -431,6 +439,10 @@ impl Editor {
                 "remote write result does not match its request".into(),
             ),
         }
+        if matches!(key.action, WriteAction::Save { .. }) {
+            self.finish_save_feedback(document);
+            self.collection_save_progress(document, false);
+        }
     }
 
     fn remote_write_uncertain(&mut self, document: DocumentId, message: String) {
@@ -438,6 +450,8 @@ impl Editor {
             attempt.unconfirmed = true;
         }
         self.message = message;
+        self.finish_save_feedback(document);
+        self.collection_save_progress(document, false);
     }
     fn accept_remote_receipt(&mut self, key: RemoteWriteKey, receipt: RemoteSaveReceipt) {
         let version = receipt.into_version();
@@ -475,6 +489,8 @@ impl Editor {
             "remote snapshot written; newer edits remain unsaved"
         }
         .into();
+        self.finish_save_feedback(key.document);
+        self.collection_save_progress(key.document, current);
         if current
             && matches!(key.action, WriteAction::Save { close: true })
             && !self.docs.is_empty()
