@@ -150,7 +150,7 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
     let mut e = Editor::new(Buffer::from_text("scratch\n"));
     e.open_fixture(&a).unwrap();
     e.open_fixture(&b).unwrap();
-    e.open_picker(strop_picker::Kind::Grep);
+    e.open_picker(strop_picker::Kind::Search);
     let item = |path: &std::path::Path, line: usize, text: &str| strop_picker::Item {
         badge: None,
         text: text.into(),

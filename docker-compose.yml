@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: bin
+      target: container-test
     environment:
       - STROP_CONTAINER_TESTS=1
     volumes:

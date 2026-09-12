@@ -4,7 +4,7 @@ use super::{ReviewRow, CONTEXT};
 use strop_core::id::BufferRevision;
 use strop_core::{Buffer, EditError, Replacement};
 
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct ReviewBuffer {
     pub text: String,
     pub rows: Vec<ReviewRow>,

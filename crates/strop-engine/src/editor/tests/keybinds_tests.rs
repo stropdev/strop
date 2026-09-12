@@ -377,7 +377,7 @@ fn grep_respawns_reach_the_production_event_source() {
     e.cwd = dir.path().to_path_buf();
     let (tx, rx) = crate::editor::events::channel();
     e.connect_events(tx);
-    e.open_picker(strop_picker::Kind::Grep);
+    e.open_picker(strop_picker::Kind::Search);
     // type the query: respawns flow through the forwarded channel
     for c in "needle".chars() {
         e.feed(crate::editor::Key::Char(c));
@@ -435,14 +435,24 @@ fn project_replace_is_byte_exact_past_multibyte() {
     // 0020 §3: é before the match must not break verification
     let mut e = Editor::new(Buffer::from_text("éé foo\n"));
     let id = e.current();
-    let hits = vec![(1usize, 6usize, 3usize, "éé foo".to_string())];
+    let hits = vec![crate::editor::picker::ReplacementHit {
+        line: 1,
+        col: 6,
+        match_len: 3,
+        text: "éé foo".into(),
+    }];
     let (applied, _, stale) = e.replace_in_buffer_pub(id, &hits, "bar");
     assert_eq!((applied, stale), (1, 0));
     assert_eq!(e.buf().text().to_string(), "éé bar\n");
     // and inside the match itself
     let mut e = Editor::new(Buffer::from_text("féé and féé\n"));
     let id = e.current();
-    let hits = vec![(1usize, 1usize, 5usize, "féé and féé".to_string())];
+    let hits = vec![crate::editor::picker::ReplacementHit {
+        line: 1,
+        col: 1,
+        match_len: 5,
+        text: "féé and féé".into(),
+    }];
     let (applied, _, stale) = e.replace_in_buffer_pub(id, &hits, "x");
     assert_eq!((applied, stale), (1, 0));
     assert_eq!(e.buf().text().to_string(), "x and féé\n");

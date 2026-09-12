@@ -64,7 +64,10 @@ pub use document::{DiffRow, DocumentSource, RemoteDirectory, RemoteDocument, Sur
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
 pub use panes::{LayoutDir, Pane};
-pub use picker::{PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews};
+pub use picker::{
+    checked_hit_range, PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews,
+    ReplacementHit, SearchScope,
+};
 pub use registers::{ClipboardKey, ClipboardResult, Register};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 
@@ -222,6 +225,7 @@ pub struct Editor {
     /// Macro self-replay depth guard.
     pub macro_depth: usize,
     pub picker: Option<PickerGlue>,
+    pub(crate) retained_search: Option<PickerGlue>,
     pub(crate) picker_ranking: picker::ranking::State,
     pub(crate) analysis: analysis::AnalysisState,
     pub resolution: resolution::ResolutionState,
@@ -420,6 +424,7 @@ impl Editor {
             insert_count: 1,
             insert_open: None,
             picker: None,
+            retained_search: None,
             workspaces: {
                 let mut registry = workspaces::WorkspaceRegistry::default();
                 registry.bind(strop_workspace::Filesystem::Local, Some(cwd.clone()));
@@ -507,8 +512,19 @@ impl Editor {
         if let Some(build) = self.collection_build.as_mut() {
             build.focus_on_ready = false;
         }
+        if let Some(preparing) = self.review.preparing.as_mut() {
+            preparing.focus_ready = false;
+        }
         self.revoke_shell_focus();
         self.message.clear();
+        if key == Key::Esc
+            && self.mode == Mode::Normal
+            && !self.pending.is_active()
+            && self.review.preparing.is_some()
+        {
+            self.review_cancel_pub();
+            return;
+        }
         if key == Key::Esc
             && !self.pending.is_active()
             && self.cancel_open(strop_core::worker::CancelReason::Dismissed)

@@ -198,6 +198,7 @@ impl Editor {
         self.lsp_state.attach.enabled = false;
         self.stop_remote_work();
         self.close_picker();
+        self.cancel_review_preparation();
         self.analysis.stop();
         self.resolution.stop();
         self.git_mutations.clear();

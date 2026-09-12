@@ -37,7 +37,7 @@ v V                           visual           u ctrl-r .           undo, redo, 
 "a … "+                       registers        :w :q :e :help        ex line
 Q                            multicursor      Space c              cursor below
 
-Space  f files · o remote · b buffers · / grep · R replace · ? help   C-w … panes
+Space  f files · o remote · b buffers · / Search · R Search with replacement · ? help
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 
@@ -89,7 +89,24 @@ metadata is excluded. `:search-options` shows the separate visibility controls.
 quoting, supported languages, errors and examples. Old `-t`/`-g` UI flags are
 ordinary text now. Replacement text is literal, including `$1` and backslashes.
 
-Replacement Enter prepares a review. `:apply-change` edits buffers;
+`Space /` opens or resumes one large Search workspace. `Space R` resumes the same
+investigation with With visible. Inside Search, `Ctrl-R` toggles With without
+restarting the search or losing either field's text, caret, mode, selection or
+workset. Enter in **Find opens the selected source**, even with With visible;
+Enter in **With prepares Review**. Tab switches fields when With is visible.
+
+`Ctrl-X` toggles one match; `Ctrl-D` masks/restores its file without erasing the
+individual decisions. Excluded hits remain visible in both presentations.
+`Ctrl-O` collects exactly the included matches. An all-excluded, incomplete or
+failed dataset cannot silently become a whole-project operation.
+
+Opening a source hides Search; `Space /` returns to the retained investigation.
+Re-entry refreshes through owned work in its captured local scope, even if focus
+or cwd changed. Only unchanged source witnesses regain exclusions and selection;
+lost decisions are reported. Remote/container project Search is not implemented:
+unsupported explicit scopes refuse rather than searching an analogous local path.
+
+Review preparation is cancellable background work. `:apply-change` edits buffers;
 `:save-change` separately saves the changed files and opens a per-file receipt.
 Open and previously unopened files obey the same policy. Dirty open source text
 wins over disk, stale witnesses refuse, and Cancel restores the query and draft.

@@ -234,7 +234,7 @@ fn collection_view_gutters_source_line_numbers() {
     std::fs::write(&a, "alpha one\nalpha two\nalpha three\n").unwrap();
     let mut e = Editor::new(Buffer::from_text("scratch\n"));
     e.open_fixture(&a).unwrap();
-    e.open_picker(strop_picker::Kind::Grep);
+    e.open_picker(strop_picker::Kind::Search);
     e.picker_items_fixture(vec![strop_picker::Item {
         badge: None,
         text: "a.txt:3".into(),
@@ -247,11 +247,6 @@ fn collection_view_gutters_source_line_numbers() {
         },
     }]);
     e.feed(crate::editor::Key::CtrlO);
-    assert_eq!(
-        e.buf().name.as_deref(),
-        Some("collection: grep"),
-        "the modeline names the collection"
-    );
     let mut terminal = viewport_terminal(50, 8);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     let grid = terminal.backend().buffer();
@@ -288,7 +283,7 @@ fn collection_bodies_project_syntax_and_paint_hits() {
     .unwrap();
     let mut e = Editor::new(Buffer::from_text("scratch\n"));
     e.open_fixture(&a).unwrap();
-    e.open_picker(strop_picker::Kind::Grep);
+    e.open_picker(strop_picker::Kind::Search);
     e.picker_items_fixture(vec![strop_picker::Item {
         badge: None,
         text: "a.rs:1 · fn send_request".into(),

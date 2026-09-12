@@ -1,6 +1,5 @@
-//! Real-engine integration tests (0037 DC1a). Gated exactly like the SSH
-//! gate: they run only when `STROP_CONTAINER_TESTS=1` *and* `docker info`
-//! succeeds, and skip loudly otherwise — a docker-less host stays green.
+//! Real-engine integration tests (0037 DC1a). Ordinary unit runs opt out;
+//! STROP_CONTAINER_TESTS=1 requires an accessible Docker engine and never skips.
 //!
 //! The fixture launches one uniquely-labelled disposable busybox container
 //! per test (`strop-test-run=<tag>`) and removes exactly that container in
@@ -28,16 +27,16 @@ fn engine_available() -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-/// The loud skip: every test calls this first.
+/// Explicit opt-in is a required gate, not permission for a vacuous pass.
 fn gate(test: &str) -> bool {
     if !required() {
         eprintln!("skipping {test}: STROP_CONTAINER_TESTS is not 1");
         return false;
     }
-    if !engine_available() {
-        eprintln!("skipping {test}: STROP_CONTAINER_TESTS=1 but the docker engine is unreachable");
-        return false;
-    }
+    assert!(
+        engine_available(),
+        "{test}: STROP_CONTAINER_TESTS=1 requires an accessible Docker engine"
+    );
     true
 }
 

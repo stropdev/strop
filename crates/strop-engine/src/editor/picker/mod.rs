@@ -20,6 +20,12 @@ mod query;
 mod query_tests;
 pub(crate) mod ranking;
 mod replace;
+pub use replace::checked_hit_range;
+pub use replace::ReplacementHit;
+pub(crate) mod search;
+pub use search::SearchScope;
+#[cfg(test)]
+mod search_tests;
 #[cfg(test)]
 mod tests;
 
@@ -101,6 +107,8 @@ pub struct PickerGlue {
     pub(crate) query: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
     file_scope: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
     pub(crate) indent_target: Option<strop_core::id::DocumentId>,
+    pub(crate) search: Option<search::SearchContext>,
+    preview_witness: Option<preview::WitnessCheck>,
 }
 
 /// The visible suggestion list: static candidates from the query's own
@@ -135,6 +143,8 @@ impl PickerGlue {
             file_scope: None,
             query: None,
             indent_target: None,
+            search: None,
+            preview_witness: None,
         }
     }
 
@@ -165,7 +175,19 @@ impl Editor {
                 return;
             }
         };
+        glue.preview_witness = None;
         glue.id = PickerId(id);
+        if glue.picker.kind == Kind::Search && glue.search.is_none() {
+            match self.new_search_context(SearchScope {
+                root: strop_workspace::ResourceLocation::local(self.cwd.clone()),
+            }) {
+                Ok(context) => glue.search = Some(context),
+                Err(error) => {
+                    self.message = error;
+                    return;
+                }
+            }
+        }
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"picker","id":id.get(),
@@ -183,6 +205,10 @@ impl Editor {
     }
 
     pub fn open_picker(&mut self, kind: Kind) {
+        if kind == Kind::Search {
+            self.open_search(false);
+            return;
+        }
         if kind == Kind::RemoteHosts {
             self.open_remote_picker();
             return;
@@ -218,8 +244,7 @@ impl Editor {
             // Grep/Replace stream only once input registers a request;
             // Files launches its walk right after install.
             Kind::Files
-            | Kind::Grep
-            | Kind::Replace
+            | Kind::Search
             | Kind::RemoteHosts
             | Kind::RemoteAddress
             | Kind::CodeActions
@@ -336,7 +361,10 @@ impl Editor {
         if glue.rank_alive {
             self.picker_ranking.retiring.insert(glue.id);
         }
-        if let Some(worker) = glue.rank_worker.take() {
+        if glue.picker.kind == Kind::Search {
+            drop(glue.rank_worker.take());
+            self.retain_search(glue);
+        } else if let Some(worker) = glue.rank_worker.take() {
             if let Err(error) = worker.retire(glue.picker) {
                 self.message = format!("picker cleanup failed: {error}");
             }
@@ -384,7 +412,8 @@ impl Editor {
         if key != Key::Enter {
             glue.accept_when_ranked = false;
         }
-        let replace = glue.picker.kind == Kind::Replace;
+        let search = glue.picker.kind == Kind::Search;
+        let replace = search && glue.picker.replacement_visible;
         // the suggestion list owns accept/cancel while open (0051 R02)
         if glue.suggestions.is_some() {
             match key {
@@ -417,7 +446,13 @@ impl Editor {
             }
             Key::Esc => {
                 if glue.picker.input_normal() {
+                    let origin = glue.search.as_ref().map(|context| context.origin.clone());
                     self.close_picker();
+                    if let Some(origin) =
+                        origin.filter(|origin| self.docs.get(origin.document).is_some())
+                    {
+                        self.jump_to(origin);
+                    }
                 } else {
                     glue.picker.enter_normal();
                 }
@@ -426,20 +461,34 @@ impl Editor {
             Key::Tab | Key::Backtab if replace => glue.picker.toggle_field(),
             // ctrl-o: the listed hits become an editable collection (0044).
             Key::CtrlO => self.open_collection_from_picker(),
-            Key::CtrlD if replace => glue.picker.toggle_file_excluded(),
-            Key::CtrlD => {}
-            Key::CtrlX => {}
+            Key::CtrlD if search => {
+                if glue.picker.toggle_file_excluded() {
+                    self.search_intent_changed();
+                } else {
+                    self.message = "no source match selected".into();
+                }
+            }
+            Key::CtrlX if search => {
+                if glue.picker.toggle_excluded() {
+                    self.search_intent_changed();
+                } else {
+                    self.message = "no source match selected".into();
+                }
+            }
+            Key::CtrlD | Key::CtrlX => {}
             Key::Backspace => {
                 if glue.picker.input_normal() {
                     glue.picker.normal_key('h');
                 } else if replace && glue.picker.field == strop_picker::Field::Replace {
                     glue.picker.pop_replace_char();
+                    self.search_intent_changed();
                 } else {
                     glue.picker.pop_char();
                     self.picker_input_changed();
                 }
             }
             Key::CtrlL => self.needs_repaint = true,
+            Key::CtrlR if search => self.toggle_search_replacement(),
             Key::CtrlR | Key::CtrlW => {}
             Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
             Key::Up => glue.picker.move_by(-1),
@@ -453,10 +502,15 @@ impl Editor {
             Key::Char(c) => {
                 if glue.picker.input_normal() {
                     if glue.picker.normal_key(c) {
-                        self.picker_input_changed();
+                        if replace && glue.picker.field == strop_picker::Field::Replace {
+                            self.search_intent_changed();
+                        } else {
+                            self.picker_input_changed();
+                        }
                     }
                 } else if replace && glue.picker.field == strop_picker::Field::Replace {
                     glue.picker.push_replace_char(c);
+                    self.search_intent_changed();
                 } else {
                     glue.picker.push_char(c);
                     self.picker_input_changed();
@@ -471,6 +525,9 @@ impl Editor {
     /// a message — a dropped keystroke with no feedback reads as a
     /// broken terminal, not as an editor decision.
     pub(crate) fn paste_picker(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
         let Some(glue) = &mut self.picker else {
             return;
         };
@@ -480,6 +537,8 @@ impl Editor {
         }
         if glue.picker.paste(text) {
             self.picker_input_changed();
+        } else {
+            self.search_intent_changed();
         }
     }
 
@@ -495,13 +554,15 @@ impl Editor {
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
-        if matches!(glue.picker.kind, Kind::Files | Kind::Grep | Kind::Replace) {
+        if matches!(glue.picker.kind, Kind::Files | Kind::Search) {
             if let Some(error) = &glue.picker.error {
                 self.message = error.clone();
                 return;
             }
         }
-        let replacing = glue.picker.kind == Kind::Replace;
+        let replacing = glue.picker.kind == Kind::Search
+            && glue.picker.replacement_visible
+            && glue.picker.field == strop_picker::Field::Replace;
         if glue.rank_pending.is_some()
             || ((replacing || glue.picker.current().is_none()) && glue.picker.streaming)
         {
@@ -510,7 +571,7 @@ impl Editor {
         }
         glue.accept_when_ranked = false;
         if replacing {
-            self.apply_replace();
+            self.prepare_search_review();
             return;
         }
         let payload = glue.picker.current().map(|item| item.payload.clone());
@@ -562,6 +623,10 @@ impl Editor {
             self.message = "no matching entries".into();
             return;
         };
+        if glue.picker.kind == Kind::Search {
+            self.open_search_hit(payload);
+            return;
+        }
         let context = glue.lsp_context;
         self.close_picker();
         self.accept_picker(payload, context);
@@ -571,7 +636,10 @@ impl Editor {
         if self.picker.as_ref().is_some_and(|glue| {
             glue.accept_when_ranked
                 && glue.rank_pending.is_none()
-                && (glue.picker.kind != Kind::Replace || !glue.picker.streaming)
+                && (!(glue.picker.kind == Kind::Search
+                    && glue.picker.replacement_visible
+                    && glue.picker.field == strop_picker::Field::Replace)
+                    || !glue.picker.streaming)
         }) {
             self.accept_current_picker();
         }

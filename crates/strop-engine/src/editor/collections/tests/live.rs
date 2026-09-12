@@ -42,7 +42,7 @@ fn context_merges_preserve_same_line_matches_and_source_position() {
     std::fs::write(&path, "before\nfn hit() { hit(); }\nafter\nmore\n").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
     editor.open_fixture(&path).unwrap();
-    editor.open_picker(Kind::Grep);
+    editor.open_picker(Kind::Search);
     let items = [4, 12].map(|column| Item {
         badge: None,
         text: "hit".into(),
@@ -151,6 +151,20 @@ fn final_line_without_newline_deletes_and_undoes_without_editing_chrome() {
         .find_map(|(id, doc)| (doc.buf.path.as_ref() == Some(&path)).then_some(id))
         .unwrap();
     editor.replace_system(source, "alpha").unwrap();
+    let mut items: Vec<_> = editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .picker
+        .items
+        .iter()
+        .cloned()
+        .collect();
+    if let Payload::Grep { line_text, .. } = &mut items[0].payload {
+        *line_text = "alpha".into();
+    }
+    editor.picker.as_mut().unwrap().picker.clear_items();
+    editor.picker_items_fixture(items);
     editor.feed(crate::editor::Key::CtrlO);
     editor.set_head(current_text(&editor).find("alpha").unwrap());
     editor.feed_text("dd");
@@ -289,7 +303,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
     let a_id = editor.current();
     editor.open_fixture(&b).unwrap();
     let b_id = editor.current();
-    editor.open_picker(Kind::Grep);
+    editor.open_picker(Kind::Search);
     editor.picker_items_fixture(vec![
         Item {
             badge: None,

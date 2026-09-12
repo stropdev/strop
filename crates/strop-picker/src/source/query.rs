@@ -40,11 +40,11 @@ pub fn parse_json_match(line: &str) -> Vec<Item> {
     let Some(line_no) = data["line_number"].as_u64() else {
         return Vec::new();
     };
-    let line_text = data["lines"]["text"]
+    let line_text: std::sync::Arc<str> = data["lines"]["text"]
         .as_str()
         .unwrap_or("")
         .trim_end_matches('\n')
-        .to_string();
+        .into();
     let Some(subs) = data["submatches"].as_array() else {
         return Vec::new();
     };

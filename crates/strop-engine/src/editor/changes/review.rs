@@ -14,14 +14,15 @@
 use strop_core::id::DocumentId;
 use strop_core::Buffer;
 
-use super::{ChangePlan, ChangeReceipt, PlannedDocument};
+use super::{ChangePlan, ChangeReceipt};
 use crate::editor::transact::ChangeSet;
 use crate::editor::Editor;
+pub(crate) mod prepare;
 mod render;
 mod save;
 use render::ReviewBuffer;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum ReviewRow {
     Heading,
     File,
@@ -48,13 +49,7 @@ pub(crate) struct ReviewState {
     seq: usize,
     /// The proposal awaiting Apply/Cancel, if any.
     pending: Option<ChangeProposal>,
-    /// A global replace assembling while its unopened targets load
-    /// (0051 §6 R04); the review presents when the last target resolves.
-    pub(crate) replace: Option<PendingReplace>,
-    /// Monotone replace identity: a newer Enter supersedes, and opens
-    /// issued for the older one merge nowhere.
-    replace_seq: usize,
-    pub(crate) replace_context: Option<ReplaceContext>,
+    pub(crate) preparing: Option<prepare::Preparation>,
     rows: std::collections::HashMap<DocumentId, Vec<ReviewRow>>,
     saves: std::collections::HashMap<DocumentId, save::PendingChangeSave>,
 }
@@ -69,33 +64,8 @@ impl ReviewState {
             .is_some_and(|proposal| proposal.buffer == document)
         {
             self.pending = None;
-            if self.replace.is_none() {
-                self.replace_context = None;
-            }
         }
     }
-}
-
-pub(crate) struct ReplaceContext {
-    pub picker: strop_picker::Picker,
-    pub origin: crate::editor::jumps::JumpRecord,
-}
-
-/// A global replace (Space R Enter) assembling its prepared review:
-/// open buffers planned at Enter, unopened targets joining as their
-/// owned open jobs land. Nothing here mutates a buffer.
-#[derive(Debug)]
-pub(crate) struct PendingReplace {
-    /// Generation from `replace_seq`; late opens for a superseded
-    /// replace are ignored.
-    pub id: usize,
-    /// Targets prepared so far, each with its pinned base revision.
-    pub documents: Vec<PlannedDocument>,
-    /// Every target that will not change, named with its reason:
-    /// stale witnesses, read-only buffers, failed opens.
-    pub refused: Vec<(strop_workspace::ResourceLocation, String)>,
-    /// Owned opens still in flight; the review presents at zero.
-    pub pending_opens: usize,
 }
 
 /// An immutable prepared proposal (0049 §8): identity, provenance, the
@@ -112,6 +82,7 @@ pub(crate) struct ChangeProposal {
     /// receipt after Apply/Cancel.
     pub buffer: DocumentId,
     pub view_revision: strop_core::id::BufferRevision,
+    pub search: Option<crate::editor::picker::search::SearchStamp>,
 }
 
 impl Editor {
@@ -146,7 +117,14 @@ impl Editor {
             self.message = "review changed; prepare a new proposal before applying".into();
             return;
         }
-        self.review.replace_context = None;
+        if proposal
+            .search
+            .is_some_and(|stamp| self.search_stamp(stamp.session) != Some(stamp))
+        {
+            self.review.pending = Some(proposal);
+            self.message = "Search changed; prepare a new review".into();
+            return;
+        }
         let producer = proposal.plan.producer.label().to_string();
         let mut receipt = ChangeReceipt {
             producer: producer.clone(),
@@ -167,6 +145,16 @@ impl Editor {
             match current {
                 None => {
                     let reason = "document closed since the proposal".to_string();
+                    receipt.refused.push((target.location, reason.clone()));
+                    lines.push(format!("refused: {label} — {reason}"));
+                }
+                Some(_)
+                    if proposal.search.is_some()
+                        && !self.doc(target.document).matches_target(
+                            &crate::files::FileTarget::Local(target.location.path.clone()),
+                        ) =>
+                {
+                    let reason = "source binding changed since the proposal".to_string();
                     receipt.refused.push((target.location, reason.clone()));
                     lines.push(format!("refused: {label} — {reason}"));
                 }
@@ -263,15 +251,22 @@ impl Editor {
     /// Cancel the reviewed proposal: nothing is applied, ever. The review
     /// buffer becomes a cancelled receipt and stays open.
     pub(crate) fn review_cancel_pub(&mut self) {
-        if self.review.replace.take().is_some() {
-            self.restore_replace_context();
-            self.message = "replace cancelled while loading; nothing applied".into();
+        if let Some(stamp) = self
+            .review
+            .preparing
+            .as_ref()
+            .map(|pending| pending.ticket.key.stamp)
+        {
+            self.cancel_review_preparation();
+            self.resume_search_after_review(stamp);
+            self.message = "replacement review cancelled; nothing applied".into();
             return;
         }
         let Some(proposal) = self.review.pending.take() else {
             self.message = "no change proposal awaiting review".into();
             return;
         };
+        let search = proposal.search;
         let producer = proposal.plan.producer.label();
         let mut text = format!(
             "strop change proposal {}: {producer} — CANCELLED\nnothing applied; {} file(s) had been proposed\n",
@@ -309,35 +304,16 @@ impl Editor {
         if let Err(error) = publish {
             self.message = format!("change receipt publish failed: {error}");
         }
-        self.restore_replace_context();
+        if let Some(stamp) = search {
+            self.resume_search_after_review(stamp);
+        }
     }
 
     /// Render the review buffer: header, per-file unified diffs computed
     /// from each target's pinned base, and every refused target named with
     /// its reason.
     fn render_proposal(&self, id: usize, plan: &ChangePlan) -> ReviewBuffer {
-        let producer = plan.producer.label();
-        let mut view = ReviewBuffer::default();
-        view.line(
-            &format!("strop change proposal {id}: {producer}"),
-            ReviewRow::Heading,
-        );
-        view.line(
-            &format!(
-                "{} file(s) to change, {} target(s) refused",
-                plan.documents.len(),
-                plan.refused.len()
-            ),
-            ReviewRow::Context,
-        );
-        view.line(
-            &format!("{APPLY_COMMAND} applies exactly what is shown; {CANCEL_COMMAND} discards it"),
-            ReviewRow::Context,
-        );
-        view.line(
-            "bases are pinned — editing a source invalidates that file at apply",
-            ReviewRow::Context,
-        );
+        let mut view = Self::review_heading(id, plan);
         for target in &plan.documents {
             view.line("", ReviewRow::Context);
             let label = match target.location.filesystem {
@@ -365,6 +341,60 @@ impl Editor {
                 ),
             }
         }
+        Self::review_refusals(&mut view, plan);
+        view
+    }
+}
+impl Editor {
+    /// Present a prepared plan as a review ALWAYS (0051 §6 R04): a
+    /// global replace never applies straight from the picker's text
+    /// fields, even when the plan is a single file. Same review shape
+    /// as `present_change_plan` — kept separate so that method's
+    /// direct-apply fast path stays untouched for LSP producers.
+    pub(crate) fn review_change_plan(&mut self, plan: ChangePlan) {
+        let Some(id) = self.next_review_id() else {
+            return;
+        };
+        let text = self.render_proposal(id, &plan);
+        self.publish_review(id, plan, text, None, true);
+    }
+
+    fn next_review_id(&mut self) -> Option<usize> {
+        match self.review.seq.checked_add(1) {
+            Some(id) => Some(id),
+            None => {
+                self.message = "review identity exhausted".into();
+                None
+            }
+        }
+    }
+
+    fn review_heading(id: usize, plan: &ChangePlan) -> ReviewBuffer {
+        let mut view = ReviewBuffer::default();
+        view.line(
+            &format!("strop change proposal {id}: {}", plan.producer.label()),
+            ReviewRow::Heading,
+        );
+        view.line(
+            &format!(
+                "{} file(s) to change, {} target(s) refused",
+                plan.documents.len(),
+                plan.refused.len()
+            ),
+            ReviewRow::Context,
+        );
+        view.line(
+            &format!("{APPLY_COMMAND} applies exactly what is shown; {CANCEL_COMMAND} discards it"),
+            ReviewRow::Context,
+        );
+        view.line(
+            "bases are pinned — editing a source invalidates that file at apply",
+            ReviewRow::Context,
+        );
+        view
+    }
+
+    fn review_refusals(view: &mut ReviewBuffer, plan: &ChangePlan) {
         if !plan.refused.is_empty() {
             view.line("", ReviewRow::Context);
             view.line("refused targets:", ReviewRow::Warning);
@@ -375,36 +405,32 @@ impl Editor {
                 );
             }
         }
-        view
-    }
-}
-impl Editor {
-    /// Begin a replace review assembly (0051 §6 R04); returns the
-    /// generation the owned opens carry. A newer call supersedes the
-    /// old assembly — its late opens merge nowhere.
-    pub(crate) fn begin_replace(
-        &mut self,
-        documents: Vec<PlannedDocument>,
-        refused: Vec<(strop_workspace::ResourceLocation, String)>,
-        pending_opens: usize,
-    ) -> usize {
-        self.review.replace_seq += 1;
-        let id = self.review.replace_seq;
-        self.review.replace = Some(PendingReplace {
-            id,
-            documents,
-            refused,
-            pending_opens,
-        });
-        id
     }
 
-    /// Present a prepared plan as a review ALWAYS (0051 §6 R04): a
-    /// global replace never applies straight from the picker's text
-    /// fields, even when the plan is a single file. Same review shape
-    /// as `present_change_plan` — kept separate so that method's
-    /// direct-apply fast path stays untouched for LSP producers.
-    pub(crate) fn review_change_plan(&mut self, plan: ChangePlan) {
+    fn present_prepared_search_review(
+        &mut self,
+        plan: ChangePlan,
+        body: ReviewBuffer,
+        stamp: crate::editor::picker::search::SearchStamp,
+        focus: bool,
+    ) {
+        let Some(id) = self.next_review_id() else {
+            return;
+        };
+        let mut text = Self::review_heading(id, &plan);
+        text.append(body);
+        Self::review_refusals(&mut text, &plan);
+        self.publish_review(id, plan, text, Some(stamp), focus);
+    }
+
+    fn publish_review(
+        &mut self,
+        id: usize,
+        plan: ChangePlan,
+        text: ReviewBuffer,
+        search: Option<crate::editor::picker::search::SearchStamp>,
+        focus: bool,
+    ) {
         if let Some(old) = self.review.pending.take() {
             let note = format!(
                 "strop change proposal {}: {} — SUPERSEDED by a newer proposal\n",
@@ -418,31 +444,73 @@ impl Editor {
                 .rows
                 .insert(old.buffer, vec![ReviewRow::Heading]);
         }
-        self.review.seq += 1;
-        let id = self.review.seq;
-        let text = self.render_proposal(id, &plan);
-        let producer = plan.producer.label().to_string();
+        self.review.seq = id;
+        let producer = plan.producer.label().to_owned();
         let files = plan.documents.len();
         let refused = plan.refused.len();
         let mut buf = Buffer::from_text(&text.text);
         buf.name = Some(format!("change proposal {id}"));
         let view_revision = buf.revision();
-        let buffer = self.open_temporary_output(buf);
+        let buffer = if focus {
+            self.open_temporary_output(buf)
+        } else {
+            let mut document = crate::editor::Document::output(buf);
+            if let Some(origin) = self
+                .retained_search
+                .as_ref()
+                .and_then(|glue| glue.search.as_ref())
+                .map(|context| context.origin.clone())
+            {
+                document.set_return_point(origin);
+            }
+            let id = self.docs.insert(document);
+            self.mru.push(id);
+            id
+        };
         self.review.rows.insert(buffer, text.rows);
         self.review.pending = Some(ChangeProposal {
             id,
             plan,
             buffer,
             view_revision,
+            search,
         });
-        self.message = match refused {
-            0 => format!(
-                "{producer}: proposal {id} reviews {files} file(s) — {APPLY_COMMAND} or {CANCEL_COMMAND}"
-            ),
-            _ => format!(
-                "{producer}: proposal {id} reviews {files} file(s), {refused} refused — {APPLY_COMMAND} or {CANCEL_COMMAND}"
-            ),
-        };
+        self.message = format!(
+            "{producer}: proposal {id} reviews {files} file(s), {refused} refused — {}",
+            if focus {
+                ":apply-change or :cancel-change"
+            } else {
+                "ready in buffers; focus unchanged"
+            }
+        );
+    }
+
+    pub(crate) fn invalidate_search_review(&mut self, session: strop_core::worker::WorkerId) {
+        if self
+            .review
+            .preparing
+            .as_ref()
+            .is_some_and(|pending| pending.ticket.key.stamp.session == session)
+        {
+            self.cancel_review_preparation();
+        }
+        if !self.review.pending.as_ref().is_some_and(|proposal| {
+            proposal
+                .search
+                .is_some_and(|stamp| stamp.session == session)
+        }) {
+            return;
+        }
+        if let Some(proposal) = self.review.pending.take() {
+            let note = format!("strop change proposal {} — STALE\nSearch changed; prepare a new review. Nothing applied.\n", proposal.id);
+            if let Err(error) = self.replace_system(proposal.buffer, &note) {
+                self.message = format!("could not retire stale review: {error}");
+            }
+            self.review.rows.insert(
+                proposal.buffer,
+                vec![ReviewRow::Warning, ReviewRow::Context],
+            );
+        }
     }
 }
 

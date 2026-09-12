@@ -192,25 +192,26 @@ impl GrepWorker {
                                 return Outcome::Cancelled(CancelReason::OwnerClosed);
                             }
                             let text = text.to_string();
-                            let text = text.trim_end_matches('\n');
+                            let text: std::sync::Arc<str> = text.trim_end_matches('\n').into();
+                            let short: String = text.trim().chars().take(80).collect();
                             let items = regex
-                                .find_iter(text)
+                                .find_iter(&text)
                                 .map(|hit| crate::Item {
-                                    badge: None,
+                                    badge: Some("buffer".into()),
                                     // same display shape as the rg adapter:
                                     // trimmed excerpt, byte col + 1
                                     text: format!(
                                         "{}:{} · {}",
                                         relative.display(),
                                         line + 1,
-                                        text.trim().chars().take(80).collect::<String>()
+                                        short
                                     ),
                                     payload: crate::Payload::Grep {
                                         path: relative.to_path_buf(),
                                         line: line + 1,
                                         col: hit.start() + 1,
                                         match_len: hit.len(),
-                                        line_text: text.to_string(),
+                                        line_text: text.clone(),
                                     },
                                 })
                                 .collect();

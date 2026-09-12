@@ -14,9 +14,9 @@ use strop_core::{Buffer, BufferSeed};
 use crate::editor::document::DocumentSource;
 use crate::editor::{Document, Editor, LayoutDir, Pane};
 
-// 0.29 changes query interpretation and delimiter matching. Old input must
-// never be silently replayed under the new semantics; metadata export is separate.
-const SEMANTIC_VERSION: u32 = 1;
+// 0.30 unifies search keyboard and owned-review semantics. Old input must
+// never be silently replayed under new semantics; metadata export is separate.
+const SEMANTIC_VERSION: u32 = 2;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.

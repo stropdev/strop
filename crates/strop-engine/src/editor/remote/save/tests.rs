@@ -178,7 +178,9 @@ fn publish_rank(editor: &mut Editor) {
 }
 
 fn remote_collection(editor: &mut Editor) -> DocumentId {
-    editor.open_picker(strop_picker::Kind::Grep);
+    editor.set_picker(crate::editor::picker::PickerGlue::diagnostics(
+        strop_picker::Picker::new(strop_picker::Kind::Locations, Vec::new(), false),
+    ));
     publish_rank(editor);
     editor
         .picker

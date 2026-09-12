@@ -11,7 +11,7 @@ fn sym(name: &str, container: &str, line: usize, kind: &str) -> Item {
             line,
             col: 1,
             match_len: 1,
-            line_text: String::new(),
+            line_text: "".into(),
         },
     }
 }
@@ -64,7 +64,7 @@ fn replace_rows_show_identity_window_and_delta() {
         13,
         "pub fn retry_request(attempt: usize) -> bool {",
     );
-    let lines = replace_rows(&item, "dispatch_request", false, 100, false, 4);
+    let lines = search_rows(&item, Some("dispatch_request"), false, 100, false, 4, None);
     assert_eq!(lines.len(), 3);
     let header = line_text(&lines[0]);
     assert!(header.contains("[x]"), "inclusion state: {header:?}");
@@ -102,7 +102,7 @@ fn replace_rows_exclusion_is_neutral_not_failure_red() {
         13,
         "assert!(retry_request(1));",
     );
-    let lines = replace_rows(&item, "dispatch_request", true, 100, false, 4);
+    let lines = search_rows(&item, Some("dispatch_request"), true, 100, false, 4, None);
     let header = line_text(&lines[0]);
     assert!(
         header.contains("[ ]"),
@@ -126,7 +126,7 @@ fn replace_rows_exclusion_is_neutral_not_failure_red() {
 #[test]
 fn replace_rows_selected_band_covers_the_logical_block() {
     let item = grep_item("a.rs", 1, 1, 3, "foo bar");
-    for line in replace_rows(&item, "baz", false, 40, true, 4) {
+    for line in search_rows(&item, Some("baz"), false, 40, true, 4, None) {
         let width: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
         assert_eq!(width, 40, "the band pads to full width");
         assert!(
@@ -139,7 +139,7 @@ fn replace_rows_selected_band_covers_the_logical_block() {
 #[test]
 fn replace_rows_empty_replacement_renders_the_deletion() {
     let item = grep_item("a.rs", 1, 1, 3, "foo bar");
-    let lines = replace_rows(&item, "", false, 60, false, 4);
+    let lines = search_rows(&item, Some(""), false, 60, false, 4, None);
     let new = line_text(&lines[2]);
     assert!(new.contains("+ "), "{new:?}");
     assert!(
@@ -156,9 +156,9 @@ fn replace_rows_empty_replacement_renders_the_deletion() {
 fn source_rows_are_total_and_cell_bounded_at_degenerate_widths() {
     let item = grep_item("src/界界/é.rs", 123, 5, 0, "界 é");
     for width in 0..30 {
-        for line in grep_rows(&item, width, true, 3)
+        for line in search_rows(&item, None, false, width, true, 3, None)
             .into_iter()
-            .chain(replace_rows(&item, "界", false, width, true, 3))
+            .chain(search_rows(&item, Some("界"), false, width, true, 3, None))
         {
             assert!(line.width() <= width as usize, "width {width}: {line:?}");
         }

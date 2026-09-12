@@ -422,7 +422,7 @@ fn bench_picker_100k() -> io::Result<()> {
     let mut stream = Op::new("stream+settle");
     let mut frame = Op::new("frame_full");
     for _ in 0..3 {
-        drive.editor.open_picker(Kind::Grep);
+        drive.editor.open_picker(Kind::Search);
         stream.try_time(|| {
             drive.input(AppEvent::Paste("needle_hit_".into()))?;
             drive.settle(SETTLE)
@@ -465,7 +465,7 @@ fn bench_replace_project() -> io::Result<()> {
             120,
             40,
         )?;
-        drive.editor.open_picker(Kind::Replace);
+        drive.editor.open_search(true);
         search.try_time(|| {
             drive.input(AppEvent::Paste("needle_todo".into()))?;
             drive.settle(SETTLE)
@@ -579,7 +579,7 @@ fn bench_drop_stale() -> io::Result<()> {
     let mut prime = Op::new("prime_10k");
     let mut supersede = Op::new("supersede+settle");
     for _ in 0..3 {
-        drive.editor.open_picker(Kind::Grep);
+        drive.editor.open_picker(Kind::Search);
         prime.try_time(|| {
             drive.input(AppEvent::Paste("needle_alpha".into()))?;
             // Consume until 10k items have landed; the rest of the 50k

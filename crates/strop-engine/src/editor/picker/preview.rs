@@ -37,7 +37,92 @@ impl<'de> serde::Deserialize<'de> for PreparedPreview {
     }
 }
 
+/// One exact witness check per source revision/dataset/selected hit. Replacement
+/// typing and repaints must not compare a megabyte source line again.
+pub(super) struct WitnessCheck {
+    item: usize,
+    dataset: u64,
+    document: Option<(strop_core::id::DocumentId, strop_core::id::BufferRevision)>,
+    path: Option<std::path::PathBuf>,
+    range: Option<strop_core::Range>,
+}
+
 impl Editor {
+    pub fn picker_preview_range(
+        &mut self,
+        source: &PreviewSource,
+    ) -> Result<Option<strop_core::Range>, &'static str> {
+        let Some(glue) = self
+            .picker
+            .as_ref()
+            .filter(|glue| glue.picker.kind == strop_picker::Kind::Search)
+        else {
+            return Ok(None);
+        };
+        let Some(context) = glue.search.as_ref() else {
+            return Ok(None);
+        };
+        let Some(row) = glue.picker.rows.get(glue.picker.selected) else {
+            return Ok(None);
+        };
+        let (rope, document, path) = match source {
+            PreviewSource::Buffer(id) => {
+                let Some(doc) = self.docs.get(*id) else {
+                    return Err("source closed — refresh Search");
+                };
+                (doc.buf.text(), Some((*id, doc.buf.revision())), None)
+            }
+            PreviewSource::Cached(path) => {
+                let Some(entry) = self.previews.get(path) else {
+                    return Ok(None);
+                };
+                (&entry.rope, None, Some(path))
+            }
+            _ => return Ok(None),
+        };
+        let result = |range: Option<strop_core::Range>| {
+            range.map(Some).ok_or("source changed — refresh Search")
+        };
+        if let Some(cached) = glue.preview_witness.as_ref().filter(|cached| {
+            cached.item == row.item
+                && cached.dataset == context.stamp.dataset
+                && cached.document == document
+                && cached.path.as_ref() == path
+        }) {
+            return result(cached.range);
+        }
+        let Payload::Grep {
+            line,
+            col,
+            match_len,
+            line_text,
+            ..
+        } = &glue.picker.items[row.item].payload
+        else {
+            return Ok(None);
+        };
+        let range = super::checked_hit_range(
+            rope,
+            &super::ReplacementHit {
+                line: *line,
+                col: *col,
+                match_len: *match_len,
+                text: line_text.clone(),
+            },
+        );
+        let checked = WitnessCheck {
+            item: row.item,
+            dataset: context.stamp.dataset,
+            document,
+            path: path.cloned(),
+            range,
+        };
+        if let Some(glue) = self.picker.as_mut() {
+            glue.preview_witness = Some(checked);
+        }
+        result(range)
+    }
+
     pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
         let item = self.picker.as_ref()?.picker.current()?;
         let (path, focus_line) = match &item.payload {
@@ -71,7 +156,7 @@ impl Editor {
                 ));
             }
         };
-        let full = self.cwd.join(&path);
+        let full = self.picker_path(&path);
         // 0050: the header identifies filename + line first; the parent
         // directory follows only while it fits the card.
         let title = {

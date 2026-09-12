@@ -23,6 +23,10 @@ RUN cargo fmt --check \
 FROM builder AS bin
 RUN cargo build --locked -p strop-editor
 
+# Only the integration runner needs a Docker client; the shipping binary does not.
+FROM bin AS container-test
+RUN apk add --no-cache docker-cli
+
 # Stripped static release binary (0002 §4). The gate: no NEEDED shared
 # libraries. (`ldd | grep "not a dynamic"` is wrong on current
 # rust:alpine — a static-pie musl binary still prints the ld-musl line;

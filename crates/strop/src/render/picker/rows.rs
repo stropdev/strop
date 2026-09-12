@@ -24,20 +24,28 @@ pub(super) fn render_results(
     selected: usize,
     tab_for_path: &impl Fn(&std::path::Path) -> usize,
 ) {
-    let two_line = picker.kind == strop_picker::Kind::Grep;
-    let per_row = if two_line { 2 } else { 1 };
-    let visible_rows = (area.height as usize).div_ceil(per_row);
-    let start_row = if selected >= visible_rows {
-        selected + 1 - visible_rows
+    let two_line = picker.kind == strop_picker::Kind::Search;
+    let per_row = if two_line {
+        if picker.replacement_visible {
+            3
+        } else {
+            2
+        }
     } else {
-        0
+        1
+    };
+    let visible_rows = (area.height as usize).div_ceil(per_row);
+    let start_row = if two_line {
+        picker.scroll_top
+    } else {
+        selected.saturating_sub(visible_rows.saturating_sub(1))
     };
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
     if picker.rows.is_empty()
         && picker.input.text.is_empty()
         && matches!(
             picker.kind,
-            strop_picker::Kind::Files | strop_picker::Kind::Grep
+            strop_picker::Kind::Files | strop_picker::Kind::Search
         )
     {
         // 0051 R02: the empty field teaches the vocabulary — never an
@@ -59,7 +67,7 @@ pub(super) fn render_results(
         && picker.input.text.is_empty()
         && !matches!(
             picker.kind,
-            strop_picker::Kind::Files | strop_picker::Kind::Grep
+            strop_picker::Kind::Files | strop_picker::Kind::Search
         )
     {
         let message = if picker.streaming {
@@ -78,7 +86,7 @@ pub(super) fn render_results(
         // 0050 §8: an empty filtered set is explained, never a blank
         // card with a nonzero count
         let noun = match picker.kind {
-            strop_picker::Kind::Grep | strop_picker::Kind::Replace => "matches".to_string(),
+            strop_picker::Kind::Search => "matches".to_string(),
             _ => format!("{} match", picker.kind.title().trim()),
         };
         lines.push(Line::from(Span::styled(
@@ -106,9 +114,22 @@ pub(super) fn render_results(
             strop_picker::Payload::Grep { path, .. } => tab_for_path(path),
             _ => 4,
         };
-        for line in compose_row(item, picker.kind, match_cols, area.width, active, tab) {
-            lines.push(line);
-        }
+        let rendered = if two_line {
+            search_rows(
+                item,
+                picker
+                    .replacement_visible
+                    .then_some(picker.replace_input.text.as_str()),
+                picker.is_excluded(row.item),
+                area.width,
+                active,
+                tab,
+                picker.file_match_count(row.item),
+            )
+        } else {
+            compose_row(item, picker.kind, match_cols, area.width, active)
+        };
+        lines.extend(rendered);
     }
     frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
@@ -120,12 +141,10 @@ fn compose_row(
     match_cols: &[u32],
     width: u16,
     active: bool,
-    tab: usize,
 ) -> Vec<Line<'static>> {
     match kind {
         strop_picker::Kind::Symbols => vec![symbol_row(item, match_cols, width, active)],
         strop_picker::Kind::Files => vec![file_row(&item.text, match_cols, width, active)],
-        strop_picker::Kind::Grep => grep_rows(item, width, active, tab),
         _ => vec![generic_row(item, match_cols, width, active)],
     }
 }
@@ -431,46 +450,6 @@ fn elide_middle(path: &str, room: usize) -> String {
     )
 }
 
-// ---- grep -----------------------------------------------------------------
-
-/// Two display lines per hit (0050 §7): filename + directory, then the
-/// code window around the REAL submatch with line:char numbers. A wide
-/// list may collapse to one row when everything fits.
-fn grep_rows(
-    item: &strop_picker::Item,
-    width: u16,
-    active: bool,
-    tab: usize,
-) -> Vec<Line<'static>> {
-    let strop_picker::Payload::Grep {
-        path,
-        line,
-        col,
-        match_len,
-        line_text,
-    } = &item.payload
-    else {
-        return vec![generic_row(item, &[], width, active)];
-    };
-    let budget = (width as usize).saturating_sub(1);
-    let line1 = file_row(&strop_picker::display_path(path), &[], width, active);
-    // line 2: numbers secondary, then the code window around the match
-    let (match_start, match_end) = strop_picker::replace_span(line_text, *col, *match_len);
-    let numbers = format!(" {line}:{}  ", match_start + 1);
-    let code_budget = budget.saturating_sub(text::width(&numbers));
-    let (window, win_match) = match_window(line_text, match_start, match_end, code_budget, tab);
-    let mut bottom = vec![plain(" ", Style::default())];
-    bottom.push(plain(&numbers, Style::default().fg(SECONDARY)));
-    bottom.extend(emphasis(
-        &window,
-        &match_cols_in_window(win_match, &window),
-        Style::default().fg(TEXT),
-        active,
-    ));
-    let line2 = finish(bottom, width, active);
-    vec![line1, line2]
-}
-
 /// Match columns for the window's own char coordinates.
 fn match_cols_in_window((start, end): (usize, usize), _window: &str) -> Vec<u32> {
     (start as u32..end as u32).collect()
@@ -572,21 +551,17 @@ fn digits(mut n: usize) -> usize {
     d
 }
 
-// ---- replace ---------------------------------------------------------------
+// ---- shared Search rows ----------------------------------------------------
 
-/// Three display lines per hit (0051 §6 R04): the grep source-hit
-/// vocabulary — inclusion state, filename bright, directory secondary,
-/// source numbers secondary, the code window around the REAL submatch
-/// with the match amber/bold — plus the replacement delta in the
-/// common diff roles. Exclusion is a neutral inclusion state, never
-/// the failure red.
-fn replace_rows(
+/// One source identity/code row, with an optional literal replacement layer.
+fn search_rows(
     item: &strop_picker::Item,
-    replacement: &str,
+    replacement: Option<&str>,
     excluded: bool,
     width: u16,
     active: bool,
     tab: usize,
+    file_hits: Option<usize>,
 ) -> Vec<Line<'static>> {
     let strop_picker::Payload::Grep {
         path,
@@ -600,12 +575,30 @@ fn replace_rows(
     };
     let secondary = if excluded { MUTED } else { SECONDARY };
     let budget = (width as usize).saturating_sub(1);
-    let notice = if excluded && width >= 24 {
-        " · excluded"
-    } else {
-        ""
-    };
-    let path_width = width.saturating_sub((4 + text::width(notice)) as u16);
+    let basename = path
+        .file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy();
+    let mut room = (width as usize).saturating_sub(text::width(&basename) + 5);
+    let mut notice = String::new();
+    if let Some(count) = file_hits {
+        let count = format!(" · {count} hits");
+        if text::width(&count) <= room {
+            room -= text::width(&count);
+            notice.push_str(&count);
+        }
+    }
+    for label in [excluded.then_some("excluded"), item.badge.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        if text::width(label) + 3 <= room {
+            room -= text::width(label) + 3;
+            notice.push_str(" · ");
+            notice.push_str(label);
+        }
+    }
+    let path_width = width.saturating_sub((4 + text::width(&notice)) as u16);
     let heading = file_row(&strop_picker::display_path(path), &[], path_width, active);
     let mut top = vec![
         marker(active),
@@ -623,10 +616,11 @@ fn replace_rows(
     if !notice.is_empty() {
         top.push(plain(notice, Style::default().fg(MUTED)));
     }
-    let line1 = finish(top, width, active);
-    // lines 2/3: `-` old / `+` new over the same match-window machinery
-    // as grep_rows; the match/replacement spans stay amber/bold on top
-    // of the diff roles. Preview and apply share `replace_span`.
+    let mut line1 = finish(top, width, active);
+    if !active {
+        line1.style = Style::default().bg(Color::Rgb(0x1b, 0x1d, 0x26));
+    }
+    // The same checked byte span drives source evidence and the optional delta.
     let (s, e) = strop_picker::replace_span(line_text, *col, *match_len);
     let numbers = format!(" {line}:{}  ", s + 1);
     let numbers_w = text::width(&numbers);
@@ -639,10 +633,20 @@ fn replace_rows(
         }
     };
     let (old_window, old_match) = match_window(line_text, s, e, code_budget, tab);
-    let del = if excluded { secondary } else { DEL_FG };
+    let delta = replacement.filter(|_| !excluded);
+    let del = if excluded {
+        secondary
+    } else if delta.is_some() {
+        DEL_FG
+    } else {
+        TEXT
+    };
     let mut old = vec![plain(" ", Style::default())];
     old.push(plain(&numbers, Style::default().fg(secondary)));
-    old.push(plain("- ", Style::default().fg(del)));
+    old.push(plain(
+        if delta.is_some() { "- " } else { "  " },
+        Style::default().fg(del),
+    ));
     old.extend(emphasis(
         &old_window,
         &evidence(&old_window, old_match),
@@ -650,8 +654,14 @@ fn replace_rows(
         active,
     ));
     let line2 = finish(old, width, active);
-    let (new_window, new_match) =
-        replacement_window(line_text, s, e, replacement, code_budget, tab);
+    let Some(delta) = delta else {
+        let mut lines = vec![line1, line2];
+        if replacement.is_some() {
+            lines.push(finish(Vec::new(), width, active));
+        }
+        return lines;
+    };
+    let (new_window, new_match) = replacement_window(line_text, s, e, delta, code_budget, tab);
     let add = if excluded { secondary } else { ADD_FG };
     let mut new = vec![plain(" ", Style::default())];
     new.push(plain(" ".repeat(numbers_w), Style::default()));
@@ -664,68 +674,6 @@ fn replace_rows(
     ));
     let line3 = finish(new, width, active);
     vec![line1, line2, line3]
-}
-
-/// The replace results list (0051 §6 R04): three display lines per
-/// logical row — source-hit identity, `-` old, `+` new — with the
-/// selection band covering the whole logical block, and the same named
-/// empty states as the grep list.
-pub(super) fn render_replace_results(
-    frame: &mut Frame,
-    area: Rect,
-    p: &strop_picker::Picker,
-    tab_for_path: &impl Fn(&std::path::Path) -> usize,
-) {
-    const PER_ROW: usize = 3;
-    let visible_rows = (area.height as usize).div_ceil(PER_ROW);
-    let selected = p.selected;
-    let start = if selected >= visible_rows {
-        selected + 1 - visible_rows
-    } else {
-        0
-    };
-    let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
-    if p.rows.is_empty() && p.input.text.is_empty() {
-        // 0051 R02: the empty field teaches the vocabulary — never an
-        // obsolete flag hint
-        lines.push(Line::from(Span::styled(
-            " language:rust path:src/ glob:\"**/*.rs\" hidden:include case:smart",
-            Style::default().fg(MUTED),
-        )));
-        lines.push(Line::from(Span::styled(
-            " bare words are literal content · ctrl-space suggests",
-            Style::default().fg(MUTED),
-        )));
-    }
-    if p.rows.is_empty() && !p.input.text.is_empty() {
-        // 0050 §8: an empty set is explained, never a blank card
-        lines.push(Line::from(Span::styled(
-            format!(" No matches “{}”", p.input.text),
-            Style::default().fg(SECONDARY),
-        )));
-        lines.push(Line::from(Span::styled(
-            " edit Find · esc normal/close",
-            Style::default().fg(MUTED),
-        )));
-    }
-    for (vi, row) in p.rows.iter().enumerate().skip(start).take(visible_rows) {
-        let active = vi == selected;
-        let Some(item) = p.items.get(row.item) else {
-            continue;
-        };
-        lines.extend(replace_rows(
-            item,
-            &p.replace_input.text,
-            p.is_excluded(row.item),
-            area.width,
-            active,
-            match &item.payload {
-                strop_picker::Payload::Grep { path, .. } => tab_for_path(path),
-                _ => 4,
-            },
-        ));
-    }
-    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
 
 #[cfg(test)]

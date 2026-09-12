@@ -197,7 +197,13 @@ fn review_ranged_yank_updates_unnamed_register() {
 fn review_stale_replace_range_is_utf8_safe() {
     let mut e = Editor::new(Buffer::from_text("界foo\n"));
     let doc = e.current();
-    let (_, applied, stale) = e.replace_in_buffer_pub(doc, &[(1, 2, 3, "afoo".into())], "bar");
+    let hit = crate::editor::picker::ReplacementHit {
+        line: 1,
+        col: 2,
+        match_len: 3,
+        text: "afoo".into(),
+    };
+    let (_, applied, stale) = e.replace_in_buffer_pub(doc, &[hit], "bar");
     assert_eq!((applied, stale), (0, 1));
 }
 

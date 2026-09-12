@@ -274,7 +274,7 @@ fn collection_fixture() -> (Editor, tempfile::TempDir) {
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
     e.open_fixture(&a).expect("open a");
     e.open_fixture(&b).expect("open b");
-    e.open_picker(strop_picker::Kind::Grep);
+    e.open_picker(strop_picker::Kind::Search);
     let item = |path: &std::path::Path, line: usize, text: &str| strop_picker::Item {
         badge: None,
         text: text.to_string(),

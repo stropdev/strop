@@ -1,7 +1,7 @@
 # 0053 — One search workspace, replacement on demand
 
-Status: requested design handoff; not an implementation or a claim that 0051 has
-finished. Written while another session implements the whole-editor polish pass.
+Status: implemented for 0.30.0, following the published and fully verified
+0.29.0/0051 release. S01–S10 implementation and acceptance evidence are in §11.
 
 ## 1. Decision and scope
 
@@ -370,3 +370,93 @@ Run the specific behavior walkthroughs, then the repository's integrated
 locked tests). Update existing user docs/changelog and the roadmap acceptance
 ledger. That gate belongs to implementation, not to this documentation-only
 investigation while another session is editing source.
+
+## 10. Integration decisions for 0.30.0
+
+- `Kind::Search` is the one content-search model. Replacement visibility is a
+  facet; its parked `LineEdit` and modal/caret state are never destroyed by toggling.
+- One retained investigation belongs to a captured `SearchScope` resource root.
+  Re-entry refreshes through owned work rather than assuming disk results stayed
+  current. Pure replacement toggles/draft edits never restart search or ranking.
+- Workset decisions use native file identity, source coordinates and exact shared
+  line witnesses, not catalog indices transferred to a new dataset. Refresh drops
+  and reports decisions whose witnesses no longer identify the same match.
+- The shared result renderer owns one stable outer card, logical-row viewport,
+  file identity/code rows and optional delta layer. Find Enter opens a source;
+  With Enter prepares review. Contextual hints follow the actual input owner.
+- Replacement preparation freezes source observations and runs as a finite owned
+  job. Query, draft/workset and prepared-review generations are independent;
+  late preparation never retargets or steals newer focus.
+- Existing change plans, exact edit witnesses, source permissions and explicit
+  persistence receipts remain authoritative. Replay semantics advance for the
+  changed model and keyboard contract; no old-kind aliases remain.
+
+## 11. Implementation and acceptance — 0.30.0
+
+| ID | Implementation and exercised contract |
+| --- | --- |
+| S01 | `strop-picker::Kind::Search`, one engine open/resume path and common row renderer. Removed the separate Replace kind and old per-file open/replacement assembly. |
+| S02 | Parked Find/With `LineEdit`s and independent replacement visibility; the live-query regression keeps the existing producer while toggling, pasting and changing field modes. No new grep/rank work from a pure toggle. |
+| S03 | `render/picker/{mod,rows,preview}.rs`: one near-full-frame rectangle, basename/parent/source coordinates, per-file hit counts, source-buffer badges, full selection/exclusion bands, raised headings and source-preview surface. Tiny views prioritize the active field without changing the retained viewport. |
+| S04 | Contextual registry/help and shared field dispatch: Find Enter opens, With Enter reviews, Ctrl-R toggles, Ctrl-X/Ctrl-D curate, Ctrl-O collects. Suggestions own acceptance only while visible; terminal bracketed paste edits the focused field. Document Ctrl-R remains redo. |
+| S05 | Source-witness workset, not catalog-index exclusions; visible counts in both presentations. Same-line individual decisions survive a file mask/restore. Both collection and review refuse all-excluded/incomplete/error datasets. Collection admission verifies source witnesses before projecting coordinates. |
+| S06 | `changes/review/prepare.rs` freezes observations and prepares diffs on an owned worker. Canonical aliases coalesce; dirty buffers win; moved revisions/bindings, closed/read-only/unavailable sources are named refusals. Apply uses the reviewed edits; Save is separate. Existing open/unopened Apply/Save, stale-target, failed-read and remote-receipt regressions pass. |
+| S07 | `picker/search.rs` retains one bounded investigation. Source opening, Cancel and re-entry preserve query/draft/selection/workset; refresh restores semantic hit identity even when stream order changes. Lost witnesses are reported, not transferred to new source text. |
+| S08 | Typed captured `SearchScope`, independent dataset/intent/preparation tickets, finite cancellation and focus guards. Tests cover re-entry after cwd changes, dirty relative display spellings, late completions and save-as binding changes. Unsupported explicit namespaces refuse; only the local project backend is implemented. |
+| S09 | Shared model, source row/window projection and pure witness validator. Preparation, retained lifecycle and workset have separate modules. Modified production modules remain below the 800-line ceiling; the command table remains the existing single-pattern artifact. Replay semantic version advances to 2. |
+| S10 | Focused state and TestBackend regressions, release-binary headless/full-replay walkthroughs, actual terminal captures, user help/README/generated compatibility docs and measured project replacement. Required final gates and hosted release checks are recorded below. |
+
+### Surface and behavioral evidence
+
+- Final GNU/Linux release executable SHA-256:
+  `067c42a03bc91f18d32ad094ec5d5da36df0e3543919b9078b8d4506f6d46466`.
+- Private controlled fixtures and captures live under
+  `/tmp/strop-search030-yqaed_fl/`. `candidate-tui.jsonl` records the actual terminal
+  executable; `candidate-*.json` retains emitted cell grids, with SVG projections
+  for visual inspection. Projections are not native Windows Terminal screenshots;
+  the projection font lacks some CJK glyphs, while the grid retains original UTF-8.
+- Exercised 140×40, 100×30, 80×24 and tiny/resize recovery, duplicate basenames,
+  long parent paths, Unicode/tabs, same-line multiple matches, selection/exclusion,
+  literal `$1` paste, common source/delta rows and syntax-spanned source preview.
+  Separate headless captures exercise empty/one-result and suggestion/incomplete
+  query states. A repeated `path:` qualifier is an OR filter, not an empty-result
+  probe; the actual empty probe uses a unique unmatched content expression.
+- `accepted.jsonl` is a complete release-executable Search → toggle/exclude →
+  Review → Cancel → source open → retained re-entry recording; full replay checks
+  the recorded requests, state and rendered observations.
+- Final actual-TUI Apply/Save walkthrough: disk stayed unchanged after Apply;
+  Save wrote seven literal `dispatch_$1` replacements and retained the one excluded
+  `needle`. Full replay of `candidate-tui.jsonl` completed with `should_quit=true`.
+  Its trace contains one grep launch; subsequent replacement toggling/paste/resize
+  issued viewport analysis and Review work, not another grep or ranking request.
+- `picker/search_tests.rs` defends real transition and authority boundaries:
+  producer-preserving toggle, semantic re-entry, shared same-line worksets, changed
+  witnesses, late preparation, pristine scratch preservation, revision-keyed
+  preview validation, alias coalescing, save-as refusal and cwd-independent dirty
+  source authority. Existing review/picker/collection tests use the migrated path.
+
+### Measurements and gate limits
+
+- Final release build, this WSL2 Ryzen 9950X3D host: 500 input+frame samples over
+  10k lines at 120×40 — p50 0.41 ms, p95 0.53 ms, p99 0.64 ms, max 1.04 ms.
+- 300 files × 50 matches, eight fresh replacement runs: search+settle p50/p95
+  124.71/130.97 ms; Review+settle 38.35/39.11 ms; Apply+frame 19.54/19.84 ms;
+  Save+settle 44.25/47.81 ms; retirement 4.65/5.07 ms. The benchmark reads every
+  saved file back; it does not count a refusal or a no-op as a fast replacement.
+- Compose `model` and `verify` passed; the edit kernel has 10 verified obligations,
+  zero errors. These existing proofs do not prove terminal layout or filesystem
+  scheduling.
+- Validation exposed an existing vacuous container gate: its image lacked the
+  Docker CLI. A dedicated test stage now supplies it; explicit
+  `STROP_CONTAINER_TESTS=1` fails on an unreachable engine instead of skipping.
+  The normal compose container gate ran 25 unit tests and five real-engine cases;
+  an unreachable-engine negative control failed as required.
+- Final `docker compose run --build --rm test` passed fmt, locked all-target
+  clippy with warnings denied, and the complete locked suite with real SSH
+  fixtures required. The corrected `container-test` service passed without any
+  manual package installation. Publication/CI/demo must succeed for `v0.30.0`
+  before the release task is complete.
+- No S requirement is deferred. The filesystem workspace (0054), completion
+  program (0052), and terminal/GUI program (0055) retain their independent scope.
+  Measurements and test counts are evidence for the exercised paths, not a claim
+  that every editor defect or schedule has been exhausted.

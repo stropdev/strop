@@ -147,7 +147,8 @@ impl Editor {
         if let Some(glue) = self.picker.as_mut() {
             glue.suggestions = None;
             glue.accept_when_ranked = false;
-            if kind == Kind::Replace && glue.picker.field == strop_picker::Field::Replace {
+            if kind == Kind::Search && glue.picker.field == strop_picker::Field::Replace {
+                self.search_intent_changed();
                 return;
             }
         }
@@ -180,35 +181,84 @@ impl Editor {
             }
             return;
         }
-        let (query, picker) = {
-            let Some(glue) = &mut self.picker else {
-                return;
-            };
-            if glue.picker.kind == Kind::RemoteAddress {
+        if kind == Kind::Search {
+            self.restart_search_query();
+            return;
+        }
+        if let Some(glue) = self.picker.as_mut() {
+            if kind == Kind::RemoteAddress {
                 glue.picker.error = None;
                 return;
             }
-            if !matches!(glue.picker.kind, Kind::Grep | Kind::Replace) {
-                self.request_picker_ranking();
+        }
+        self.request_picker_ranking();
+    }
+
+    pub(super) fn restart_search_query(&mut self) {
+        let plans = self.picker_query_eval(Kind::Search);
+        let (query, picker, root, session) = {
+            let Some(glue) = self.picker.as_mut() else {
                 return;
-            }
-            let query = glue.picker.input.text.clone();
-            let picker = glue.id;
+            };
+            glue.suggestions = None;
+            glue.accept_when_ranked = false;
             glue.revoke(CancelReason::Superseded);
-            glue.picker.error = None;
-            glue.picker.warning = None;
-            glue.picker.clear_items();
-            glue.ranked_query = None;
+            if let Some(worker) = &glue.rank_worker {
+                worker.cancel_pending();
+            }
             glue.rank_pending = None;
+            glue.rank_dirty = false;
+            glue.ranked_query = None;
             glue.picker.streaming = false;
-            (query, picker)
+            let Some(context) = glue.search.as_mut() else {
+                glue.picker.error = Some("Search has no captured workspace scope".into());
+                return;
+            };
+            let policy = (
+                glue.query
+                    .as_ref()
+                    .and_then(|query| query.hidden)
+                    .unwrap_or(self.config.search_show_hidden),
+                !glue
+                    .query
+                    .as_ref()
+                    .and_then(|query| query.ignored)
+                    .unwrap_or(!self.config.search_respect_ignore),
+            );
+            let refresh =
+                std::mem::take(&mut context.refresh_requested) && context.policy == policy;
+            context.policy = policy;
+            context.begin_view_restore();
+            if refresh {
+                glue.picker.refresh_items();
+            } else {
+                glue.picker.clear_items();
+                context.discard_view_restore();
+            }
+            let Some(next) = context.stamp.dataset.checked_add(1) else {
+                glue.picker.error = Some("search dataset generation exhausted".into());
+                return;
+            };
+            context.stamp.dataset = next;
+            context.refreshing = true;
+            (
+                glue.picker.input.text.clone(),
+                glue.id,
+                context.scope.root.path.clone(),
+                context.stamp.session,
+            )
         };
-        let Some(plans) = self.picker_query_eval(kind) else {
-            return;
-        };
+        self.invalidate_search_review(session);
+        let Some(plans) = plans else { return };
         if plans.content.is_none() {
             if let Some(glue) = self.picker.as_mut() {
-                glue.picker.error = Some("content search needs a text or regex expression".into());
+                if !query.is_empty() {
+                    glue.picker.error =
+                        Some("content search needs a text or regex expression".into());
+                }
+                if let Some(context) = glue.search.as_mut() {
+                    context.refreshing = false;
+                }
             }
             return;
         }
@@ -228,7 +278,7 @@ impl Editor {
             request,
             key: PickerKey {
                 picker,
-                cwd: self.cwd.clone(),
+                cwd: root.clone(),
             },
         };
         // registration precedes launch (replay stops here)
@@ -274,12 +324,17 @@ impl Editor {
                     return None;
                 }
                 Some(strop_picker::SourceSnapshot {
-                    path: self.cwd.join(document.buf.path.as_ref()?),
+                    path: self.cwd.join(
+                        document
+                            .buf
+                            .file_identity()
+                            .or(document.buf.path.as_deref())?,
+                    ),
                     text: document.buf.text().clone(),
                 })
             })
             .collect();
-        let worker = GrepWorker::spawn(plans, policy, &self.cwd, snapshots, tx);
+        let worker = GrepWorker::spawn(plans, policy, &root, snapshots, tx);
         if let Some(glue) = self.picker.as_mut() {
             glue.worker = Some(PickerWorker::Grep(worker));
         }
@@ -295,8 +350,8 @@ impl Editor {
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
-        let query_role = matches!(glue.picker.kind, Kind::Files | Kind::Grep)
-            || (glue.picker.kind == Kind::Replace
+        let query_role = glue.picker.kind == Kind::Files
+            || (glue.picker.kind == Kind::Search
                 && glue.picker.field == strop_picker::Field::Search);
         if !query_role || glue.picker.input_normal() {
             return;

@@ -78,9 +78,14 @@ pub(crate) struct Collection {
     pub pending_commit: Vec<(DocumentId, BufferRevision)>,
 }
 
-/// One collection hit: path, 0-based line, and the query submatch's
-/// (byte column, length) when the source was a real rg match.
-pub(crate) type CollectionHit = (std::path::PathBuf, usize, Option<(usize, usize)>);
+/// A source location plus the exact search witness when this came from Search.
+#[derive(Debug)]
+pub(crate) struct CollectionHit {
+    path: std::path::PathBuf,
+    line: usize,
+    span: Option<(usize, usize)>,
+    witness: Option<super::picker::ReplacementHit>,
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct SourceHit {
@@ -144,33 +149,42 @@ impl Editor {
             kind,
             strop_picker::Kind::Locations
                 | strop_picker::Kind::Diagnostics
-                | strop_picker::Kind::Grep
+                | strop_picker::Kind::Search
         ) {
             self.message = "collections come from a results list".into();
             return;
         }
         // Local hits and remote hits alike; remote ones resolve against
         // open remote documents (0040 permits gate their write-back).
+        let root = glue
+            .search
+            .as_ref()
+            .map_or(&self.cwd, |context| &context.scope.root.path);
         let mut hits: Vec<CollectionHit> = Vec::new();
         let mut remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)> =
             Vec::new();
-        for item in glue
-            .picker
-            .rows
-            .iter()
-            .filter_map(|row| glue.picker.items.get(row.item))
-        {
+        for item in glue.picker.accepted() {
             match &item.payload {
                 strop_picker::Payload::Grep {
                     path,
                     line,
                     col,
                     match_len,
-                    ..
+                    line_text,
                 } => {
-                    let hit = (kind == strop_picker::Kind::Grep)
+                    let hit = (kind == strop_picker::Kind::Search)
                         .then(|| (col.saturating_sub(1), *match_len));
-                    hits.push((path.clone(), line.saturating_sub(1), hit));
+                    hits.push(CollectionHit {
+                        path: root.join(path),
+                        line: line.saturating_sub(1),
+                        span: hit,
+                        witness: hit.map(|_| super::picker::ReplacementHit {
+                            line: *line,
+                            col: *col,
+                            match_len: *match_len,
+                            text: line_text.clone(),
+                        }),
+                    });
                 }
                 strop_picker::Payload::Remote {
                     endpoint,
@@ -181,6 +195,10 @@ impl Editor {
                 _ => {}
             }
         }
+        if hits.is_empty() && remote_hits.is_empty() {
+            self.message = "collection: no included source matches".into();
+            return;
+        }
         let title = kind.title().trim().to_string();
         let owner = glue.id.0;
         self.close_picker();
@@ -189,7 +207,7 @@ impl Editor {
         let mut to_load: Vec<std::path::PathBuf> = Vec::new();
         let open_sources = self.collection_local_sources();
         let mut requested = std::collections::HashSet::new();
-        for (path, ..) in &hits {
+        for CollectionHit { path, .. } in &hits {
             let absolute = if path.is_absolute() {
                 path.clone()
             } else {
@@ -268,7 +286,13 @@ impl Editor {
         let mut by_doc: HashMap<DocumentId, Vec<SourceHit>> = HashMap::new();
         let open_sources = self.collection_local_sources();
         let mut skipped = 0;
-        for (path, line, hit) in hits {
+        for CollectionHit {
+            path,
+            line,
+            span: hit,
+            witness,
+        } in hits
+        {
             let absolute = if path.is_absolute() {
                 path
             } else {
@@ -278,6 +302,12 @@ impl Editor {
                 skipped += 1;
                 continue;
             };
+            if witness.as_ref().is_some_and(|witness| {
+                super::picker::checked_hit_range(self.doc(document).buf.text(), witness).is_none()
+            }) {
+                skipped += 1;
+                continue;
+            }
             by_doc
                 .entry(document)
                 .or_default()
@@ -299,7 +329,7 @@ impl Editor {
             }
         }
         if by_doc.is_empty() {
-            self.message = "no open buffers among the results — open them first".into();
+            self.message = format!("collection refused: {skipped} source match(es) stale or unavailable; refresh Search");
             return;
         }
         let mut excerpts: Vec<Excerpt> = Vec::new();

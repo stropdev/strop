@@ -259,7 +259,7 @@ mod picker_tests {
         std::fs::write(dir.path().join("b.py"), "send = 1\n").unwrap();
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.cwd = dir.path().to_path_buf();
-        e.open_picker(Kind::Grep);
+        e.open_picker(Kind::Search);
         e.feed_text("language:rust send");
         e.wait_picker();
         let p = &e.picker.as_ref().unwrap().picker;
@@ -281,7 +281,7 @@ mod picker_tests {
         std::fs::write(dir.path().join("a.rs"), "fn send() {}\n").unwrap();
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.cwd = dir.path().to_path_buf();
-        e.open_picker(Kind::Grep);
+        e.open_picker(Kind::Search);
         e.feed_text("langauge:rust send");
         let p = &e.picker.as_ref().unwrap().picker;
         assert!(
@@ -299,7 +299,7 @@ mod picker_tests {
     #[test]
     fn ctrl_space_suggests_and_enter_completes() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.open_picker(Kind::Grep);
+        e.open_picker(Kind::Search);
         e.feed_text("lang");
         e.feed(crate::editor::Key::CtrlSpace);
         let glue = e.picker.as_ref().unwrap();
@@ -324,7 +324,7 @@ mod picker_tests {
     #[test]
     fn suggestions_stay_out_of_literal_fields() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.open_picker(Kind::Replace);
+        e.open_search(true);
         e.feed_text("foo");
         e.feed(crate::editor::Key::Tab); // With field
         e.feed_text("lang");
@@ -393,7 +393,7 @@ mod worker_lifecycle_tests {
     /// Register a grep-stream request without launching rg: the glue
     /// only needs the ticket; events are injected by hand.
     fn register_stream(e: &mut Editor) -> Ticket<PickerKey> {
-        e.open_picker(Kind::Grep);
+        e.open_picker(Kind::Search);
         let picker = e.picker.as_ref().map(|g| g.id).unwrap();
         let request = e.worker_ids.allocate().unwrap();
         let ticket = Ticket {
@@ -555,7 +555,7 @@ mod worker_lifecycle_tests {
     #[test]
     fn preview_failure_is_visible_and_retryable_after_reopen() {
         let mut e = editor();
-        e.open_picker(Kind::Grep);
+        e.open_picker(Kind::Search);
         e.picker
             .as_mut()
             .unwrap()
@@ -589,7 +589,7 @@ mod worker_lifecycle_tests {
         assert!(!e.previews.contains_key(&path), "negative cache forgotten");
         assert!(!e.preview_loads.contains_key(&path));
         // …so an explicit reopen can retry with a fresh request
-        e.open_picker(Kind::Grep);
+        e.open_picker(Kind::Search);
         e.picker
             .as_mut()
             .unwrap()
@@ -630,7 +630,7 @@ mod worker_lifecycle_tests {
     #[test]
     fn preview_empty_success_is_ready_and_cancel_does_not_resubmit() {
         let mut e = editor();
-        e.open_picker(Kind::Grep);
+        e.open_picker(Kind::Search);
         e.picker
             .as_mut()
             .unwrap()

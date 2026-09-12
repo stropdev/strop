@@ -92,8 +92,8 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ space f` — file finder
 - `✓ space o` — open remote destination
 - `✓ space b` — buffers (MRU)
-- `✓ space /` — live grep
-- `✓ space R` — global search & replace
+- `✓ space /` — Search workspace (resume investigation)
+- `✓ space R` — Search with replacement
 - `✓ space ?` — help buffer
 - `✓ space y` — yank motion → system clipboard
 - `✓ space p` — paste clipboard after
@@ -137,9 +137,12 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ ctrl-w q` — close pane (last → buffer)
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
-- `✓ ctrl-x` — replace picker: exclude/include match
+- `✓ ctrl-x` — Search: exclude/include match
 - `✓ ctrl-space` — query field: qualifier, language and value suggestions
-- `✓ ctrl-d` — replace picker: exclude/include file
+- `✓ ctrl-d` — Search: exclude/include file
+- `✓ ctrl-r` — Search: toggle replacement; document: redo
+- `✓ enter` — Search Find: open source; With: prepare review
+- `✓ ctrl-o` — Search: collect included matches
 - `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
 - `✓ :apply-change :cancel-change :save-change` — review: apply buffers, cancel, or save the changed files
 - `✓ ctrl-l` — redraw: full repaint when the terminal desyncs

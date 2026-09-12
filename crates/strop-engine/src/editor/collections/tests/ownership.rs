@@ -18,7 +18,18 @@ fn hit(path: &std::path::Path, text: &str) -> Item {
 #[test]
 fn collecting_a_filtered_location_list_uses_only_its_visible_workset() {
     let (mut editor, _, _) = fixture();
-    editor.picker.as_mut().unwrap().picker.kind = Kind::Locations;
+    let items = editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .picker
+        .items
+        .iter()
+        .cloned()
+        .collect();
+    editor.set_picker(crate::editor::picker::PickerGlue::diagnostics(
+        strop_picker::Picker::new(Kind::Locations, items, false),
+    ));
     editor.feed_text("a.txt");
     editor.wait_picker();
     editor.feed(crate::editor::Key::CtrlO);
@@ -35,11 +46,11 @@ fn stale_source_load_cannot_complete_a_newer_collection() {
     std::fs::write(&old, "OLD_SOURCE\n").unwrap();
     std::fs::write(&new, "NEW_SOURCE\n").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
-    editor.open_picker(Kind::Grep);
+    editor.open_picker(Kind::Search);
     editor.picker_items_fixture(vec![hit(&old, "OLD_SOURCE")]);
     editor.feed(crate::editor::Key::CtrlO);
     let old_owner = editor.collection_build.as_ref().unwrap().owner;
-    editor.open_picker(Kind::Grep);
+    editor.open_picker(Kind::Search);
     editor.picker_items_fixture(vec![hit(&new, "NEW_SOURCE")]);
     editor.feed(crate::editor::Key::CtrlO);
     let mut old_event = None;
@@ -80,7 +91,7 @@ fn a_collection_finishing_after_typing_does_not_steal_the_view() {
     std::fs::write(&path, "LATE_SOURCE\n").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin\n"), dir.path().to_path_buf());
     let origin = editor.current();
-    editor.open_picker(Kind::Grep);
+    editor.open_picker(Kind::Search);
     editor.picker_items_fixture(vec![hit(&path, "LATE_SOURCE")]);
     editor.feed(crate::editor::Key::CtrlO);
     editor.feed_text("iuser <esc>");

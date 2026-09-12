@@ -246,7 +246,7 @@ impl Editor {
                             line,
                             col,
                             match_len: 1,
-                            line_text: d.message.clone(),
+                            line_text: d.message.clone().into(),
                         },
                     }),
                     // Remote diagnostics carry their endpoint: the

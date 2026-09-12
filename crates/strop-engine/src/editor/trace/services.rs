@@ -57,6 +57,7 @@ pub fn io(event: &crate::editor::io::IoEvent) {
         IoEvent::Open(value) => completion("io", "open", value),
         IoEvent::Save(value) => completion("io", "save", value),
         IoEvent::Native(value) => completion("io", "native", value),
+        IoEvent::Review(value) => completion("search", "review", value),
         IoEvent::Remote(event) => {
             use crate::editor::remote::RemoteEvent;
             match event {

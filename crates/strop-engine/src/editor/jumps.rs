@@ -52,9 +52,10 @@ impl Editor {
                     .filter_map(|doc| doc.return_point_mut()),
             )
             .chain(
-                self.review
-                    .replace_context
+                self.picker
                     .iter_mut()
+                    .chain(self.retained_search.iter_mut())
+                    .filter_map(|glue| glue.search.as_mut())
                     .map(|context| &mut context.origin),
             )
         {

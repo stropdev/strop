@@ -39,16 +39,10 @@ pub enum OpenIntent {
         line: LineIndex,
         column: ByteColumn,
     },
+    SearchHit(super::picker::ReplacementHit),
     LspLocation {
         context: strop_lsp::ReplyContext,
         position: strop_lsp::ServerPosition,
-    },
-    Replace {
-        hits: Vec<(usize, usize, usize, String)>,
-        replacement: String,
-        /// The pending replace review this open feeds (0051 §6 R04);
-        /// a stale generation merges nowhere.
-        review: usize,
     },
     /// Open without focus (0044 v2): collection builds load sources in
     /// the background; the picker keeps focus and focus never moves.
@@ -59,7 +53,10 @@ pub enum OpenIntent {
 impl OpenIntent {
     fn requires_file(&self) -> bool {
         match self {
-            Self::AtLine { .. } | Self::Grep { .. } | Self::LspLocation { .. } => true,
+            Self::AtLine { .. }
+            | Self::Grep { .. }
+            | Self::SearchHit(_)
+            | Self::LspLocation { .. } => true,
             Self::RemoteView { view, line } => {
                 line.is_some() || *view != super::remote::RemoteView::default()
             }
@@ -100,6 +97,14 @@ pub enum IoEvent {
     Save(Box<Completion<SaveKey, SaveReceipt>>),
     Native(Box<Completion<native::NativeKey, native::NativeResult>>),
     Remote(super::remote::RemoteEvent),
+    Review(
+        Box<
+            Completion<
+                super::changes::review::prepare::PreparationKey,
+                super::changes::review::prepare::PreparedReview,
+            >,
+        >,
+    ),
     Session {
         request: WorkerId,
         outcome: Outcome<()>,
@@ -177,9 +182,7 @@ impl Editor {
             FileTarget::Local(path) => FileTarget::Local(self.cwd.join(path)),
             remote => remote,
         };
-        if !matches!(intent, OpenIntent::Replace { .. }) {
-            self.cancel_open(worker::CancelReason::Superseded);
-        }
+        self.cancel_open(worker::CancelReason::Superseded);
         let existing = self.docs.iter().find_map(|(id, document)| {
             (document.matches_target(&path)
                 && document
@@ -221,10 +224,7 @@ impl Editor {
             intent,
             selection,
         };
-        if !matches!(
-            key.intent,
-            OpenIntent::Replace { .. } | OpenIntent::CollectionSource { .. }
-        ) {
+        if !matches!(key.intent, OpenIntent::CollectionSource { .. }) {
             self.io.navigation = Some(request);
         }
         self.io.open.insert(request, key.clone());
@@ -309,23 +309,12 @@ impl Editor {
             return false;
         }
         // Background work owns its operation generation, not the current focus.
-        match key.intent {
-            OpenIntent::CollectionSource { owner } => {
-                return !self.docs.is_empty()
-                    && self
-                        .collection_build
-                        .as_ref()
-                        .is_some_and(|build| build.owner == owner)
-            }
-            OpenIntent::Replace { review, .. } => {
-                return !self.docs.is_empty()
-                    && self
-                        .review
-                        .replace
-                        .as_ref()
-                        .is_some_and(|pending| pending.id == review)
-            }
-            _ => {}
+        if let OpenIntent::CollectionSource { owner } = key.intent {
+            return !self.docs.is_empty()
+                && self
+                    .collection_build
+                    .as_ref()
+                    .is_some_and(|build| build.owner == owner);
         }
         if let OpenIntent::LspLocation { context, .. } = &key.intent {
             if !self.lsp_context_fresh(context) {
@@ -398,17 +387,23 @@ impl Editor {
     fn finish_open(&mut self, document: DocumentId, intent: OpenIntent) {
         self.resolve_indent_for(document);
         match intent {
+            OpenIntent::SearchHit(hit) => {
+                let Some(range) =
+                    super::picker::checked_hit_range(self.doc(document).buf.text(), &hit)
+                else {
+                    self.message = format!(
+                        "{}: search hit changed; refresh Search before opening it",
+                        self.doc(document).label(&self.cwd)
+                    );
+                    return;
+                };
+                self.jump_land(document, range.start.get());
+                self.discover_git();
+                self.lsp_maybe_attach();
+            }
             OpenIntent::LspLocation { context, position } => {
                 self.finish_lsp_jump(document, position, context)
             }
-            // 0051 §6 R04: the loaded target joins the pending review —
-            // verified against its fresh text, never auto-applied and
-            // never auto-saved.
-            OpenIntent::Replace {
-                hits,
-                replacement,
-                review,
-            } => self.complete_replace_open(document, &hits, &replacement, review),
             OpenIntent::Split { vertical } => self.split_document(vertical, document),
             // Background opens never move focus; a pending collection
             // build counts down and assembles when its sources land.
@@ -520,6 +515,7 @@ impl Editor {
         match event {
             IoEvent::Native(completion) => self.handle_native(*completion),
             IoEvent::Remote(event) => self.handle_remote_event(event),
+            IoEvent::Review(completion) => self.handle_review_prepared(*completion),
             IoEvent::Open(completion) => {
                 let request = completion.ticket.request;
                 if self.io.open.get(&request) != Some(&completion.ticket.key) {
@@ -565,13 +561,22 @@ impl Editor {
                             }
                             id
                         } else {
+                            if let OpenIntent::SearchHit(hit) = &key.intent {
+                                if super::picker::checked_hit_range(opened.document.buf.text(), hit)
+                                    .is_none()
+                                {
+                                    self.message = format!(
+                                        "{}: search hit changed; refresh Search before opening it",
+                                        key.path
+                                    );
+                                    return;
+                                }
+                            }
                             // Background loads never steal the view: the
                             // pristine scratch stays until a foreground
                             // open or the built collection replaces it.
-                            let takes_focus = !matches!(
-                                key.intent,
-                                OpenIntent::CollectionSource { .. } | OpenIntent::Replace { .. }
-                            );
+                            let takes_focus =
+                                !matches!(key.intent, OpenIntent::CollectionSource { .. });
                             // A first open on an endpoint binds its workspace
                             // context (0042 slice 2); rebinds are idempotent.
                             let endpoint = opened
@@ -603,21 +608,7 @@ impl Editor {
                         if let OpenIntent::CollectionSource { owner } = key.intent {
                             self.collection_source_ready(owner);
                         }
-                        // 0051 §6 R04: a failed replace target is a named
-                        // refusal in the pending review, never a silent drop.
-                        if let OpenIntent::Replace { review, .. } = &key.intent {
-                            let path = match &key.path {
-                                FileTarget::Local(path) => path.clone(),
-                                other => PathBuf::from(other.to_string()),
-                            };
-                            self.refuse_replace_open(
-                                &path,
-                                format!("open failed: {}", failure.message),
-                                *review,
-                            );
-                        } else {
-                            self.message = format!("open {}: {}", key.path, failure.message);
-                        }
+                        self.message = format!("open {}: {}", key.path, failure.message);
                     }
                     Outcome::Cancelled(_) => {}
                 }
@@ -694,6 +685,7 @@ impl Editor {
 
     pub fn io_pending(&self) -> bool {
         !self.io.open.is_empty()
+            || self.review.preparing.is_some()
             || !self.io.saves.is_empty()
             || self.io.session.is_some()
             || !self.io.native.is_empty()

@@ -7,7 +7,7 @@ fn filter_only_files_and_literal_content_share_scope() {
     std::fs::write(dir.path().join("a.rs"), "request.id() request.id()\n").unwrap();
     std::fs::write(dir.path().join("b.py"), "request.id()\n").unwrap();
     std::fs::write(dir.path().join(".hidden.rs"), "request.id()\n").unwrap();
-    for kind in [Kind::Files, Kind::Grep, Kind::Replace] {
+    for kind in [Kind::Files, Kind::Search] {
         let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
         editor.open_picker(kind);
         editor.paste_bracketed(if kind == Kind::Files {
@@ -60,7 +60,7 @@ fn dirty_source_search_and_cancelled_replace_preserve_working_context() {
     editor.open_fixture(&path).unwrap();
     editor.feed_text("iunsaved <esc>");
     let source = editor.current();
-    editor.open_picker(Kind::Replace);
+    editor.open_search(true);
     editor.paste_bracketed("text:unsaved");
     editor.wait_picker();
     editor.feed(Key::Tab);
@@ -133,7 +133,7 @@ fn a_source_warning_keeps_results_acceptable() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "needle\n").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
-    editor.open_picker(Kind::Grep);
+    editor.open_picker(Kind::Search);
     // register a stream by hand (the worker_lifecycle pattern: no real rg)
     let picker = editor.picker.as_ref().unwrap().id;
     let request = editor.worker_ids.allocate().unwrap();
@@ -188,7 +188,7 @@ fn a_source_warning_keeps_results_acceptable() {
 #[test]
 fn qualifier_edits_do_not_clear_ranked_results() {
     let mut editor = Editor::new(Buffer::from_text("x\n"));
-    editor.open_picker(Kind::Grep);
+    editor.open_picker(Kind::Search);
     let glue = editor.picker.as_mut().unwrap();
     glue.picker.append(vec![Item {
         badge: None,

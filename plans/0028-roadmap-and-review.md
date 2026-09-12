@@ -168,8 +168,11 @@ remove its R01–R11 obligations. The integration owner schedules them explicitl
 completion work in 0052 retains its own C01–C09 ledger.
 
 ### One Search workspace — 0053
-The user requested this as the next separate release after 0.29.0, with its own
-complete S01–S10 implementation and green gate before publication.
+Implemented for 0.30.0 as a separate release after 0.29.0. All S01–S10 are covered
+by [0053 §11](0053-unified-search-workspace.md#11-implementation-and-acceptance--0300):
+retained scoped investigations, one responsive card and included workset, and
+owned exact Review/Apply/Save. Local compose, real-container, replay and terminal
+evidence accompany the release; 0054 and 0052 retain their own scope.
 
 
 [0053](0053-unified-search-workspace.md) requires **S01–S10**: one large stable

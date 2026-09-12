@@ -70,7 +70,13 @@ impl Editor {
         }
         let appended = matches!(&event.msg, PickerMsg::Items(_));
         match event.msg {
-            PickerMsg::Items(items) => glue.picker.append(items.into_items()),
+            PickerMsg::Items(items) => {
+                let items = items.into_items();
+                self.observe_search_items(&items);
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.picker.append(items);
+                }
+            }
             PickerMsg::Warning(message) => glue.picker.warning = Some(message),
             PickerMsg::QueryError(diagnostic) => {
                 let range = match (&glue.query, &glue.file_scope) {
@@ -97,16 +103,25 @@ impl Editor {
                 glue.rx = None;
                 glue.picker.streaming = false;
                 glue.worker = None;
-                if let Outcome::Failed { failure, .. } = outcome {
-                    glue.picker.error = Some(failure.message);
-                    glue.accept_when_ranked = false;
-                    glue.file_scope = None;
+                match outcome {
+                    Outcome::Success(()) => {}
+                    Outcome::Failed { failure, .. } => {
+                        glue.picker.error = Some(failure.message);
+                        glue.accept_when_ranked = false;
+                        glue.file_scope = None;
+                    }
+                    Outcome::Cancelled(_) => {
+                        glue.picker.error = Some("source cancelled; refresh to continue".into());
+                        glue.accept_when_ranked = false;
+                        glue.file_scope = None;
+                    }
                 }
             }
         }
         if appended {
             self.request_picker_ranking();
         }
+        self.finish_search_refresh();
         self.finish_pending_picker_accept();
     }
 

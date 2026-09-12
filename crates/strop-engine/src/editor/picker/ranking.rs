@@ -197,6 +197,7 @@ impl Editor {
                 }
             }
         }
+        self.finish_search_refresh();
         self.finish_pending_picker_accept();
     }
 }

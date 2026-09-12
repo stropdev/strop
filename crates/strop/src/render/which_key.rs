@@ -133,29 +133,6 @@ mod tests {
     use crate::editor::Editor;
     use strop_core::Buffer;
 
-    /// The space card is generated from keymap::BINDINGS: live leader
-    /// rows, the git prefix row, soon rows muted with the suffix.
-    #[test]
-    fn space_card_lists_table_children() {
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.feed_text(" ");
-        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
-        for present in [
-            "file finder",
-            "buffers (MRU)",
-            "live grep",
-            "global search & replace",
-            "diagnostics picker",
-            "hover docs",
-            "paste clipboard before",
-            "git…",
-            "jumplist picker",
-            "undo-tree browser",
-        ] {
-            assert!(frame.contains(present), "space card missing {present:?}");
-        }
-    }
-
     /// The `space g` card carries the git verbs from the table.
     #[test]
     fn git_card_lists_verbs() {

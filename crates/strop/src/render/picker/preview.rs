@@ -8,7 +8,9 @@ use ratatui::Frame;
 
 use crate::editor::{Editor, PreviewSource};
 
-use super::super::{syntax_style, BASE, MUTED, SELECT_BG, TEXT};
+use super::super::{syntax_style, ACCENT, BASE, MUTED, SELECT_BG, TEXT};
+
+const SURFACE: Color = Color::Rgb(0x20, 0x22, 0x2e);
 pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
     let Some((title, focus_line, source)) = editor.picker_preview() else {
         frame.render_widget(Paragraph::new("").style(Style::default().bg(BASE)), area);
@@ -16,27 +18,33 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
     };
     let visible = area.height as usize;
     let width = usize::from(area.width.saturating_sub(1));
+    let matched = editor.picker_preview_range(&source);
 
     let lines: Vec<Line> = match source {
         PreviewSource::Buffer(document) => {
             let tab = editor.doc(document).indent.width;
             let rope = editor.doc(document).buf.snapshot();
-            let window = preview_window(&rope, focus_line, visible);
-            let analysis = editor.document_analysis(
-                document,
-                rope.line_to_byte(window.start),
-                rope.line_to_byte(window.end),
-                0,
-                width,
-            );
-            highlight_lines_owned(
-                &rope,
-                analysis.as_ref().map(|a| a.spans.as_slice()),
-                focus_line,
-                window,
-                width,
-                tab,
-            )
+            if let Err(message) = matched {
+                vec![Line::from(message)]
+            } else {
+                let window = preview_window(&rope, focus_line, visible);
+                let analysis = editor.document_analysis(
+                    document,
+                    rope.line_to_byte(window.start),
+                    rope.line_to_byte(window.end),
+                    0,
+                    width,
+                );
+                highlight_lines_owned(
+                    &rope,
+                    analysis.as_ref().map(|a| a.spans.as_slice()),
+                    focus_line,
+                    window,
+                    width,
+                    tab,
+                    matched.ok().flatten(),
+                )
+            }
         }
         PreviewSource::Cached(path) => {
             // 0051 R08: a cached path's hard-tab display resolves like
@@ -47,21 +55,26 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
                 return;
             };
             let rope = entry.rope.clone();
-            let window = preview_window(&rope, focus_line, visible);
-            let analysis = editor.preview_analysis(
-                &path,
-                rope.line_to_byte(window.start),
-                rope.line_to_byte(window.end),
-                width,
-            );
-            highlight_lines_owned(
-                &rope,
-                analysis.as_ref().map(|a| a.spans.as_slice()),
-                focus_line,
-                window,
-                width,
-                tab,
-            )
+            if let Err(message) = matched {
+                vec![Line::from(message)]
+            } else {
+                let window = preview_window(&rope, focus_line, visible);
+                let analysis = editor.preview_analysis(
+                    &path,
+                    rope.line_to_byte(window.start),
+                    rope.line_to_byte(window.end),
+                    width,
+                );
+                highlight_lines_owned(
+                    &rope,
+                    analysis.as_ref().map(|a| a.spans.as_slice()),
+                    focus_line,
+                    window,
+                    width,
+                    tab,
+                    matched.ok().flatten(),
+                )
+            }
         }
         PreviewSource::Loading => vec![Line::from(Span::styled(
             " loading…",
@@ -76,7 +89,7 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
     let block = Block::default()
         .borders(Borders::LEFT)
         .border_style(Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d)))
-        .style(Style::default().bg(BASE))
+        .style(Style::default().bg(SURFACE))
         .title(Span::styled(
             format!(
                 " {} ",
@@ -105,6 +118,7 @@ fn highlight_lines_owned(
     window: std::ops::Range<usize>,
     width: usize,
     tab: usize,
+    matched: Option<strop_core::Range>,
 ) -> Vec<Line<'static>> {
     use strop_core::layout::{clip, printable_grapheme, RopeGraphemes};
     let spans = spans.unwrap_or_default();
@@ -128,7 +142,7 @@ fn highlight_lines_owned(
                 continue;
             };
             let pos = start + placement.byte;
-            let mut style = Style::default().fg(TEXT);
+            let mut style = Style::default().fg(TEXT).bg(SURFACE);
             if let Some(span) = spans[first_span..]
                 .iter()
                 .take_while(|span| span.start <= pos)
@@ -139,6 +153,11 @@ fn highlight_lines_owned(
             }
             if focus_line == Some(line + 1) {
                 style = style.bg(SELECT_BG);
+            }
+            if matched.is_some_and(|range| range.start.get() <= pos && pos < range.end.get()) {
+                style = style
+                    .fg(ACCENT)
+                    .add_modifier(ratatui::style::Modifier::BOLD);
             }
             let symbol = if !visible.complete || grapheme == "\t" {
                 " ".repeat(visible.width)

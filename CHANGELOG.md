@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.30.0 — 2026-09-12
+
+One Search workspace, replacement on demand (0053).
+
+### Changed
+
+- `Space /` and `Space R` enter one retained Search investigation. `Ctrl-R`
+  shows/hides With without relaunching search or discarding drafts, field carets,
+  modal state, selection, scope or inclusion decisions.
+- One large responsive card, common source/delta rows, visible workset counts,
+  filename/parent identity and distinct source-preview background in both modes.
+  Tiny terminals prioritize the active field and preserve the result viewport.
+- Find Enter opens the selected source; With Enter prepares an owned background
+  review. Apply edits real buffers; Save remains explicit for every target.
+- `Ctrl-X` and `Ctrl-D` curate one workset shared by Collect and Review.
+  Same-query re-entry restores only exact witnesses and reports lost decisions.
+- Query, replacement/workset and review generations are independent. Late review
+  completions cannot retarget or steal newer focus; changed sources are refused.
+- Full replay semantics advance for the new keyboard and owned-review contract.
+
+### Fixed
+
+- Stale Search hits cannot open or collect unrelated current source coordinates.
+- Review preparation coalesces canonical aliases, retains dirty-buffer authority
+  and reports read-only, stale and unavailable sources alongside exact diffs.
+- Long captured roots cannot overwrite Search error headlines.
+- Container integration gates include the Docker client and fail, rather than
+  silently skip, when an explicitly required engine is unavailable.
+
 ## 0.29.0 — 2026-09-12
 
 Whole-editor polish and one query language (0051).

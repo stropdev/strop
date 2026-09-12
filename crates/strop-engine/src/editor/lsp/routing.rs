@@ -175,7 +175,7 @@ impl Editor {
                                 line,
                                 col,
                                 match_len: 1,
-                                line_text: String::new(),
+                                line_text: "".into(),
                             },
                             strop_workspace::Filesystem::Remote(endpoint) => Payload::Remote {
                                 endpoint,
@@ -282,7 +282,7 @@ impl Editor {
                                         line,
                                         col,
                                         match_len: 1,
-                                        line_text: String::new(),
+                                        line_text: "".into(),
                                     },
                                     Filesystem::Remote(endpoint) => Payload::Remote {
                                         endpoint,

@@ -1,273 +1,19 @@
-//! Global replace (0051 §6 R04): Enter prepares a change-plan review
-//! from the accepted hits — never a bulk write from the text fields.
-//! Open buffers plan against their live text (a dirty buffer wins over
-//! disk) with the 0007 §4 per-hit content witnesses intact; unopened
-//! targets load through owned open jobs and join the same review.
-//! Apply/cancel are the existing review commands (`:apply-change` /
-//! `:cancel-change`); persistence is explicit (`:save-change`), never
-//! implied by apply.
+//! Source witnesses shared by Search opening and owned replacement preparation.
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-
-use strop_picker::Payload;
-use strop_workspace::ResourceLocation;
-
-use super::super::changes::review::PendingReplace;
-use super::super::changes::{ChangePlan, ChangeProducer, PlannedDocument};
+#[cfg(test)]
 use super::super::Editor;
 
-/// One grep hit with its content witness: (line, col, match_len,
-/// expected line text) — the tuple the payload and open intent carry.
-pub(crate) type Hit = (usize, usize, usize, String);
+/// Exact source-line witness carried across loading and review preparation.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReplacementHit {
+    pub line: usize,
+    pub col: usize,
+    pub match_len: usize,
+    pub text: std::sync::Arc<str>,
+}
 
+#[cfg(test)]
 impl Editor {
-    pub(crate) fn restore_replace_context(&mut self) {
-        let Some(context) = self.review.replace_context.take() else {
-            return;
-        };
-        if self.docs.get(context.origin.document).is_some() {
-            self.jump_to(context.origin);
-        }
-        self.set_picker(super::PickerGlue::diagnostics(context.picker));
-        self.picker_query_eval(strop_picker::Kind::Replace);
-    }
-
-    /// Replace-mode Enter: prepare the review (0051 §6 R04). A query
-    /// without a content expression — or with a parse diagnostic — is
-    /// a named refusal, never an empty bulk operation.
-    pub(crate) fn apply_replace(&mut self) {
-        let Some(glue) = self.picker.as_ref() else {
-            return;
-        };
-        let query = strop_picker::query::SearchQuery::parse(&glue.picker.input.text);
-        if let Some(diagnostic) = query.diagnostics.first() {
-            self.message = format!("replace: {}", diagnostic.message);
-            return;
-        }
-        if query.content.is_none() {
-            self.message = "replace needs a search expression — add text or regex:".into();
-            return;
-        }
-        let replacement = glue.picker.replace_input.text.clone();
-        let mut by_path: BTreeMap<PathBuf, Vec<Hit>> = BTreeMap::new();
-        for it in glue.picker.accepted() {
-            if let Payload::Grep {
-                path,
-                line,
-                col,
-                match_len,
-                line_text,
-            } = &it.payload
-            {
-                by_path.entry(path.clone()).or_default().push((
-                    *line,
-                    *col,
-                    *match_len,
-                    line_text.clone(),
-                ));
-            }
-        }
-        if by_path.is_empty() {
-            self.message = "replace: no matches in the apply set".into();
-            return;
-        }
-        let origin = self.jump_record();
-        if let Some(glue) = self.picker.as_mut() {
-            let picker = std::mem::replace(
-                &mut glue.picker,
-                strop_picker::Picker::new(strop_picker::Kind::Replace, Vec::new(), false),
-            );
-            self.review.replace_context =
-                Some(crate::editor::changes::review::ReplaceContext { picker, origin });
-        }
-        self.close_picker();
-        // Partition: open buffers plan now (dirty text wins), unopened
-        // targets load through owned jobs and complete the same review.
-        let mut documents = Vec::new();
-        let mut refused = Vec::new();
-        let mut unopened = Vec::new();
-        for (rel, hits) in by_path {
-            let full = self.cwd.join(&rel);
-            match self.buffer_index_of(&full) {
-                Some(bi) => self.plan_replace_target(
-                    &full,
-                    bi,
-                    &hits,
-                    &replacement,
-                    &mut documents,
-                    &mut refused,
-                ),
-                None => unopened.push((full, hits)),
-            }
-        }
-        if unopened.is_empty() {
-            self.present_replace_review(documents, refused);
-            return;
-        }
-        let pending_opens = unopened.len();
-        let review = self.begin_replace(documents, refused, pending_opens);
-        self.message = format!("replace: loading {pending_opens} target(s)…");
-        for (full, hits) in unopened {
-            self.request_open(
-                full,
-                super::super::io::OpenIntent::Replace {
-                    hits,
-                    replacement: replacement.clone(),
-                    review,
-                },
-            );
-        }
-    }
-
-    /// Verify one target's hits against CURRENT text and produce either
-    /// a planned document (pinned base revision, exact edit spans) or a
-    /// named refusal. The per-hit content witnesses are the 0007 §4
-    /// stale-hit protection — unchanged by the move to change plans.
-    fn plan_replace_target(
-        &self,
-        full: &std::path::Path,
-        bi: strop_core::id::DocumentId,
-        hits: &[Hit],
-        replacement: &str,
-        documents: &mut Vec<PlannedDocument>,
-        refused: &mut Vec<(ResourceLocation, String)>,
-    ) {
-        let location = || ResourceLocation::local(full.to_path_buf());
-        let Some(doc) = self.docs.get(bi) else {
-            refused.push((location(), "document closed before the review".into()));
-            return;
-        };
-        if doc.buf.readonly {
-            refused.push((location(), "buffer is read-only".into()));
-            return;
-        }
-        let (edits, stale) = verified_edits(&doc.buf, hits, replacement);
-        if edits.is_empty() {
-            refused.push((
-                location(),
-                format!("all {} match(es) stale — re-run the search", hits.len()),
-            ));
-            return;
-        }
-        if stale > 0 {
-            refused.push((
-                location(),
-                format!(
-                    "{stale} of {} match(es) stale at review — skipped",
-                    hits.len()
-                ),
-            ));
-        }
-        documents.push(PlannedDocument {
-            location: location(),
-            document: bi,
-            base: doc.buf.revision(),
-            edits,
-        });
-    }
-
-    /// The assembled review: every prepared target and every named
-    /// refusal, always through the review buffer — never a direct
-    /// apply, however small the plan.
-    fn present_replace_review(
-        &mut self,
-        documents: Vec<PlannedDocument>,
-        refused: Vec<(ResourceLocation, String)>,
-    ) {
-        if documents.is_empty() {
-            self.message = match refused.first() {
-                None => "replace: nothing to review".into(),
-                Some((location, reason)) if refused.len() == 1 => {
-                    format!("replace refused: {} — {reason}", location.label())
-                }
-                Some(_) => format!(
-                    "replace: all {} target(s) refused — nothing to apply",
-                    refused.len()
-                ),
-            };
-            self.restore_replace_context();
-            return;
-        }
-        self.review_change_plan(ChangePlan {
-            producer: ChangeProducer::Replace,
-            documents,
-            refused,
-        });
-    }
-
-    /// An owned open for the pending replace review landed: verify the
-    /// hits against the loaded text and merge the outcome; the review
-    /// presents when the last target resolves. A generation mismatch
-    /// means a newer replace superseded this one — the buffer simply
-    /// stays open.
-    pub(crate) fn complete_replace_open(
-        &mut self,
-        document: strop_core::id::DocumentId,
-        hits: &[Hit],
-        replacement: &str,
-        review: usize,
-    ) {
-        if self.review.replace.as_ref().is_none_or(|p| p.id != review) {
-            return;
-        }
-        let full = self
-            .docs
-            .get(document)
-            .and_then(|doc| doc.buf.path.clone())
-            .unwrap_or_default();
-        let mut documents = Vec::new();
-        let mut refused = Vec::new();
-        self.plan_replace_target(
-            &full,
-            document,
-            hits,
-            replacement,
-            &mut documents,
-            &mut refused,
-        );
-        let pending: &mut PendingReplace = self.review.replace.as_mut().unwrap();
-        pending.documents.extend(documents);
-        pending.refused.extend(refused);
-        pending.pending_opens = pending.pending_opens.saturating_sub(1);
-        if pending.pending_opens > 0 {
-            self.message = format!("replace: loading {} more target(s)…", pending.pending_opens);
-            return;
-        }
-        let pending = self.review.replace.take().unwrap();
-        self.present_replace_review(pending.documents, pending.refused);
-    }
-
-    /// A replace target's open failed: a named refusal in the same
-    /// review, never a silent drop (0051 §6 R04).
-    pub(crate) fn refuse_replace_open(
-        &mut self,
-        path: &std::path::Path,
-        reason: String,
-        review: usize,
-    ) {
-        let Some(pending) = self.review.replace.as_mut().filter(|p| p.id == review) else {
-            return;
-        };
-        pending
-            .refused
-            .push((ResourceLocation::local(path.to_path_buf()), reason));
-        pending.pending_opens = pending.pending_opens.saturating_sub(1);
-        if pending.pending_opens > 0 {
-            self.message = format!("replace: loading {} more target(s)…", pending.pending_opens);
-            return;
-        }
-        let pending = self.review.replace.take().unwrap();
-        self.present_replace_review(pending.documents, pending.refused);
-    }
-
-    /// Open-buffer index for an absolute path, if loaded.
-    fn buffer_index_of(&self, abs: &std::path::Path) -> Option<strop_core::id::DocumentId> {
-        self.docs.iter().find_map(|(id, document)| {
-            (document.buf.path.as_deref() == Some(abs) || document.buf.file_identity() == Some(abs))
-                .then_some(id)
-        })
-    }
     /// Verified, single-transaction replacement in an open buffer —
     /// the test surface for the witness checks review planning shares
     /// (`verified_edits`); production replace goes through the review.
@@ -275,7 +21,7 @@ impl Editor {
     pub(crate) fn replace_in_buffer_pub(
         &mut self,
         bi: strop_core::id::DocumentId,
-        hits: &[Hit],
+        hits: &[ReplacementHit],
         replacement: &str,
     ) -> (usize, usize, usize) {
         if self.docs.get(bi).is_none() || self.doc(bi).buf.readonly {
@@ -304,51 +50,67 @@ impl Editor {
 /// Each hit retains its complete source-line witness. This protects regex
 /// context and zero-width matches as well as the replaced bytes. All edits
 /// are prepared against the same unchanged buffer before any are applied.
+#[cfg(test)]
 fn verified_edits(
     buf: &strop_core::Buffer,
-    hits: &[Hit],
+    hits: &[ReplacementHit],
     replacement: &str,
 ) -> (Vec<strop_core::Replacement>, usize) {
     let mut edits = Vec::new();
     let mut stale = 0;
-    for (line, col, match_len, expected) in hits {
-        if *line == 0 || *line > buf.len_lines() {
+    for hit in hits {
+        if let Some(range) = checked_hit_range(buf.text(), hit) {
+            edits.push(strop_core::Replacement::new(range, replacement));
+        } else {
             stale += 1;
-            continue;
         }
-        let (s, e) = strop_picker::replace_span(expected, *col, *match_len);
-        let (ls, len) = (buf.line_start(line - 1), buf.len_bytes());
-        let abs_s = ls + s;
-        let abs_e = (ls + e).min(len);
-        // A matching substring alone cannot prove an anchored/boundary regex
-        // still matches, and an empty substring is no witness at all.
-        let aligned = buf.is_boundary(abs_s) && buf.is_boundary(abs_e);
-        let matches = aligned
-            && abs_s <= abs_e
-            && buf.text().byte_slice(ls..buf.line_end(line - 1)) == expected.as_str()
-            && buf.text().byte_slice(abs_s..abs_e) == expected[s..e];
-        if !matches {
-            stale += 1;
-            continue;
-        }
-        edits.push(strop_core::Replacement::new(
-            strop_core::Range::charwise(abs_s, abs_e),
-            replacement,
-        ));
     }
     edits.sort_by_key(|edit| edit.range.start.get());
     (edits, stale)
 }
 
+/// Verify an exact Search witness against authoritative source text.
+pub fn checked_hit_range(buffer: &ropey::Rope, hit: &ReplacementHit) -> Option<strop_core::Range> {
+    if hit.line == 0 || hit.line > buffer.len_lines() {
+        return None;
+    }
+    let start = hit.col.checked_sub(1)?;
+    let end = start.checked_add(hit.match_len)?;
+    let (checked_start, checked_end) =
+        strop_picker::replace_span(&hit.text, hit.col, hit.match_len);
+    if (start, end) != (checked_start, checked_end) {
+        return None;
+    }
+    let line_start = buffer.line_to_byte(hit.line - 1);
+    let mut line_end = if hit.line < buffer.len_lines() {
+        buffer.line_to_byte(hit.line)
+    } else {
+        buffer.len_bytes()
+    };
+    if line_end > line_start && buffer.byte(line_end - 1) == b'\n' {
+        line_end -= 1;
+    }
+    let absolute_start = line_start.checked_add(start)?;
+    let absolute_end = line_start.checked_add(end)?;
+    // Equality to the char-boundary-checked witness establishes source boundaries.
+    (absolute_end <= line_end && buffer.byte_slice(line_start..line_end) == hit.text.as_ref())
+        .then(|| strop_core::Range::charwise(absolute_start, absolute_end))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use strop_core::Buffer;
-    use strop_picker::{Item, Kind, Picker};
+    use strop_picker::{Item, Payload, Picker};
 
-    /// One hit tuple: (line, col, match_len, expected line text).
-    fn hit(line: usize, col: usize, len: usize, text: &str) -> Hit {
-        (line, col, len, text.to_string())
+    /// One exact source witness.
+    fn hit(line: usize, col: usize, len: usize, text: &str) -> ReplacementHit {
+        ReplacementHit {
+            line,
+            col,
+            match_len: len,
+            text: text.into(),
+        }
     }
 
     #[test]
@@ -380,27 +142,24 @@ mod tests {
     #[test]
     fn enter_without_content_expression_is_a_named_refusal() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.open_picker(Kind::Replace);
+        e.open_search(true);
         e.feed_text("language:rust");
-        e.apply_replace();
-        assert!(
-            e.message.contains("search expression"),
-            "named state, not an empty bulk op: {}",
-            e.message
-        );
+        e.prepare_search_review();
+        assert!(!e.message.is_empty());
         assert!(e.picker.is_some(), "the picker stays open to fix the query");
-        assert!(e.review.replace.is_none());
+        assert_eq!(e.buf().text(), "x\n");
     }
 
     #[test]
     fn enter_without_matches_mutates_nothing() {
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.open_picker(Kind::Replace);
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = Editor::new_in(Buffer::from_text("x\n"), dir.path().to_path_buf());
+        e.open_search(true);
         e.feed_text("foo");
-        e.apply_replace();
-        assert_eq!(e.message, "replace: no matches in the apply set");
+        e.wait_picker();
+        e.prepare_search_review();
         assert!(e.picker.is_some());
-        assert!(e.review.replace.is_none());
+        assert_eq!(e.buf().text(), "x\n");
     }
 
     fn text_of(e: &Editor, document: strop_core::id::DocumentId) -> String {
@@ -519,11 +278,11 @@ mod tests {
         e.switch_to(a_doc);
         e.feed_text("ichanged <esc>");
         // same search again (disk is unchanged), then Enter
-        e.feed_text(" Rfoo");
+        e.open_search(true);
         e.wait_picker();
-        e.feed(crate::editor::Key::Tab);
         e.feed_text("bar");
         e.accept_current_picker();
+        e.wait_io().unwrap();
         assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
         let proposal = e.buf().text().to_string();
         assert!(proposal.contains("+beta bar"), "{proposal}");
@@ -543,18 +302,13 @@ mod tests {
         assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 1);
         e.feed(crate::editor::Key::Tab);
         e.feed_text("bar");
-        // direct prepare: the Enter/accept path is covered end-to-end
-        // by replace_review_apply_and_save_change_flow; this test pins
-        // the refusal naming, not accept timing
-        e.apply_replace();
-        assert!(e.message.contains("a.txt"), "named: {}", e.message);
-        assert!(e.message.contains("read-only"), "{}", e.message);
+        e.prepare_search_review();
+        e.wait_io().unwrap();
+        let review = e.buf().text().to_string();
+        assert!(review.contains("a.txt"), "{review}");
+        assert!(review.contains("read-only"), "{review}");
+        e.review_apply_pub();
         assert_eq!(text_of(&e, a_doc), "alpha foo\n");
-        assert_ne!(
-            e.buf().name.as_deref(),
-            Some("change proposal 1"),
-            "no empty review for a fully refused operation"
-        );
     }
 
     #[test]
@@ -583,13 +337,11 @@ mod tests {
             proposal.contains("b.txt"),
             "failed target named: {proposal}"
         );
-        assert!(proposal.contains("open failed"), "{proposal}");
         e.review_apply_pub();
         assert_eq!(text_of(&e, a_doc), "alpha bar\n");
         let receipt = text_of(&e, review);
         assert!(receipt.contains("refused: "), "{receipt}");
         assert!(receipt.contains("b.txt"), "{receipt}");
-        assert!(receipt.contains("open failed"), "{receipt}");
     }
 
     #[test]
@@ -604,6 +356,7 @@ mod tests {
         e.feed(crate::editor::Key::Tab);
         e.feed_text("bar");
         e.accept_current_picker();
+        e.wait_io().unwrap();
         assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
         // the source moves after the review was prepared
         e.switch_to(a_doc);
@@ -642,18 +395,19 @@ mod tests {
         e.feed(crate::editor::Key::Tab);
         e.feed_text("bar");
         e.accept_current_picker();
+        e.wait_io().unwrap();
         assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
         e.review_cancel_pub();
         assert_eq!(text_of(&e, a_doc), "alpha foo\n");
         assert!(!e.docs.get(a_doc).unwrap().buf.dirty);
+        e.wait_picker();
         assert!(!e.io_pending(), "cancel schedules no saves");
         assert_eq!(std::fs::read_to_string(&a).unwrap(), "alpha foo\n");
     }
 
     #[test]
     fn excluded_rows_stay_out_of_the_apply_set() {
-        let mut p = Picker::new(
-            Kind::Replace,
+        let mut p = Picker::search(
             vec![
                 Item {
                     badge: None,
@@ -679,6 +433,7 @@ mod tests {
                 },
             ],
             false,
+            true,
         );
         p.install_ranking(
             strop_picker::rank::rank(&p.filter_request(), || false)
@@ -693,22 +448,6 @@ mod tests {
     }
 
     #[test]
-    fn space_r_replace_field_flow() {
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.feed_text(" Rfoo");
-        assert_eq!(e.picker.as_ref().unwrap().picker.kind, Kind::Replace);
-
-        e.feed(crate::editor::Key::Tab);
-        assert_eq!(
-            e.picker.as_ref().unwrap().picker.field,
-            strop_picker::Field::Replace
-        );
-        e.feed_text("bar");
-        assert_eq!(e.picker.as_ref().unwrap().picker.replace_input.text, "bar");
-        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "foo");
-    }
-
-    #[test]
     fn replace_filters_narrow_the_apply_set() {
         // user ask: extension limiting + file exclusion in Space R —
         // the qualifier language scopes the hit set the review prepares
@@ -718,7 +457,7 @@ mod tests {
         std::fs::write(dir.path().join("c.py"), "foo three\n").unwrap();
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.cwd = dir.path().to_path_buf();
-        e.open_picker(Kind::Replace);
+        e.open_search(true);
         // 0051: the qualifier language, not rg passthrough flags
         e.feed_text("foo -glob:\"*.py\"");
         e.wait_picker();

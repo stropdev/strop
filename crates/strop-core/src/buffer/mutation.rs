@@ -37,7 +37,7 @@ pub enum EditError {
     RevisionExhausted,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Replacement {
     pub range: Range,
     pub text: String,

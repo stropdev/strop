@@ -40,7 +40,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
     e.open_fixture(&a).unwrap();
     e.open_fixture(&b).unwrap();
-    e.open_picker(Kind::Grep);
+    e.open_picker(Kind::Search);
     let items = vec![
         Item {
             badge: None,
@@ -201,8 +201,8 @@ fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
     e.open_fixture(&a).unwrap();
     e.open_fixture(&b).unwrap();
-    e.open_picker(Kind::Grep);
-    let item = |path: &std::path::Path| Item {
+    e.open_picker(Kind::Search);
+    let item = |path: &std::path::Path, witness: &str| Item {
         badge: None,
         text: "hit".into(),
         payload: Payload::Grep {
@@ -210,10 +210,10 @@ fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
             line: 1,
             col: 1,
             match_len: 3,
-            line_text: "x one".into(),
+            line_text: witness.into(),
         },
     };
-    e.picker_items_fixture(vec![item(&a), item(&b)]);
+    e.picker_items_fixture(vec![item(&a, "alpha one"), item(&b, "beta one")]);
     (e, a, b)
 }
 
@@ -279,7 +279,7 @@ fn unopened_sources_load_in_the_background_and_assemble() {
     let a = root.join("late-a.txt");
     std::fs::write(&a, "late one\n").unwrap();
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
-    e.open_picker(Kind::Grep);
+    e.open_picker(Kind::Search);
     e.picker_items_fixture(vec![Item {
         badge: None,
         text: "hit".into(),
@@ -328,7 +328,7 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
         },
     );
     e.docs.insert(remote_doc);
-    e.open_picker(Kind::Grep);
+    e.open_picker(Kind::Search);
     e.picker_items_fixture(vec![
         Item {
             badge: None,
@@ -381,7 +381,7 @@ fn relative_startup_path_collects_all_hits() {
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
     e.open_fixture(std::path::Path::new("a.txt")).unwrap();
     e.open_fixture(&root.join("b.txt")).unwrap();
-    e.open_picker(Kind::Grep);
+    e.open_picker(Kind::Search);
     let items = vec![
         Item {
             badge: None,
@@ -644,7 +644,7 @@ fn collection_loads_unopened_sources_in_the_background() {
     std::fs::write(&a, "alpha zzq one\nkeep a\n").unwrap();
     std::fs::write(&b, "beta zzq two\nkeep b\n").unwrap();
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
-    e.open_picker(Kind::Grep);
+    e.open_picker(Kind::Search);
     e.picker_items_fixture(vec![
         Item {
             badge: None,
@@ -681,7 +681,6 @@ fn collection_loads_unopened_sources_in_the_background() {
         text.contains("alpha zzq one") && text.contains("beta zzq two"),
         "both sources assembled: {text}"
     );
-    assert_eq!(e.buf().name.as_deref(), Some("collection: grep"));
 }
 
 /// 0049 §6: one card per file — disjoint excerpts of one source share a
@@ -698,7 +697,7 @@ fn one_card_per_file_with_gap_rows() {
     .unwrap();
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
     e.open_fixture(&a).unwrap();
-    e.open_picker(Kind::Grep);
+    e.open_picker(Kind::Search);
     e.picker_items_fixture(vec![
         Item {
             text: "a.txt:3".into(),

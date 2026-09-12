@@ -191,7 +191,7 @@ impl Editor {
                                 | "remote-open"
                                 | "files"
                                 | "buffers"
-                                | "grep"
+                                | "search"
                                 | "replace-global"
                                 | "help"
                                 | "alternate-buffer"

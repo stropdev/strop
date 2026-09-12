@@ -160,7 +160,7 @@ fn respawn_never_renders_stale_rows() {
     std::fs::write(dir.path().join("b.txt"), "alpha three\n").unwrap();
     let mut e = Editor::new(Buffer::from_text("x\n"));
     e.cwd = dir.path().to_path_buf();
-    e.open_picker(strop_picker::Kind::Replace);
+    e.open_search(true);
 
     e.feed_text("alpha");
     e.wait_picker();
@@ -181,7 +181,7 @@ fn rg_error_is_sticky_in_the_card() {
     std::fs::write(dir.path().join("a.rs"), "foo\n").unwrap();
     let mut e = Editor::new(Buffer::from_text("x\n"));
     e.cwd = dir.path().to_path_buf();
-    e.open_picker(strop_picker::Kind::Replace);
+    e.open_search(true);
     // Semantic compilation belongs to the owned worker, never input/render.
     e.feed_text("foo glob:\"**/bad[\"");
     e.wait_picker();
@@ -304,12 +304,13 @@ fn same_line_replacements_share_one_exact_styled_review() {
     std::fs::write(&path, "foo foo\n").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
     let source = editor.open_fixture(&path).unwrap();
-    editor.open_picker(strop_picker::Kind::Replace);
+    editor.open_search(true);
     editor.paste_bracketed("foo");
     editor.wait_picker();
     editor.feed(Key::Tab);
     editor.paste_bracketed("bar");
     editor.feed(Key::Enter);
+    editor.wait_io().unwrap();
     let text = editor.buf().text().to_string();
     assert_eq!(text.matches("-foo foo").count(), 1, "{text}");
     assert_eq!(text.matches("+bar bar").count(), 1, "{text}");
@@ -325,4 +326,55 @@ fn same_line_replacements_share_one_exact_styled_review() {
     assert_ne!(grid[(5, removed)].bg, grid[(5, added)].bg);
     editor.feed_text(":apply-change<cr>");
     assert_eq!(editor.doc(source).buf.text().to_string(), "bar bar\n");
+}
+
+#[test]
+fn search_keeps_outer_geometry_and_recovers_active_field_after_tiny_resize() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("source.txt");
+    let text = "needle\n".repeat(40);
+    std::fs::write(&path, &text).unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+    editor.open_fixture(&path).unwrap();
+    editor.open_search(false);
+    editor.paste_bracketed("needle");
+    editor.wait_picker();
+    for _ in 0..20 {
+        editor.feed(Key::Down);
+    }
+    for (width, height) in [(140, 40), (100, 30), (80, 24)] {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| crate::render::render(&mut editor, frame))
+            .unwrap();
+        let before = terminal.backend().buffer().clone();
+        editor.feed(Key::CtrlR);
+        terminal
+            .draw(|frame| crate::render::render(&mut editor, frame))
+            .unwrap();
+        let after = terminal.backend().buffer();
+        for (x, y) in [
+            (1, 0),
+            (width - 2, 0),
+            (1, height - 2),
+            (width - 2, height - 2),
+        ] {
+            assert_eq!(before[(x, y)].symbol(), after[(x, y)].symbol());
+        }
+        assert_eq!(editor.picker.as_ref().unwrap().picker.selected, 20);
+        editor.feed(Key::CtrlR);
+    }
+    editor.feed(Key::CtrlR);
+    editor.paste_bracketed("replacement");
+    let top = editor.picker.as_ref().unwrap().picker.scroll_top;
+    let tiny = crate::headless::frame_string(&mut editor, 12, 4).unwrap();
+    assert!(tiny.contains("With"), "{tiny}");
+    assert_eq!(editor.picker.as_ref().unwrap().picker.scroll_top, top);
+    for (width, height) in [(1, 1), (2, 2), (3, 3), (140, 40)] {
+        crate::headless::frame_string(&mut editor, width, height).unwrap();
+    }
+    let restored = crate::headless::frame_string(&mut editor, 140, 40).unwrap();
+    assert!(restored.contains("replacement"), "{restored}");
+    assert_eq!(editor.picker.as_ref().unwrap().picker.selected, 20);
 }

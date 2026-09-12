@@ -21,7 +21,7 @@ impl Editor {
     }
 
     pub fn tab_width_for_path(&self, path: &std::path::Path) -> usize {
-        let target = crate::files::FileTarget::Local(self.cwd.join(path));
+        let target = crate::files::FileTarget::Local(self.picker_path(path));
         self.docs
             .iter()
             .find(|(_, document)| document.matches_target(&target))
