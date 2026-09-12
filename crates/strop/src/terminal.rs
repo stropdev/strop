@@ -1,6 +1,7 @@
 //! Real terminal lifecycle and event loop. No alternate-screen writes escape
 //! this boundary; the trace writer owns a different, private file.
 use crate::editor::{self, events::AppEvent, Editor, Mode};
+use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::event::{
     DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
@@ -18,17 +19,22 @@ use strop_trace::{record_with, EventKind};
 /// twice would eat the user's outer-session flags.
 static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+fn write_restore_sequence<W: Write>(out: &mut W) -> io::Result<()> {
+    crossterm::execute!(
+        out,
+        SetCursorStyle::DefaultUserShape,
+        PopKeyboardEnhancementFlags,
+        DisableBracketedPaste,
+        LeaveAlternateScreen
+    )
+}
+
 fn restore_terminal() {
     if RESTORED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
     let _ = disable_raw_mode();
-    let _ = crossterm::execute!(
-        io::stdout(),
-        PopKeyboardEnhancementFlags,
-        DisableBracketedPaste,
-        LeaveAlternateScreen
-    );
+    let _ = write_restore_sequence(&mut io::stdout());
 }
 
 struct TerminalLease;
@@ -325,6 +331,21 @@ mod tests {
             AppEvent::Terminal(key) => Some(*key),
             _ => None,
         }
+    }
+
+    #[test]
+    fn restore_puts_the_cursor_back_to_the_terminal_default() {
+        let mut out: Vec<u8> = Vec::new();
+        write_restore_sequence(&mut out).unwrap();
+        let sequence = String::from_utf8(out).unwrap();
+        assert!(
+            sequence.contains("\x1b[0 q"),
+            "DECSCUSR user-default reset missing: {sequence:?}"
+        );
+        assert!(
+            sequence.contains("\x1b[?1049l"),
+            "leave-alternate-screen missing: {sequence:?}"
+        );
     }
 
     #[test]
