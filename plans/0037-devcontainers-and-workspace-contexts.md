@@ -4,6 +4,12 @@ Status: researched, planned for later (P3). Requested explicitly during 0036. Th
 plan preserves the architectural insight; it is not a claim of implemented Dev
 Container support and does not expand the current release into provisioning.
 
+[0058](0058-unified-native-worker.md) subsequently unifies native worker deployment/
+execution for local, SSH and already-running containers after 0056/0057. It is not
+Dev Container provisioning: no image rebuild, container restart or elevation to
+install a worker. Captured engine/incarnation/user/cwd and capability refusals remain
+mandatory, with new deployment/lifecycle proof and real-container evidence.
+
 ## Decision
 
 **One editor/workspace stack, two separate layers.**

@@ -6,7 +6,7 @@ fn hit(path: &std::path::Path, text: &str) -> Item {
         badge: None,
         text: path.display().to_string(),
         payload: Payload::Grep {
-            path: path.to_path_buf(),
+            location: strop_workspace::ResourceLocation::local(path.to_path_buf()),
             line: 1,
             col: 1,
             match_len: 3,

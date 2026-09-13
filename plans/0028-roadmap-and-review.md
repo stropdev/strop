@@ -149,12 +149,12 @@ is assigned. They are not unimplemented parts of the 0051 release contract.
 
 | ID | Deferred scope / reason | Re-entry condition and destination |
 | --- | --- | --- |
-| D01 | Multi-source code completion: explicitly authorized by the user as a separate larger release | [0052](0052-nonblocking-code-completion.md), after the source/view/input foundations from 0051. Its C01–C09 gates require real LSP + current-buffer sources, nonblocking cancellation/freshness, safe edits and disable/manual-only config. Query-field suggestions remain required in 0051. |
+| D01 | Code completion remains unimplemented and deferred through architecture, core verification and native-worker unification | [0059](0059-nonblocking-code-completion.md) C01–C09 starts after 0056 AR01–AR16, 0057 VF01–VF20 and [0058](0058-unified-native-worker.md) WK01–WK20. Architecture/verification are already dispatched; the worker follows without interrupting them. Query suggestions remain part of 0051. |
 | D02 | Full Boolean/GitHub-style query language, semantic symbol predicates, arbitrary provider qualifiers: unnecessary for the bounded uniform filters | A concrete unmet workflow after 0051's grammar, highlighting and filter-parity corpus are stable; amend/write the query plan before implementation. Do not advertise these forms meanwhile. |
 | D03 | Clickable modeline/general mouse interaction: needs coherent terminal capture and hit-region ownership | A tested pointer contract that does not swallow unrelated mouse input. Keyboard `:tab-size`, its selector and visible effective setting ship in 0051 regardless. |
-| D04 | General theme engine, experimental terminal typography, GUI and additional provisioning/backends: not required to finish the current TUI | Existing architecture/platform/0037/0049 evidence gates. The whole existing UI still receives the 0051 quality pass. |
-| D05 | Completion extensions: rich snippets, additional providers, heterogeneous semantic multicursor completion and commit-character/prediction behavior | After 0052 C01–C09, under its §12 extension ledger and a concrete supported interaction/ownership contract. Do not silently approximate unsupported edits. |
-| D06 | Embedded terminal implementation: explicitly requested as a later program, TUI first and GUI next when the GUI is tackled; not a dependency of current polish or filesystem work | [0055](0055-embedded-terminal-tui-and-gui.md): preflight emulator/PTY/packaging comparison, then T01–T10 for the real TUI integration and G01–G07 for the later shared-core GUI surface. Published Alacritty is the provisional first candidate, libghostty-vt the strongest challenger; no dependency or implementation is committed yet. |
+| D04 | Theme/typography and additional provisioning remain gated; GUI is the final parity arc after architecture, core verification, native worker, completion and debugger | 0056 closes shared gaps, 0057 verifies the baseline and 0058 unifies/requalifies native services before [0061](0061-gui-windows-and-wsl.md) consumes them for Windows presentation over WSL. |
+| D05 | Completion extensions: rich snippets, additional providers, heterogeneous semantic multicursor completion and commit-character/prediction behavior | After 0059 C01–C09, under its §12 ledger and a supported interaction/ownership contract. Do not silently approximate unsupported edits. |
+| D06 | Terminal TUI scope remains independent of its final GUI surface | [0055](0055-embedded-terminal-tui-and-gui.md) owns T01–T10 and preflight. 0058 preserves/requalifies its native worker/PTY integration; G01–G07 integrate under [0061](0061-gui-windows-and-wsl.md), with Windows presentation and WSL execution. |
 
 Earlier plans for named investigations, structural recipes, Dev Container
 lifecycle, installed remote services and GUI retain their own gates. They must
@@ -165,14 +165,14 @@ not displace the required improvements to today's editor.
 These handoffs were requested while another session implements 0051. They are
 design contracts, not evidence that that session finished or authorization to
 remove its R01–R11 obligations. The integration owner schedules them explicitly;
-completion work in 0052 retains its own C01–C09 ledger.
+completion in 0059 retains C01–C09 and waits for architecture, core verification and the worker.
 
 ### One Search workspace — 0053
 Implemented for 0.30.0 as a separate release after 0.29.0. All S01–S10 are covered
 by [0053 §11](0053-unified-search-workspace.md#11-implementation-and-acceptance--0300):
 retained scoped investigations, one responsive card and included workset, and
 owned exact Review/Apply/Save. Local compose, real-container, replay and terminal
-evidence accompany the release; 0054 and 0052 retain their own scope.
+evidence accompany the release; 0054 and 0059 retain their own scope.
 
 
 [0053](0053-unified-search-workspace.md) requires **S01–S10**: one large stable
@@ -189,6 +189,12 @@ Remove obsolete separate-kind/render/apply paths instead of keeping compatibilit
 branches. The S ledger requires actual surface and state-transition evidence.
 
 ### One filesystem workspace — 0054
+
+**0.31.0 implementation complete:** F01–F12 and source-preview gutters passed
+the integrated compose, required SSH/container, existing model/proof and static
+release gates. Actual local/SSH TUI evidence includes modal filename copy,
+dirty relocation, checked recovery, cancellation and lost acknowledgements.
+0054 §15 records the exercised boundaries and the Linux/WSL coverage limitation.
 
 [0054](0054-unified-filesystem-workspace.md) requires **F01–F12**: a common local/
 SSH Directory buffer and read-only container adapter, coherent `:e`/`:browse`/
@@ -218,10 +224,97 @@ replacement and durable named operation sessions. These are explicit design
 boundaries, **not user-approved removal of an F requirement**. Moving required
 work out needs the user's approval, impact/re-entry evidence and a ledger update.
 
-GUI remains separately gated. Embedded-terminal work now has the canonical
-[0055](0055-embedded-terminal-tui-and-gui.md) handoff under D06: **TUI integration
-first, GUI integration next when the GUI is ready**, using one shared session/core.
-Neither milestone is needed to deliver useful local/remote file operations.
+The user authorized 0054 F01–F12 followed by [0055](0055-embedded-terminal-tui-and-gui.md)
+T01–T10 as the next releases after 0.30.0, including preview line numbers and
+focused search-line triangles. **All GUI work is deferred until the desired
+functionality and bug-hardening are complete.** G01–G07 remain a later shared-core
+frontend contract, not work to execute alongside the TUI or maintain independently.
+Each release requires green CI, actual-surface evidence and verified website updates.
+
+## Final release sequence — verified baseline, native worker, then features
+
+The user has already dispatched **0056 architecture and 0057 whole-core verification**.
+The subsequently authorized native worker is a **separate release after both**, not
+a reason to stop or retarget the current proof effort. Completion remains unimplemented.
+
+```text
+0054 filesystem -> 0055 TUI terminal -> 0056 architecture -> 0057 core verification
+    -> 0058 unified native worker + assurance migration
+    -> 0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
+```
+
+[0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
+and channels; it is not another editor feature arc afterward. No earlier behavior,
+platform or evidence ledger is silently removed by inserting the worker.
+
+- **Architecture — [0056](0056-architecture-prerequisites.md), AR01–AR16.**
+  Finish the dispatched readonly render/action/view cutover, recovery, bindings/
+  outcomes, bounded liveness, real namespace/container supervision, effects/privacy,
+  UI server/driver, install/catalog/ID/explain/build contracts and current gates.
+  Reuse preceding filesystem/terminal implementation. Worker implementation and
+  worker-specific new proofs are not added to this agent's current scope.
+- **Core verification — [0057](0057-core-verification-and-assurance.md), VF01–VF20.**
+  Qualify the actual pre-worker candidate end to end, including its deployed Python
+  helpers, editor mutation, local/remote filesystems, container/process/terminal/
+  recovery/UI/privacy/install effects. Deliver the generalized proofs, same-source
+  kernels, calibrated model/Loom/correspondence/native evidence and exact baseline.
+  Do not skip Python claims because their replacement is planned. §14 explicitly
+  tells an already-running verification agent how to hand off without retargeting.
+- **Native worker — [0058](0058-unified-native-worker.md), WK01–WK20.**
+  After the baseline, make local, SSH and supported container I/O/execution consume
+  one native worker and versioned protocol. Ship a worker mode of the release binary,
+  deploy it through authorized private artifact/cache flows, reuse shared Rust
+  filesystem/save/supervision and remove Strop's Python helpers—including the
+  supervisor, not just filesystem scripts. Preserve editor/terminal/capability
+  behavior, SFTP-only reads and restricted-host refusals; no daemon or elevation.
+  WK16–WK20 map every inherited VF claim, reprove changed/new kernels/theorems,
+  qualify real codec/native/editor bridges and require full exact-candidate gates.
+  User preference for native deployment is explicit; a “10x” speedup is not claimed.
+- **Completion — [0059](0059-nonblocking-code-completion.md), C01–C09.**
+  Starts only after AR/VF/WK close. Add the required two sources, indexing/query/
+  resolve/acceptance, edits/undo, menu/docs, source/multicursor ownership, settings,
+  privacy and real typing/server evidence over the requalified worker/service core.
+  0051 static query suggestions are not this deferred feature.
+- **Debugger — [0060](0060-debugger-workflow-and-architecture.md), DBG01–DBG16.**
+  After completion, implement actual LLVM/debugpy DAP journeys, launch/build/attach,
+  breakpoints/exceptions, inspection/console/stepping, terminals and sessions using
+  the completed worker/context/lease/deployment contract. No new Python supervisor.
+  `Space D` remains debugger; `Space d` remains diagnostics.
+- **GUI — [0061](0061-gui-windows-and-wsl.md), UI01–UI18.**
+  Last editor feature arc: native Windows GPUI rendering/input/IME/UIA, native
+  automation/capture, bridge/cache integration and full supported TUI parity.
+  The WSL engine owns worker-backed services. No second editor/recovery store,
+  generic repair or competing worker/presentation protocol inside a GUI component.
+- **Distribution — [0062](0062-distribution-and-wsl-onboarding.md), PKG01–PKG14.**
+  Extend the qualified TUI/worker artifact and install identities with signed Windows
+  installation, selected-WSL bootstrap, paired activation/rollback/uninstall and
+  truthful public presentation. Package the exact worker-capable backend rather
+  than implementing another service installer.
+
+AR01–AR16 precedes VF01–VF20; both precede WK01–WK20; all three precede C01–C09.
+Completion precedes debugger, and both precede GUI. A source defect discovered in
+the worker cutover is fixed and requalified, not hidden behind a local/remote bypass
+or silently deferred. All C/DBG/UI/PKG behavior and native evidence remain required.
+
+**Verification migration is release work.** Preserve the pre-worker baseline and
+its exact artifacts as history. 0058's live ledger maps claims to unchanged with
+dependency justification, transferred/requalified, strengthened/reproved, new or
+retired implementation-specific claims with named successors. Retiring Python does
+not retire user-facing guarantees or confer proof status on a Rust port.
+
+The worker candidate must run complete `test`, `model`, `verify`, `tlaps`,
+`core-assurance` and required native/deployment/artifact lanes. New targets include
+the real local protocol path, SSH/container bootstrap, verified-object activation,
+lease-safe cache cleanup, child/control-stream isolation, native supervision and
+worker→editor reconciliation. Keep the existing edit/composition/UI/recovery proofs.
+TLC bounds, tested refinement and trusted OS/SSH/Docker assumptions remain explicit.
+Publication never inherits an old 0057 badge for a new worker executable.
+
+Every integration owner records source/contract/claim/artifact identities, failure/
+privacy/cancel semantics, raw evidence and status. Required scope reductions need
+explicit user approval and impact/re-entry evidence. Native GUI hardware/IME/UIA and
+Windows signing/installer acceptance remain 0061/0062 obligations, not inferred from
+headless core/worker proofs. The worker has no unsupported “fallback” write mode.
 
 ## Closed in 0.14.1
 
@@ -373,7 +466,8 @@ states and unchanged error/overwrite policy. Measure on the existing bench path.
 Modeline and commit/diff presentation polish shipped separately in 0.15.1 (0032).
 
 - Search-history UX and richer diagnostics presentation remain optional P3 work.
-- Debugger/plugin expansion stays behind the correctness work (0019/0020).
+- Debugger delivery now follows [0060](0060-debugger-workflow-and-architecture.md);
+  plugin/runtime expansion remains separately deferred behind correctness.
 - Crate publication now derives a real dependency topological order (0034).
 - The full TRAMP-style capability roadmap is [0035](0035-remote-workflow-roadmap.md).
   Its P2 slices plus read-only directory browsing, remote LSP and remote Git are
@@ -381,36 +475,30 @@ Modeline and commit/diff presentation polish shipped separately in 0.15.1 (0032)
 - Dev Container provisioning complements the same workspace/transport interfaces;
   the researched later-stage plan is [0037](0037-devcontainers-and-workspace-contexts.md).
 
-### GUI feasibility evaluation — P3 research, no implementation commitment
+### Final GUI arc — native Windows presentation, WSL execution (0061)
 
-Verdict from [0038](0038-remote-experience-and-responsiveness.md): keep the TUI
-first-class and pursue an optional native GUI later, sharing the same editor engine.
-Do not replace the terminal frontend or fork grammar, documents, jobs or replay.
+[0061](0061-gui-windows-and-wsl.md) is the current GUI contract, refining 0038's
+GPUI recommendation and the user's explicit WSL-only workspace preference.
+Keep the engine, files, Git/LSP/DAP, SSH/container execution and terminal PTYs in
+Linux. Windows owns GPUI rendering, fonts/input/IME, clipboard and UI Automation
+over a bounded versioned presentation bridge.
 
-Preferred first prototype: GPUI + gpui_platform + AccessKit, using our own
-editor surface and pinned framework versions. GPUI's custom Elements fit code-editor
-layout; its Apache-2.0 crate and native platform layer are a better initial fit than
-a webview. Its pre-1.0 API churn and Zed coupling remain explicit risks. Iced/egui
-are comparison/fallback candidates, not parallel implementations; Slint also adds
-a declarative language and a licensing decision. 0038 records sources and tradeoffs.
+The generic gaps found in the sweep—mutable render admission, broad engine access,
+no dirty-draft backup, lifecycle/queue bounds and the protocol/server—are owned by
+0056 AR01–AR16, followed immediately by 0057 VF01–VF20 whole-core assurance.
+0058 then unifies native workers and requalifies affected claims before completion
+and debugger. GUI consumes those contracts; it does not repair them through callbacks.
+Keep the TUI first-class and independently buildable.
 
-The user's acceptance requirement is native Windows-first, GPU-accelerated and
-visually polished while retaining strop's current minimal look. WSL is not Windows
-GUI evidence. The future prototype includes mixed DPI, IME, Narrator/NVDA, driver
-coverage and Windows GUI → WSL workspaces. Windows process-tree ownership and
-filesystem/service integration must be ported as well; see 0038 for the concrete
-DirectX/GPUI rationale and current engine gaps.
-
-The P3 gate remains real evidence: IME preedit/commit, shaping/font fallback and
-Unicode, screen-reader text/selection/actions, clipboard/HiDPI, remote buffers,
-large-document latency and packaging on Linux/macOS/Windows. AccessKit in a
-dependency tree does not prove a custom editor is accessible. Pixels must remain
-outside byte-domain grammar and terminal display-cell geometry. A failed prototype
-can still produce a no-go verdict. No GUI implementation is part of 0038's release.
+UI01–UI18 and the full parity matrix require actual native Windows+WSL evidence,
+including IME, accessibility, GPU rendering/capture, DPI, source/byte/pixel mapping,
+all service families and protected mutations. WSLg, a mocked GPUI TestPlatform
+or a non-Windows headless screenshot facility does not prove those behaviors.
+Native Windows workspaces/ConPTY and other GUI platforms are explicit later gates.
 
 ### Embedded terminal program — TUI first, GUI later (0055)
 
-The user requested a separate future handoff, not immediate implementation:
+TUI implementation is authorized after the filesystem release:
 [0055](0055-embedded-terminal-tui-and-gui.md). **T01–T10** require a real local
 PTY-backed TUI terminal, full supported input routing before editor normalization,
 normal-mode text navigation, bounded snapshots/queues, process/session cleanup,
@@ -419,8 +507,9 @@ The TUI milestone does not wait for a GUI and does not import GUI dependencies.
 
 After the GUI's own platform gate, **G01–G07** add native rendering, input/IME,
 pointer ownership, mixed-DPI geometry and accessibility over the same terminal
-session/emulator/process contract. WSL is not native Windows/ConPTY evidence.
-Sharing implementation does not imply cross-process live-session transfer.
+session/emulator/process contract. Under 0061 the native Windows frontend renders
+WSL-owned Linux PTYs; native Windows workspace/ConPTY support is a later backend
+gate. Sharing implementation does not imply cross-process live-session transfer.
 
 The provisional engine choice is published `alacritty_terminal`; evaluate its
 application-side input-encoding cost against `libghostty-vt` in a real preflight.

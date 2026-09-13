@@ -81,7 +81,7 @@ pub(crate) struct Collection {
 /// A source location plus the exact search witness when this came from Search.
 #[derive(Debug)]
 pub(crate) struct CollectionHit {
-    path: std::path::PathBuf,
+    location: strop_workspace::ResourceLocation,
     line: usize,
     span: Option<(usize, usize)>,
     witness: Option<super::picker::ReplacementHit>,
@@ -101,8 +101,6 @@ pub(crate) struct CollectionBuild {
     pub title: String,
     /// (path, line, match col+len in source bytes when known)
     pub hits: Vec<CollectionHit>,
-    /// Remote hits resolve against open remote documents at build.
-    pub remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)>,
     pub waiting: usize,
     pub owner: strop_core::worker::WorkerId,
     pub origin: DocumentId,
@@ -111,7 +109,7 @@ pub(crate) struct CollectionBuild {
 }
 
 impl Editor {
-    fn collection_local_sources(&self) -> HashMap<std::path::PathBuf, DocumentId> {
+    fn collection_sources(&self) -> HashMap<strop_workspace::ResourceLocation, DocumentId> {
         let mut sources = HashMap::new();
         for (id, document) in self.docs.iter() {
             if matches!(document.source, super::document::DocumentSource::File) {
@@ -122,16 +120,24 @@ impl Editor {
                     .into_iter()
                     .chain(document.buf.file_identity())
                 {
-                    sources.insert(self.cwd.join(path), id);
+                    sources.insert(
+                        strop_workspace::ResourceLocation::local(self.cwd.join(path)),
+                        id,
+                    );
                 }
+            }
+            if let Some(location) = document
+                .file_target(&self.cwd)
+                .and_then(|target| target.resource_location())
+            {
+                sources.insert(location, id);
             }
         }
         sources
     }
 
     /// `ctrl-o` in a result picker: open the listed hits as an editable
-    /// collection. Unopened local sources load as owned background work;
-    /// remote hits resolve only against their already-open endpoint.
+    /// collection. Unopened sources load in their captured filesystem namespace.
     pub(crate) fn open_collection_from_picker(&mut self) {
         let Some(glue) = &self.picker else {
             return;
@@ -154,19 +160,11 @@ impl Editor {
             self.message = "collections come from a results list".into();
             return;
         }
-        // Local hits and remote hits alike; remote ones resolve against
-        // open remote documents (0040 permits gate their write-back).
-        let root = glue
-            .search
-            .as_ref()
-            .map_or(&self.cwd, |context| &context.scope.root.path);
         let mut hits: Vec<CollectionHit> = Vec::new();
-        let mut remote_hits: Vec<(strop_workspace::RemoteEndpoint, std::path::PathBuf, usize)> =
-            Vec::new();
         for item in glue.picker.accepted() {
             match &item.payload {
                 strop_picker::Payload::Grep {
-                    path,
+                    location,
                     line,
                     col,
                     match_len,
@@ -175,7 +173,7 @@ impl Editor {
                     let hit = (kind == strop_picker::Kind::Search)
                         .then(|| (col.saturating_sub(1), *match_len));
                     hits.push(CollectionHit {
-                        path: root.join(path),
+                        location: location.clone(),
                         line: line.saturating_sub(1),
                         span: hit,
                         witness: hit.map(|_| super::picker::ReplacementHit {
@@ -191,11 +189,19 @@ impl Editor {
                     path,
                     line,
                     ..
-                } => remote_hits.push((endpoint.clone(), path.clone(), line.saturating_sub(1))),
+                } => hits.push(CollectionHit {
+                    location: strop_workspace::ResourceLocation::remote(
+                        endpoint.clone(),
+                        path.clone(),
+                    ),
+                    line: line.saturating_sub(1),
+                    span: None,
+                    witness: None,
+                }),
                 _ => {}
             }
         }
-        if hits.is_empty() && remote_hits.is_empty() {
+        if hits.is_empty() {
             self.message = "collection: no included source matches".into();
             return;
         }
@@ -204,24 +210,24 @@ impl Editor {
         self.close_picker();
         // Unopened sources load in the background (never switching focus);
         // the build assembles when the last one lands.
-        let mut to_load: Vec<std::path::PathBuf> = Vec::new();
-        let open_sources = self.collection_local_sources();
+        let mut to_load = Vec::new();
+        let open_sources = self.collection_sources();
         let mut requested = std::collections::HashSet::new();
-        for CollectionHit { path, .. } in &hits {
-            let absolute = if path.is_absolute() {
-                path.clone()
-            } else {
-                self.cwd.join(path)
-            };
-            if !open_sources.contains_key(&absolute) && requested.insert(absolute.clone()) {
-                to_load.push(absolute);
+        for hit in &hits {
+            if !open_sources.contains_key(&hit.location) && requested.insert(hit.location.clone()) {
+                match crate::files::FileTarget::from_location(&hit.location) {
+                    Ok(target) => to_load.push(target),
+                    Err(error) => {
+                        self.message = format!("collection refused: {error}");
+                        return;
+                    }
+                }
             }
         }
         let waiting = to_load.len();
         let build = CollectionBuild {
             title,
             hits,
-            remote_hits,
             waiting,
             owner,
             origin: self.current(),
@@ -234,9 +240,9 @@ impl Editor {
         }
         self.collection_build = Some(build);
         self.message = format!("collection: loading {waiting} source(s)…");
-        for path in to_load {
-            self.request_open(
-                path,
+        for target in to_load {
+            self.request_target(
+                target,
                 crate::editor::io::OpenIntent::CollectionSource { owner },
             );
         }
@@ -277,28 +283,18 @@ impl Editor {
                 .docs
                 .get(build.origin)
                 .is_some_and(|document| document.buf.revision() == build.revision);
-        let CollectionBuild {
-            title,
-            hits,
-            remote_hits,
-            ..
-        } = build;
+        let CollectionBuild { title, hits, .. } = build;
         let mut by_doc: HashMap<DocumentId, Vec<SourceHit>> = HashMap::new();
-        let open_sources = self.collection_local_sources();
+        let open_sources = self.collection_sources();
         let mut skipped = 0;
         for CollectionHit {
-            path,
+            location,
             line,
             span: hit,
             witness,
         } in hits
         {
-            let absolute = if path.is_absolute() {
-                path
-            } else {
-                self.cwd.join(path)
-            };
-            let Some(&document) = open_sources.get(&absolute) else {
+            let Some(&document) = open_sources.get(&location) else {
                 skipped += 1;
                 continue;
             };
@@ -312,21 +308,6 @@ impl Editor {
                 .entry(document)
                 .or_default()
                 .push(SourceHit { line, span: hit });
-        }
-        for (endpoint, path, line) in remote_hits {
-            let document = self.docs.iter().find_map(|(id, doc)| {
-                doc.remote_metadata().and_then(|source| {
-                    (source.file.endpoint() == &endpoint && source.file.path() == path.as_path())
-                        .then_some(id)
-                })
-            });
-            match document {
-                Some(id) => by_doc
-                    .entry(id)
-                    .or_default()
-                    .push(SourceHit { line, span: None }),
-                None => skipped += 1,
-            }
         }
         if by_doc.is_empty() {
             self.message = format!("collection refused: {skipped} source match(es) stale or unavailable; refresh Search");

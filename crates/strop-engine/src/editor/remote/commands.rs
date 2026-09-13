@@ -7,10 +7,7 @@ use strop_workspace::{RemoteEndpoint, RemoteLocation};
 
 impl Editor {
     pub(crate) fn run_remote_ex(&mut self, command: &str, argument: &str) -> bool {
-        if !matches!(
-            command,
-            "tail" | "range" | "follow" | "unfollow" | "browse" | "filter" | "remote"
-        ) {
+        if !matches!(command, "tail" | "range" | "follow" | "unfollow" | "remote") {
             return false;
         }
         if let Err(message) = self.remote_ex(command, argument.trim()) {
@@ -21,7 +18,6 @@ impl Editor {
     fn remote_ex(&mut self, command: &str, argument: &str) -> Result<(), String> {
         let words: Vec<_> = argument.split_whitespace().collect();
         match command {
-            "filter" => self.filter_remote_directory(argument.to_owned()),
             "unfollow" if words.is_empty() => {
                 self.message = if self.stop_remote_follow(self.current()) {
                     "follow stopped"
@@ -48,9 +44,8 @@ impl Editor {
                         RemoteEndpoint::parse(endpoint).map_err(|e| e.to_string())?,
                     ),
                     ["disconnect"] => RemoteControl::Disconnect(
-                        self.remote_file()
+                        self.remote_endpoint()
                             .ok_or("no remote endpoint; use :remote disconnect ssh://HOST")?
-                            .endpoint()
                             .clone(),
                     ),
                     ["clear"] => RemoteControl::DisconnectAll,
@@ -61,27 +56,6 @@ impl Editor {
                     ),
                 };
                 self.request_remote_control(operation);
-                Ok(())
-            }
-            "browse" if words.len() <= 1 => {
-                let location = if let Some(uri) = words.first() {
-                    RemoteLocation::parse(uri).map_err(|error| error.to_string())?
-                } else if let Some(directory) = self.remote_directory() {
-                    directory.directory.clone().into()
-                } else {
-                    let file = self
-                        .remote_file()
-                        .ok_or(":browse needs an ssh:// directory")?;
-                    file.with_path(
-                        file.path()
-                            .parent()
-                            .ok_or("remote path has no parent")?
-                            .to_owned(),
-                    )
-                    .map_err(|error| error.to_string())?
-                    .into()
-                };
-                self.request_target(FileTarget::Remote(location), OpenIntent::Browse);
                 Ok(())
             }
             "follow" if words.len() <= 1 => {

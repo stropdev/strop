@@ -1,22 +1,10 @@
-//! RW2 remote host/path completion (0036 "Completion and homes").
+//! One owned path-completion session for local, SSH and attached containers.
+//! Local/container listings run on workers. SSH paths use only existing live
+//! connections or bounded cached observations; Tab never authenticates.
 //!
-//! Ex Tab on a file-bearing command's `ssh://` operand completes from
-//! two honest sources only: local host data (`strop_remote::hosts`,
-//! read on a worker — never `ssh -G`, never `Match exec`) and an
-//! already-live connection's directory listing via
-//! `RemoteClient::list_connected`, which must never authenticate or
-//! open a connection. Without a live connection the user gets cached
-//! candidates or an explicit connect instruction — completion never
-//! surprises anyone with an authentication prompt.
-//!
-//! Ownership is the second half: a request captures the exact prompt
-//! moment (focus, document, revision, full input text and cursor) and
-//! every delivery re-checks it, so a result that lands after an edit,
-//! Esc, focus change or close can neither rewrite the input line nor
-//! open a picker. Cycling reuses the one prompt grammar
-//! (`PendingEvent::CompleteEx`); there is no second prompt surface.
-//! Applied candidates are canonical `RemoteFile` URIs, so native
-//! filename bytes (spaces, non-UTF-8) survive as percent escapes.
+//! Every reply captures the exact prompt, focus, document revision and cursor.
+//! Cycling uses the existing PendingEvent::CompleteEx reducer. Candidates use
+//! lossless resource URIs so native filename bytes cannot become display aliases.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -31,6 +19,7 @@ use super::document::DocumentSource;
 use super::pending::{PendingEvent, PromptContext};
 use super::Editor;
 
+mod directory;
 #[cfg(test)]
 mod tests;
 
@@ -71,6 +60,11 @@ pub enum RemoteCompletionQuery {
         directory: String,
         segment: String,
     },
+    Directory {
+        location: strop_workspace::ResourceLocation,
+        segment: Vec<u8>,
+        container: Option<strop_containers::ContainerIdentity>,
+    },
 }
 
 impl RemoteCompletionQuery {
@@ -78,6 +72,7 @@ impl RemoteCompletionQuery {
         match self {
             Self::Hosts { .. } => "hosts",
             Self::Path { .. } => "path",
+            Self::Directory { .. } => "directory",
         }
     }
 }
@@ -98,6 +93,7 @@ pub enum CandidateSource {
     Config,
     Connection,
     Cache,
+    Directory,
 }
 
 /// The typed moment a request owns; every delivery re-checks it.
@@ -110,6 +106,7 @@ pub struct RemoteCompletionKey {
     pub text: String,
     pub cursor: usize,
     pub query: RemoteCompletionQuery,
+    pub prefix_body: String,
 }
 
 /// The worker's terminal answer. Failures travel as
@@ -199,6 +196,20 @@ impl RemoteCompletionState {
 }
 
 impl Editor {
+    fn revoke_path_completion(&mut self) {
+        if let Some(old) = self.remote_completion.pending.take() {
+            if let Some(handle) = self.worker_handles.remove(&old.request) {
+                handle.cancel(CancelReason::Superseded);
+            }
+        }
+        self.remote_completion.ready = None;
+    }
+
+    pub(crate) fn invalidate_filesystem_completions(&mut self) {
+        self.revoke_path_completion();
+        self.remote_completion.cache.clear();
+    }
+
     /// Tab on the ex line's remote operand: cycle landed candidates or
     /// start a request. Returns true when the line was a remote
     /// completion (even when the answer is a refusal message), so the
@@ -217,35 +228,89 @@ impl Editor {
         let Some((cmd, rest)) = body.split_once(' ') else {
             return false;
         };
-        let tokens: Vec<&str> = rest.split(' ').filter(|token| !token.is_empty()).collect();
-        let Some(operand) = tokens.last().copied() else {
-            return false;
+        let filesystem = cmd == "fs";
+        let (cmd, rest) = if filesystem {
+            let Some((operation, destination)) = rest.split_once(' ') else {
+                return false;
+            };
+            if !matches!(operation, "create" | "mkdir" | "rename" | "move" | "copy") {
+                return false;
+            }
+            let destination = if operation == "copy" {
+                destination
+                    .strip_prefix("stored ")
+                    .or_else(|| destination.strip_prefix("buffer "))
+                    .unwrap_or(destination)
+            } else {
+                destination
+            };
+            (operation, destination)
+        } else {
+            (cmd, rest)
         };
-        if !operand.starts_with("ssh://") {
-            // A URI stranded before the final token means a raw space
-            // was typed into it; complete only well-formed lines.
-            if tokens.iter().any(|token| token.starts_with("ssh://")) {
+        let tokens = rest.split(' ').filter(|token| !token.is_empty());
+        let remote = rest.starts_with("ssh://")
+            || (matches!(cmd, "tail" | "range")
+                && tokens.clone().any(|token| token.starts_with("ssh://")));
+        let (query, prefix_body) = if remote {
+            let Some(operand) = tokens
+                .clone()
+                .next_back()
+                .filter(|operand| operand.starts_with("ssh://"))
+            else {
                 self.message = "remote URI cannot contain a raw space (type %20)".into();
                 return true;
-            }
-            return false;
-        }
-        if matches!(cmd, "w" | "w!" | "wq" | "wq!") {
-            self.message = "remote save-as completion is unsupported".into();
-            return true;
-        }
-        let Some((min_args, max_args)) = remote_operand_shape(cmd) else {
-            return false;
-        };
-        let leading = tokens.len() - 1;
-        if leading < min_args || leading > max_args {
-            self.message = match cmd {
-                "range" => ":range needs START BYTES before the URI".into(),
-                "tail" => ":tail takes at most one byte count before the URI".into(),
-                _ => format!(":{cmd} takes no argument before the URI"),
             };
-            return true;
-        }
+            if matches!(cmd, "w" | "w!" | "wq" | "wq!") {
+                self.message = "remote save-as completion is unsupported".into();
+                return true;
+            }
+            let Some((min, max)) = (if filesystem {
+                Some((0, 0))
+            } else {
+                remote_operand_shape(cmd)
+            }) else {
+                return false;
+            };
+            let leading = tokens.count().saturating_sub(1);
+            if leading < min || leading > max {
+                self.message = match cmd {
+                    "range" => ":range needs START BYTES before the URI".into(),
+                    "tail" => ":tail takes at most one byte count before the URI".into(),
+                    _ => format!(":{cmd} takes no argument before the URI"),
+                };
+                return true;
+            }
+            let prefix = body[..body.len() - operand.len()].to_owned();
+            (
+                classify_remote_operand(operand.strip_prefix("ssh://").unwrap_or_default()),
+                prefix,
+            )
+        } else {
+            if !filesystem
+                && !matches!(
+                    cmd,
+                    "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit" | "browse"
+                )
+            {
+                return false;
+            }
+            let context = if filesystem {
+                match self.filesystem_completion_context(cmd, rest) {
+                    Ok(context) => context,
+                    Err(error) => {
+                        self.message = error;
+                        return true;
+                    }
+                }
+            } else {
+                self.open_context()
+            };
+            (
+                directory::classify(self, rest, context),
+                body[..body.len() - rest.len()].to_owned(),
+            )
+        };
         if cursor != text.len() {
             self.message = "completion needs the cursor at the end of the line".into();
             return true;
@@ -262,22 +327,16 @@ impl Editor {
                 }
                 return true;
             }
-            // A sole candidate descends into directories or re-queries.
         }
-        let typed = operand.strip_prefix("ssh://").unwrap_or_default();
-        self.start_remote_completion(typed);
+        match query {
+            Ok(query) => self.start_remote_completion(query, prefix_body),
+            Err(error) => self.message = error,
+        }
         true
     }
 
     /// Classify the typed operand and launch the owned worker request.
-    fn start_remote_completion(&mut self, typed: &str) {
-        let query = match classify_remote_operand(typed) {
-            Ok(query) => query,
-            Err(message) => {
-                self.message = message;
-                return;
-            }
-        };
+    fn start_remote_completion(&mut self, query: RemoteCompletionQuery, prefix_body: String) {
         let Some((text, cursor, document, revision)) =
             self.pending
                 .prompt()
@@ -311,16 +370,13 @@ impl Editor {
                     return;
                 }
             },
-            RemoteCompletionQuery::Hosts { .. } => (None, None),
+            RemoteCompletionQuery::Hosts { .. } | RemoteCompletionQuery::Directory { .. } => {
+                (None, None)
+            }
         };
         // A new request replaces any in-flight one; the old worker's
         // late delivery is rejected by ticket mismatch.
-        if let Some(old) = self.remote_completion.pending.take() {
-            if let Some(handle) = self.worker_handles.remove(&old.request) {
-                handle.cancel(CancelReason::Superseded);
-            }
-        }
-        self.remote_completion.ready = None;
+        self.revoke_path_completion();
         let key = RemoteCompletionKey {
             focus: self.focus_epoch,
             document,
@@ -328,6 +384,7 @@ impl Editor {
             text,
             cursor,
             query: query.clone(),
+            prefix_body,
         };
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
@@ -408,20 +465,24 @@ impl Editor {
                 }
                 if items.is_empty() {
                     self.message = match notes.first() {
-                        Some(note) => format!("no remote matches: {note}"),
-                        None => "no remote matches".into(),
+                        Some(note) => format!("no path matches: {note}"),
+                        None => "no path matches".into(),
                     };
                     return;
                 }
-                let prefix_body = completion_prefix_body(&ticket.key);
+                let prefix_body = ticket.key.prefix_body.clone();
                 self.apply_completion(&prefix_body, &items[0].uri);
+                self.message = candidates_message(&items, source);
                 self.remote_completion.ready = Some(ReadyCompletion {
                     prefix_body,
                     applied: self.pending.text().to_owned(),
-                    candidates: items.clone(),
+                    candidates: items,
                     index: 0,
                 });
-                self.message = candidates_message(&items, source);
+                if let Some(note) = notes.first() {
+                    self.message.push_str(" — ");
+                    self.message.push_str(note);
+                }
             }
             Outcome::Success(RemoteCompletionResult::ConnectRequired { endpoint }) => {
                 self.message = format!(
@@ -447,6 +508,15 @@ impl Editor {
             && self.buf().revision() == key.revision
             && prompt.text() == key.text
             && prompt.cursor() == key.cursor
+            && match &key.query {
+                RemoteCompletionQuery::Directory {
+                    location,
+                    container: Some(expected),
+                    ..
+                } => matches!(&location.filesystem, strop_workspace::Filesystem::Container(id)
+                        if self.containers.attached.get(id.as_str()) == Some(expected)),
+                _ => true,
+            }
     }
 
     /// Apply one candidate through the one prompt grammar.
@@ -474,17 +544,6 @@ impl Editor {
     }
 }
 
-/// The prompt body before the remote operand (`e `, `tail 64k `),
-/// rebuilt from the request's captured text. The operand is the last
-/// token, so the last `ssh://` is its start.
-fn completion_prefix_body(key: &RemoteCompletionKey) -> String {
-    let body = key.text.strip_prefix(':').unwrap_or(&key.text);
-    match body.rfind("ssh://") {
-        Some(at) => body[..at].to_owned(),
-        None => body.to_owned(),
-    }
-}
-
 /// Sort, show and label the candidate list for the message line.
 fn candidates_message(items: &[RemoteCandidate], source: CandidateSource) -> String {
     let mut text = items
@@ -500,9 +559,14 @@ fn candidates_message(items: &[RemoteCandidate], source: CandidateSource) -> Str
         CandidateSource::Cache => text.push_str("  (cached)"),
         CandidateSource::Connection => text.push_str("  (live)"),
         CandidateSource::Config => {}
+        CandidateSource::Directory => {}
     }
     if text.len() > 160 {
-        text.truncate(160);
+        let mut boundary = 160;
+        while !text.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        text.truncate(boundary);
     }
     text
 }
@@ -576,6 +640,11 @@ fn run_completion(
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
     match query {
+        RemoteCompletionQuery::Directory {
+            location,
+            segment,
+            container,
+        } => directory::run(location, &segment, container.as_ref(), &client, &cancel),
         RemoteCompletionQuery::Hosts { partial } => {
             let enumeration = strop_remote::enumerate_hosts(&sources, &history);
             let items = enumeration

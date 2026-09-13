@@ -6,6 +6,10 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+#[path = "remote_ssh/filesystem.rs"]
+mod filesystem;
+#[path = "remote_ssh/search.rs"]
+mod search;
 #[path = "remote_ssh/writes.rs"]
 mod writes;
 

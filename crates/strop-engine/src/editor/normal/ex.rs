@@ -131,6 +131,10 @@ impl Editor {
     /// substitute is a documented deviation until 0016's grammar work).
     fn run_ranged_ex(&mut self, range: (usize, usize), rest: &str) {
         let (lo, hi) = range;
+        if let Some(argument) = rest.strip_prefix("fs ") {
+            self.run_filesystem_ex(argument, Some(range));
+            return;
+        }
         if rest.is_empty() {
             // :N — goto line
             let s = self.buf().line_start(lo);
@@ -148,9 +152,17 @@ impl Editor {
                     self.buf().len_bytes()
                 };
                 let text = self.buf().text().byte_slice(s..e).to_string();
-                self.set_register(None, Register::linewise(text));
+                let mut register = Register::linewise(text);
+                register.file_provenance = self.capture_filename_register(
+                    [(strop_core::Range::charwise(s, e), true)],
+                    true,
+                    false,
+                );
+                self.set_register(None, register);
                 self.tx_begin();
+                self.filename_delete_hint(strop_core::Range::charwise(s, e), true);
                 self.buf_mut().delete(strop_core::Range::charwise(s, e));
+                self.clear_filename_hint();
                 self.tx_commit();
                 self.set_head(self.buf().clamp_boundary(s));
                 self.clamp_cursor();
@@ -164,7 +176,13 @@ impl Editor {
                     self.buf().len_bytes()
                 };
                 let text = self.buf().text().byte_slice(s..e).to_string();
-                self.set_register(None, Register::linewise(text));
+                let mut register = Register::linewise(text);
+                register.file_provenance = self.capture_filename_register(
+                    [(strop_core::Range::charwise(s, e), true)],
+                    false,
+                    false,
+                );
+                self.set_register(None, register);
                 self.message = format!("{} lines yanked", hi - lo + 1);
             }
             _ if rest.starts_with("s/") => self.substitute_range(lo, hi, &rest[2..]),
@@ -236,6 +254,21 @@ impl Editor {
             return;
         }
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline, ""));
+        if cmd == "fs" {
+            self.run_filesystem_ex(arg, None);
+            return;
+        }
+        if matches!(cmd, "browse" | "filter") {
+            let result = if cmd == "browse" {
+                self.browse_directory(arg.trim())
+            } else {
+                self.filter_directory(arg.to_owned())
+            };
+            if let Err(error) = result {
+                self.message = error;
+            }
+            return;
+        }
         if self.run_remote_ex(cmd, arg) {
             return;
         }
@@ -286,6 +319,19 @@ impl Editor {
                         self.message = "readonly".into();
                     }
                     "noro" | "noreadonly" => {
+                        if self.directory().is_some_and(|source| {
+                            source.draft.as_ref().is_none_or(|draft| !draft.editable())
+                        }) {
+                            self.message = "Directory listings are read-only; use :fs edit for filename drafts".into();
+                            return;
+                        }
+                        if matches!(
+                            self.cur().source,
+                            crate::editor::DocumentSource::Container { .. }
+                        ) {
+                            self.message = "container files are read-only by policy".into();
+                            return;
+                        }
                         if self.remote_file().is_some() && !self.remote_edit_authorized() {
                             self.message =
                                 "remote file is read-only; use :remote edit first".into();
@@ -373,13 +419,12 @@ impl Editor {
             "undo-change" => self.undo_last_change(),
             "save-change" => self.save_changed_files_pub(),
             "e" | "e!" => {
-                if arg.is_empty() && cmd == "e!" && self.refresh_remote() {
-                    return;
-                }
-                if arg.is_empty() {
-                    self.message = ":e needs a path".into();
-                } else if self.buf().dirty && cmd == "e" {
+                if self.buf().dirty && cmd == "e" {
                     self.message = "unsaved changes — :e! to force".into();
+                } else if arg.is_empty() {
+                    if !self.refresh_current_resource() {
+                        self.message = "no file or directory to reload".into();
+                    }
                 } else {
                     self.request_user_open(
                         arg,

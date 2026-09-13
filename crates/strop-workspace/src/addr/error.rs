@@ -4,6 +4,12 @@
 /// Why a textual remote address was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AddressError {
+    #[error("file URIs must use an empty or localhost authority")]
+    NonLocalFileAuthority,
+    #[error("container locations require a canonical full container ID and absolute path")]
+    InvalidContainerLocation,
+    #[error("resource URI must use file://, ssh:// or container:")]
+    UnsupportedResourceUri,
     #[error("remote locations use the form `ssh://[user@]host[:port]/absolute/path`")]
     NotSshUri,
     #[error(
@@ -57,6 +63,6 @@ pub enum AddressError {
         "the path begins with `~` (a home query), which is not a canonical file; a session must expand it first"
     )]
     UnresolvedHome,
-    #[error("a canonical remote path is absolute: it must start with `/`")]
+    #[error("a resource path is absolute: it must start with `/`")]
     RelativePath,
 }

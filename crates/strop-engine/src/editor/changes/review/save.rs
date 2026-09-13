@@ -10,6 +10,11 @@ pub(super) struct PendingChangeSave {
 impl Editor {
     /// Save the newest applied operation, never merely the current buffer.
     pub(crate) fn save_changed_files_pub(&mut self) {
+        if self.is_filesystem_report(self.current()) {
+            self.message =
+                "filesystem receipts describe native operations, not source saves".into();
+            return;
+        }
         let mut seen = std::collections::HashSet::new();
         let targets: Vec<_> = self
             .changes

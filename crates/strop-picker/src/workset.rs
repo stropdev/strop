@@ -2,8 +2,8 @@
 //! Same-query refresh can preserve only the exact location AND line contents.
 use crate::Payload;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
+use strop_workspace::ResourceLocation;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Position {
@@ -22,16 +22,16 @@ struct FileCounts {
 }
 #[derive(Default)]
 pub(crate) struct Workset {
-    rows: HashMap<PathBuf, HashMap<Position, Decision>>,
-    files: HashSet<PathBuf>,
-    counts: HashMap<PathBuf, FileCounts>,
+    rows: HashMap<ResourceLocation, HashMap<Position, Decision>>,
+    files: HashSet<ResourceLocation>,
+    counts: HashMap<ResourceLocation, FileCounts>,
     excluded: usize,
 }
 
 /// Immutable decisions consumed by owned review preparation.
 pub struct WorksetSnapshot {
-    rows: HashMap<PathBuf, HashMap<Position, Arc<str>>>,
-    files: HashSet<PathBuf>,
+    rows: HashMap<ResourceLocation, HashMap<Position, Arc<str>>>,
+    files: HashSet<ResourceLocation>,
 }
 impl WorksetSnapshot {
     pub fn is_excluded(&self, payload: &Payload) -> bool {
@@ -47,13 +47,13 @@ impl WorksetSnapshot {
     }
 }
 struct Match<'a> {
-    path: &'a PathBuf,
+    path: &'a ResourceLocation,
     position: Position,
     text: &'a Arc<str>,
 }
 fn source_match(payload: &Payload) -> Option<Match<'_>> {
     let Payload::Grep {
-        path,
+        location: path,
         line,
         col,
         match_len,
@@ -213,5 +213,39 @@ impl Workset {
             seen
         });
         lost
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn file_exclusion_never_crosses_namespace_or_host() {
+        let payload = |location| Payload::Grep {
+            location,
+            line: 1,
+            col: 1,
+            match_len: 6,
+            line_text: "needle".into(),
+        };
+        let local = payload(ResourceLocation::local("/work/file".into()));
+        let remote = payload(ResourceLocation::remote(
+            strop_workspace::RemoteEndpoint::parse("ssh://one").unwrap(),
+            "/work/file".into(),
+        ));
+        let other = payload(ResourceLocation::remote(
+            strop_workspace::RemoteEndpoint::parse("ssh://two").unwrap(),
+            "/work/file".into(),
+        ));
+        let mut workset = Workset::default();
+        for hit in [&local, &remote, &other] {
+            workset.observe(hit);
+        }
+        assert!(workset.toggle_file(&remote));
+        assert_eq!(workset.count(), 1);
+        let snapshot = workset.snapshot();
+        assert!(snapshot.is_excluded(&remote));
+        assert!(!snapshot.is_excluded(&local));
+        assert!(!snapshot.is_excluded(&other));
     }
 }

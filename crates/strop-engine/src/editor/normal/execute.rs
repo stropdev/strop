@@ -123,11 +123,16 @@ impl Editor {
                     .map(|(_, r, _)| self.buf().slice_string(*r))
                     .collect();
                 let text = texts.join("\n");
-                let register = if kept.first().is_some_and(|t| t.2) {
+                let mut register = if kept.first().is_some_and(|t| t.2) {
                     Register::linewise(text)
                 } else {
                     Register::characterwise(text)
                 };
+                register.file_provenance = self.capture_filename_register(
+                    kept.iter().map(|(_, range, linewise)| (*range, *linewise)),
+                    false,
+                    true,
+                );
                 self.set_register(cmd.register, register);
                 self.flash(kept[0].1);
             }
@@ -144,7 +149,7 @@ impl Editor {
                 if cmd.op.unwrap() == Op::Change && kept.first().is_some_and(|t| t.2) {
                     // vim cc/S: clear content, keep the line — never
                     // merge with the next one
-                    self.change_lines(cmd, &kept);
+                    self.change_lines(cmd.register, &cmd.keys, &kept);
                     self.last_cmd_keys = cmd.keys.clone();
                     self.last_insert = None;
                     return;
@@ -155,16 +160,24 @@ impl Editor {
                     .map(|(_, r, _)| self.buf().slice_string(*r))
                     .collect();
                 let linewise = kept.first().is_some_and(|t| t.2);
+                let provenance = self.capture_filename_register(
+                    kept.iter().map(|(_, range, linewise)| (*range, *linewise)),
+                    true,
+                    true,
+                );
                 self.tx_begin();
                 for (_, r, _) in kept.iter().rev() {
+                    self.filename_delete_hint(*r, r.is_linewise());
                     self.buf_mut().delete(*r);
+                    self.clear_filename_hint();
                 }
                 let text = texts.join("\n");
-                let register = if linewise {
+                let mut register = if linewise {
                     Register::linewise(text)
                 } else {
                     Register::characterwise(text)
                 };
+                register.file_provenance = provenance;
                 self.set_register(cmd.register, register);
                 // landings: each range start minus what lower deletes
                 // already removed (deletes applied bottom-up above)
@@ -210,7 +223,17 @@ impl Editor {
     /// vim `cc` / `S` (and counted `2cc`): clear each line's content,
     /// keep the line and its indent, open insert at the indent. The
     /// register gets the full lines (with newlines), linewise.
-    fn change_lines(&mut self, cmd: &Command, kept: &[(usize, strop_core::Range, bool)]) {
+    pub(crate) fn change_lines(
+        &mut self,
+        register_name: Option<char>,
+        keys: &str,
+        kept: &[(usize, strop_core::Range, bool)],
+    ) {
+        let provenance = self.capture_filename_register(
+            kept.iter().map(|(_, range, linewise)| (*range, *linewise)),
+            false,
+            false,
+        );
         let newline = self.newline_str();
         // texts + indents read top-down before any edit lands
         let texts: Vec<String> = kept
@@ -252,7 +275,9 @@ impl Editor {
             } else {
                 // N lines collapse into one fresh line
                 let end = self.buf().line_start(last + 1).min(self.buf().len_bytes());
+                self.filename_change_hint(Range::charwise(start, end));
                 self.buf_mut().delete(Range::charwise(start, end));
+                self.clear_filename_hint();
                 self.buf_mut().insert(start, &format!("{indent}{newline}"));
             }
             let net = self.buf().len_bytes() as isize - before;
@@ -268,7 +293,9 @@ impl Editor {
                 (*p, (*at as isize + shift).max(0) as usize)
             })
             .collect();
-        self.set_register(cmd.register, Register::linewise(texts.join("")));
+        let mut register = Register::linewise(texts.join(""));
+        register.file_provenance = provenance;
+        self.set_register(register_name, register);
         self.set_head(
             landings
                 .iter()
@@ -279,7 +306,7 @@ impl Editor {
         let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
         starts.sort_unstable();
         self.sels_mut().set_extras(starts);
-        self.enter_insert_from(&cmd.keys);
+        self.enter_insert_from(keys);
         self.clamp_cursor();
         self.flash(Range::charwise(self.head(), self.head()));
     }

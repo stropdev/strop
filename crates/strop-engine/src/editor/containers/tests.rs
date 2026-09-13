@@ -1,9 +1,10 @@
-//! Container attach/browse ownership: injected completions, no engine.
-
+//! Container attachment and common Directory/read ownership, without native work.
 use super::*;
-use crate::editor::Editor;
-use strop_core::worker::Outcome;
+use crate::editor::io::{IoEvent, Opened};
+use crate::editor::{Directory, Document, Editor, Key};
+use crate::files::FileTarget;
 use strop_core::Buffer;
+use strop_workspace::{ContainerId, Filesystem, ResourceLocation};
 
 fn identity(id: char) -> strop_containers::ContainerIdentity {
     strop_containers::ContainerIdentity {
@@ -15,148 +16,166 @@ fn identity(id: char) -> strop_containers::ContainerIdentity {
         workdir: String::new(),
     }
 }
-
-fn entry(name: &str, kind: strop_containers::DirEntryKind) -> strop_containers::DirEntry {
-    strop_containers::DirEntry {
-        name: name.into(),
-        kind,
-        size: None,
-    }
+fn editor() -> Editor {
+    let mut editor = Editor::new_in(Buffer::from_text("origin\n"), "/isolated".into());
+    editor.tape = std::rc::Rc::new(strop_trace::replay::Tape::fixture(|_, _| {
+        Err(std::io::Error::other(
+            "native observation forbidden in ownership fixture",
+        ))
+    }));
+    editor
 }
-
-fn deliver(e: &mut Editor, result: ContainerResult) {
-    let ticket = e.containers.pending.clone().expect("request in flight");
-    e.handle_container_event(Completion {
+fn deliver(editor: &mut Editor, result: ContainerResult) {
+    let ticket = editor.containers.pending.clone().unwrap();
+    editor.handle_container_event(Completion {
         ticket,
         outcome: Outcome::Success(result),
     });
 }
-
-#[test]
-fn discover_offers_and_attach_binds_a_container_workspace() {
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.request_containers();
-    deliver(&mut e, ContainerResult::Containers(vec![identity('a')]));
-    // picker offers the container; accepting attaches and lists root
-    e.accept_picker(strop_picker::Payload::Container("a".repeat(64)), None);
-    assert!(matches!(
-        e.containers.pending.as_ref().map(|t| &t.key.job),
-        Some(ContainerJob::Attach { .. })
-    ));
-    deliver(
-        &mut e,
-        ContainerResult::Listing {
-            identity: identity('a'),
-            path: "/".into(),
-            entries: vec![entry("etc", strop_containers::DirEntryKind::Dir)],
-        },
-    );
-    let text = e.buf().text().to_string();
-    assert!(text.contains("container fixture"), "{text}");
-    assert!(text.contains("d etc/"), "{text}");
-    assert!(e.buf().readonly, "listings are read-only");
-    // the workspace registry bound the container namespace
-    let bound = e.workspaces.iter().any(|(_, context)| {
-        matches!(
-            context.filesystem,
-            strop_workspace::Filesystem::Container(_)
-        )
-    });
-    assert!(bound, "attach binds a container context");
-}
-
-#[test]
-fn enter_on_a_listing_row_requests_descent_or_read() {
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.request_containers();
-    deliver(&mut e, ContainerResult::Containers(vec![identity('a')]));
-    e.attach_container("a".repeat(64));
-    deliver(
-        &mut e,
-        ContainerResult::Listing {
-            identity: identity('a'),
-            path: "/".into(),
-            entries: vec![
-                entry("etc", strop_containers::DirEntryKind::Dir),
-                entry("init.log", strop_containers::DirEntryKind::File),
-            ],
-        },
-    );
-    e.close_picker(); // accept_picker closes it in production
-                      // row 1 (line 2): the file → a bounded read job
-    e.set_head(e.buf().line_start(2));
-    e.feed(crate::editor::Key::Enter);
-    assert!(matches!(
-        e.containers.pending.as_ref().map(|t| &t.key.job),
-        Some(ContainerJob::ReadFile { path, .. }) if path == "/init.log"
-    ));
-    deliver(
-        &mut e,
-        ContainerResult::File {
-            identity: identity('a'),
-            path: "/init.log".into(),
-            text: "boot ok\n".into(),
-        },
-    );
-    assert_eq!(e.buf().text().to_string(), "boot ok\n");
-    assert!(e.buf().readonly, "container files are read-only");
-}
-
-#[test]
-fn a_stale_completion_changes_nothing() {
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.request_containers();
-    let stale = e.containers.pending.clone().unwrap();
-    e.containers.pending = None; // superseded
-    e.handle_container_event(Completion {
-        ticket: stale,
-        outcome: Outcome::Success(ContainerResult::Containers(vec![identity('a')])),
-    });
-    assert!(!e.picker_open(), "no picker from a stale answer");
-    assert_eq!(e.buf().text().to_string(), "x\n");
-}
-
-#[test]
-fn engine_failure_surfaces_on_the_status_line() {
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.request_containers();
-    let ticket = e.containers.pending.clone().unwrap();
-    e.handle_container_event(Completion {
+fn deliver_open(editor: &mut Editor, document: Document, canonical: FileTarget) {
+    let (&request, key) = editor.io.open.iter().next().unwrap();
+    let ticket = Ticket {
+        request,
+        key: key.clone(),
+    };
+    editor.handle_io(IoEvent::Open(Box::new(Completion {
         ticket,
-        outcome: Outcome::failed(
-            FailureKind::Io,
-            "docker engine unavailable: is docker running?".to_string(),
-        ),
-    });
-    assert!(e.message.contains("docker engine unavailable"));
+        outcome: Outcome::Success(Opened {
+            document,
+            canonical,
+        }),
+    })));
+}
+fn listing(editor: &mut Editor, path: &str, children: &[(&str, strop_containers::DirEntryKind)]) {
+    let container = ContainerId::canonical("a".repeat(64)).unwrap();
+    let location = ResourceLocation {
+        filesystem: Filesystem::Container(container.clone()),
+        path: path.into(),
+    };
+    let entries = children
+        .iter()
+        .map(|(name, kind)| strop_containers::DirEntry {
+            name: (*name).into(),
+            kind: *kind,
+            size: None,
+        })
+        .collect();
+    let source = Directory::from_listing(strop_fs::from_container(location, entries).unwrap());
+    let document = Document::directory(Buffer::from_text(&source.text()), source);
+    deliver_open(
+        editor,
+        document,
+        FileTarget::Container {
+            container,
+            path: path.into(),
+        },
+    );
+}
+fn file(editor: &mut Editor, path: &str, text: &str) {
+    let container = ContainerId::canonical("a".repeat(64)).unwrap();
+    let document =
+        Document::container_file(Buffer::from_text(text), container.clone(), path.into());
+    deliver_open(
+        editor,
+        document,
+        FileTarget::Container {
+            container,
+            path: path.into(),
+        },
+    );
 }
 
 #[test]
-fn container_files_refuse_every_write_form() {
-    // 0037 DC1b write policy: no in-container save, no :w! bypass,
-    // never a local-path fallback
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.request_containers();
-    deliver(&mut e, ContainerResult::Containers(vec![identity('a')]));
-    e.close_picker();
-    e.attach_container("a".repeat(64));
-    deliver(
-        &mut e,
-        ContainerResult::File {
-            identity: identity('a'),
-            path: "/init.log".into(),
-            text: "boot ok\n".into(),
-        },
+fn attached_container_uses_shared_directory_navigation_without_local_paths() {
+    let mut editor = editor();
+    editor.attach_container("a".repeat(64));
+    deliver(&mut editor, ContainerResult::Attached(identity('a')));
+    listing(
+        &mut editor,
+        "/",
+        &[("etc", strop_containers::DirEntryKind::Dir)],
     );
-    e.feed_text(":w\r");
-    assert!(e.message.contains("read-only"), "{}", e.message);
-    e.feed_text(":w!\r");
+    assert!(matches!(
+        editor.directory().unwrap().location.filesystem,
+        Filesystem::Container(_)
+    ));
+    assert!(editor.buf().readonly);
+    editor.feed(Key::Enter);
+    listing(
+        &mut editor,
+        "/etc",
+        &[("init.log", strop_containers::DirEntryKind::File)],
+    );
+    assert_eq!(
+        editor.directory().unwrap().location.path,
+        std::path::Path::new("/etc")
+    );
+    editor.feed(Key::Enter);
+    file(&mut editor, "/etc/init.log", "boot ok\n");
+    assert_eq!(editor.buf().text(), "boot ok\n");
+    assert!(editor.buf().readonly);
     assert!(
-        e.message.contains("read-only"),
-        "w! refuses too: {}",
-        e.message
+        editor.buf().path.is_none(),
+        "container bytes never acquire a local write path"
     );
-    e.feed_text(":wq!\r");
-    assert!(e.message.contains("read-only"), "{}", e.message);
-    assert!(!e.should_quit);
+    editor.feed(Key::CtrlO);
+    assert_eq!(
+        editor.directory().unwrap().location.path,
+        std::path::Path::new("/etc")
+    );
+}
+
+#[test]
+fn late_container_inspection_cannot_replace_newer_typing() {
+    let mut editor = editor();
+    editor.request_containers();
+    editor.feed_text("Ityped <esc>");
+    deliver(
+        &mut editor,
+        ContainerResult::Containers(vec![identity('a')]),
+    );
+    assert!(!editor.picker_open());
+    assert_eq!(editor.buf().text(), "typed origin\n");
+}
+
+#[test]
+fn superseded_container_result_cannot_open_an_old_context() {
+    let mut editor = editor();
+    editor.attach_container("a".repeat(64));
+    let stale = editor.containers.pending.clone().unwrap();
+    editor.attach_container("b".repeat(64));
+    editor.handle_container_event(Completion {
+        ticket: stale,
+        outcome: Outcome::Success(ContainerResult::Attached(identity('a'))),
+    });
+    assert!(editor.io.open.is_empty());
+    assert!(editor.containers.attached.is_empty());
+    assert_eq!(editor.buf().text(), "origin\n");
+}
+
+#[test]
+fn container_files_refuse_writes_and_writable_flag_bypasses() {
+    let mut editor = editor();
+    editor.attach_container_target(
+        ContainerId::canonical("a".repeat(64)).unwrap(),
+        "/init.log".into(),
+        OpenIntent::Switch { readonly: true },
+    );
+    deliver(&mut editor, ContainerResult::Attached(identity('a')));
+    file(&mut editor, "/init.log", "boot ok\n");
+    let document = editor.current();
+    for command in [
+        ":w<cr>",
+        ":w!<cr>",
+        ":wq!<cr>",
+        ":w /local-copy<cr>",
+        ":set noro<cr>",
+    ] {
+        editor.feed_text(command);
+        assert_eq!(editor.current(), document);
+        assert_eq!(editor.buf().text(), "boot ok\n");
+        assert!(editor.buf().readonly);
+        assert!(!editor.io_pending());
+        assert!(!editor.should_quit);
+    }
 }

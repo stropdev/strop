@@ -114,12 +114,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             remote_view,
         } => {
             let script = std::fs::read_to_string(script)?;
-            let buffer = path
-                .as_ref()
-                .and_then(|location| location.path.local_path())
-                .map(Buffer::open)
-                .transpose()?
-                .unwrap_or_else(|| Buffer::from_text(""));
+            let (buffer, directory) = initial_buffer(&path)?;
             let mut editor = editor::Editor::new(buffer);
             let (configuration, error) = config::Config::load();
             editor.config = configuration;
@@ -132,13 +127,18 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
                 &mut editor,
                 path.as_ref().and_then(|location| location.line),
             );
+            let open = startup_open(
+                &path,
+                remote_view,
+                directory.then_some(editor.cwd.as_path()),
+            );
             headless::run_script(
                 &mut editor,
                 &script,
                 100,
                 30,
                 &mut io::stdout().lock(),
-                remote_start(&path, remote_view),
+                open,
             )?;
         }
         cli::Command::Edit {
@@ -146,29 +146,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             readonly,
             remote_view,
         } => {
-            let directory = path
-                .as_ref()
-                .and_then(|location| location.path.local_path())
-                .filter(|path| path.is_dir())
-                .map(std::path::Path::to_owned);
-            if directory.is_some()
-                && path
-                    .as_ref()
-                    .is_some_and(|location| location.line.is_some())
-            {
-                return Err("a line location requires a file, not a directory".into());
-            }
-            if let Some(directory) = &directory {
-                std::env::set_current_dir(directory)?;
-            }
-            let buffer = match path
-                .as_ref()
-                .and_then(|location| location.path.local_path())
-                .filter(|_| directory.is_none())
-            {
-                Some(path) => Buffer::open(path)?,
-                None => Buffer::from_text(""),
-            };
+            let (buffer, directory) = initial_buffer(&path)?;
             let mut editor = editor::Editor::new(buffer);
             editor.frame_draw = Some(headless::frame_draw);
             editor.buf_mut().readonly = readonly;
@@ -197,8 +175,11 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             let tick = editor.tape.sample_tick();
             editor.recorded_action(
                 editor::trace::drive::Action::Start {
-                    directory_picker: directory.is_some(),
-                    open: remote_start(&path, remote_view),
+                    open: startup_open(
+                        &path,
+                        remote_view,
+                        directory.then_some(editor.cwd.as_path()),
+                    ),
                 },
                 tick,
             )?;
@@ -208,17 +189,51 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
     io::stdout().flush()?;
     Ok(())
 }
-fn remote_start(
+fn initial_buffer(location: &Option<cli::FileLocation>) -> Result<(Buffer, bool), Box<dyn Error>> {
+    let local = location
+        .as_ref()
+        .and_then(|location| location.path.local_path());
+    let directory = local.filter(|path| path.is_dir());
+    if directory.is_some()
+        && location
+            .as_ref()
+            .is_some_and(|location| location.line.is_some())
+    {
+        return Err("a line location requires a file, not a directory".into());
+    }
+    if let Some(directory) = directory {
+        std::env::set_current_dir(directory)?;
+    }
+    let buffer = match local.filter(|_| directory.is_none()) {
+        Some(path) => Buffer::open(path)?,
+        None => Buffer::from_text(""),
+    };
+    Ok((buffer, directory.is_some()))
+}
+
+fn startup_open(
     location: &Option<cli::FileLocation>,
     view: editor::remote::RemoteView,
+    directory: Option<&std::path::Path>,
 ) -> Option<editor::trace::drive::StartupOpen> {
+    if let Some(directory) = directory {
+        return Some(editor::trace::drive::StartupOpen {
+            target: files::FileTarget::Local(directory.to_path_buf()),
+            intent: editor::io::OpenIntent::Browse,
+        });
+    }
     let location = location.as_ref()?;
-    matches!(location.path, files::FileTarget::Remote(_)).then(|| {
-        editor::trace::drive::StartupOpen {
-            target: location.path.clone(),
-            line: location.line,
+    let intent = match location.path {
+        files::FileTarget::Remote(_) => editor::io::OpenIntent::RemoteView {
             view,
-        }
+            line: location.line,
+        },
+        files::FileTarget::Container { .. } => editor::io::OpenIntent::Switch { readonly: true },
+        files::FileTarget::Local(_) => return None,
+    };
+    Some(editor::trace::drive::StartupOpen {
+        target: location.path.clone(),
+        intent,
     })
 }
 

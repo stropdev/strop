@@ -46,6 +46,9 @@ impl Editor {
             Payload::IndentChoice(_) => {
                 self.message = "indentation choice requires its original selector".into()
             }
+            Payload::FilesystemAction(_) => {
+                self.message = "filesystem choice requires its original selector".into()
+            }
             Payload::File(rel) => {
                 self.request_open(
                     rel,
@@ -60,18 +63,32 @@ impl Editor {
                 }
             }
             Payload::Grep {
-                path, line, col, ..
+                location,
+                line,
+                col,
+                ..
             } => {
+                if let strop_workspace::Filesystem::Remote(endpoint) = &location.filesystem {
+                    self.lsp_open_remote_hit(endpoint, &location.path, line, col, context);
+                    return;
+                }
                 if let Some(context) = context {
-                    self.lsp_jump_from_picker(path, line, col, context);
+                    self.lsp_jump_from_picker(location.path, line, col, context);
                     return;
                 }
                 // Grep/symbol hits are jumps in vim's sense (quickfix
                 // jumps enter the jumplist): record first, so ctrl-o
                 // returns to where the picker was accepted (0047 §1).
                 self.push_jump();
-                self.request_open(
-                    path,
+                let target = match crate::files::FileTarget::from_location(&location) {
+                    Ok(target) => target,
+                    Err(error) => {
+                        self.message = error.to_string();
+                        return;
+                    }
+                };
+                self.request_target(
+                    target,
                     super::super::io::OpenIntent::Grep {
                         line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
                         column: strop_core::id::ByteColumn::new(col.saturating_sub(1)),

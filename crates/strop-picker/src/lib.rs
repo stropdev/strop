@@ -17,7 +17,7 @@ pub use line_edit::LineEdit;
 
 pub use score::fuzzy_score;
 pub use source::{
-    display_path, spawn_files, GrepWorker, PickerMsg, SelectionPolicy, SourceSnapshot,
+    display_path, PickerMsg, SelectionPolicy, SourceSink, SourceSnapshot, SourceWorker,
 };
 
 use std::path::PathBuf;
@@ -29,11 +29,9 @@ pub enum Payload {
     File(PathBuf),
     /// An open document (stable generational id, 0014 wave 2).
     Buffer(strop_core::id::DocumentId),
-    /// A grep hit: path, 1-based line, 1-based col, matched-span length
-    /// in bytes, the matched line.
+    /// A content hit with resolved namespace identity and 1-based source coordinates.
     Grep {
-        #[serde(with = "strop_core::path_serde")]
-        path: PathBuf,
+        location: strop_workspace::ResourceLocation,
         line: usize,
         col: usize,
         match_len: usize,
@@ -55,6 +53,8 @@ pub enum Payload {
     /// A language-server code action: the editor's pending action list
     /// index. The action payload itself never crosses the picker.
     CodeAction(usize),
+    /// Index into the editor's captured filesystem action selector.
+    FilesystemAction(usize),
     /// A running container's canonical inspect id (0037 DC1a).
     Container(String),
     /// A search-visibility setting toggle (0051 R03).
@@ -126,6 +126,7 @@ pub enum Kind {
     /// Language-server code actions (0043): titles listed, acceptance
     /// applies the chosen action's edits through a change plan.
     CodeActions,
+    FilesystemActions,
     /// Running containers on the local engine (0037 DC1a).
     Containers,
     /// The `:tab-size` indent selector (0051 R08).
@@ -148,6 +149,7 @@ impl Kind {
             Kind::Symbols => " symbols ",
             Kind::RemoteAddress => " connect to remote ",
             Kind::CodeActions => " code actions ",
+            Kind::FilesystemActions => " filesystem actions ",
         }
     }
 }
@@ -578,7 +580,7 @@ mod tests {
             badge: None,
             text: path.into(),
             payload: Payload::Grep {
-                path: PathBuf::from(path),
+                location: strop_workspace::ResourceLocation::local(PathBuf::from(path)),
                 line: 1,
                 col: 1,
                 match_len: 1,

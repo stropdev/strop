@@ -65,7 +65,7 @@ impl Buffer {
         history: History,
     ) -> Result<(), crate::history::HistoryError> {
         history.validate_for(&self.rope)?;
-        self.history = history;
+        self.adopt_history(history);
         Ok(())
     }
 

@@ -95,3 +95,43 @@ tarball-level smoke; they never duplicate the harness.
 - Property tests for the rope/undo core (proptest) — M4, when the undo tree lands.
 - PTY smoke on macOS CI runners (Tier 3 is Linux-first; macOS adds `script(1)`
   quirks — defer until the darwin release path exists and needs it).
+
+## 6. Architecture, whole-core verification and later feature extensions
+
+[0056](0056-architecture-prerequisites.md) extends the shared engine/headless
+contracts with bounded protocol/stdio/WSL driving, recovery/lifetime schedules and
+real native evidence before any GUI. It preserves the existing differential/TUI/
+PTY tiers. [0060](0060-debugger-workflow-and-architecture.md) adds DAP-specific
+ordering tests and real adapter/transport journeys through those contracts.
+
+[0061](0061-gui-windows-and-wsl.md) adds deterministic GPUI components plus actual
+native Windows rendering/capture, input, IME/accessibility and Windows+WSL integration.
+Headless semantic data does not prove pixels or OS input, and a missing Windows
+headless renderer is not a successful screenshot gate. Its native driver/capture
+extends the proven semantic protocol; it does not invent another engine test path.
+
+Permanent harness/driver code stays Rust-first. Disposable research probes are
+not a second maintained Python/PowerShell stack, and no fixture skip substitutes
+for a required implementation/release lane.
+
+The separate [0057](0057-core-verification-and-assurance.md) release follows
+architecture immediately, before 0058 worker, 0059 completion, debugger or GUI. It covers the
+whole core: editing/input/projections, local and remote filesystem authority, exact
+Rust/Python helpers through editor reconciliation, containers/processes/queues,
+terminal/recovery/UI-stdio, privacy and install/publication effects—not only protocols.
+
+VF01–VF20 require reviewed contracts, calibrated TLA+/TLC, generalized TLAPS safety,
+same-source Verus and actual-code Loom/correspondence/helper/native campaigns.
+The new `tlaps` and `core-assurance` gates supplement existing `test`/`model`/`verify`
+and required native lanes. PR/tag evidence binds the exact source/helper/artifact
+candidate and declared targets. Zero/subset proofs, missing tools or parser errors
+cannot pass. Models/tests remain valuable without being labelled universal proofs
+of the implementation, CPython or the OS. Later features extend affected claims.
+
+[0058](0058-unified-native-worker.md) follows the accepted baseline. Its WK16–WK20
+explicitly migrate VF claims, models/theorems/production kernels and actual native
+correspondence to the new worker; the already-dispatched 0057 agent must finish
+verifying its own actual implementation, not future code. Local tests cross the
+same real codec/client/worker as SSH/container tests. Add deployment/activation/cache-
+lease and child/control-stream cases to the same required gate framework. No legacy
+Python job silently skipped, toy local bypass or inherited badge qualifies the cutover.

@@ -410,8 +410,11 @@ mod worker_lifecycle_tests {
     }
 
     /// Register a preview request without launching a read thread.
-    fn register_preview(e: &mut Editor, rel: &str) -> (Ticket<PreviewKey>, PathBuf) {
-        let path = e.cwd.join(rel);
+    fn register_preview(
+        e: &mut Editor,
+        rel: &str,
+    ) -> (Ticket<PreviewKey>, strop_workspace::ResourceLocation) {
+        let path = strop_workspace::ResourceLocation::local(e.cwd.join(rel));
         let picker = e.picker.as_ref().map(|g| g.id).unwrap();
         let request = e.worker_ids.allocate().unwrap();
         let ticket = Ticket {
@@ -436,18 +439,12 @@ mod worker_lifecycle_tests {
             glue.active.is_some(),
             "the request owns the stream before launch"
         );
-        assert!(matches!(glue.worker, Some(PickerWorker::Files(_))));
+        let ticket = glue.active.clone().unwrap();
         e.close_picker();
         assert!(!e.picker_open(), "close settles the picker");
         // a terminal event from the cancelled walk cannot resurrect it
         e.handle_picker_event(PickerEvent {
-            ticket: Ticket {
-                request: strop_core::worker::WorkerId::new(1),
-                key: PickerKey {
-                    picker: PickerId(strop_core::worker::WorkerId::new(2)),
-                    cwd: e.cwd.clone(),
-                },
-            },
+            ticket,
             msg: PickerMsg::Finished(Outcome::Success(())),
         });
         assert!(!e.picker_open());

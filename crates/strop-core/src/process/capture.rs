@@ -312,6 +312,8 @@ pub struct StreamPolicy {
     pub stderr_tail: u64,
     /// Wall-clock budget for the whole exchange.
     pub deadline: Duration,
+    /// Keep the stdin lifetime lease open while consuming stdout.
+    pub hold_stdin: bool,
 }
 
 /// One streamed run's outcome: everything except stdout, which the
@@ -384,7 +386,11 @@ pub fn stream_with<E>(
     std::thread::scope(|scope| {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
-        command.stdin(Stdio::null());
+        command.stdin(if policy.hold_stdin {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
         // Owned here, INSIDE scope: unwinding kills pipes before scope joins.
         let mut process = OwnedProcess::spawn(command, token).map_err(|failure| {
             if failure.kind == FailureKind::Spawn {
@@ -393,6 +399,15 @@ pub fn stream_with<E>(
                 StreamError::Failure(failure)
             }
         })?;
+        let _stdin_lease = if policy.hold_stdin {
+            Some(
+                process
+                    .take_stdin()
+                    .ok_or_else(|| failure(FailureKind::Protocol, "missing stdin lease".into()))?,
+            )
+        } else {
+            None
+        };
         let stdout = process
             .take_stdout()
             .ok_or_else(|| failure(FailureKind::Protocol, "missing stdout".into()))?;
@@ -568,6 +583,7 @@ mod tests {
             stderr_limit: LIMIT,
             stderr_tail: 0,
             deadline,
+            hold_stdin: false,
         }
     }
 

@@ -16,6 +16,7 @@ pub struct Change {
     pub revision: BufferRevision,
     pub origin: ChangeOrigin,
     pub edit: InputEdit,
+    pub history: Option<crate::history::EditRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -84,6 +85,30 @@ impl Buffer {
     }
     pub fn changes(&self) -> &[Change] {
         &self.changes
+    }
+
+    /// Borrow this live journal entry's inserted bytes from existing history.
+    /// System/history replacement invalidates these references rather than
+    /// retaining a second copy of every edited payload.
+    pub fn change_inserted(&self, index: usize) -> Option<&str> {
+        let change = self.changes.get(index)?;
+        let length = change
+            .edit
+            .new_end_byte
+            .checked_sub(change.edit.start_byte)?;
+        if length == 0 {
+            return Some("");
+        }
+        self.history
+            .inserted_text(change.history?)
+            .filter(|text| text.len() == length)
+    }
+
+    pub(crate) fn adopt_history(&mut self, history: crate::history::History) {
+        for change in &mut self.changes {
+            change.history = None;
+        }
+        self.history = history;
     }
     pub fn clear_changes(&mut self) {
         self.changes.clear();
@@ -199,10 +224,11 @@ impl Buffer {
             old_end_point,
             new_end_point,
         };
+        let mut history = None;
         if origin == ChangeOrigin::User {
             if !range.is_empty() {
                 let removed = self.rope.byte_slice(start_byte..end_byte).to_string();
-                self.history.record(
+                history = Some(self.history.record(
                     Edit {
                         at: start_byte,
                         text: removed.clone(),
@@ -213,10 +239,10 @@ impl Buffer {
                         text: removed,
                         kind: EditKind::Delete,
                     },
-                );
+                ));
             }
             if !text.is_empty() {
-                self.history.record(
+                history = Some(self.history.record(
                     Edit {
                         at: start_byte,
                         text: text.into(),
@@ -227,7 +253,7 @@ impl Buffer {
                         text: text.into(),
                         kind: EditKind::Insert,
                     },
-                );
+                ));
             }
         }
         let start = self.rope.byte_to_char(start_byte);
@@ -238,11 +264,16 @@ impl Buffer {
         if !text.is_empty() {
             self.rope.insert(start, text);
         }
-        self.publish_change(edit, origin);
+        self.publish_change(edit, origin, history);
         self.trace_edit(origin, start_byte, range.len(), text);
     }
 
-    fn publish_change(&mut self, edit: InputEdit, origin: ChangeOrigin) {
+    fn publish_change(
+        &mut self,
+        edit: InputEdit,
+        origin: ChangeOrigin,
+        history: Option<crate::history::EditRef>,
+    ) {
         debug_assert!(self.epoch < u64::MAX);
         self.epoch += 1;
         self.invalidate_line_layouts(&edit);
@@ -251,6 +282,7 @@ impl Buffer {
             revision: self.revision(),
             origin,
             edit,
+            history,
         });
     }
 }
@@ -316,7 +348,7 @@ impl SystemEdit<'_> {
             text,
             ChangeOrigin::System,
         );
-        self.buffer.history = Default::default();
+        self.buffer.adopt_history(Default::default());
         Ok(())
     }
 
@@ -343,8 +375,9 @@ impl SystemEdit<'_> {
                 new_end_point,
             },
             ChangeOrigin::System,
+            None,
         );
-        self.buffer.history = Default::default();
+        self.buffer.adopt_history(Default::default());
         self.buffer.trace_snapshot(old_end_byte);
         Ok(())
     }

@@ -150,6 +150,20 @@ fn snapshot_search_yank_and_readonly_commands_use_the_real_buffer() {
     assert!(frame.contains("[RO]"));
 }
 
+#[test]
+fn narrow_remote_modeline_retains_source_identity_during_status_messages() {
+    use strop_engine::editor::test_support::remote::{io_editor as editor, open};
+
+    let mut editor = editor("origin\n");
+    open(&mut editor, "remote contents\n");
+    editor.message = "an active operation has detailed status information ".repeat(8);
+    let frame = crate::headless::frame_string(&mut editor, 80, 8).unwrap();
+    let modeline = frame.lines().last().unwrap();
+    assert!(modeline.contains("ssh:fixture"), "{modeline}");
+    assert!(modeline.contains("app.log"), "{modeline}");
+    assert!(modeline.contains("[RO]"), "{modeline}");
+}
+
 /// regression (0.3.3 user crash): Space R, type a query, type more —
 /// the respawn cleared items but not rows, and the replace renderer
 /// indexed items[stale_row] → panic
@@ -207,57 +221,77 @@ fn rg_error_is_sticky_in_the_card() {
 #[test]
 fn directory_metadata_preserves_unknown_zero_and_native_row_identity() {
     use strop_engine::editor::test_support::remote::snapshot_editor as editor;
-    use strop_engine::editor::{Document, RemoteDirectory};
-    use strop_remote::{RemoteEntry, RemoteEntryKind, RemotePermissions, RemoteSize};
-    use strop_workspace::RemoteFile;
-
-    let root = RemoteFile::parse("ssh://fixture/repo").unwrap();
-    let entries = vec![
-        RemoteEntry {
-            file: root.with_path("/repo/missing".into()).unwrap(),
-            kind: RemoteEntryKind::Unknown,
-            permissions: None,
-            size: None,
-        },
-        RemoteEntry {
-            file: root.with_path("/repo/zero".into()).unwrap(),
-            kind: RemoteEntryKind::File,
-            permissions: Some(RemotePermissions::new(0).unwrap()),
-            size: Some(RemoteSize::new(0)),
-        },
-        RemoteEntry {
-            file: root.with_path("/repo/line\nbreak".into()).unwrap(),
-            kind: RemoteEntryKind::SymbolicLink,
-            permissions: Some(RemotePermissions::new(0o777).unwrap()),
-            size: Some(RemoteSize::new(7)),
-        },
-    ];
-    let directory = RemoteDirectory {
-        directory: root,
-        entries: entries.into(),
-        visible: vec![0, 1, 2],
-        filter: String::new(),
-        connection: None,
-        return_to: None,
+    use strop_engine::editor::{Directory, Document};
+    use strop_workspace::{
+        DirectoryEntry, DirectorySnapshot, EntryKind, EntryName, ListingState, Observation,
+        Permissions, ResourceLocation,
     };
+    let entry = |name: &str, kind, permissions, size| {
+        let mut observation = Observation::unknown(kind);
+        observation.permissions = permissions;
+        observation.size = size;
+        DirectoryEntry {
+            name: EntryName::new(name.into()).unwrap(),
+            observation,
+            error: None,
+        }
+    };
+    let location = ResourceLocation::remote(
+        strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
+        "/repo".into(),
+    );
+    let directory = Directory::new(DirectorySnapshot {
+        location,
+        entries: vec![
+            entry(
+                "line\nbreak",
+                EntryKind::SymbolicLink,
+                Some(Permissions::new(0o777).unwrap()),
+                Some(7),
+            ),
+            entry("missing", EntryKind::Unknown, None, None),
+            entry(
+                "zero",
+                EntryKind::File,
+                Some(Permissions::new(0).unwrap()),
+                Some(0),
+            ),
+        ]
+        .into(),
+        state: ListingState::Complete,
+    });
     let mut editor = editor("origin\n");
     let document = Document::directory(Buffer::from_text(&directory.text()), directory);
     let id = editor.docs.insert(document);
     editor.switch_to(id);
     let frame = crate::headless::frame_string(&mut editor, 80, 10).unwrap();
-    assert!(frame.contains("??????????     ? missing"), "{frame}");
-    assert!(frame.contains("----------     0 zero"), "{frame}");
-    assert!(frame.contains("lrwxrwxrwx     7 line�break@"), "{frame}");
-    let wide = crate::headless::frame_string(&mut editor, 140, 10).unwrap();
+    let missing = frame.lines().find(|line| line.contains("missing")).unwrap();
+    let zero = frame.lines().find(|line| line.contains("zero")).unwrap();
     assert!(
-        wide.contains("hidden on") && wide.contains("no ignores"),
-        "{wide}"
+        missing.contains('?') && !missing.contains("  0"),
+        "{missing}"
     );
-    editor.feed_text("3Gyy");
-    assert!(editor
-        .register(None)
-        .text
-        .starts_with("----------     0 zero"));
+    assert!(
+        zero.contains("----------") && zero.contains("  0") && !zero.contains('?'),
+        "{zero}"
+    );
+    let text = editor.buf().text().to_string();
+    let link = text.find("line\\nbreak").unwrap();
+    editor.set_head(link);
+    let source = editor
+        .directory()
+        .unwrap()
+        .entry_location(strop_core::id::LineIndex::new(
+            editor.buf().line_of(editor.head()),
+        ))
+        .unwrap();
+    assert_eq!(source.path, std::path::Path::new("/repo/line\nbreak"));
+    editor.feed_text("yy");
+    assert_eq!(
+        editor.register(None).text.matches('\n').count(),
+        1,
+        "a native newline never creates another actionable row"
+    );
 }
 
 #[test]

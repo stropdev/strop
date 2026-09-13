@@ -119,6 +119,7 @@ pub(crate) fn stream(
         stderr_limit: STDERR_LIMIT,
         stderr_tail: 0,
         deadline,
+        hold_stdin: false,
     };
     let output =
         stream_with(&mut command, token, &policy, consume).map_err(|error| match error {

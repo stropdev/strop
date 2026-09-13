@@ -19,7 +19,9 @@ pub mod collections;
 mod containers;
 mod cursor;
 mod diagnostics;
+mod directory;
 mod dispatch;
+mod filesystem;
 pub mod resolution;
 pub use diagnostics::DocumentDiagnostics;
 mod dive;
@@ -60,7 +62,7 @@ mod workspaces;
 
 pub use collections::{CollectionRow, CollectionRowInfo};
 pub use document::Document;
-pub use document::{DiffRow, DocumentSource, RemoteDirectory, RemoteDocument, Surface};
+pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
 pub use panes::{LayoutDir, Pane};
@@ -154,6 +156,8 @@ pub struct Editor {
         HashMap<strop_core::id::DocumentId, strop_core::diagnostics::BufferTraceId>,
     pub io: io::IoState,
     pub(crate) remote: remote::RemoteState,
+    pub(crate) directories: directory::DirectoryState,
+    pub(crate) filesystem: filesystem::FsState,
     pub(crate) remote_completion: remote_completion::RemoteCompletionState,
     pub(crate) worker_ids: strop_core::worker::WorkerIds,
     pub(crate) worker_handles:
@@ -226,6 +230,7 @@ pub struct Editor {
     pub macro_depth: usize,
     pub picker: Option<PickerGlue>,
     pub(crate) retained_search: Option<PickerGlue>,
+    pub(crate) picker_source: Option<strop_picker::SourceWorker>,
     pub(crate) picker_ranking: picker::ranking::State,
     pub(crate) analysis: analysis::AnalysisState,
     pub resolution: resolution::ResolutionState,
@@ -251,7 +256,8 @@ pub struct Editor {
     /// the in-flight set are drained in drain_picker.
     pub preview_tx: std::sync::mpsc::Sender<PreviewResult>,
     pub preview_rx: Option<std::sync::mpsc::Receiver<PreviewResult>>,
-    pub(crate) preview_loads: HashMap<PathBuf, strop_core::worker::Load<PreviewKey>>,
+    pub(crate) preview_loads:
+        HashMap<strop_workspace::ResourceLocation, strop_core::worker::Load<PreviewKey>>,
     pub hunks: git_memory::HunkSet,
     /// HEAD↔index — the staged set (0014 wave 4); rendered in the
     /// gutter's committed-adjacent color.
@@ -367,6 +373,8 @@ impl Editor {
             trace_documents: HashMap::new(),
             io: io::IoState::default(),
             remote: remote::RemoteState::default(),
+            directories: directory::DirectoryState::default(),
+            filesystem: filesystem::FsState::default(),
             remote_completion: remote_completion::RemoteCompletionState::default(),
             picker_ranking: picker::ranking::State::default(),
             analysis: analysis::AnalysisState::default(),
@@ -425,6 +433,7 @@ impl Editor {
             insert_open: None,
             picker: None,
             retained_search: None,
+            picker_source: None,
             workspaces: {
                 let mut registry = workspaces::WorkspaceRegistry::default();
                 registry.bind(strop_workspace::Filesystem::Local, Some(cwd.clone()));

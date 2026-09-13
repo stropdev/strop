@@ -44,7 +44,9 @@
 mod python;
 mod run;
 mod spec;
+mod stream;
 mod supervisor;
+pub use stream::{stream, RemoteStreamError, RemoteStreamOutput};
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};

@@ -1,15 +1,22 @@
 # 0055 — Embedded terminal: TUI first, shared GUI integration later
 
-Status: requested research and implementation handoff; **not scheduled or
-implemented**. No emulator dependency has been added and no integration benchmark
-has been run. The user explicitly wants the TUI as the first delivery milestone,
-then GUI integration when the GUI itself is tackled.
+Status: TUI implementation authorized after 0054's filesystem release, including
+the two-candidate preflight and all T01–T10 requirements. No emulator is selected
+until that comparison runs. The user explicitly defers **all GUI work**, including
+G01–G07, until the desired Strop functionality and bug-hardening are complete.
 
 This is the canonical terminal plan, extracted from
-[0054 §12](0054-unified-filesystem-workspace.md). It does not block filesystem
-operations, search polish, completion or the current whole-editor release. The
-GUI remains separately gated by [0038](0038-remote-experience-and-responsiveness.md)
-and [0028](0028-roadmap-and-review.md).
+[0054 §12](0054-unified-filesystem-workspace.md). Filesystem is delivered first,
+then T01–T10; architecture/core verification and the subsequent native worker follow
+before completion or debugger. GUI remains separately gated by
+[0061](0061-gui-windows-and-wsl.md) and
+[0028](0028-roadmap-and-review.md): native Windows presentation with WSL execution.
+
+After the TUI milestone, [0056](0056-architecture-prerequisites.md) reuses its
+working input/PTY/lifecycle contracts and closes the remaining cross-feature
+architecture, then 0057 verifies the pre-worker core. [0058](0058-unified-native-worker.md)
+unifies/requalifies native process/PTY integration afterward, before 0059 completion,
+0060 debugger and 0061 GUI. It preserves T01–T10; emulator/grammar/views stay in-engine.
 
 ## 1. Recommendation
 
@@ -179,8 +186,8 @@ Scope: real **local** interactive terminals on the supported TUI platforms, with
 Strop-owned lifecycle, keyboard input, terminal Normal mode and bounded rendering.
 Existing Unix/WSL support is not proof of native Windows support. If Windows TUI
 is supported when this milestone starts, native ConPTY evidence is required too.
-Otherwise its port remains an explicit platform prerequisite, required before
-claiming Windows GUI terminal support in milestone 2.
+The initial GUI envelope in 0061 instead renders WSL-owned Linux PTYs. A native
+Windows process/ConPTY backend is later work, not a prerequisite for that GUI.
 
 | ID | Required TUI result |
 | --- | --- |
@@ -218,10 +225,10 @@ inside the GUI.
 | G03 | Native key/IME preedit/commit, clipboard, pointer/wheel and terminal-mouse ownership without duplicate input or editor shortcut theft. |
 | G04 | Pixel→cell resize authority, mixed-DPI/font/zoom transitions and multi-view behavior without PTY resize feedback loops. |
 | G05 | Accessible terminal text/selection/actions, bounded output announcements, focus and keyboard-only navigation—not just a linked accessibility crate. |
-| G06 | Real supported-platform evidence, especially native Windows/ConPTY and Windows GUI→WSL context handling; WSL TUI evidence is not this gate. |
+| G06 | Real native Windows GUI + WSL backend/PTY evidence under 0061. Native Windows workspaces/processes/ConPTY are a later backend gate; WSL TUI evidence alone does not prove the native frontend. |
 | G07 | Same security/private capture/replay and close/restart guarantees, with actual GUI walkthroughs and no TUI regression. |
 
-GPUI is the currently preferred GUI evaluation direction from 0038, not a required
+GPUI is the preferred GUI direction under 0061, not a required
 terminal dependency. If GUI selection changes, the terminal core does not change
 with it. Zed's GPUI integration is a useful reference for responsibilities; its
 terminal_view is not the component we import.
@@ -506,9 +513,9 @@ Concrete GUI work:
   a generic canvas or AccessKit dependency is not accessible terminal content.
 - Preserve lifecycle when panels/tabs/windows hide or close. Rendering resources
   are disposable; process/session state is not owned by a GPUI Element destructor.
-- Validate native Windows ConPTY/process supervision and the already-planned
-  Windows GUI→WSL boundary. OS-handle support in a dependency is not an implemented
-  Strop platform port. Keep Linux/macOS/TUI gates independent and green.
+- Validate the native Windows presentation/input boundary with the WSL-owned
+  terminal session and Linux PTY under 0061. Native Windows ConPTY/processes are
+  later backend capabilities. Keep existing Linux/macOS/TUI gates green.
 
 Do not promise live transfer of a running process between separate TUI and GUI
 instances. Sharing the implementation is required; cross-process handoff would
@@ -598,8 +605,9 @@ Do not substitute WSL, a mocked GPU renderer or dependency presence for evidence
 - General TUI mouse/pointer UX remains separately gated. Optional terminal mouse
   forwarding must meet the scoped contract before enabling it; GUI pointer
   integration remains required in G03.
-- Native Windows support is an actual platform implementation/evidence gate,
-  not an assumption from choosing a cross-platform crate.
+- Native Windows frontend support is the actual 0061 GUI evidence gate.
+  Native Windows workspace/process/ConPTY support is separately deferred under
+  the user's WSL execution envelope, not assumed from a cross-platform crate.
 
 T01–T10 or G01–G07 cannot be moved into this list merely to make a release pass.
 Record any proposed scope change, reason, impact, re-entry condition and explicit

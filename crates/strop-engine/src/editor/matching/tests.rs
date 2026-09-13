@@ -279,7 +279,7 @@ fn collection_fixture() -> (Editor, tempfile::TempDir) {
         badge: None,
         text: text.to_string(),
         payload: strop_picker::Payload::Grep {
-            path: path.to_path_buf(),
+            location: strop_workspace::ResourceLocation::local(path.to_path_buf()),
             line,
             col: 1,
             match_len: 2,

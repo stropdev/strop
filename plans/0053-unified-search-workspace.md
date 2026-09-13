@@ -457,6 +457,6 @@ investigation while another session is editing source.
   manual package installation. Publication/CI/demo must succeed for `v0.30.0`
   before the release task is complete.
 - No S requirement is deferred. The filesystem workspace (0054), completion
-  program (0052), and terminal/GUI program (0055) retain their independent scope.
+  program (0059), and terminal/GUI program (0055) retain their independent scope.
   Measurements and test counts are evidence for the exercised paths, not a claim
   that every editor defect or schedule has been exhausted.

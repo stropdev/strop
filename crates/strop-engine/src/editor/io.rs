@@ -1,7 +1,8 @@
 //! File I/O is owned work. Only matching completions may publish into a view.
 mod codec;
 pub(super) mod native;
-mod remote;
+mod navigation;
+mod open;
 #[cfg(test)]
 mod remote_tests;
 mod save;
@@ -12,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use strop_core::id::{BufferRevision, ByteColumn, DocumentId, LineIndex};
 use strop_core::worker::{self, Completion, FailureKind, Outcome, Ticket, WorkerId};
-use strop_core::{Buffer, SaveReceipt};
+use strop_core::SaveReceipt;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OpenIntent {
@@ -28,7 +29,7 @@ pub enum OpenIntent {
     Refresh,
     Browse,
     DirectoryParent {
-        child: strop_workspace::RemoteFile,
+        child: strop_workspace::ResourceLocation,
     },
     RemoteDestination,
     RemoteView {
@@ -97,6 +98,8 @@ pub enum IoEvent {
     Save(Box<Completion<SaveKey, SaveReceipt>>),
     Native(Box<Completion<native::NativeKey, native::NativeResult>>),
     Remote(super::remote::RemoteEvent),
+    DirectoryFilter(Box<Completion<super::directory::FilterKey, Opened>>),
+    Filesystem(Box<super::filesystem::FsEvent>),
     Review(
         Box<
             Completion<
@@ -148,6 +151,24 @@ impl Editor {
     }
 
     pub fn request_target(&mut self, target: FileTarget, intent: OpenIntent) {
+        self.remember_directory_view();
+        if target
+            .resource_location()
+            .is_some_and(|location| self.filesystem.blocks(&location))
+        {
+            self.message = "filesystem operation pending or unconfirmed; verify before reopening this resource".into();
+            return;
+        }
+        if matches!(intent, OpenIntent::Refresh) && self.directory().is_some() {
+            if let Err(error) = self.start_directory_task(
+                self.current(),
+                super::directory::DirectoryTask::Reload,
+                None,
+            ) {
+                self.message = error;
+            }
+            return;
+        }
         if matches!(intent, OpenIntent::Refresh) && self.remote_write_blocks_refresh(self.current())
         {
             self.message =
@@ -167,13 +188,12 @@ impl Editor {
         let browse = matches!(
             intent,
             OpenIntent::Browse | OpenIntent::DirectoryParent { .. }
-        );
-        if matches!(target, FileTarget::Local(_))
-            && (browse
-                || matches!(
-                    intent,
-                    OpenIntent::RemoteView { .. } | OpenIntent::RemoteDestination
-                ))
+        ) || (matches!(intent, OpenIntent::Refresh) && self.directory().is_some());
+        if !matches!(target, FileTarget::Remote(_))
+            && matches!(
+                intent,
+                OpenIntent::RemoteView { .. } | OpenIntent::RemoteDestination
+            )
         {
             self.message = "range/tail/follow views require a remote target".into();
             return;
@@ -183,6 +203,12 @@ impl Editor {
             remote => remote,
         };
         self.cancel_open(worker::CancelReason::Superseded);
+        if let FileTarget::Container { container, path } = &path {
+            if !self.containers.attached.contains_key(container.as_str()) {
+                self.attach_container_target(container.clone(), path.clone(), intent);
+                return;
+            }
+        }
         let existing = self.docs.iter().find_map(|(id, document)| {
             (document.matches_target(&path)
                 && document
@@ -192,8 +218,13 @@ impl Editor {
         });
         if let Some(id) = existing.filter(|&id| {
             !matches!(intent, OpenIntent::Refresh)
-                && (!matches!(intent, OpenIntent::Browse | OpenIntent::RemoteDestination)
-                    || self.doc(id).directory_metadata_ref().is_none())
+                && !matches!(path, FileTarget::Container { .. })
+                && (!matches!(
+                    intent,
+                    OpenIntent::Browse
+                        | OpenIntent::DirectoryParent { .. }
+                        | OpenIntent::RemoteDestination
+                ) || self.doc(id).directory_metadata_ref().is_none())
         }) {
             if (requires_file && self.doc(id).directory_metadata_ref().is_some())
                 || (browse && self.doc(id).directory_metadata_ref().is_none())
@@ -242,64 +273,45 @@ impl Editor {
                 return;
             }
         }
-        let client = self.remote_client();
+        let work = open::OpenRead {
+            container: match &path {
+                FileTarget::Container { container, .. } => {
+                    self.containers.attached.get(container.as_str()).cloned()
+                }
+                _ => None,
+            },
+            previous_directories: {
+                let mut previous: Vec<_> = self
+                    .docs
+                    .iter()
+                    .filter_map(|(_, doc)| doc.directory_metadata_ref().cloned())
+                    .collect();
+                for saved in self.directories.views.values() {
+                    if !previous
+                        .iter()
+                        .any(|source| source.location == saved.directory.location)
+                    {
+                        previous.push(saved.directory.clone());
+                    }
+                }
+                previous
+            },
+            target: path,
+            browse,
+            requires_file,
+            selection,
+            client: self.remote_client(),
+            reveal: match &ticket.key.intent {
+                OpenIntent::DirectoryParent { child } => Some(child.clone()),
+                _ => None,
+            },
+        };
         let handle = worker::spawn(
             "strop-open",
             move |outcome| {
                 let _ = tx.send(IoEvent::Open(Box::new(Completion { ticket, outcome })));
             },
-            move |cancel| match path {
-                FileTarget::Local(path) => match Buffer::open(&path) {
-                    Ok(buffer) => {
-                        let canonical = buffer
-                            .file_identity()
-                            .map_or_else(|| path.clone(), ToOwned::to_owned);
-                        Outcome::Success(Opened {
-                            document: Document::new(buffer),
-                            canonical: FileTarget::Local(canonical),
-                        })
-                    }
-                    Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
-                },
-                // Container documents open through :containers owned jobs;
-                // a container FileTarget never reads a local path.
-                FileTarget::Container { .. } => Outcome::failed(
-                    FailureKind::InvalidInput,
-                    "container documents open through :containers".to_string(),
-                ),
-                FileTarget::Remote(location) => match if browse {
-                    client
-                        .list(&location, &cancel)
-                        .map(strop_remote::RemoteResource::Directory)
-                } else {
-                    client.open(&location, selection, &cancel)
-                } {
-                    Ok(strop_remote::RemoteResource::File(snapshot)) => {
-                        let canonical = FileTarget::Remote(snapshot.file.clone().into());
-                        Outcome::Success(Opened {
-                            document: Document::remote_snapshot(*snapshot, selection),
-                            canonical,
-                        })
-                    }
-                    Ok(strop_remote::RemoteResource::Directory(snapshot)) => {
-                        if requires_file {
-                            return Outcome::failed(
-                                FailureKind::InvalidInput,
-                                "range/tail/follow requires a regular file",
-                            );
-                        }
-                        let canonical = FileTarget::Remote(snapshot.directory.clone().into());
-                        Outcome::Success(Opened {
-                            document: Document::remote_directory(snapshot),
-                            canonical,
-                        })
-                    }
-                    Err(error) if error.is_cancellation() => {
-                        Outcome::Cancelled(worker::CancelReason::OwnerClosed)
-                    }
-                    Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
-                },
-            },
+            move |cancel| work.run(&cancel),
         );
         self.worker_handles.insert(request, handle);
     }
@@ -410,16 +422,23 @@ impl Editor {
             OpenIntent::CollectionSource { owner } => self.collection_source_ready(owner),
             intent => {
                 self.switch_to(document);
-                self.set_head(0);
-                self.view_mut().view_top = 0;
+                if self.doc(document).directory_metadata_ref().is_some()
+                    && self.filename_draft(document).is_none()
+                {
+                    self.restore_directory_view(document);
+                } else if self.doc(document).directory_metadata_ref().is_none() {
+                    self.set_head(0);
+                    self.view_mut().view_top = 0;
+                }
                 match intent {
                     OpenIntent::Switch { readonly: true } => self.buf_mut().readonly = true,
                     OpenIntent::DirectoryParent { child } => {
                         if let Some(line) = self
-                            .remote_directory()
+                            .directory()
                             .and_then(|directory| directory.line_for(&child))
                         {
                             self.set_head(self.buf().line_start(line));
+                            self.place_jump_target();
                         }
                     }
                     OpenIntent::AtLine { line } => {
@@ -437,7 +456,7 @@ impl Editor {
                             );
                             self.run_motion("^");
                         } else if view.follow_limit().is_some() {
-                            self.set_head(super::remote::follow::last_position(self.buf().text()));
+                            self.set_head(super::document::last_position(self.buf().text()));
                         }
                         if let Some(limit) = view.follow_limit() {
                             self.start_remote_follow(document, limit);
@@ -457,6 +476,7 @@ impl Editor {
                     }
                     _ => {}
                 }
+                self.remember_directory_view();
                 self.remember_remote_destination();
                 self.discover_git();
                 self.lsp_maybe_attach();
@@ -516,6 +536,8 @@ impl Editor {
             IoEvent::Native(completion) => self.handle_native(*completion),
             IoEvent::Remote(event) => self.handle_remote_event(event),
             IoEvent::Review(completion) => self.handle_review_prepared(*completion),
+            IoEvent::DirectoryFilter(completion) => self.directory_filter_done(*completion),
+            IoEvent::Filesystem(event) => self.handle_filesystem(*event),
             IoEvent::Open(completion) => {
                 let request = completion.ticket.request;
                 if self.io.open.get(&request) != Some(&completion.ticket.key) {
@@ -535,10 +557,12 @@ impl Editor {
                     Outcome::Success(mut opened) => {
                         if matches!(key.intent, OpenIntent::Refresh) {
                             self.revoke_remote_write(key.origin);
-                            self.finish_remote_refresh(key.origin, opened.document);
+                            self.finish_refresh(key.origin, opened.document);
                             return;
                         }
-                        opened.document.set_return_point(self.jump_record());
+                        if !self.cur().matches_target(&opened.canonical) {
+                            opened.document.set_return_point(self.jump_record());
+                        }
                         let existing = self.docs.iter().find_map(|(id, document)| {
                             (document.matches_target(&opened.canonical)
                                 && document
@@ -547,13 +571,12 @@ impl Editor {
                             .then_some(id)
                         });
                         let id = if let Some(id) = existing {
-                            if matches!(
-                                key.intent,
-                                OpenIntent::Browse | OpenIntent::RemoteDestination
-                            ) && self.doc(id).directory_metadata_ref().is_some()
+                            if self.doc(id).directory_metadata_ref().is_some()
+                                || (matches!(key.path, FileTarget::Container { .. })
+                                    && !self.doc(id).buf.dirty)
                             {
                                 if let Err(error) =
-                                    self.publish_remote_snapshot(id, opened.document, false)
+                                    self.publish_source_snapshot(id, opened.document, false)
                                 {
                                     self.message = error.to_string();
                                     return;
@@ -587,7 +610,9 @@ impl Editor {
                                     opened
                                         .document
                                         .directory_metadata_ref()
-                                        .map(|directory| directory.directory.endpoint().clone())
+                                        .and_then(|directory| {
+                                            directory.location.filesystem.endpoint().cloned()
+                                        })
                                 });
                             if let Some(endpoint) = endpoint {
                                 self.workspaces
@@ -607,6 +632,13 @@ impl Editor {
                     Outcome::Failed { failure, .. } => {
                         if let OpenIntent::CollectionSource { owner } = key.intent {
                             self.collection_source_ready(owner);
+                        }
+                        if let Some(source) = self
+                            .docs
+                            .get_mut(key.origin)
+                            .and_then(|doc| doc.directory_metadata_mut())
+                        {
+                            source.stale = Some(failure.message.clone());
                         }
                         self.message = format!("open {}: {}", key.path, failure.message);
                     }
@@ -686,6 +718,8 @@ impl Editor {
     pub fn io_pending(&self) -> bool {
         !self.io.open.is_empty()
             || self.review.preparing.is_some()
+            || !self.directories.filters.is_empty()
+            || self.filesystem.pending()
             || !self.io.saves.is_empty()
             || self.io.session.is_some()
             || !self.io.native.is_empty()
@@ -698,6 +732,7 @@ impl Editor {
         self.io.session == Some(request)
             || self.remote_write_pending(request)
             || self.destination_write_pending(request)
+            || self.filesystem.mutation_pending(request)
             || self
                 .io
                 .saves
@@ -732,6 +767,9 @@ impl Editor {
 }
 
 impl IoState {
+    pub(crate) fn save_pending_for(&self, document: DocumentId) -> bool {
+        self.saves.contains_key(&document)
+    }
     /// In-flight native tickets — tests answer a tape-suppressed
     /// launch by feeding `handle_io` a crafted completion.
     #[cfg(test)]

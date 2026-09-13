@@ -32,7 +32,7 @@ pub enum AppEvent {
     LspAttach(super::lsp::attach::AttachRecord),
     Shell(ShellResult),
     Io(super::io::IoEvent),
-    RemoteCompletion(super::remote_completion::RemoteCompletionEvent),
+    RemoteCompletion(Box<super::remote_completion::RemoteCompletionEvent>),
     Container(super::containers::ContainerEvent),
     Git(super::GitJob),
     Picker(super::picker::PickerEvent),
@@ -68,7 +68,9 @@ impl Editor {
             forward(rx, tx.clone(), AppEvent::Io);
         }
         if let Some(rx) = self.remote_completion.rx.take() {
-            forward(rx, tx.clone(), AppEvent::RemoteCompletion);
+            forward(rx, tx.clone(), |event| {
+                AppEvent::RemoteCompletion(Box::new(event))
+            });
         }
         if let Some(rx) = self.containers.take_rx() {
             forward(rx, tx.clone(), AppEvent::Container);
@@ -139,7 +141,7 @@ impl Editor {
             AppEvent::LspAttach(record) => self.handle_lsp_attach(record),
             AppEvent::Shell(r) => self.handle_shell_result(r),
             AppEvent::Io(event) => self.handle_io(event),
-            AppEvent::RemoteCompletion(event) => self.handle_remote_completion(event),
+            AppEvent::RemoteCompletion(event) => self.handle_remote_completion(*event),
             AppEvent::Container(event) => self.handle_container_event(event),
             AppEvent::Git(job) => self.handle_git_job(job),
             AppEvent::Picker(event) => self.handle_picker_event(event),
@@ -165,6 +167,10 @@ impl Editor {
                 .as_ref()
                 .is_some_and(|glue| glue.picker.streaming || glue.rank_pending.is_some())
             || !self.picker_ranking.retiring.is_empty()
+            || self
+                .picker_source
+                .as_ref()
+                .is_some_and(strop_picker::SourceWorker::busy)
             || self.analysis.pending()
             || self.resolution.pending()
             || self
@@ -198,6 +204,9 @@ impl Editor {
         self.lsp_state.attach.enabled = false;
         self.stop_remote_work();
         self.close_picker();
+        if let Some(source) = self.picker_source.as_ref() {
+            source.close();
+        }
         self.cancel_review_preparation();
         self.analysis.stop();
         self.resolution.stop();
@@ -213,6 +222,18 @@ impl Editor {
             if let Some(handle) = self.worker_handles.remove(&request) {
                 handle.cancel(strop_core::worker::CancelReason::Shutdown);
             }
+        }
+    }
+
+    /// Report admitted effects that did not reach a confirmed shutdown outcome.
+    pub fn take_shutdown_error(&mut self) -> Option<String> {
+        match (
+            self.io.session_error.take(),
+            self.filesystem_shutdown_error(),
+        ) {
+            (Some(session), Some(filesystem)) => Some(format!("{session}\n{filesystem}")),
+            (Some(error), None) | (None, Some(error)) => Some(error),
+            (None, None) => None,
         }
     }
 }

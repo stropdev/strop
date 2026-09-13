@@ -11,6 +11,15 @@ fn text(e: &Editor) -> String {
 }
 
 #[test]
+fn visual_line_change_keeps_the_following_line_and_one_undo_group() {
+    let mut editor = editor_with("one\ntwo\n");
+    editor.feed_text("VcX<esc>");
+    assert_eq!(text(&editor), "X\ntwo\n");
+    editor.feed_text("u");
+    assert_eq!(text(&editor), "one\ntwo\n");
+}
+
+#[test]
 fn named_registers_yank_and_paste() {
     let mut e = editor_with("alpha\nbeta\ngamma\n");
 

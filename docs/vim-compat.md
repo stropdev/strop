@@ -89,6 +89,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 ## leader
 
 - `✓ space |` — pipe line/selection through shell (:! runs)
+- `✓ space e` — reveal source in its Directory buffer
 - `✓ space f` — file finder
 - `✓ space o` — open remote destination
 - `✓ space b` — buffers (MRU)
@@ -100,7 +101,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ space P` — paste clipboard before
 - `✓ space d` — diagnostics picker
 - `✓ space k` — hover docs
-- `✓ space a` — code actions
+- `✓ space a` — context actions (code / filesystem)
 - `✓ space s` — document symbols picker
 - `· space S` — workspace symbols picker (soon)
 - `✓ space j` — jumplist picker
@@ -144,5 +145,6 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ enter` — Search Find: open source; With: prepare review
 - `✓ ctrl-o` — Search: collect included matches
 - `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
-- `✓ :apply-change :cancel-change :save-change` — review: apply buffers, cancel, or save the changed files
+- `✓ :fs :browse :filter` — filesystem actions, namespace-aware browsing and folder filtering
+- `✓ :apply-change :cancel-change :save-change` — review: apply text or filesystem changes, cancel, or save changed text
 - `✓ ctrl-l` — redraw: full repaint when the terminal desyncs

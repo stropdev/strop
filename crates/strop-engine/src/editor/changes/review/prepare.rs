@@ -74,6 +74,10 @@ impl Editor {
             self.message = "Search has no captured scope".into();
             return;
         };
+        if context.scope.root.filesystem != strop_workspace::Filesystem::Local {
+            self.message = "SSH Search is read-only; With and Review are unavailable".into();
+            return;
+        }
         if glue.picker.streaming || glue.rank_pending.is_some() || glue.picker.error.is_some() {
             self.message =
                 "Search dataset is incomplete; finish or refresh it before Review".into();
@@ -288,15 +292,25 @@ fn prepare(input: Input, cancel: &worker::CancelToken) -> Outcome<PreparedReview
             continue;
         }
         if let strop_picker::Payload::Grep {
-            path,
+            location,
             line,
             col,
             match_len,
             line_text,
         } = &item.payload
         {
+            if location.filesystem != strop_workspace::Filesystem::Local
+                || input.scope.root.filesystem != strop_workspace::Filesystem::Local
+                || !location.path.is_absolute()
+                || !location.path.starts_with(&input.scope.root.path)
+            {
+                return Outcome::failed(
+                    worker::FailureKind::Unavailable,
+                    "replacement source is outside its local review scope",
+                );
+            }
             groups
-                .entry(input.scope.root.path.join(path))
+                .entry(location.path.clone())
                 .or_default()
                 .push(ReplacementHit {
                     line: *line,

@@ -9,7 +9,11 @@ use strop_workspace::RemoteFile;
 const VERSION: u8 = 1;
 const HEADER_LIMIT: usize = 16 * 1024;
 const REPLY_LIMIT: usize = 64 * 1024;
-const HELPER: &str = include_str!("helper.py");
+pub(super) const HELPER: &str = concat!(
+    include_str!("../protected.py"),
+    "\n",
+    include_str!("helper.py")
+);
 
 #[derive(Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]

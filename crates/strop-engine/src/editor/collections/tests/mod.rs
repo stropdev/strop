@@ -46,7 +46,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
             badge: None,
             text: "a.txt:1: alpha one".into(),
             payload: Payload::Grep {
-                path: a.clone(),
+                location: strop_workspace::ResourceLocation::local(a.clone()),
                 line: 1,
                 col: 1,
                 match_len: 5,
@@ -57,7 +57,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
             badge: None,
             text: "b.txt:2: beta two".into(),
             payload: Payload::Grep {
-                path: b.clone(),
+                location: strop_workspace::ResourceLocation::local(b.clone()),
                 line: 2,
                 col: 1,
                 match_len: 4,
@@ -206,7 +206,7 @@ fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
         badge: None,
         text: "hit".into(),
         payload: Payload::Grep {
-            path: path.to_path_buf(),
+            location: strop_workspace::ResourceLocation::local(path.to_path_buf()),
             line: 1,
             col: 1,
             match_len: 3,
@@ -284,7 +284,7 @@ fn unopened_sources_load_in_the_background_and_assemble() {
         badge: None,
         text: "hit".into(),
         payload: Payload::Grep {
-            path: a.clone(),
+            location: strop_workspace::ResourceLocation::local(a.clone()),
             line: 1,
             col: 1,
             match_len: 3,
@@ -334,7 +334,7 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
             badge: None,
             text: "local".into(),
             payload: Payload::Grep {
-                path: a.clone(),
+                location: strop_workspace::ResourceLocation::local(a.clone()),
                 line: 1,
                 col: 1,
                 match_len: 3,
@@ -387,7 +387,7 @@ fn relative_startup_path_collects_all_hits() {
             badge: None,
             text: "a.txt:1".into(),
             payload: Payload::Grep {
-                path: root.join("a.txt"),
+                location: strop_workspace::ResourceLocation::local(root.join("a.txt")),
                 line: 1,
                 col: 1,
                 match_len: 6,
@@ -398,7 +398,7 @@ fn relative_startup_path_collects_all_hits() {
             badge: None,
             text: "b.txt:1".into(),
             payload: Payload::Grep {
-                path: root.join("b.txt"),
+                location: strop_workspace::ResourceLocation::local(root.join("b.txt")),
                 line: 1,
                 col: 1,
                 match_len: 6,
@@ -650,7 +650,7 @@ fn collection_loads_unopened_sources_in_the_background() {
             badge: None,
             text: "a.txt:1".into(),
             payload: Payload::Grep {
-                path: a.clone(),
+                location: strop_workspace::ResourceLocation::local(a.clone()),
                 line: 1,
                 col: 1,
                 match_len: 3,
@@ -661,7 +661,7 @@ fn collection_loads_unopened_sources_in_the_background() {
             badge: None,
             text: "b.txt:1".into(),
             payload: Payload::Grep {
-                path: b.clone(),
+                location: strop_workspace::ResourceLocation::local(b.clone()),
                 line: 1,
                 col: 1,
                 match_len: 3,
@@ -703,7 +703,7 @@ fn one_card_per_file_with_gap_rows() {
             text: "a.txt:3".into(),
             badge: None,
             payload: Payload::Grep {
-                path: a.clone(),
+                location: strop_workspace::ResourceLocation::local(a.clone()),
                 line: 3,
                 col: 1,
                 match_len: 5,
@@ -714,7 +714,7 @@ fn one_card_per_file_with_gap_rows() {
             text: "a.txt:10".into(),
             badge: None,
             payload: Payload::Grep {
-                path: a.clone(),
+                location: strop_workspace::ResourceLocation::local(a.clone()),
                 line: 10,
                 col: 1,
                 match_len: 5,

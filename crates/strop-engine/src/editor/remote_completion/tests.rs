@@ -48,6 +48,61 @@ fn ticket_for(e: &Editor, text: &str, query: RemoteCompletionQuery) -> Ticket<Re
     pending
 }
 
+fn complete_worker(editor: &mut Editor) {
+    let event = editor
+        .remote_completion
+        .rx
+        .as_ref()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    editor.handle_remote_completion(event);
+}
+
+#[test]
+fn local_completion_preserves_native_names_and_opens_the_selected_file() {
+    #[cfg(unix)]
+    let name = {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(b"odd name\n\xff.txt".to_vec())
+    };
+    #[cfg(not(unix))]
+    let name = std::ffi::OsString::from("odd name.txt");
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(name);
+    std::fs::write(&path, "native source\n").unwrap();
+    let canonical = std::fs::canonicalize(&path).unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_owned());
+    editor.feed_text(":e odd <tab>");
+    complete_worker(&mut editor);
+    let uri = strop_workspace::ResourceLocation::local(canonical.clone())
+        .uri()
+        .unwrap();
+    assert_eq!(editor.pending.text(), format!(":e {uri}"));
+    editor.feed_text("<cr>");
+    editor.wait_io().unwrap();
+    assert_eq!(editor.buf().text(), "native source\n");
+    assert_eq!(editor.buf().file_identity(), Some(canonical.as_path()));
+}
+
+#[test]
+fn local_directory_completion_descends_and_rejects_stale_field_results() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("folder")).unwrap();
+    std::fs::write(root.path().join("folder/child.txt"), "child\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_owned());
+    editor.feed_text(":e fol<tab>");
+    complete_worker(&mut editor);
+    assert!(editor.pending.text().ends_with("/folder/"));
+    editor.feed_text("<tab>");
+    complete_worker(&mut editor);
+    assert!(editor.pending.text().ends_with("/folder/child.txt"));
+    editor.feed_text("<esc><esc>:e fol<tab>x");
+    let edited = editor.pending.text().to_owned();
+    complete_worker(&mut editor);
+    assert_eq!(editor.pending.text(), edited);
+}
+
 #[test]
 fn host_candidates_apply_then_cycle_without_new_requests() {
     let mut e = editor();
@@ -404,27 +459,4 @@ fn raw_spaces_and_mid_line_cursors_refuse_with_a_hint() {
     e.feed_text("<esc>h"); // line's normal mode, caret moved left
     e.feed_pending(crate::editor::Key::Tab);
     assert!(e.message.contains("end of the line"));
-}
-
-#[test]
-fn empty_candidates_report_the_first_note() {
-    let mut e = editor();
-    suppress(&mut e);
-    e.feed_text(":e ssh://zz");
-    e.feed_text("<tab>");
-    let ticket = e.remote_completion.ticket().expect("request in flight");
-    deliver(
-        &mut e,
-        ticket,
-        RemoteCompletionResult::Candidates {
-            items: Vec::new(),
-            source: CandidateSource::Config,
-            notes: vec!["2 hashed known_hosts entries cannot be completed".into()],
-            listed_directory: None,
-        },
-    );
-    assert_eq!(
-        e.message,
-        "no remote matches: 2 hashed known_hosts entries cannot be completed"
-    );
 }

@@ -18,8 +18,8 @@ pub enum DocumentSource {
     Scratch,
     /// An in-memory SSH document; write authority is explicit and never local.
     Remote(Box<super::RemoteDocument>),
-    /// A remote directory's real, read-only listing buffer.
-    RemoteDirectory(Box<super::RemoteDirectory>),
+    /// One namespace-aware directory listing or filename draft.
+    Directory(Box<super::Directory>),
     /// A file inside a container: readonly (DC1b refuses writes); the
     /// path names the container's filesystem — never a local path.
     Container {

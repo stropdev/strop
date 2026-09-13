@@ -4,6 +4,9 @@ use std::sync::{
     Arc,
 };
 
+mod effect;
+pub use effect::spawn_effect;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct WorkerId(u64);
@@ -209,59 +212,102 @@ impl Drop for CancelHandle {
         }
     }
 }
+/// A registered work envelope without an eagerly spawned thread.
+/// Retain a cancellation handle until it runs or is explicitly cancelled.
+#[must_use]
+pub struct PreparedWork<T> {
+    token: CancelToken,
+    emitter: Emitter<T>,
+}
+
+pub fn prepare<T: Send + 'static>(
+    emit: impl FnOnce(Outcome<T>) + Send + 'static,
+) -> PreparedWork<T> {
+    PreparedWork {
+        token: CancelToken(Arc::new(Cancellation::default())),
+        emitter: Arc::new(Mutex::new(Some(Box::new(emit)))),
+    }
+}
+
+impl<T: Send + 'static> PreparedWork<T> {
+    /// Additional guards share one terminal reservation; dropping any live guard
+    /// cancels the work. A scheduler can retain its own guard while the UI owns one.
+    pub fn cancel_handle(&self) -> CancelHandle {
+        let cancel_token = self.token.clone();
+        let cancel_emitter = self.emitter.clone();
+        CancelHandle {
+            cancel: Some(Box::new(move |reason| {
+                let emit = cancel_emitter.lock().take();
+                if let Some(emit) = emit {
+                    let outcome = match cancel_token.cancel_resource() {
+                        Ok(()) => Outcome::Cancelled(reason),
+                        Err(failure) => Outcome::Failed {
+                            failure,
+                            partial: None,
+                        },
+                    };
+                    emit(outcome);
+                }
+            })),
+        }
+    }
+
+    pub fn run(self, work: impl FnOnce(CancelToken) -> Outcome<T>) {
+        if self.token.is_cancelled() {
+            return;
+        }
+        let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            work(self.token.clone())
+        })) {
+            Ok(outcome) => outcome,
+            Err(_) => match self.token.cancel_resource() {
+                Ok(()) => Outcome::failed(FailureKind::Panic, "worker panicked"),
+                Err(failure) => Outcome::Failed {
+                    failure,
+                    partial: None,
+                },
+            },
+        };
+        self.token.clear_cancel_resource();
+        finish(&self.emitter, outcome);
+    }
+}
+
 pub fn spawn<T: Send + 'static>(
     name: &'static str,
     emit: impl FnOnce(Outcome<T>) + Send + 'static,
     work: impl FnOnce(CancelToken) -> Outcome<T> + Send + 'static,
 ) -> CancelHandle {
-    let token = CancelToken(Arc::new(Cancellation::default()));
-    let emitter: Emitter<T> = Arc::new(Mutex::new(Some(Box::new(emit))));
-    let cancel_token = token.clone();
-    let cancel_emitter = emitter.clone();
-    let handle = CancelHandle {
-        cancel: Some(Box::new(move |reason| {
-            // Reservation is the terminal linearization point. No lock is held
-            // across cleanup or publication, and success cannot overtake cleanup.
-            let emit = cancel_emitter.lock().take();
-            if let Some(emit) = emit {
-                let outcome = match cancel_token.cancel_resource() {
-                    Ok(()) => Outcome::Cancelled(reason),
-                    Err(failure) => Outcome::Failed {
-                        failure,
-                        partial: None,
-                    },
-                };
-                emit(outcome);
-            }
-        })),
-    };
-    let worker_emitter = emitter.clone();
-    let started = std::thread::Builder::new()
+    let prepared = prepare(emit);
+    let handle = prepared.cancel_handle();
+    let emitter = prepared.emitter.clone();
+    if let Err(error) = std::thread::Builder::new()
         .name(name.into())
-        .spawn(move || {
-            if token.is_cancelled() {
-                return;
-            }
-            let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                work(token.clone())
-            })) {
-                Ok(outcome) => outcome,
-                Err(_) => {
-                    // Resource owners should also use RAII. This catches resources
-                    // whose work panicked before it could perform normal cleanup.
-                    match token.cancel_resource() {
-                        Ok(()) => Outcome::failed(FailureKind::Panic, "worker panicked"),
-                        Err(failure) => Outcome::Failed {
-                            failure,
-                            partial: None,
-                        },
-                    }
-                }
-            };
-            token.clear_cancel_resource();
-            finish(&worker_emitter, outcome);
-        });
-    if let Err(error) = started {
+        .spawn(move || prepared.run(work))
+    {
+        finish(
+            &emitter,
+            Outcome::failed(FailureKind::ThreadStart, error.to_string()),
+        );
+    }
+    handle
+}
+
+/// Scoped readers use the same envelope, and their scope joins them before a
+/// provider can release physical ownership or start its successor.
+pub fn spawn_scoped<'scope, 'env, T: Send + 'static>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    name: &'static str,
+    emit: impl FnOnce(Outcome<T>) + Send + 'static,
+    work: impl FnOnce(CancelToken) -> Outcome<T> + Send + 'scope,
+) -> CancelHandle {
+    let prepared = prepare(emit);
+    let handle = prepared.cancel_handle();
+    let emitter = prepared.emitter.clone();
+    if let Err(error) = std::thread::Builder::new()
+        .name(name.into())
+        .spawn_scoped(scope, move || prepared.run(work))
+    {
         finish(
             &emitter,
             Outcome::failed(FailureKind::ThreadStart, error.to_string()),
@@ -339,5 +385,58 @@ mod tests {
         assert!(matches!(rx.recv().unwrap(), Outcome::Success(7)));
         drop(handle);
         assert!(rx.recv().is_err());
+    }
+
+    #[test]
+    fn queued_cancellation_prevents_work_from_starting() {
+        let (tx, rx) = channel();
+        let prepared: PreparedWork<()> = prepare(move |outcome| {
+            tx.send(outcome).unwrap();
+        });
+        prepared.cancel_handle().cancel(CancelReason::Superseded);
+        prepared.run(|_| panic!("cancelled queued work executed"));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            Outcome::Cancelled(CancelReason::Superseded)
+        ));
+        assert!(rx.recv().is_err());
+    }
+
+    #[test]
+    fn scoped_worker_cancellation_does_not_skip_physical_join() {
+        let (control_tx, control_rx) = channel();
+        let (entered_tx, entered_rx) = channel();
+        let (release_tx, release_rx) = channel();
+        let (exited_tx, exited_rx) = channel();
+        let (tx, rx) = channel();
+        let scope_owner = std::thread::spawn(move || {
+            std::thread::scope(|scope| {
+                let handle = spawn_scoped(
+                    scope,
+                    "scoped-reader",
+                    move |outcome| {
+                        tx.send(outcome).unwrap();
+                    },
+                    move |_| {
+                        entered_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        Outcome::Success(())
+                    },
+                );
+                assert!(control_tx.send(handle).is_ok());
+            });
+            exited_tx.send(()).unwrap();
+        });
+        let handle = control_rx.recv().unwrap();
+        entered_rx.recv().unwrap();
+        handle.cancel(CancelReason::Dismissed);
+        assert!(matches!(
+            rx.recv().unwrap(),
+            Outcome::Cancelled(CancelReason::Dismissed)
+        ));
+        assert!(exited_rx.try_recv().is_err());
+        release_tx.send(()).unwrap();
+        exited_rx.recv().unwrap();
+        scope_owner.join().unwrap();
     }
 }

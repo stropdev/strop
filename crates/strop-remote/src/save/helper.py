@@ -1,40 +1,20 @@
 """Fixed owned save helper. Inputs are framed data, never executable text."""
 import errno
-import fcntl
-import hashlib
 import json
-import os
 import secrets
 import signal
-import stat
 import struct
 import sys
 import time
-import unicodedata
 
 VERSION = 1
 MAX_BYTES = 256 * 1024 * 1024
 MAX_HEADER = 16 * 1024
 MAX_ATTRIBUTES = 64 * 1024
-MAX_ENTRIES = 100_000
 CHUNK = 64 * 1024
-LOCK_PREFIX = b'.strop-lock-'
 STAGE_PREFIX = b'.strop-save-'
 
 
-class Refusal(Exception):
-    def __init__(self, kind, detail):
-        self.kind = kind
-        self.detail = detail
-        super().__init__(detail)
-
-
-class ResolveLink(Exception):
-    """An intermediate directory component is a symlink; carries the
-    spliced absolute path to restart the no-follow walk with."""
-    def __init__(self, path):
-        super().__init__(path)
-        self.path = path
 
 
 
@@ -46,28 +26,6 @@ for termination_signal in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
     signal.signal(termination_signal, terminated)
 
 
-def reserved(component):
-    normalized = unicodedata.normalize('NFKC', os.fsdecode(component)).casefold()
-    return normalized.startswith(('.strop-lock-', '.strop-save-'))
-
-
-def exact_name(directory, name):
-    # Exact directory-entry spelling gives one stable basename key even on a
-    # filesystem which also accepts case/normalization aliases.
-    with os.scandir(directory) as entries:
-        for count, entry in enumerate(entries):
-            if count >= MAX_ENTRIES:
-                raise Refusal('unsupported', 'directory spelling check exceeds 100000 entries')
-            stored = os.fsencode(entry.name)
-            if stored == name:
-                if reserved(stored):
-                    raise Refusal('invalid_path', 'remote-save control paths are reserved')
-                return
-    raise Refusal('invalid_path', 'use exact stored path spelling; reopen through the directory browser')
-
-
-def identity(info):
-    return info.st_dev, info.st_ino
 
 
 def file_info(info):
@@ -146,109 +104,27 @@ def preserves(current, expected):
                ('device', 'mode', 'uid', 'gid', 'mtime_ns', 'attributes'))
 
 
-class Transaction:
+class Transaction(PathScope):
     def __init__(self, path):
-        self.descriptors = []
-        self.bindings = []
-        self.parent = None
+        super().__init__(path)
         self.target = None
-        self.lock = None
         self.stage_directory = None
         self.stage_name = None
         self.stage_identity = None
         self.stage = None
         self.commit_started = False
-        self.path = path
-
-    def own(self, descriptor):
-        self.descriptors.append(descriptor)
-        return descriptor
-
-    MAX_LINK_HOPS = 40
 
     def open(self):
-        if not self.path.startswith(b'/') or b'\0' in self.path:
-            raise Refusal('invalid_path', 'an absolute native path is required')
-        components = [part for part in self.path.split(b'/') if part]
-        if not components or any(part in (b'.', b'..') or reserved(part) for part in components):
-            raise Refusal('invalid_path', 'canonical non-control path components are required')
-        path = self.path
-        for _ in range(self.MAX_LINK_HOPS):
-            try:
-                self.walk(path)
-                return
-            except ResolveLink as resolution:
-                path = resolution.path
-        raise Refusal('invalid_path', 'too many symbolic links in the path')
-
-    def walk(self, path):
-        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-        todo = [part for part in path.split(b'/') if part and part != b'.']
-        parent = self.own(os.open(b'/', flags))
-        done = []
-        bindings = []
-        while len(todo) > 1:
-            component = todo[0]
-            # '..' reaches this walk only through a symlink target; the
-            # kernel resolves it against the real directory, which is
-            # correct even across further symlinks. It is not a stored
-            # entry, so exact_name does not apply.
-            if component != b'..':
-                if reserved(component):
-                    raise Refusal('invalid_path', 'canonical non-control path components are required')
-                exact_name(parent, component)
-            try:
-                child = self.own(os.open(component, flags, dir_fd=parent))
-            except OSError as failure:
-                if failure.errno not in (errno.ENOTDIR, errno.ELOOP):
-                    raise
-                info = os.stat(component, dir_fd=parent, follow_symlinks=False)
-                if not stat.S_ISLNK(info.st_mode):
-                    raise Refusal('invalid_path', 'a path component is not a directory')
-                # A symlinked intermediate directory (NFS-mounted home
-                # directories are the norm on enterprise hosts): resolve
-                # it, then restart the walk from the root so every opened
-                # ancestor remains a verified real directory. The final
-                # component still opens O_NOFOLLOW below — writing a
-                # symlink target stays refused. revalidate() re-stats
-                # every binding before commit, so a component swapped
-                # after this walk is a conflict, never a silent redirect.
-                target = os.readlink(component, dir_fd=parent)
-                if not target.startswith(b'/'):
-                    target = b'/' + b'/'.join(done) + b'/' + target
-                raise ResolveLink(target + b'/' + b'/'.join(todo[1:]))
-            bindings.append((parent, component, child))
-            done.append(component)
-            todo = todo[1:]
-            parent = child
-        self.bindings = bindings
-        self.parent = parent
-        self.name = todo[0]
-        if self.name == b'..' or reserved(self.name):
-            raise Refusal('invalid_path', 'canonical non-control path components are required')
-        exact_name(parent, self.name)
-        self.lock_name = LOCK_PREFIX + hashlib.sha256(self.name).hexdigest().encode('ascii')
-        self.lock = self.own(os.open(self.lock_name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600, dir_fd=parent))
-        info = os.fstat(self.lock)
-        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
-                info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600):
-            raise Refusal('permission', 'save lock is not a private owned single-link file')
-        try:
-            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise Refusal('busy', 'another remote-save participant holds this file')
-        self.target = self.own(os.open(self.name, os.O_RDWR | os.O_NOFOLLOW, dir_fd=parent))
+        self.open_parent()
+        exact_name(self.parent, self.name)
+        self.acquire_lock()
+        self.target = self.own(os.open(self.name, os.O_RDWR | os.O_NOFOLLOW, dir_fd=self.parent))
         validate_file(os.fstat(self.target))
         self.revalidate()
 
     def revalidate(self, target=None):
-        for parent, name, child in self.bindings:
-            current = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            if not stat.S_ISDIR(current.st_mode) or identity(current) != identity(os.fstat(child)):
-                raise Refusal('conflict', 'a parent directory changed identity')
-        lock = os.stat(self.lock_name, dir_fd=self.parent, follow_symlinks=False)
-        if identity(lock) != identity(os.fstat(self.lock)) or lock.st_nlink != 1:
-            raise Refusal('conflict', 'save lock changed identity')
+        self.revalidate_parents()
+        self.revalidate_lock()
         current = os.stat(self.name, dir_fd=self.parent, follow_symlinks=False)
         descriptor = self.target if target is None else target
         validate_file(current)

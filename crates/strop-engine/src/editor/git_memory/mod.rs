@@ -251,7 +251,7 @@ impl Editor {
         if key == Key::Esc {
             self.cancel_remote_write(self.current());
             self.stop_remote_follow(self.current());
-            self.cancel_remote_filter(self.current());
+            self.cancel_directory_filter(self.current());
             self.walker.clear();
             return;
         }
@@ -273,10 +273,7 @@ impl Editor {
         if !self.walker.is_ground() {
             return self.feed_command(key);
         }
-        if self.remote_directory_key(key) {
-            return;
-        }
-        if self.container_key(key) {
+        if self.directory_key(key) {
             return;
         }
         match key {

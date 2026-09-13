@@ -5,6 +5,8 @@
 //! project search results, even with `ignored:include`.
 
 use std::path::Path;
+pub(super) const PATH_LIMIT: usize = 100_000;
+pub(super) const PATH_BYTES: usize = 16 * 1024 * 1024;
 
 /// Portable display/search spelling; the native path remains the I/O identity.
 pub fn display_path(path: &Path) -> std::borrow::Cow<'_, str> {

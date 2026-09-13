@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 
 use strop_core::worker::{CancelHandle, CancelReason, Load, Ticket, WorkerId};
-use strop_picker::{spawn_files, GrepWorker, Item, Kind, Payload, Picker, PickerMsg};
+use strop_picker::{Item, Kind, Payload, Picker, PickerMsg};
 
 use super::{Editor, Key};
 
@@ -55,31 +55,15 @@ pub struct PickerEvent {
 }
 
 /// One supervised preview read: the picker instance it serves and the
-/// native path being read.
+/// namespace-qualified resource being read.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PreviewKey {
     pub picker: PickerId,
-    #[serde(with = "strop_core::path_serde")]
-    pub path: PathBuf,
+    pub path: strop_workspace::ResourceLocation,
 }
 
 /// The terminal result of a preview request.
 pub type PreviewResult = strop_core::worker::Completion<PreviewKey, preview::PreparedPreview>;
-
-/// The live worker behind a streaming request.
-pub(crate) enum PickerWorker {
-    Files(CancelHandle),
-    Grep(GrepWorker),
-}
-
-impl PickerWorker {
-    pub(crate) fn cancel(self, reason: CancelReason) {
-        match self {
-            PickerWorker::Files(handle) => handle.cancel(reason),
-            PickerWorker::Grep(worker) => worker.cancel(reason),
-        }
-    }
-}
 
 pub struct PickerGlue {
     pub picker: Picker,
@@ -90,7 +74,7 @@ pub struct PickerGlue {
     /// Headless only: the active request's raw stream (the TUI gets a
     /// ticket-stamping bridge at launch instead).
     pub(crate) rx: Option<(Ticket<PickerKey>, Receiver<PickerMsg>)>,
-    pub(crate) worker: Option<PickerWorker>,
+    pub(crate) worker: Option<CancelHandle>,
     pub(crate) lsp_context: Option<strop_lsp::ReplyContext>,
     pub(crate) rank_worker: Option<strop_picker::RankingWorker<ranking::Key>>,
     pub rank_pending: Option<Ticket<ranking::Key>>,
@@ -205,6 +189,10 @@ impl Editor {
     }
 
     pub fn open_picker(&mut self, kind: Kind) {
+        if kind == Kind::FilesystemActions {
+            self.open_filesystem_actions();
+            return;
+        }
         if kind == Kind::Search {
             self.open_search(false);
             return;
@@ -252,6 +240,9 @@ impl Editor {
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
             Kind::SearchOptions => unreachable!("search options build their own items"),
             Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
+            Kind::FilesystemActions => {
+                unreachable!("filesystem actions build their own captured selector")
+            }
             Kind::Symbols => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
@@ -317,25 +308,24 @@ impl Editor {
         )));
     }
 
-    /// Hand a launched request's stream to the app event loop (TUI) or
-    /// keep it for the headless drain.
-    fn attach_picker_stream(&mut self, ticket: Ticket<PickerKey>, rx: Receiver<PickerMsg>) {
-        let Some(app_tx) = self.app_tx.clone() else {
-            if let Some(glue) = self.picker.as_mut() {
-                glue.rx = Some((ticket, rx));
-            }
-            return;
-        };
-        if let Err(error) = drain::forward_picker_stream(rx, ticket.clone(), app_tx) {
-            // the bridge thread could not start: settle the request now
-            self.handle_picker_event(PickerEvent {
-                ticket,
-                msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
-                    strop_core::worker::FailureKind::ThreadStart,
-                    format!("picker bridge: {error}"),
-                )),
+    /// Register headless delivery before launch, or stamp directly onto the live
+    /// app queue. Source restarts never allocate per-request bridge threads.
+    fn picker_source_sink(&mut self, ticket: Ticket<PickerKey>) -> strop_picker::SourceSink {
+        if let Some(app_tx) = self.app_tx.clone() {
+            return strop_picker::SourceSink::new(move |msg| {
+                app_tx
+                    .send(super::events::AppEvent::Picker(PickerEvent {
+                        ticket: ticket.clone(),
+                        msg,
+                    }))
+                    .is_ok()
             });
         }
+        let (tx, rx) = channel();
+        if let Some(glue) = self.picker.as_mut() {
+            glue.rx = Some((ticket, rx));
+        }
+        tx.into()
     }
 
     /// Connect-time: hand any already-registered headless stream to
@@ -343,7 +333,15 @@ impl Editor {
     pub(crate) fn connect_picker_stream(&mut self, tx: &super::events::EventSender) {
         if let Some(glue) = &mut self.picker {
             if let Some((ticket, rx)) = glue.rx.take() {
-                let _ = drain::forward_picker_stream(rx, ticket, tx.clone());
+                if let Err(error) = drain::forward_picker_stream(rx, ticket.clone(), tx.clone()) {
+                    let _ = tx.send(super::events::AppEvent::Picker(PickerEvent {
+                        ticket,
+                        msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
+                            strop_core::worker::FailureKind::ThreadStart,
+                            format!("picker bridge: {error}"),
+                        )),
+                    }));
+                }
             }
         }
     }
@@ -357,6 +355,7 @@ impl Editor {
         };
         glue.revoke(CancelReason::OwnerClosed);
         self.revoke_remote_chooser(glue.id);
+        self.revoke_filesystem_actions(glue.id);
         self.revoke_picker_previews(glue.id);
         if glue.rank_alive {
             self.picker_ranking.retiring.insert(glue.id);
@@ -458,7 +457,16 @@ impl Editor {
                 }
             }
             Key::Enter => self.accept_current_picker(),
-            Key::Tab | Key::Backtab if replace => glue.picker.toggle_field(),
+            Key::Tab | Key::Backtab if replace => {
+                if glue.search.as_ref().is_some_and(|context| {
+                    context.scope.root.filesystem != strop_workspace::Filesystem::Local
+                }) {
+                    self.message =
+                        "SSH Search is read-only; With and Review are unavailable".into();
+                } else {
+                    glue.picker.toggle_field();
+                }
+            }
             // ctrl-o: the listed hits become an editable collection (0044).
             Key::CtrlO => self.open_collection_from_picker(),
             Key::CtrlD if search => {
@@ -619,6 +627,15 @@ impl Editor {
             self.accept_indent_choice(document, choice, &draft);
             return;
         }
+        if glue.picker.kind == Kind::FilesystemActions {
+            let Some(Payload::FilesystemAction(index)) = payload else {
+                self.message = "no matching filesystem action".into();
+                return;
+            };
+            let picker = glue.id;
+            self.accept_filesystem_action(picker, index);
+            return;
+        }
         let Some(payload) = payload else {
             self.message = "no matching entries".into();
             return;
@@ -652,13 +669,13 @@ pub struct PreviewEntry {
 
 pub enum PreviewSource {
     Buffer(strop_core::id::DocumentId),
-    Cached(PathBuf),
+    Cached(strop_workspace::ResourceLocation),
     Loading,
     Failed(String),
     Cancelled(CancelReason),
 }
 
-pub type Previews = HashMap<PathBuf, PreviewEntry>;
+pub type Previews = HashMap<strop_workspace::ResourceLocation, PreviewEntry>;
 
 /// One jumplist row; dead documents drop out (0047 §2). The payload
 /// stays a plain destination — accepting a menu entry is a NEW jump

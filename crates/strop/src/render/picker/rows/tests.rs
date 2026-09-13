@@ -7,7 +7,7 @@ fn sym(name: &str, container: &str, line: usize, kind: &str) -> Item {
         badge: Some(kind.into()),
         text: format!("{name}  {container} · :{line}"),
         payload: Payload::Grep {
-            path: PathBuf::from("/p/net.cpp"),
+            location: strop_workspace::ResourceLocation::local(PathBuf::from("/p/net.cpp")),
             line,
             col: 1,
             match_len: 1,
@@ -46,7 +46,7 @@ fn grep_item(path: &str, line: usize, col: usize, len: usize, text: &str) -> Ite
         badge: None,
         text: text.into(),
         payload: Payload::Grep {
-            path: PathBuf::from(path),
+            location: strop_workspace::ResourceLocation::local(PathBuf::from(path)),
             line,
             col,
             match_len: len,

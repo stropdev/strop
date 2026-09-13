@@ -155,7 +155,7 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
         badge: None,
         text: text.into(),
         payload: strop_picker::Payload::Grep {
-            path: path.to_path_buf(),
+            location: strop_workspace::ResourceLocation::local(path.to_path_buf()),
             line,
             col: 1,
             match_len: 2,

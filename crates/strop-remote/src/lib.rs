@@ -6,6 +6,7 @@
 //! this crate is the transport and behavior over them.
 mod client;
 mod exec;
+pub mod filesystem;
 mod hosts;
 mod pool;
 pub mod save;
@@ -19,9 +20,9 @@ pub use client::{
     RemoteEntryKind, RemotePermissions, RemoteResource, RemoteSnapshot,
 };
 pub use exec::{
-    command, command_supervised, run, run_with_input, CommandOutput, RemoteCommand,
-    RemoteCommandError, RemoteExitStatus, RemoteProgram, StdinMode, SupervisionKey,
-    SupervisionOutcome,
+    command, command_supervised, run, run_with_input, stream, CommandOutput, RemoteCommand,
+    RemoteCommandError, RemoteExitStatus, RemoteProgram, RemoteStreamError, RemoteStreamOutput,
+    StdinMode, SupervisionKey, SupervisionOutcome,
 };
 pub use hosts::{enumerate_hosts, CandidateOrigin, HostCandidate, HostEnumeration, HostSources};
 pub use selection::{

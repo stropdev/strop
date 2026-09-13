@@ -70,9 +70,9 @@ navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish
 
 ## Workspace search and source editing
 
-`Space f`, `Space /`, and the Find field of `Space R` share one local-workspace
-query language. Bare file queries are fuzzy; content queries are literal unless
-you explicitly choose `regex:`:
+`Space f`, `Space /`, and the Find field of `Space R` share one query language.
+File finding is local; Search also supports explicitly scoped SSH directories.
+Bare file queries are fuzzy; content queries are literal unless you choose `regex:`:
 
 ```text
 language:rust
@@ -101,10 +101,15 @@ individual decisions. Excluded hits remain visible in both presentations.
 failed dataset cannot silently become a whole-project operation.
 
 Opening a source hides Search; `Space /` returns to the retained investigation.
-Re-entry refreshes through owned work in its captured local scope, even if focus
+Re-entry refreshes through owned work in its captured namespace/root, even if focus
 or cwd changed. Only unchanged source witnesses regain exclusions and selection;
-lost decisions are reported. Remote/container project Search is not implemented:
-unsupported explicit scopes refuse rather than searching an analogous local path.
+lost decisions are reported. In a Directory buffer, **`:fs search`** or
+**Space a → Search here** captures that directory without changing cwd.
+SSH search requires a supported POSIX/Python host with `rg`; unavailable execution
+is reported rather than searching local files or downloading the tree.
+SSH results retain their host identity through preview, opening and Collect.
+**With/Review are unavailable in SSH scopes**; individual remote write permits do
+not authorize project replacement. Container Search here remains unsupported.
 
 Review preparation is cancellable background work. `:apply-change` edits buffers;
 `:save-change` separately saves the changed files and opens a per-file receipt.
@@ -122,6 +127,68 @@ closes the view only after its admitted saves confirm.
 Changing indentation settings never rewrites existing bytes. The modeline names
 the effective input owner and source setting. Matching delimiters use the same
 cancellable source resolver as `%`, without moving the view.
+
+## Filesystem workspace
+
+Open a directory with `strop DIRECTORY`, `:browse`, or `:e DIRECTORY`.
+`Space e` reveals the current source in its parent. Browsing keeps the process
+cwd unchanged; Enter opens a structured entry and `-`/Backspace goes to its
+parent. Directory-local `Space a` opens filesystem actions.
+
+Filesystem mutations use **Review → Apply → Receipt**, locally and on supported
+POSIX/Python SSH hosts:
+
+```vim
+:fs create nested/new.txt
+:fs mkdir new-directory
+:fs rename new-name.txt
+:fs move destination-directory
+:fs copy stored stored-copy.txt
+:fs copy buffer edited-copy.txt
+:fs trash
+:fs remove
+:apply-change
+:cancel-change
+:fs operations
+:fs verify OPERATION STEP
+:fs undo OPERATION STEP
+```
+
+Relative filesystem destinations use the current Directory, or the current
+source's parent; source-less buffers use the workspace root. Explicit resource
+URIs select another namespace. Creation never truncates an occupied name;
+rename/move is no-clobber. Review lists missing-parent creation explicitly.
+Stored-copy and buffer-copy select different versions without saving the source.
+Trash uses native recovery facilities where supported; remote Trash is
+unavailable, not an alias for permanent removal. Recursive removal of non-empty
+directories and unsafe alias/root operations are refused.
+
+`:fs edit` enters a name-only **filename draft**. Ordinary motions, edits,
+whole-line yank/paste, undo/redo and macros change the draft, not disk.
+`:w` prepares review; `:apply-change` performs filesystem changes;
+`:cancel-change` returns to the intact draft. Browsing or refreshing the directory
+retains edited names and source provenance. Use `:fs discard` to discard explicitly.
+Copies need a distinct name; ambiguous joins and conflicting targets refuse
+instead of guessing which file a row represents.
+
+Confirmed relocation keeps source text, history and document identity.
+Remote relocation revokes old write authority; use `:remote edit` again before
+saving the renamed buffer. Pending saves and unconfirmed operations block
+conflicting work. Receipts survive leaving the view; verification never blindly
+retries a mutation. Containers remain read-only through these actions.
+
+Local saves/save-as and local filesystem mutations use a conservative per-editor
+write barrier, including parent aliases. Let an admitted save finish before
+applying a local filesystem review, and resolve unconfirmed receipts before saving.
+Move verification and recovery require the recorded post-publication version:
+finding the same inode at a pathname is not sufficient ownership evidence.
+Receipts are in-memory, not crash recovery. Graceful global exit refuses unresolved
+outcomes; explicit `:qa!` reports them and exits unsuccessfully rather than claiming
+they were resolved or persisted.
+
+Removing an otherwise empty directory may retire its validated, quiescent protocol
+locks. Active locks, unknown entries and other directory contents cause refusal;
+partial housekeeping is reported even when cancellation prevents removal.
 
 ## SSH workspaces
 
@@ -167,9 +234,22 @@ server-reported byte size and native filename columns. Missing attributes show
 totals. Links and special entries have distinct type markers. Enter opens an entry;
 `-`, Backspace or `../` returns to the parent and restores the selected child.
 `:filter` narrows names, and an empty filter restores the full listing.
+
+Search here uses the same query fields, inclusion decisions and source previews
+as local Search. Native filename bytes remain separate from display text, and a
+dirty local buffer at an identical path is never substituted for remote content.
+Source enumeration is limited to 100,000 selected paths or 16 MiB of names.
+rg records are limited to 1 MiB and 4,096 submatches; decoded batches are limited
+to 4 MiB. A source request publishes at most 100,000 result rows or 64 MiB of
+owned row data. Limits and malformed output produce a visible failure, not a
+silently complete partial result.
+
 SSH and container listings include hidden entries and do not evaluate ignore files;
 the modeline names this fixed policy. Local `:search-options` defaults do not filter
 another filesystem namespace.
+Plain Ex open operands keep their local meaning outside Directory buffers;
+inside Directory they use that directory's captured namespace. Explicit `file://`
+and `ssh://` locations select the namespace regardless of the current view.
 Tab completes SSH hosts and paths without starting authentication: remote candidates
 need a live authorized connection or cached data. Connections are shared by endpoint
 and held by documents or explicit `:remote connect` pins; clear/disconnect retires

@@ -676,6 +676,14 @@ pub const BINDINGS: &[Binding] = &[
     },
     // leader
     Binding {
+        keys: "space e",
+        desc: "reveal source in its Directory buffer",
+        sections: &["leader"],
+        live: true,
+        id: "directory-reveal",
+        handler: Handler::Leaf(|e, _| e.reveal_source()),
+    },
+    Binding {
         keys: "space f",
         desc: "file finder",
         sections: &["leader"],
@@ -765,11 +773,11 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "space a",
-        desc: "code actions",
+        desc: "context actions (code / filesystem)",
         sections: &["leader"],
         live: true,
         id: "code-actions",
-        handler: Handler::Leaf(|e, _| e.lsp_code_actions_pub()),
+        handler: Handler::Leaf(|e, _| e.context_actions()),
     },
     Binding {
         keys: "space s",
@@ -1070,8 +1078,16 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
+        keys: ":fs :browse :filter",
+        desc: "filesystem actions, namespace-aware browsing and folder filtering",
+        sections: &["ex+panes"],
+        live: true,
+        id: "filesystem",
+        handler: Handler::Contextual,
+    },
+    Binding {
         keys: ":apply-change :cancel-change :save-change",
-        desc: "review: apply buffers, cancel, or save the changed files",
+        desc: "review: apply text or filesystem changes, cancel, or save changed text",
         sections: &["ex+panes"],
         live: true,
         id: "change-review-actions",

@@ -1,10 +1,10 @@
 # 0054 — One filesystem workspace: browse, edit names, review operations
 
-Status: requested architectural/product handoff, not implemented. This is a
-separate substantial filesystem milestone alongside the search refinement in
-[0053](0053-unified-search-workspace.md), not an excuse to omit any of 0051's
-current-release requirements. GUI and embedded-terminal implementation are not
-prerequisites.
+Status: implemented and container-verified for 0.31.0. This release combines
+F01–F12 with source-preview line numbers and focused-line markers. The following
+release implements 0055's TUI terminal. All GUI work is explicitly deferred until
+the desired functionality and bug-hardening work are complete; neither GUI nor
+the embedded terminal is a prerequisite for this filesystem milestone.
 
 ## 1. Product decision
 
@@ -402,6 +402,19 @@ resources must be recognized by identity/policy, not substring matching, and
 receive an explicit refusal or separately designed admission—not bulk destruction
 because they happened to match a filter.
 
+Empty-directory removal may retire otherwise obstructing protocol name locks,
+without changing ordinary stable-lock release policy. First capture a bounded
+descriptor-relative set containing only exact `.strop-lock-` + 64 lowercase-hex
+names: empty regular files, current uid, mode 0600 and one link. Unknown entries
+refuse before pruning. Then acquire each captured lock nonblockingly, revalidate
+its captured descriptor/name identity, unlink that exact entry while locked,
+and close before `rmdir` so cleanup does not retain its own NFS silly-renames.
+Never rescan/delete new arrivals or `.nfs` entries. Final pinned-directory
+identity checks and atomic `rmdir` decide removal. Later failure reports confirmed
+bookkeeping progress without claiming directory removal; ambiguous unlink errors
+do not invent an exact total. This relies on participants' mandatory post-flock
+pathname validation, not universal CAS. Other NFS openers can still force refusal.
+
 ## 7. Modal filename editing, without filesystem effects per keystroke
 
 `:fs edit` / Edit names enters a **filename draft** for the captured directory
@@ -504,6 +517,12 @@ until verified. Graceful shutdown follows the existing remote Save/Verify drain
 contract; explicit forced shutdown must name unresolved work. Do not promise crash
 recovery without the requisite private durable intent/receipt record.
 
+Admitted effect workers use observed completion: cancellation signals resources
+but cannot consume the eventual result callback. The worker still reports its
+exact per-step outcomes, including work cancelled before native launch. A
+cancellation-cleanup failure retains an observed result as partial data; the
+ledger validates and keeps those receipts and displays the cleanup warning.
+
 ### Per-item outcomes and recovery
 
 Use typed distinctions for committed, refused/conflict, failed before mutation,
@@ -523,6 +542,16 @@ Revalidate identity and vacant destinations. Native text `u` is not a promise of
 filesystem undo, permanent deletion is not recoverable by assertion, and a
 conflicting reverse operation must refuse rather than overwrite newer work.
 
+Move confirmation requires an owned post-publication version, not merely the
+before inode appearing at the destination. Pin the source descriptor through
+rename and final observation, using metadata-only handles so rename does not gain
+a read-permission prerequisite. Capture the after-version even when a rename
+returns an ambiguous I/O error. Missing owned evidence stays Unconfirmed/Unknown;
+never manufacture a witness from a later pathname stat. Within the existing
+metadata/content-version contract, recovery also requires the unchanged recorded
+after-version matched to that owned witness. A later-edited object needs a fresh
+explicit operation, not an unchecked reverse move.
+
 ## 9. Rename/move and the live editor
 
 Resource relocation is the hardest shared boundary. Do not implement it by
@@ -539,6 +568,10 @@ catch up.
    admission/refresh and unresolved mutation attempts. A save must not recreate
    the old name after the move. Refuse/queue visibly; never silently lose its
    receipt or mutate whichever path is current when the worker finishes.
+   Local saves/save-as and local filesystem mutations use a conservative
+   per-editor write barrier in both directions. Save-as targets can be unresolved
+   parent aliases; comparing only the writer document's old binding is unsafe.
+   No path canonicalization is performed on the input thread to relax this barrier.
 3. Ordinary dirty files and dirty descendants are supported for rename/move:
    preserve their live text, history, selections and DocumentId. No implicit save
    or forced reload. Their edits can continue while the operation runs; a newer
@@ -790,3 +823,98 @@ does not inherit authority from a protected file-operation helper.
   [libghostty-vt API](https://libghostty.tip.ghostty.org/): current embedding scope
   and explicit unstable-API warning. Recheck maturity at the later evaluation;
   do not treat this handoff's research snapshot as a permanent compatibility claim.
+
+## 14. Integration decisions for 0.31.0
+
+- `strop-workspace` remains pure: common directory entries/snapshots, native names,
+  observations, typed filesystem intents/plans/outcomes. It gains no I/O or process
+  dependency. Directory entry names are native components, not reparsed URLs.
+- A `strop-fs` crate owns native local listing/observation and checked mutation
+  primitives. Namespace dispatch uses actual local, protected SSH and existing
+  read-only container capabilities; no generic provider/plugin framework.
+- SSH mutations remain fixed, framed operations under `strop-remote` supervision.
+  Shared protected-path/lock helpers are factored from the existing save helper;
+  filesystem operations do not weaken remote Save/Edit/Verify authority.
+- One engine Directory source replaces RemoteDirectory and the separate container
+  listing row map. Its immutable listing, filter, selected entry, viewport, marks
+  and optional filename draft belong to a captured namespace/root.
+- Engine filesystem preparation, review, apply/receipt, verification and relocation
+  have separate modules and owned tickets. Admitted mutations outlive their view;
+  focus only controls presentation. Unknown outcomes block affected bindings.
+- Native no-replace rename is required, not an existence check plus rename.
+  Copy publishes a fully written private stage exclusively. EXDEV moves, unsupported
+  link mutations and cyclic rename graphs refuse before publication. Metadata and
+  cooperative-concurrency limits remain explicit in review/receipts.
+- Filename drafts keep entry/register provenance out of band, map it through the
+  existing edit journal and history, and compile through the same filesystem planner
+  as explicit `:fs` actions. `:w` prepares review; Apply performs filesystem effects.
+- Confirmed relocation preserves DocumentId, dirty text, undo and selections.
+  A pure core binding update consumes worker-observed paths/baselines; engine
+  reconciliation invalidates binding-dependent services and updates all views.
+- Read-only SSH Search here extends the existing Search owner and source payloads.
+  It retains endpoint/native-path identity through previews, opening and collection
+  promotion. Replacement capability stays separately refused in remote scopes.
+- Source previews share absolute line-number gutters and a focused-hit triangle,
+  adapted from Rootle without copying its independent editor or parser.
+- File enumeration and local/SSH content search share one editor-owned source
+  worker with one running request and one replaceable pending request. Superseded
+  pending work never starts; a new native search waits for the old search and its
+  scoped pipe readers to drain. The input path only replaces owned request data.
+  Shared backlog credit bounds queued result batches across retired requests,
+  while each request independently bounds its catalog. Replay never starts this
+  worker; finite-work checks include physical draining during live cancellation.
+  The core worker envelope supplies the same terminal/cancellation rules to
+  queued, scoped-thread and ordinary spawned work.
+- 0.31.0 delivers F01–F12 plus gutters. 0055's prototype selection and T01–T10 form
+  the following release. GUI requirements remain explicitly deferred.
+
+## 15. Filesystem implementation evidence
+
+Implementation is integrated and the release gates below passed. The following
+names implementation and exercised contracts, not whole-core assurance
+(0057 owns that separate release).
+
+| ID | Implementation and evidence |
+| --- | --- |
+| F01 | `strop-workspace::directory`, `editor/document/directory.rs` and `editor/directory/` share namespace/native-entry identity. Local and authenticated SSH Directory walkthroughs use the same source surface. |
+| F02 | Directory navigation, reveal and completion use captured locations; engine regressions cover refresh selection, name reuse and retirement of old completion candidates after relocation. |
+| F03 | Real Directory/source/filename-draft frames were exercised at 140×40, 100×30 and 80×24. A 12×4 round trip retained draft text and horizontal viewport; ordinary `0` revealed the full names again. The observed host-identity loss under long status text was fixed and verified in the actual 80×24 SSH draft. |
+| F04 | `strop-fs` and protected SSH preparation/execution review each missing parent and publish exclusively. Native SSH scripts and the actual TUI created and saved a file through the normal remote-edit permit path. |
+| F05 | Engine regressions cover dirty file/directory-descendant moves, stable document identity/history, name reuse and both save-as barrier directions. Actual SSH rename retained unsaved text, moved stored bytes and revoked the old permit. |
+| F06 | Local filesystem/engine regressions cover native Trash/restore and checked copy recovery. Actual SSH stored-copy and buffer-copy produced distinct intended bytes without saving the source; checked recovery removed only its owned copy. A directory emptied through Strop was removed after protocol-lock retirement. |
+| F07 | `filesystem/draft/` keeps edit/register/history provenance. Engine cases cover ambiguous joins, undo, external text, refresh and browsing retention. Actual SSH `yy`/`p` plus name editing produced a checked Copy; Cancel retained the draft and Apply copied the real source bytes. |
+| F08 | The filesystem ledger owns admitted outcomes; effect-worker regressions preserve observed results through cancellation/cleanup failure. Real SSH fault injection after lock unlink retained the confirmed cleanup count without removing the directory. |
+| F09 | Local and authenticated SSH Search-here were driven through the real TUI. SSH source preview/open preserved the namespace and read-only replacement policy. The bounded-source smoke retained its 100,000-row prefix with an explicit capacity failure. |
+| F10 | `filesystem/reconcile.rs` consumes confirmed bindings; engine cases cover saves, deferred format/save, completions, directory selections, dirty descendants and detached removals. Remote writes require fresh admission after relocation. |
+| F11 | Source enumeration/search uses one physical worker and one replaceable pending request, shared queued-byte credit and scoped pipe-reader cleanup. Required SSH integration cases replay with native SSH deliberately disabled; replay cannot repeat filesystem mutations. |
+| F12 | Actual local/SSH walkthroughs, native-byte checks, required SSH/container tests, docs and integrated compose gates passed. The 0.31.0 static release binary and benchmark smoke were exercised. Hosted publication is tracked separately. |
+
+The authenticated TUI fault fixture killed the unchanged protected helper after
+a real successful rename syscall. The namespace moved, but its receipt remained
+Unconfirmed. Verify did not invent the missing post-publication witness or retry.
+Global `:qa` refused unresolved outcomes and named Verify/explicit force; `:qa!`
+exited nonzero and listed the operation while explicitly stating that in-memory
+receipts were not persisted. The ordinary SSH walkthrough exited successfully.
+
+This runtime evidence was collected on Linux/WSL using an isolated OpenSSH/Python
+host in the project test container, with private HOME/XDG/host keys. It is not a
+claim of actual NFS-mount or Darwin interactive coverage. Native/helper regressions
+exercise the lock-close ordering and competing-entry/held-lock boundaries; the
+documented cooperative-concurrency limit remains unchanged. Disposable decoder
+source is absent from the production tree; terminal recordings are external proof
+artifacts, not an editor-specific execution path.
+
+Release checks passed:
+
+- `docker compose run --build --rm test`: fmt, locked all-target clippy with
+  warnings denied, and locked workspace tests with SSH explicitly required.
+- `docker compose run --build --rm model`, `verify`, and `container-test`:
+  existing TLC gates, 10 shipped edit-geometry verifications with no errors,
+  and all five required real-container integration cases.
+- `docker compose run --build --rm bench`: repeats the test stage for the
+  versioned candidate, builds the static release and runs the real benchmark
+  scenarios. The binary reports `strop 0.31.0`; the ELF dependency check passed.
+- Representative measurement on this workstation: 500 key+frame iterations
+  at 120×40 over 10k lines had p99 1.37 ms, max 3.55 ms. This is an observation,
+  not a cross-platform latency guarantee; finite background settle times are
+  reported separately by the benchmark.

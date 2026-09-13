@@ -58,6 +58,15 @@ pub fn io(event: &crate::editor::io::IoEvent) {
         IoEvent::Save(value) => completion("io", "save", value),
         IoEvent::Native(value) => completion("io", "native", value),
         IoEvent::Review(value) => completion("search", "review", value),
+        IoEvent::DirectoryFilter(value) => completion("directory", "filter", value),
+        IoEvent::Filesystem(event) => {
+            use crate::editor::filesystem::FsEvent;
+            match event.as_ref() {
+                FsEvent::Prepared(value) => completion("filesystem", "prepare", value),
+                FsEvent::Applied(value) => completion("filesystem", "apply", value),
+                FsEvent::Verified(value) => completion("filesystem", "verify", value),
+            }
+        }
         IoEvent::Remote(event) => {
             use crate::editor::remote::RemoteEvent;
             match event {
@@ -67,7 +76,6 @@ pub fn io(event: &crate::editor::io::IoEvent) {
                 RemoteEvent::Timer(value) => completion("remote", "follow_clock", value),
                 RemoteEvent::Read(value) => completion("remote", "follow_read", value),
                 RemoteEvent::Control(value) => completion("remote", "control", value),
-                RemoteEvent::Filter(value) => completion("remote", "directory_filter", value),
                 RemoteEvent::Choices(value) => completion("remote", "destinations", value),
                 RemoteEvent::Write(value) => {
                     let mut record = completion("remote", "write", value);

@@ -8,7 +8,16 @@ use strop_workspace::RemoteFile;
 impl Editor {
     pub(crate) fn remember_remote_destination(&mut self) {
         let directory = if let Some(source) = self.cur().directory_metadata_ref() {
-            source.directory.clone()
+            let Some(endpoint) = source.location.filesystem.endpoint() else {
+                return;
+            };
+            match RemoteFile::from_path(endpoint.clone(), source.location.path.clone()) {
+                Ok(directory) => directory,
+                Err(error) => {
+                    self.message = error.to_string();
+                    return;
+                }
+            }
         } else if let Some(source) = self.cur().remote_metadata() {
             let Some(parent) = source.file.path().parent() else {
                 return;

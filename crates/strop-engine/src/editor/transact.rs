@@ -98,6 +98,7 @@ impl super::Editor {
             self.sync_collection_write_back(id, map_active, &position);
             return;
         }
+        self.sync_filename_draft(id);
         let change_count = self.docs.get(id).map_or(0, |doc| doc.buf.changes().len());
         if change_count == 0 {
             return;

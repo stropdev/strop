@@ -58,6 +58,12 @@ impl Editor {
                     .filter_map(|glue| glue.search.as_mut())
                     .map(|context| &mut context.origin),
             )
+            .chain(
+                self.directories
+                    .views
+                    .values_mut()
+                    .map(|saved| &mut saved.record),
+            )
         {
             if record.document == document {
                 record.offset = map(record.offset);

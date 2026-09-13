@@ -3,7 +3,6 @@
 mod chooser;
 mod commands;
 mod controls;
-mod directory;
 pub(super) mod follow;
 mod history;
 pub(crate) mod save;
@@ -26,7 +25,6 @@ pub(crate) struct RemoteState {
     following: HashMap<DocumentId, FollowOwner>,
     controls: HashMap<WorkerId, ControlKey>,
     pins: HashMap<RemoteEndpoint, ConnectionLease>,
-    filters: HashMap<WorkerId, DirectoryFilterKey>,
     choices: Option<Ticket<super::picker::PickerId>>,
     destination_write: Option<Ticket<RemoteFile>>,
     destination_queue: Vec<RemoteFile>,
@@ -39,7 +37,6 @@ impl Default for RemoteState {
             following: HashMap::new(),
             controls: HashMap::new(),
             pins: HashMap::new(),
-            filters: HashMap::new(),
             choices: None,
             destination_write: None,
             destination_queue: Vec::new(),
@@ -99,19 +96,12 @@ pub enum ControlResult {
     Disconnected,
     Listing(String),
 }
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DirectoryFilterKey {
-    pub document: DocumentId,
-    pub revision: BufferRevision,
-    pub query: String,
-}
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum RemoteEvent {
     Tick(Ticket<FollowKey>),
     Timer(Completion<FollowKey, ()>),
     Read(Box<Completion<FollowReadKey, FollowUpdate>>),
     Control(Completion<ControlKey, ControlResult>),
-    Filter(Box<Completion<DirectoryFilterKey, Opened>>),
     Choices(Completion<super::picker::PickerId, chooser::RemoteChoices>),
     DestinationWritten(Completion<RemoteFile, ()>),
     Write(Box<Completion<save::RemoteWriteKey, save::RemoteWriteResult>>),
@@ -124,16 +114,21 @@ impl Editor {
     pub fn remote_file(&self) -> Option<&RemoteFile> {
         match &self.cur().source {
             DocumentSource::Remote(source) => Some(&source.file),
-            DocumentSource::RemoteDirectory(source) => Some(&source.directory),
             _ => None,
         }
     }
-    pub(crate) fn remote_endpoint(&self) -> Option<&RemoteEndpoint> {
-        self.remote_file().map(RemoteFile::endpoint).or_else(|| {
-            self.cur()
-                .git_context()
-                .and_then(strop_git::GitContext::endpoint)
-        })
+    pub fn remote_endpoint(&self) -> Option<&RemoteEndpoint> {
+        self.remote_file()
+            .map(RemoteFile::endpoint)
+            .or_else(|| {
+                self.directory()
+                    .and_then(|source| source.location.filesystem.endpoint())
+            })
+            .or_else(|| {
+                self.cur()
+                    .git_context()
+                    .and_then(strop_git::GitContext::endpoint)
+            })
     }
     pub(crate) fn remote_window_complete(&self) -> bool {
         self.cur()
@@ -141,15 +136,11 @@ impl Editor {
             .is_some_and(|source| source.window.is_complete())
             && !self.remote_following(self.current())
     }
-    pub(crate) fn remote_directory(&self) -> Option<&super::document::RemoteDirectory> {
-        self.cur().directory_metadata_ref()
-    }
     pub fn remote_following(&self, document: DocumentId) -> bool {
         self.remote.following.contains_key(&document)
     }
     pub(crate) fn remote_work_pending(&self) -> bool {
         !self.remote.controls.is_empty()
-            || !self.remote.filters.is_empty()
             || self.remote.choices.is_some()
             || self.remote.destination_write.is_some()
             || !self.remote.destination_queue.is_empty()
@@ -167,7 +158,6 @@ impl Editor {
             RemoteEvent::Timer(completion) => self.remote_follow_timer_done(completion),
             RemoteEvent::Read(completion) => self.remote_follow_read(*completion),
             RemoteEvent::Control(completion) => self.remote_control_done(completion),
-            RemoteEvent::Filter(completion) => self.remote_filter_done(*completion),
             RemoteEvent::Choices(completion) => self.remote_choices_done(completion),
             RemoteEvent::DestinationWritten(completion) => {
                 self.remote_destination_written(completion)

@@ -259,13 +259,13 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
                 .map(|directory| {
                     match directory
                         .entry(strop_core::id::LineIndex::new(line_idx))
-                        .map(|entry| entry.kind)
+                        .map(|entry| entry.observation.kind)
                     {
-                        Some(strop_remote::RemoteEntryKind::Directory) => ACCENT,
-                        Some(strop_remote::RemoteEntryKind::SymbolicLink) => {
+                        Some(strop_workspace::EntryKind::Directory) => ACCENT,
+                        Some(strop_workspace::EntryKind::SymbolicLink) => {
                             Color::Rgb(0x89, 0xb4, 0xfa)
                         }
-                        Some(strop_remote::RemoteEntryKind::File) => TEXT,
+                        Some(strop_workspace::EntryKind::File) => TEXT,
                         _ => MUTED,
                     }
                 });

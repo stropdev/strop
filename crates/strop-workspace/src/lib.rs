@@ -12,10 +12,16 @@
 
 pub mod addr;
 mod container;
+pub mod directory;
 mod filesystem;
+pub mod operation;
 mod resource;
 
 pub use addr::{AddressError, RemoteEndpoint, RemoteFile, RemoteLocation};
 pub use container::{ContainerId, ContainerIdError};
+pub use directory::{
+    DirectoryEntry, DirectorySnapshot, EntryKind, EntryName, EntryNameError, FileTime,
+    ListingState, ObjectId, Observation, PermissionBitsError, Permissions,
+};
 pub use filesystem::Filesystem;
 pub use resource::ResourceLocation;

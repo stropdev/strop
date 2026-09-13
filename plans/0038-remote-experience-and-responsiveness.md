@@ -235,6 +235,19 @@ README/site alongside the new remote flow.
 
 ## 5. GUI research deliverable, not implementation
 
+**Follow-on contract:** [0061](0061-gui-windows-and-wsl.md) now owns the complete
+GUI arc and evidence ledger; [0062](0062-distribution-and-wsl-onboarding.md) owns
+distribution. The user chose WSL execution/storage as the initial envelope:
+native Windows GPUI presentation over the existing Linux engine. The framework
+comparison here is historical context, not permission to omit full TUI parity.
+
+[0056](0056-architecture-prerequisites.md) closes shared engine, recovery,
+execution/lifecycle and non-graphical protocol/server gaps. The separate
+[0057](0057-core-verification-and-assurance.md) release immediately qualifies the
+pre-worker core; [0058](0058-unified-native-worker.md) then unifies/requalifies native
+services before 0059 completion and 0060 debugger. 0061 consumes these foundations,
+not generic repairs, worker deployment or baseline verification left for GUI.
+
 **Verdict: keep the TUI first-class, and add an optional native GUI later over the
 same engine. Do not replace the terminal editor and do not build the GUI now.**
 The Emacs-shaped choice is compelling: terminal access stays lightweight and
@@ -263,12 +276,12 @@ DirectWrite/font fallback, Narrator/NVDA text and selection access, clipboard,
 keyboard layouts, and a usable signed/packaged application. No Vulkan-only assumption,
 software-only renderer, or webview approximation is accepted merely to claim support.
 
-There is engine work too: current `strop-core::OwnedProcess` explicitly requires Unix,
-and the non-Unix LSP process adapter only terminates the direct child. A real native
-Windows release needs owned process-tree/Job Object cancellation, native filesystem
-and file-watching behavior, and a Windows GUI → WSL workspace path that runs Git/LSP
-in the correct distribution rather than against Windows lookalike paths. These are
-P3 GUI prerequisites, not claims about the existing WSL terminal binary.
+The current GUI plan keeps Unix filesystem/process/service ownership in WSL and
+adds a bounded Windows presentation/input bridge. A native Windows workspace,
+Windows LSP/DAP process-tree port and ConPTY are not prerequisites for that
+envelope. They remain later backend capabilities. The native frontend still
+requires Windows GPU/IME/accessibility and real bridge/lifecycle evidence; WSLg
+alone is not that proof. Generic engine-boundary gaps are owned and closed by 0056.
 
 | Candidate | Fit and concrete reservation |
 |---|---|
@@ -283,12 +296,12 @@ is explicit that custom elements must expose stable identities, text runs, selec
 and accessible actions. Merely depending on AccessKit is not accessibility proof.
 Likewise, reading a toolkit's README is not IME or platform verification.
 
-The future prototype gate is one real slice: shared edit/undo/search, composition
-preedit/commit, mixed Unicode/RTL/emoji, font fallback, remote document navigation,
-screen-reader selection/actions, HiDPI and large-document latency on Linux, macOS
-and Windows. GUI actions must replay against the same engine. Pixel/shaping layout
-must never leak into byte-domain grammar or terminal-cell coordinates. TUI-only
-builds retain their static/no-GUI-dependency contract and rustls-only policy.
+The 0061 prototype gate is one real native Windows + WSL slice: shared edit/undo/
+search, composition preedit/commit, Unicode/fallback, remote navigation, accessible
+text/selection, HiDPI, large-document latency and actual automation/capture.
+Other native GUI platforms have later explicit gates. Actions replay against the
+same engine; pixel/shaping layout never replaces byte-domain grammar or terminal
+cell coordinates. The TUI keeps its static/no-GUI-dependency and rustls-only rules.
 
 If GPUI fails accessibility, IME or packaging gates, evaluate Iced/egui using the
 same slice rather than accepting those regressions. The recommendation is a P3

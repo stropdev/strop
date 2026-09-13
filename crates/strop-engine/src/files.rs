@@ -64,13 +64,66 @@ impl<'de> Deserialize<'de> for FileTarget {
     }
 }
 impl FileTarget {
+    pub fn resource_location(&self) -> Option<strop_workspace::ResourceLocation> {
+        use strop_workspace::{Filesystem, ResourceLocation};
+        match self {
+            Self::Local(path) if path.is_absolute() => Some(ResourceLocation::local(path.clone())),
+            Self::Remote(location) => location.absolute_file().map(|file| {
+                ResourceLocation::remote(file.endpoint().clone(), file.path().to_path_buf())
+            }),
+            Self::Container { container, path } if path.is_absolute() => Some(ResourceLocation {
+                filesystem: Filesystem::Container(container.clone()),
+                path: path.clone(),
+            }),
+            _ => None,
+        }
+    }
+    pub fn from_location(
+        location: &strop_workspace::ResourceLocation,
+    ) -> Result<Self, AddressError> {
+        use strop_workspace::Filesystem;
+        if !location.path.is_absolute() {
+            return Err(AddressError::RelativePath);
+        }
+        Ok(match &location.filesystem {
+            Filesystem::Local => Self::Local(location.path.clone()),
+            Filesystem::Remote(endpoint) => Self::Remote(
+                strop_workspace::RemoteFile::from_path(endpoint.clone(), location.path.clone())?
+                    .into(),
+            ),
+            Filesystem::Container(container) => Self::Container {
+                container: container.clone(),
+                path: location.path.clone(),
+            },
+        })
+    }
+
+    pub fn matches_location(&self, location: &strop_workspace::ResourceLocation) -> bool {
+        use strop_workspace::Filesystem;
+        match (self, &location.filesystem) {
+            (Self::Local(path), Filesystem::Local) => path == &location.path,
+            (Self::Remote(remote), Filesystem::Remote(endpoint)) => remote
+                .absolute_file()
+                .is_some_and(|file| file.endpoint() == endpoint && file.path() == location.path),
+            (Self::Container { container, path }, Filesystem::Container(expected)) => {
+                container == expected && path == &location.path
+            }
+            _ => false,
+        }
+    }
     /// Only textual user-entry boundaries interpret the scheme. Filesystem/LSP
     /// callers construct Local directly, including filenames containing `ssh:`.
     pub fn parse(value: PathBuf) -> Result<Self, AddressError> {
-        match value.to_str().filter(|text| text.starts_with("ssh://")) {
-            Some(uri) => RemoteLocation::parse(uri).map(Self::Remote),
-            None => Ok(Self::Local(value)),
+        if let Some(text) = value.to_str() {
+            if text.starts_with("ssh://") {
+                return RemoteLocation::parse(text).map(Self::Remote);
+            }
+            if text.starts_with("file://") || text.starts_with("container:") {
+                return strop_workspace::ResourceLocation::parse_uri(text)
+                    .and_then(|location| Self::from_location(&location));
+            }
         }
+        Ok(Self::Local(value))
     }
     pub fn local_path(&self) -> Option<&Path> {
         match self {

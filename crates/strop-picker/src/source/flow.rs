@@ -8,13 +8,20 @@ use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
 
-const BACKLOG_BYTES: usize = 4 * 1024 * 1024;
+pub(super) const BACKLOG_BYTES: usize = 4 * 1024 * 1024;
+const CATALOG_BYTES: usize = 64 * 1024 * 1024;
+const CATALOG_ITEMS: usize = 100_000;
 const CANCEL_POLL: Duration = Duration::from_millis(10);
 #[derive(Default)]
-struct Flow {
+pub(super) struct Flow {
     used: AtomicUsize,
     waiting: Mutex<()>,
     available: Condvar,
+}
+#[derive(Default)]
+struct Budget {
+    retained: AtomicUsize,
+    items: AtomicUsize,
 }
 struct Permit {
     flow: Arc<Flow>,
@@ -61,38 +68,134 @@ impl From<Vec<Item>> for ItemBatch {
     }
 }
 
+#[derive(Debug)]
+pub(super) enum BatchError {
+    Cancelled,
+    Closed,
+    Bound(&'static str),
+}
+impl BatchError {
+    pub(super) fn message(&self) -> &'static str {
+        match self {
+            Self::Cancelled => "search cancelled",
+            Self::Closed => "search consumer closed",
+            Self::Bound(message) => message,
+        }
+    }
+    pub(super) fn outcome(self) -> strop_core::worker::Outcome<()> {
+        use strop_core::worker::{CancelReason, FailureKind, Outcome};
+        match self {
+            Self::Cancelled => Outcome::Cancelled(CancelReason::Superseded),
+            Self::Closed => Outcome::failed(FailureKind::Disconnected, self.message()),
+            Self::Bound(message) => Outcome::failed(FailureKind::Unavailable, message),
+        }
+    }
+}
+
+/// Owned row allocation, excluding shared source text (charged once per run).
+pub(super) fn row_bytes(item: &Item) -> usize {
+    let path = match &item.payload {
+        Payload::File(path) => path.capacity(),
+        Payload::Grep { location, .. } => {
+            let namespace = match &location.filesystem {
+                strop_workspace::Filesystem::Local => 0,
+                strop_workspace::Filesystem::Remote(endpoint) => {
+                    2 * (endpoint.host().len() + endpoint.user().map_or(0, str::len))
+                }
+                strop_workspace::Filesystem::Container(id) => id.as_str().len(),
+            };
+            location.path.capacity().saturating_add(namespace)
+        }
+        _ => 0,
+    };
+    std::mem::size_of::<Item>()
+        .saturating_add(item.text.capacity())
+        .saturating_add(item.badge.as_ref().map_or(0, String::capacity))
+        .saturating_add(path)
+}
+
+/// Delivery is supplied by the driver; live TUI sources post directly to its
+/// event queue instead of allocating a forwarding thread for every request.
+#[derive(Clone)]
+pub struct SourceSink(Arc<dyn Fn(PickerMsg) -> bool + Send + Sync>);
+impl SourceSink {
+    pub fn new(emit: impl Fn(PickerMsg) -> bool + Send + Sync + 'static) -> Self {
+        Self(Arc::new(emit))
+    }
+    pub fn send(&self, message: PickerMsg) -> bool {
+        self.0(message)
+    }
+}
+impl From<mpsc::Sender<PickerMsg>> for SourceSink {
+    fn from(sender: mpsc::Sender<PickerMsg>) -> Self {
+        Self::new(move |message| sender.send(message).is_ok())
+    }
+}
+
 #[derive(Clone)]
 pub struct StreamSender {
-    sender: mpsc::Sender<PickerMsg>,
+    sender: SourceSink,
     flow: Arc<Flow>,
+    budget: Arc<Budget>,
 }
-impl From<mpsc::Sender<PickerMsg>> for StreamSender {
-    fn from(sender: mpsc::Sender<PickerMsg>) -> Self {
+impl StreamSender {
+    pub(super) fn new(sender: SourceSink, flow: Arc<Flow>) -> Self {
         Self {
             sender,
-            flow: Arc::default(),
+            flow,
+            budget: Arc::default(),
         }
     }
 }
 impl StreamSender {
-    pub fn batch(&self, items: Vec<Item>, cancel: &CancelToken) -> bool {
+    pub(super) fn batch(&self, items: Vec<Item>, cancel: &CancelToken) -> Result<(), BatchError> {
         if items.is_empty() {
-            return true;
+            return Ok(());
         }
-        let bytes = items
-            .iter()
-            .fold(0usize, |size, item| {
-                size.saturating_add(item.text.len())
-                    .saturating_add(match &item.payload {
-                        Payload::Grep { line_text, .. } => line_text.len(),
-                        _ => 0,
-                    })
-                    .saturating_add(std::mem::size_of::<Item>())
+        let mut bytes = items
+            .capacity()
+            .saturating_sub(items.len())
+            .saturating_mul(std::mem::size_of::<Item>());
+        let mut previous: Option<&Arc<str>> = None;
+        for item in &items {
+            bytes = bytes.saturating_add(row_bytes(item));
+            if let Payload::Grep { line_text, .. } = &item.payload {
+                if previous.is_none_or(|text| !Arc::ptr_eq(text, line_text)) {
+                    bytes = bytes.saturating_add(line_text.len());
+                }
+                previous = Some(line_text);
+            }
+        }
+        if bytes > BACKLOG_BYTES {
+            return Err(BatchError::Bound(
+                "search batch exceeds 4 MiB; narrow the query",
+            ));
+        }
+        if self
+            .budget
+            .items
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                count
+                    .checked_add(items.len())
+                    .filter(|total| *total <= CATALOG_ITEMS)
             })
-            .clamp(1, BACKLOG_BYTES);
+            .is_err()
+            || self
+                .budget
+                .retained
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                    used.checked_add(bytes)
+                        .filter(|total| *total <= CATALOG_BYTES)
+                })
+                .is_err()
+        {
+            return Err(BatchError::Bound(
+                "search results exceed 100000 rows or 64 MiB; narrow the query",
+            ));
+        }
         loop {
             if cancel.is_cancelled() {
-                return false;
+                return Err(BatchError::Cancelled);
             }
             let used = self.flow.used.load(Ordering::Acquire);
             if used + bytes <= BACKLOG_BYTES {
@@ -112,7 +215,8 @@ impl StreamSender {
                             items,
                             permit: Some(permit),
                         }))
-                        .is_ok();
+                        .then_some(())
+                        .ok_or(BatchError::Closed);
                 }
                 continue;
             }
@@ -126,7 +230,7 @@ impl StreamSender {
     }
     /// Control/terminal publication never waits for data credit, including when
     /// invoked by the cancellation handle on the editor thread.
-    pub fn control(&self, message: PickerMsg) -> Result<(), mpsc::SendError<PickerMsg>> {
+    pub fn control(&self, message: PickerMsg) -> bool {
         debug_assert!(!matches!(message, PickerMsg::Items(_)));
         self.sender.send(message)
     }

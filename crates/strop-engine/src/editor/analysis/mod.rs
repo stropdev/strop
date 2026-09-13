@@ -15,7 +15,7 @@ use strop_core::worker::{Completion, Outcome, Ticket};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AnalysisTarget {
     Document(DocumentId),
-    Preview(#[serde(with = "strop_core::path_serde")] PathBuf),
+    Preview(strop_workspace::ResourceLocation),
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AnalysisKey {
@@ -255,7 +255,7 @@ impl Editor {
 
     pub fn preview_analysis(
         &mut self,
-        path: &std::path::Path,
+        path: &strop_workspace::ResourceLocation,
         first: usize,
         last: usize,
         width: usize,
@@ -265,15 +265,15 @@ impl Editor {
         }
         let entry = self.previews.get(path)?;
         let key = AnalysisKey {
-            target: AnalysisTarget::Preview(path.to_path_buf()),
+            target: AnalysisTarget::Preview(path.clone()),
             revision: BufferRevision::new(0),
             first,
             last,
-            tab: self.cur_indent().width.max(1),
+            tab: self.tab_width_for_location(path).max(1),
             guides: false,
             left: 0,
             right: width,
-            syntax_path: Some(path.to_path_buf()),
+            syntax_path: Some(path.path.clone()),
             search: None,
         };
         if let Some(cached) = self

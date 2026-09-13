@@ -239,7 +239,7 @@ fn collection_view_gutters_source_line_numbers() {
         badge: None,
         text: "a.txt:3".into(),
         payload: strop_picker::Payload::Grep {
-            path: a.clone(),
+            location: strop_workspace::ResourceLocation::local(a.clone()),
             line: 3,
             col: 1,
             match_len: 5,
@@ -288,7 +288,7 @@ fn collection_bodies_project_syntax_and_paint_hits() {
         badge: None,
         text: "a.rs:1 · fn send_request".into(),
         payload: strop_picker::Payload::Grep {
-            path: a.clone(),
+            location: strop_workspace::ResourceLocation::local(a.clone()),
             line: 1,
             col: 4,
             match_len: 12,

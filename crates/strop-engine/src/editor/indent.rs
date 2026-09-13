@@ -20,8 +20,10 @@ impl Editor {
         self.doc(source).indent
     }
 
-    pub fn tab_width_for_path(&self, path: &std::path::Path) -> usize {
-        let target = crate::files::FileTarget::Local(self.picker_path(path));
+    pub fn tab_width_for_location(&self, location: &strop_workspace::ResourceLocation) -> usize {
+        let Ok(target) = crate::files::FileTarget::from_location(location) else {
+            return self.config.tab_size;
+        };
         self.docs
             .iter()
             .find(|(_, document)| document.matches_target(&target))

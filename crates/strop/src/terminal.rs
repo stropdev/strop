@@ -176,7 +176,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
         )?;
     }
     editor.tape.finish()?;
-    if let Some(error) = editor.io.session_error.take() {
+    if let Some(error) = editor.take_shutdown_error() {
         return Err(io::Error::other(error));
     }
     Ok(())

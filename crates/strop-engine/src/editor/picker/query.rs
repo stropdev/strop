@@ -4,6 +4,15 @@ use std::sync::Arc;
 use strop_picker::query::SearchQuery;
 
 impl Editor {
+    fn source_worker(
+        &mut self,
+    ) -> Result<&strop_picker::SourceWorker, strop_core::worker::Failure> {
+        match &mut self.picker_source {
+            Some(worker) => Ok(worker),
+            slot @ None => Ok(slot.insert(strop_picker::SourceWorker::new()?)),
+        }
+    }
+
     fn query_policy(&self) -> strop_picker::SelectionPolicy {
         strop_picker::SelectionPolicy {
             hidden: self.config.search_show_hidden,
@@ -27,8 +36,12 @@ impl Editor {
         } else {
             "literal"
         };
+        let namespace = glue.search.as_ref().map_or_else(
+            || "local".into(),
+            |context| context.scope.root.filesystem.label(),
+        );
         glue.query_summary = format!(
-            "local · {expression_mode} · hidden {} ({}) · ignored {} ({})",
+            "{namespace} · {expression_mode} · hidden {} ({}) · ignored {} ({})",
             if hidden { "on" } else { "off" },
             if query.hidden.is_some() {
                 "query"
@@ -132,12 +145,21 @@ impl Editor {
             }
         }
         let policy = self.query_policy();
-        let (tx, rx) = channel();
-        let worker = spawn_files(self.cwd.clone(), parsed, policy, tx);
+        let tx = self.picker_source_sink(ticket.clone());
+        let root = self.cwd.clone();
+        let worker = match self.source_worker() {
+            Ok(source) => source.files(root, parsed, policy, tx),
+            Err(failure) => {
+                let _ = tx.send(PickerMsg::Finished(strop_core::worker::Outcome::Failed {
+                    failure,
+                    partial: None,
+                }));
+                return;
+            }
+        };
         if let Some(glue) = self.picker.as_mut() {
-            glue.worker = Some(PickerWorker::Files(worker));
+            glue.worker = Some(worker);
         }
-        self.attach_picker_stream(ticket, rx);
     }
 
     pub(super) fn picker_input_changed(&mut self) {
@@ -194,6 +216,19 @@ impl Editor {
         self.request_picker_ranking();
     }
 
+    pub(crate) fn filesystem_picker_changed(&mut self) {
+        match self.picker.as_ref().map(|glue| glue.picker.kind) {
+            Some(Kind::Files) => {
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.file_scope = None;
+                }
+                self.picker_input_changed();
+            }
+            Some(Kind::Search) => self.restart_search_query(),
+            _ => {}
+        }
+    }
+
     pub(super) fn restart_search_query(&mut self) {
         let plans = self.picker_query_eval(Kind::Search);
         let (query, picker, root, session) = {
@@ -244,7 +279,7 @@ impl Editor {
             (
                 glue.picker.input.text.clone(),
                 glue.id,
-                context.scope.root.path.clone(),
+                context.scope.root.clone(),
                 context.stamp.session,
             )
         };
@@ -278,7 +313,7 @@ impl Editor {
             request,
             key: PickerKey {
                 picker,
-                cwd: root.clone(),
+                cwd: root.path.clone(),
             },
         };
         // registration precedes launch (replay stops here)
@@ -294,7 +329,7 @@ impl Editor {
         });
         match self.tape.request(
             "picker-grep",
-            &serde_json::json!({"ticket":ticket,"query":query}),
+            &serde_json::json!({"ticket":ticket,"query":query,"scope":root}),
         ) {
             Ok(false) => return,
             Ok(true) => {}
@@ -310,35 +345,38 @@ impl Editor {
             }
         }
         let policy = self.query_policy();
-        let (tx, rx) = channel();
+        let tx = self.picker_source_sink(ticket.clone());
         let snapshots = self
             .docs
             .iter()
             .filter_map(|(_, document)| {
-                if !document.buf.dirty
-                    || !matches!(
-                        document.source,
-                        crate::editor::document::DocumentSource::File
-                    )
+                if !document.buf.dirty {
+                    return None;
+                }
+                let location = document.file_target(&self.cwd)?.resource_location()?;
+                if location.filesystem != root.filesystem || !location.path.starts_with(&root.path)
                 {
                     return None;
                 }
                 Some(strop_picker::SourceSnapshot {
-                    path: self.cwd.join(
-                        document
-                            .buf
-                            .file_identity()
-                            .or(document.buf.path.as_deref())?,
-                    ),
+                    path: location.path,
                     text: document.buf.text().clone(),
                 })
             })
             .collect();
-        let worker = GrepWorker::spawn(plans, policy, &root, snapshots, tx);
+        let worker = match self.source_worker() {
+            Ok(source) => source.search(plans, policy, root, snapshots, tx),
+            Err(failure) => {
+                let _ = tx.send(PickerMsg::Finished(strop_core::worker::Outcome::Failed {
+                    failure,
+                    partial: None,
+                }));
+                return;
+            }
+        };
         if let Some(glue) = self.picker.as_mut() {
-            glue.worker = Some(PickerWorker::Grep(worker));
+            glue.worker = Some(worker);
         }
-        self.attach_picker_stream(ticket, rx);
     }
 }
 

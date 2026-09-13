@@ -8,7 +8,11 @@ mod indentation;
 pub(crate) mod remote;
 pub mod surfaces;
 pub use indentation::{detect_indent, Detection, Indent, IndentOverride, IndentSource};
-pub use remote::{RemoteDirectory, RemoteDocument};
+mod directory;
+pub use directory::Directory;
+pub use remote::RemoteDocument;
+mod snapshot;
+pub(crate) use snapshot::last_position;
 
 pub use super::jumps::JumpRecord;
 pub use surfaces::{DiffRow, DocumentSource, Surface};
@@ -155,7 +159,7 @@ impl Document {
             },
             DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
             DocumentSource::Container { path, .. } => Some(path),
-            DocumentSource::RemoteDirectory(_) | DocumentSource::Output { .. } => None,
+            DocumentSource::Directory(_) | DocumentSource::Output { .. } => None,
         }
     }
 
@@ -164,10 +168,16 @@ impl Document {
             (DocumentSource::Remote(source), crate::files::FileTarget::Remote(location)) => {
                 location.absolute_file() == Some(&source.file)
             }
+            (DocumentSource::Directory(source), target) => {
+                target.matches_location(&source.location)
+            }
             (
-                DocumentSource::RemoteDirectory(source),
-                crate::files::FileTarget::Remote(location),
-            ) => location.absolute_file() == Some(&source.directory),
+                DocumentSource::Container { container, path },
+                crate::files::FileTarget::Container {
+                    container: expected,
+                    path: requested,
+                },
+            ) => container == expected && path == requested,
             (DocumentSource::File, crate::files::FileTarget::Local(path)) => {
                 self.buf.path.as_ref() == Some(path)
                     || self.buf.file_identity() == Some(path.as_path())
@@ -180,9 +190,11 @@ impl Document {
         use crate::files::FileTarget;
         match &self.source {
             DocumentSource::Remote(source) => Some(FileTarget::Remote(source.file.clone().into())),
-            DocumentSource::RemoteDirectory(source) => {
-                Some(FileTarget::Remote(source.directory.clone().into()))
-            }
+            DocumentSource::Directory(source) => FileTarget::from_location(&source.location).ok(),
+            DocumentSource::Container { container, path } => Some(FileTarget::Container {
+                container: container.clone(),
+                path: path.clone(),
+            }),
             _ => self
                 .buf
                 .file_identity()
@@ -315,6 +327,9 @@ impl Editor {
 
     /// Switch the active view to a document.
     pub fn switch_to(&mut self, id: strop_core::id::DocumentId) {
+        if self.current() != id {
+            self.remember_directory_view();
+        }
         self.cancel_pending();
         self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.focus_epoch += 1;
@@ -376,6 +391,13 @@ impl Editor {
     /// Returns false when unsaved changes block the close. Generational
     /// ids mean no reindexing anywhere (0014 wave 2).
     pub fn close_buffer(&mut self, force: bool) -> bool {
+        self.remember_directory_view();
+        if !force && self.docs.len() == 1 && self.filesystem.unconfirmed() > 0 {
+            self.message =
+                "filesystem outcomes are unconfirmed; :fs verify before quitting, or :q! to force"
+                    .into();
+            return false;
+        }
         // A collection's dirty bit is presentation state (0049 §5): the
         // sources hold the real unsaved edits — the view always closes.
         let view_only = self.collections.contains_key(&self.current());
@@ -411,15 +433,14 @@ impl Editor {
         self.analysis
             .forget(super::analysis::AnalysisTarget::Document(closed));
         self.stop_remote_follow(closed);
-        self.cancel_remote_filter(closed);
+        self.cancel_directory_filter(closed);
         self.lsp_close_document(closed);
         self.shell_document_closed(closed);
         self.revoke_git_requests_for(closed);
         self.blame_gutters.remove(&closed);
         self.collections.remove(&closed);
         self.review.forget(closed);
-        self.containers.buffers.remove(&closed);
-        self.containers.entries.remove(&closed);
+        self.filesystem_forget_view(closed);
         let return_to = self
             .docs
             .remove(closed)
@@ -454,10 +475,10 @@ impl Editor {
             self.view_mut().hscroll = strop_core::id::DisplayColumn::new(0);
             // a closing surface hands the cursor and view back to the
             // document it opened from — by id, no index math (0011 §1)
-            if let Some(ret) = return_to {
-                if self.docs.get(ret.document).is_some() {
-                    self.jump_to(ret);
-                }
+            if let Some(ret) = return_to.filter(|ret| self.docs.get(ret.document).is_some()) {
+                self.jump_to(ret);
+            } else if self.doc(next).directory_metadata_ref().is_some() {
+                self.restore_directory_view(next);
             }
         }
         for collection in affected_collections {
@@ -474,11 +495,15 @@ impl Editor {
     /// ctrl-c's quit intent (0015): warn once when dirty work exists,
     /// force on the second press. Returns true when the app may exit.
     pub fn ctrl_c_quit(&mut self) -> bool {
-        if self.ctrl_c_armed || !self.any_dirty() {
+        if self.ctrl_c_armed || (!self.any_dirty() && self.filesystem.unconfirmed() == 0) {
             return true;
         }
         self.ctrl_c_armed = true;
-        self.message = "unsaved changes — ctrl-c again to force-quit".into();
+        self.message = if self.filesystem.unconfirmed() > 0 {
+            "filesystem outcomes are unconfirmed — ctrl-c again to force-quit".into()
+        } else {
+            "unsaved changes — ctrl-c again to force-quit".into()
+        };
         false
     }
 

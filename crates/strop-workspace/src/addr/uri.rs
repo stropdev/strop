@@ -12,7 +12,8 @@ const HEX: &[u8; 16] = b"0123456789ABCDEF";
 /// Decode a URI path region to native filename bytes. Raw bytes outside the
 /// path grammar are refused (percent-encode them); raw non-ASCII UTF-8
 /// passes through as data. Remote metacharacters are never special.
-pub(super) fn decode_path(text: &str) -> Result<PathBuf, AddressError> {
+/// Decoding alone grants no authority and does not require an absolute path.
+pub fn decode_path(text: &str) -> Result<PathBuf, AddressError> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -45,7 +46,7 @@ pub(super) fn decode_path(text: &str) -> Result<PathBuf, AddressError> {
 
 /// Append the canonical URI spelling of native path bytes: only necessary
 /// percent escapes, everything the grammar allows stays raw.
-pub(super) fn push_escaped(out: &mut String, bytes: &[u8]) {
+pub(crate) fn push_escaped(out: &mut String, bytes: &[u8]) {
     use std::fmt::Write as _;
     for &byte in bytes {
         if is_raw_path_byte(byte) {
@@ -59,6 +60,14 @@ pub(super) fn push_escaped(out: &mut String, bytes: &[u8]) {
             );
         }
     }
+}
+
+/// Lossless URI path spelling for resource references and native Trash metadata.
+/// This encoder does not grant resource authority; admission still validates paths.
+pub fn encode_path(path: &std::path::Path) -> String {
+    let mut value = String::new();
+    push_escaped(&mut value, path_bytes(path));
+    value
 }
 
 /// Caller checked `is_ascii_hexdigit`.

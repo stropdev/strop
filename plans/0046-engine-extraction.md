@@ -56,3 +56,18 @@ the current consumers need — no speculative GUI API.
 GUI prototypes, toolkit evaluation, `strop-gui` scaffolding, a plugin
 boundary. The engine boundary exists so a GUI *can* attach later; nothing
 here is GUI work.
+
+## 5. Architecture, verification, native worker, then feature consumers
+
+[0056](0056-architecture-prerequisites.md) owns the remaining stage-C/read-only
+render/action/view cutover and migrates the real TUI/headless consumers. Dependency
+separation is retained; mutable rendering/job admission is not a finished boundary.
+Its non-graphical protocol/server and recovery/lifecycle contracts are delivered
+and tested first. [0057](0057-core-verification-and-assurance.md) then verifies the
+stable pre-worker core. [0058](0058-unified-native-worker.md) subsequently unifies
+native services/protocol and requalifies their claims before 0059 completion and
+0060 debugger. The worker does not own editor buffers/grammar/history/rendering.
+
+[0061](0061-gui-windows-and-wsl.md) then consumes that released boundary for native
+Windows presentation over WSL. It does not close stage C itself, clone Editor per
+frame, fork grammar/services or introduce another generic protocol/recovery owner.

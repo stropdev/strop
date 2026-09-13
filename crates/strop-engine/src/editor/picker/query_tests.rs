@@ -25,8 +25,14 @@ fn filter_only_files_and_literal_content_share_scope() {
         );
         for row in &picker.rows {
             match &picker.items.get(row.item).unwrap().payload {
-                Payload::File(path) | Payload::Grep { path, .. } => {
+                Payload::File(path) => {
                     assert_eq!(path, &PathBuf::from("a.rs"))
+                }
+                Payload::Grep { location, .. } => {
+                    assert_eq!(
+                        location,
+                        &strop_workspace::ResourceLocation::local(dir.path().join("a.rs"))
+                    );
                 }
                 _ => panic!("unexpected source kind"),
             }
@@ -152,7 +158,7 @@ fn a_source_warning_keeps_results_acceptable() {
                 badge: None,
                 text: "a.txt:1 · needle".into(),
                 payload: Payload::Grep {
-                    path: PathBuf::from("a.txt"),
+                    location: strop_workspace::ResourceLocation::local(dir.path().join("a.txt")),
                     line: 1,
                     col: 1,
                     match_len: 6,
@@ -194,7 +200,7 @@ fn qualifier_edits_do_not_clear_ranked_results() {
         badge: None,
         text: "src/a.rs:1 · hit".into(),
         payload: Payload::Grep {
-            path: PathBuf::from("src/a.rs"),
+            location: strop_workspace::ResourceLocation::local(editor.cwd.join("src/a.rs")),
             line: 1,
             col: 1,
             match_len: 3,

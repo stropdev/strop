@@ -12,7 +12,7 @@ Git, documentation, prompts, settings, and loading/error/recovery flows.
 The source investigation and live review made no Strop implementation changes.
 The other implementation session owns those changes. Reconcile its current
 branch before starting; reuse work already landed instead of implementing it
-twice. Code completion has its own, explicitly later release in **0052**.
+twice. Code completion has its own, explicitly later release in **0059**.
 
 ## 1. Release contract — scope is not optional
 
@@ -344,7 +344,7 @@ search/replace while the user finishes a token.
   escaping. Errors point to a token and name valid alternatives.
 
 This is query assistance, not the later code-completion subsystem. Disabling
-code completion in 0052 must not disable manual query help/suggestions.
+code completion in 0059 must not disable manual query help/suggestions.
 
 ## 5. Hidden and ignored files — R03
 
@@ -774,11 +774,11 @@ Suggested complete increments, all inside the release:
 
 | ID | May be deferred from this release | Re-entry condition / boundary |
 | --- | --- | --- |
-| D01 | Multi-source **code** completion | Separate release 0052, explicitly authorized by the user; LSP/current-buffer sources, nonblocking lifecycle and config gates belong there. This does **not** defer R02 query suggestions. |
+| D01 | Multi-source **code** completion | Separate release 0059, after architecture, core verification and native worker, explicitly authorized by the user; LSP/current-buffer sources, nonblocking lifecycle and config gates belong there. This does **not** defer R02 query suggestions. |
 | D02 | Full Boolean/GitHub search language, semantic `symbol:` predicates and arbitrary provider qualifiers | A concrete workflow beyond the bounded language above, after R01/R02 parity and diagnostics are stable. Do not advertise unsupported forms now. |
 | D03 | Clickable modeline/general mouse interaction | A coherent pointer/hit-region and terminal-capture contract. Keyboard `:tab-size`, the selector and visible effective setting are required now. Do not enable mouse capture only to discard most mouse input. |
 | D04 | General theme engine, experimental terminal typography protocols, GUI and new backend provisioning | Existing roadmap prerequisites/evidence gates; none is needed to deliver this TUI polish. Use the existing palette/layout first. |
-| D05 | Completion extras outside the bounded 0052 release, such as rich snippets or additional providers | The explicit 0052 extension ledger, after its required safe two-source completion is complete. |
+| D05 | Completion extras outside the bounded 0059 release, such as rich snippets or additional providers | The explicit 0059 extension ledger, after its required safe two-source completion is complete. |
 
 Previously deferred broader work (named investigations, structural recipes,
 Dev Container lifecycle, installed remote service) keeps its existing roadmap
@@ -882,7 +882,7 @@ been exhausted. The permitted D01–D05 deferrals remain exactly those in §11.
 
 - [0049 product/architecture handoff](0049-product-and-architecture-handoff.md),
   [0050 picker polish](0050-picker-visual-polish-handoff.md),
-  [0052 completion release](0052-nonblocking-code-completion.md),
+  [0059 completion release](0059-nonblocking-code-completion.md),
   [0028 roadmap](0028-roadmap-and-review.md).
 - [GitHub code-search syntax](https://docs.github.com/en/search-github/github-code-search/understanding-github-code-search-syntax): qualifiers, quoting and explicit regex precedent; this plan deliberately defines a smaller/different language.
 - [ripgrep guide](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md): ignore/glob/type/matching behavior and argv boundaries.

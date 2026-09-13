@@ -19,7 +19,7 @@ fn helper(
     let mut header = serde_json::to_vec(&request).unwrap();
     header.push(b'\n');
     let body = body.to_vec();
-    let source = format!("{fault}\n{}", include_str!("helper.py"));
+    let source = format!("{fault}\n{}", protocol::HELPER);
     crate::test_support::in_worker(move |token| {
         let mut command = std::process::Command::new("python3");
         command.args(["-I", "-S", "-c"]).arg(source).arg(path);

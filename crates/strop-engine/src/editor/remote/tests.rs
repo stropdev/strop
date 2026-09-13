@@ -11,7 +11,7 @@ fn follow_moves_the_eof_cursor_but_not_marks_or_jump_history() {
     e.set_head(old_tail);
     e.feed_text("ma");
     e.push_jump();
-    e.publish_remote_snapshot(id, document("first\nend\nnew\n", ReadSelection::Full), true)
+    e.publish_source_snapshot(id, document("first\nend\nnew\n", ReadSelection::Full), true)
         .unwrap();
     assert_eq!(e.head(), 12); // final character of the appended "new"
     e.jump_back();
@@ -25,7 +25,7 @@ fn browsing_does_not_become_eof_stickiness() {
     let mut e = editor("first\nend\n");
     let id = e.current();
     e.set_head(1);
-    e.publish_remote_snapshot(id, document("first\nend\nnew\n", ReadSelection::Full), true)
+    e.publish_source_snapshot(id, document("first\nend\nnew\n", ReadSelection::Full), true)
         .unwrap();
     assert_eq!(e.head(), 1);
 }
@@ -35,7 +35,7 @@ fn refresh_clamps_the_column_within_the_original_line() {
     let mut e = editor("abcdefgh\nsecond\nthird\n");
     let id = e.current();
     e.set_head(6);
-    e.publish_remote_snapshot(
+    e.publish_source_snapshot(
         id,
         document("x\nsecond\nthird\n", ReadSelection::Full),
         false,
@@ -50,7 +50,7 @@ fn shrink_clamps_browsing_to_a_real_grapheme() {
     let mut e = editor("first\nold tail\n");
     let id = e.current();
     e.set_head(8);
-    e.publish_remote_snapshot(id, document("e\u{301}\n", ReadSelection::Full), true)
+    e.publish_source_snapshot(id, document("e\u{301}\n", ReadSelection::Full), true)
         .unwrap();
     assert_eq!(
         e.head(),

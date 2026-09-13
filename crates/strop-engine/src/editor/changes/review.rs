@@ -104,6 +104,13 @@ impl Editor {
     /// becomes the receipt and stays open; the receipt is recorded for
     /// grouped undo (`:undo-change`).
     pub(crate) fn review_apply_pub(&mut self) {
+        if self.apply_filesystem_review() {
+            return;
+        }
+        if self.is_filesystem_report(self.current()) {
+            self.message = "this filesystem report has no pending proposal to apply".into();
+            return;
+        }
         let Some(proposal) = self.review.pending.take() else {
             self.message = "no change proposal awaiting review".into();
             return;
@@ -251,6 +258,13 @@ impl Editor {
     /// Cancel the reviewed proposal: nothing is applied, ever. The review
     /// buffer becomes a cancelled receipt and stays open.
     pub(crate) fn review_cancel_pub(&mut self) {
+        if self.cancel_filesystem_review() {
+            return;
+        }
+        if self.is_filesystem_report(self.current()) {
+            self.message = "this filesystem report has no pending proposal to cancel".into();
+            return;
+        }
         if let Some(stamp) = self
             .review
             .preparing
@@ -431,6 +445,7 @@ impl Editor {
         search: Option<crate::editor::picker::search::SearchStamp>,
         focus: bool,
     ) {
+        self.retire_filesystem_review("superseded by a text review");
         if let Some(old) = self.review.pending.take() {
             let note = format!(
                 "strop change proposal {}: {} — SUPERSEDED by a newer proposal\n",
@@ -518,6 +533,40 @@ impl Editor {
 mod tests;
 
 impl Editor {
+    pub(crate) fn set_filesystem_review_rows(
+        &mut self,
+        document: DocumentId,
+        rows: Vec<ReviewRow>,
+    ) {
+        self.filesystem_report_opened(document);
+        self.review.rows.insert(document, rows);
+    }
+
+    pub(crate) fn retire_text_review_for_filesystem(&mut self) {
+        if let Some(proposal) = self.review.pending.take() {
+            if self.docs.get(proposal.buffer).is_some() {
+                if let Err(error) = self.replace_system(
+                    proposal.buffer,
+                    "text review superseded by filesystem review; nothing applied\n",
+                ) {
+                    self.message = error.to_string();
+                }
+            }
+        }
+    }
+
+    pub(crate) fn invalidate_filesystem_text_review(&mut self, documents: &[DocumentId]) {
+        self.cancel_review_preparation();
+        if self.review.pending.as_ref().is_some_and(|proposal| {
+            proposal
+                .plan
+                .documents
+                .iter()
+                .any(|target| documents.contains(&target.document))
+        }) {
+            self.retire_text_review_for_filesystem();
+        }
+    }
     pub fn review_row(&self, document: DocumentId, row: usize) -> Option<ReviewRow> {
         self.review.rows.get(&document)?.get(row).copied()
     }

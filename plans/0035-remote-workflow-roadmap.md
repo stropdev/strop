@@ -8,6 +8,13 @@ gates and observable acceptance; it sets no dates or blanket parity promise. Rem
 writes, arbitrary shell jobs, additional transports and automatic content restoration
 remain outside the delivered scope.
 
+**Subsequent implementation cutover:** [0058](0058-unified-native-worker.md) is now
+authorized after 0056 architecture and 0057 verification. It replaces Strop's Python
+filesystem/save/supervision with one native worker/protocol for local, SSH and
+supported containers, while preserving this inventory's capability/trust boundaries.
+Python requirements below describe the pre-worker milestones; the dispatched
+verification agent still verifies that actual baseline. WK16–WK20 own the migration.
+
 ## Method and sources
 
 The [TRAMP manual TOC](https://www.gnu.org/software/emacs/manual/html_node/tramp/index.html)

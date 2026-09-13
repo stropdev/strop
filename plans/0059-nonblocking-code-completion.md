@@ -1,10 +1,11 @@
-# 0052 — Nonblocking, precise code completion
+# 0059 — Nonblocking, precise code completion
 
-Status: **separately scheduled implementation release; research/design only**.
-The user explicitly authorized separating this larger feature from the next
-whole-editor polish release in 0051. It must not delay any required 0051 item.
-Conversely, when a release claims code completion, C01–C09 below are required;
-shipping only a popup or a single provider does not complete this plan.
+Status: **unimplemented; deferred until the native worker and its assurance cutover**.
+The user has dispatched [0056 architecture](0056-architecture-prerequisites.md) and
+[0057 core verification](0057-core-verification-and-assurance.md). The authorized
+[0058 native worker](0058-unified-native-worker.md) release follows both; only after
+WK01–WK20 completes does this release start, before 0060 debugger and 0061 GUI.
+C01–C09 remain required; a popup or one provider does not complete this plan.
 
 Research baseline: Strop 0.28.0,
 `c7a5ac6c9089cff654365a0376f6cf87d746db95`. No completion implementation,
@@ -51,15 +52,21 @@ semantic results; source provenance stays truthful.
 This is **code completion**, not AI edit prediction, an automatic code agent,
 brace insertion, or the query-qualifier assistance required by 0051.
 
-## 3. Reuse the existing architecture, close its actual gaps
+## 3. Consume the completed architecture and assured core
 
-Relevant current seams:
+Entry requires **0056 AR01–AR16, 0057 VF01–VF20 and 0058 WK01–WK20 complete**, on
+recorded candidates. Do not begin providers/indexing while those releases are in flight.
+Consume their admitted source/mutation/input and worker-backed service/transport APIs;
+update anchors after the cutover rather than coding against historical Python helpers.
+
+Existing seams to consume, not alternate infrastructure to recreate:
 
 - `strop-lsp/src/protocol.rs`, `caps.rs`, `client/api.rs`: typed requests,
   capability gating, `RequestStamp`, admission and replies.
-- `client/queue.rs`: ordered per-connection wire worker; full-text rope
-  serialization is off the input thread. The queue is currently unbounded and
-  `WireJob::Change` carries a full rope snapshot.
+- `client/queue.rs` and its released replacement/split: ordered per-connection
+  transport with serialization off input, bounded retained work and synchronization
+  barriers. Its historical unbounded full-rope queue is 0056 architecture work,
+  qualified by 0057 before completion starts.
 - `editor/trace/drive.rs`: recorded actions synchronize changed bindings;
   `editor/lsp/state.rs`: document/service bindings, request ownership and tape
   calls. Do not reuse the hover-versus-navigation owner slot for completion.
@@ -326,17 +333,18 @@ wrong server or write authority.
 
 ## 9. LSP transport must stay current under typing — C05
 
-Current full-text serialization is already off the UI thread; retain that.
-It does **not** prove memory is bounded or that the newest completion can reach
-the server promptly. `client/queue.rs` currently queues full rope snapshots,
-and recorded actions synchronize changed bindings.
+At entry, 0056/0057 establish off-input serialization, physical retention bounds,
+coalescing and ordering, and 0058 has preserved/requalified them through its real
+local/SSH/container worker protocol. C05 preserves these under completion traffic;
+it does not repair generic queues or finish the worker migration for the first time.
 
-Before increasing request frequency:
+Before enabling higher request frequency:
 
-1. Bound retained sync/completion work by count and bytes.
-2. Coalesce superseded unsent full-document updates when no admitted consumer
-   requires the intermediate version. Preserve didOpen/didClose, incarnation
-   changes, request barriers and required mutation/lifecycle outcomes.
+1. Account completion work in the real count/byte admission and retirement bounds;
+   prove/check completion cannot bypass them with its own unsent snapshots.
+2. Reuse the admitted coalescing policy for superseded unsent full-document updates
+   when no consumer needs the intermediate version. Preserve didOpen/didClose,
+   incarnation changes, request barriers and required mutation/lifecycle outcomes.
 3. Remove obsolete queued completion requests before sending where possible;
    send advisory cancellation for sent requests. Do not corrupt an in-progress
    framed message by aborting it halfway through serialization/transmission.
@@ -471,10 +479,12 @@ Styled grids must show selection/source/detail/doc hierarchy and edge placement;
 text-only snapshots do not establish visual polish. Ordinary typing must remain
 usable while every provider is slow or unavailable.
 
-Run the repository's compose quality gate and affected model/proof/adapter gates.
-Record exact executed checks, limitations and C01–C09 acceptance in the plan and
-roadmap. No code-completion release is complete with just a renderer, fake
-provider or an unbounded “async” implementation.
+Run the Compose quality gate plus the applicable 0057/0058 `model`, `verify`, `tlaps`,
+`core-assurance` and native/service/deployment lanes on the exact candidate. Register
+completion query/index/resolve/acceptance extensions and update affected worker/core
+claims, models, production proofs and correspondence; neither baseline proves new code.
+Record exact checks, limitations and C01–C09 acceptance in this plan and roadmap.
+No release is complete with only a renderer, fake provider or unbounded “async” work.
 
 ## 12. Authorized extensions after this bounded release
 
@@ -516,3 +526,7 @@ suggestions or matching delimiter highlighting.
 - [0051 whole-editor contract](0051-whole-editor-polish-and-query-language.md),
   [0050 visual roles](0050-picker-visual-polish-handoff.md), and
   [0028 roadmap](0028-roadmap-and-review.md).
+- [0056 architecture](0056-architecture-prerequisites.md),
+  [0057 core verification](0057-core-verification-and-assurance.md) and
+  [0058 native worker](0058-unified-native-worker.md): completed prerequisites,
+  including the worker's assurance migration—not completion work or optional hardening.

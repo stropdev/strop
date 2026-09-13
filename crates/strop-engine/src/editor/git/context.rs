@@ -29,6 +29,26 @@ impl Editor {
             return;
         }
         self.git_discovery.retry_failed();
+        let directory = self.directory().map(|source| source.location.clone());
+        if let Some(directory) = &directory {
+            match &directory.filesystem {
+                strop_workspace::Filesystem::Remote(endpoint) => {
+                    match strop_workspace::RemoteFile::from_path(
+                        endpoint.clone(),
+                        directory.path.clone(),
+                    ) {
+                        Ok(file) => self.discover_remote_git(file),
+                        Err(error) => self.message = error.to_string(),
+                    }
+                    return;
+                }
+                strop_workspace::Filesystem::Container(container) => {
+                    self.discover_container_git(container.clone(), directory.path.clone());
+                    return;
+                }
+                strop_workspace::Filesystem::Local => {}
+            }
+        }
         if let Some(file) = self.remote_file().cloned() {
             self.discover_remote_git(file);
             return;
@@ -41,11 +61,9 @@ impl Editor {
             self.discover_container_git(container.clone(), path.clone());
             return;
         }
-        let from = self
-            .buf()
-            .path
-            .as_deref()
-            .map(std::path::PathBuf::from)
+        let from = directory
+            .map(|directory| directory.path)
+            .or_else(|| self.buf().path.clone())
             .unwrap_or_else(|| self.cwd.clone());
         // one request per origin while running; a resolved (Ready)
         // discovery is re-derivable, so explicit switches refresh it
@@ -92,7 +110,7 @@ impl Editor {
     /// honest answer, published like any other context.
     fn discover_remote_git(&mut self, file: strop_workspace::RemoteFile) {
         let endpoint = file.endpoint().clone();
-        let from_dir = if self.remote_directory().is_some() {
+        let from_dir = if self.directory().is_some() {
             file.path().to_owned()
         } else {
             file.path()
@@ -165,10 +183,13 @@ impl Editor {
         container: strop_workspace::ContainerId,
         path: std::path::PathBuf,
     ) {
-        let from_dir = path
-            .parent()
-            .unwrap_or(std::path::Path::new("/"))
-            .to_owned();
+        let from_dir = if self.directory().is_some() {
+            path.clone()
+        } else {
+            path.parent()
+                .unwrap_or(std::path::Path::new("/"))
+                .to_owned()
+        };
         let from = FileTarget::Container {
             container: container.clone(),
             path: from_dir.clone(),

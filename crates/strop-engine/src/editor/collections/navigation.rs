@@ -13,39 +13,25 @@ impl Editor {
         self.collection_open_source();
     }
 
-    pub(crate) fn collection_open_source(&mut self) {
-        let id = self.current();
-        let cursor_line = self.buf().line_of(self.head());
-        let cursor_col = self.buf().col_of(self.head());
-        let Some(collection) = self.collections.get(&id) else {
-            return;
-        };
-        let mut target: Option<(DocumentId, usize)> = None;
-        for excerpt in &collection.excerpts {
-            if cursor_line == excerpt.view_line {
-                // header row: the file, at this excerpt's first line
-                target = Some((excerpt.source, excerpt.start));
-                break;
-            }
-            if cursor_line > excerpt.view_line
-                && cursor_line <= excerpt.view_line + excerpt.view_lines
-            {
-                // body row: same line-in-excerpt, same column
-                let Some(source) = self.docs.get(excerpt.source) else {
-                    break;
-                };
-                let source_line =
-                    source.buf.line_of(excerpt.start) + (cursor_line - excerpt.view_line - 1);
-                let line = source_line.min(source.buf.len_lines().saturating_sub(1));
-                target = Some((
-                    excerpt.source,
-                    source
-                        .buf
-                        .clamp_boundary(source.buf.line_start(line).saturating_add(cursor_col)),
-                ));
-                break;
-            }
+    /// Shared source context for navigation actions, including a collection's
+    /// source-bearing file header. Presentation chrome never becomes a path.
+    pub(crate) fn navigation_source(&self) -> Option<(DocumentId, usize)> {
+        if let Some(source) = self.source_position(self.current(), self.head()) {
+            return Some(source);
         }
+        let line = self.buf().line_of(self.head());
+        self.collections
+            .get(&self.current())?
+            .excerpts
+            .iter()
+            .find(|excerpt| excerpt.view_line == line)
+            .map(|excerpt| (excerpt.source, excerpt.start))
+    }
+    pub(crate) fn collection_open_source(&mut self) {
+        if !self.collections.contains_key(&self.current()) {
+            return;
+        }
+        let target = self.navigation_source();
         let Some((document, head)) = target else {
             self.message = "not on an excerpt".into();
             return;

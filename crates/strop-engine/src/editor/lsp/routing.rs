@@ -171,7 +171,7 @@ impl Editor {
                         let path = symbol.location.doc.path.clone();
                         let payload = match symbol.location.doc.filesystem {
                             strop_workspace::Filesystem::Local => Payload::Grep {
-                                path,
+                                location: strop_workspace::ResourceLocation::local(path),
                                 line,
                                 col,
                                 match_len: 1,
@@ -278,7 +278,9 @@ impl Editor {
                                 let text = format!("{}:{}:{}", location.doc.label(), line, col);
                                 let payload = match location.doc.filesystem {
                                     Filesystem::Local => Payload::Grep {
-                                        path: location.doc.path,
+                                        location: strop_workspace::ResourceLocation::local(
+                                            location.doc.path,
+                                        ),
                                         line,
                                         col,
                                         match_len: 1,

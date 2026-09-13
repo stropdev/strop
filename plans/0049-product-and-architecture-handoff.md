@@ -528,6 +528,14 @@ than creating another parallel change model.
 
 ## 9. Architecture and quality work worth doing now
 
+**Current owner:** remaining shared implementation gaps here are consolidated into
+[0056](0056-architecture-prerequisites.md), immediately followed by the separate
+[0057](0057-core-verification-and-assurance.md) whole-core verification release.
+The subsequent [0058 worker](0058-unified-native-worker.md) unifies native services
+and requalifies changed claims before completion/debugger/GUI. It does not interrupt
+dispatched AR/VF work. Preserve preceding fixes/evidence; this historical inventory
+is not a competing scope or permission to bury repairs in GUI.
+
 ### Finish boundaries where the product needs them
 
 - `strop-engine` extraction is delivered. Keep it. Tighten the public surface

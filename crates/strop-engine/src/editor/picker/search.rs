@@ -42,7 +42,7 @@ struct RestoreView {
     top_item: Option<usize>,
 }
 struct HitWitness {
-    path: PathBuf,
+    path: ResourceLocation,
     line: usize,
     column: usize,
     length: usize,
@@ -51,7 +51,7 @@ struct HitWitness {
 impl HitWitness {
     fn from_item(item: &Item) -> Option<Self> {
         let Payload::Grep {
-            path,
+            location: path,
             line,
             col,
             match_len,
@@ -69,7 +69,7 @@ impl HitWitness {
         })
     }
     fn matches(&self, item: &Item) -> bool {
-        matches!(&item.payload, Payload::Grep {path,line,col,match_len,line_text}
+        matches!(&item.payload, Payload::Grep {location: path,line,col,match_len,line_text}
             if self.path == *path && self.line == *line && self.column == *col
                 && self.length == *match_len && self.text == *line_text)
     }
@@ -100,7 +100,7 @@ impl Editor {
     }
     pub(super) fn open_search_hit(&mut self, payload: Payload) {
         let Payload::Grep {
-            path,
+            location,
             line,
             col,
             match_len,
@@ -114,7 +114,19 @@ impl Editor {
             self.message = "Search has no captured workspace scope".into();
             return;
         };
-        let path = scope.root.path.join(path);
+        if location.filesystem != scope.root.filesystem
+            || !location.path.starts_with(&scope.root.path)
+        {
+            self.message = "Search result escaped its captured namespace/root".into();
+            return;
+        }
+        let target = match crate::files::FileTarget::from_location(&location) {
+            Ok(target) => target,
+            Err(error) => {
+                self.message = error.to_string();
+                return;
+            }
+        };
         let hit = ReplacementHit {
             line,
             col,
@@ -123,7 +135,7 @@ impl Editor {
         };
         self.push_jump();
         self.close_picker();
-        self.request_open(path, super::super::io::OpenIntent::SearchHit(hit));
+        self.request_target(target, super::super::io::OpenIntent::SearchHit(hit));
     }
 
     pub(super) fn new_search_context(
@@ -162,8 +174,16 @@ impl Editor {
     }
 
     pub fn open_search_in(&mut self, scope: SearchScope, replacement: bool) {
-        if scope.root.filesystem != Filesystem::Local || !scope.root.path.is_absolute() {
-            self.message = "Search currently requires an absolute local-workspace scope; no filesystem fallback".into();
+        if matches!(scope.root.filesystem, Filesystem::Container(_))
+            || !scope.root.path.is_absolute()
+        {
+            self.message =
+                "Search requires an absolute local or capable SSH scope; no filesystem fallback"
+                    .into();
+            return;
+        }
+        if replacement && scope.root.filesystem != Filesystem::Local {
+            self.message = "SSH Search is read-only; With and Review are unavailable".into();
             return;
         }
         self.cancel_open(CancelReason::Superseded);
@@ -311,6 +331,14 @@ impl Editor {
             .as_mut()
             .filter(|glue| glue.picker.kind == Kind::Search)
         {
+            if glue
+                .search
+                .as_ref()
+                .is_some_and(|context| context.scope.root.filesystem != Filesystem::Local)
+            {
+                self.message = "SSH Search is read-only; With and Review are unavailable".into();
+                return;
+            }
             glue.picker.toggle_replacement();
             glue.accept_when_ranked = false;
             glue.suggestions = None;

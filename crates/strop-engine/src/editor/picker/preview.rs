@@ -43,7 +43,7 @@ pub(super) struct WitnessCheck {
     item: usize,
     dataset: u64,
     document: Option<(strop_core::id::DocumentId, strop_core::id::BufferRevision)>,
-    path: Option<std::path::PathBuf>,
+    path: Option<strop_workspace::ResourceLocation>,
     range: Option<strop_core::Range>,
 }
 
@@ -65,14 +65,25 @@ impl Editor {
         let Some(row) = glue.picker.rows.get(glue.picker.selected) else {
             return Ok(None);
         };
+        let Payload::Grep { location, .. } = &glue.picker.items[row.item].payload else {
+            return Ok(None);
+        };
+        let target = crate::files::FileTarget::from_location(location)
+            .map_err(|_| "invalid source identity")?;
         let (rope, document, path) = match source {
             PreviewSource::Buffer(id) => {
                 let Some(doc) = self.docs.get(*id) else {
                     return Err("source closed — refresh Search");
                 };
+                if !doc.matches_target(&target) {
+                    return Err("preview source belongs to another resource");
+                }
                 (doc.buf.text(), Some((*id, doc.buf.revision())), None)
             }
             PreviewSource::Cached(path) => {
+                if path != location {
+                    return Err("preview source belongs to another resource");
+                }
                 let Some(entry) = self.previews.get(path) else {
                     return Ok(None);
                 };
@@ -125,38 +136,35 @@ impl Editor {
 
     pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
         let item = self.picker.as_ref()?.picker.current()?;
-        let (path, focus_line) = match &item.payload {
+        let (full, focus_line) = match &item.payload {
             Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
             | Payload::Jump { .. }
             | Payload::SearchOption(_)
             | Payload::CodeAction(_)
             | Payload::Container(_)
+            | Payload::FilesystemAction(_)
             | Payload::IndentChoice(_) => return None,
             Payload::Buffer(document) => {
                 let name = self.docs.get(*document)?.label(&self.cwd);
                 return Some((name, None, PreviewSource::Buffer(*document)));
             }
-            Payload::File(path) => (path.clone(), None),
-            Payload::Grep { path, line, .. } => (path.clone(), Some(*line)),
-            // A remote hit never previews from the local disk: the
-            // analogous path is another machine's file (0036). The
-            // endpoint-labelled title says where it lives; accepting
-            // opens it remotely.
+            Payload::File(path) => (
+                strop_workspace::ResourceLocation::local(self.picker_path(path)),
+                None,
+            ),
+            Payload::Grep { location, line, .. } => (location.clone(), Some(*line)),
             Payload::Remote {
                 endpoint,
                 path,
                 line,
                 ..
-            } => {
-                return Some((
-                    format!("{endpoint}{}", path.display()),
-                    Some(*line),
-                    PreviewSource::Failed("remote hit — accept to open".into()),
-                ));
-            }
+            } => (
+                strop_workspace::ResourceLocation::remote(endpoint.clone(), path.clone()),
+                Some(*line),
+            ),
         };
-        let full = self.picker_path(&path);
+        let path = &full.path;
         // 0050: the header identifies filename + line first; the parent
         // directory follows only while it fits the card.
         let title = {
@@ -175,7 +183,17 @@ impl Editor {
             .trim_end()
             .to_string()
         };
-        let target = crate::files::FileTarget::Local(full.clone());
+        let title = if full.local_path().is_none() {
+            format!("{} · {title}", full.filesystem.label())
+        } else {
+            title
+        };
+        let target = match crate::files::FileTarget::from_location(&full) {
+            Ok(target) => target,
+            Err(error) => {
+                return Some((title, focus_line, PreviewSource::Failed(error.to_string())))
+            }
+        };
         if let Some((document, _)) = self
             .docs
             .iter()
@@ -205,13 +223,13 @@ impl Editor {
     /// True when the preview is cached. Otherwise registers an owned
     /// request for this picker instance (cancelling any stale one) and
     /// launches the bounded read; the next tick picks the result up.
-    fn preview_ready(&mut self, path: &Path) -> bool {
+    fn preview_ready(&mut self, path: &strop_workspace::ResourceLocation) -> bool {
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return false;
         };
         let key = PreviewKey {
             picker,
-            path: path.to_path_buf(),
+            path: path.clone(),
         };
         if self.previews.contains_key(path)
             && matches!(self.preview_loads.get(path), Some(Load::Ready(owner)) if owner == &key)
@@ -247,11 +265,11 @@ impl Editor {
         // registration precedes launch — replay mode stops here and
         // only injected results populate the cache
         self.preview_loads
-            .insert(path.to_path_buf(), Load::Running(ticket.clone()));
+            .insert(path.clone(), Load::Running(ticket.clone()));
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"preview","request":request.get(),
-                "picker":picker.0.get(),"path":path.to_string_lossy(),
+                "picker":picker.0.get(),"location":path,
             })
         });
         match self
@@ -268,17 +286,53 @@ impl Editor {
                 return false;
             }
         }
-        let launch_path = path.to_path_buf();
+        let launch_path = path.clone();
+        let client = self.remote_client();
         let tx = self.preview_tx.clone();
         let handle = worker::spawn(
             "strop-preview",
             move |outcome| {
                 let _ = tx.send(PreviewResult { ticket, outcome });
             },
-            move |_| read_preview(&launch_path),
+            move |token| read_resource_preview(&launch_path, &client, &token),
         );
         self.worker_handles.insert(request, handle);
         false
+    }
+}
+
+fn read_resource_preview(
+    location: &strop_workspace::ResourceLocation,
+    client: &strop_remote::RemoteClient,
+    token: &worker::CancelToken,
+) -> Outcome<PreparedPreview> {
+    match crate::files::FileTarget::from_location(location) {
+        Ok(crate::files::FileTarget::Local(path)) => read_preview(&path),
+        Ok(crate::files::FileTarget::Remote(remote)) => {
+            let length = match strop_remote::ReadLimit::new(512 * 1024) {
+                Ok(length) => length,
+                Err(error) => return Outcome::failed(FailureKind::Protocol, error.to_string()),
+            };
+            let selection = strop_remote::ReadSelection::Range {
+                start: strop_remote::RemoteOffset::new(0),
+                length,
+            };
+            match client.read(&remote, selection, token) {
+                Ok(snapshot) if snapshot.window.is_complete() => {
+                    Outcome::Success(PreparedPreview {
+                        rope: snapshot.buffer.text().clone(),
+                    })
+                }
+                Ok(_) => Outcome::failed(FailureKind::Unavailable, "preview too large"),
+                Err(_) if token.is_cancelled() => Outcome::Cancelled(CancelReason::Superseded),
+                Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
+            }
+        }
+        Ok(crate::files::FileTarget::Container { .. }) => Outcome::failed(
+            FailureKind::Unavailable,
+            "container search preview is not supported",
+        ),
+        Err(error) => Outcome::failed(FailureKind::Protocol, error.to_string()),
     }
 }
 

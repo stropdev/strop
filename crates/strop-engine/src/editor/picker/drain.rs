@@ -162,7 +162,7 @@ impl Editor {
             };
             serde_json::json!({
                 "service":"preview","request":result.ticket.request.get(),
-                "path":path.to_string_lossy(),"outcome":outcome,
+                "location":path,"outcome":outcome,
             })
         });
         let key = result.ticket.key;

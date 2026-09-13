@@ -74,6 +74,7 @@ struct Modeline {
     git_context: String,         // branch or historical commit identity
     worktree_dirty: bool,        // "*" — unstaged or untracked changes
     staged_mark: bool,           // "+" — staged changes
+    namespace: String,           // source identity, not optional Git context
     dir: String,                 // muted context, trailing separator kept
     name: String,                // the part that must survive truncation
     dirty: bool,                 // " ●" after the name
@@ -109,17 +110,18 @@ impl Modeline {
         let (errors, warnings) = editor.diag_counts(editor.current());
         let cursors = editor.sels().count();
         let commit = historical_commit(editor);
+        let namespace = editor
+            .remote_endpoint()
+            .map(|endpoint| format!("ssh:{}", endpoint.host()))
+            .unwrap_or_default();
         let git_context = match commit {
             Some(sha) => format!("@{}", sha.get(..8).unwrap_or(sha)),
-            None if editor.remote_file().is_some() => editor
-                .remote_file()
-                .map(|file| format!("ssh:{}", file.endpoint().host()))
-                .unwrap_or_default(),
-            None => editor
+            None if namespace.is_empty() => editor
                 .git
                 .as_ref()
                 .and_then(|git| git.head_branch.clone())
                 .unwrap_or_default(),
+            None => String::new(),
         };
         Self {
             chip: if let Some(glue) = editor.picker.as_ref() {
@@ -139,6 +141,7 @@ impl Modeline {
             },
             accent: mode_color(editor.mode),
             git_context: printable(git_context),
+            namespace: printable(namespace),
             worktree_dirty: commit.is_none()
                 && (!editor.hunks.is_empty() || editor.hunks_untracked),
             staged_mark: commit.is_none() && !editor.staged_hunks.is_empty(),
@@ -246,6 +249,11 @@ impl Modeline {
             + 5 * usize::from(self.readonly)
             + self.multicursor.as_ref().map_or(0, |mark| 1 + width(mark));
         let name_budget = budget.saturating_sub(reserved);
+        if !self.namespace.is_empty() {
+            let namespace_budget = name_budget.saturating_sub(width(&self.name).min(MIN_GROUP) + 1);
+            self.namespace = clip_end(&self.namespace, namespace_budget).into_owned();
+        }
+        let name_budget = name_budget.saturating_sub(self.namespace_width());
         self.name = clip_end(&self.name, name_budget).into_owned();
     }
 
@@ -254,6 +262,7 @@ impl Modeline {
     /// the row between them — never an empty row.
     fn ultra(&mut self, cells: usize) {
         self.git_context.clear();
+        self.namespace.clear();
         // Even at degenerate widths, put safety before decorative mode text.
         let safety = format!(
             "{}{}{}",
@@ -336,8 +345,17 @@ impl Modeline {
         left + GAP + right
     }
 
+    fn namespace_width(&self) -> usize {
+        if self.namespace.is_empty() {
+            0
+        } else {
+            width(&self.namespace) + 1
+        }
+    }
+
     fn file_w(&self) -> usize {
-        width(&self.dir)
+        self.namespace_width()
+            + width(&self.dir)
             + width(&self.name)
             + 2 * usize::from(self.dirty)
             + 5 * usize::from(self.readonly)
@@ -346,6 +364,13 @@ impl Modeline {
 
     fn file_spans(&self) -> Vec<Span<'_>> {
         let mut spans = Vec::new();
+        if !self.namespace.is_empty() {
+            spans.push(Span::styled(
+                self.namespace.as_str(),
+                Style::default().fg(MUTED),
+            ));
+            spans.push(Span::raw(" "));
+        }
         if !self.dir.is_empty() {
             spans.push(Span::styled(self.dir.as_str(), Style::default().fg(MUTED)));
         }
@@ -517,6 +542,27 @@ fn historical_commit(editor: &Editor) -> Option<&str> {
 /// absolute form. Virtual buffers keep their display name; a pathless,
 /// nameless buffer is the scratch.
 fn file_display(editor: &Editor) -> (String, String) {
+    if let Some(directory) = editor.directory() {
+        let path = &directory.location.path;
+        let parent = path
+            .parent()
+            .map(strop_workspace::directory::display_path)
+            .unwrap_or_default();
+        let mut name = strop_workspace::directory::display_path(
+            path.file_name().map(std::path::Path::new).unwrap_or(path),
+        );
+        if !name.ends_with('/') {
+            name.push('/');
+        }
+        return (
+            if parent.is_empty() {
+                parent
+            } else {
+                format!("{parent}/")
+            },
+            name,
+        );
+    }
     if let Some(file) = editor.remote_file() {
         let directory = file.path().parent().map_or_else(String::new, |parent| {
             let mut directory = parent.display().to_string();

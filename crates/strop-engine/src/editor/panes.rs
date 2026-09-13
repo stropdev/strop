@@ -117,6 +117,12 @@ impl Editor {
     /// real close path (leases, sessions, remote permits all settle). vim:
     /// refuses while any buffer is dirty; `:qa!` discards.
     pub(crate) fn quit_all(&mut self, force: bool) {
+        if !force && self.filesystem.unconfirmed() > 0 {
+            self.message =
+                "filesystem outcomes are unconfirmed; :fs verify before quitting, or :qa! to force"
+                    .into();
+            return;
+        }
         if !force {
             let dirty = self.docs.iter().filter(|(_, d)| d.buf.dirty).count();
             if dirty > 0 {
@@ -125,7 +131,9 @@ impl Editor {
             }
         }
         while !self.docs.is_empty() {
-            self.close_buffer(force);
+            if !self.close_buffer(force) {
+                return;
+            }
         }
     }
 

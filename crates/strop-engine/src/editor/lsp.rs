@@ -242,7 +242,7 @@ impl Editor {
                             d.message
                         ),
                         payload: Payload::Grep {
-                            path: doc.path.clone(),
+                            location: strop_workspace::ResourceLocation::local(doc.path.clone()),
                             line,
                             col,
                             match_len: 1,

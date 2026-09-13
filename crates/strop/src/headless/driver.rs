@@ -154,10 +154,7 @@ pub fn run_script(
         terminal: Terminal::new(TestBackend::new(cols, rows))?,
         events,
     };
-    driver.apply(Action::Start {
-        directory_picker: false,
-        open,
-    })?;
+    driver.apply(Action::Start { open })?;
     driver.draw()?;
     for line in steps {
         if driver.editor.should_quit {
@@ -257,7 +254,7 @@ pub fn run_script(
     driver.apply(Action::Finish)?;
     driver.wait(Duration::from_secs(30), WaitTarget::Jobs, false)?;
     driver.editor.tape.finish()?;
-    if let Some(error) = driver.editor.io.session_error.take() {
+    if let Some(error) = driver.editor.take_shutdown_error() {
         return Err(io::Error::other(error));
     }
     Ok(())

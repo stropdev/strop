@@ -14,8 +14,7 @@ use strop_trace::replay::Tick;
 #[derive(Serialize, Deserialize)]
 pub struct StartupOpen {
     pub target: crate::files::FileTarget,
-    pub line: Option<strop_core::id::LineIndex>,
-    pub view: super::super::remote::RemoteView,
+    pub intent: super::super::io::OpenIntent,
 }
 
 /// Every external step a replay reproduces. `Event` carries the shared
@@ -24,10 +23,9 @@ pub struct StartupOpen {
 /// handler are one function.
 #[derive(Serialize, Deserialize)]
 pub enum Action {
-    /// The explicit start-services step after the seed: git discovery
-    /// registration, the optional directory picker, LSP start state.
+    /// The explicit start-services step after the seed, with an optional owned
+    /// resource open. Local directories and remote resources share this path.
     Start {
-        directory_picker: bool,
         #[serde(default)]
         open: Option<StartupOpen>,
     },
@@ -54,24 +52,14 @@ impl Editor {
     pub(crate) fn apply_recorded(&mut self, action: Action) -> io::Result<()> {
         let frame = matches!(action, Action::Frame { .. });
         match action {
-            Action::Start {
-                directory_picker,
-                open,
-            } => {
+            Action::Start { open } => {
                 self.resolution.enabled = true;
                 let startup_message = self.message.clone();
                 if let Some(open) = open {
                     self.lsp_start_services();
-                    let intent = super::super::io::OpenIntent::RemoteView {
-                        view: open.view,
-                        line: open.line,
-                    };
-                    self.request_target(open.target, intent);
+                    self.request_target(open.target, open.intent);
                 } else {
                     self.discover_git();
-                    if directory_picker {
-                        self.open_picker(strop_picker::Kind::Files);
-                    }
                     self.lsp_start_services();
                 }
                 if !startup_message.is_empty() {

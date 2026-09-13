@@ -179,6 +179,51 @@ pub fn prepare_edit(
     })
 }
 
+/// Explicit worker-only re-admission after a confirmed same-object relocation.
+/// The old version is evidence of stored bytes, not transferable write authority.
+/// A fresh protected helper check must prove the new name still owns that object.
+pub fn prepare_relocated_edit(
+    file: &RemoteFile,
+    before: &RemoteVersion,
+    token: &CancelToken,
+) -> Result<RemoteVersion, RemoteSaveError> {
+    if file.endpoint() != before.file.endpoint() {
+        return Err(RemoteSaveError::refused(
+            RefusalKind::Conflict,
+            "relocation crossed an endpoint",
+        ));
+    }
+    let reply = protocol::invoke(
+        file,
+        protocol::Operation::Edit {
+            length: before.stamp.size,
+            digest: &before.stamp.content,
+        },
+        token,
+    )?;
+    let protocol::Reply::Ready { stamp } = reply else {
+        return Err(RemoteSaveError::refused(
+            RefusalKind::Protocol,
+            "expected a fresh edit baseline",
+        ));
+    };
+    if !stamp.valid()
+        || stamp.inode != before.stamp.inode
+        || !stamp.preserves(&before.stamp)
+        || stamp.size != before.stamp.size
+        || stamp.content != before.stamp.content
+    {
+        return Err(RemoteSaveError::refused(
+            RefusalKind::Conflict,
+            "relocated file no longer matches the stored source baseline",
+        ));
+    }
+    Ok(RemoteVersion {
+        file: file.clone(),
+        stamp,
+    })
+}
+
 /// Worker-only conditional atomic replacement. The file is carried by its baseline,
 /// so a caller cannot accidentally pair a different path with the expected version.
 pub fn save(

@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.31.0 — 2026-09-13
+
+One filesystem workspace: browse, edit names, review operations (0054).
+
+### Added
+
+- One namespace-aware Directory buffer for local, SSH and read-only container
+  browsing, with current-file reveal, native-name completion, filtering and preview.
+- Checked filesystem creation, rename/move, stored/buffer copy, local Trash and
+  explicit permanent removal. Missing parents are reviewed separately; occupied
+  destinations are never silently replaced.
+- Modal filename drafts use ordinary edits, yank/paste and undo without touching
+  disk. Review and Apply share the explicit filesystem-operation planner.
+- Filesystem receipts retain committed, cancelled, partial and unconfirmed
+  outcomes independently of their views, with verification and checked recovery.
+- Directory **Search here** (`:fs search` / `Space a`) captures a local or SSH
+  namespace/root without changing cwd. Capable SSH hosts run read-only `rg`
+  through supervised argv transport; source previews, opening and collection
+  loading preserve endpoint and native filename identity.
+- Search source previews have absolute line-number gutters and focused-hit
+  markers. SSH Search explicitly disables With/Review.
+
+### Fixed
+
+- Search grouping, exclusions, preview caches and tab-width lookup distinguish
+  local files and different SSH hosts even when native paths are identical.
+- Invalid rg records, escaped paths, unsupported source text and oversized
+  records fail explicitly instead of disappearing from the result set.
+- Filename-review cancellation returns directly to the intact draft. Browsing
+  or refreshing its directory preserves edited names, undo history and provenance.
+- Directory selections follow confirmed renames through re-sorting and name
+  reuse. Stale path completions and transferred LSP navigation cannot restore old
+  bindings; deferred format-and-save work blocks conflicting relocation.
+- Native Ex open operands remain local outside Directory buffers. Directory
+  operands and completion share the captured directory namespace.
+- Search bounds decoded batches, source enumeration, total result rows and
+  retained row data; a small rg record cannot amplify into an unbounded batch.
+- Local save/save-as and filesystem mutations serialize in both directions,
+  including unresolved symlinked-parent destinations.
+- Move verification and recovery require an owned post-publication version;
+  pathname occupancy or a reused inode cannot authorize recovery.
+- Empty-directory removal can retire validated, quiescent protocol locks without
+  splitting active lock domains. Cancellation retains confirmed cleanup counts.
+- Admitted effects keep their actual receipts through cancellation and cleanup
+  failures; uncertain Trash publication retains its recovery metadata.
+- Remote source identity stays with the filename under modeline width pressure,
+  rather than disappearing with optional Git context.
+
 ## 0.30.0 — 2026-09-12
 
 One Search workspace, replacement on demand (0053).

@@ -4,8 +4,20 @@
 > Linux binaries, native macOS builds, four tarballs, crates.io + homebrew + site dispatch.
 > The new wrinkle is native C/C++ code: tree-sitter grammars and libgit2.
 
-Status: accepted-in-principle. No code yet; this is the contract the first Dockerfile and
-release workflow are written against.
+Status: historical build/release design. Current workflow sources own implemented
+details; [0062](0062-distribution-and-wsl-onboarding.md) extends the distribution
+contract for the native Windows GUI and selected-WSL backend without weakening
+the TUI/static gates. Historical illustrative snippets are not replacement gates.
+
+[0056](0056-architecture-prerequisites.md) AR11–AR15 close the current shared TUI
+installation/ownership, release-catalog, build/evidence foundations first. 0062
+extends them for Windows/WSL packaging instead of repairing them inside GUI delivery.
+The separate [0057](0057-core-verification-and-assurance.md) release immediately
+qualifies the stable core and adds required generalized proof/core-assurance gates.
+[0058](0058-unified-native-worker.md) then adds shared native worker mode and verified
+local/SSH/container artifact deployment, reusing the release matrix/catalog and
+requalifying its changes. Completion/debugger/GUI follow. Publication binds the
+actual uploaded/executed worker to the exact source/target/assurance candidate.
 
 ---
 
@@ -18,7 +30,9 @@ release workflow are written against.
 | `x86_64-apple-darwin` | `macos-14` | native cargo, stock Xcode cross (no macos-13 queue) |
 | `aarch64-apple-darwin` | `macos-14` | native cargo |
 
-Windows is out by design (WSL is the story there) — same call as rootle/gripsack.
+The TUI's Windows story remains WSL. Native Windows GUI distribution is now
+specified by [0061](0061-gui-windows-and-wsl.md) and
+[0062](0062-distribution-and-wsl-onboarding.md); workspace execution stays in WSL.
 A static musl binary is the whole Linux story: one artifact, every distro, every ssh box.
 
 ## 2. Why musl-static survives tree-sitter (the decision this plan records)
@@ -50,9 +64,9 @@ Requirements this imposes:
    already splits git work: libgit2 for local hot paths (gutter, hunks — no network),
    shell `git` for log/blame. Network operations are therefore out of libgit2 entirely,
    openssl stays out of the tree (consistent with the rustls-only rule from gripsack),
-   and the musl build stays clean. If a future feature needs libgit2 https, the escape
-   hatch is `openssl-sys/vendored` (compiles OpenSSL from source under musl; real
-   build-time cost, real binary growth) — prefer routing through shell `git` instead.
+   and the musl build stays clean. Future network features must preserve that
+   rule through shell Git or an approved rustls path. Vendored OpenSSL is not an
+   approved escape hatch under the current repository contract.
 
 ## 3. glibc fallback (accepted, not built)
 
@@ -125,7 +139,8 @@ Trigger: `push` on tags `v*`. `concurrency.group: release`, `cancel-in-progress:
 
 ## 6. Deferred
 
-- **Windows targets**: revisit only if WSL coverage proves insufficient.
+- **Native Windows workspace/process targets** remain later work. The Windows GUI
+  frontend + WSL backend and its installer now have 0061/0062 contracts.
 - **Grammar smoke on macOS**: same headless parse, cheap to add; the musl static link is
   the fragile one, so Linux gets the gate first.
 - **cargo-zigbuild / pinned-glibc artifacts**: §3.

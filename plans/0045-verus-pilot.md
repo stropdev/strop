@@ -15,6 +15,14 @@ Open: batch-mapping composition (mapping through a validated batch equals
 folding per-edit mappings) was the stretch property and is NOT yet proved —
 the two landed seams do not claim it.
 
+The open composition obligation and expanded **whole-core** verification now belong
+to the separate [0057 VF01–VF20](0057-core-verification-and-assurance.md) release,
+immediately after 0056 architecture and before completion/debugger/GUI. Preserve
+the two landed proof seams below; the expanded assurance is not already done.
+[0058](0058-unified-native-worker.md) follows that completed baseline and preserves
+these edit/composition targets while requalifying changed callers and adding its
+own worker/deployment/kernel obligations. A Rust port does not inherit proof status.
+
 
 Original scope statement: the pilot boundary is the code
 S4 made load-bearing: every change plan, collection write-back, mark,
@@ -63,7 +71,7 @@ out of the shipping images.
 
 ## 4. Trust boundary and limits
 
-Verified: the three seams above, under explicit assumptions (usize = 64-bit
+Verified: the two landed seams above, under explicit assumptions (usize = 64-bit
 machine arithmetic modeled as int with bounds; rope invariants — boundary
 correctness of byte offsets — remain trusted, stated as such). Trusted:
 ropey, the verifier, the solver, and the preconditions callers actually

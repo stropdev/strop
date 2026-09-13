@@ -54,7 +54,10 @@ fn find_enter_opens_sources_in_both_presentations_and_resume_keeps_scope() {
             .payload
             .clone();
         let Payload::Grep {
-            path, line, col, ..
+            location: path,
+            line,
+            col,
+            ..
         } = chosen
         else {
             panic!("source hit")
@@ -64,7 +67,7 @@ fn find_enter_opens_sources_in_both_presentations_and_resume_keeps_scope() {
         assert!(!editor.picker_open());
         assert!(editor
             .doc(editor.current())
-            .matches_target(&crate::files::FileTarget::Local(root.path().join(&path))));
+            .matches_target(&crate::files::FileTarget::from_location(&path).unwrap()));
         assert_eq!(editor.head(), editor.buf().line_start(line - 1) + col - 1);
         assert!(!editor.buf().dirty);
         let unrelated = tempfile::tempdir().unwrap();
@@ -75,7 +78,7 @@ fn find_enter_opens_sources_in_both_presentations_and_resume_keeps_scope() {
         let picker = &editor.picker.as_ref().unwrap().picker;
         assert_eq!(picker.input.text, "needle");
         let Payload::Grep {
-            path: current_path,
+            location: current_path,
             line: current_line,
             col: current_col,
             ..
@@ -261,7 +264,7 @@ fn canonical_aliases_prepare_only_one_edit_plan_for_the_source() {
         badge: None,
         text: "alias".into(),
         payload: Payload::Grep {
-            path: "alias.txt".into(),
+            location: strop_workspace::ResourceLocation::local(root.path().join("alias.txt")),
             line: 1,
             col: 1,
             match_len: 6,

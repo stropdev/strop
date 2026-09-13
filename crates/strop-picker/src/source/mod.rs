@@ -6,16 +6,19 @@
 
 mod grep;
 mod query;
+mod remote;
+mod snapshots;
+mod worker;
+pub use worker::SourceWorker;
 
 mod flow;
-pub use flow::ItemBatch;
 use flow::StreamSender;
-pub use grep::{GrepWorker, SourceSnapshot};
+pub use flow::{ItemBatch, SourceSink};
+pub use snapshots::SourceSnapshot;
 
 use std::path::PathBuf;
-use std::sync::mpsc::Sender;
 
-use strop_core::worker::{self, CancelHandle, CancelReason, FailureKind, Outcome};
+use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 
 use crate::{Item, Payload};
 
@@ -42,63 +45,66 @@ pub use selection::{display_path, SelectionPolicy, RG_PROTECTED_ARGS};
 /// surface; dotfiles show by default; `.git` is never a result. A walk
 /// error terminates visibly after the batches already streamed — never
 /// as a silent empty success.
-pub fn spawn_files(
+fn run_files(
     cwd: PathBuf,
     query: std::sync::Arc<crate::query::SearchQuery>,
     policy: selection::SelectionPolicy,
-    tx: Sender<PickerMsg>,
-) -> CancelHandle {
-    let tx = StreamSender::from(tx);
-    let terminal = tx.clone();
-    worker::spawn(
-        "picker-files",
-        move |outcome| {
-            let _ = terminal.control(PickerMsg::Finished(outcome));
-        },
-        move |cancel| {
-            if cancel.is_cancelled() {
-                return Outcome::Cancelled(CancelReason::OwnerClosed);
-            }
-            let plan = match crate::query::FileSelectionPlan::compile(&query) {
-                Ok(plan) => plan,
-                Err(diagnostic) => {
-                    let message = diagnostic.message.clone();
-                    let _ = tx.control(PickerMsg::QueryError(diagnostic));
-                    return Outcome::failed(FailureKind::Protocol, message);
+    tx: StreamSender,
+    cancel: CancelToken,
+) -> Outcome<()> {
+    if cancel.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
+    let plan = match crate::query::FileSelectionPlan::compile(&query) {
+        Ok(plan) => plan,
+        Err(diagnostic) => {
+            let message = diagnostic.message.clone();
+            let _ = tx.control(PickerMsg::QueryError(diagnostic));
+            return Outcome::failed(FailureKind::Protocol, message);
+        }
+    };
+    if query.exact_file_expression {
+        if let Err(diagnostic) = crate::query::ContentPlan::compile(&query) {
+            let message = diagnostic.message.clone();
+            let _ = tx.control(PickerMsg::QueryError(diagnostic));
+            return Outcome::failed(FailureKind::Protocol, message);
+        }
+    }
+    let mut batch = Vec::with_capacity(512);
+    let mut delivery_error = None;
+    let cancelled = || cancel.is_cancelled();
+    let result = selection::walk(&cwd, &plan, policy, &cancelled, |rel| {
+        batch.push(Item {
+            badge: None,
+            text: display_path(&rel).into_owned(),
+            payload: Payload::File(rel),
+        });
+        if batch.len() >= 512 {
+            return match tx.batch(std::mem::take(&mut batch), &cancel) {
+                Ok(()) => true,
+                Err(error) => {
+                    delivery_error = Some(error);
+                    false
                 }
             };
-            if query.exact_file_expression {
-                if let Err(diagnostic) = crate::query::ContentPlan::compile(&query) {
-                    let message = diagnostic.message.clone();
-                    let _ = tx.control(PickerMsg::QueryError(diagnostic));
-                    return Outcome::failed(FailureKind::Protocol, message);
-                }
+        }
+        true
+    });
+    if let Some(error) = delivery_error {
+        return error.outcome();
+    }
+    if let Err(error) = result {
+        if !batch.is_empty() {
+            if let Err(error) = tx.batch(std::mem::take(&mut batch), &cancel) {
+                return error.outcome();
             }
-            let mut batch = Vec::with_capacity(512);
-            let cancelled = || cancel.is_cancelled();
-            let result = selection::walk(&cwd, &plan, policy, &cancelled, |rel| {
-                batch.push(Item {
-                    badge: None,
-                    text: display_path(&rel).into_owned(),
-                    payload: Payload::File(rel),
-                });
-                if batch.len() >= 512 {
-                    return tx.batch(std::mem::take(&mut batch), &cancel);
-                }
-                true
-            });
-            if let Err(error) = result {
-                if !batch.is_empty() {
-                    tx.batch(std::mem::take(&mut batch), &cancel);
-                }
-                return Outcome::failed(FailureKind::Io, error);
-            }
-            if !batch.is_empty() && !tx.batch(batch, &cancel) {
-                return Outcome::Cancelled(CancelReason::OwnerClosed);
-            }
-            Outcome::Success(())
-        },
-    )
+        }
+        return Outcome::failed(FailureKind::Io, error);
+    }
+    if let Err(error) = tx.batch(batch, &cancel) {
+        return error.outcome();
+    }
+    Outcome::Success(())
 }
 
 #[cfg(test)]
@@ -111,7 +117,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("x.rs"), "").unwrap();
         let (tx, rx) = channel();
-        let worker = super::spawn_files(
+        let worker = super::SourceWorker::new().unwrap();
+        let _request = worker.files(
             dir.clone(),
             std::sync::Arc::new(crate::query::SearchQuery::default()),
             super::selection::SelectionPolicy {

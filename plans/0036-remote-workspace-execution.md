@@ -4,6 +4,11 @@ Status: implemented for 0.17.0. The user expanded 0034/0035 while work was in
 progress: RW1, RW2, RW3, read-only directory browsing, remote LSP and remote Git,
 website updates and a complete verified release. This supersedes snapshot-only scope.
 
+The later [0058 native worker](0058-unified-native-worker.md) follows the dispatched
+0056/0057 releases and replaces helper/supervision implementation, not these source/
+namespace/lifecycle promises. Preserve the pre-worker verification evidence; the
+worker release requalifies real local/SSH/container codec and native-effect paths.
+
 ## Scope and ordering
 
 - **RW1 (P2):** byte ranges, bounded tails and follow mode with append/reset handling.

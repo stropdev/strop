@@ -47,7 +47,7 @@ fn context_merges_preserve_same_line_matches_and_source_position() {
         badge: None,
         text: "hit".into(),
         payload: Payload::Grep {
-            path: path.clone(),
+            location: strop_workspace::ResourceLocation::local(path.clone()),
             line: 2,
             col: column,
             match_len: 3,
@@ -309,7 +309,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
             badge: None,
             text: "a first".into(),
             payload: Payload::Grep {
-                path: a.clone(),
+                location: strop_workspace::ResourceLocation::local(a.clone()),
                 line: 1,
                 col: 1,
                 match_len: 5,
@@ -320,7 +320,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
             badge: None,
             text: "a later".into(),
             payload: Payload::Grep {
-                path: a.clone(),
+                location: strop_workspace::ResourceLocation::local(a.clone()),
                 line: 15,
                 col: 1,
                 match_len: 5,
@@ -331,7 +331,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
             badge: None,
             text: "b".into(),
             payload: Payload::Grep {
-                path: b,
+                location: strop_workspace::ResourceLocation::local(b),
                 line: 1,
                 col: 1,
                 match_len: 4,

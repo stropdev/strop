@@ -17,6 +17,14 @@ pub struct Edit {
     pub kind: EditKind,
 }
 
+/// A borrowed payload location in this buffer's immutable history tree (or its
+/// current pending node). It carries no mutation authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EditRef {
+    pub revision: usize,
+    pub index: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EditKind {
     Insert,
@@ -267,15 +275,23 @@ impl History {
     }
 
     /// Record one buffer mutation's inverse+forward pair.
-    pub fn record(&mut self, undo: Edit, redo: Edit) {
-        if self.pending.is_none() {
-            // a lone edit outside a transaction is its own revision
-            self.begin();
-        }
-        if let Some((u, r)) = &mut self.pending {
-            u.push(undo);
-            r.push(redo);
-        }
+    pub fn record(&mut self, undo: Edit, redo: Edit) -> EditRef {
+        let revision = self.revisions.len();
+        let (undo_edits, redo_edits) = self.pending.get_or_insert_with(Default::default);
+        let index = redo_edits.len();
+        undo_edits.push(undo);
+        redo_edits.push(redo);
+        EditRef { revision, index }
+    }
+
+    pub(crate) fn inserted_text(&self, reference: EditRef) -> Option<&str> {
+        let edits = if reference.revision == self.revisions.len() {
+            &self.pending.as_ref()?.1
+        } else {
+            &self.revisions.get(reference.revision)?.redo
+        };
+        let edit = edits.get(reference.index)?;
+        (edit.kind == EditKind::Insert).then_some(edit.text.as_str())
     }
 
     pub fn can_undo(&self) -> bool {

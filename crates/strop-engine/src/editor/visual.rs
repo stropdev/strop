@@ -84,35 +84,44 @@ impl Editor {
                     return;
                 };
                 let linewise = self.mode == Mode::VisualLine;
+                if op == Op::Change && linewise {
+                    self.mode = Mode::Normal;
+                    self.change_lines(None, "V...", &[(self.head(), range, true)]);
+                    return;
+                }
                 if op == Op::Yank {
                     let text = self.buf().slice_string(range);
-                    self.set_register(
-                        None,
-                        if linewise {
-                            super::Register::linewise(text)
-                        } else {
-                            super::Register::characterwise(text)
-                        },
-                    );
+                    let mut register = if linewise {
+                        super::Register::linewise(text)
+                    } else {
+                        super::Register::characterwise(text)
+                    };
+                    register.file_provenance =
+                        self.capture_filename_register([(range, linewise)], false, false);
+                    self.set_register(None, register);
                     self.flash(range);
                 } else {
                     let text = self.buf().slice_string(range);
+                    let provenance =
+                        self.capture_filename_register([(range, linewise)], true, false);
                     let changes = crate::editor::transact::ChangeSet {
                         edits: vec![strop_core::Replacement::new(range, String::new())],
                         undo_open: false,
                     };
+                    self.filename_delete_hint(range, linewise);
                     if let Err(error) = self.apply(self.current(), self.buf().revision(), changes) {
+                        self.clear_filename_hint();
                         self.message = error.to_string();
                         return;
                     }
-                    self.set_register(
-                        None,
-                        if linewise {
-                            super::Register::linewise(text)
-                        } else {
-                            super::Register::characterwise(text)
-                        },
-                    );
+                    self.clear_filename_hint();
+                    let mut register = if linewise {
+                        super::Register::linewise(text)
+                    } else {
+                        super::Register::characterwise(text)
+                    };
+                    register.file_provenance = provenance;
+                    self.set_register(None, register);
                     self.set_head(range.start.get());
                     self.flash(Range::charwise(self.head(), self.head()));
                 }
@@ -264,14 +273,14 @@ impl Editor {
                 if let Some(range) = self.visual_range() {
                     let linewise = self.mode == Mode::VisualLine;
                     let text = self.buf().slice_string(range);
-                    self.set_register(
-                        Some('+'),
-                        if linewise {
-                            super::Register::linewise(text)
-                        } else {
-                            super::Register::characterwise(text)
-                        },
-                    );
+                    let mut register = if linewise {
+                        super::Register::linewise(text)
+                    } else {
+                        super::Register::characterwise(text)
+                    };
+                    register.file_provenance =
+                        self.capture_filename_register([(range, linewise)], false, false);
+                    self.set_register(Some('+'), register);
                     self.flash(range);
                 }
                 self.mode = Mode::Normal;

@@ -2,7 +2,18 @@
 use super::*;
 
 impl Editor {
+    pub(crate) fn local_write_pending(&self) -> bool {
+        !self.io.saves.is_empty()
+            || matches!(self.lsp_state.after_format.as_ref(),
+                Some(crate::editor::lsp::state::AfterFormat::Save { document, .. })
+                    if self.docs.get(*document).is_some_and(|doc| matches!(doc.source, crate::editor::document::DocumentSource::File)))
+    }
+
     pub fn request_save(&mut self, target: Option<PathBuf>, force: bool, close: bool) {
+        if self.directory().is_some() {
+            self.request_save_document(self.current(), target, force, close);
+            return;
+        }
         // auto_format (helix parity): a plain `:w` formats through the
         // language server first; the save chains on the reply. A
         // formatter failure or refusal never holds the save hostage.
@@ -33,11 +44,45 @@ impl Editor {
         force: bool,
         close: bool,
     ) -> bool {
+        let blocked = if let Some(target) = target.as_ref() {
+            self.filesystem
+                .blocks(&strop_workspace::ResourceLocation::local(
+                    self.cwd.join(target),
+                ))
+        } else {
+            self.filesystem_blocks_document(document)
+        };
+        if blocked {
+            self.message =
+                "filesystem operation pending or unconfirmed; verify before saving this binding"
+                    .into();
+            return false;
+        }
+        if self
+            .docs
+            .get(document)
+            .is_some_and(|doc| doc.directory_metadata_ref().is_some())
+        {
+            if self.filename_draft(document).is_some() {
+                if target.is_some() || close {
+                    self.message = "use :w without a target to review filename changes; filesystem application is explicit".into();
+                    return false;
+                }
+                return match self.prepare_filename_draft(document) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        self.message = error;
+                        false
+                    }
+                };
+            }
+            self.message = "Directory buffers have no file write binding; use :fs edit".into();
+            return false;
+        }
         if self.docs.get(document).is_some_and(|doc| {
             matches!(
                 doc.source,
                 crate::editor::document::DocumentSource::Remote(_)
-                    | crate::editor::document::DocumentSource::RemoteDirectory(_)
             )
         }) {
             return self.request_remote_save(document, target, force, close);
@@ -48,6 +93,13 @@ impl Editor {
             .is_some_and(|path| path.starts_with("ssh://"))
         {
             self.message = "remote save-as is unsupported; no local fallback".into();
+            return false;
+        }
+        if self
+            .filesystem
+            .blocks_namespace(&strop_workspace::Filesystem::Local)
+        {
+            self.message = "local filesystem mutation is pending or unconfirmed; settle or verify its receipt before saving".into();
             return false;
         }
         if self.io.saves.contains_key(&document) {

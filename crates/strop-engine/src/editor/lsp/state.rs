@@ -224,6 +224,12 @@ impl Editor {
     }
 
     pub(crate) fn lsp_close_document(&mut self, document: DocumentId) {
+        self.cancel_lsp_open_from(document);
+        if matches!(self.lsp_state.after_format.as_ref(), Some(AfterFormat::Save { document: owner, .. }) if *owner == document)
+        {
+            self.lsp_state.after_format = None;
+        }
+        self.lsp_state.jump_contexts.remove(&document);
         self.diags.remove(&document);
         if !self.docs.is_empty() && document == self.current() {
             self.hover_card = None;

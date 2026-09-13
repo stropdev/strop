@@ -90,14 +90,8 @@ fn attached_server_diagnostics_survive_full_replay() {
         _ => Err(std::io::Error::other("unexpected native observation")),
     }));
     e.tape.seed(&Seed::capture(&e).unwrap()).unwrap();
-    e.recorded_action(
-        Action::Start {
-            directory_picker: false,
-            open: None,
-        },
-        Tick::default(),
-    )
-    .unwrap();
+    e.recorded_action(Action::Start { open: None }, Tick::default())
+        .unwrap();
     let ticket = *e.lsp_state.attach.pending.values().next().unwrap();
     let attach = AttachRecord {
         ticket,

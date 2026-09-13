@@ -30,6 +30,31 @@ pub struct SaveReceipt {
 }
 
 impl Buffer {
+    /// Pure adoption of an owned reload's observed binding and on-disk baseline.
+    /// The caller validates resource/request identity and publishes text separately.
+    pub fn adopt_file_binding(&mut self, observed: &Self) {
+        self.path = observed.path.clone();
+        self.file_identity = observed.file_identity.clone();
+        self.disk_stamp = observed.disk_stamp;
+    }
+
+    /// Adopt a confirmed native relocation without changing text, revision or undo.
+    /// `canonical` and `stamp` come from the owned filesystem operation receipt.
+    /// Descendants of a moved directory retain their unchanged baseline when no
+    /// separate file observation was needed.
+    pub fn relocate_file_binding(&mut self, canonical: PathBuf, stamp: Option<SystemTime>) {
+        self.path = Some(canonical.clone());
+        self.file_identity = Some(canonical);
+        self.disk_stamp = stamp.or(self.disk_stamp);
+    }
+
+    /// Detach a removed resource. A later unnamed write must not recreate it.
+    pub fn detach_file_binding(&mut self) {
+        self.path = None;
+        self.file_identity = None;
+        self.disk_stamp = None;
+    }
+
     pub fn prepare_save(&self, target: Option<PathBuf>, force: bool) -> io::Result<SaveRequest> {
         if self.readonly && !force {
             return Err(io::Error::new(

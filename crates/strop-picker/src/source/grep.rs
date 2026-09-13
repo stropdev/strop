@@ -7,12 +7,13 @@
 
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::channel;
 
-use strop_core::worker::{self, CancelHandle, CancelReason, FailureKind, Outcome};
+use strop_core::worker::{self, CancelReason, FailureKind, Outcome};
 
 use super::query::parse_json_match;
 use super::PickerMsg;
+use super::SourceSnapshot;
 
 /// One reader-thread event for the supervisor.
 #[derive(Debug)]
@@ -87,330 +88,335 @@ impl Drop for OwnedChild {
     }
 }
 
-/// A grep worker. Each keystroke respawns the search; dropping or
-/// cancelling the worker kills the previous rg before it can flood —
-/// through the supervisor, so both pipes and the process are reaped.
-pub struct GrepWorker {
-    stop: Sender<ReadEvent>,
-    terminal: Option<CancelHandle>,
-}
-
-/// An immutable dirty-source snapshot. Native identity stays separate from display.
-pub struct SourceSnapshot {
-    pub path: std::path::PathBuf,
-    pub text: ropey::Rope,
-}
-
-impl GrepWorker {
-    /// Run `rg` for a compiled selection + content plan (0051 §3): the
-    /// pattern comes from the query's explicit expression (literal or
-    /// regex — never shell syntax), paths come from the shared selection
-    /// authority in bounded argv batches, and `.git` is always excluded.
-    /// A content surface with no expression is a named refusal, not a
-    /// silent search-everything.
-    pub fn spawn(
-        query: std::sync::Arc<crate::query::SearchQuery>,
-        policy: super::selection::SelectionPolicy,
-        cwd: &std::path::Path,
-        snapshots: Vec<SourceSnapshot>,
-        tx: Sender<PickerMsg>,
-    ) -> Self {
-        let tx = super::flow::StreamSender::from(tx);
-        let cwd = cwd.to_path_buf();
-        let (events, rx) = channel::<ReadEvent>();
-        let stop = events.clone();
-        let terminal_tx = tx.clone();
-        let terminal = worker::spawn(
-            "picker-rg",
-            move |outcome| {
-                let _ = terminal_tx.control(PickerMsg::Finished(outcome));
-            },
-            move |cancel| {
-                if cancel.is_cancelled() {
-                    return Outcome::Cancelled(CancelReason::OwnerClosed);
-                }
-                let plan = match crate::query::FileSelectionPlan::compile(&query) {
-                    Ok(plan) => plan,
-                    Err(diagnostic) => {
-                        let message = diagnostic.message.clone();
-                        let _ = tx.control(PickerMsg::QueryError(diagnostic));
-                        return Outcome::failed(FailureKind::Protocol, message);
-                    }
-                };
-                let content = match crate::query::ContentPlan::compile(&query) {
-                    Ok(Some(content)) => content,
-                    Ok(None) => {
-                        return Outcome::failed(
-                            FailureKind::Protocol,
-                            "the query has no search expression — add text or regex",
-                        )
-                    }
-                    Err(diagnostic) => {
-                        let message = diagnostic.message.clone();
-                        let _ = tx.control(PickerMsg::QueryError(diagnostic));
-                        return Outcome::failed(FailureKind::Protocol, message);
-                    }
-                };
-                if cancel.is_cancelled() {
-                    return Outcome::Cancelled(CancelReason::OwnerClosed);
-                }
-                let pattern = match &content.expr {
-                    crate::query::ContentExpr::Literal(text) => {
-                        if text.is_empty() {
-                            return Outcome::Success(());
-                        }
-                        text.clone()
-                    }
-                    crate::query::ContentExpr::Regex(pattern) => pattern.clone(),
-                };
-                // eligible paths from the shared selection authority;
-                // bounded argv batches (0051 §3: real bounds, no shell)
-                let mut paths: Vec<std::path::PathBuf> = Vec::new();
-                let cancelled = || cancel.is_cancelled();
-                let walk = super::selection::walk(&cwd, &plan, policy, &cancelled, |rel| {
-                    paths.push(rel);
-                    true
-                });
-                if let Err(error) = walk {
-                    return Outcome::failed(FailureKind::Io, error);
-                }
-                if cancelled() {
-                    return Outcome::Cancelled(CancelReason::OwnerClosed);
-                }
-                // Dirty open source text is authoritative, never a hidden disk
-                // save. Matching happens on this worker, under the same plan.
-                {
-                    let regex = &content.regex;
-                    for snapshot in snapshots {
-                        let relative = snapshot.path.strip_prefix(&cwd).unwrap_or(&snapshot.path);
-                        let Some(index) = paths.iter().position(|path| path == relative) else {
-                            continue;
-                        };
-                        paths.swap_remove(index);
-                        for (line, text) in snapshot.text.lines().enumerate() {
-                            if cancel.is_cancelled() {
-                                return Outcome::Cancelled(CancelReason::OwnerClosed);
-                            }
-                            let text = text.to_string();
-                            let text: std::sync::Arc<str> = text.trim_end_matches('\n').into();
-                            let short: String = text.trim().chars().take(80).collect();
-                            let items = regex
-                                .find_iter(&text)
-                                .map(|hit| crate::Item {
-                                    badge: Some("buffer".into()),
-                                    // same display shape as the rg adapter:
-                                    // trimmed excerpt, byte col + 1
-                                    text: format!(
-                                        "{}:{} · {}",
-                                        relative.display(),
-                                        line + 1,
-                                        short
-                                    ),
-                                    payload: crate::Payload::Grep {
-                                        path: relative.to_path_buf(),
-                                        line: line + 1,
-                                        col: hit.start() + 1,
-                                        match_len: hit.len(),
-                                        line_text: text.clone(),
-                                    },
-                                })
-                                .collect();
-                            if !tx.batch(items, &cancel) {
-                                return Outcome::Cancelled(CancelReason::OwnerClosed);
-                            }
-                        }
-                    }
-                }
-                let mut argv: Vec<String> = vec!["--json".into(), "-e".into(), pattern];
-                match content.case {
-                    crate::query::CaseMode::Smart => argv.push("--smart-case".into()),
-                    crate::query::CaseMode::Sensitive => argv.push("--case-sensitive".into()),
-                    crate::query::CaseMode::Ignore => argv.push("-i".into()),
-                }
-                if matches!(content.expr, crate::query::ContentExpr::Literal(_)) {
-                    argv.push("-F".into());
-                }
-                if policy.effective(&plan).hidden {
-                    argv.push("--hidden".into());
-                }
-                if !policy.effective(&plan).respect_ignore {
-                    argv.push("--no-ignore".into());
-                }
-                for arg in super::RG_PROTECTED_ARGS {
-                    argv.push((*arg).to_string());
-                }
-                argv.push("--".into());
-                let mut batches: Vec<Vec<std::path::PathBuf>> = Vec::new();
-                let mut current: Vec<std::path::PathBuf> = Vec::new();
-                let mut bytes = argv.iter().map(|a| a.len() + 1).sum::<usize>();
-                for path in paths {
-                    let path_bytes = path.as_os_str().as_encoded_bytes().len();
-                    if current.len() >= 4096 || bytes + path_bytes > 128 * 1024 {
-                        batches.push(std::mem::take(&mut current));
-                        bytes = argv.iter().map(|a| a.len() + 1).sum::<usize>();
-                    }
-                    bytes += path_bytes + 1;
-                    current.push(path);
-                }
-                if !current.is_empty() {
-                    batches.push(current);
-                }
-                for batch in batches {
-                    if cancel.is_cancelled() {
-                        return Outcome::Cancelled(CancelReason::OwnerClosed);
-                    }
-                    let child = match Command::new("rg")
-                        .args(&argv)
-                        .args(&batch)
-                        .current_dir(&cwd)
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .spawn()
-                    {
-                        Ok(child) => child,
-                        Err(e) => return Outcome::failed(FailureKind::Spawn, format!("rg: {e}")),
-                    };
-                    let mut process = OwnedChild {
-                        child,
-                        reaped: false,
-                    };
-                    let Some(stdout) = process.child.stdout.take() else {
-                        return Outcome::failed(FailureKind::Protocol, "rg: missing stdout");
-                    };
-                    let Some(mut stderr) = process.child.stderr.take() else {
-                        return Outcome::failed(FailureKind::Protocol, "rg: missing stderr");
-                    };
-                    let out_events = events.clone();
-                    let out_tx = tx.clone();
-                    let out_reader = worker::spawn(
-                        "rg-stdout",
-                        move |outcome| {
-                            let _ = out_events.send(ReadEvent::Stdout(outcome));
-                        },
-                        move |token| {
-                            for line in BufReader::new(stdout).lines() {
-                                if token.is_cancelled() {
-                                    return Outcome::Cancelled(CancelReason::OwnerClosed);
-                                }
-                                let line = match line {
-                                    Ok(line) => line,
-                                    Err(e) => {
-                                        return Outcome::failed(FailureKind::Io, e.to_string())
-                                    }
-                                };
-                                let items = parse_json_match(&line);
-                                if !out_tx.batch(items, &token) {
-                                    return Outcome::Cancelled(CancelReason::OwnerClosed);
-                                }
-                            }
-                            Outcome::Success(())
-                        },
-                    );
-                    let err_events = events.clone();
-                    let err_reader = worker::spawn(
-                        "rg-stderr",
-                        move |outcome| {
-                            let _ = err_events.send(ReadEvent::Stderr(outcome));
-                        },
-                        move |_| {
-                            let mut text = String::new();
-                            match stderr.read_to_string(&mut text) {
-                                Ok(_) => Outcome::Success(text),
-                                Err(e) => Outcome::Failed {
-                                    failure: strop_core::worker::Failure::new(
-                                        FailureKind::Io,
-                                        e.to_string(),
-                                    ),
-                                    partial: Some(text),
-                                },
-                            }
-                        },
-                    );
-                    // hold both reader handles: dropping one would cancel a
-                    // perfectly healthy reader
-                    let _readers = (out_reader, err_reader);
-                    let mut stdout_done = false;
-                    let mut stderr_text = None;
-                    while !stdout_done || stderr_text.is_none() {
-                        match rx.recv() {
-                            Ok(event) => {
-                                if let Some(outcome) =
-                                    step(event, &mut stdout_done, &mut stderr_text)
-                                {
-                                    return outcome; // OwnedChild::drop kills/reaps
-                                }
-                            }
-                            Err(e) => {
-                                return Outcome::failed(FailureKind::Disconnected, e.to_string())
-                            }
-                        }
-                    }
-                    let status = match process.child.wait() {
-                        Ok(status) => {
-                            process.reaped = true;
-                            status
-                        }
-                        Err(e) => return Outcome::failed(FailureKind::Wait, format!("rg: {e}")),
-                    };
-                    let stderr = stderr_text.unwrap_or_default();
-                    let outcome = verdict(status, &stderr);
-                    if matches!(outcome, Outcome::Success(())) && !stderr.trim().is_empty() {
-                        let detail = stderr.trim().strip_prefix("rg: ").unwrap_or(stderr.trim());
-                        let _ = tx.control(PickerMsg::Warning(format!("rg: {detail}")));
-                    }
-                    if !matches!(outcome, Outcome::Success(())) {
-                        return outcome;
-                    }
-                }
-                Outcome::Success(())
-            },
+/// Execute one local source request on the editor-owned source worker.
+pub(super) fn run(
+    query: std::sync::Arc<crate::query::SearchQuery>,
+    policy: super::selection::SelectionPolicy,
+    cwd: std::path::PathBuf,
+    snapshots: Vec<SourceSnapshot>,
+    tx: super::flow::StreamSender,
+    cancel: strop_core::worker::CancelToken,
+) -> Outcome<()> {
+    let (events, rx) = channel::<ReadEvent>();
+    let stop = events.clone();
+    if let Err(failure) = cancel.register_cancel_resource(move || {
+        let _ = stop.send(ReadEvent::Cancel);
+        Ok(())
+    }) {
+        return Outcome::Failed {
+            failure,
+            partial: None,
+        };
+    }
+    if cancel.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
+    let plan = match crate::query::FileSelectionPlan::compile(&query) {
+        Ok(plan) => plan,
+        Err(diagnostic) => {
+            let message = diagnostic.message.clone();
+            let _ = tx.control(PickerMsg::QueryError(diagnostic));
+            return Outcome::failed(FailureKind::Protocol, message);
+        }
+    };
+    let content = match crate::query::ContentPlan::compile(&query) {
+        Ok(Some(content)) => content,
+        Ok(None) => {
+            return Outcome::failed(
+                FailureKind::Protocol,
+                "the query has no search expression — add text or regex",
+            )
+        }
+        Err(diagnostic) => {
+            let message = diagnostic.message.clone();
+            let _ = tx.control(PickerMsg::QueryError(diagnostic));
+            return Outcome::failed(FailureKind::Protocol, message);
+        }
+    };
+    if cancel.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
+    let pattern = match &content.expr {
+        crate::query::ContentExpr::Literal(text) => {
+            if text.is_empty() {
+                return Outcome::Success(());
+            }
+            text.clone()
+        }
+        crate::query::ContentExpr::Regex(pattern) => pattern.clone(),
+    };
+    // eligible paths from the shared selection authority;
+    // bounded argv batches (0051 §3: real bounds, no shell)
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    let mut path_bytes = 0usize;
+    let mut path_limit = false;
+    let cancelled = || cancel.is_cancelled();
+    let walk = super::selection::walk(&cwd, &plan, policy, &cancelled, |rel| {
+        path_bytes = path_bytes.saturating_add(rel.as_os_str().as_encoded_bytes().len());
+        if paths.len() >= super::selection::PATH_LIMIT || path_bytes > super::selection::PATH_BYTES
+        {
+            path_limit = true;
+            return false;
+        }
+        paths.push(rel);
+        true
+    });
+    if path_limit {
+        return Outcome::failed(
+            FailureKind::Unavailable,
+            "search selection exceeds 100000 paths or 16 MiB; narrow the scope",
         );
-        Self {
-            stop,
-            terminal: Some(terminal),
+    }
+    if let Err(error) = walk {
+        return Outcome::failed(FailureKind::Io, error);
+    }
+    if cancelled() {
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
+    // Dirty open source text is authoritative, never a hidden disk
+    // save. Matching happens on this worker, under the same plan.
+    if let Err(error) = super::snapshots::emit_snapshots(
+        &strop_workspace::ResourceLocation::local(cwd.clone()),
+        &content,
+        snapshots,
+        &mut paths,
+        &tx,
+        &cancel,
+    ) {
+        return if cancel.is_cancelled() {
+            Outcome::Cancelled(CancelReason::Superseded)
+        } else {
+            Outcome::failed(FailureKind::Protocol, error)
+        };
+    }
+    let mut argv: Vec<String> = vec!["--no-config".into(), "--json".into(), "-e".into(), pattern];
+    match content.case {
+        crate::query::CaseMode::Smart => argv.push("--smart-case".into()),
+        crate::query::CaseMode::Sensitive => argv.push("--case-sensitive".into()),
+        crate::query::CaseMode::Ignore => argv.push("-i".into()),
+    }
+    if matches!(content.expr, crate::query::ContentExpr::Literal(_)) {
+        argv.push("-F".into());
+    }
+    if policy.effective(&plan).hidden {
+        argv.push("--hidden".into());
+    }
+    if !policy.effective(&plan).respect_ignore {
+        argv.push("--no-ignore".into());
+    }
+    for arg in super::RG_PROTECTED_ARGS {
+        argv.push((*arg).to_string());
+    }
+    argv.push("--".into());
+    let mut batches: Vec<Vec<std::path::PathBuf>> = Vec::new();
+    let mut current: Vec<std::path::PathBuf> = Vec::new();
+    let mut bytes = argv.iter().map(|a| a.len() + 1).sum::<usize>();
+    for path in paths {
+        let path_bytes = path.as_os_str().as_encoded_bytes().len();
+        if current.len() >= 4096 || bytes + path_bytes > 128 * 1024 {
+            batches.push(std::mem::take(&mut current));
+            bytes = argv.iter().map(|a| a.len() + 1).sum::<usize>();
+        }
+        bytes += path_bytes + 1;
+        current.push(path);
+    }
+    if !current.is_empty() {
+        batches.push(current);
+    }
+    for batch in batches {
+        if cancel.is_cancelled() {
+            return Outcome::Cancelled(CancelReason::OwnerClosed);
+        }
+        let outcome = std::thread::scope(|scope| {
+            let child = match Command::new("rg")
+                .args(&argv)
+                .args(&batch)
+                .current_dir(&cwd)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(e) => return Outcome::failed(FailureKind::Spawn, format!("rg: {e}")),
+            };
+            let mut process = OwnedChild {
+                child,
+                reaped: false,
+            };
+            let Some(stdout) = process.child.stdout.take() else {
+                return Outcome::failed(FailureKind::Protocol, "rg: missing stdout");
+            };
+            let Some(mut stderr) = process.child.stderr.take() else {
+                return Outcome::failed(FailureKind::Protocol, "rg: missing stderr");
+            };
+            let out_events = events.clone();
+            let out_tx = tx.clone();
+            let root = strop_workspace::ResourceLocation::local(cwd.clone());
+            let out_reader = worker::spawn_scoped(
+                scope,
+                "rg-stdout",
+                move |outcome| {
+                    let _ = out_events.send(ReadEvent::Stdout(outcome));
+                },
+                move |token| {
+                    let mut reader = BufReader::new(stdout);
+                    let mut line = Vec::new();
+                    loop {
+                        if token.is_cancelled() {
+                            return Outcome::Cancelled(CancelReason::OwnerClosed);
+                        }
+                        line.clear();
+                        match reader
+                            .by_ref()
+                            .take((super::query::RECORD_LIMIT + 1) as u64)
+                            .read_until(b'\n', &mut line)
+                        {
+                            Ok(0) => break,
+                            Ok(_) => {}
+                            Err(error) => {
+                                return Outcome::failed(FailureKind::Io, error.to_string())
+                            }
+                        }
+                        let items = match parse_json_match(&line, &root) {
+                            Ok(items) => items,
+                            Err(error) => return Outcome::failed(FailureKind::Protocol, error),
+                        };
+                        if let Err(error) = out_tx.batch(items, &token) {
+                            return error.outcome();
+                        }
+                    }
+                    Outcome::Success(())
+                },
+            );
+            let err_events = events.clone();
+            let err_reader = worker::spawn_scoped(
+                scope,
+                "rg-stderr",
+                move |outcome| {
+                    let _ = err_events.send(ReadEvent::Stderr(outcome));
+                },
+                move |_| {
+                    let mut retained = Vec::new();
+                    let mut chunk = [0; 8192];
+                    let mut dropped = 0usize;
+                    loop {
+                        match stderr.read(&mut chunk) {
+                            Ok(0) => break,
+                            Ok(count) => {
+                                let keep =
+                                    count.min((64 * 1024usize).saturating_sub(retained.len()));
+                                retained.extend_from_slice(&chunk[..keep]);
+                                dropped = dropped.saturating_add(count - keep);
+                            }
+                            Err(error) => {
+                                return Outcome::failed(FailureKind::Io, error.to_string())
+                            }
+                        }
+                    }
+                    let mut text = String::from_utf8_lossy(&retained).into_owned();
+                    if dropped > 0 {
+                        text.push_str(&format!("\nrg stderr truncated ({dropped} bytes omitted)"));
+                    }
+                    Outcome::Success(text)
+                },
+            );
+            // hold both reader handles: dropping one would cancel a
+            // perfectly healthy reader
+            let _readers = (out_reader, err_reader);
+            let mut stdout_done = false;
+            let mut stderr_text = None;
+            while !stdout_done || stderr_text.is_none() {
+                match rx.recv() {
+                    Ok(event) => {
+                        if let Some(outcome) = step(event, &mut stdout_done, &mut stderr_text) {
+                            return outcome; // OwnedChild::drop kills/reaps
+                        }
+                    }
+                    Err(e) => return Outcome::failed(FailureKind::Disconnected, e.to_string()),
+                }
+            }
+            let status = match process.child.wait() {
+                Ok(status) => {
+                    process.reaped = true;
+                    status
+                }
+                Err(e) => return Outcome::failed(FailureKind::Wait, format!("rg: {e}")),
+            };
+            let stderr = stderr_text.unwrap_or_default();
+            let outcome = verdict(status, &stderr);
+            if matches!(outcome, Outcome::Success(())) && !stderr.trim().is_empty() {
+                let detail = stderr.trim().strip_prefix("rg: ").unwrap_or(stderr.trim());
+                let _ = tx.control(PickerMsg::Warning(format!("rg: {detail}")));
+            }
+            outcome
+        });
+        if !matches!(outcome, Outcome::Success(())) {
+            return outcome;
         }
     }
-
-    /// Explicit cancellation: wake the supervisor (it kills and reaps
-    /// the child) and revoke publication immediately with the real
-    /// reason.
-    pub fn cancel(mut self, reason: CancelReason) {
-        let _ = self.stop.send(ReadEvent::Cancel);
-        if let Some(handle) = self.terminal.take() {
-            handle.cancel(reason);
-        }
-    }
-}
-
-impl Drop for GrepWorker {
-    fn drop(&mut self) {
-        let _ = self.stop.send(ReadEvent::Cancel);
-        if let Some(handle) = self.terminal.take() {
-            handle.cancel(CancelReason::OwnerClosed);
-        }
-    }
+    Outcome::Success(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc::channel;
+    use std::sync::mpsc::{channel, Sender};
 
     /// The old pattern-string helper through the query language (0051):
     /// bare text becomes a literal content expression.
-    fn spawn_query(text: &str, cwd: &std::path::Path, tx: Sender<PickerMsg>) -> GrepWorker {
+    fn spawn_query(
+        text: &str,
+        cwd: &std::path::Path,
+        tx: Sender<PickerMsg>,
+    ) -> (super::super::SourceWorker, strop_core::worker::CancelHandle) {
         let query = crate::query::SearchQuery::parse(text);
-        GrepWorker::spawn(
+        let worker = super::super::SourceWorker::new().unwrap();
+        let request = worker.search(
             std::sync::Arc::new(query),
             super::super::selection::SelectionPolicy {
                 hidden: true,
                 respect_ignore: true,
             },
-            cwd,
+            strop_workspace::ResourceLocation::local(cwd.to_path_buf()),
             Vec::new(),
             tx,
+        );
+        (worker, request)
+    }
+
+    #[test]
+    fn exhausted_catalog_reports_failure_after_the_bounded_prefix() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("hits.txt"),
+            "needle\n".repeat(100_001),
         )
+        .unwrap();
+        let (tx, rx) = channel();
+        let worker = super::super::SourceWorker::new().unwrap();
+        let _request = worker.search(
+            std::sync::Arc::new(crate::query::SearchQuery::parse("needle")),
+            super::super::selection::SelectionPolicy {
+                hidden: true,
+                respect_ignore: false,
+            },
+            strop_workspace::ResourceLocation::local(directory.path().to_path_buf()),
+            Vec::new(),
+            tx,
+        );
+        let mut received = 0;
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
+                PickerMsg::Items(items) => received += items.len(),
+                PickerMsg::Finished(Outcome::Failed { failure, .. }) => {
+                    assert_eq!(failure.kind, FailureKind::Unavailable);
+                    assert_eq!(received, 100_000);
+                    break;
+                }
+                event => panic!("expected source rows followed by a capacity failure: {event:?}"),
+            }
+        }
     }
 
     #[test]

@@ -22,7 +22,7 @@ pub(super) fn render_results(
     area: Rect,
     picker: &strop_picker::Picker,
     selected: usize,
-    tab_for_path: &impl Fn(&std::path::Path) -> usize,
+    tab_for_path: &impl Fn(&strop_workspace::ResourceLocation) -> usize,
 ) {
     let two_line = picker.kind == strop_picker::Kind::Search;
     let per_row = if two_line {
@@ -111,7 +111,7 @@ pub(super) fn render_results(
         };
         let match_cols = picker.match_columns(row);
         let tab = match &item.payload {
-            strop_picker::Payload::Grep { path, .. } => tab_for_path(path),
+            strop_picker::Payload::Grep { location, .. } => tab_for_path(location),
             _ => 4,
         };
         let rendered = if two_line {
@@ -511,8 +511,8 @@ fn locator_prefix_chars(item: &strop_picker::Item) -> usize {
             text.rfind('/').map_or(0, |i| text[..i + 1].chars().count())
         }
         // grep hits render "{path}:{line} · …": dim through the number
-        Payload::Grep { path, line, .. } => {
-            path.display().to_string().chars().count() + 1 + digits(*line)
+        Payload::Grep { location, line, .. } => {
+            location.label().chars().count() + 1 + digits(*line)
         }
         // jumplist rows carry a 2-char marker before "{name}:{line}"
         Payload::Jump { .. } => item
@@ -564,7 +564,7 @@ fn search_rows(
     file_hits: Option<usize>,
 ) -> Vec<Line<'static>> {
     let strop_picker::Payload::Grep {
-        path,
+        location,
         line,
         col,
         match_len,
@@ -573,6 +573,7 @@ fn search_rows(
     else {
         return vec![generic_row(item, &[], width, active)];
     };
+    let path = &location.path;
     let secondary = if excluded { MUTED } else { SECONDARY };
     let budget = (width as usize).saturating_sub(1);
     let basename = path
@@ -599,7 +600,12 @@ fn search_rows(
         }
     }
     let path_width = width.saturating_sub((4 + text::width(&notice)) as u16);
-    let heading = file_row(&strop_picker::display_path(path), &[], path_width, active);
+    let label = if location.local_path().is_some() {
+        strop_workspace::directory::display_path(path)
+    } else {
+        location.label()
+    };
+    let heading = file_row(&label, &[], path_width, active);
     let mut top = vec![
         marker(active),
         plain(

@@ -47,6 +47,7 @@ pub enum RegisterShape {
 pub struct Register {
     pub text: String,
     pub shape: RegisterShape,
+    pub file_provenance: Option<std::sync::Arc<super::filesystem::draft::FileRegister>>,
 }
 
 impl Register {
@@ -54,6 +55,7 @@ impl Register {
         Self {
             text: text.into(),
             shape: RegisterShape::Characterwise,
+            file_provenance: None,
         }
     }
 
@@ -61,6 +63,7 @@ impl Register {
         Self {
             text: text.into(),
             shape: RegisterShape::Linewise,
+            file_provenance: None,
         }
     }
 
@@ -70,6 +73,7 @@ impl Register {
         Self {
             text: text.into(),
             shape: RegisterShape::Blockwise { width },
+            file_provenance: None,
         }
     }
 
@@ -83,6 +87,7 @@ impl Editor {
         static EMPTY: Register = Register {
             text: String::new(),
             shape: RegisterShape::Characterwise,
+            file_provenance: None,
         };
         self.registers.get(&name.unwrap_or('"')).unwrap_or(&EMPTY)
     }
@@ -125,9 +130,17 @@ impl Editor {
             RegisterShape::Blockwise { width } => {
                 self.paste_blockwise(register, width, count, before)
             }
-            shape @ (RegisterShape::Characterwise | RegisterShape::Linewise) => {
-                self.paste_text(register.text.repeat(count), shape, before)
-            }
+            shape @ (RegisterShape::Characterwise | RegisterShape::Linewise) => self.paste_text(
+                register.text.repeat(count),
+                shape,
+                before,
+                if shape == RegisterShape::Linewise {
+                    register.file_provenance.as_ref()
+                } else {
+                    None
+                },
+                count,
+            ),
         }
     }
 
@@ -288,14 +301,29 @@ impl Editor {
         }
     }
 
-    fn paste_text(&mut self, text: String, shape: RegisterShape, before: bool) {
+    fn paste_text(
+        &mut self,
+        text: String,
+        shape: RegisterShape,
+        before: bool,
+        provenance: Option<&std::sync::Arc<super::filesystem::draft::FileRegister>>,
+        count: usize,
+    ) {
         // nvim rule: every command is one undo unit — a lone paste must
         // commit its own revision (it used to ride the *next* command's)
         self.tx_begin();
         let cursors = self.all_cursors();
         if cursors.len() == 1 {
             let spot = self.paste_points(self.head(), &text, shape, before);
+            self.filename_paste_hint(
+                spot.at,
+                &spot.text,
+                usize::from(spot.text.len() > text.len()),
+                provenance,
+                count,
+            );
             self.buf_mut().insert(spot.at, &spot.text);
+            self.clear_filename_hint();
             self.set_head(spot.land);
             self.clamp_cursor();
             self.tx_commit();
@@ -322,7 +350,15 @@ impl Editor {
             shift += j.3.len();
         }
         for (at, _, _, insert) in jobs.iter().rev() {
+            self.filename_paste_hint(
+                *at,
+                insert,
+                usize::from(insert.len() > text.len()),
+                provenance,
+                count,
+            );
             self.buf_mut().insert(*at, insert);
+            self.clear_filename_hint();
         }
         self.sels_mut()
             .set_extras(jobs.iter().filter(|j| !j.2).map(|j| j.1));

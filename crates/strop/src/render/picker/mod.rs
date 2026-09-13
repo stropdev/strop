@@ -128,6 +128,9 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         .picker
         .as_ref()
         .is_some_and(|glue| glue.suggestions.is_some());
+    let read_only_search = editor
+        .search_scope()
+        .is_some_and(|scope| scope.root.local_path().is_none());
     let hint = if suggestions_open {
         if narrow_card {
             " enter · esc cancel "
@@ -137,7 +140,9 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     } else if narrow_card {
         // whole groups by priority; never cut through a chord (0050 §8)
         if search_mode {
-            if field == strop_picker::Field::Replace {
+            if read_only_search {
+                " enter open · read-only · esc "
+            } else if field == strop_picker::Field::Replace {
                 " enter review · ctrl-r replace · esc "
             } else {
                 " enter open · ctrl-r replace · esc "
@@ -150,7 +155,9 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             " enter open · esc "
         }
     } else if search_mode {
-        if field == strop_picker::Field::Replace {
+        if read_only_search {
+            " enter open · With/Review unavailable · ctrl-x hit · ctrl-d file · ctrl-o collect · esc "
+        } else if field == strop_picker::Field::Replace {
             " enter review · tab field · ctrl-r replace · ctrl-x hit · ctrl-d file · ctrl-o collect · esc "
         } else {
             " enter open · ctrl-r replace · ctrl-x hit · ctrl-d file · ctrl-o collect · ctrl-space suggest · esc "
@@ -376,7 +383,7 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             ..results
         };
         render_results(frame, text_area, p, selected, &|path| {
-            editor.tab_width_for_path(path)
+            editor.tab_width_for_location(path)
         });
     }
     // border-column scrollbar for the results list (0003 §5.5)

@@ -4,6 +4,12 @@ Status: implemented and container-verified for 0.19.0, the release after 0.18.0.
 This implements 0035 RW4, not directory mutations, arbitrary remote commands,
 elevation or a writable mount. Read-only remains the default.
 
+**Later authorized cutover:** [0058](0058-unified-native-worker.md) replaces this
+Python implementation and the remote supervisor with the shared native worker,
+after the dispatched 0056 architecture/0057 verification baseline. The transaction,
+metadata, authority and uncertain-outcome promises remain required. Do not skip
+baseline Python verification now; WK16–WK20 rebind and discharge its successors.
+
 ## 1. Evidence and the concurrency boundary
 
 OpenSSH's [POSIX rename extension](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL)

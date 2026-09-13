@@ -190,6 +190,7 @@ impl Editor {
                                 | "hover"
                                 | "remote-open"
                                 | "files"
+                                | "directory-reveal"
                                 | "buffers"
                                 | "search"
                                 | "replace-global"

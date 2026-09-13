@@ -45,6 +45,8 @@ pub enum RemoteWriteResult {
 pub(crate) struct WriteState {
     pending: HashMap<DocumentId, Ticket<RemoteWriteKey>>,
     attempts: HashMap<DocumentId, Attempt>,
+    /// Stored-byte evidence retained after relocation; never an active permit.
+    relocations: HashMap<DocumentId, RemoteVersion>,
 }
 struct Attempt {
     permit: WorkerId,
@@ -57,6 +59,7 @@ enum Work {
     Enable {
         file: RemoteFile,
         contents: Rope,
+        baseline: Option<RemoteVersion>,
     },
     Save {
         before: RemoteVersion,
@@ -84,7 +87,7 @@ impl Work {
     }
     fn before(&self) -> Option<&RemoteVersion> {
         match self {
-            Self::Enable { .. } => None,
+            Self::Enable { baseline, .. } => baseline.as_ref(),
             Self::Save { before, .. } | Self::Verify { before, .. } => Some(before),
         }
     }
@@ -97,9 +100,17 @@ impl Work {
     }
     fn execute(self, token: &worker::CancelToken) -> RemoteWriteResult {
         let result = match self {
-            Self::Enable { file, contents } => {
-                transport::prepare_edit(&file, &contents, token).map(RemoteWriteResult::Enabled)
-            }
+            Self::Enable {
+                file,
+                contents,
+                baseline,
+            } => match baseline {
+                Some(before) => transport::prepare_relocated_edit(&file, &before, token)
+                    .map(RemoteWriteResult::Enabled),
+                None => {
+                    transport::prepare_edit(&file, &contents, token).map(RemoteWriteResult::Enabled)
+                }
+            },
             Self::Save {
                 before, contents, ..
             } => transport::save(&before, &contents, token).map(RemoteWriteResult::Saved),
@@ -119,6 +130,9 @@ impl WriteState {
 impl Editor {
     pub(super) fn enable_remote_edit(&mut self) -> Result<(), String> {
         let document = self.current();
+        if self.filesystem_blocks_document(document) {
+            return Err("filesystem operation pending or unconfirmed; verify its receipt before edit admission".into());
+        }
         if self.remote_refresh_pending(document) {
             return Err("remote refresh is pending".into());
         }
@@ -138,6 +152,7 @@ impl Editor {
         let work = Work::Enable {
             file: source.file.clone(),
             contents: self.buf().snapshot(),
+            baseline: self.remote.writes.relocations.get(&document).cloned(),
         };
         self.start_remote_write(document, self.buf().revision(), None, work)
     }
@@ -164,6 +179,12 @@ impl Editor {
         force: bool,
         close: bool,
     ) -> Result<(), String> {
+        if self.filesystem_blocks_document(document) {
+            return Err(
+                "filesystem operation pending or unconfirmed; verify its receipt before saving"
+                    .into(),
+            );
+        }
         if target.is_some() {
             return Err("remote save-as is unsupported; no local fallback".into());
         }
@@ -360,6 +381,7 @@ impl Editor {
             Outcome::Success(RemoteWriteResult::Enabled(version))
                 if key.action == WriteAction::Enable && version.file() == &key.file =>
             {
+                self.remote.writes.relocations.remove(&document);
                 let mut doc = self.doc_mut(document);
                 if let DocumentSource::Remote(source) = &mut doc.source {
                     source.write = Some(WritePermit {
@@ -502,6 +524,7 @@ impl Editor {
     }
 
     pub(crate) fn revoke_remote_write(&mut self, document: DocumentId) {
+        self.remote.writes.relocations.remove(&document);
         if let Some(doc) = self.docs.get_mut(document) {
             if let DocumentSource::Remote(source) = &mut doc.source {
                 source.write = None;
@@ -512,6 +535,26 @@ impl Editor {
         if let Some(ticket) = self.remote.writes.pending.remove(&document) {
             if let Some(handle) = self.worker_handles.remove(&ticket.request) {
                 handle.cancel(CancelReason::OwnerClosed);
+            }
+        }
+    }
+
+    pub(crate) fn relocate_remote_binding(&mut self, document: DocumentId, file: RemoteFile) {
+        let baseline = self
+            .docs
+            .get(document)
+            .and_then(|doc| doc.remote_metadata())
+            .and_then(|source| source.write.as_ref())
+            .map(|permit| permit.version.clone())
+            .or_else(|| self.remote.writes.relocations.get(&document).cloned());
+        self.revoke_remote_write(document);
+        if let Some(doc) = self.docs.get_mut(document) {
+            if let DocumentSource::Remote(source) = &mut doc.source {
+                doc.buf.name = Some(file.to_string());
+                source.file = file;
+                if let Some(baseline) = baseline {
+                    self.remote.writes.relocations.insert(document, baseline);
+                }
             }
         }
     }

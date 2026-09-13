@@ -413,7 +413,7 @@ mod tests {
                     badge: None,
                     text: "a".into(),
                     payload: Payload::Grep {
-                        path: PathBuf::from("a"),
+                        location: strop_workspace::ResourceLocation::local(PathBuf::from("/a")),
                         line: 1,
                         col: 1,
                         match_len: 1,
@@ -424,7 +424,7 @@ mod tests {
                     badge: None,
                     text: "b".into(),
                     payload: Payload::Grep {
-                        path: PathBuf::from("b"),
+                        location: strop_workspace::ResourceLocation::local(PathBuf::from("/b")),
                         line: 1,
                         col: 1,
                         match_len: 1,
