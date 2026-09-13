@@ -170,7 +170,7 @@ pub fn run_script(
             }
             DirectiveKind::Keys => {
                 for key in crate::editor::keys::parse(arguments) {
-                    driver.input(AppEvent::Terminal(key))?;
+                    driver.input(AppEvent::Input(strop_core::frontend_input::Input::Key(key)))?;
                     if driver.editor.should_quit {
                         break;
                     }
@@ -179,8 +179,16 @@ pub fn run_script(
                     driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
                 }
             }
+            DirectiveKind::Input => {
+                driver.input(AppEvent::Input(
+                    serde_json::from_str(arguments).map_err(io::Error::other)?,
+                ))?;
+                if driver.editor.resolution.pending() {
+                    driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
+                }
+            }
             DirectiveKind::Key => {
-                driver.input(AppEvent::Terminal(
+                driver.input(AppEvent::EditorKey(
                     serde_json::from_str(arguments).map_err(io::Error::other)?,
                 ))?;
                 if driver.editor.resolution.pending() {

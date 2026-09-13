@@ -22,7 +22,7 @@ fn pending_state(editor: &Editor) -> serde_json::Value {
             json!({"kind":"search","backward":backward})
         }
     };
-    json!({"text":capture_content().then(||prompt.text()),"cursor_byte":prompt.cursor(),
+    json!({"text":(capture_content() && !editor.private_terminal_prompt()).then(||prompt.text()),"cursor_byte":prompt.cursor(),
         "normal":prompt.normal(),"context":context,"pane_index":origin.pane_index,
         "origin":origin.pane,"revision":origin.revision})
 }
@@ -60,7 +60,8 @@ impl Editor {
                         revision: document.buf.revision(),
                         bytes: document.buf.len_bytes(),
                         readonly: document.buf.readonly,
-                        text: capture_content().then(|| document.buf.text().to_string()),
+                        text: (capture_content() && !self.private_terminal_document(id))
+                            .then(|| document.buf.text().to_string()),
                     },
                 );
             }
@@ -83,11 +84,12 @@ impl Editor {
                     "pattern":capture_content().then(||search.query.source()),"backward":search.backward,
                     "whole_word":search.query.whole_word()})),
                 "cursor":cursor,"documents":documents,"panes":self.panes,"active_pane":self.active_pane,
-                "view_rows":self.view_rows,"message":self.message,"should_quit":self.should_quit,
+                "view_rows":self.view_rows,"message":(!self.tape.content_omitted()).then_some(self.message.as_str()),"should_quit":self.should_quit,
                 "picker":self.picker.as_ref().map(|glue|json!({"id":glue.id.0.get(),
-                    "request":glue.active.as_ref().map(|ticket|ticket.request.get()),"query":glue.picker.input.text,
+                    "request":glue.active.as_ref().map(|ticket|ticket.request.get()),"query":(!self.tape.content_omitted()).then_some(glue.picker.input.text.as_str()),
                     "items":glue.picker.items.len(),"streaming":glue.picker.streaming})),
                 "config":self.config,
+                "terminal":self.panes.get(self.active_pane).and_then(|pane| self.terminal_status(pane.doc)),
             }),
         );
     }

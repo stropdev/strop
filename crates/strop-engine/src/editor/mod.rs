@@ -54,6 +54,8 @@ mod registers;
 pub mod remote;
 mod remote_completion;
 mod shell;
+pub(crate) mod terminal;
+pub use terminal::TerminalDocument;
 pub mod transact;
 mod undo;
 pub mod view;
@@ -233,6 +235,7 @@ pub struct Editor {
     pub(crate) picker_source: Option<strop_picker::SourceWorker>,
     pub(crate) picker_ranking: picker::ranking::State,
     pub(crate) analysis: analysis::AnalysisState,
+    pub(crate) terminals: terminal::State,
     pub resolution: resolution::ResolutionState,
     pub cwd: PathBuf,
     /// Bound workspace contexts (0042 slice 2): one per filesystem in use.
@@ -278,6 +281,9 @@ pub struct Editor {
     /// ctrl-l: the terminal desynced from the model — the draw loop
     /// answers with a full repaint (vim's redraw).
     pub needs_repaint: bool,
+    /// Last frame-preparation stamp (AR01): preparation runs only when the
+    /// view-relevant state or geometry changed; unchanged repaints stay pure.
+    pub frame_stamp: u64,
     /// System-clipboard reads (paste from `+`) run on a worker thread;
     /// `clip_paste_pending` remembers before/after AND the initiating
     /// document until the read lands (0023 §4).
@@ -305,6 +311,7 @@ pub struct Editor {
     /// Shared state root for explicit trust and optional session persistence.
     pub state_dir: Option<PathBuf>,
     pub session_policy: crate::session::SessionPolicy,
+
     /// The last grammar-level change (dot-repeat's semantic form).
     pub(crate) last_change: Option<strop_grammar::Command>,
     /// Direct non-grammar commands (x, p, J…) replay their key string.
@@ -319,6 +326,13 @@ pub struct Editor {
     /// binary; replay of a recorded `Frame` action renders through this
     /// hook. The engine never renders on its own.
     pub frame_draw: Option<FrameDraw>,
+}
+
+impl Editor {
+    /// Focus identity for frame-preparation stamps (AR01).
+    pub fn focus_epoch(&self) -> u64 {
+        self.focus_epoch
+    }
 }
 
 /// The compiled query owns matching semantics for repeat, preview and highlighting.
@@ -378,6 +392,7 @@ impl Editor {
             remote_completion: remote_completion::RemoteCompletionState::default(),
             picker_ranking: picker::ranking::State::default(),
             analysis: analysis::AnalysisState::default(),
+            terminals: terminal::State::default(),
             resolution: resolution::ResolutionState::default(),
             worker_ids: strop_core::worker::WorkerIds::default(),
             worker_handles: HashMap::new(),
@@ -452,6 +467,7 @@ impl Editor {
             git_tx,
             git_rx: Some(git_rx),
             needs_repaint: false,
+            frame_stamp: 0,
             osc52: None,
             terminal_output: Vec::new(),
             preview_tx,
@@ -466,6 +482,7 @@ impl Editor {
             diags: HashMap::new(),
             hover_card: None,
             panes: vec![Pane {
+                terminal_input: false,
                 doc: current,
                 sels: strop_core::selection::SelectionSet::default(),
                 view_top: 0,
@@ -483,7 +500,7 @@ impl Editor {
 
     pub fn feed_text(&mut self, text: &str) {
         for key in keys::parse(text) {
-            self.feed(key);
+            self.handle_frontend_input(strop_core::frontend_input::Input::Key(key));
         }
     }
 
@@ -663,7 +680,7 @@ pub fn state_json(editor: &Editor) -> String {
         return serde_json::json!({"should_quit":editor.should_quit,"documents":0,"message":editor.message}).to_string();
     }
     serde_json::json!({
-        "mode": editor.mode.chip(),
+        "mode": if editor.terminal_input_active() { "TERMINAL" } else { editor.mode.chip() },
         "cursor": editor.head(),
         "line": editor.buf().line_of(editor.head()) + 1,
         "col": editor.buf().col_of(editor.head()) + 1,
@@ -678,6 +695,7 @@ pub fn state_json(editor: &Editor) -> String {
         "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
         "register": editor.register(None).text,
         "dirty": editor.buf().dirty,
+        "terminal":editor.terminal_status(editor.current()),
     })
     .to_string()
 }

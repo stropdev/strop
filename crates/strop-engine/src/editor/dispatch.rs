@@ -21,6 +21,8 @@ pub enum InputOwner {
     Picker,
     /// The undo-tree browser.
     UndoBrowser,
+    /// Physical input belongs to an embedded child, before grammar normalization.
+    Terminal,
     /// The document itself: mode dispatch (insert/visual/normal).
     Document,
 }
@@ -43,6 +45,9 @@ impl Editor {
         }
         if self.picker_open() {
             return InputOwner::Picker;
+        }
+        if self.terminal_input_active() {
+            return InputOwner::Terminal;
         }
         if self.hover_card.is_some() {
             return InputOwner::HoverCard;
@@ -101,6 +106,10 @@ impl Editor {
                 }
             }
             InputOwner::Document => self.feed_document(key),
+            InputOwner::Terminal => {
+                self.message =
+                    "terminal input needs physical events; use keys or input in scripts".into();
+            }
         }
     }
 
@@ -118,6 +127,12 @@ impl Editor {
 
     /// The mode machine: insert/visual/normal dispatch.
     fn feed_document(&mut self, key: Key) {
+        if self.mode == Mode::Normal
+            && matches!(key, Key::Char('i' | 'a'))
+            && self.enter_terminal_input()
+        {
+            return;
+        }
         match self.mode {
             Mode::Insert => self.feed_insert(key),
             Mode::Visual | Mode::VisualLine | Mode::VisualBlock => self.feed_visual(key),

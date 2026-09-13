@@ -5,7 +5,7 @@ use super::*;
 /// Ordinary file and diff rows stream graphemes straight off the rope —
 /// no whole-line String, no layout vector; only decorated surfaces
 /// (help/log/stats) keep their existing owned styled text.
-pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
+pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
     let rows = usize::from(area.height);
     let (cur_line, first, last) = {
         let buf = &editor.doc(view.doc).buf;
@@ -16,7 +16,7 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
             buf.line_end(last_line.saturating_sub(1)),
         )
     };
-    let analysis = editor.document_analysis(
+    let analysis = editor.document_analysis_cached(
         view.doc,
         first,
         last,
@@ -60,7 +60,7 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
         .map(|(source, first, last)| {
             (
                 source,
-                editor.document_analysis(
+                editor.document_analysis_cached(
                     source,
                     first,
                     last,
@@ -125,7 +125,7 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
     // never scrolls, never blocks, active pane only. Computed before
     // the rope borrow below: a miss submits worker work (&mut editor)
     let [pair_first, pair_second] = if view.overlays {
-        editor.pair_highlight(
+        editor.pair_highlight_cached(
             view.doc,
             view.cursor,
             matches!(editor.mode, crate::editor::Mode::Insert),
@@ -135,6 +135,10 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
     };
     let buf = &editor.doc(view.doc).buf;
     let surface = editor.doc(view.doc).surface_payload();
+    let directory = editor
+        .doc(view.doc)
+        .directory_metadata_ref()
+        .filter(|source| source.draft.is_none());
 
     // overlays read live editor state; only the active pane shows them
     let mut style = RowStyle {
@@ -240,7 +244,17 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
             left.extend(fixed_spans(vec![span], diff::BLAME_W, margin_tab));
         }
         if line_idx > buf.last_content_line() {
-            left.push(Span::styled("~", Style::default().fg(MUTED)));
+            if let Some(directory) = directory {
+                if line_idx == 2 && directory.visible.is_empty() {
+                    left.push(Span::raw(" ".repeat(number_width)));
+                    left.push(Span::styled(
+                        directory::empty_message(directory),
+                        Style::default().fg(MUTED),
+                    ));
+                }
+            } else {
+                left.push(Span::styled("~", Style::default().fg(MUTED)));
+            }
             lines.push(pad_row(Line::from(left), area.width));
             continue;
         }
@@ -252,23 +266,7 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
         style.diff_line = None;
         style.emphasis = None;
         style.row_bg = None;
-        style.row_fg =
-            editor
-                .doc(view.doc)
-                .directory_metadata_ref()
-                .map(|directory| {
-                    match directory
-                        .entry(strop_core::id::LineIndex::new(line_idx))
-                        .map(|entry| entry.observation.kind)
-                    {
-                        Some(strop_workspace::EntryKind::Directory) => ACCENT,
-                        Some(strop_workspace::EntryKind::SymbolicLink) => {
-                            Color::Rgb(0x89, 0xb4, 0xfa)
-                        }
-                        Some(strop_workspace::EntryKind::File) => TEXT,
-                        _ => MUTED,
-                    }
-                });
+        style.row_fg = None;
         style.decorations.clear();
         style.note = None;
         style.syn_spans = syn_spans;
@@ -389,8 +387,18 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
                     }
                     _ => {}
                 }
-                if let Some(row) =
-                    diff::surface_list_row(surface, line_idx, width, line_idx == cur_line)
+                if let Some(row) = directory
+                    .and_then(|source| {
+                        directory::row(
+                            source,
+                            line_idx,
+                            text,
+                            view.overlays && line_idx == cur_line,
+                        )
+                    })
+                    .or_else(|| {
+                        diff::surface_list_row(surface, line_idx, width, line_idx == cur_line)
+                    })
                 {
                     // the quiet cursor-row band rides under overlays
                     // (search/visual/flash still override per cell)
@@ -427,6 +435,13 @@ pub(super) fn render_pane(editor: &mut Editor, frame: &mut Frame, area: Rect, vi
             hscroll: DisplayColumn::new(0),
             ..*view
         };
+        if directory.is_some() {
+            if let Some(bg) = style.row_bg {
+                for span in &mut left {
+                    span.style.bg = Some(bg);
+                }
+            }
+        }
         left.extend(content_spans(
             editor,
             if chrome { &fixed_view } else { view },
@@ -474,6 +489,23 @@ fn diff_digits(surface: Option<&crate::editor::Surface>) -> usize {
 /// The sign column: diagnostics win over git signs (merged gutter,
 /// 0009), and only the pane's own buffer shows them.
 fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static str, Color) {
+    if let Some(directory) = editor
+        .doc(view.doc)
+        .directory_metadata_ref()
+        .filter(|source| source.draft.is_none())
+    {
+        if let Some(entry) = directory.entry(strop_core::id::LineIndex::new(line_idx)) {
+            if directory.marked.contains_key(&entry.name) {
+                return ("●", ACCENT);
+            }
+            if entry.error.is_some() {
+                return ("!", diff::DEL_FG);
+            }
+        }
+        if view.overlays && editor.doc(view.doc).buf.line_of(view.cursor) == line_idx {
+            return ("▸", ACCENT);
+        }
+    }
     if let Some(sev) = editor.diag_severity_at(view.doc, line_idx + 1) {
         // severity dot (VSCode/gitui lesson: color reads faster than
         // letters) — the cursor line's EOL note carries the words

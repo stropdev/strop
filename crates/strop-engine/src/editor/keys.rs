@@ -1,6 +1,7 @@
 //! Streaming script-token decoding shared by Editor::feed_text and headless.
-//! Unknown tokens stay literal, and a lone '<' never fabricates a closing '>'.
-use super::Key;
+//! Tokens retain physical modifiers until the engine selects the input owner.
+//! Unknown tokens stay literal; a lone '<' never fabricates a closing '>'.
+use strop_core::frontend_input::{KeyCode, KeyEvent, Modifiers};
 
 pub fn parse(text: &str) -> Keys<'_> {
     Keys {
@@ -13,60 +14,122 @@ pub struct Keys<'a> {
     literal_bytes: usize,
 }
 impl Iterator for Keys<'_> {
-    type Item = Key;
-    fn next(&mut self) -> Option<Key> {
-        let character = self.remaining.chars().next()?;
+    type Item = KeyEvent;
+    fn next(&mut self) -> Option<KeyEvent> {
+        let ch = self.remaining.chars().next()?;
         if self.literal_bytes > 0 {
-            self.remaining = &self.remaining[character.len_utf8()..];
-            self.literal_bytes -= character.len_utf8();
-            return Some(Key::Char(character));
+            self.remaining = &self.remaining[ch.len_utf8()..];
+            self.literal_bytes -= ch.len_utf8();
+            return Some(KeyEvent::press(KeyCode::Char(ch)));
         }
-        if character == '<' {
+        if ch == '<' {
             if let Some(end) = self.remaining.find('>') {
-                let token = &self.remaining[1..end];
-                if let Some((_, key)) = TOKENS
-                    .iter()
-                    .find(|(name, _)| token.eq_ignore_ascii_case(name))
-                {
+                if let Some(key) = token(&self.remaining[1..end]) {
                     self.remaining = &self.remaining[end + 1..];
-                    return Some(*key);
+                    return Some(key);
                 }
                 self.literal_bytes = end;
             }
         }
-        self.remaining = &self.remaining[character.len_utf8()..];
-        Some(match character {
-            '\x1b' => Key::Esc,
-            '\r' | '\n' => Key::Enter,
-            '\x7f' => Key::Backspace,
-            character => Key::Char(character),
-        })
+        self.remaining = &self.remaining[ch.len_utf8()..];
+        Some(character(ch))
     }
 }
-const TOKENS: &[(&str, Key)] = &[
-    ("esc", Key::Esc),
-    ("cr", Key::Enter),
-    ("enter", Key::Enter),
-    ("bs", Key::Backspace),
-    ("space", Key::Char(' ')),
-    ("lt", Key::Char('<')),
-    ("gt", Key::Char('>')),
-    ("up", Key::Up),
-    ("down", Key::Down),
-    ("left", Key::Left),
-    ("right", Key::Right),
-    ("tab", Key::Tab),
-    ("s-tab", Key::Backtab),
-    ("c-r", Key::CtrlR),
-    ("c-x", Key::CtrlX),
-    ("c-d", Key::CtrlD),
-    ("c-u", Key::CtrlU),
-    ("c-f", Key::CtrlF),
-    ("c-b", Key::CtrlB),
-    ("c-^", Key::CtrlCaret),
-    ("c-v", Key::CtrlV),
-    ("c-w", Key::CtrlW),
-    ("c-o", Key::CtrlO),
-    ("c-l", Key::CtrlL),
-    ("c-space", Key::CtrlSpace),
+
+fn character(ch: char) -> KeyEvent {
+    let code = match ch {
+        '\x1b' => KeyCode::Escape,
+        '\r' | '\n' => KeyCode::Enter,
+        '\x7f' | '\x08' => KeyCode::Backspace,
+        '\t' => KeyCode::Tab,
+        '\0' => KeyCode::Null,
+        '\x01'..='\x1a' => {
+            let mut key = KeyEvent::press(KeyCode::Char(char::from(ch as u8 - 1 + b'a')));
+            key.modifiers.control = true;
+            return key;
+        }
+        '\x1c'..='\x1f' => {
+            let scalar = match ch {
+                '\x1c' => '\\',
+                '\x1d' => ']',
+                '\x1e' => '6',
+                _ => '_',
+            };
+            let mut key = KeyEvent::press(KeyCode::Char(scalar));
+            key.modifiers.control = true;
+            return key;
+        }
+        ch => KeyCode::Char(ch),
+    };
+    KeyEvent::press(code)
+}
+
+fn token(mut text: &str) -> Option<KeyEvent> {
+    let mut modifiers = Modifiers::default();
+    while let Some((modifier, rest)) = text.split_once('-') {
+        if modifier.eq_ignore_ascii_case("c") {
+            modifiers.control = true;
+        } else if modifier.eq_ignore_ascii_case("s") {
+            modifiers.shift = true;
+        } else if modifier.eq_ignore_ascii_case("a") || modifier.eq_ignore_ascii_case("m") {
+            modifiers.alt = true;
+        } else if modifier.eq_ignore_ascii_case("d") || modifier.eq_ignore_ascii_case("super") {
+            modifiers.super_key = true;
+        } else {
+            break;
+        }
+        text = rest;
+    }
+    let mut code = NAMES
+        .iter()
+        .find(|(name, _)| text.eq_ignore_ascii_case(name))
+        .map(|(_, code)| *code);
+    if code.is_none() && text.starts_with(['f', 'F']) {
+        code = text[1..]
+            .parse::<u8>()
+            .ok()
+            .filter(|number| *number != 0)
+            .map(KeyCode::Function);
+    }
+    if code.is_none() {
+        let mut chars = text.chars();
+        if let Some(ch) = chars.next() {
+            if chars.next().is_none() && modifiers != Modifiers::default() {
+                code = Some(KeyCode::Char(ch));
+            }
+        }
+    }
+    let mut code = code?;
+    if code == KeyCode::Tab && modifiers.shift {
+        code = KeyCode::BackTab;
+    }
+    if code == KeyCode::Char('^') && modifiers.control {
+        code = KeyCode::Char('6');
+        modifiers.shift = true;
+    }
+    let mut key = KeyEvent::press(code);
+    key.modifiers = modifiers;
+    Some(key)
+}
+const NAMES: &[(&str, KeyCode)] = &[
+    ("esc", KeyCode::Escape),
+    ("cr", KeyCode::Enter),
+    ("enter", KeyCode::Enter),
+    ("bs", KeyCode::Backspace),
+    ("backspace", KeyCode::Backspace),
+    ("space", KeyCode::Char(' ')),
+    ("lt", KeyCode::Char('<')),
+    ("gt", KeyCode::Char('>')),
+    ("up", KeyCode::Up),
+    ("down", KeyCode::Down),
+    ("left", KeyCode::Left),
+    ("right", KeyCode::Right),
+    ("tab", KeyCode::Tab),
+    ("home", KeyCode::Home),
+    ("end", KeyCode::End),
+    ("pageup", KeyCode::PageUp),
+    ("pagedown", KeyCode::PageDown),
+    ("delete", KeyCode::Delete),
+    ("insert", KeyCode::Insert),
+    ("null", KeyCode::Null),
 ];

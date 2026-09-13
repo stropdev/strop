@@ -23,6 +23,7 @@ mod hover_card;
 #[path = "picker/mod.rs"]
 mod picker;
 mod statusline;
+mod terminal;
 #[cfg(test)]
 mod terminal_tests;
 mod text;
@@ -95,21 +96,25 @@ pub(crate) fn syntax_style(span: &strop_syntax::Span) -> Style {
 }
 
 mod field;
+mod prepare;
 
 pub fn render(editor: &mut Editor, frame: &mut Frame) {
     let area = frame.area();
     if editor.panes.is_empty() {
         return;
     }
+    // AR01: preparation owns every paint-path admission and viewport
+    // adjustment, idempotently; painting below is a readonly query.
+    prepare::prepare_frame(editor, area);
+    let editor = &*editor;
+
     // pane geometry (heights feed the vertical viewport, widths the
     // horizontal origin) is decided per pane inside render_panes —
     // the full-area numbers were wrong in splits (0031 R6)
-    editor.refresh_hunks();
-
     let pane_area = buffer::render_panes(editor, frame, area);
     statusline::render(editor, frame, area);
     cmd_card::render_cmd_card(editor, frame);
-    if !cmd_card_active(editor) {
+    if !cmd_card_active(editor) && !editor.terminal_input_active() {
         place_cursor(editor, frame, pane_area);
     }
     render_welcome(editor, frame);
@@ -167,7 +172,11 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
 /// First-launch card: brand + the three keys that matter. Only on an
 /// empty scratch buffer — once you're editing, it never intrudes.
 fn render_welcome(editor: &Editor, frame: &mut Frame) {
-    if editor.buf().path.is_some() || editor.buf().len_bytes() > 0 || editor.picker_open() {
+    if !matches!(editor.cur().source, crate::editor::DocumentSource::Scratch)
+        || editor.buf().path.is_some()
+        || editor.buf().len_bytes() > 0
+        || editor.picker_open()
+    {
         return;
     }
     use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};

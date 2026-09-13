@@ -44,6 +44,14 @@ impl Editor {
         force: bool,
         close: bool,
     ) -> bool {
+        if self
+            .docs
+            .get(document)
+            .is_some_and(|doc| matches!(doc.source, crate::editor::DocumentSource::Terminal(_)))
+        {
+            self.message = "terminal buffers have no file write binding; yank text to an ordinary buffer to export it".into();
+            return false;
+        }
         let blocked = if let Some(target) = target.as_ref() {
             self.filesystem
                 .blocks(&strop_workspace::ResourceLocation::local(

@@ -37,12 +37,12 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
                 i = end;
                 continue;
             }
-            "ctrl-w" => {
+            "ctrl-w" | "ctrl-\\" | "ctrl-4" => {
                 if let Some(k) = toks.get(i + 1) {
-                    seqs.push(vec!["ctrl-w", k]);
+                    seqs.push(vec![toks[i], k]);
                     i += 2;
                 } else {
-                    seqs.push(vec!["ctrl-w"]);
+                    seqs.push(vec![toks[i]]);
                     i += 1;
                 }
                 continue;
@@ -107,6 +107,9 @@ pub(crate) const NAMED: &[&str] = &[
     "ctrl-v",
     "ctrl-l",
     "ctrl-space",
+    "ctrl-\\",
+    "ctrl-n",
+    "ctrl-4",
 ];
 
 /// The single-key operator `<` is literal, not a placeholder.

@@ -7,8 +7,11 @@
 # a dependency that drags in openssl is a bug (AGENTS.md).
 
 FROM rust:alpine AS builder
-RUN apk add --no-cache build-base git ripgrep neovim \
+RUN apk add --no-cache build-base git ripgrep neovim less curl ca-certificates xz \
     && rustup component add clippy rustfmt
+COPY .github/scripts/install-zig.sh /tmp/install-zig.sh
+RUN sh /tmp/install-zig.sh /opt/strop-zig && rm /tmp/install-zig.sh
+ENV ZIG=/opt/strop-zig/zig
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates

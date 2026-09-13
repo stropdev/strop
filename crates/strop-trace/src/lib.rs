@@ -9,7 +9,9 @@ mod bounded;
 mod chunk;
 mod event;
 pub mod export;
+mod privacy;
 pub mod replay;
+pub use privacy::without_content;
 mod writer;
 
 pub use event::{
@@ -165,7 +167,13 @@ pub fn enabled() -> bool {
 }
 #[inline]
 pub fn capture_content() -> bool {
-    enabled() && CONTENT.load(Ordering::Relaxed)
+    enabled() && CONTENT.load(Ordering::Relaxed) && privacy::content_allowed()
+}
+
+/// A declared private boundary ends content collection, not diagnostic recording.
+/// The producer emits its opaque-scope marker before calling this.
+pub(crate) fn stop_content_capture() {
+    CONTENT.store(false, Ordering::Release);
 }
 
 /// Lazy producer: no payload construction or allocation when disabled.

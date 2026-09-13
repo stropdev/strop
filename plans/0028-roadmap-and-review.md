@@ -237,6 +237,11 @@ The user has already dispatched **0056 architecture and 0057 whole-core verifica
 The subsequently authorized native worker is a **separate release after both**, not
 a reason to stop or retarget the current proof effort. Completion remains unimplemented.
 
+The 2026-09-13 follow-up prioritizes a folder-view polish pass now and the native
+worker as the next post-baseline programme. WK01–WK20 are tracked in full; the
+priority does not waive 0058 §2's accepted AR/VF baseline or retarget their candidate.
+Completion, debugger and GUI remain behind the worker release.
+
 ```text
 0054 filesystem -> 0055 TUI terminal -> 0056 architecture -> 0057 core verification
     -> 0058 unified native worker + assurance migration

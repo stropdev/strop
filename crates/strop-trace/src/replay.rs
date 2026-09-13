@@ -47,6 +47,10 @@ pub enum Node {
     Check {
         value: Value,
     },
+    /// Deliberately omitted private data makes this capture non-replayable.
+    Opaque {
+        scope: String,
+    },
     End,
 }
 
@@ -68,6 +72,7 @@ pub struct Tape {
     fault: Cell<Option<&'static str>>,
     tick: Cell<Tick>,
     finished: Cell<bool>,
+    opaque: Cell<bool>,
     started: std::time::Instant,
     #[cfg(feature = "test-support")]
     fixture: Option<Fixture>,
@@ -97,6 +102,7 @@ impl Tape {
             fault: Cell::new(None),
             tick: Cell::new(Tick::default()),
             finished: Cell::new(false),
+            opaque: Cell::new(false),
             started: std::time::Instant::now(),
             #[cfg(feature = "test-support")]
             fixture: None,
@@ -111,8 +117,10 @@ impl Tape {
 
     /// A replay tape over recorded nodes. It never consults the host.
     pub fn replay(nodes: Vec<Node>) -> Self {
+        let opaque = nodes.iter().any(|node| matches!(node, Node::Opaque { .. }));
         Self {
             mode: RefCell::new(Mode::Replay(nodes.into())),
+            fault: Cell::new(opaque.then_some("replay unavailable: private content was omitted")),
             ..Self::live()
         }
     }
@@ -159,6 +167,28 @@ impl Tape {
     /// Expensive state construction is lazy when neither recording nor replaying.
     pub fn observes(&self) -> bool {
         self.is_replay() || self.captures()
+    }
+
+    pub fn content_omitted(&self) -> bool {
+        self.opaque.get()
+    }
+
+    /// Classify a private boundary before action/value serialization. Live
+    /// execution continues, but missing history can never pass forensic replay.
+    pub fn omit_content(&self, scope: &'static str) -> io::Result<()> {
+        self.healthy()?;
+        if self.is_replay() {
+            return self.fail("replay entered an unrecorded private boundary");
+        }
+        if !self.opaque.replace(true) {
+            self.emit(&Node::Opaque {
+                scope: scope.into(),
+            });
+            if !self.has_fixture() {
+                crate::stop_content_capture();
+            }
+        }
+        Ok(())
     }
 
     /// Only the live adapter samples the host clock. Fixtures and replay use
@@ -221,6 +251,9 @@ impl Tape {
     }
 
     fn captures(&self) -> bool {
+        if self.opaque.get() {
+            return false;
+        }
         if self.has_fixture() {
             return true;
         }
@@ -228,12 +261,15 @@ impl Tape {
     }
 
     fn emit(&self, node: &Node) {
+        if self.opaque.get() && !matches!(node, Node::Opaque { .. } | Node::End) {
+            return;
+        }
         #[cfg(feature = "test-support")]
         if let Some(fixture) = &self.fixture {
             fixture.nodes.borrow_mut().push(node.clone());
             return;
         }
-        if crate::capture_content() {
+        if crate::capture_content() || matches!(node, Node::Opaque { .. }) {
             crate::record(crate::EventKind::Replay, node);
         }
     }
@@ -338,7 +374,7 @@ impl Tape {
         if self.finished.get() && !self.is_replay() {
             return self.fail("recording finished");
         }
-        if !self.is_replay() && !self.captures() {
+        if !self.is_replay() && !self.captures() && !self.has_fixture() {
             return Ok(true);
         }
         let arguments = self.value(arguments)?;
@@ -381,7 +417,7 @@ impl Tape {
         if self.finished.get() && !self.is_replay() {
             return self.fail("recording finished");
         }
-        if !self.is_replay() && !self.captures() {
+        if !self.is_replay() && !self.captures() && !self.has_fixture() {
             return Ok(native());
         }
         let arguments = self.value(arguments)?;

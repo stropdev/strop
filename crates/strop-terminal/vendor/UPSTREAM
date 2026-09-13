@@ -1,0 +1,9 @@
+Project: libghostty-vt (Ghostty)
+License: MIT; see LICENSE-GHOSTTY and licenses within the source distribution
+Revision: 5252b193cfd52b4bcd868135e21e4563f2f326ec
+Source: https://github.com/ghostty-org/ghostty/tree/5252b193cfd52b4bcd868135e21e4563f2f326ec
+Distribution: zig build dist -Demit-lib-vt=true -Doptimize=ReleaseFast -Dvt-features=-kitty-graphics
+Archive: ghostty-vt-5252b193.tar.gz
+Archive SHA-256: 6eac1c1b1870ebfbcbb0798b091ba91f2e45d1da89ae21e83e6ae66adb082488
+Compiler: Zig 0.16.0, supplied explicitly by the source builder; never downloaded by build.rs
+Runtime: statically linked, no Ghostty installation or Zig compiler required

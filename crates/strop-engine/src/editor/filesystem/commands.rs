@@ -107,6 +107,29 @@ impl Editor {
         }
         let (command, argument) = argument.split_once(' ').unwrap_or((argument, ""));
         match command {
+            "terminal" => {
+                if !argument.is_empty() || range.is_some() {
+                    return Err(
+                        "fs terminal uses the selected directory, not an operand or range".into(),
+                    );
+                }
+                let directory = self
+                    .directory()
+                    .ok_or("fs terminal requires a Directory buffer")?;
+                if directory.draft.is_some() {
+                    return Err("finish the filename draft before opening a terminal here".into());
+                }
+                let line = LineIndex::new(self.buf().line_of(self.head()));
+                let location = directory
+                    .entry(line)
+                    .filter(|entry| entry.observation.kind == strop_workspace::EntryKind::Directory)
+                    .map_or_else(
+                        || directory.location.clone(),
+                        |entry| directory.location_of(entry),
+                    );
+                self.launch_terminal_at(location, "");
+                return Ok(());
+            }
             "search" => {
                 if !argument.is_empty() || range.is_some() {
                     return Err(

@@ -31,6 +31,46 @@ fn extra_cursors_render_without_panicking() {
     assert!(frame.contains("one") && frame.contains("two"));
 }
 
+/// AR01: paint is a readonly query. Repeated draws with no engine/view
+/// change run no new preparation (same stamp), admit no analysis work and
+/// leave the viewport untouched.
+#[test]
+fn repeated_paint_without_change_admits_no_work_or_viewport_drift() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("probe.rs");
+    std::fs::write(&path, "fn main() {\n    let x = (1);\n}\n").unwrap();
+    let mut e = Editor::new(Buffer::from_text(""));
+    e.open_fixture(&path).unwrap();
+    e.wait_analysis();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    e.wait_analysis();
+    assert!(
+        !e.analysis_pending_probe(),
+        "work admitted by first paint drained"
+    );
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    let stamp = e.frame_stamp;
+    let (top, origin, head) = (e.view().view_top, e.view().hscroll.get(), e.head());
+    for _ in 0..3 {
+        terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    }
+    assert_eq!(e.frame_stamp, stamp, "unchanged repaints skip preparation");
+    assert!(
+        !e.analysis_pending_probe(),
+        "unchanged repaints admit no analysis"
+    );
+    assert_eq!(
+        (e.view().view_top, e.view().hscroll.get(), e.head()),
+        (top, origin, head)
+    );
+    // A real change re-arms preparation exactly once.
+    e.feed(Key::Char('j'));
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    assert_ne!(e.frame_stamp, stamp);
+    assert_ne!(e.head(), head);
+}
+
 #[test]
 fn key_soup_never_panics() {
     // seeded LCG drives thousands of keystrokes across buffer shapes:

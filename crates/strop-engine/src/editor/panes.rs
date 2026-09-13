@@ -13,6 +13,8 @@ use super::Editor;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Pane {
     pub doc: strop_core::id::DocumentId,
+    /// Input-mode views mirror the live terminal; Normal views pin its text.
+    pub terminal_input: bool,
     pub sels: SelectionSet,
     pub view_top: usize,
     /// Horizontal display-cell origin (0031 R6): glyphs, overlays and
@@ -79,6 +81,7 @@ impl Editor {
             view
         } else {
             Pane {
+                terminal_input: false,
                 doc,
                 sels: SelectionSet::default(),
                 view_top: 0,
@@ -129,6 +132,17 @@ impl Editor {
                 self.message = format!("{dirty} unsaved buffer(s) — :qa! to discard");
                 return;
             }
+        }
+        if self.terminals.live() {
+            if !force {
+                self.message =
+                    "terminal sessions are running; stop them first, or :qa! to stop and quit"
+                        .into();
+                return;
+            }
+            self.stop_all_terminals();
+            self.should_quit = true;
+            return;
         }
         while !self.docs.is_empty() {
             if !self.close_buffer(force) {

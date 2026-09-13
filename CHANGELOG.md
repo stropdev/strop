@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.32.0 — 2026-09-13
+
+Embedded local terminals, full-screen pickers with wider previews, and a
+folder-view refresh (plans 0054/0055 TUI milestones; all GUI work remains
+deferred).
+
+### Added
+
+- **Local terminals** (`:terminal`): a real PTY-backed shell in the editor
+  (`strop-terminal`, pinned static Ghostty VT engine; source builds require
+  explicitly installed Zig 0.16.0 — prebuilt users need neither). Terminal
+  input keeps Esc/Ctrl-C/Ctrl-R/Alt/F-key meanings for the child; Ctrl-\\ Ctrl-N
+  (legacy terminals may spell it Ctrl-4) enters editor Normal inspection over a
+  pinned read-only text snapshot; i/a follow the live cursor again. An exited
+  session stays readable and never restarts implicitly.
+- `:terminal COMMAND`, directory **Terminal here**, `:terminal-local` for an
+  explicit local shell from SSH/container contexts (interactive execution is
+  refused there, never silently redirected), `:terminal-stop`, and
+  `:terminal-paste`/`:terminal-paste-cancel` for held multiline/control paste
+  consent. `:qa` refuses live sessions and `:qa!` stops and drains them.
+- Terminal buffers are real read-only buffers: normal motions, `/` search,
+  selection and yank; splits mirror the live cell grid while one focused view
+  owns PTY geometry. Background descendants are reaped (pidfd-supervised on
+  Linux); deliberately detached processes are explicitly out of scope.
+- Terminal privacy: content is excluded from traces even with `--log-content`.
+  Entering a terminal records an opaque marker and downgrades the capture to
+  metadata-only; replay refuses the omitted history. `--log-terminal-content`
+  is the separate explicit consent, visibly marked REC. Full `--replay`
+  reproduces terminal sessions with no PTY/process/clipboard/network effects;
+  input-only extraction refuses terminal traces honestly.
+- Keyboard capability advertisement is captured per session; legacy frontends
+  get a truthful legacy profile and the child's kitty-protocol queries are
+  masked to it (no fabricated enhanced keys, focus reporting follows mode 1004).
+- `input` headless directive for complete physical key/text/paste events with
+  modifiers and repeat/release information; `keys` now accepts chords
+  (`<a-x>`, `<f5>`) and physical facts are preserved until the engine selects
+  the input owner.
+
+### Changed
+
+- Folder views align human-readable sizes and permissions behind full filenames.
+  A quieter breadcrumb header, restrained type accents and full-width cursor/mark
+  bands make the listing easier to scan without changing native entry identity.
+- Folder marks have visible gutter indicators. Empty folders and filtered-empty
+  listings show an explicit state instead of file-buffer filler rows; parent rows
+  expose the existing open/actions affordances.
+- Find File, Symbols and Search share one stable near-full-frame workspace
+  instead of a smaller floating card. The file preview gets the wider share
+  (grep 60/40, files/symbols 55/45), so source evidence reads comfortably
+  next to the decision list. Transient pickers keep the floating card.
+- Picker previews keep the rootle-style line gutter (▶ marker on the focused
+  line, right-aligned numbers, `│` divider) across files, grep and symbols;
+  the marker now reads accent+bold on the selection band.
+- Rendering is readonly (0056 AR01 core): an idempotent preparation step owns
+  every paint-path admission and viewport adjustment behind a state/geometry
+  stamp; repeated paints allocate no worker tickets and painting itself is a
+  pure `&Editor` query.
+
 ## 0.31.1 — 2026-09-13
 
 One filesystem workspace: browse, edit names, review operations (0054).

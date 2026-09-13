@@ -158,7 +158,7 @@ impl Drive {
     }
 
     fn key(&mut self, key: Key) -> io::Result<()> {
-        self.input(AppEvent::Terminal(key))
+        self.input(AppEvent::EditorKey(key))
     }
 
     /// One fairness-bounded turn of queued events (EVENTS_PER_TURN /

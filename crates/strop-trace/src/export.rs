@@ -144,6 +144,14 @@ pub fn replay_nodes(input: impl BufRead) -> io::Result<Vec<crate::replay::Node>>
         }
         Ok(())
     })?;
+    if nodes
+        .iter()
+        .any(|node| matches!(node, crate::replay::Node::Opaque { .. }))
+    {
+        return Err(io::Error::other(
+            "terminal-content replay unavailable: private content was omitted; re-record with explicit private terminal capture",
+        ));
+    }
     if !full || !complete {
         return Err(io::Error::other(
             "full replay requires complete full-content capture",

@@ -47,6 +47,16 @@ jobs:
             -e "VERSION=${GITHUB_REF_NAME#v}" \
             -e "TARGET=${{ matrix.target }}" release
 
+      - name: Install pinned native build compiler
+        if: "!matrix.docker"
+        run: |
+          sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
+          echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
+
+      - name: Verify native macOS terminal ownership
+        if: "!matrix.docker"
+        run: cargo test --locked -p strop-editor --test terminal_helper
+
       - name: Build (macOS, native)
         if: "!matrix.docker"
         run: |
@@ -143,6 +153,10 @@ jobs:
       # publishing the wrong version. crates.io `strop` is taken; the
       # package publishes as `strop-editor` (0001 §naming).
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned source-package compiler
+        run: |
+          sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
+          echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
 
       - name: Publish to crates.io (dependency order)
         env:

@@ -38,7 +38,10 @@ fn action(editor: &mut Editor, event: AppEvent) {
 
 fn keys(editor: &mut Editor, text: &str) {
     for key in crate::editor::keys::parse(text) {
-        action(editor, AppEvent::Terminal(key));
+        action(
+            editor,
+            AppEvent::Input(strop_core::frontend_input::Input::Key(key)),
+        );
     }
 }
 

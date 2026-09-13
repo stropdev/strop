@@ -936,3 +936,44 @@ open-file-description lifetime without a timing-dependent fork test.
 After both corrections, all 100 concurrent engine-suite repetitions completed.
 The 0.31.1 compose test/static-benchmark, model, Verus and required-container
 gates passed again; the required SSH capture/replay cases were not skipped.
+
+## 16. Folder presentation follow-up
+
+The 2026-09-13 polish request keeps the same Directory/native-entry model and
+modal navigation. Worker-prepared listing text aligns filename-first metadata in
+display cells, uses explicit binary size units, preserves unknown versus measured
+zero and never truncates a native name. Long names can move their metadata beyond
+the normal column rather than being rewritten into a different-looking resource.
+
+The shared row renderer applies a muted breadcrumb/header band, filename/type
+emphasis, full-width active/marked bands and distinct gutter indicators. All
+decorations preserve the buffer's exact text prefix, so search, selection, yank
+and caret mapping still share the canonical projection. Filename drafts retain
+their existing name-only editing surface. Blank listing space no longer uses the
+ordinary file buffer's `~` filler.
+
+Actual-binary headless walkthroughs exercised 92×20, 32×10 and 12×4, marks, opening
+an empty child and returning to its selected parent entry. Captured cell-grid
+colors were inspected, and TestBackend regressions cover aligned metadata,
+selection/marks, Unicode names and narrow recovery. The existing unknown/zero/
+escaped-native-name regression also passes. These are presentation observations,
+not a claim that the next release or whole-core assurance gate has completed.
+
+The subsequent `docker compose run --build --rm test` gate passed on the integrated
+working tree: formatting, locked workspace/all-target clippy with warnings denied,
+and locked tests with SSH explicitly required. The actual TUI mark/open/parent
+walkthrough also exited cleanly. Disposable folder fixtures/scripts were removed;
+the captured grid/trace remain external evidence, not a production UI path.
+
+## 17. Picker workspace follow-up
+
+The same 2026-09-13 request moved Find File and Symbols onto the stable
+near-full-frame workspace Search already used, and widened the file preview's
+share of that workspace (grep 60/40, files/symbols 55/45). Transient pickers
+keep the smaller floating card. Row composition, hints, scrolling and preview
+sources are unchanged — only the card geometry and the horizontal split moved.
+
+A TestBackend regression pins the contract: card corners at the one-cell
+margins for all three workspace kinds, the selected row's full band ending
+near 55% of a 100-column frame, the preview's own border and file title right
+of the list, and floating geometry retained for the remote-address picker.

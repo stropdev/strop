@@ -7,6 +7,7 @@ use strop_core::{id::LineIndex, Buffer};
 use strop_workspace::{
     DirectoryEntry, EntryKind, EntryName, ListingState, Observation, ResourceLocation,
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Directory {
@@ -113,14 +114,35 @@ impl Directory {
             }
         );
         text.push_str("../\n");
-        for &index in self.visible.iter() {
+        let names: Vec<_> = self
+            .visible
+            .iter()
+            .map(|&index| {
+                let entry = &self.entries[index];
+                let mut name = entry.name.display();
+                match entry.observation.kind {
+                    EntryKind::Directory => name.push('/'),
+                    EntryKind::SymbolicLink => name.push('@'),
+                    _ => {}
+                }
+                let width = UnicodeWidthStr::width(name.as_str());
+                (name, width)
+            })
+            .collect();
+        let name_width = names
+            .iter()
+            .map(|(_, width)| *width)
+            .max()
+            .unwrap_or(0)
+            .clamp(24, 64);
+        for (&index, (name, width)) in self.visible.iter().zip(names) {
             let entry = &self.entries[index];
-            text.push_str(&entry.name.display());
-            match entry.observation.kind {
-                EntryKind::Directory => text.push('/'),
-                EntryKind::SymbolicLink => text.push('@'),
-                _ => {}
+            text.push_str(&name);
+            for _ in width..name_width {
+                text.push(' ');
             }
+            text.push_str("  ");
+            write_size(&mut text, entry.observation.size);
             text.push_str("  ");
             text.push(entry.observation.kind.marker());
             match entry.observation.permissions {
@@ -128,12 +150,6 @@ impl Directory {
                     let _ = write!(text, "{permissions}");
                 }
                 None => text.push_str("?????????"),
-            }
-            match entry.observation.size {
-                Some(size) => {
-                    let _ = write!(text, "  {size}");
-                }
-                None => text.push_str("  ?"),
             }
             if entry.error.is_some() {
                 text.push_str("  unavailable");
@@ -232,6 +248,29 @@ impl Directory {
                 (group(&pair[0]), &pair[0].name) < (group(&pair[1]), &pair[1].name)
             })
     }
+}
+
+/// Ten-cell binary units keep metadata legible without materializing per-row
+/// formatting strings. Unknown and a measured zero remain distinct.
+fn write_size(text: &mut String, size: Option<u64>) {
+    let Some(size) = size else {
+        text.push_str("         ?");
+        return;
+    };
+    if size < 1024 {
+        let _ = write!(text, "{size:>8} B");
+        return;
+    }
+    let units = ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+    let mut unit = 0;
+    let mut scale = 1024u64;
+    while size / scale >= 1024 && unit + 1 < units.len() {
+        scale *= 1024;
+        unit += 1;
+    }
+    let whole = size / scale;
+    let tenth = (size % scale) * 10 / scale;
+    let _ = write!(text, "{whole:>4}.{tenth} {}", units[unit]);
 }
 
 impl Document {

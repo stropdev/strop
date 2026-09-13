@@ -14,11 +14,14 @@ pub use channel::{channel, EventSender, EVENTS_PER_TURN, TURN_BUDGET};
 
 use super::{Editor, Key, ShellResult};
 
-/// One app event. Terminal input is already translated to editor keys
-/// by the reader thread.
+/// External input retains its physical facts until the engine selects an owner.
+/// EditorKey is already-normalized semantic input from scripted/editor commands.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum AppEvent {
-    Terminal(Key),
+    Input(strop_core::frontend_input::Input),
+    EditorKey(Key),
+    TerminalUpdate(strop_terminal::model::SessionId),
+    Focus(bool),
     /// Terminal resized — a redraw is owed even with no input (0020 §12).
     Resize {
         columns: u16,
@@ -64,6 +67,9 @@ impl Editor {
     /// (TUI only — headless keeps the raw channels for its drains).
     /// Late-attaching LSP servers forward through the retained sender.
     pub fn connect_events(&mut self, tx: EventSender) {
+        if let Some(rx) = self.terminals.rx.take() {
+            forward(rx, tx.clone(), AppEvent::TerminalUpdate);
+        }
         if let Some(rx) = self.io.rx.take() {
             forward(rx, tx.clone(), AppEvent::Io);
         }
@@ -110,9 +116,16 @@ impl Editor {
     /// drain loops; the drains call these in a try_recv loop).
     pub fn handle_app_event(&mut self, ev: AppEvent) {
         match ev {
-            AppEvent::Terminal(key) => self.feed(key),
+            AppEvent::Input(input) => self.handle_frontend_input(input),
+            AppEvent::TerminalUpdate(session) => self.handle_terminal_update(session),
+            AppEvent::Focus(focused) => self.terminal_focus_changed(focused),
+            AppEvent::EditorKey(key) => self.feed(key),
             AppEvent::Resize { .. } => {} // the loop redraws after every event
             AppEvent::Paste(text) => {
+                if self.terminal_owns_input() {
+                    self.feed_terminal(strop_core::frontend_input::Input::Paste(text));
+                    return;
+                }
                 strop_trace::record_with(strop_trace::EventKind::Paste, || {
                     serde_json::json!({
                         "bytes":text.len(),"text":strop_trace::capture_content().then_some(text.as_str()),
@@ -160,6 +173,7 @@ impl Editor {
     pub fn async_pending(&self) -> bool {
         use strop_core::worker::Load;
         self.io_pending()
+            || self.terminals.pending()
             || !self.shell_requests.is_empty()
             || self.clip_paste_pending.is_some()
             || self
@@ -202,6 +216,7 @@ impl Editor {
     pub(crate) fn finish_background_work(&mut self) {
         self.finishing = true;
         self.lsp_state.attach.enabled = false;
+        self.stop_all_terminals();
         self.stop_remote_work();
         self.close_picker();
         if let Some(source) = self.picker_source.as_ref() {

@@ -96,8 +96,23 @@ impl Modeline {
     fn gather(editor: &Editor) -> Self {
         let buf = editor.buf();
         let (dir, name) = file_display(editor);
-        let line = buf.line_of(editor.head()) + 1;
-        let col = buf.col_of(editor.head()) + 1;
+        let terminal_input = editor.terminal_input_active();
+        let terminal = editor.terminal_document(editor.current()).is_some();
+        let (line, col) = if terminal_input {
+            editor
+                .terminal_frame(editor.current(), true)
+                .map_or((1, 1), |frame| {
+                    (
+                        usize::from(frame.cursor.row) + 1,
+                        usize::from(frame.cursor.column) + 1,
+                    )
+                })
+        } else {
+            (
+                buf.line_of(editor.head()) + 1,
+                buf.col_of(editor.head()) + 1,
+            )
+        };
         // The percentage's denominator is content lines: a trailing
         // newline's phantom row is not somewhere you can be 75% down
         // of — the last content row reports 100 (0032).
@@ -110,10 +125,14 @@ impl Modeline {
         let (errors, warnings) = editor.diag_counts(editor.current());
         let cursors = editor.sels().count();
         let commit = historical_commit(editor);
-        let namespace = editor
-            .remote_endpoint()
-            .map(|endpoint| format!("ssh:{}", endpoint.host()))
-            .unwrap_or_default();
+        let namespace = if terminal {
+            "local".to_owned()
+        } else {
+            editor
+                .remote_endpoint()
+                .map(|endpoint| format!("ssh:{}", endpoint.host()))
+                .unwrap_or_default()
+        };
         let git_context = match commit {
             Some(sha) => format!("@{}", sha.get(..8).unwrap_or(sha)),
             None if namespace.is_empty() => editor
@@ -136,19 +155,34 @@ impl Modeline {
                 )
             } else if let Some(sigil) = editor.pending_sigil() {
                 format!(" {sigil} INPUT ")
+            } else if terminal_input {
+                if editor.terminal_capture_enabled() {
+                    " TERMINAL REC ".into()
+                } else {
+                    " TERMINAL ".into()
+                }
             } else {
-                format!(" {} ", editor.mode.chip())
+                format!(
+                    " {}{} ",
+                    editor.mode.chip(),
+                    if terminal && editor.terminal_capture_enabled() {
+                        " REC"
+                    } else {
+                        ""
+                    }
+                )
             },
             accent: mode_color(editor.mode),
             git_context: printable(git_context),
             namespace: printable(namespace),
-            worktree_dirty: commit.is_none()
+            worktree_dirty: !terminal
+                && commit.is_none()
                 && (!editor.hunks.is_empty() || editor.hunks_untracked),
-            staged_mark: commit.is_none() && !editor.staged_hunks.is_empty(),
+            staged_mark: !terminal && commit.is_none() && !editor.staged_hunks.is_empty(),
             dir: printable(dir),
             name: printable(name),
             dirty: buf.dirty || editor.collection_unsaved(editor.current()),
-            readonly: buf.readonly,
+            readonly: buf.readonly && !terminal_input,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
             status: printable(transient(editor)),
             errors,
@@ -156,8 +190,12 @@ impl Modeline {
             show_diag: errors > 0 || warnings > 0,
             line,
             col,
-            percent: Some(percent),
-            indent: editor.indent_label(),
+            percent: (!terminal).then_some(percent),
+            indent: if terminal {
+                String::new()
+            } else {
+                editor.indent_label()
+            },
             bare: false,
             bare_chip: 0,
         }
@@ -542,6 +580,18 @@ fn historical_commit(editor: &Editor) -> Option<&str> {
 /// absolute form. Virtual buffers keep their display name; a pathless,
 /// nameless buffer is the scratch.
 fn file_display(editor: &Editor) -> (String, String) {
+    if let Some(terminal) = editor.terminal_document(editor.current()) {
+        let directory = editor
+            .terminal_launch_directory(editor.current())
+            .map_or_else(String::new, |path| {
+                let mut label = strop_workspace::directory::display_path(path);
+                if !label.ends_with('/') {
+                    label.push('/');
+                }
+                label
+            });
+        return (directory, format!("terminal #{}", terminal.session.get()));
+    }
     if let Some(directory) = editor.directory() {
         let path = &directory.location.path;
         let parent = path
@@ -633,6 +683,41 @@ fn file_display(editor: &Editor) -> (String, String) {
 /// beats save/load activity, which beats the last message. Nothing is
 /// filtered here — whatever wins is what the user sees.
 fn transient(editor: &Editor) -> String {
+    if let Some(phase) = editor.terminal_phase(editor.current()) {
+        if editor.pending.is_active() {
+            return editor.pending.text().to_owned();
+        }
+        let new_output = !editor.terminal_input_active()
+            && editor.terminal_has_new_output(editor.current())
+            && phase.live();
+        if !editor.message.is_empty() {
+            return format!(
+                "{}{}",
+                if new_output { "new output · " } else { "" },
+                editor.message
+            );
+        }
+        let phase = match phase {
+            strop_terminal::model::Phase::Starting => "starting",
+            strop_terminal::model::Phase::Running => "running",
+            strop_terminal::model::Phase::Closing => "closing",
+            strop_terminal::model::Phase::Exited { .. } => "exited",
+            strop_terminal::model::Phase::Failed(_) => "failed",
+        };
+        return format!(
+            "{phase} · {}{}",
+            if new_output {
+                "new output · i follows · "
+            } else {
+                ""
+            },
+            if editor.terminal_capture_enabled() {
+                "PRIVATE CAPTURE"
+            } else {
+                "private input"
+            }
+        );
+    }
     let preview = match editor.preview() {
         Ok(Some((_, spec))) => Some(spec),
         Ok(None) => None,

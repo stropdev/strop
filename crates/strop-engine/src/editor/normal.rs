@@ -17,6 +17,23 @@ use super::{Editor, Key};
 /// The ex vocabulary (completion + `run_ex` dispatch reads the same
 /// list — one table, no drift).
 pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
+    ("terminal", "local interactive shell or explicit command"),
+    (
+        "terminal-local",
+        "explicit local shell even from an SSH/container context",
+    ),
+    (
+        "terminal-stop",
+        "stop the current terminal and retain its output",
+    ),
+    (
+        "terminal-paste",
+        "confirm the current terminal's held multiline/control paste",
+    ),
+    (
+        "terminal-paste-cancel",
+        "discard the current terminal's held paste",
+    ),
     ("w", "write"),
     ("w!", "write, force (file changed on disk)"),
     ("wq!", "write forced + quit"),

@@ -12,6 +12,7 @@
 use strop_grammar::{Command, Op};
 
 use crate::editor::Key;
+mod frontend;
 use crate::keymap::{self, AbsorbKind, Binding, Handler};
 
 /// Counts combine multiplicatively (vim: 2d3w = 6 words).

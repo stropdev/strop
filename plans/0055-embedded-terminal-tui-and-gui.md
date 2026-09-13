@@ -647,3 +647,178 @@ TUI integration as a “terminal foundation.”
   screen model and ready-made Ratatui widget, not a complete Strop session design.
 - [Cargo dependency/publication rules](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations):
   why an unpublished Git dependency is a release-design decision, not just a pin.
+
+## 15. Running preflight evidence
+
+The comparison uses disposable JSONL emulator adapters outside production source
+and one shared real Linux PTY harness. Neither adapter is an embedded-terminal
+feature or proof of Strop session supervision.
+
+| Boundary | Published Alacritty | Pinned libghostty-vt |
+| --- | --- | --- |
+| Input | `alacritty_terminal` 0.26.0, Apache-2.0; adapted upstream sequence construction/default bindings at `94e7c8874e526b1e67b349d9ba30ddf81669119e` | C API at `5252b193cfd52b4bcd868135e21e4563f2f326ec`, MIT; library encoder configured from the live terminal |
+| Real applications | Bash command/history, Ctrl-C foreground interruption, `less`, and nested `nvim --clean` passed; native edited file bytes checked | Same corpus and real-application cases passed |
+| VT/input cases | Partial UTF-8, CJK/combining, cursor replies, legacy/enhanced keys, paste, alternate screen, truecolor/styles and reflow passed | Same cases passed |
+| Graphemes | Default legacy cell allocation retained; negotiated mode 2027 did not combine the tested ZWJ cluster | Default legacy allocation retained; negotiated mode 2027 combined the tested ZWJ cluster correctly |
+| History | Exact configured row cap in the experiment | Native page-granular byte/line budgets, not an exact row cap; the strict six-row probe correctly exposed that distinction |
+| Native executable size | 1,156,768 bytes in the GNU prototype | 2,547,392 bytes in the GNU prototype; linking did not require a shared Ghostty library |
+| Source package | Cargo package verification passed; 13.9 KiB compressed adapter package plus published Rust dependencies | Cargo package verification and installation from the extracted package passed; 3.8 MiB compressed with the real pinned source distribution |
+| Static Linux | Actual musl build passed; no ELF `NEEDED` entries | Actual musl build from the source package passed; no ELF `NEEDED` entries |
+
+Ghostty's source build uses exactly Zig 0.16.0, resolved from the official release
+index and verified against SHA-256
+`70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00`.
+The build checks for that compiler and never downloads one. Prebuilt executables
+require neither Zig nor a shared Ghostty installation. This is an explicit source-
+builder prerequisite, not a hidden `build.rs` bootstrap. Native dependency fetches
+use the pinned upstream Zig dependency hashes.
+
+Measurements include adapter projection/JSON construction, not a claim about
+future Strop paint latency. Representative 100-iteration medians were approximately
+12 µs versus 88 µs for a 100-line feed, and 6.0 ms versus 5.0 ms for a 140×40 JSON
+snapshot (Alacritty/Ghostty). After 100k output lines with a 1000-line history
+configuration, observed RSS was about 10.5/9.5 MiB and retained history was
+1000/675 rows respectively. These are workstation observations, not universal
+memory or latency guarantees.
+
+**Selected emulator: Ghostty**, for its maintained mode-aware encoder, negotiated
+grapheme support and explicit bounded native API. Its unstable ABI, Zig source-
+build prerequisite and page-granular budgets must remain visible costs. The
+prototype's 64-codepoint projection limit and refusal of Kitty clipboard paste
+events are adapter limitations, not shipping feature claims.
+
+A real Rust `portable-pty` 0.9.0 probe observed the requested 30×100 geometry,
+accepted input and drained the final output before a successful ordinary exit.
+Its direct-child kill left a deliberately HUP-resistant background job in a
+different process group alive; the probe then cleaned it through an owned
+pidfd. This confirms that transport handles are not the required supervisor.
+Its cloned Unix killer also stores a bare PID. Neither killer is adopted.
+`rustix-openpty` 0.2.0 is the smaller shared pair primitive also used by Alacritty;
+Strop owns session lifetime, lease closure and platform-safe cleanup.
+
+Linux `TIOCSIG` only accepts SIGINT/SIGQUIT/SIGTSTP, so it cannot provide forced
+cleanup. Linux pidfds can name captured session members without PID reuse.
+Darwin's PTY-master `TIOCSIG` targets the terminal's foreground group under the
+kernel tty lock and accepts the full signal range; a controlling-session helper
+can validate group membership through `tcsetpgrp` before signaling through the
+owned PTY. These source findings guide the native experiment; they are not yet
+Darwin runtime evidence. A live helper/session anchor and lease must outlive
+views, and completed child output must drain before publication of final state.
+
+Primary implementation references:
+- [Published Alacritty source](https://github.com/alacritty/alacritty/tree/94e7c8874e526b1e67b349d9ba30ddf81669119e)
+- [Pinned Ghostty VT API](https://github.com/ghostty-org/ghostty/tree/5252b193cfd52b4bcd868135e21e4563f2f326ec/include/ghostty/vt)
+- [Linux PTY signal implementation](https://github.com/torvalds/linux/blob/v6.18/drivers/tty/pty.c)
+- [Darwin PTY control implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/tty_dev.c)
+
+## 16. TUI implementation contract
+
+This is the one integration contract; it does not claim T01–T10 are already done.
+
+- `strop-terminal` owns the selected VT adapter, bounded input/effect/frame data
+  and the terminal worker. The pinned source distribution is packaged, statically
+  built with explicitly installed Zig 0.16.0, and never loaded as a runtime
+  shared library. Unsupported graphics are disabled, not advertised.
+- Rich frontend-neutral key/text/paste events retain code, modifiers and event
+  kind until the ordered engine chooses the input owner. Editor grammar keeps its
+  existing normalization; terminal input does not inherit Esc/Alt/Ctrl-C loss.
+  The canonical key/Ex registry owns terminal launch, mode escape and lifecycle
+  actions. No duplicate GUI or terminal command parser.
+  Child keyboard capability is captured at launch: TUI enhanced support requires
+  actually received repeat/release events after its best-effort negotiation;
+  otherwise the child gets a truthful legacy profile. Structured headless input
+  declares its supported event profile. This avoids a blocking stdin probe and
+  prevents a legacy Esc-prefix from being promoted into a false enhanced Alt key.
+  actions. No duplicate GUI or terminal command parser.
+
+- The existing owned-process boundary gains a leased-child cancellation mode:
+  cancellation shuts down the helper control channel instead of killing only
+  its process group. Its existing non-reaping observation and revocation rules
+  remain shared with ordinary pipe jobs.
+
+- A terminal-specific helper mode in the same binary owns the real PTY and its
+  controlling session. It starts before any helper threads, creates the pair in
+  that single-threaded process, and keeps a live session anchor until cleanup.
+  PTY descriptors never move into editor state; bounded framed bytes/commands use
+  one inherited private Unix socket. Parent death/lease EOF triggers cleanup.
+  This is the required local terminal supervisor, not 0058's later general worker
+  deployment or a remote/container shell capability.
+- The helper alone serializes PTY writes and resize. Partial writes retain their
+  remainder; acknowledgments mean transport acceptance, not command execution.
+  A bounded output queue backpressures the PTY instead of discarding VT bytes.
+  Shutdown can revoke pending input visibly rather than waiting forever behind
+  a blocked child stdin. Linux uses pidfd-identified private-session members;
+  Darwin validates group membership through its controlling terminal and signals
+  through the owned master. Native capability failures are explicit.
+- The VT worker parses ordered output and encodes keys against that same state.
+  Immutable snapshots reuse unchanged rows; only publication notifications/frames
+  coalesce. UI code neither locks a live parser nor waits for native work.
+  One controlling view owns a versioned inner-pane geometry; mirrors never
+  independently resize the process.
+- Each terminal document is a real read-only buffer with a byte-to-cell mapping.
+  Normal-mode inspection pins an immutable document snapshot shared by inspection
+  views, while input/mirror views may show the continuing live frame. Soft wraps,
+  continuation cells and grapheme bytes are represented explicitly. Returning to
+  input follows the live cursor; an exited view never relaunches implicitly.
+  Inspection uses the logical rope's ordinary horizontal viewport and byte-mapped
+  terminal styling; input and input-mode mirrors paint native physical cells.
+  Inspecting alone does not resize the child or rewrite soft wraps as hard lines.
+- Default recording excludes terminal keys, paste, command/environment and
+  terminal content before generic trace/frame admission. Explicit private terminal
+  content capture is separate from ordinary full-content logging. Opaque captures
+  report that terminal-content replay is unavailable; enabled capture replays
+  ordered data with no PTY/process/clipboard/network effects.
+- Native startup, closing/draining work and admitted input/frame barriers are
+  finite; a running shell is not. Hidden sessions remain owned and discoverable.
+  Graceful quit refuses live work until an explicit stop/force policy is chosen,
+  then drains owned outcomes. Final output and status remain readable.
+
+Privacy admission precedes generic action serialization. When terminal content is
+not explicitly enabled, an opaque marker makes forensic replay refuse the missing
+terminal history rather than substitute an empty screen. That boundary deliberately
+downgrades the remaining active capture to metadata-only: content derived from a
+private terminal must not leak through later worker diagnostics. Diagnostic
+producers also use a synchronous content-classification scope while publishing
+terminal ropes; nested scopes/unwinding restore the caller's policy. Terminal
+document/state/frame producers omit untrusted content outside that mutation scope.
+Explicit private capture retains the normal replay contract and never grants
+native launch authority during replay.
+
+The native helper, frame/projection owner, input/privacy cutover and renderer are
+separate responsibility modules. Actual Windows Terminal→WSL interaction and
+native supported-platform/package evidence remain T10 gates, not assumptions
+borrowed from the successful emulator comparison.
+
+### Integration evidence (T01–T09 working tree)
+
+The editor now owns the full local-terminal surface: `:terminal`
+`:terminal-local` `:terminal-stop` `:terminal-paste` `:terminal-paste-cancel`,
+directory **Terminal here**, terminal Normal inspection (motions/search/yank
+over the pinned rope with byte-mapped terminal styles), input-mode cell-grid
+mirroring with the child's cursor shape, one focused view owning PTY geometry,
+focus reporting (mode 1004), held multiline/control paste consent, `:qa`
+refusal/draining, hidden-session ownership, remote-context refusal, and the
+private-by-default capture boundary (`--log-terminal-content` opts in; opaque
+captive replay refuses; input-only extraction refuses terminal traces).
+
+`crates/strop/tests/terminal_editor.rs` drives the real binary on a real PTY:
+interactive shell, nvim insert/esc/write, less, Ctrl-C foreground interrupt,
+raw `dd|od` byte fidelity (`12 1b 78 1b 5b 31 35 7e`), bracketed-paste hold +
+confirm, frozen inspection while async output lands ("new output" notice),
+yank out to an ordinary buffer, `:vs` split (28×60 geometry, mirror pane
+clipped), close-then-reenter, `:qa` refusal → `:terminal-stop` → clean exit,
+and execution-free `--replay` of the captured trace. Container evidence uses
+busybox `sh`, Alpine nvim/less. The `docker compose run --build --rm test`
+gate passed on this tree (fmt, locked all-target clippy `-D warnings`, locked
+tests incl. SSH-required suites). T10 packaging/release gates and Windows/WSL
+physical-terminal evidence remain open.
+
+T10 packaging (Linux): the compose `release` stage now installs the pinned Zig
+0.16.0 and gates the static build (`! readelf NEEDED`, static-pie). The
+shipped tarball's single binary was smoked on the host: `--headless` drove
+`:terminal` through the real PTY helper (the helper re-executes the same
+static binary via `--terminal-helper`), `--help` documents the terminal
+commands/capture flag, `--version` reports the workspace version. macOS
+release runners install the pinned Zig and run `terminal_helper` tests; actual
+macOS/Windows Terminal→WSL physical evidence remains with the next tagged
+release workflow, not this working tree.

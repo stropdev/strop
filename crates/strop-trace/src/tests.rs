@@ -4,6 +4,9 @@ use super::*;
 
 /// `start` is process-global; tests that open a session serialize on this.
 static SESSION: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+#[path = "privacy/tests.rs"]
+mod content_privacy;
 #[test]
 fn trace_lifecycle_is_exclusive_ordered_and_durable() {
     let _session = SESSION.lock();
@@ -671,6 +674,7 @@ fn tape_divergences_are_sticky_and_never_reach_native() {
 
 #[test]
 fn live_tape_without_capture_runs_native_and_records_nothing() {
+    let _session = SESSION.lock();
     assert!(!capture_content());
     let tape = replay::Tape::live();
     tape.seed(&serde_json::json!({"n":1})).unwrap();

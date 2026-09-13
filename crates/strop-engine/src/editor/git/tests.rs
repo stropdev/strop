@@ -192,6 +192,7 @@ fn stale_hunk_surface_refuses() {
     // (the active pane's document IS the current one — the surface —
     // so point a second pane at the file for the cursor-keep branch)
     e.panes.push(crate::editor::Pane {
+        terminal_input: false,
         doc: e.first_doc(),
         sels: strop_core::selection::SelectionSet::default(),
         view_top: 0,

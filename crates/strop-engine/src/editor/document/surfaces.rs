@@ -32,6 +32,8 @@ pub enum DocumentSource {
     /// return point is where `:q` hands the view back (0051 §7 R07) —
     /// temporary surfaces restore their origin, not the MRU's line 1.
     Output { return_to: Option<JumpRecord> },
+    /// A local PTY session with a retained immutable inspection projection.
+    Terminal(Box<crate::editor::TerminalDocument>),
 }
 
 #[derive(Debug, Clone)]

@@ -21,7 +21,14 @@ thread_local! { static INPUT_DEPTH: Cell<usize> = const { Cell::new(0) }; }
 pub struct InputScope;
 impl InputScope {
     pub fn enter(editor: &Editor, key: Key) -> Option<Self> {
-        if !enabled() {
+        if !enabled()
+            || editor.tape.content_omitted()
+            || editor.private_terminal_prompt()
+            || editor
+                .panes
+                .get(editor.active_pane)
+                .is_some_and(|pane| editor.private_terminal_document(pane.doc))
+        {
             return None;
         }
         let depth = INPUT_DEPTH.with(|value| {

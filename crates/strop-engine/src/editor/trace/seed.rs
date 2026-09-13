@@ -14,9 +14,9 @@ use strop_core::{Buffer, BufferSeed};
 use crate::editor::document::DocumentSource;
 use crate::editor::{Document, Editor, LayoutDir, Pane};
 
-// 0.31 unifies filesystem documents, operations and startup semantics.
+// Version 4 preserves frontend key facts until engine input ownership is selected.
 // Older input must never execute under a different command/authority contract.
-const SEMANTIC_VERSION: u32 = 3;
+const SEMANTIC_VERSION: u32 = 4;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.
@@ -40,6 +40,8 @@ pub struct Seed {
     #[serde(with = "strop_core::path_serde::option")]
     state_dir: Option<PathBuf>,
     session_policy: crate::session::SessionPolicy,
+    terminal_capture: bool,
+    terminal_keyboard: u8,
     config: crate::config::Config,
     git: Option<strop_git::GitContext>,
     git_view: WorkerId,
@@ -89,6 +91,8 @@ impl Seed {
             cwd: editor.cwd.clone(),
             state_dir: editor.state_dir.clone(),
             session_policy: editor.session_policy,
+            terminal_capture: editor.terminal_capture_enabled(),
+            terminal_keyboard: editor.terminal_keyboard_flags(),
             config: editor.config.clone(),
             git: editor.git.clone(),
             git_view: editor.git_view,
@@ -173,6 +177,10 @@ impl Seed {
         editor.layout = self.layout;
         editor.state_dir = self.state_dir;
         editor.session_policy = self.session_policy;
+        editor.set_terminal_capture(self.terminal_capture);
+        editor
+            .set_terminal_keyboard(self.terminal_keyboard)
+            .map_err(io::Error::other)?;
         editor.config = self.config;
         editor.git = self.git;
         editor.git_view = self.git_view;

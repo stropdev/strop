@@ -49,6 +49,7 @@ pub struct Options {
     pub command: Command,
     pub trace_path: Option<PathBuf>,
     pub content: ContentPolicy,
+    pub terminal_capture: bool,
 }
 
 pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
@@ -57,6 +58,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         .filter(|p| !p.is_empty())
         .map(PathBuf::from);
     let mut content = ContentPolicy::Metadata;
+    let mut terminal_capture = false;
     let mut readonly = false;
     let mut initial_line = None;
     let mut remote_selection = None;
@@ -129,6 +131,11 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 }
                 "--log-content" => {
                     content = ContentPolicy::Full;
+                    continue;
+                }
+                "--log-terminal-content" => {
+                    content = ContentPolicy::Full;
+                    terminal_capture = true;
                     continue;
                 }
                 "--headless" => {
@@ -231,7 +238,12 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         return Err("remote view options require an ssh:// operand".into());
     }
     if content == ContentPolicy::Full && trace_path.is_none() {
-        return Err("--log-content requires --log or STROP_LOG".into());
+        return Err(if terminal_capture {
+            "--log-terminal-content requires --log or STROP_LOG"
+        } else {
+            "--log-content requires --log or STROP_LOG"
+        }
+        .into());
     }
     // Replay/export consume exactly one trace file and never record one.
     if matches!(
@@ -263,5 +275,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         command,
         trace_path,
         content,
+        terminal_capture,
     })
 }

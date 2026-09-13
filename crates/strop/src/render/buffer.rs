@@ -28,6 +28,7 @@ use super::{dim_color, severity_color};
 use super::{ACCENT, BASE, FLASH_BG, MUTED, PAIR_BG, PREVIEW_BG, SELECT_BG, TEXT};
 
 mod content;
+mod directory;
 mod rows;
 use content::{content_spans, fixed_spans};
 use rows::render_pane;
@@ -51,23 +52,21 @@ fn pad_row(mut line: Line<'static>, width: u16) -> Line<'static> {
 /// One pane's view of a buffer. `overlays` is false for inactive panes:
 /// preview/search/selection/flash belong to the pane being driven.
 #[derive(Clone, Copy)]
-struct PaneView {
-    doc: DocumentId,
-    cursor: usize,
-    view_top: usize,
-    hscroll: DisplayColumn,
-    overlays: bool,
+pub(crate) struct PaneView {
+    pub(crate) doc: DocumentId,
+    pub(crate) cursor: usize,
+    pub(crate) view_top: usize,
+    pub(crate) hscroll: DisplayColumn,
+    pub(crate) overlays: bool,
 }
 
-/// Render all panes and return the active pane's rect (the native
-/// cursor lives there — offsets included, which the full-area version
-/// got wrong in splits). Geometry is computed in `usize` and narrowed
-/// once, per pane, at the `Rect` boundary.
-pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -> Rect {
+/// Final pane rects (identity title row already subtracted) for the current
+/// layout. Pure over editor state and the frame area; shared by preparation
+/// and paint so both agree on the exact same geometry.
+pub(crate) fn pane_rects(editor: &Editor, area: Rect) -> Vec<Rect> {
     let n = editor.panes.len();
-    let mut active_rect = Rect::new(area.x, area.y, 0, 0);
     if n == 0 {
-        return active_rect;
+        return Vec::new();
     }
     let is_row = editor.layout == LayoutDir::Row;
     let total_w = usize::from(area.width);
@@ -76,6 +75,7 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
     let usable = axis.saturating_sub(n - 1);
     let base = usable / n;
     let mut offset = 0usize;
+    let mut rects = Vec::with_capacity(n);
     for i in 0..n {
         let size = if i + 1 == n {
             usable - base * (n - 1)
@@ -100,9 +100,85 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
             )
         };
         let mut rect = Rect::new(x as u16, y as u16, w as u16, h as u16);
+        if n > 1 && h > 0 && w > 0 {
+            rect.y = rect.y.saturating_add(1);
+            rect.height = rect.height.saturating_sub(1);
+        }
+        rects.push(rect);
+        offset = offset.saturating_add(size).saturating_add(1);
+    }
+    rects
+}
+
+/// Frame-preparation admission for one pane's visible window: analysis for
+/// the pane document plus its collection's projected sources, and the active
+/// pane's pair-match job. Paint serves the identical windows from cache.
+pub(super) fn admit_visible_work(editor: &mut Editor, area: Rect, view: &PaneView) {
+    let rows = usize::from(area.height);
+    if rows == 0 || editor.docs.get(view.doc).is_none() {
+        return;
+    }
+    let buf = &editor.doc(view.doc).buf;
+    let last_line = view.view_top.saturating_add(rows).min(buf.len_lines());
+    let first = buf.line_start(view.view_top);
+    let last = buf.line_end(last_line.saturating_sub(1));
+    editor.document_analysis(
+        view.doc,
+        first,
+        last,
+        view.hscroll.get(),
+        usize::from(area.width),
+    );
+    let collection_rows: Vec<Option<crate::editor::CollectionRowInfo>> = (0..rows)
+        .map(|row| editor.collection_row_info(view.doc, view.view_top.saturating_add(row)))
+        .collect();
+    let mut windows: Vec<(DocumentId, usize, usize)> = Vec::new();
+    for info in collection_rows.iter().flatten() {
+        if let Some((source, start, end)) = info.source {
+            if let Some((_, first, last)) = windows.iter_mut().find(|(doc, ..)| *doc == source) {
+                *first = (*first).min(start);
+                *last = (*last).max(end);
+            } else {
+                windows.push((source, start, end));
+            }
+        }
+    }
+    for (source, first, last) in windows {
+        editor.document_analysis(
+            source,
+            first,
+            last,
+            view.hscroll.get(),
+            usize::from(area.width),
+        );
+    }
+    if view.overlays {
+        let _ = editor.pair_highlight(
+            view.doc,
+            view.cursor,
+            matches!(editor.mode, crate::editor::Mode::Insert),
+        );
+    }
+}
+pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Rect {
+    let rects = pane_rects(editor, area);
+    let n = rects.len();
+    let mut active_rect = Rect::new(area.x, area.y, 0, 0);
+    if n == 0 {
+        return active_rect;
+    }
+    let is_row = editor.layout == LayoutDir::Row;
+    let axis = if is_row {
+        usize::from(area.width)
+    } else {
+        usize::from(area.height.saturating_sub(1))
+    };
+    let mut offset = 0usize;
+    for (i, rect) in rects.iter().enumerate() {
         let active = i == editor.active_pane;
-        let has_identity = n > 1 && h > 0 && w > 0;
-        if has_identity {
+        let w = usize::from(rect.width);
+        let h = usize::from(rect.height);
+        if n > 1 && h > 0 && w > 0 {
             let document = editor.doc(editor.panes[i].doc);
             let name = document
                 .remote_metadata()
@@ -140,29 +216,16 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
             );
             frame.render_widget(
                 Paragraph::new(Line::from(spans)),
-                Rect { height: 1, ..rect },
+                Rect {
+                    y: rect.y.saturating_sub(1),
+                    height: 1,
+                    width: rect.width,
+                    x: rect.x,
+                },
             );
-            rect.y = rect.y.saturating_add(1);
-            rect.height = rect.height.saturating_sub(1);
         }
-        let h = usize::from(rect.height);
         if active {
-            // The pane's own height feeds the vertical viewport (a
-            // Column split pane is not the terminal height); a
-            // zero-height pane cannot reveal a row and keeps its top.
-            if h == 0 {
-                editor.view_rows = 0;
-            } else {
-                editor.scroll_to_cursor(h);
-            }
-            if let Some(column) = editor.buf().try_cell_col_with_tab(
-                editor.head(),
-                editor.indentation_at(editor.current(), editor.head()).width,
-            ) {
-                let width = w.saturating_sub(diff::left_inset(editor, editor.current()));
-                editor.view_mut().reveal_column(column, width);
-            }
-            active_rect = rect;
+            active_rect = *rect;
         }
         let pane = &editor.panes[i];
         let view = PaneView {
@@ -172,19 +235,26 @@ pub(crate) fn render_panes(editor: &mut Editor, frame: &mut Frame, area: Rect) -
             hscroll: pane.hscroll,
             overlays: active,
         };
+        let terminal_input = editor.terminal_view_input(pane);
         if w != 0 && h != 0 && editor.docs.get(view.doc).is_some() {
-            render_pane(editor, frame, rect, &view);
-            if active {
-                render_extra_cursors(editor, frame, rect, &view);
+            if terminal_input {
+                super::terminal::render(editor, frame, *rect, view.doc, active);
             } else {
-                render_static_caret(editor, frame, rect, &view);
+                render_pane(editor, frame, *rect, &view);
+                if active {
+                    render_extra_cursors(editor, frame, *rect, &view);
+                } else {
+                    render_static_caret(editor, frame, *rect, &view);
+                }
             }
         }
+        let size = if is_row { w } else { h };
         let divider = offset.saturating_add(size);
         if i + 1 < n && divider < axis {
             if is_row {
                 let dx = area.x + divider as u16;
-                for dy in area.y..area.y + total_h as u16 {
+                let bottom = area.y + area.height.saturating_sub(1);
+                for dy in area.y..bottom {
                     let cell = &mut frame.buffer_mut()[(dx, dy)];
                     cell.set_symbol("│");
                     cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));

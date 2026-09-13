@@ -254,6 +254,29 @@ impl Editor {
             return;
         }
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline, ""));
+        match cmd {
+            "terminal" => {
+                self.launch_terminal(arg, false);
+                return;
+            }
+            "terminal-local" => {
+                self.launch_terminal(arg, true);
+                return;
+            }
+            "terminal-stop" => {
+                self.stop_terminal();
+                return;
+            }
+            "terminal-paste" => {
+                self.terminal_paste_decision(true);
+                return;
+            }
+            "terminal-paste-cancel" => {
+                self.terminal_paste_decision(false);
+                return;
+            }
+            _ => {}
+        }
         if cmd == "fs" {
             self.run_filesystem_ex(arg, None);
             return;
@@ -319,6 +342,11 @@ impl Editor {
                         self.message = "readonly".into();
                     }
                     "noro" | "noreadonly" => {
+                        if self.terminal_document(self.current()).is_some() {
+                            self.message =
+                                "terminal projections are read-only; i enters child input".into();
+                            return;
+                        }
                         if self.directory().is_some_and(|source| {
                             source.draft.as_ref().is_none_or(|draft| !draft.editable())
                         }) {

@@ -191,6 +191,47 @@ impl Editor {
         }
     }
 
+    /// Readonly paint query for the same overlay: cache lookup and view-byte
+    /// mapping only. Job admission and stale-target cancellation stay in
+    /// [`Self::pair_highlight`], owned by frame preparation.
+    pub fn pair_highlight_cached(
+        &self,
+        doc: DocumentId,
+        caret: usize,
+        insert: bool,
+    ) -> [Option<usize>; 2] {
+        const NONE: [Option<usize>; 2] = [None, None];
+        if self.finishing {
+            return NONE;
+        }
+        let Some((source, source_caret)) = self.source_position(doc, caret) else {
+            return NONE;
+        };
+        let near = match self.docs.get(source) {
+            Some(document) => near_delimiter(&document.buf, source_caret, insert),
+            None => return NONE,
+        };
+        if !near {
+            return NONE;
+        }
+        let Some(document) = self.docs.get(source) else {
+            return NONE;
+        };
+        let key = MatchKey {
+            target: AnalysisTarget::Document(source),
+            revision: document.buf.revision(),
+            caret: source_caret,
+            insert,
+        };
+        match self.analysis.pair.lookup(&key) {
+            Some(Some(pair)) => [
+                self.view_byte_for_source(doc, source, pair.first),
+                self.view_byte_for_source(doc, source, pair.second),
+            ],
+            _ => NONE,
+        }
+    }
+
     /// A source byte's view byte in `doc`: identity for ordinary
     /// buffers; for a collection, the excerpt of THAT SAME source
     /// covering the byte's line (0051 §7 — never another file's card,

@@ -65,6 +65,9 @@ pub(super) fn content_spans(
         if let Some(bg) = style.row_bg {
             cell = cell.bg(bg);
         }
+        if let Some((terminal, palette)) = editor.terminal_style_at(view.doc, pos) {
+            cell = cell.patch(crate::render::terminal::style(terminal, palette));
+        }
         while syn_idx < style.syn_spans.len() && style.syn_spans[syn_idx].end <= pos {
             syn_idx += 1;
         }

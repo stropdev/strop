@@ -42,6 +42,19 @@ pub fn write_script(path: &Path, out: &mut dyn Write) -> io::Result<()> {
         }
         let fields = &event["fields"];
         match event["event"].as_str() {
+            Some("replay") if fields["kind"] == "opaque" => {
+                return Err(io::Error::other(
+                    "input extraction unavailable: private terminal content was omitted",
+                ));
+            }
+            Some("replay")
+                if fields["kind"] == "action"
+                    && fields["value"]["Event"].get("TerminalUpdate").is_some() =>
+            {
+                return Err(io::Error::other(
+                    "terminal captures require --replay; input-only extraction cannot reproduce PTY state",
+                ));
+            }
             Some("replay") if !initial && fields["kind"] == "seed" => {
                 let seed: crate::editor::trace::seed::Seed =
                     serde_json::from_value(event["fields"]["value"].take())

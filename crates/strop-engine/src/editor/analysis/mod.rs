@@ -171,6 +171,75 @@ pub fn clip_stale_frame(frame: Arc<FrameAnalysis>, len: usize) -> Arc<FrameAnaly
     Arc::new(clipped)
 }
 impl Editor {
+    /// Readonly presentation query for the paint path: exact cache hit or the
+    /// same clipped one-frame-stale frame, never a ticket, cancel or request.
+    /// Admission lives in [`Self::document_analysis`], called by preparation.
+    pub fn document_analysis_cached(
+        &self,
+        document: DocumentId,
+        first: usize,
+        last: usize,
+        left: usize,
+        width: usize,
+    ) -> Option<Arc<FrameAnalysis>> {
+        if self.finishing {
+            return None;
+        }
+        let doc = self.docs.get(document)?;
+        let guides = self.config.indent_guides
+            && matches!(
+                doc.source,
+                DocumentSource::File | DocumentSource::Scratch | DocumentSource::Remote(_)
+            );
+        let target = AnalysisTarget::Document(document);
+        let search = if document == self.current() {
+            self.current_search_query().ok().flatten()
+        } else {
+            None
+        };
+        if !guides && doc.syntax_path().is_none() && search.is_none() {
+            return None;
+        }
+        let key = AnalysisKey {
+            target,
+            revision: doc.buf.revision(),
+            first,
+            last,
+            tab: doc.indent.width.max(1),
+            guides,
+            left,
+            right: left.saturating_add(width),
+            syntax_path: doc.syntax_path().map(std::path::Path::to_path_buf),
+            search,
+        };
+        if let Some(cached) = self
+            .analysis
+            .cache
+            .get(&key.target)
+            .and_then(|entries| entries.iter().find(|entry| entry.key == key))
+        {
+            return cached.value.clone();
+        }
+        self.analysis
+            .cache
+            .get(&key.target)
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .rev()
+                    .find(|entry| {
+                        entry.key.first == key.first
+                            && entry.key.last == key.last
+                            && entry.key.tab == key.tab
+                            && entry.key.search == key.search
+                            && entry.key.revision.get() < key.revision.get()
+                            && entry.value.is_some()
+                    })
+                    .and_then(|entry| entry.value.clone())
+            })
+            .map(|frame| clip_stale_frame(frame, doc.buf.len_bytes()))
+    }
+
     pub fn document_analysis(
         &mut self,
         document: DocumentId,
@@ -251,6 +320,37 @@ impl Editor {
         let rope = doc.buf.snapshot();
         self.request_analysis(key, rope);
         stale
+    }
+
+    /// Readonly paint query for preview windows: cache hit only.
+    pub fn preview_analysis_cached(
+        &self,
+        path: &strop_workspace::ResourceLocation,
+        first: usize,
+        last: usize,
+        width: usize,
+    ) -> Option<Arc<FrameAnalysis>> {
+        if self.finishing {
+            return None;
+        }
+        self.previews.get(path)?;
+        let key = AnalysisKey {
+            target: AnalysisTarget::Preview(path.clone()),
+            revision: BufferRevision::new(0),
+            first,
+            last,
+            tab: self.tab_width_for_location(path).max(1),
+            guides: false,
+            left: 0,
+            right: width,
+            syntax_path: Some(path.path.clone()),
+            search: None,
+        };
+        self.analysis
+            .cache
+            .get(&key.target)
+            .and_then(|entries| entries.iter().find(|entry| entry.key == key))
+            .and_then(|entry| entry.value.clone())
     }
 
     pub fn preview_analysis(
@@ -445,6 +545,11 @@ impl Editor {
 
 #[cfg(any(test, feature = "test-support"))]
 impl Editor {
+    /// Whether any analysis/match work is in flight (test/inspection probe).
+    pub fn analysis_pending_probe(&self) -> bool {
+        self.analysis.pending()
+    }
+
     pub fn analysis_fixture(&mut self) -> Arc<FrameAnalysis> {
         loop {
             if let Some(frame) =

@@ -1,7 +1,9 @@
-//! The picker card (0003 §2): centered floating card over a dimmed
-//! backdrop; input top, results left, preview right. House style:
-//! `▌` selection marker, accent+bold matched chars, hints in the
-//! bottom border, border-column scrollbar.
+//! The picker card (0003 §2): find-file/symbols/grep own one stable
+//! near-full-frame workspace over a dimmed backdrop — input top, results
+//! left, the file preview right with the wider share. Transient pickers
+//! keep the smaller centered floating card. House style: `▌` selection
+//! marker, accent+bold matched chars, hints in the bottom border,
+//! border-column scrollbar.
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -11,9 +13,12 @@ use ratatui::Frame;
 
 use crate::editor::Editor;
 
+mod layout;
 mod preview;
 mod rows;
 mod window;
+#[cfg(test)]
+mod workspace_tests;
 
 use rows::render_results;
 
@@ -33,42 +38,19 @@ pub fn dim_backdrop(frame: &mut Frame, area: Rect) {
     }
 }
 
-pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
+pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     if !editor.picker_open() {
         return;
     }
     let area = frame.area();
     dim_backdrop(frame, area);
 
-    // Search owns one stable near-full-frame workspace in either presentation.
-    let card = {
-        let glue = editor.picker.as_ref().expect("picker open");
-        let p = &glue.picker;
-        if p.kind == strop_picker::Kind::Search {
-            Rect {
-                x: area.x + 1,
-                y: area.y,
-                width: area.width.saturating_sub(2),
-                height: area.height.saturating_sub(1),
-            }
-        } else {
-            let width = ((u32::from(area.width) * 84 / 100) as u16)
-                .max(50)
-                .min(area.width.saturating_sub(2));
-            let height = if p.kind == strop_picker::Kind::RemoteAddress {
-                8
-            } else {
-                ((u32::from(area.height) * 70 / 100) as u16).max(12)
-            }
-            .min(area.height.saturating_sub(2));
-            Rect {
-                x: (area.width - width) / 2,
-                y: (area.height - height) / 2,
-                width,
-                height,
-            }
-        }
-    };
+    // Search, files and symbols own one stable near-full-frame workspace;
+    // the smaller floating card remains for transient pickers.
+    let card = layout::card(
+        area,
+        editor.picker.as_ref().expect("picker open").picker.kind,
+    );
     frame.render_widget(Clear, card);
 
     let (
@@ -323,9 +305,9 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
         );
     }
 
-    // 0050 §8: the decision list wins the budget — symbols/files 60%,
-    // grep 65%; narrow terminals stack a short preview below the list
-    // instead of two unreadable slivers; very little height lists only.
+    // 0050 §8: the decision list wins the budget; narrow terminals stack
+    // a short preview below the list instead of two unreadable slivers;
+    // very little height lists only.
     let (results, preview_area) = if remote_picker {
         (rows[1], None)
     } else if card.width < 64 && rows[1].height >= 12 {
@@ -337,10 +319,12 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
     } else if card.width < 64 {
         (rows[1], None)
     } else {
+        // The file preview carries the evidence: it gets the wider share of
+        // the full-screen workspace (grep 60/40, files/symbols 55/45).
         let list = if kind == strop_picker::Kind::Search {
-            65
-        } else {
             60
+        } else {
+            55
         };
         let cols = Layout::default()
             .direction(Direction::Horizontal)
@@ -363,19 +347,6 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             results,
         );
     } else {
-        if let Some(glue) = editor.picker.as_mut() {
-            let per_row = if search_mode {
-                if replace_mode {
-                    3
-                } else {
-                    2
-                }
-            } else {
-                1
-            };
-            glue.picker
-                .reveal_selected((results.height as usize / per_row).max(1));
-        }
         let p = &editor.picker.as_ref().expect("picker open").picker;
         // the scrollbar track is reserved BEFORE text budgets (0050 §8)
         let text_area = Rect {
@@ -461,4 +432,22 @@ pub fn render_picker(editor: &mut Editor, frame: &mut Frame) {
             );
         }
     }
+}
+
+/// Preparation-time scroll clamping for the open picker: the same results
+/// area paint uses, so the viewport matches what is about to be drawn.
+pub(super) fn reveal_for_prepare(editor: &mut Editor, area: Rect) {
+    let Some(glue) = editor.picker.as_mut() else {
+        return;
+    };
+    if matches!(glue.picker.kind, strop_picker::Kind::RemoteAddress) {
+        return;
+    }
+    let kind = glue.picker.kind;
+    let replace_visible = glue.picker.replacement_visible;
+    let Some(results) = layout::results(area, kind, replace_visible) else {
+        return;
+    };
+    glue.picker
+        .reveal_selected((results.height as usize / layout::per_row(kind, replace_visible)).max(1));
 }

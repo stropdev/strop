@@ -159,7 +159,9 @@ impl Document {
             },
             DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
             DocumentSource::Container { path, .. } => Some(path),
-            DocumentSource::Directory(_) | DocumentSource::Output { .. } => None,
+            DocumentSource::Directory(_)
+            | DocumentSource::Output { .. }
+            | DocumentSource::Terminal(_) => None,
         }
     }
 
@@ -339,6 +341,7 @@ impl Editor {
             view.view_top = 0;
             view.hscroll = strop_core::id::DisplayColumn::new(0);
             view.desired_column = None;
+            view.terminal_input = false;
         }
         self.view_mut().doc = id;
         self.touch_mru(id);
@@ -392,6 +395,37 @@ impl Editor {
     /// ids mean no reindexing anywhere (0014 wave 2).
     pub fn close_buffer(&mut self, force: bool) -> bool {
         self.remember_directory_view();
+        if self
+            .terminal_phase(self.current())
+            .is_some_and(strop_terminal::model::Phase::live)
+        {
+            if force {
+                self.stop_terminal();
+            }
+            if let Some(next) = self
+                .mru
+                .iter()
+                .copied()
+                .find(|id| *id != self.current() && self.docs.get(*id).is_some())
+            {
+                self.switch_to(next);
+                self.mode = super::Mode::Normal;
+                self.message = if force {
+                    "terminal closing; final output remains in its buffer"
+                } else {
+                    "terminal hidden and still running; Space b returns to it"
+                }
+                .into();
+                return true;
+            }
+            if force {
+                self.should_quit = true;
+                return true;
+            }
+            self.message =
+                "terminal is running; :terminal-stop ends it, :q! stops and quits".into();
+            return false;
+        }
         if !force && self.docs.len() == 1 && self.filesystem.unconfirmed() > 0 {
             self.message =
                 "filesystem outcomes are unconfirmed; :fs verify before quitting, or :q! to force"
@@ -411,6 +445,7 @@ impl Editor {
             self.request_session_save();
         }
         let closed = self.current();
+        self.forget_terminal_document(closed);
         let mut affected_collections = Vec::new();
         for (id, collection) in &mut self.collections {
             let before = collection.excerpts.len();
@@ -495,12 +530,16 @@ impl Editor {
     /// ctrl-c's quit intent (0015): warn once when dirty work exists,
     /// force on the second press. Returns true when the app may exit.
     pub fn ctrl_c_quit(&mut self) -> bool {
-        if self.ctrl_c_armed || (!self.any_dirty() && self.filesystem.unconfirmed() == 0) {
+        if self.ctrl_c_armed
+            || (!self.any_dirty() && self.filesystem.unconfirmed() == 0 && !self.terminals.live())
+        {
             return true;
         }
         self.ctrl_c_armed = true;
         self.message = if self.filesystem.unconfirmed() > 0 {
             "filesystem outcomes are unconfirmed — ctrl-c again to force-quit".into()
+        } else if self.terminals.live() {
+            "terminal sessions are running — ctrl-c again to stop and quit".into()
         } else {
             "unsaved changes — ctrl-c again to force-quit".into()
         };

@@ -48,6 +48,23 @@ pub(super) struct WitnessCheck {
 }
 
 impl Editor {
+    /// Readonly paint query: identical resolution, but an uncached preview
+    /// reports loading instead of registering/launching the bounded read.
+    /// Preparation calls [`Self::picker_preview`] first.
+    pub fn picker_preview_cached(&self) -> Option<(String, Option<usize>, PreviewSource)> {
+        let mut probe = PreviewProbe { editor: self };
+        probe.resolve()
+    }
+
+    /// Readonly paint query: cached witness or a fresh checked range
+    /// without writing the witness cache back (preparation owns that).
+    pub fn picker_preview_range_cached(
+        &self,
+        source: &PreviewSource,
+    ) -> Result<Option<strop_core::Range>, &'static str> {
+        let probe = RangeProbe { editor: self };
+        probe.resolve(source)
+    }
     pub fn picker_preview_range(
         &mut self,
         source: &PreviewSource,
@@ -133,7 +150,200 @@ impl Editor {
         }
         result(range)
     }
+}
 
+/// `&self` mirror of picker_preview_range for the paint path.
+struct RangeProbe<'a> {
+    editor: &'a Editor,
+}
+impl RangeProbe<'_> {
+    fn resolve(&self, source: &PreviewSource) -> Result<Option<strop_core::Range>, &'static str> {
+        let Some(glue) = self
+            .editor
+            .picker
+            .as_ref()
+            .filter(|glue| glue.picker.kind == strop_picker::Kind::Search)
+        else {
+            return Ok(None);
+        };
+        let Some(context) = glue.search.as_ref() else {
+            return Ok(None);
+        };
+        let Some(row) = glue.picker.rows.get(glue.picker.selected) else {
+            return Ok(None);
+        };
+        let Payload::Grep { location, .. } = &glue.picker.items[row.item].payload else {
+            return Ok(None);
+        };
+        let target = crate::files::FileTarget::from_location(location)
+            .map_err(|_| "invalid source identity")?;
+        let (rope, document, path) = match source {
+            PreviewSource::Buffer(id) => {
+                let Some(doc) = self.editor.docs.get(*id) else {
+                    return Err("source closed — refresh Search");
+                };
+                if !doc.matches_target(&target) {
+                    return Err("preview source belongs to another resource");
+                }
+                (doc.buf.text(), Some((*id, doc.buf.revision())), None)
+            }
+            PreviewSource::Cached(path) => {
+                if path != location {
+                    return Err("preview source belongs to another resource");
+                }
+                let Some(entry) = self.editor.previews.get(path) else {
+                    return Ok(None);
+                };
+                (&entry.rope, None, Some(path))
+            }
+            _ => return Ok(None),
+        };
+        if let Some(cached) = glue.preview_witness.as_ref().filter(|cached| {
+            cached.item == row.item
+                && cached.dataset == context.stamp.dataset
+                && cached.document == document
+                && cached.path.as_ref() == path
+        }) {
+            return cached
+                .range
+                .map(Some)
+                .ok_or("source changed — refresh Search");
+        }
+        let Payload::Grep {
+            line,
+            col,
+            match_len,
+            line_text,
+            ..
+        } = &glue.picker.items[row.item].payload
+        else {
+            return Ok(None);
+        };
+        let range = super::checked_hit_range(
+            rope,
+            &super::ReplacementHit {
+                line: *line,
+                col: *col,
+                match_len: *match_len,
+                text: line_text.clone(),
+            },
+        );
+        range.map(Some).ok_or("source changed — refresh Search")
+    }
+}
+
+/// `&self` mirror of the picker_preview resolution for the paint path.
+struct PreviewProbe<'a> {
+    editor: &'a Editor,
+}
+impl PreviewProbe<'_> {
+    fn resolve(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
+        let item = self.editor.picker.as_ref()?.picker.current()?;
+        if let Payload::Buffer(document) = &item.payload {
+            let name = self.editor.docs.get(*document)?.label(&self.editor.cwd);
+            return Some((name, None, PreviewSource::Buffer(*document)));
+        }
+        let (full, focus_line) = self.item_source(item)?;
+        let title = self.title(&full, focus_line);
+        let target = match crate::files::FileTarget::from_location(&full) {
+            Ok(target) => target,
+            Err(error) => {
+                return Some((title, focus_line, PreviewSource::Failed(error.to_string())))
+            }
+        };
+        if let Some((document, _)) = self
+            .editor
+            .docs
+            .iter()
+            .find(|(_, document)| document.matches_target(&target))
+        {
+            return Some((title, focus_line, PreviewSource::Buffer(document)));
+        }
+        match self.editor.preview_loads.get(&full) {
+            Some(Load::Failed { failure, .. }) => Some((
+                title,
+                focus_line,
+                PreviewSource::Failed(failure.message.clone()),
+            )),
+            Some(Load::Cancelled { reason, .. }) => {
+                Some((title, focus_line, PreviewSource::Cancelled(*reason)))
+            }
+            _ if self.load_ready(&full) => Some((title, focus_line, PreviewSource::Cached(full))),
+            _ => Some((title, focus_line, PreviewSource::Loading)),
+        }
+    }
+
+    /// The cache serves only a preview this picker instance owns (0050):
+    /// a respawned search never paints the previous instance's rows.
+    fn load_ready(&self, full: &strop_workspace::ResourceLocation) -> bool {
+        let Some(picker) = self.editor.picker.as_ref().map(|glue| glue.id) else {
+            return false;
+        };
+        let key = PreviewKey {
+            picker,
+            path: full.clone(),
+        };
+        self.editor.previews.contains_key(full)
+            && matches!(
+                self.editor.preview_loads.get(full),
+                Some(Load::Ready(owner)) if *owner == key
+            )
+    }
+    fn title(&self, full: &strop_workspace::ResourceLocation, focus_line: Option<usize>) -> String {
+        let path = &full.path;
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let parent = path
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+        let title = match focus_line {
+            Some(line) => format!("{name}:{line}  {parent}"),
+            None => format!("{name}  {parent}"),
+        }
+        .trim_end()
+        .to_string();
+        if full.local_path().is_none() {
+            format!("{} · {title}", full.filesystem.label())
+        } else {
+            title
+        }
+    }
+
+    fn item_source(
+        &self,
+        item: &strop_picker::Item,
+    ) -> Option<(strop_workspace::ResourceLocation, Option<usize>)> {
+        match &item.payload {
+            Payload::RemoteDirectory(_)
+            | Payload::RemoteConnect
+            | Payload::Jump { .. }
+            | Payload::SearchOption(_)
+            | Payload::CodeAction(_)
+            | Payload::Container(_)
+            | Payload::FilesystemAction(_)
+            | Payload::IndentChoice(_) => None,
+            Payload::Buffer(_) => None, // handled via label in the admitting path
+            Payload::File(path) => Some((
+                strop_workspace::ResourceLocation::local(self.editor.picker_path(path)),
+                None,
+            )),
+            Payload::Grep { location, line, .. } => Some((location.clone(), Some(*line))),
+            Payload::Remote {
+                endpoint,
+                path,
+                line,
+                ..
+            } => Some((
+                strop_workspace::ResourceLocation::remote(endpoint.clone(), path.clone()),
+                Some(*line),
+            )),
+        }
+    }
+}
+impl Editor {
     pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
         let item = self.picker.as_ref()?.picker.current()?;
         let (full, focus_line) = match &item.payload {

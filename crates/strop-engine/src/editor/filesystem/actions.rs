@@ -145,6 +145,18 @@ const ACTIONS: &[Action] = &[
         operand: false,
         mutation: false,
     },
+    Action {
+        title: "Terminal here",
+        command: "terminal",
+        operand: false,
+        mutation: false,
+    },
+    Action {
+        title: "Open local terminal",
+        command: ":terminal-local",
+        operand: false,
+        mutation: false,
+    },
 ];
 pub(super) struct ActionOwner {
     picker: super::super::picker::PickerId,
@@ -181,6 +193,14 @@ impl Editor {
                         | "deletes permanent" => draft,
                         "operations" | "verify" | "path" => true,
                         "refresh" => directory,
+                        "terminal" => {
+                            directory
+                                && !draft
+                                && scope.filesystem == strop_workspace::Filesystem::Local
+                        }
+                        ":terminal-local" => {
+                            !draft && scope.filesystem != strop_workspace::Filesystem::Local
+                        }
                         "search" => {
                             directory
                                 && !matches!(
@@ -264,6 +284,10 @@ impl Editor {
         };
         if action.command == ":w" {
             self.request_save_document(self.current(), None, false, false);
+            return;
+        }
+        if let Some(command) = action.command.strip_prefix(':') {
+            self.run_ex(command);
             return;
         }
         if action.operand {

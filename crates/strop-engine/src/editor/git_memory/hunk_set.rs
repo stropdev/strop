@@ -47,6 +47,12 @@ impl HunkSet {
             additions,
         }))
     }
+    /// Allocation identity for frame-preparation stamps: every published set
+    /// is a fresh allocation (the previous set is dropped only after the
+    /// swap), so equal identities mean the same published hunks.
+    pub fn identity(&self) -> usize {
+        Arc::as_ptr(&self.0) as *const () as usize
+    }
     pub(crate) fn sign(&self, line: usize) -> Option<char> {
         self.0.signs.get(&line).map(|(_, sign)| *sign)
     }

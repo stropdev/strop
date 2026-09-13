@@ -17,7 +17,7 @@ use super::{ACCENT, MUTED, TEXT};
 mod list;
 mod margins;
 
-pub(crate) use list::surface_list_row;
+pub(crate) use list::{surface_list_row, RowDecoration, CURSOR_ROW_BG};
 pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans, BLAME_W};
 
 pub(crate) const ADD_FG: Color = Color::Rgb(0xa9, 0xc4, 0x7c);

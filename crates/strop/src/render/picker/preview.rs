@@ -11,14 +11,14 @@ use crate::editor::{Editor, PreviewSource};
 use super::super::{syntax_style, ACCENT, BASE, MUTED, SELECT_BG, TEXT};
 
 const SURFACE: Color = Color::Rgb(0x20, 0x22, 0x2e);
-pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect) {
-    let Some((title, focus_line, source)) = editor.picker_preview() else {
+pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
+    let Some((title, focus_line, source)) = editor.picker_preview_cached() else {
         frame.render_widget(Paragraph::new("").style(Style::default().bg(BASE)), area);
         return;
     };
     let visible = area.height.saturating_sub(1) as usize;
     let width = usize::from(area.width.saturating_sub(1));
-    let matched = editor.picker_preview_range(&source);
+    let matched = editor.picker_preview_range_cached(&source);
 
     let lines: Vec<Line> = match source {
         PreviewSource::Buffer(document) => {
@@ -28,7 +28,7 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
                 vec![Line::from(message)]
             } else {
                 let window = preview_window(&rope, focus_line, visible);
-                let analysis = editor.document_analysis(
+                let analysis = editor.document_analysis_cached(
                     document,
                     rope.line_to_byte(window.start),
                     rope.line_to_byte(window.end),
@@ -59,7 +59,7 @@ pub(super) fn render_preview(editor: &mut Editor, frame: &mut Frame, area: Rect)
                 vec![Line::from(message)]
             } else {
                 let window = preview_window(&rope, focus_line, visible);
-                let analysis = editor.preview_analysis(
+                let analysis = editor.preview_analysis_cached(
                     &path,
                     rope.line_to_byte(window.start),
                     rope.line_to_byte(window.end),
@@ -160,10 +160,13 @@ fn highlight_lines_owned(
             number_style
         };
         if gutter > 0 {
-            spans_out.push(Span::styled(
-                if focused { "▶" } else { " " },
-                Style::default().fg(if focused { ACCENT } else { MUTED }),
-            ));
+            let mut marker = Style::default().fg(ACCENT);
+            if focused {
+                marker = marker
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+                    .bg(SELECT_BG);
+            }
+            spans_out.push(Span::styled(if focused { "▶" } else { " " }, marker));
         }
         if gutter == digits + 5 {
             spans_out.push(Span::styled(
@@ -243,7 +246,7 @@ mod tests {
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).unwrap();
             terminal
-                .draw(|frame| render_preview(&mut editor, frame, frame.area()))
+                .draw(|frame| render_preview(&editor, frame, frame.area()))
                 .unwrap();
             let grid = terminal.backend().buffer();
             let lines: Vec<String> = (0..8)
@@ -267,6 +270,66 @@ mod tests {
                 assert!(lines.iter().all(|line| !line.contains('▶')));
             }
         }
+    }
+
+    #[test]
+    fn symbols_preview_points_at_the_symbol_line_in_the_full_screen_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("mod.rs");
+        let text = format!("{}fn dispatch() {{}}\n", "filler\n".repeat(41));
+        std::fs::write(&path, text).unwrap();
+        let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+        editor.open_fixture(&path).unwrap();
+        editor.open_picker(strop_picker::Kind::Symbols);
+        editor.picker_items_fixture(vec![strop_picker::Item {
+            badge: Some("fn".into()),
+            text: "dispatch  mod.rs · :42".into(),
+            payload: strop_picker::Payload::Grep {
+                location: strop_workspace::ResourceLocation::local(path.clone()),
+                line: 42,
+                col: 4,
+                match_len: 8,
+                line_text: "fn dispatch() {}".into(),
+            },
+        }]);
+        // The real full-screen picker workspace: the wider preview pane must
+        // carry the numbered gutter, the ▶ marker on the symbol's line and
+        // the divider — exactly the rootle-style shape, now at 45% width.
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        terminal
+            .draw(|frame| crate::render::render(&mut editor, frame))
+            .unwrap();
+        let grid = terminal.backend().buffer();
+        let right: Vec<String> = (0..30)
+            .map(|y| (56..100).map(|x| grid[(x, y)].symbol()).collect())
+            .collect();
+        assert!(
+            right.iter().any(|line| line.contains("▶ 42 │")),
+            "symbol marker on line 42: {right:?}"
+        );
+        assert_eq!(
+            right.iter().filter(|line| line.contains('▶')).count(),
+            1,
+            "exactly one marker"
+        );
+        assert!(
+            right.iter().any(|line| line.contains("│ fn dispatch")),
+            "divider then content: {right:?}"
+        );
+        let mut marker = None;
+        for x in 56u16..100 {
+            for y in 0..30u16 {
+                if grid[(x, y)].symbol() == "▶" {
+                    marker = Some((x, y));
+                }
+            }
+        }
+        let (marker_x, marker_y) = marker.unwrap();
+        let marker = &grid[(marker_x, marker_y)];
+        assert_eq!(marker.fg, crate::render::ACCENT);
+        assert!(marker.modifier.contains(ratatui::style::Modifier::BOLD));
+        assert_eq!(marker.bg, crate::render::SELECT_BG);
     }
 
     #[test]

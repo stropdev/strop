@@ -27,6 +27,23 @@ fn main() -> ExitCode {
 
 fn launch() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(unix)]
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "--terminal-helper")
+    {
+        if arguments.len() != 2 {
+            return Err("terminal helper requires exactly one inherited descriptor".into());
+        }
+        let fd = arguments[1]
+            .to_str()
+            .ok_or("invalid helper descriptor")?
+            .parse::<i32>()?;
+        // SAFETY: this early process entrypoint precedes threads, tracing and
+        // editor setup. The launching worker transferred this inherited fd.
+        unsafe { strop_terminal::helper::run_inherited(fd)? };
+        return Ok(());
+    }
     let options = cli::parse(arguments.clone())?;
     match &options.command {
         cli::Command::ReplayFull { trace } => {
@@ -69,10 +86,11 @@ fn launch() -> Result<(), Box<dyn Error>> {
             "platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,
             "term":std::env::var("TERM").ok(), "colorterm":std::env::var("COLORTERM").ok(),
             "full_content":strop_trace::capture_content(),
+            "terminal_content":options.terminal_capture,
             "headless":matches!(options.command, cli::Command::Headless { .. }),
         })
     });
-    let result = execute(options.command);
+    let result = execute(options.command, options.terminal_capture);
     if let Err(error) = &result {
         record_with(
             EventKind::Error,
@@ -89,7 +107,7 @@ fn launch() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
+fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn Error>> {
     match command {
         cli::Command::Help => print_help(),
         cli::Command::Version => println!("strop {}", env!("CARGO_PKG_VERSION")),
@@ -116,6 +134,8 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
             let script = std::fs::read_to_string(script)?;
             let (buffer, directory) = initial_buffer(&path)?;
             let mut editor = editor::Editor::new(buffer);
+            editor.set_terminal_capture(terminal_capture);
+            editor.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)?;
             let (configuration, error) = config::Config::load();
             editor.config = configuration;
             editor.reresolve_indents();
@@ -148,6 +168,7 @@ fn execute(command: cli::Command) -> Result<(), Box<dyn Error>> {
         } => {
             let (buffer, directory) = initial_buffer(&path)?;
             let mut editor = editor::Editor::new(buffer);
+            editor.set_terminal_capture(terminal_capture);
             editor.frame_draw = Some(headless::frame_draw);
             editor.buf_mut().readonly = readonly;
             let (configuration, error) = config::Config::load();
@@ -262,6 +283,7 @@ TRACING:\n  --log / --log=ALL              all diagnostic categories to strop-lo
   --log=PATH / --log-file PATH    create a new private JSONL file\n\
   STROP_LOG=PATH                 environment alternative (flag wins)\n\
   --log-content                 include file/paste text, LSP payloads and rendered cells\n\
+  --log-terminal-content        explicitly include private terminal commands, keys and output\n\
   Keys, commands, paths and messages can be sensitive even without content.\n\
   Inspect logs before sharing. Existing files are never overwritten.\n\n\
 KEYS: h j k l w b e 0 $ gg G %; d y c + motion; i a A o O; v V; u ctrl-r\n\

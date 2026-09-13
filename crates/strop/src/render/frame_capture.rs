@@ -91,20 +91,24 @@ pub fn draw(editor: &mut Editor, frame: &mut Frame, record_action: bool) {
     let cursor = CURSOR.with(std::cell::Cell::get);
     let grid = frame.buffer_mut();
     if let Some(started) = started {
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        for cell in &grid.content {
-            cell.symbol().hash(&mut hash);
-            cell.fg.hash(&mut hash);
-            cell.bg.hash(&mut hash);
-            cell.modifier.bits().hash(&mut hash);
-            cell.skip.hash(&mut hash);
-        }
+        let cell_hash =
+            (!editor.tape.content_omitted() && !editor.private_terminal_view()).then(|| {
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                for cell in &grid.content {
+                    cell.symbol().hash(&mut hash);
+                    cell.fg.hash(&mut hash);
+                    cell.bg.hash(&mut hash);
+                    cell.modifier.bits().hash(&mut hash);
+                    cell.skip.hash(&mut hash);
+                }
+                format!("{:016x}", hash.finish())
+            });
         record(
             EventKind::Render,
             &json!({
                 "duration_us":started.elapsed().as_micros(),"columns":area.width,"rows":area.height,
                 "cursor":cursor.map(|(column,row)|json!({"column":column,"row":row})),
-                "cell_hash":format!("{:016x}",hash.finish()),"active_pane":editor.active_pane,
+                "cell_hash":cell_hash,"active_pane":editor.active_pane,
             }),
         );
     }

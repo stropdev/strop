@@ -4,6 +4,7 @@
 mod buffer;
 pub mod diagnostics;
 pub mod editmap;
+pub mod frontend_input;
 pub mod history;
 pub mod id;
 pub mod languages;
