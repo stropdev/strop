@@ -78,13 +78,15 @@ remove and re-add the custom domain (PUT pages cname) — that kicks provisionin
 
 Borrowed from gripsack's demo.yml, simplified:
 
-- **Trigger**: push to main touching `crates/**`, `demos/**`, `Cargo.toml/lock`, plus
-  `workflow_dispatch`.
+- **Trigger**: push to main touching `crates/**`, `demos/**`, `Cargo.toml/lock`,
+  or the demo workflow itself, plus `workflow_dispatch`.
 - **Build**: `docker compose run --build --rm -e VERSION=0.0.0-demo release` — the exact
   release artifact, so the demo can never drift from what ships (plan 0002).
-- **Render**: `ghcr.io/charmbracelet/vhs` container, tape types real keystrokes into a
-  real strop. Simplification vs. gripsack: no deno install, no trust-gate env, no
-  fixture repo beyond a small demo file tree baked into `demos/`.
+- **Render**: checksum-pinned VHS 0.11.0 container, tape types real keystrokes into
+  the built strop. A fresh `demo-artifacts/demo.gif` is required and decoded-frame
+  count must be positive before upload; a checked-in GIF is never fallback evidence.
+  The 0.31.1 publication audit reproduced VHS 0.12.0 exiting zero without creating
+  a GIF, while the same probe on 0.11.0 produced the expected visible marker.
 - **Publish**: idempotent artifacts PR on a force-pushed `demo/artifacts` branch (bot
   PRs don't trigger CI; admin-merge), then copy to `site/img/` + rebuild dispatch —
   the rootle/gripsack pattern, unchanged.
