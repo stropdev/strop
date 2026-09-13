@@ -460,7 +460,16 @@ fn mixed_copy_versions_use_the_reviewed_snapshot_for_each_destination() {
         "stored\n"
     );
     assert_eq!(
-        std::fs::read_to_string(root.path().join("buffer.txt")).unwrap(),
+        std::fs::read_to_string(root.path().join("buffer.txt")).unwrap_or_else(|error| {
+            panic!(
+                "{error}; receipts: {:#?}",
+                editor
+                    .filesystem
+                    .history
+                    .back()
+                    .map(|attempt| &attempt.receipts)
+            )
+        }),
         "unsaved stored\n"
     );
     assert_eq!(std::fs::read_to_string(source).unwrap(), "stored\n");

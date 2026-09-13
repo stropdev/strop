@@ -32,19 +32,34 @@ pub fn execute(
     receipts: &[StepReceipt],
     token: &CancelToken,
 ) -> StepOutcome {
-    match execute_checked(operation, contents, receipts, token) {
+    let mut locks = Vec::new();
+    let mut outcome = match execute_checked(operation, contents, receipts, token, &mut locks) {
         Ok(outcome) => outcome,
         Err(error) if error.kind == FsFailureKind::Cancelled => StepOutcome::Cancelled {
             detail: error.detail,
         },
         Err(error) => StepOutcome::Refused(error),
+    };
+    for lock in locks {
+        if let Err(error) = lock.release() {
+            let warning = format!("operation lock release failed: {error}");
+            match &mut outcome {
+                StepOutcome::Committed { warnings, .. } => warnings.push(warning),
+                StepOutcome::Refused(error) => error.detail.push_str(&format!("; {warning}")),
+                StepOutcome::Cancelled { detail } | StepOutcome::Unconfirmed { detail, .. } => {
+                    detail.push_str(&format!("; {warning}"));
+                }
+            }
+        }
     }
+    outcome
 }
 fn execute_checked(
     operation: &PreparedOperation,
     contents: Option<&ropey::Rope>,
     receipts: &[StepReceipt],
     token: &CancelToken,
+    locks: &mut Vec<NameLock>,
 ) -> Result<StepOutcome, FsFailure> {
     if token.is_cancelled() {
         return Err(failure(
@@ -118,7 +133,6 @@ fn execute_checked(
         .collect();
     names.sort_by(|a, b| a.location.path.cmp(&b.location.path));
     names.dedup_by(|a, b| a.location == b.location);
-    let mut locks = Vec::new();
     for resource in names {
         let managed_source = operation
             .source
@@ -214,7 +228,7 @@ fn execute_checked(
     } else {
         None
     };
-    for lock in &locks {
+    for lock in locks.iter() {
         lock.revalidate()?;
     }
     for parent in &parents {

@@ -103,6 +103,82 @@ fn trace_lifecycle_is_exclusive_ordered_and_durable() {
 }
 
 #[test]
+fn in_budget_burst_is_complete_when_the_writer_runs_after_producers() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("delayed-writer.jsonl");
+    let limits = Limits::default();
+    let (sender, receiver) = channel();
+    let failure = Arc::new(Failure::default());
+    let recorder = Recorder {
+        admission: Mutex::new(Admission::new(sender, limits)),
+        failure: Arc::clone(&failure),
+        started: Instant::now(),
+        max_record: limits.record_bytes,
+    };
+    for value in 0..256 {
+        record_to(
+            &recorder,
+            EventKind::Input,
+            &serde_json::json!({"value": value}),
+        );
+    }
+    recorder.admission.lock().sender.take();
+    writer::run(
+        std::fs::File::create(&path).unwrap(),
+        receiver,
+        failure,
+        limits,
+    );
+    let events: Vec<serde_json::Value> = std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.last().unwrap()["fields"]["complete"], true);
+    let values: Vec<_> = events[..events.len() - 1]
+        .iter()
+        .map(|event| event["fields"]["value"].as_u64().unwrap())
+        .collect();
+    assert_eq!(values, (0..256).collect::<Vec<_>>());
+}
+
+#[test]
+fn delayed_writer_still_reports_the_real_capture_byte_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("delayed-capped.jsonl");
+    let limits = Limits {
+        bytes: 4096,
+        ..Limits::default()
+    };
+    let (sender, receiver) = channel();
+    let failure = Arc::new(Failure::default());
+    let recorder = Recorder {
+        admission: Mutex::new(Admission::new(sender, limits)),
+        failure: Arc::clone(&failure),
+        started: Instant::now(),
+        max_record: limits.record_bytes,
+    };
+    let fields = serde_json::json!({"payload": "x".repeat(512)});
+    for _ in 0..1000 {
+        record_to(&recorder, EventKind::Input, &fields);
+    }
+    recorder.admission.lock().sender.take();
+    writer::run(
+        std::fs::File::create(&path).unwrap(),
+        receiver,
+        failure,
+        limits,
+    );
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.len() <= limits.bytes);
+    let terminal: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    assert_eq!(terminal["event"], "trace_end");
+    assert_eq!(terminal["fields"]["complete"], false);
+    assert_eq!(terminal["fields"]["reason"], "capture_limit");
+    assert!(export::replay_nodes(io::BufReader::new(std::fs::File::open(path).unwrap())).is_err());
+}
+
+#[test]
 fn invalid_limits_are_refused_before_any_file_exists() {
     let _session = SESSION.lock();
     let directory = tempfile::tempdir().unwrap();

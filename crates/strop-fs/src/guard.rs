@@ -217,8 +217,19 @@ impl NameLock {
             name: lock_name.into(),
             identity,
         };
-        lock.revalidate()?;
+        if let Err(mut error) = lock.revalidate() {
+            if let Err(release) = lock.release() {
+                error.detail.push_str(&format!("; lock release: {release}"));
+            }
+            return Err(error);
+        }
         Ok(lock)
+    }
+    /// Closing alone is insufficient: a concurrent fork may hold the same
+    /// open-file description until exec. End our ownership explicitly.
+    pub fn release(self) -> Result<(), FsFailure> {
+        rustix::fs::flock(&self.file, rustix::fs::FlockOperation::Unlock)
+            .map_err(|error| io_failure(error.into()))
     }
     pub fn revalidate(&self) -> Result<(), FsFailure> {
         let current = observation::metadata(

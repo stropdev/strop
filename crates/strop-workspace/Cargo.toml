@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.31.0" }
+strop-core = { path = "../strop-core", version = "0.31.1" }
 serde = { version = "1", features = ["derive", "rc"] }
 thiserror = "2"
 

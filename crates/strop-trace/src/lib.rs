@@ -22,14 +22,11 @@ use serde::Serialize;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, LazyLock};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
-/// A full queue is a visible capture failure, never silent loss; the writer
-/// drains faster than producers admit, so this only trips on writer stalls.
-const QUEUE_CAPACITY: usize = 64;
 static ACTIVE: LazyLock<Mutex<Option<Arc<Recorder>>>> = LazyLock::new(|| Mutex::new(None));
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static CONTENT: AtomicBool = AtomicBool::new(false);
@@ -68,8 +65,47 @@ struct Record {
     elapsed_us: u128,
     fields: Vec<u8>,
 }
+
+/// Lifetime budgets bound retained records even if the writer never runs.
+/// Field bytes exclude envelope overhead, so exhausting either budget proves
+/// the file cannot fit. Keep one overflow witness for the writer's cap marker.
+struct Admission {
+    sender: Option<Sender<Record>>,
+    remaining_events: u64,
+    remaining_fields: usize,
+}
+
+impl Admission {
+    fn new(sender: Sender<Record>, limits: Limits) -> Self {
+        Self {
+            sender: Some(sender),
+            remaining_events: limits.events,
+            remaining_fields: limits.bytes - TERMINAL_RESERVE,
+        }
+    }
+
+    fn send(&mut self, record: Record, failure: &Failure) -> bool {
+        let Some(sender) = self.sender.as_ref() else {
+            return false;
+        };
+        let fields = record.fields.len();
+        let capped = self.remaining_events == 0 || fields > self.remaining_fields;
+        if sender.send(record).is_err() {
+            failure.set(|| "capture writer unavailable".into());
+            self.sender.take();
+            return false;
+        }
+        self.remaining_events = self.remaining_events.saturating_sub(1);
+        self.remaining_fields = self.remaining_fields.saturating_sub(fields);
+        if capped {
+            self.sender.take();
+        }
+        !capped
+    }
+}
+
 struct Recorder {
-    sender: Mutex<Option<SyncSender<Record>>>,
+    admission: Mutex<Admission>,
     failure: Arc<Failure>,
     started: Instant,
     max_record: usize,
@@ -100,7 +136,7 @@ pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceEr
         path: path.to_path_buf(),
         source,
     })?;
-    let (sender, receiver) = sync_channel(QUEUE_CAPACITY);
+    let (sender, receiver) = channel();
     let failure = Arc::new(Failure::default());
     let writer_failure = Arc::clone(&failure);
     let limits = options.limits;
@@ -109,7 +145,7 @@ pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceEr
         .spawn(move || writer::run(file, receiver, writer_failure, limits))
         .map_err(TraceError::Spawn)?;
     let recorder = Arc::new(Recorder {
-        sender: Mutex::new(Some(sender)),
+        admission: Mutex::new(Admission::new(sender, limits)),
         failure,
         started: Instant::now(),
         max_record: limits.record_bytes,
@@ -146,73 +182,53 @@ pub fn record<T: Serialize>(kind: EventKind, fields: &T) {
     let Some(recorder) = ACTIVE.lock().clone() else {
         return;
     };
-    // This lock protects queue admission only, never disk writes. Stamping
-    // under it keeps timestamps nondecreasing in the writer's receive order,
-    // and serializing under it bounds simultaneous trace encodings.
-    let mut sender = recorder.sender.lock();
-    if sender.is_none() {
+    record_to(&recorder, kind, fields);
+}
+
+fn record_to<T: Serialize>(recorder: &Recorder, kind: EventKind, fields: &T) {
+    // Serialize/stamp under admission ownership, never under a disk-write lock.
+    let mut admission = recorder.admission.lock();
+    if admission.sender.is_none() {
         return;
     }
     if recorder.failure.message.lock().is_some() {
-        sender.take();
+        admission.sender.take();
         return;
     }
     let mut bytes = bounded::Bytes::new(recorder.max_record);
     if serde_json::to_writer(&mut bytes, fields).is_ok() {
-        let record = Record {
-            kind,
-            elapsed_us: recorder.started.elapsed().as_micros(),
-            fields: bytes.into_vec(),
-        };
-        if sender
-            .as_ref()
-            .expect("checked sender")
-            .try_send(record)
-            .is_err()
-        {
-            recorder
-                .failure
-                .set(|| "capture queue full or writer unavailable".into());
-            sender.take();
-        }
+        admission.send(
+            Record {
+                kind,
+                elapsed_us: recorder.started.elapsed().as_micros(),
+                fields: bytes.into_vec(),
+            },
+            &recorder.failure,
+        );
         return;
     }
-    // Only the forensic substream chunks: replay completeness is contractual
-    // there, and the Full content policy is what may carry payloads at all.
-    // Every other oversize record keeps the honest refusal below.
+    // Only the explicitly enabled forensic substream may carry chunked values.
     if kind == EventKind::Replay && CONTENT.load(Ordering::Relaxed) {
         if let Some(chunks) = chunk::serialize(kind, fields, recorder.max_record) {
-            let mut admitted = true;
             for fields in chunks {
-                let record = Record {
-                    kind: EventKind::ReplayChunk,
-                    elapsed_us: recorder.started.elapsed().as_micros(),
-                    fields,
-                };
-                if sender
-                    .as_ref()
-                    .expect("checked sender")
-                    .try_send(record)
-                    .is_err()
-                {
-                    admitted = false;
+                if !admission.send(
+                    Record {
+                        kind: EventKind::ReplayChunk,
+                        elapsed_us: recorder.started.elapsed().as_micros(),
+                        fields,
+                    },
+                    &recorder.failure,
+                ) {
                     break;
                 }
             }
-            if admitted {
-                return;
-            }
-            recorder
-                .failure
-                .set(|| "capture queue full or writer unavailable".into());
-            sender.take();
             return;
         }
     }
     recorder
         .failure
         .set(|| "record exceeds cap or cannot serialize".into());
-    sender.take();
+    admission.sender.take();
 }
 
 /// End the capture visibly when honest continuation is impossible (a value
@@ -224,7 +240,7 @@ pub fn mark_incomplete(message: &'static str) {
         return;
     };
     recorder.failure.set(|| message.into());
-    recorder.sender.lock().take();
+    recorder.admission.lock().sender.take();
     CONTENT.store(false, Ordering::Release);
 }
 
@@ -255,7 +271,7 @@ impl TraceSession {
                 *active = None;
             }
         }
-        self.recorder.sender.lock().take();
+        self.recorder.admission.lock().sender.take();
         if worker.join().is_err() {
             self.recorder
                 .failure

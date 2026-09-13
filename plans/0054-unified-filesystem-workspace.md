@@ -918,3 +918,21 @@ Release checks passed:
   at 120×40 over 10k lines had p99 1.37 ms, max 3.55 ms. This is an observation,
   not a cross-platform latency guarantee; finite background settle times are
   reported separately by the benchmark.
+
+Hosted publication correction: the 0.31.0 main CI and demo passed, but its
+release build caught a valid SSH capture overflowing the old 64-record trace
+queue. Publication stopped before artifacts were released. The deterministic
+delayed-writer reproduction and lifetime-budget correction are recorded in
+0029. The existing tag remains immutable; 0.31.1 carries the corrected release.
+
+The corrected candidate's concurrency gate also exposed inherited advisory-lock
+ownership: a concurrent fork can keep an open-file description alive until exec,
+so merely closing an operation's descriptor does not end its flock. Every normal
+completed/refused/cancelled operation explicitly unlocks its acquired name locks
+before closing them. Unlock failures remain visible in that operation's receipt;
+no mutation is retried. A duplicated-descriptor regression reproduces the same
+open-file-description lifetime without a timing-dependent fork test.
+
+After both corrections, all 100 concurrent engine-suite repetitions completed.
+The 0.31.1 compose test/static-benchmark, model, Verus and required-container
+gates passed again; the required SSH capture/replay cases were not skipped.

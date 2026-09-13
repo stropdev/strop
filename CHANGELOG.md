@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.31.0 — 2026-09-13
+## 0.31.1 — 2026-09-13
 
 One filesystem workspace: browse, edit names, review operations (0054).
+
+The 0.31.0 tag was not published: its hosted release gate caught a
+scheduler-dependent trace-capture failure. This release includes the correction
+without moving the existing tag.
 
 ### Added
 
@@ -24,6 +28,12 @@ One filesystem workspace: browse, edit names, review operations (0054).
 
 ### Fixed
 
+- Trace admission uses the capture's byte/event budgets rather than a 64-record
+  scheduling window. Valid bursts survive a delayed writer without blocking
+  input; real capture limits and writer failures still produce incomplete traces.
+- Filesystem operations explicitly unlock cooperative name locks when they end.
+  A concurrent process fork can no longer retain a completed operation's lock
+  through an inherited descriptor and spuriously refuse the next batch step.
 - Search grouping, exclusions, preview caches and tab-width lookup distinguish
   local files and different SSH hosts even when native paths are identical.
 - Invalid rg records, escaped paths, unsupported source text and oversized

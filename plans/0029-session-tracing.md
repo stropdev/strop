@@ -46,6 +46,16 @@ Schema 2 reserves a terminal `TraceEnd` record. Hard limits are 64 MiB total,
 100,000 records and 256 KiB per record. A cap, queue failure or writer failure
 cannot masquerade as a complete capture; full replay rejects incomplete input.
 
+The 0.31 hosted SSH capture gate exposed a scheduler-dependent failure in the
+old 64-record queue: a valid burst could fail before the writer ran. Admission
+now shares the capture's lifetime event and serialized-field byte budgets,
+rather than assuming the writer runs between small bursts. Its incremental
+channel is bounded by those monotonic budgets. One over-budget record is retained
+as a witness so the writer emits the existing honest capture-limit terminal
+marker, then admission closes. No producer waits for file I/O, no records are
+silently dropped, and the file/reader limits are unchanged. A delayed-writer
+regression queues the entire valid burst before allowing any writes.
+
 Schema 3 adds `ReplayChunk` (0028 P2): a forensic value whose serialized fields
 exceed the per-record cap travels as an ordered run of chunk records sharing a
 capture id, each declaring the original event, assembled byte total, chunk

@@ -9,7 +9,7 @@ fn fixture() -> (tempfile::TempDir, Parent, Parent, OsString) {
     let parent = Parent::open(root.path()).unwrap();
     let directory = Parent::open(&path).unwrap();
     let lock = NameLock::acquire(&directory, OsStr::new("old-child")).unwrap();
-    drop(lock);
+    lock.release().unwrap();
     let name = std::fs::read_dir(&path)
         .unwrap()
         .next()
@@ -20,9 +20,22 @@ fn fixture() -> (tempfile::TempDir, Parent, Parent, OsString) {
 }
 
 #[test]
+fn completed_lock_ownership_does_not_survive_an_inherited_descriptor() {
+    let (_root, _parent, directory, _name) = fixture();
+    let lock = NameLock::acquire(&directory, OsStr::new("old-child")).unwrap();
+    // dup shares the open-file description exactly as a fork inheritance does.
+    let inherited = lock.file.try_clone().unwrap();
+    lock.release().unwrap();
+    let next = NameLock::acquire(&directory, OsStr::new("old-child"));
+    assert!(next.is_ok(), "completed operation retained its flock");
+    next.unwrap().release().unwrap();
+    drop(inherited);
+}
+
+#[test]
 fn an_active_lock_is_never_unlinked() {
     let (_root, parent, directory, name) = fixture();
-    let _held = NameLock::acquire(&directory, OsStr::new("old-child")).unwrap();
+    let held = NameLock::acquire(&directory, OsStr::new("old-child")).unwrap();
     with_token(|token| {
         let approved = observation::stat(&directory.path).unwrap().unwrap();
         let captured =
@@ -34,6 +47,7 @@ fn an_active_lock_is_never_unlinked() {
         assert_eq!(error.kind, FsFailureKind::Busy);
         assert!(directory.path.join(name).exists());
     });
+    held.release().unwrap();
 }
 
 #[test]
@@ -45,7 +59,7 @@ fn replacement_of_a_captured_lock_is_not_adopted_for_cleanup() {
             DirectoryLocks::capture(&parent, OsStr::new("directory"), &approved, &token).unwrap();
         std::fs::rename(directory.path.join(&name), root.path().join("retired-lock")).unwrap();
         let replacement = NameLock::acquire(&directory, OsStr::new("old-child")).unwrap();
-        drop(replacement);
+        replacement.release().unwrap();
         let error = captured
             .prune(&parent, OsStr::new("directory"), &token)
             .err()
