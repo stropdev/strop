@@ -35,6 +35,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "-Demit-lib-vt=true",
             "-Doptimize=ReleaseFast",
             "-Dvt-features=-kitty-graphics",
+            // The pinned source's own version, explicitly: extracted inside a
+            // git checkout, Ghostty's git detection would otherwise see the
+            // embedding project's tags and refuse them as foreign versions.
+            "-Dversion-string=1.3.2",
         ])
         .arg(format!("-Dtarget={target}"))
         .arg("--prefix")
