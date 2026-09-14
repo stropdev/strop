@@ -47,8 +47,9 @@ fn parse_json_match(line: &[u8], root: &ResourceLocation) -> Result<Vec<Item>, S
     parse_json_match_with(line, root, None)
 }
 
-/// Exact per-(path, line) admission (0063 §4).
-pub type Admit = dyn Fn(&str, &str) -> bool;
+/// Exact per-(path, line) admission (0063 §4): path, 1-based line
+/// number (None on line-less surfaces) and line text.
+pub type Admit = dyn Fn(&str, Option<usize>, &str) -> bool;
 
 /// Parse one rg JSON match record; when an admission closure is given,
 /// its exact Boolean evaluation (0063 §4) filters lines the provider
@@ -94,7 +95,7 @@ pub fn parse_json_match_with(
             .path
             .strip_prefix(&root.path)
             .map_err(|_| "rg path escaped scope".to_string())?;
-        if !admits(&relative.to_string_lossy(), &text) {
+        if !admits(&relative.to_string_lossy(), Some(line_no), &text) {
             return Ok(Vec::new());
         }
     }
@@ -146,6 +147,68 @@ pub fn parse_json_match_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn admission_closure_sees_path_line_and_text() {
+        let root = ResourceLocation::local(std::path::PathBuf::from("/work"));
+        let record = |path: &str, line: usize, text: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "type": "match",
+                "data": {
+                    "path": { "text": path },
+                    "lines": { "text": format!("{text}\n") },
+                    "line_number": line,
+                    "submatches": [{ "start": 0, "end": 1 }]
+                }
+            }))
+            .unwrap()
+        };
+        // A kind:-bearing plan built over a real index: the closure
+        // must receive the record's line number and drop the line the
+        // index excludes (outside every function).
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(directory.path().join("src")).unwrap();
+        std::fs::write(
+            directory.path().join("src/lib.rs"),
+            "fn wrap() {\n    let parser = 1;\n}\nlet bare = 2;\n",
+        )
+        .unwrap();
+        let index = crate::source::symbols::SymbolIndex::build(
+            directory.path(),
+            &[std::path::PathBuf::from("src/lib.rs")],
+            &|| false,
+        );
+        let plan = crate::query::ContentPlan::compile(&crate::query::SearchQuery::parse(
+            "kind:function AND parser",
+        ))
+        .unwrap()
+        .unwrap();
+        let admits = move |path: &str, line: Option<usize>, text: &str| {
+            plan.admits(
+                crate::query::Evidence {
+                    symbols: Some(&index),
+                    path: Some(path),
+                    line,
+                    ..crate::query::Evidence::default()
+                },
+                text,
+            )
+        };
+        let kept = parse_json_match_with(
+            &record("src/lib.rs", 2, "    let parser = 1"),
+            &root,
+            Some(&admits),
+        )
+        .unwrap();
+        assert_eq!(kept.len(), 1);
+        let dropped = parse_json_match_with(
+            &record("src/lib.rs", 4, "let bare = parser"),
+            &root,
+            Some(&admits),
+        )
+        .unwrap();
+        assert!(dropped.is_empty(), "the index excludes the bare line");
+    }
+
     #[test]
     fn json_matches_retain_scope_and_exact_submatch_coordinates() {
         let root = ResourceLocation::remote(

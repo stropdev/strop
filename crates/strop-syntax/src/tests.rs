@@ -456,3 +456,116 @@ fn html_embedded_script_and_style_use_the_shared_registry() {
     assert_eq!(capture_at(&spans, source, "42").class, Class::Number);
     assert_eq!(capture_at(&spans, source, "\"yes\"").class, Class::String);
 }
+
+mod symbols_fallback {
+    use super::super::languages;
+    use super::super::symbols::{DeclExtractor, SymbolKind};
+
+    fn extract(
+        language: languages::LanguageId,
+        src: &str,
+    ) -> Vec<(SymbolKind, String, usize, usize)> {
+        let mut extractor = DeclExtractor::for_language(language).expect("extractor");
+        extractor
+            .extract(src.as_bytes(), &|| false)
+            .expect("evidence")
+            .into_iter()
+            .map(|d| (d.kind, d.name, d.line, d.end_line))
+            .collect()
+    }
+
+    #[test]
+    fn rust_declarations() {
+        let src = "mod outer {\n    const C: u8 = 1;\n    trait Iface { fn required(); }\n    impl Iface for Foo {\n        fn method(&self) {}\n    }\n}\nfn free_fn() -> u8 {\n    C\n}\nstruct St;\nenum E { A }\n";
+        assert_eq!(
+            extract(languages::LanguageId::Rust, src),
+            vec![
+                (SymbolKind::Module, "outer".into(), 1, 7),
+                (SymbolKind::Constant, "C".into(), 2, 2),
+                (SymbolKind::Interface, "Iface".into(), 3, 3),
+                (SymbolKind::Method, "required".into(), 3, 3),
+                (SymbolKind::Method, "method".into(), 5, 5),
+                (SymbolKind::Function, "free_fn".into(), 8, 10),
+                (SymbolKind::Struct, "St".into(), 11, 11),
+                (SymbolKind::Enum, "E".into(), 12, 12),
+            ]
+        );
+    }
+
+    #[test]
+    fn python_declarations() {
+        let src = "class Cls:\n    def method(self):\n        pass\n\ndef free_fn():\n    return\n";
+        assert_eq!(
+            extract(languages::LanguageId::Python, src),
+            vec![
+                (SymbolKind::Class, "Cls".into(), 1, 3),
+                (SymbolKind::Method, "method".into(), 2, 3),
+                (SymbolKind::Function, "free_fn".into(), 5, 6),
+            ]
+        );
+    }
+
+    #[test]
+    fn lua_functions_and_methods() {
+        let src =
+            "local function free_fn()\nend\nfunction mod.fn2()\nend\nfunction mod:method()\nend\n";
+        assert_eq!(
+            extract(languages::LanguageId::Lua, src),
+            vec![
+                (SymbolKind::Function, "free_fn".into(), 1, 2),
+                (SymbolKind::Function, "mod.fn2".into(), 3, 4),
+                (SymbolKind::Method, "mod:method".into(), 5, 6),
+            ]
+        );
+    }
+
+    #[test]
+    fn c_declarations() {
+        let src = "struct St { int a; };\nenum E { A };\nint free_fn(int x) { return x; }\nint proto(int);\nstruct Fwd;\nint usage(struct St s);\n";
+        let found = extract(languages::LanguageId::C, src);
+        assert!(found.contains(&(SymbolKind::Struct, "St".into(), 1, 1)));
+        assert!(found.contains(&(SymbolKind::Enum, "E".into(), 2, 2)));
+        assert!(found.contains(&(SymbolKind::Function, "free_fn".into(), 3, 3)));
+        assert!(found.contains(&(SymbolKind::Function, "proto".into(), 4, 4)));
+        // Forward declaration and type usage are not definitions.
+        assert!(!found.iter().any(|(_, name, _, _)| name == "Fwd"));
+        assert_eq!(found.iter().filter(|(_, n, _, _)| n == "St").count(), 1);
+        assert!(found.contains(&(SymbolKind::Function, "usage".into(), 6, 6)));
+    }
+
+    #[test]
+    fn cpp_classes_and_methods() {
+        let src = "class Cls {\npublic:\n    void method() {}\n    int attr;\n};\nvoid free_fn() {}\nint Cls::out_of_line() { return 0; }\n";
+        assert_eq!(
+            extract(languages::LanguageId::Cpp, src),
+            vec![
+                (SymbolKind::Class, "Cls".into(), 1, 5),
+                (SymbolKind::Method, "method".into(), 3, 3),
+                (SymbolKind::Function, "free_fn".into(), 6, 6),
+                (SymbolKind::Function, "Cls::out_of_line".into(), 7, 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn multiline_spans_cover_bodies() {
+        let src = "fn wrapped() {\n    let x = 1;\n    let y = 2;\n}\nlet outside = 3;\n";
+        assert_eq!(
+            extract(languages::LanguageId::Rust, src),
+            vec![(SymbolKind::Function, "wrapped".into(), 1, 4)]
+        );
+    }
+
+    #[test]
+    fn unsupported_languages_have_no_extractor() {
+        assert!(DeclExtractor::for_language(languages::LanguageId::Go).is_none());
+        assert!(DeclExtractor::for_language(languages::LanguageId::Json).is_none());
+    }
+
+    #[test]
+    fn cancelled_parse_is_not_evidence() {
+        let mut extractor =
+            DeclExtractor::for_language(languages::LanguageId::Rust).expect("extractor");
+        assert!(extractor.extract(b"fn f() {}", &|| true).is_none());
+    }
+}

@@ -14,6 +14,7 @@ pub mod languages;
 pub use guides::{GuideFrame, IndentGuides};
 mod injections;
 mod spans;
+pub mod symbols;
 pub use spans::Emphasis;
 use spans::{CaptureStyle, LayeredSpan};
 

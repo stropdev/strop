@@ -247,6 +247,32 @@ runtime evidence — `NOT` over an undecidable atom admits instead of
 dropping lines. `repo:` decides exactly with a catalog on the local
 search path (one discovery scan per search, worker-side); remote and
 no-catalog paths stay Unknown until 0058's worker owns remote
-discovery. Evidence: synthetic mixed tree (nested repo, worktree,
 marker, loose dir), ignored-repo miss classified soundly, repo
 branch-sensitivity, NOT-repo inversion, no-catalog overfetch.
+
+Syntax-fallback slice (2026-09-14): `kind:` now decides exactly from
+real evidence. `strop-syntax` gains declaration extraction over the
+already-linked grammars (`queries/{rust,python,c,lua,cpp}/symbols.scm`
++ `src/symbols.rs`): kind, name and inclusive line span per
+declaration, with methods recognized by member context (impl/trait,
+class body, Lua method syntax) and honest gaps kept out (macros,
+typedef aliases, forward declarations, inferred Python constants).
+The picker builds one bounded `SymbolIndex` per search — worker-side,
+only when the compiled AST consults `kind:` (ordinary queries pay
+nothing) — from the selection walk's own paths (4096 files / 2 MiB per
+file / 64 MiB total; beyond stays absent = Unknown). Admission's
+evidence grew a `line` number and the index: a complete entry answers
+Yes/No by span containment, absent/incomplete evidence stays Unknown
+and admits; dirty buffers overlay their disk entry because unsaved
+text is authoritative. Flat `kind:`/`repo:`/`type:` queries upgrade
+to the Boolean parse as implicit ANDs — the "combine with AND"
+failure is gone because narrowing now exists. `kind:function`
+subsumes methods; unrecognized kind values admit and explain through
+suggestions. Evidence so far: per-language extraction corpora (spans,
+methods, qualified C++ names), index bounds/cancel/overlay tests,
+three-valued narrowing tests (AND, NOT inversion, branch
+sensitivity, unknown value), the rg-record seam passing line numbers
+through `parse_json_match_with`, and suggestion listing. Still open:
+LSP lazy init and the workspace-symbols picker surface (§2),
+incremental cross-search reuse and invalidation (0058's worker),
+stored-query versioning (§3), and the §6 tiers.

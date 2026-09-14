@@ -38,6 +38,7 @@ pub enum PickerMsg {
 
 pub mod catalog;
 pub mod selection;
+pub mod symbols;
 
 pub use selection::{display_path, SelectionPolicy, RG_PROTECTED_ARGS};
 

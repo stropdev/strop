@@ -103,6 +103,20 @@ fn value_suggestions(key: &str, prefix: &str, range: std::ops::Range<usize>) -> 
                 }
             }
         }
+        "kind" => {
+            for value in [
+                "function",
+                "method",
+                "class",
+                "struct",
+                "enum",
+                "interface",
+                "module",
+                "constant",
+            ] {
+                push(value.to_string(), "symbol kind");
+            }
+        }
         "hidden" | "ignored" => {
             push("include".into(), "value");
             push("exclude".into(), "value");
@@ -154,5 +168,24 @@ mod tests {
     #[test]
     fn quoted_spans_offer_nothing() {
         assert!(suggest(&super::super::SearchQuery::parse("\"lang"), 3).is_empty());
+    }
+
+    #[test]
+    fn kind_values_offer_the_symbol_kinds() {
+        let suggestions = suggest(&super::super::SearchQuery::parse("kind:fun"), 8);
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].insert, "function");
+        assert_eq!(suggestions[0].detail, "symbol kind");
+        let all = suggest(&super::super::SearchQuery::parse("kind:"), 5);
+        assert!(all.iter().map(|s| s.insert.as_str()).eq([
+            "function",
+            "method",
+            "class",
+            "struct",
+            "enum",
+            "interface",
+            "module",
+            "constant",
+        ]));
     }
 }

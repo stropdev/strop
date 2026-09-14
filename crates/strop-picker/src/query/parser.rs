@@ -163,9 +163,16 @@ impl SearchQuery {
             state: QueryState::Ready,
             ..Default::default()
         };
-        let boolean = tokens
-            .iter()
-            .any(|token| matches!(token.kind, TokenKind::Operator(_) | TokenKind::Paren { .. }));
+        let boolean = tokens.iter().any(|token| match &token.kind {
+            TokenKind::Operator(_) | TokenKind::Paren { .. } => true,
+            // `kind:`/`repo:` narrow through the AST's evidence
+            // (symbol index, project catalog — 0063 §2); a flat
+            // spelling is an implicit AND, not a failure.
+            TokenKind::Qualifier { key, value, .. } => {
+                !value.is_empty() && matches!(key.as_str(), "kind" | "type" | "repo")
+            }
+            _ => false,
+        });
         let mut free_text: Vec<(String, bool, std::ops::Range<usize>)> = Vec::new();
         for token in &tokens {
             match &token.kind {
@@ -365,15 +372,6 @@ impl SearchQuery {
                     ContentExpr::Regex(value.to_string())
                 });
             }
-            // `kind:`/`repo:` (0063 §2) are grammar-valid: they narrow
-            // workspace symbols and repositories once project discovery
-            // lands. In a flat query they cannot narrow anything yet —
-            // say so instead of silently dropping them.
-            "kind" | "repo" => self.fail(
-                range,
-                format!("{key}: narrows workspace symbols; combine with AND for now"),
-                Some(format!("try \"{key}:{value} AND <text>\"")),
-            ),
             _ => unreachable!("the lexer only emits known qualifiers"),
         }
     }

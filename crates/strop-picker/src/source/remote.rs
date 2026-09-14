@@ -4,7 +4,7 @@ use super::{
     query::{parse_json_match_with, scoped_path, RECORD_LIMIT},
     PickerMsg, SelectionPolicy, SourceSnapshot,
 };
-use crate::query::{CaseMode, ContentPlan, FileSelectionPlan, SearchQuery};
+use crate::query::{CaseMode, ContentPlan, Evidence, FileSelectionPlan, SearchQuery};
 use std::{ffi::OsString, path::PathBuf, sync::Arc};
 use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 use strop_workspace::{RemoteEndpoint, ResourceLocation};
@@ -80,7 +80,19 @@ fn search(
     records.finish()?;
     // Remote project discovery arrives with 0058's unified worker;
     // until then `repo:` atoms admit (overfetch), never drop.
-    super::snapshots::emit_snapshots(root, &content, snapshots, &mut paths, tx, token, None)?;
+    // Remote symbol evidence arrives with 0058's worker; until then
+    super::snapshots::emit_snapshots(
+        root,
+        &content,
+        snapshots,
+        &mut paths,
+        tx,
+        token,
+        super::snapshots::Sources {
+            catalog: None,
+            symbols: None,
+        },
+    )?;
     let pattern: std::ffi::OsString = content.provider_pattern().into();
     common.extend(["--json".into(), "-e".into(), pattern]);
     common.push(
@@ -124,7 +136,16 @@ fn search(
         let mut records = Records::new(b'\n');
         let admits = {
             let content = content.clone();
-            move |path: &str, text: &str| content.admits_in(None, path, text)
+            move |path: &str, line: Option<usize>, text: &str| {
+                content.admits(
+                    Evidence {
+                        path: Some(path),
+                        line,
+                        ..Evidence::default()
+                    },
+                    text,
+                )
+            }
         };
         run(endpoint, root, args, token, tx, |chunk| {
             records.feed(chunk, |record| {

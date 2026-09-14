@@ -145,9 +145,9 @@ pub(super) fn run(
     let catalog = crate::source::catalog::ProjectCatalog::discover(&cwd, &cancelled);
     // The reader thread admits every hit line through the exact plan:
     // the provider pattern only prefilters (0063 §4). One owning
-    // closure per rg batch — `content`/`catalog` outlive the loop.
-    // eligible paths from the shared selection authority;
-    // bounded argv batches (0051 §3: real bounds, no shell)
+    // closure per rg batch — `content`/`catalog`/`symbols` outlive the
+    // loop. Eligible paths come from the shared selection authority;
+    // bounded argv batches (0051 §3: real bounds, no shell).
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
     let mut path_bytes = 0usize;
     let mut path_limit = false;
@@ -173,6 +173,16 @@ pub(super) fn run(
     if cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
+    // Syntax-fallback symbol index (0063 §2): built only when the
+    // query carries a `kind:` atom, from the selection's own eligible
+    // files. Absent or incomplete entries stay Unknown and admit.
+    let mut symbols = if content.needs_symbols() {
+        Some(std::sync::Arc::new(
+            crate::source::symbols::SymbolIndex::build(&cwd, &paths, &cancelled),
+        ))
+    } else {
+        None
+    };
     // Dirty open source text is authoritative, never a hidden disk
     // save. Matching happens on this worker, under the same plan.
     if let Err(error) = super::snapshots::emit_snapshots(
@@ -182,7 +192,10 @@ pub(super) fn run(
         &mut paths,
         &tx,
         &cancel,
-        Some(&catalog),
+        super::snapshots::Sources {
+            catalog: Some(&catalog),
+            symbols: symbols.as_mut().and_then(std::sync::Arc::get_mut),
+        },
     ) {
         return if cancel.is_cancelled() {
             Outcome::Cancelled(CancelReason::Superseded)
@@ -254,7 +267,18 @@ pub(super) fn run(
             let admitting = {
                 let content = content.clone();
                 let catalog = catalog.clone();
-                move |path: &str, text: &str| content.admits_in(Some(&catalog), path, text)
+                let symbols = symbols.clone();
+                move |path: &str, line: Option<usize>, text: &str| {
+                    content.admits(
+                        crate::query::Evidence {
+                            catalog: Some(&catalog),
+                            symbols: symbols.as_deref(),
+                            path: Some(path),
+                            line,
+                        },
+                        text,
+                    )
+                }
             };
             let out_events = events.clone();
             let out_tx = tx.clone();

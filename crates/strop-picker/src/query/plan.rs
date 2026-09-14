@@ -188,18 +188,20 @@ enum MetadataKey {
     Path,
     Glob,
     Repo,
+    Kind,
 }
 
 impl BooleanPlan {
-    /// Exact admission for one candidate line of one file (workspace-
-    /// relative path). `None` path treats path metadata as not matching.
-    pub fn admits(
-        &self,
-        catalog: Option<&crate::source::catalog::ProjectCatalog>,
-        path: Option<&str>,
-        line: &str,
-    ) -> bool {
-        self.root.decide(catalog, path, line) != Decision::No
+    /// Exact admission for one candidate line. `Evidence::default()`
+    /// (a line-less surface) keeps every metadata atom Unknown.
+    pub fn admits(&self, evidence: &Evidence<'_>, line: &str) -> bool {
+        self.root.decide(evidence, line) != Decision::No
+    }
+
+    /// Whether the AST consults `kind:` — the signal to build the
+    /// syntax-fallback symbol index (0063 §2).
+    pub fn uses_kind(&self) -> bool {
+        self.root.uses_kind()
     }
 
     fn compile(
@@ -244,7 +246,10 @@ impl BooleanPlan {
                     "path" => MetadataKey::Path,
                     "glob" => MetadataKey::Glob,
                     "repo" => MetadataKey::Repo,
-                    // `kind:` awaits workspace symbols (0063 §2).
+                    // Decided by the syntax-fallback symbol index when
+                    // the search built one (0063 §2); otherwise the
+                    // atom stays Unknown and admits.
+                    "kind" => MetadataKey::Kind,
                     _ => return Ok(CompiledExpr::Unknown),
                 };
                 CompiledExpr::Metadata {
@@ -286,18 +291,13 @@ impl CompiledExpr {
     /// Three-valued evaluation (0063 §4): failed or unavailable evidence
     /// is Unknown — never false, so `NOT` cannot turn a miss into a
     /// match, and a top-level Unknown admits (overfetch).
-    fn decide(
-        &self,
-        catalog: Option<&crate::source::catalog::ProjectCatalog>,
-        path: Option<&str>,
-        line: &str,
-    ) -> Decision {
+    fn decide(&self, evidence: &Evidence<'_>, line: &str) -> Decision {
         match self {
             Self::Unknown => Decision::Unknown,
             Self::And(operands) => {
                 let mut result = Decision::Yes;
                 for operand in operands {
-                    match operand.decide(catalog, path, line) {
+                    match operand.decide(evidence, line) {
                         Decision::No => return Decision::No,
                         Decision::Unknown => result = Decision::Unknown,
                         Decision::Yes => {}
@@ -308,7 +308,7 @@ impl CompiledExpr {
             Self::Or(branches) => {
                 let mut result = Decision::No;
                 for branch in branches {
-                    match branch.decide(catalog, path, line) {
+                    match branch.decide(evidence, line) {
                         Decision::Yes => return Decision::Yes,
                         Decision::Unknown => result = Decision::Unknown,
                         Decision::No => {}
@@ -316,7 +316,7 @@ impl CompiledExpr {
                 }
                 result
             }
-            Self::Not(inner) => match inner.decide(catalog, path, line) {
+            Self::Not(inner) => match inner.decide(evidence, line) {
                 Decision::Yes => Decision::No,
                 Decision::No => Decision::Yes,
                 Decision::Unknown => Decision::Unknown,
@@ -333,7 +333,7 @@ impl CompiledExpr {
                 value,
                 negated,
             } => {
-                let Some(path) = path else {
+                let Some(path) = evidence.path else {
                     return Decision::Unknown;
                 };
                 let matched = match key {
@@ -348,10 +348,37 @@ impl CompiledExpr {
                     MetadataKey::Path => path.contains(value.as_str()),
                     MetadataKey::Glob => glob_literal_match(value, path),
                     MetadataKey::Repo => {
-                        let Some(catalog) = catalog else {
+                        let Some(catalog) = evidence.catalog else {
                             return Decision::Unknown;
                         };
                         catalog.repo_matches(path, value, *negated)
+                    }
+                    MetadataKey::Kind => {
+                        let Some(symbols) = evidence.symbols else {
+                            return Decision::Unknown;
+                        };
+                        let Some(kinds) =
+                            crate::source::symbols::SymbolIndex::kinds_for_value(value)
+                        else {
+                            return Decision::Unknown;
+                        };
+                        return match symbols.kind_decides(path, evidence.line, kinds) {
+                            Some(true) => {
+                                if *negated {
+                                    Decision::No
+                                } else {
+                                    Decision::Yes
+                                }
+                            }
+                            Some(false) => {
+                                if *negated {
+                                    Decision::Yes
+                                } else {
+                                    Decision::No
+                                }
+                            }
+                            None => Decision::Unknown,
+                        };
                     }
                 };
                 if matched != *negated {
@@ -362,6 +389,31 @@ impl CompiledExpr {
             }
         }
     }
+
+    fn uses_kind(&self) -> bool {
+        match self {
+            Self::And(operands) | Self::Or(operands) => operands.iter().any(Self::uses_kind),
+            Self::Not(inner) => inner.uses_kind(),
+            Self::Content(_) => false,
+            Self::Metadata { key, .. } => *key == MetadataKey::Kind,
+            Self::Unknown => false,
+        }
+    }
+}
+
+/// Per-candidate evidence for exact admission (0063 §4): everything
+/// the AST may consult beyond the line text. Missing evidence keeps
+/// its atoms Unknown — admitting, never false.
+#[derive(Default)]
+pub struct Evidence<'a> {
+    /// The project catalog deciding `repo:` atoms.
+    pub catalog: Option<&'a crate::source::catalog::ProjectCatalog>,
+    /// The syntax-fallback symbol index deciding `kind:` atoms.
+    pub symbols: Option<&'a crate::source::symbols::SymbolIndex>,
+    /// Workspace-relative path of the candidate's file.
+    pub path: Option<&'a str>,
+    /// 1-based line number; `None` on line-less surfaces.
+    pub line: Option<usize>,
 }
 
 /// Three-valued admission outcome.
@@ -457,32 +509,24 @@ impl ContentPlan {
         }))
     }
 
-    /// Exact per-line admission (0063 §4). Simple queries are the regex
-    /// itself; Boolean queries evaluate the AST with path metadata.
+    /// Exact per-line admission on a line-less surface (directory
+    /// names): metadata atoms stay Unknown (0063 §4).
     pub fn matches_line(&self, line: &str) -> bool {
-        match &self.boolean {
-            Some(exact) => exact.admits(None, None, line),
-            None => self.regex.is_match(line),
-        }
+        self.admits(Evidence::default(), line)
     }
 
     /// Exact admission with the file's path for metadata atoms.
-    pub fn admits(&self, path: &str, line: &str) -> bool {
-        self.admits_in(None, path, line)
-    }
-
-    /// Exact admission with the project catalog deciding `repo:` atoms;
-    /// without one they stay Unknown and admit (overfetch, 0063 §4).
-    pub fn admits_in(
-        &self,
-        catalog: Option<&crate::source::catalog::ProjectCatalog>,
-        path: &str,
-        line: &str,
-    ) -> bool {
+    pub fn admits(&self, evidence: Evidence<'_>, line: &str) -> bool {
         match &self.boolean {
-            Some(exact) => exact.admits(catalog, Some(path), line),
+            Some(exact) => exact.admits(&evidence, line),
             None => self.regex.is_match(line),
         }
+    }
+
+    /// Whether building the syntax-fallback symbol index pays off for
+    /// this query — only `kind:` atoms consult it (0063 §2).
+    pub fn needs_symbols(&self) -> bool {
+        self.boolean.as_ref().is_some_and(|exact| exact.uses_kind())
     }
 
     pub fn compile_expression(
@@ -610,26 +654,44 @@ mod tests {
             .expect("content required")
     }
 
+    fn admits_line(plan: &ContentPlan, path: &str, line: &str) -> bool {
+        plan.admits(
+            Evidence {
+                path: Some(path),
+                ..Evidence::default()
+            },
+            line,
+        )
+    }
+
     #[test]
     fn boolean_admits_same_line_conjunction_and_exclusion() {
         // 0063 §4: AND means both literals on ONE logical line; NOT
         // excludes the line. Git-grep line semantics, not file-level.
         let plan = content_plan("text:\"retry\" AND text:\"request\" NOT text:\"test\"");
-        assert!(plan.admits("src/a.rs", "let request = retry(request);"));
-        assert!(!plan.admits("src/a.rs", "let request = retry(request); // test"));
-        assert!(!plan.admits("src/a.rs", "let request = x;"));
+        assert!(admits_line(
+            &plan,
+            "src/a.rs",
+            "let request = retry(request);"
+        ));
+        assert!(!admits_line(
+            &plan,
+            "src/a.rs",
+            "let request = retry(request); // test"
+        ));
+        assert!(!admits_line(&plan, "src/a.rs", "let request = x;"));
         // Different lines are different candidates: neither line alone
         // satisfies the conjunction.
-        assert!(!plan.admits("src/a.rs", "let retry = retry(x);"));
-        assert!(!plan.admits("src/a.rs", "let request = y;"));
+        assert!(!admits_line(&plan, "src/a.rs", "let retry = retry(x);"));
+        assert!(!admits_line(&plan, "src/a.rs", "let request = y;"));
     }
 
     #[test]
     fn boolean_metadata_narrows_by_path_and_language() {
         let plan = content_plan("(language:python OR language:cpp) parser");
-        assert!(plan.admits("pkg/main.py", "class Parser:"));
-        assert!(plan.admits("src/main.cpp", "Parser parser;"));
-        assert!(!plan.admits("src/main.rs", "struct Parser;"));
+        assert!(admits_line(&plan, "pkg/main.py", "class Parser:"));
+        assert!(admits_line(&plan, "src/main.cpp", "Parser parser;"));
+        assert!(!admits_line(&plan, "src/main.rs", "struct Parser;"));
     }
 
     #[test]
@@ -637,10 +699,10 @@ mod tests {
         // (path:a AND foo) OR (path:b AND bar) — the branch relationship
         // is preserved: a-with-bar or b-with-foo do not match (0063 §4).
         let plan = content_plan("(path:alpha AND foo) OR (path:beta AND bar)");
-        assert!(plan.admits("alpha/x.rs", "fn foo() {}"));
-        assert!(plan.admits("beta/y.rs", "fn bar() {}"));
-        assert!(!plan.admits("alpha/x.rs", "fn bar() {}"));
-        assert!(!plan.admits("beta/y.rs", "fn foo() {}"));
+        assert!(admits_line(&plan, "alpha/x.rs", "fn foo() {}"));
+        assert!(admits_line(&plan, "beta/y.rs", "fn bar() {}"));
+        assert!(!admits_line(&plan, "alpha/x.rs", "fn bar() {}"));
+        assert!(!admits_line(&plan, "beta/y.rs", "fn foo() {}"));
     }
 
     #[test]
@@ -648,9 +710,9 @@ mod tests {
         // Unknown evidence (a path with no extension) must not become
         // false inside NOT and admit the line (0063 §4).
         let plan = content_plan("NOT language:rust AND parser");
-        assert!(!plan.admits("src/main.rs", "struct Parser;"));
-        assert!(plan.admits("src/main.py", "class Parser:"));
-        assert!(plan.admits("noext", "parser here"));
+        assert!(!admits_line(&plan, "src/main.rs", "struct Parser;"));
+        assert!(admits_line(&plan, "src/main.py", "class Parser:"));
+        assert!(admits_line(&plan, "noext", "parser here"));
     }
 
     #[test]
@@ -676,7 +738,7 @@ mod tests {
                 ("src/b.rs", "baz foo bar"),
             ];
             for (path, line) in corpus {
-                if plan.admits(path, line) {
+                if admits_line(&plan, path, line) {
                     assert!(
                         plan.regex.is_match(line),
                         "{input}: prefilter missed admitted line {line:?}"
@@ -698,8 +760,8 @@ mod tests {
         // kind:/repo: await project discovery: they cannot narrow yet, so
         // they admit (overfetch) while the decided operand still binds.
         let plan = content_plan("kind:class AND parser");
-        assert!(plan.admits("any/x.rs", "a parser here"));
-        assert!(!plan.admits("any/x.rs", "nothing relevant"));
+        assert!(admits_line(&plan, "any/x.rs", "a parser here"));
+        assert!(!admits_line(&plan, "any/x.rs", "nothing relevant"));
     }
 
     #[test]
@@ -707,10 +769,10 @@ mod tests {
         // The soundness core (0063 §4): unknown evidence under NOT must
         // not become false and silently drop every line.
         let plan = content_plan("NOT kind:function AND parser");
-        assert!(plan.admits("any/x.rs", "a parser here"));
-        assert!(!plan.admits("any/x.rs", "nothing relevant"));
+        assert!(admits_line(&plan, "any/x.rs", "a parser here"));
+        assert!(!admits_line(&plan, "any/x.rs", "nothing relevant"));
         let widened = content_plan("(repo:engine OR repo:tools) AND parser");
-        assert!(widened.admits("elsewhere/y.py", "parser"));
+        assert!(admits_line(&widened, "elsewhere/y.py", "parser"));
     }
 
     #[test]
@@ -724,36 +786,197 @@ mod tests {
         let catalog = crate::source::catalog::ProjectCatalog::discover(scope, &|| false);
         let plan = content_plan("(repo:engine OR repo:tools) NOT glob:**/vendor/** parser");
         // Exact admission with the catalog: branch-sensitive.
-        assert!(plan.admits_in(Some(&catalog), "engine/src/a.rs", "parser here"));
-        assert!(plan.admits_in(Some(&catalog), "tools/b.py", "parser here"));
-        assert!(!plan.admits_in(Some(&catalog), "other/c.rs", "parser here"));
-        assert!(!plan.admits_in(Some(&catalog), "engine/vendor/x.rs", "parser here"));
+        assert!(plan.admits(
+            Evidence {
+                catalog: Some(&catalog),
+                path: Some("engine/src/a.rs"),
+                ..Evidence::default()
+            },
+            "parser here"
+        ));
+        assert!(plan.admits(
+            Evidence {
+                catalog: Some(&catalog),
+                path: Some("tools/b.py"),
+                ..Evidence::default()
+            },
+            "parser here"
+        ));
+        assert!(!plan.admits(
+            Evidence {
+                catalog: Some(&catalog),
+                path: Some("other/c.rs"),
+                ..Evidence::default()
+            },
+            "parser here"
+        ));
+        assert!(!plan.admits(
+            Evidence {
+                catalog: Some(&catalog),
+                path: Some("engine/vendor/x.rs"),
+                ..Evidence::default()
+            },
+            "parser here"
+        ));
         // NOT repo: inverts exactly with a catalog.
         let outside = content_plan("NOT repo:engine AND parser");
-        assert!(!outside.admits_in(Some(&catalog), "engine/src/a.rs", "parser"));
-        assert!(outside.admits_in(Some(&catalog), "tools/b.py", "parser"));
+        assert!(!outside.admits(
+            Evidence {
+                catalog: Some(&catalog),
+                path: Some("engine/src/a.rs"),
+                ..Evidence::default()
+            },
+            "parser"
+        ));
+        assert!(outside.admits(
+            Evidence {
+                catalog: Some(&catalog),
+                path: Some("tools/b.py"),
+                ..Evidence::default()
+            },
+            "parser"
+        ));
         // Without a catalog (remote until 0058's worker): repo: is
         // Unknown — the line admits when the decided atoms allow it.
-        assert!(plan.admits("other/c.rs", "parser here"));
-        assert!(!plan.admits("other/c.rs", "nothing"));
+        assert!(admits_line(&plan, "other/c.rs", "parser here"));
+        assert!(!admits_line(&plan, "other/c.rs", "nothing"));
+    }
+    #[test]
+    fn flat_kind_and_repo_are_implicit_ands() {
+        // Flat spellings upgrade to the Boolean parse (0063 §2):
+        // `kind:class needle` narrows exactly like `kind:class AND
+        // needle` — the evidence exists now — and `type:` aliases.
+        let query = SearchQuery::parse("kind:class needle");
+        assert_eq!(query.state, super::super::QueryState::Ready);
+        assert!(query.boolean.is_some());
+        let aliased = SearchQuery::parse("type:class needle");
+        assert_eq!(aliased.state, super::super::QueryState::Ready);
+        assert_eq!(
+            aliased.boolean.as_ref().unwrap().to_query_string(),
+            query.boolean.as_ref().unwrap().to_query_string()
+        );
+        let repo = SearchQuery::parse("repo:engine parser");
+        assert_eq!(repo.state, super::super::QueryState::Ready);
+        assert!(repo.boolean.is_some());
+        // Without evidence both still admit (Unknown, 0063 §4).
+        let plan = ContentPlan::compile(&query).unwrap().unwrap();
+        assert!(admits_line(&plan, "src/a.rs", "class Parser { needle }"));
+        assert!(!admits_line(&plan, "src/a.rs", "class Parser {}"));
     }
 
     #[test]
-    fn flat_kind_or_repo_explains_itself() {
-        let query = SearchQuery::parse("kind:class needle");
-        assert_ne!(query.state, super::super::QueryState::Ready);
-        assert!(query
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("workspace symbols")));
+    fn kind_atoms_narrow_with_symbol_evidence_and_admit_without() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "struct St;\nfn wrap() {\n    let parser = 1;\n}\nlet bare = 2;\n",
+        )
+        .unwrap();
+        fn evidence_for<'a>(
+            index: &'a crate::source::symbols::SymbolIndex,
+            path: &'a str,
+            line: usize,
+        ) -> Evidence<'a> {
+            Evidence {
+                symbols: Some(index),
+                path: Some(path),
+                line: Some(line),
+                ..Evidence::default()
+            }
+        }
+        let index = crate::source::symbols::SymbolIndex::build(
+            root,
+            &[std::path::PathBuf::from("src/lib.rs")],
+            &|| false,
+        );
+
+        let plan = ContentPlan::compile(&SearchQuery::parse("kind:function parser"))
+            .unwrap()
+            .unwrap();
+        assert!(plan.needs_symbols());
+        // Line 3 (inside `wrap`): content and kind both Yes.
+        assert!(plan.admits(evidence_for(&index, "src/lib.rs", 3), "    let parser = 1;"));
+        // Line 5 (`bare`, outside every function): complete evidence
+        // answers No — the line drops.
+        assert!(!plan.admits(evidence_for(&index, "src/lib.rs", 5), "let bare = parser;"));
+        // Unknown file: overfetch, never a silent drop.
+        assert!(plan.admits(evidence_for(&index, "src/other.rs", 1), "parser"));
+        // No index at all: Unknown admits.
+        assert!(plan.admits(
+            Evidence {
+                path: Some("src/lib.rs"),
+                line: Some(5),
+                ..Evidence::default()
+            },
+            "let bare = parser;"
+        ));
+
+        // NOT inverts exactly under complete evidence (0063 §4): a
+        // parser line outside functions now matches.
+        let negated = ContentPlan::compile(&SearchQuery::parse("NOT kind:function AND parser"))
+            .unwrap()
+            .unwrap();
+        assert!(negated.admits(evidence_for(&index, "src/lib.rs", 5), "let bare = parser;"));
+        assert!(!negated.admits(evidence_for(&index, "src/lib.rs", 3), "    let parser = 1;"));
+
+        // Branches stay sensitive: struct line matches the OR, function
+        // line does not.
+        let branches = ContentPlan::compile(&SearchQuery::parse("(kind:class OR kind:struct) x"))
+            .unwrap()
+            .unwrap();
+        assert!(branches.admits(evidence_for(&index, "src/lib.rs", 1), "struct St; // x"));
+        assert!(!branches.admits(evidence_for(&index, "src/lib.rs", 3), "let x = 1;"));
+
+        // Methods narrow under kind:function and kind:method alike.
+        std::fs::write(
+            root.join("src/impl.rs"),
+            "struct O;\nimpl O {\n    fn m(&self) {\n        let k = 1;\n    }\n}\n",
+        )
+        .unwrap();
+        let index = crate::source::symbols::SymbolIndex::build(
+            root,
+            &[
+                std::path::PathBuf::from("src/lib.rs"),
+                std::path::PathBuf::from("src/impl.rs"),
+            ],
+            &|| false,
+        );
+        let methods = ContentPlan::compile(&SearchQuery::parse("kind:method AND k"))
+            .unwrap()
+            .unwrap();
+        assert!(methods.admits(evidence_for(&index, "src/impl.rs", 4), "        let k = 1;"));
+        let banana = ContentPlan::compile(&SearchQuery::parse("kind:banana AND k"))
+            .unwrap()
+            .unwrap();
+        // An unrecognized kind value stays Unknown — admit, explain
+        // via suggestions, never drop.
+        assert!(banana.admits(evidence_for(&index, "src/lib.rs", 5), "let k = 2;"));
+    }
+
+    #[test]
+    fn plain_queries_never_build_the_symbol_index() {
+        let plan = ContentPlan::compile(&SearchQuery::parse("parser AND request"))
+            .unwrap()
+            .unwrap();
+        assert!(!plan.needs_symbols());
+        let flat = ContentPlan::compile(&SearchQuery::parse("parser"))
+            .unwrap()
+            .unwrap();
+        assert!(!flat.needs_symbols());
+        let repo_only = ContentPlan::compile(&SearchQuery::parse("repo:engine AND parser"))
+            .unwrap()
+            .unwrap();
+        assert!(!repo_only.needs_symbols());
     }
 
     #[test]
     fn boolean_case_modes_apply_to_atoms() {
         let smart = content_plan("text:Parser AND text:Request");
-        assert!(smart.admits("x.rs", "Parser Request"));
-        assert!(!smart.admits("x.rs", "parser request"));
+        assert!(admits_line(&smart, "x.rs", "Parser Request"));
+        assert!(!admits_line(&smart, "x.rs", "parser request"));
         let ignore = content_plan("case:ignore text:Parser AND text:Request");
-        assert!(ignore.admits("x.rs", "parser request"));
+        assert!(admits_line(&ignore, "x.rs", "parser request"));
     }
 }
