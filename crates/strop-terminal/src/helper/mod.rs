@@ -158,6 +158,10 @@ fn pump(
     session: &Session,
 ) -> Result<(), Error> {
     let mut closing = None;
+    // Darwin reports the last slave closure as POLLHUP on the controller
+    // instead of an EOF/EIO read (Linux's report), so the hangup seen by the
+    // transport poll is sticky evidence the session can never produce more.
+    let mut hangup = false;
     loop {
         for _ in 0..32 {
             let Some(packet) = command(reader, channel)? else {
@@ -184,7 +188,7 @@ fn pump(
         if closing.is_none() {
             inputs.flush(master, writer)?;
         }
-        let eof = drain(master, writer, false)?;
+        let eof = hangup || drain(master, writer, false)?;
         if let Some(start) = closing {
             let signal = if start.elapsed() < Duration::from_millis(250) {
                 Signal::TERM
@@ -196,7 +200,7 @@ fn pump(
                 return Ok(());
             }
         }
-        wait_io(
+        hangup |= wait_io(
             channel,
             master,
             !reader.eof(),
@@ -272,7 +276,7 @@ fn wait_io(
     write_channel: bool,
     write_master: bool,
     timeout_ms: i32,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     use std::os::fd::AsRawFd;
     let interests = |read, write| {
         (if read { libc::POLLIN } else { 0 }) | (if write { libc::POLLOUT } else { 0 })
@@ -313,7 +317,11 @@ fn wait_io(
             return Err(io_error("wait for terminal transport", error));
         }
     }
-    Ok(())
+    // POLLHUP/POLLERR on the controller is the only last-slave-closure notice
+    // Darwin's transport gives; the read-EIO report is a Linux quirk. The
+    // descriptor is skipped only under output backpressure, which the lease
+    // owner always drains to unblock.
+    Ok(descriptors[1].revents & (libc::POLLHUP | libc::POLLERR) != 0)
 }
 
 fn command(
