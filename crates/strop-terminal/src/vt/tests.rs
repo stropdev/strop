@@ -79,7 +79,7 @@ fn clipboard_reads_are_denied_and_multiline_paste_requires_explicit_consent() {
 }
 
 #[test]
-fn nul_retains_modifiers_and_negotiated_release_semantics() {
+fn nul_retains_modifiers_and_negotiated_repeat_release_semantics() {
     use strop_core::frontend_input::{KeyCode, KeyEvent, KeyKind};
     let mut vt = terminal(20, 3);
     let mut key = KeyEvent::press(KeyCode::Null);
@@ -89,6 +89,11 @@ fn nul_retains_modifiers_and_negotiated_release_semantics() {
     assert_eq!(
         vt.input(&Input::Key(key), false).unwrap().reply,
         b"\x1b[32;7u"
+    );
+    key.kind = KeyKind::Repeat;
+    assert_eq!(
+        vt.input(&Input::Key(key), false).unwrap().reply,
+        b"\x1b[32;7:2u"
     );
     key.kind = KeyKind::Release;
     assert_eq!(
@@ -160,4 +165,58 @@ fn keyboard_advertisement_matches_the_captured_frontend_profile() {
     assert_eq!(vt.input(&Input::Key(alt), false).unwrap().reply, b"\x1bx");
     vt.keyboard_capabilities(SUPPORTED_KEYBOARD_FLAGS).unwrap();
     assert_eq!(vt.feed(b"\x1b[?u").unwrap().reply, b"\x1b[?27u");
+}
+
+#[test]
+fn osc_and_window_attempts_stay_in_their_namespace() {
+    // 0055 §12: title, cwd, clipboard, window and hyperlink attempts from
+    // the child become scoped editor metadata or an explicit denial —
+    // never host window control, filesystem navigation or a reply that
+    // probes the outer terminal.
+    let mut vt = terminal(40, 3);
+    let title = vt.feed(b"\x1b]0;title-attempt\x07").unwrap();
+    assert_eq!(title.reply, b"");
+    assert!(matches!(
+        title.effects.as_slice(),
+        [Effect::Title(text)] if text == "title-attempt"
+    ));
+    let title_two = vt.feed(b"\x1b]2;title-2\x07").unwrap();
+    assert!(matches!(
+        title_two.effects.as_slice(),
+        [Effect::Title(text)] if text == "title-2"
+    ));
+    let directory = vt.feed(b"\x1b]7;file://elsewhere/home\x07").unwrap();
+    assert_eq!(directory.reply, b"");
+    assert!(matches!(
+        directory.effects.as_slice(),
+        [Effect::ReportedDirectory(bytes)] if bytes == b"file://elsewhere/home"
+    ));
+    let clipboard = vt.feed(b"\x1b]52;c;aGVsbG8=\x07").unwrap();
+    assert_eq!(clipboard.reply, b"");
+    assert_eq!(clipboard.effects.as_slice(), [Effect::ClipboardWriteDenied]);
+    // Window size queries and title-stack pushes answer nothing: the child
+    // reads only the admitted geometry through normal mode reports.
+    for probe in [
+        b"\x1b[18t".as_slice(),
+        b"\x1b[19t",
+        b"\x1b[22t",
+        b"\x1b[23t",
+    ] {
+        let window = vt.feed(probe).unwrap();
+        assert_eq!(window.reply, b"", "no host probing via {probe:?}");
+        assert!(window.effects.is_empty());
+    }
+    // Hyperlink targets do not reach the host; the link text stays text.
+    let link = vt
+        .feed(b"\x1b]8;;scheme://example\x07link\x1b]8;;\x07")
+        .unwrap();
+    assert_eq!(link.reply, b"");
+    assert!(link.effects.is_empty());
+    assert!(vt
+        .snapshot()
+        .unwrap()
+        .0
+        .projection
+        .to_string()
+        .starts_with("link"));
 }

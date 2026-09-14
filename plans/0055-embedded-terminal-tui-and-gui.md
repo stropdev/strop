@@ -891,6 +891,19 @@ distinct rows and repeated positions decode to one shared Arc. The same
 session now records ~0.7 MB (29× below the pre-0.32.3 wire), and the
 debug two-core flood test halved to ~22 s. Capture size is closed as a
 milestone concern; degradation at the bound stays honest.
+
+Input/OSC boundary evidence (2026-09-14, post-0.32.4): the §12 policy
+sweep is now pinned at the VT boundary — child title (OSC 0/2) and cwd
+(OSC 7) attempts become scoped editor metadata effects; clipboard writes
+(OSC 52) produce an explicit `ClipboardWriteDenied` with no reply; window
+probes (CSI 18/19/22/23 t) answer nothing, so the child cannot read the
+outer terminal through them; hyperlink targets (OSC 8) never reach the
+host and their text stays text. Enhanced-input evidence covers all three
+key actions byte-exactly after `\x1b[>3u` negotiation (press `1b 5b 33 32
+3b 37 75`, repeat `:2u`, release `:3u`) alongside the legacy Alt-NUL
+prefix that stays `\x1b\0` — no Esc-prefix is promoted into a false
+enhanced Alt key.
+
 Release evidence (v0.32.2, tagged 2026-09-14): the workflow ran green end
 to end — both Darwin and both musl builds, 8 tarball assets, crates.io,
 homebrew tap and the site (hero chip, roadmap, changelog) at 0.32.2; ci

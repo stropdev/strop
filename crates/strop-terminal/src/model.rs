@@ -700,7 +700,7 @@ impl Phase {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Effect {
     Title(String),
     ReportedDirectory(Vec<u8>),
