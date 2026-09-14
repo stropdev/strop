@@ -239,6 +239,26 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
             .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "17 1c 7a 17 7a")
     });
     tui.until(|screen| line(screen, "PREFIX-DONE"));
+    // Application versus normal cursor-key mode (0055 §12): the child's
+    // DECCKM toggle re-aims the same Up key through the mode-aware
+    // encoder — SS3 (ESC O A) in application mode, CSI (ESC [ A) after
+    // the reset. Byte-asserted, not assumed from the engine choice.
+    tui.send(b"stty raw -echo; printf '\\033[?1hMODE-APP\\n'; dd bs=1 count=3 2>/dev/null | od -An -tx1; printf '\\033[?1lMODE-NORM\\n'; dd bs=1 count=3 2>/dev/null | od -An -tx1; stty sane; printf '\\r\\nMODE-DONE\\n'\r");
+    tui.until(|screen| line(screen, "MODE-APP"));
+    tui.send(b"\x1b[A");
+    tui.until(|screen| {
+        screen
+            .lines()
+            .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "1b 4f 41")
+    });
+    tui.until(|screen| line(screen, "MODE-NORM"));
+    tui.send(b"\x1b[A");
+    tui.until(|screen| {
+        screen
+            .lines()
+            .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "1b 5b 41")
+    });
+    tui.until(|screen| line(screen, "MODE-DONE"));
     tui.send(b"mkfifo pause; (exec 3<>pause; printf '\\r\\nINSPECTION-READY\\n'; read go <&3; printf '\\r\\nASYNC-INSPECTION-OUTPUT\\n') &\r");
     tui.until(|screen| line(screen, "INSPECTION-READY"));
     tui.send(b"\x1c\x0e");
