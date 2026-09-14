@@ -175,6 +175,11 @@ enum CompiledExpr {
         value: String,
         negated: bool,
     },
+    /// An atom this build cannot decide yet (`kind:`, `repo:` before
+    /// project discovery). It admits its line — overfetch, never a
+    /// silent drop — and neutralizes any NOT above it, because unknown
+    /// evidence must not become false (0063 §4).
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,20 +214,25 @@ impl BooleanPlan {
             })
         };
         Ok(match expr {
-            BooleanExpr::And(operands) => CompiledExpr::And(
+            BooleanExpr::And(operands) => collapse_and(
                 operands
                     .iter()
                     .map(|operand| Self::compile(operand, case, range.clone()))
-                    .collect::<Result<_, _>>()?,
+                    .collect::<Result<Vec<_>, _>>()?,
             ),
-            BooleanExpr::Or(branches) => CompiledExpr::Or(
+            BooleanExpr::Or(branches) => collapse_or(
                 branches
                     .iter()
                     .map(|branch| Self::compile(branch, case, range.clone()))
-                    .collect::<Result<_, _>>()?,
+                    .collect::<Result<Vec<_>, _>>()?,
             ),
             BooleanExpr::Not(inner) => {
-                CompiledExpr::Not(Box::new(Self::compile(inner, case, range.clone())?))
+                let inner = Self::compile(inner, case, range.clone())?;
+                if contains_unknown(&inner) {
+                    CompiledExpr::Unknown
+                } else {
+                    CompiledExpr::Not(Box::new(inner))
+                }
             }
             BooleanExpr::Content(atom_spec) => {
                 CompiledExpr::Content(atom(atom_spec.regex, &atom_spec.text)?)
@@ -232,10 +242,8 @@ impl BooleanPlan {
                     "language" => MetadataKey::Language,
                     "path" => MetadataKey::Path,
                     "glob" => MetadataKey::Glob,
-                    // Unsupported qualifiers are diagnosed at parse; a
-                    // surviving unknown key admits its file (overfetch,
-                    // never a silent drop).
-                    _ => return Ok(CompiledExpr::And(Vec::new())),
+                    // `kind:`/`repo:` await project discovery (0063 §2).
+                    _ => return Ok(CompiledExpr::Unknown),
                 };
                 CompiledExpr::Metadata {
                     key,
@@ -272,9 +280,38 @@ impl BooleanPlan {
     }
 }
 
+/// Unknown inside AND drops out (the decided operands still bind);
+/// inside OR it widens to Unknown; under NOT it neutralizes.
+fn collapse_and(mut operands: Vec<CompiledExpr>) -> CompiledExpr {
+    operands.retain(|operand| !matches!(operand, CompiledExpr::Unknown));
+    CompiledExpr::And(operands)
+}
+
+fn collapse_or(branches: Vec<CompiledExpr>) -> CompiledExpr {
+    if branches
+        .iter()
+        .any(|branch| matches!(branch, CompiledExpr::Unknown))
+    {
+        CompiledExpr::Unknown
+    } else {
+        CompiledExpr::Or(branches)
+    }
+}
+
+fn contains_unknown(expr: &CompiledExpr) -> bool {
+    match expr {
+        CompiledExpr::Unknown => true,
+        CompiledExpr::And(operands) => operands.iter().any(contains_unknown),
+        CompiledExpr::Or(branches) => branches.iter().any(contains_unknown),
+        CompiledExpr::Not(inner) => contains_unknown(inner),
+        CompiledExpr::Content(_) | CompiledExpr::Metadata { .. } => false,
+    }
+}
+
 impl CompiledExpr {
     fn matches(&self, path: Option<&str>, line: &str) -> bool {
         match self {
+            Self::Unknown => true,
             Self::And(operands) => operands.iter().all(|operand| operand.matches(path, line)),
             Self::Or(branches) => branches.iter().any(|branch| branch.matches(path, line)),
             Self::Not(inner) => !inner.matches(path, line),
@@ -606,6 +643,43 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn type_alias_normalizes_to_kind() {
+        let query = SearchQuery::parse("type:class AND parser");
+        assert_eq!(query.state, super::super::QueryState::Ready);
+        assert!(matches!(query.boolean, Some(BooleanExpr::And(_))));
+    }
+
+    #[test]
+    fn pending_qualifiers_overfetch_inside_and() {
+        // kind:/repo: await project discovery: they cannot narrow yet, so
+        // they admit (overfetch) while the decided operand still binds.
+        let plan = content_plan("kind:class AND parser");
+        assert!(plan.admits("any/x.rs", "a parser here"));
+        assert!(!plan.admits("any/x.rs", "nothing relevant"));
+    }
+
+    #[test]
+    fn not_never_drops_lines_through_a_pending_qualifier() {
+        // The soundness core (0063 §4): unknown evidence under NOT must
+        // not become false and silently drop every line.
+        let plan = content_plan("NOT kind:function AND parser");
+        assert!(plan.admits("any/x.rs", "a parser here"));
+        assert!(!plan.admits("any/x.rs", "nothing relevant"));
+        let widened = content_plan("(repo:engine OR repo:tools) AND parser");
+        assert!(widened.admits("elsewhere/y.py", "parser"));
+    }
+
+    #[test]
+    fn flat_kind_or_repo_explains_itself() {
+        let query = SearchQuery::parse("kind:class needle");
+        assert_ne!(query.state, super::super::QueryState::Ready);
+        assert!(query
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("workspace symbols")));
     }
 
     #[test]

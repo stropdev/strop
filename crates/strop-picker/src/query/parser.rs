@@ -207,6 +207,7 @@ impl SearchQuery {
                         // Query-wide options stay outside Boolean branches
                         // and keep their flat meaning (0063 §3); selection
                         // qualifiers live in the AST only.
+                        let key = if key == "type" { "kind" } else { key };
                         query.apply_qualifier(key, value, *negated, &token.range);
                     }
                 }
@@ -364,6 +365,15 @@ impl SearchQuery {
                     ContentExpr::Regex(value.to_string())
                 });
             }
+            // `kind:`/`repo:` (0063 §2) are grammar-valid: they narrow
+            // workspace symbols and repositories once project discovery
+            // lands. In a flat query they cannot narrow anything yet —
+            // say so instead of silently dropping them.
+            "kind" | "repo" => self.fail(
+                range,
+                format!("{key}: narrows workspace symbols; combine with AND for now"),
+                Some(format!("try \"{key}:{value} AND <text>\"")),
+            ),
             _ => unreachable!("the lexer only emits known qualifiers"),
         }
     }
@@ -624,6 +634,8 @@ impl<'a> BooleanParser<'a> {
                 if value.is_empty() {
                     return None;
                 }
+                // `type:` is the documented input alias of `kind:` (0063 §3).
+                let key = if key == "type" { "kind" } else { key };
                 if key == "text" {
                     Some(BooleanExpr::Content(ContentAtom {
                         regex: false,
@@ -636,7 +648,7 @@ impl<'a> BooleanParser<'a> {
                     }))
                 } else {
                     Some(BooleanExpr::Metadata(MetadataAtom {
-                        key: key.clone(),
+                        key: key.to_string(),
                         value: value.clone(),
                         negated: *negated,
                     }))

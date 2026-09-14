@@ -226,6 +226,11 @@ grouping/negation corpus, literal-compatibility corpus, located
 dangling-operator diagnostics, parse-format-parse over the spec
 examples, same-line AND semantics, branch-preservation, prefilter
 soundness over an admitted corpus, and case-mode atom behavior. Still
-open from §3: stored-query syntax versioning, `kind:`/`type:` and
-`repo:` qualifiers, surface-by-surface inventory beyond the picker
-pipeline, and the §6 model/fuzzing tiers.
+open from §3: stored-query syntax versioning, surface-by-surface
+inventory beyond the picker pipeline, and the §6 model/fuzzing tiers.
+Follow-up (2026-09-14): `kind:`/`repo:` are grammar-valid with `type:`
+normalized as the documented alias. Until project discovery (§2) can
+decide them they compile to an explicit Unknown that admits — overfetch
+inside AND, widens OR, and neutralizes any NOT above it, so pending
+qualifiers never silently drop lines — and a flat `kind:` query
+explains itself instead of disappearing.

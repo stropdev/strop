@@ -60,9 +60,12 @@ impl Operator {
     }
 }
 
-/// Recognized qualifier keys (0051 §3 vocabulary).
+/// Recognized qualifier keys (0051 §3 vocabulary; `kind`/`repo` join with
+/// 0063 §2 — they narrow workspace symbols and repositories once project
+/// discovery lands, and never silently disappear).
 pub const QUALIFIERS: &[&str] = &[
-    "language", "path", "glob", "hidden", "ignored", "case", "text", "regex",
+    "language", "path", "glob", "hidden", "ignored", "case", "text", "regex", "kind", "type",
+    "repo",
 ];
 
 /// Lex the whole input. Never fails: an unclosed quote is a token, not
