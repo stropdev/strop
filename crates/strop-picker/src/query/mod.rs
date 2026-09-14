@@ -7,6 +7,8 @@ pub mod highlight;
 pub mod lexer;
 pub mod parser;
 pub mod plan;
+#[cfg(test)]
+mod properties;
 pub mod suggest;
 
 pub use highlight::{HighlightSpan, Role};

@@ -679,21 +679,33 @@ impl BooleanExpr {
         match self {
             Self::Content(atom) => {
                 let prefix = if atom.regex { "regex:" } else { "" };
-                let needs_quotes = atom.text.is_empty()
-                    || atom.text.chars().any(|c| c.is_whitespace())
+                // Quote anything the lexer would re-shape: whitespace,
+                // quotes, parens, backslashes, colons (a bare
+                // `kind:…` inside content would lex as a qualifier)
+                // and the operator words themselves.
+                let hostile = atom.text.is_empty()
+                    || atom.text.starts_with('-')
+                    || atom.text.chars().any(|c| {
+                        c.is_whitespace() || matches!(c, '"' | '\'' | '(' | ')' | '\\' | ':')
+                    })
                     || lexer::Operator::from_word(&atom.text).is_some();
-                if needs_quotes {
-                    format!("{prefix}\"{}\"", atom.text.replace('"', "\\\""))
+                if hostile {
+                    let escaped = atom.text.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("{prefix}\"{escaped}\"")
                 } else {
                     format!("{prefix}{}", atom.text)
                 }
             }
             Self::Metadata(atom) => {
                 let negation = if atom.negated { "-" } else { "" };
-                let needs_quotes =
-                    atom.value.is_empty() || atom.value.chars().any(|c| c.is_whitespace());
-                if needs_quotes {
-                    format!("{negation}{}:\"{}\"", atom.key, atom.value)
+                let hostile = atom.value.is_empty()
+                    || atom.value.starts_with('-')
+                    || atom.value.chars().any(|c| {
+                        c.is_whitespace() || matches!(c, '"' | '\'' | '(' | ')' | '\\' | ':')
+                    });
+                if hostile {
+                    let escaped = atom.value.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("{negation}{}:\"{escaped}\"", atom.key)
                 } else {
                     format!("{negation}{}:{}", atom.key, atom.value)
                 }

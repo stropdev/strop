@@ -600,4 +600,103 @@ mod tests {
             failure.message
         );
     }
+
+    /// 0063 §6.8 shape: a mixed parent directory — nested repositories,
+    /// a vendor subtree, marker subprojects, non-Git sources in four
+    /// languages — through the REAL search pipeline (rg child, reader
+    /// threads, catalog, symbol index, exact admission).
+    #[test]
+    fn mixed_directory_queries_narrow_exactly_end_to_end() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        for dir in ["engine/src", "engine/vendor", "tools", "loose"] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        std::fs::create_dir(root.join("engine/.git")).unwrap();
+        std::fs::create_dir(root.join("tools/.git")).unwrap();
+        std::fs::write(root.join("tools/pyproject.toml"), "").unwrap();
+        std::fs::write(
+            root.join("engine/src/lib.rs"),
+            "fn parser() {\n    let retry = request;\n}\nlet bare_parser = 1;\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("engine/vendor/v.rs"), "parser\n").unwrap();
+        std::fs::write(
+            root.join("tools/mod.py"),
+            "class Cfg:\n    def parser(self):\n        pass\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("loose/game.lua"), "function mod:parser() end\n").unwrap();
+        std::fs::write(
+            root.join("loose/app.cpp"),
+            "class App {\npublic:\n    void parser() {}\n};\n",
+        )
+        .unwrap();
+
+        let run = |query: &str| -> Vec<String> {
+            let (tx, rx) = channel();
+            let (_worker, _request) = spawn_query(query, root, tx);
+            let mut items = Vec::new();
+            let mut done = false;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while !done && std::time::Instant::now() < deadline {
+                match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                    Ok(PickerMsg::Items(batch)) => {
+                        items.extend(batch.iter().map(|item| item.text.clone()))
+                    }
+                    Ok(PickerMsg::Warning(_)) | Ok(PickerMsg::ScopeProjects(_)) => {}
+                    Ok(PickerMsg::Finished(Outcome::Success(()))) => done = true,
+                    Ok(other) => panic!("unexpected terminal: {other:?}"),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            assert!(done, "the search must settle: {query}");
+            items.sort();
+            items
+        };
+
+        // Repository narrowing: only engine paths, vendor included.
+        let engine = run("repo:engine AND parser");
+        assert!(!engine.is_empty());
+        assert!(
+            engine.iter().all(|text| text.starts_with("engine/")),
+            "{engine:?}"
+        );
+        // Branch + exclusion: engine and tools, never vendor.
+        let branched = run("(repo:engine OR repo:tools) NOT glob:**/vendor/** parser");
+        assert!(
+            branched.iter().all(|text| !text.contains("vendor/")),
+            "{branched:?}"
+        );
+        assert!(
+            branched
+                .iter()
+                .any(|text| text.starts_with("engine/src/lib.rs")),
+            "{branched:?}"
+        );
+        assert!(
+            branched.iter().any(|text| text.starts_with("tools/mod.py")),
+            "{branched:?}"
+        );
+        // Syntax evidence narrows kind: exactly the line inside the
+        // rust function carries both facts.
+        let functions = run("kind:function AND retry");
+        assert_eq!(
+            functions,
+            vec!["engine/src/lib.rs:2 · let retry = request;".to_string()],
+            "{functions:?}"
+        );
+        // Classes across languages: the python method line and the
+        // cpp member line, both inside class spans.
+        let classes = run("kind:class AND parser");
+        assert_eq!(
+            classes,
+            vec![
+                "loose/app.cpp:3 · void parser() {}".to_string(),
+                "tools/mod.py:2 · def parser(self):".to_string(),
+            ],
+            "{classes:?}"
+        );
+    }
 }

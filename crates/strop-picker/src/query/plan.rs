@@ -427,22 +427,49 @@ enum Decision {
 /// Bounded literal-glob semantics for admission: `*` and `**` span path
 /// separators or characters, everything else is literal.
 fn glob_literal_match(pattern: &str, path: &str) -> bool {
+    // Classic single-resume wildcard match: every `*` spans any run
+    // of characters (including `/`); everything else compares
+    // literally. A mismatch backtracks to the most recent star and
+    // advances its match point one character — the old first-match
+    // scan silently rejected unanchored stars like `*.rs`.
     let mut pattern = pattern;
     let mut path = path;
+    // The most recent star: the pattern tail after it, and the path
+    // position it currently matches from (`mark`). A mismatch rewinds
+    // here with `mark` advanced one character — the classic resume.
+    let mut star: Option<&str> = None;
+    let mut mark = "";
     loop {
-        match pattern.find('*') {
-            None => break pattern == path,
-            Some(star) => {
-                let (literal, rest) = pattern.split_at(star);
-                let Some(found) = path.find(literal) else {
-                    return false;
-                };
-                path = &path[found + literal.len()..];
+        if let Some(at) = pattern.find('*') {
+            let (literal, rest) = pattern.split_at(at);
+            if path.starts_with(literal) {
+                mark = &path[literal.len()..];
                 pattern = rest.trim_start_matches('*');
-                if pattern.is_empty() {
-                    return true;
+                path = mark;
+                star = Some(pattern);
+            } else if let Some(after) = star {
+                if mark.is_empty() {
+                    return false;
                 }
+                let head = mark.chars().next().expect("nonempty mark");
+                mark = &mark[head.len_utf8()..];
+                pattern = after;
+                path = mark;
+            } else {
+                return false;
             }
+        } else if pattern == path {
+            return true;
+        } else if let Some(after) = star {
+            if mark.is_empty() {
+                return false;
+            }
+            let head = mark.chars().next().expect("nonempty mark");
+            mark = &mark[head.len_utf8()..];
+            pattern = after;
+            path = mark;
+        } else {
+            return false;
         }
     }
 }
@@ -978,5 +1005,21 @@ mod tests {
         assert!(!admits_line(&smart, "x.rs", "parser request"));
         let ignore = content_plan("case:ignore text:Parser AND text:Request");
         assert!(admits_line(&ignore, "x.rs", "parser request"));
+    }
+
+    #[test]
+    fn glob_stars_span_unanchored_suffixes() {
+        // Found by the 0063 §6.2 reference interpreter: the old
+        // first-match scan rejected `*.rs` against `a/src/x.rs` — an
+        // unanchored star must resume, not surrender.
+        let plan = content_plan("glob:*.rs AND parser");
+        assert!(admits_line(&plan, "a/src/x.rs", "parser here"));
+        assert!(!admits_line(&plan, "a/src/x.py", "parser here"));
+        let nested = content_plan("glob:**/x.rs AND parser");
+        assert!(admits_line(&nested, "deep/nest/x.rs", "parser"));
+        assert!(!admits_line(&nested, "deep/nest/x.py", "parser"));
+        let prefix = content_plan("glob:a/* AND parser");
+        assert!(admits_line(&prefix, "a/anything/x.rs", "parser"));
+        assert!(!admits_line(&prefix, "b/anything/x.rs", "parser"));
     }
 }

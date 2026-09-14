@@ -339,3 +339,30 @@ for missing configuration, and incremental index reuse/invalidation
 emission test, engine gate tests (services-off, queue lifecycle,
 live-placement and sticky-refusal respect, ambiguous-marker cold
 path).
+
+Verification tier slice (2026-09-15, §6.1/§6.2/§6.8): deterministic
+property corpora and an independent reference interpreter landed in
+`query/properties.rs` — a fixed-seed LCG, no RNG dependency. The
+parser corpora pin: arbitrary inputs (operator words, parens, quotes,
+escapes, colons, multibyte) never panic and always settle into
+Ready/Incomplete/Invalid; canonical formatting is a fixed point for
+Ready queries; operator-free, evidence-free inputs stay flat. The
+reference interpreter evaluates generated ASTs (≤ depth 3, literals +
+all metadata families, negations) over five paths × five lines with
+fixture ground-truth evidence closures — 125,000 differential
+evaluations agree with `BooleanPlan` admission. The differential found
+two real bugs, both fixed at source: (1) canonical quoting was too
+weak — hostile values (backslashes, parens, colons) round-tripped
+into Invalid or different trees; quoting now escapes `\` and `"` and
+covers every lexer-hostile character; (2) `glob_literal_match` used a
+first-match scan that silently rejected unanchored stars — `*.rs`
+missed `a/src/x.rs`; replaced with the classic single-resume wildcard
+match, pinned by its own regression test. §6.8's shape landed as a
+mixed-directory e2e through the REAL pipeline (rg child, reader
+threads, catalog, symbol index): nested repos, a vendor subtree,
+pyproject marker, Lua/C++ loose sources — `repo:` narrowing,
+branch-plus-exclusion, `kind:function` and cross-language
+`kind:class` all exact through real rg output. Still open from §6:
+the TLA+/TLC lifecycle model, negative controls in the model tier,
+Verus/TLAPS correspondence, and the full §6.8 fixture with worktrees,
+dirty buffers, cancellation and remote isolation.
