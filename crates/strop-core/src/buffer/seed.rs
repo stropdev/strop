@@ -42,6 +42,61 @@ impl Buffer {
     }
 }
 
+/// The per-action observation twin of [`BufferSeed`]: every field identical
+/// except the text is witnessed by digest and byte length, so an action's
+/// check proves equality without shipping a terminal snapshot's megabytes.
+/// Keep the field lists in lockstep — observation equality is the contract.
+#[derive(Serialize)]
+pub struct BufferWitness {
+    pub text_digest: String,
+    pub text_bytes: usize,
+    pub revision: BufferRevision,
+    pub history: History,
+    #[serde(with = "crate::path_serde::option")]
+    pub path: Option<std::path::PathBuf>,
+    pub name: Option<String>,
+    pub dirty: bool,
+    pub readonly: bool,
+    pub disk_stamp: Option<std::time::SystemTime>,
+    #[serde(with = "crate::path_serde::option")]
+    pub file_identity: Option<std::path::PathBuf>,
+}
+
+impl Buffer {
+    /// The per-action observation: full field parity with [`Buffer::seed`],
+    /// text witnessed by digest.
+    pub fn witness(&self) -> BufferWitness {
+        BufferWitness {
+            text_digest: self.text_digest(),
+            text_bytes: self.len_bytes(),
+            revision: self.revision(),
+            history: self.history.clone(),
+            path: self.path.clone(),
+            name: self.name.clone(),
+            dirty: self.dirty,
+            readonly: self.readonly,
+            disk_stamp: self.disk_stamp,
+            file_identity: self.file_identity.clone(),
+        }
+    }
+
+    /// SHA-256 over the buffer text, streamed chunk-wise without a copy.
+    pub fn text_digest(&self) -> String {
+        use sha2::{Digest, Sha256};
+        use std::fmt::Write as _;
+        let mut hasher = Sha256::new();
+        for chunk in self.rope.chunks() {
+            hasher.update(chunk.as_bytes());
+        }
+        let digest: [u8; 32] = hasher.finalize().into();
+        let mut text = String::with_capacity(64);
+        let _ = digest
+            .iter()
+            .try_for_each(|byte| write!(text, "{byte:02x}"));
+        text
+    }
+}
+
 impl BufferSeed {
     /// Rebuild the buffer. Restored history is validated against the
     /// seeded text; a seed that disagrees is rejected, not coerced.
@@ -94,5 +149,24 @@ mod tests {
         let mut seed = buffer.seed();
         seed.text = "different bytes\n".into();
         assert!(seed.into_buffer().is_err());
+    }
+
+    #[test]
+    fn witness_digest_tracks_text_exactly() {
+        let buffer = Buffer::from_text("abc\n");
+        let digest = buffer.text_digest();
+        // Same text, same digest; any edit changes it.
+        assert_eq!(Buffer::from_text("abc\n").text_digest(), digest);
+        let mut edited = Buffer::from_text("abc\n");
+        edited
+            .edit()
+            .replace(crate::Range::charwise(0, 1), "z")
+            .unwrap();
+        assert_ne!(edited.text_digest(), digest);
+        // The observation twin carries the true size and a full digest.
+        let witness = edited.witness();
+        assert_eq!(witness.text_bytes, 4);
+        assert_eq!(witness.text_digest.len(), 64);
+        assert_eq!(witness.revision, edited.revision());
     }
 }

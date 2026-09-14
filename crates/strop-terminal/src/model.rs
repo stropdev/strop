@@ -95,8 +95,10 @@ pub struct Row {
 /// cell and each padded text byte travels separately. The wire therefore
 /// carries runs of adjacent cells sharing width, style and symbol; the row
 /// text and every cell's byte end are reconstructed, exactly as frame
-/// validation re-derives them. Captures written before runs carry the text
-/// plus one object per column with explicit ends; that shape still decodes.
+/// validation re-derives them, and the row's trailing default-styled space
+/// padding is dropped — the frame re-pads to its geometry on decode.
+/// Captures written before runs carry the text plus one object per column
+/// with explicit ends; that shape still decodes.
 mod row_serde {
     use super::{Cell, Row, Style, MAX_COLUMNS, MAX_ROW_BYTES};
     use serde::de::{Error as _, MapAccess, Visitor};
@@ -142,7 +144,7 @@ mod row_serde {
         let mut cells = Vec::with_capacity(entries.len());
         if entries
             .iter()
-            .all(|entry| matches!(entry, CellEntry::Single(_)))
+            .any(|entry| matches!(entry, CellEntry::Single(_)))
         {
             // Legacy shape: explicit ends against the recorded text.
             let text = text.ok_or("legacy terminal row is missing its text")?;
@@ -234,6 +236,14 @@ mod row_serde {
                     });
                 }
                 start = end;
+            }
+            // Trailing default-styled single-width spaces are the row's
+            // padding out to the frame geometry; the frame re-derives them.
+            if runs
+                .last()
+                .is_some_and(|run| run.width == 1 && run.style.is_default() && run.text == " ")
+            {
+                runs.pop();
             }
             let mut object = serializer.serialize_struct("Row", 2)?;
             object.serialize_field("cells", &runs)?;
@@ -339,7 +349,8 @@ pub struct Frame {
 
 mod frame_serde {
     use super::{
-        Frame, Palette, ProjectedRow, Row, MAX_HISTORY_LINES, MAX_PROJECTION_BYTES, MAX_ROWS,
+        Cell, Frame, Geometry, Palette, ProjectedRow, Row, Style, MAX_HISTORY_LINES,
+        MAX_PROJECTION_BYTES, MAX_ROWS,
     };
     use serde::de::{Deserializer, Error as _, MapAccess, Visitor};
     use serde::ser::SerializeStruct;
@@ -371,6 +382,7 @@ mod frame_serde {
 
     fn rebuild(
         origin: u64,
+        columns: u16,
         entries: Vec<RowEntry>,
         legacy_projection: Option<ropey::Rope>,
     ) -> Result<(imbl::Vector<ProjectedRow>, ropey::Rope), String> {
@@ -392,13 +404,27 @@ mod frame_serde {
         let mut expected = origin;
         let mut projected = Vec::with_capacity(entries.len());
         for entry in entries {
-            let (offset, row) = match entry {
+            let (offset, mut row) = match entry {
                 RowEntry::Projected {
                     absolute_start,
                     row,
                 } => (Some(absolute_start), row),
                 RowEntry::Plain(row) => (None, row),
             };
+            if !legacy {
+                // The wire drops each row's trailing default-styled space
+                // padding; the frame geometry is the authority that puts it
+                // back, byte-for-byte as read_row produced it.
+                while row.cells.len() < usize::from(columns) {
+                    row.text.push(' ');
+                    let end = row.text.len() as u32;
+                    row.cells.push(Cell {
+                        end,
+                        width: 1,
+                        style: Style::default(),
+                    });
+                }
+            }
             let row = Arc::new(row);
             let advance = row.text.len() as u64 + u64::from(!row.wrapped);
             builder.append(&row.text);
@@ -458,7 +484,7 @@ mod frame_serde {
                 fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Frame, A::Error> {
                     let mut session = None;
                     let mut revision = None;
-                    let mut geometry = None;
+                    let mut geometry: Option<Geometry> = None;
                     let mut alternate = None;
                     let mut cursor = None;
                     let mut palette: Option<Palette> = None;
@@ -498,15 +524,16 @@ mod frame_serde {
                     let rows = rows.ok_or_else(|| A::Error::custom("frame is missing rows"))?;
                     let origin =
                         origin.ok_or_else(|| A::Error::custom("frame is missing origin"))?;
-                    let (rows, projection) =
-                        rebuild(origin, rows, projection).map_err(A::Error::custom)?;
+                    let geometry =
+                        geometry.ok_or_else(|| A::Error::custom("frame is missing geometry"))?;
+                    let (rows, projection) = rebuild(origin, geometry.columns, rows, projection)
+                        .map_err(A::Error::custom)?;
                     Ok(Frame {
                         session: session
                             .ok_or_else(|| A::Error::custom("frame is missing session"))?,
                         revision: revision
                             .ok_or_else(|| A::Error::custom("frame is missing revision"))?,
-                        geometry: geometry
-                            .ok_or_else(|| A::Error::custom("frame is missing geometry"))?,
+                        geometry,
                         alternate: alternate
                             .ok_or_else(|| A::Error::custom("frame is missing alternate"))?,
                         cursor: cursor
@@ -609,20 +636,20 @@ mod tests {
     }
 
     #[test]
-    fn padded_rows_travel_as_runs_near_their_text_size() {
+    fn padded_rows_drop_their_trailing_padding() {
         let row = padded_row();
         let wire = serde_json::to_string(&row).unwrap();
-        // Without run merging this row costs a cell object per column
-        // (~20KB); with it, the wire is the text plus two runs.
-        assert!(
-            wire.contains(r#""repeat":119"#),
-            "padding must merge: {wire}"
+        // Without runs this row costs a cell object per column (~20KB);
+        // with runs plus padding derivation it is one run and no padding.
+        assert_eq!(
+            wire,
+            r#"{"cells":[{"repeat":1,"width":1,"text":"y"}],"wrapped":false}"#
         );
-        assert!(
-            wire.len() < 400,
-            "padded row must stay near text size: {wire}"
-        );
-        assert_eq!(serde_json::from_str::<Row>(&wire).unwrap(), row);
+        // The row itself decodes short; only the frame knows the geometry
+        // that puts the padding back (see the frame wire tests).
+        let decoded = serde_json::from_str::<Row>(&wire).unwrap();
+        assert_eq!(decoded.cells.len(), 1);
+        assert_eq!(decoded.text, "y");
     }
 
     #[test]
@@ -715,6 +742,99 @@ mod tests {
                 "run must be refused: {wire}"
             );
         }
+    }
+
+    /// A frame of full-width ASCII rows exactly as read_row produces them.
+    fn full_frame(columns: u16, lines: &[&str]) -> Frame {
+        let mut projection = String::new();
+        let mut rows = imbl::Vector::new();
+        let mut offset = 0u64;
+        for line in lines {
+            let mut text = (*line).to_string();
+            while text.len() < usize::from(columns) {
+                text.push(' ');
+            }
+            let cells = (1..=usize::from(columns))
+                .map(|column| Cell {
+                    end: column as u32,
+                    width: 1,
+                    style: Style::default(),
+                })
+                .collect();
+            projection.push_str(&text);
+            projection.push('\n');
+            rows.push_back(ProjectedRow {
+                absolute_start: offset,
+                row: std::sync::Arc::new(Row {
+                    text,
+                    cells,
+                    wrapped: false,
+                }),
+            });
+            offset += u64::from(columns) + 1;
+        }
+        Frame {
+            session: SessionId::from_request(strop_core::worker::WorkerId::new(7)),
+            revision: 3,
+            geometry: Geometry {
+                columns,
+                rows: u16::try_from(lines.len()).unwrap_or(u16::MAX),
+                revision: 0,
+            },
+            alternate: false,
+            cursor: Cursor {
+                column: 0,
+                row: 0,
+                visible: true,
+                blinking: false,
+                shape: CursorShape::Block,
+            },
+            palette: std::sync::Arc::new(Palette {
+                foreground: Rgb {
+                    red: 1,
+                    green: 2,
+                    blue: 3,
+                },
+                background: Rgb {
+                    red: 4,
+                    green: 5,
+                    blue: 6,
+                },
+                colors: vec![
+                    Rgb {
+                        red: 0,
+                        green: 0,
+                        blue: 0
+                    };
+                    256
+                ],
+            }),
+            history_rows: 0,
+            available_history_rows: 0,
+            history_limited: false,
+            origin: 0,
+            projection: ropey::Rope::from_str(&projection),
+            rows,
+        }
+    }
+
+    #[test]
+    fn frame_wire_re_derives_trailing_padding() {
+        let frame = full_frame(5, &["ab", "", "     "]);
+        let wire = serde_json::to_string(&frame).unwrap();
+        assert!(
+            !wire.contains(r#""text":" ""#),
+            "padding runs must not travel: {wire}"
+        );
+        let decoded: Frame = serde_json::from_str(&wire).unwrap();
+        decoded.validate().unwrap();
+        assert_eq!(decoded.projection.to_string(), "ab   \n     \n     \n");
+        for projected in &decoded.rows {
+            assert_eq!(projected.row.cells.len(), 5);
+            assert_eq!(projected.row.text.len(), 5);
+        }
+        assert_eq!(decoded.rows[2].row.text, "     ");
+        assert_eq!(decoded.rows[1].absolute_start, 6);
     }
 
     #[test]

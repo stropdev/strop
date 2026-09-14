@@ -10,18 +10,18 @@ homepage.workspace = true
 [features]
 test-support = ["strop-trace/test-support"]
 [dependencies]
-strop-trace = { path = "../strop-trace", version = "0.32.2" }
-strop-core = { path = "../strop-core", version = "0.32.2" }
-strop-terminal = { path = "../strop-terminal", version = "0.32.2" }
-strop-grammar = { path = "../strop-grammar", version = "0.32.2" }
-strop-picker = { path = "../strop-picker", version = "0.32.2" }
-strop-git = { path = "../strop-git", version = "0.32.2" }
-strop-syntax = { path = "../strop-syntax", version = "0.32.2" }
-strop-lsp = { path = "../strop-lsp", version = "0.32.2" }
-strop-workspace = { path = "../strop-workspace", version = "0.32.2" }
-strop-containers = { path = "../strop-containers", version = "0.32.2" }
-strop-remote = { path = "../strop-remote", version = "0.32.2" }
-strop-fs = { path = "../strop-fs", version = "0.32.2" }
+strop-trace = { path = "../strop-trace", version = "0.32.3" }
+strop-core = { path = "../strop-core", version = "0.32.3" }
+strop-terminal = { path = "../strop-terminal", version = "0.32.3" }
+strop-grammar = { path = "../strop-grammar", version = "0.32.3" }
+strop-picker = { path = "../strop-picker", version = "0.32.3" }
+strop-git = { path = "../strop-git", version = "0.32.3" }
+strop-syntax = { path = "../strop-syntax", version = "0.32.3" }
+strop-lsp = { path = "../strop-lsp", version = "0.32.3" }
+strop-workspace = { path = "../strop-workspace", version = "0.32.3" }
+strop-containers = { path = "../strop-containers", version = "0.32.3" }
+strop-remote = { path = "../strop-remote", version = "0.32.3" }
+strop-fs = { path = "../strop-fs", version = "0.32.3" }
 imbl = { version = "7", features = ["serde"] }
 unicode-segmentation = "1"
 unicode-width = "0.2"
@@ -33,5 +33,5 @@ tempfile = "3"
 thiserror = "2"
 
 [dev-dependencies]
-strop-trace = { path = "../strop-trace", version = "0.32.2", features = ["test-support"] }
+strop-trace = { path = "../strop-trace", version = "0.32.3", features = ["test-support"] }
 ratatui = "0.29"

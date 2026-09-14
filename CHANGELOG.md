@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.32.3 — 2026-09-14
+
+Captures of terminal sessions cost a tenth of the bytes.
+
+### Improved
+
+- **Terminal frames and per-action checks stopped shipping padding and
+  duplicate text**: each row's trailing default-styled space padding is
+  re-derived from the frame's geometry on decode, and observation checks
+  witness document text by SHA-256 digest plus its true byte length
+  instead of serializing the whole buffer every action (the startup seed
+  still carries full text). The same flooded-terminal session that
+  recorded ~20 MB now records ~2.4 MB, still complete and replayable —
+  cheaper captures, faster drains on slow runners. Traces written by
+  earlier versions still replay.
+
 ## 0.32.2 — 2026-09-14
 
 Forensic captures survive real terminal sessions.

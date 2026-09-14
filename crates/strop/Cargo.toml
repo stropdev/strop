@@ -6,17 +6,17 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-strop-engine = { path = "../strop-engine", version = "0.32.2" }
-strop-trace = { path = "../strop-trace", version = "0.32.2" }
-strop-core = { path = "../strop-core", version = "0.32.2" }
-strop-terminal = { path = "../strop-terminal", version = "0.32.2" }
-strop-grammar = { path = "../strop-grammar", version = "0.32.2" }
-strop-picker = { path = "../strop-picker", version = "0.32.2" }
-strop-git = { path = "../strop-git", version = "0.32.2" }
-strop-syntax = { path = "../strop-syntax", version = "0.32.2" }
-strop-lsp = { path = "../strop-lsp", version = "0.32.2" }
-strop-workspace = { path = "../strop-workspace", version = "0.32.2" }
-strop-remote = { path = "../strop-remote", version = "0.32.2" }
+strop-engine = { path = "../strop-engine", version = "0.32.3" }
+strop-trace = { path = "../strop-trace", version = "0.32.3" }
+strop-core = { path = "../strop-core", version = "0.32.3" }
+strop-terminal = { path = "../strop-terminal", version = "0.32.3" }
+strop-grammar = { path = "../strop-grammar", version = "0.32.3" }
+strop-picker = { path = "../strop-picker", version = "0.32.3" }
+strop-git = { path = "../strop-git", version = "0.32.3" }
+strop-syntax = { path = "../strop-syntax", version = "0.32.3" }
+strop-lsp = { path = "../strop-lsp", version = "0.32.3" }
+strop-workspace = { path = "../strop-workspace", version = "0.32.3" }
+strop-remote = { path = "../strop-remote", version = "0.32.3" }
 unicode-segmentation = "1"
 crossterm = "0.28"
 ratatui = "0.29"
@@ -33,4 +33,4 @@ path = "src/main.rs"
 libc = "0.2"
 vt100 = "0.15"
 strop-engine = { path = "../strop-engine", features = ["test-support"] }
-strop-trace = { path = "../strop-trace", version = "0.32.2", features = ["test-support"] }
+strop-trace = { path = "../strop-trace", version = "0.32.3", features = ["test-support"] }

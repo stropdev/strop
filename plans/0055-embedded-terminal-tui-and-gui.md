@@ -879,9 +879,13 @@ writer I/O failures remain fatal. The hard capture byte bound rose to
 512 MiB — terminals made captures a multi-content-class artifact; a
 consented interactive session legitimately records hundreds of full frames.
 The flood test now asserts the trace ends `complete` and replays
-execution-free. Known follow-up compaction (not needed for the milestone):
-derive trailing padding on the wire, and inter-frame row identity so a
-keystroke does not re-record unchanged history.
+execution-free. Follow-up compaction (0.32.3): each row's trailing
+default-styled space padding no longer travels — the frame re-derives it
+from its geometry — and per-action observation checks witness document
+text by SHA-256 digest plus byte length instead of shipping it (the
+startup seed still carries full text), taking the same flood session's
+capture from ~20 MB to ~2.4 MB. Remaining known follow-up: inter-frame
+row identity so a keystroke does not re-record unchanged history.
 
 Release evidence (v0.32.2, tagged 2026-09-14): the workflow ran green end
 to end — both Darwin and both musl builds, 8 tarball assets, crates.io,

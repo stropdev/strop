@@ -115,16 +115,16 @@ impl Editor {
     }
 
     /// The logical observation both modes must reproduce bit-for-bit.
-    /// Document content arrives as the pure `BufferSeed` (text, revision,
-    /// history, disk baseline) — diagnostic trace identities and other
-    /// process-local ephemera are deliberately absent.
+    /// Document content is witnessed by digest — the startup seed carries
+    /// the text itself; every per-action check proving equality does not
+    /// need to ship it again.
     fn observation(&self) -> serde_json::Value {
         let documents: Vec<_> = self
             .docs
             .iter()
-            .map(
-                |(id, document)| serde_json::json!({"document": id, "buffer": document.buf.seed()}),
-            )
+            .map(|(id, document)| {
+                serde_json::json!({"document": id, "buffer": document.buf.witness()})
+            })
             .collect();
         serde_json::json!({
             "documents": documents,
