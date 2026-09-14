@@ -138,6 +138,12 @@ static EMBEDDED: LazyLock<Vec<EmbeddedServer>> = LazyLock::new(|| {
             hint: "npm i -g pyright",
         },
         EmbeddedServer {
+            name: "lua-language-server",
+            command: "lua-language-server",
+            args: vec![],
+            hint: "install lua-language-server (brew install lua-language-server)",
+        },
+        EmbeddedServer {
             name: "gopls",
             command: "gopls",
             args: vec![],
@@ -190,6 +196,7 @@ fn embedded_name_for_language(lang: &str) -> Option<&'static str> {
         "rust" => "rust-analyzer",
         "c" | "cpp" => "clangd",
         "python" => "pyright",
+        "lua" => "lua-language-server",
         "go" => "gopls",
         "javascript" | "typescript" => "typescript-language-server",
         "json" => "vscode-json-language-server",
