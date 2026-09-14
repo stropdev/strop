@@ -158,10 +158,14 @@ fn pump(
     session: &Session,
 ) -> Result<(), Error> {
     let mut closing = None;
-    // Darwin reports the last slave closure as POLLHUP on the controller
-    // instead of an EOF/EIO read (Linux's report), so the hangup seen by the
-    // transport poll is sticky evidence the session can never produce more.
     let mut hangup = false;
+    // Session-end detection is platform-split. Linux reports the last slave
+    // closure as an EIO read on the controller; Darwin reports neither that
+    // nor a poll hangup, so there the authoritative terminator is the sweep
+    // itself: once every enumerated terminal member is dead, nothing in the
+    // supervised scope can produce more output. A bounded quiet window drains
+    // whatever the dying members buffered, then the session is provably over.
+    let mut quiescent = None;
     loop {
         for _ in 0..32 {
             let Some(packet) = command(reader, channel)? else {
@@ -196,8 +200,13 @@ fn pump(
                 Signal::KILL
             };
             let live = session.sweep(Some(signal))?;
-            if live == 0 && eof {
-                return Ok(());
+            if live == 0 {
+                let quiet = quiescent.get_or_insert_with(Instant::now);
+                if eof || quiet.elapsed() >= Duration::from_millis(100) {
+                    return Ok(());
+                }
+            } else {
+                quiescent = None;
             }
         }
         hangup |= wait_io(
