@@ -179,9 +179,39 @@ pub fn resize(master: &File, geometry: Geometry) -> Result<(), Error> {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    // SAFETY: owned master and initialized winsize for this synchronous ioctl.
-    if unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ as _, &size) } != 0 {
-        return Err(io_error("resize PTY", io::Error::last_os_error()));
+    // Darwin gates TIOCSWINSZ on the caller not being a background process
+    // group of the tty. Once the launched child takes the foreground, this
+    // helper is background on its own controlling terminal, and because
+    // setsid left it in an orphaned group the kernel skips the SIGTTOU stop
+    // and fails the ioctl with EIO. Blocking SIGTTOU opts out of that gate
+    // (the exact remedy POSIX prescribes for background terminal writers);
+    // the mask is scoped to the ioctl and a no-op on Linux, which does not
+    // gate this call.
+    let mut blocked = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+    let mut previous = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+    // SAFETY: both output pointers name properly aligned sigset_t storage,
+    // and this single-threaded helper owns its signal mask.
+    unsafe {
+        if libc::sigemptyset(blocked.as_mut_ptr()) != 0
+            || libc::sigaddset(blocked.as_mut_ptr(), libc::SIGTTOU) != 0
+            || libc::sigprocmask(libc::SIG_BLOCK, blocked.as_ptr(), previous.as_mut_ptr()) != 0
+        {
+            return Err(io_error("block SIGTTOU", io::Error::last_os_error()));
+        }
     }
-    Ok(())
+    // SAFETY: owned master and initialized winsize for this synchronous ioctl.
+    let applied = unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ as _, &size) };
+    let failure = if applied != 0 {
+        Some(io::Error::last_os_error())
+    } else {
+        None
+    };
+    // SAFETY: restoring the previously captured mask cannot fail its contract.
+    unsafe {
+        libc::sigprocmask(libc::SIG_SETMASK, previous.as_ptr(), std::ptr::null_mut());
+    }
+    match failure {
+        Some(error) => Err(io_error("resize PTY", error)),
+        None => Ok(()),
+    }
 }
