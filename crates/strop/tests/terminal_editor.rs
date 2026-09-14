@@ -226,6 +226,19 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         })
     });
     tui.until(|screen| line(screen, "BYTE-DONE"));
+    // The prefix grammar's pass-through contract (0055 §12, literal
+    // escape-prefix recovery): `Ctrl-W .` delivers the literal 0x17, and a
+    // nonmatching `Ctrl-\` or `Ctrl-W` follow-up forwards the prefix byte
+    // plus the key, in order — nothing the user typed may disappear.
+    tui.send(b"stty raw -echo; printf 'PREFIX-READY\\n'; dd bs=1 count=5 2>/dev/null | od -An -tx1; stty sane; printf '\\r\\nPREFIX-DONE\\n'\r");
+    tui.until(|screen| line(screen, "PREFIX-READY"));
+    tui.send(b"\x17.\x1cz\x17z");
+    tui.until(|screen| {
+        screen
+            .lines()
+            .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "17 1c 7a 17 7a")
+    });
+    tui.until(|screen| line(screen, "PREFIX-DONE"));
     tui.send(b"mkfifo pause; (exec 3<>pause; printf '\\r\\nINSPECTION-READY\\n'; read go <&3; printf '\\r\\nASYNC-INSPECTION-OUTPUT\\n') &\r");
     tui.until(|screen| line(screen, "INSPECTION-READY"));
     tui.send(b"\x1c\x0e");
