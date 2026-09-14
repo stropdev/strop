@@ -277,10 +277,12 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x1c\x0e");
     // The capture's per-update frame records queue ahead of this escape on
     // slow runners; the escape still lands in order — the mid-flood input
-    // contract — so the waits ride the drain, not the 15s default.
+    // contract — so the waits ride the drain, not the 15s default. The
+    // pinned-view proof is the mode chip: the transient "snapshot" message
+    // is cleared by the very next update while the flood streams.
     let drain = Duration::from_secs(60);
     tui.until_within(drain, |screen| {
-        screen.contains("NORMAL") && screen.contains("snapshot")
+        screen.contains("NORMAL") && !screen.contains("TERMINAL")
     });
     tui.send(b"i");
     let settled = tui.until_within(drain, |screen| {
@@ -293,7 +295,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"mkfifo pause; (exec 3<>pause; printf '\\r\\nINSPECTION-READY\\n'; read go <&3; printf '\\r\\nASYNC-INSPECTION-OUTPUT\\n') &\r");
     tui.until_within(drain, |screen| line(screen, "INSPECTION-READY"));
     tui.send(b"\x1c\x0e");
-    tui.until(|screen| screen.contains("NORMAL") && screen.contains("snapshot"));
+    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
     File::options()
         .write(true)
         .custom_flags(libc::O_NONBLOCK)
