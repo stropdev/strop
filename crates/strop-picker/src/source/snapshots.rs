@@ -16,6 +16,7 @@ pub(super) fn emit_snapshots(
     paths: &mut Vec<PathBuf>,
     tx: &StreamSender,
     token: &CancelToken,
+    catalog: Option<&crate::source::catalog::ProjectCatalog>,
 ) -> Result<(), String> {
     for snapshot in snapshots {
         let Ok(relative) = snapshot.path.strip_prefix(&root.path) else {
@@ -44,7 +45,7 @@ pub(super) fn emit_snapshots(
             let mut expanded = text.len();
             // Dirty sources are authoritative: exact admission first,
             // then the prefilter's positive spans become the highlights.
-            if !content.admits(&relative.to_string_lossy(), &text) {
+            if !content.admits_in(catalog, &relative.to_string_lossy(), &text) {
                 continue;
             }
             for hit in content.regex.find_iter(&text).take(4097) {

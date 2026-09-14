@@ -234,3 +234,19 @@ decide them they compile to an explicit Unknown that admits — overfetch
 inside AND, widens OR, and neutralizes any NOT above it, so pending
 qualifiers never silently drop lines — and a flat `kind:` query
 explains itself instead of disappearing.
+
+Project discovery slice (2026-09-14): one bounded catalog scan
+(`source/catalog.rs`) discovers the scope's boundaries — nested Git
+repositories, linked worktrees (`.git` file), marker subprojects
+(Cargo.toml/pyproject.toml/setup.py/CMakeLists.txt/package.json/go.mod)
+and the loose scope — deepest-enclosing lookup for `repo:` names,
+bounded and cancellation-aware with an honest `truncated` flag. Admission
+is now three-valued end to end: Yes/No/Unknown with Unknown admitting
+(overfetch), which replaced the compile-time Unknown collapse with
+runtime evidence — `NOT` over an undecidable atom admits instead of
+dropping lines. `repo:` decides exactly with a catalog on the local
+search path (one discovery scan per search, worker-side); remote and
+no-catalog paths stay Unknown until 0058's worker owns remote
+discovery. Evidence: synthetic mixed tree (nested repo, worktree,
+marker, loose dir), ignored-repo miss classified soundly, repo
+branch-sensitivity, NOT-repo inversion, no-catalog overfetch.

@@ -139,15 +139,18 @@ pub(super) fn run(
     if content.is_literal() && pattern.is_empty() {
         return Outcome::Success(());
     }
+    let cancelled = || cancel.is_cancelled();
+    // One bounded discovery scan per search (0063 §2): the catalog
+    // decides `repo:` atoms exactly; a missed project only overfetches.
+    let catalog = crate::source::catalog::ProjectCatalog::discover(&cwd, &cancelled);
     // The reader thread admits every hit line through the exact plan:
-    // the provider pattern only prefilters (0063 §4).
-    let admitting = content.clone();
+    // the provider pattern only prefilters (0063 §4). One owning
+    // closure per rg batch — `content`/`catalog` outlive the loop.
     // eligible paths from the shared selection authority;
     // bounded argv batches (0051 §3: real bounds, no shell)
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
     let mut path_bytes = 0usize;
     let mut path_limit = false;
-    let cancelled = || cancel.is_cancelled();
     let walk = super::selection::walk(&cwd, &plan, policy, &cancelled, |rel| {
         path_bytes = path_bytes.saturating_add(rel.as_os_str().as_encoded_bytes().len());
         if paths.len() >= super::selection::PATH_LIMIT || path_bytes > super::selection::PATH_BYTES
@@ -179,6 +182,7 @@ pub(super) fn run(
         &mut paths,
         &tx,
         &cancel,
+        Some(&catalog),
     ) {
         return if cancel.is_cancelled() {
             Outcome::Cancelled(CancelReason::Superseded)
@@ -247,7 +251,11 @@ pub(super) fn run(
             let Some(mut stderr) = process.child.stderr.take() else {
                 return Outcome::failed(FailureKind::Protocol, "rg: missing stderr");
             };
-            let admitting = admitting.clone();
+            let admitting = {
+                let content = content.clone();
+                let catalog = catalog.clone();
+                move |path: &str, text: &str| content.admits_in(Some(&catalog), path, text)
+            };
             let out_events = events.clone();
             let out_tx = tx.clone();
             let root = strop_workspace::ResourceLocation::local(cwd.clone());

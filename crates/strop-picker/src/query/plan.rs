@@ -187,13 +187,19 @@ enum MetadataKey {
     Language,
     Path,
     Glob,
+    Repo,
 }
 
 impl BooleanPlan {
     /// Exact admission for one candidate line of one file (workspace-
     /// relative path). `None` path treats path metadata as not matching.
-    pub fn admits(&self, path: Option<&str>, line: &str) -> bool {
-        self.root.matches(path, line)
+    pub fn admits(
+        &self,
+        catalog: Option<&crate::source::catalog::ProjectCatalog>,
+        path: Option<&str>,
+        line: &str,
+    ) -> bool {
+        self.root.decide(catalog, path, line) != Decision::No
     }
 
     fn compile(
@@ -214,25 +220,20 @@ impl BooleanPlan {
             })
         };
         Ok(match expr {
-            BooleanExpr::And(operands) => collapse_and(
+            BooleanExpr::And(operands) => CompiledExpr::And(
                 operands
                     .iter()
                     .map(|operand| Self::compile(operand, case, range.clone()))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
-            BooleanExpr::Or(branches) => collapse_or(
+            BooleanExpr::Or(branches) => CompiledExpr::Or(
                 branches
                     .iter()
                     .map(|branch| Self::compile(branch, case, range.clone()))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             BooleanExpr::Not(inner) => {
-                let inner = Self::compile(inner, case, range.clone())?;
-                if contains_unknown(&inner) {
-                    CompiledExpr::Unknown
-                } else {
-                    CompiledExpr::Not(Box::new(inner))
-                }
+                CompiledExpr::Not(Box::new(Self::compile(inner, case, range.clone())?))
             }
             BooleanExpr::Content(atom_spec) => {
                 CompiledExpr::Content(atom(atom_spec.regex, &atom_spec.text)?)
@@ -242,7 +243,8 @@ impl BooleanPlan {
                     "language" => MetadataKey::Language,
                     "path" => MetadataKey::Path,
                     "glob" => MetadataKey::Glob,
-                    // `kind:`/`repo:` await project discovery (0063 §2).
+                    "repo" => MetadataKey::Repo,
+                    // `kind:` awaits workspace symbols (0063 §2).
                     _ => return Ok(CompiledExpr::Unknown),
                 };
                 CompiledExpr::Metadata {
@@ -280,49 +282,59 @@ impl BooleanPlan {
     }
 }
 
-/// Unknown inside AND drops out (the decided operands still bind);
-/// inside OR it widens to Unknown; under NOT it neutralizes.
-fn collapse_and(mut operands: Vec<CompiledExpr>) -> CompiledExpr {
-    operands.retain(|operand| !matches!(operand, CompiledExpr::Unknown));
-    CompiledExpr::And(operands)
-}
-
-fn collapse_or(branches: Vec<CompiledExpr>) -> CompiledExpr {
-    if branches
-        .iter()
-        .any(|branch| matches!(branch, CompiledExpr::Unknown))
-    {
-        CompiledExpr::Unknown
-    } else {
-        CompiledExpr::Or(branches)
-    }
-}
-
-fn contains_unknown(expr: &CompiledExpr) -> bool {
-    match expr {
-        CompiledExpr::Unknown => true,
-        CompiledExpr::And(operands) => operands.iter().any(contains_unknown),
-        CompiledExpr::Or(branches) => branches.iter().any(contains_unknown),
-        CompiledExpr::Not(inner) => contains_unknown(inner),
-        CompiledExpr::Content(_) | CompiledExpr::Metadata { .. } => false,
-    }
-}
-
 impl CompiledExpr {
-    fn matches(&self, path: Option<&str>, line: &str) -> bool {
+    /// Three-valued evaluation (0063 §4): failed or unavailable evidence
+    /// is Unknown — never false, so `NOT` cannot turn a miss into a
+    /// match, and a top-level Unknown admits (overfetch).
+    fn decide(
+        &self,
+        catalog: Option<&crate::source::catalog::ProjectCatalog>,
+        path: Option<&str>,
+        line: &str,
+    ) -> Decision {
         match self {
-            Self::Unknown => true,
-            Self::And(operands) => operands.iter().all(|operand| operand.matches(path, line)),
-            Self::Or(branches) => branches.iter().any(|branch| branch.matches(path, line)),
-            Self::Not(inner) => !inner.matches(path, line),
-            Self::Content(regex) => regex.is_match(line),
+            Self::Unknown => Decision::Unknown,
+            Self::And(operands) => {
+                let mut result = Decision::Yes;
+                for operand in operands {
+                    match operand.decide(catalog, path, line) {
+                        Decision::No => return Decision::No,
+                        Decision::Unknown => result = Decision::Unknown,
+                        Decision::Yes => {}
+                    }
+                }
+                result
+            }
+            Self::Or(branches) => {
+                let mut result = Decision::No;
+                for branch in branches {
+                    match branch.decide(catalog, path, line) {
+                        Decision::Yes => return Decision::Yes,
+                        Decision::Unknown => result = Decision::Unknown,
+                        Decision::No => {}
+                    }
+                }
+                result
+            }
+            Self::Not(inner) => match inner.decide(catalog, path, line) {
+                Decision::Yes => Decision::No,
+                Decision::No => Decision::Yes,
+                Decision::Unknown => Decision::Unknown,
+            },
+            Self::Content(regex) => {
+                if regex.is_match(line) {
+                    Decision::Yes
+                } else {
+                    Decision::No
+                }
+            }
             Self::Metadata {
                 key,
                 value,
                 negated,
             } => {
                 let Some(path) = path else {
-                    return *negated;
+                    return Decision::Unknown;
                 };
                 let matched = match key {
                     MetadataKey::Language => path
@@ -335,11 +347,29 @@ impl CompiledExpr {
                         }),
                     MetadataKey::Path => path.contains(value.as_str()),
                     MetadataKey::Glob => glob_literal_match(value, path),
+                    MetadataKey::Repo => {
+                        let Some(catalog) = catalog else {
+                            return Decision::Unknown;
+                        };
+                        catalog.repo_matches(path, value, *negated)
+                    }
                 };
-                matched != *negated
+                if matched != *negated {
+                    Decision::Yes
+                } else {
+                    Decision::No
+                }
             }
         }
     }
+}
+
+/// Three-valued admission outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Decision {
+    Yes,
+    No,
+    Unknown,
 }
 
 /// Bounded literal-glob semantics for admission: `*` and `**` span path
@@ -431,15 +461,26 @@ impl ContentPlan {
     /// itself; Boolean queries evaluate the AST with path metadata.
     pub fn matches_line(&self, line: &str) -> bool {
         match &self.boolean {
-            Some(exact) => exact.admits(None, line),
+            Some(exact) => exact.admits(None, None, line),
             None => self.regex.is_match(line),
         }
     }
 
     /// Exact admission with the file's path for metadata atoms.
     pub fn admits(&self, path: &str, line: &str) -> bool {
+        self.admits_in(None, path, line)
+    }
+
+    /// Exact admission with the project catalog deciding `repo:` atoms;
+    /// without one they stay Unknown and admit (overfetch, 0063 §4).
+    pub fn admits_in(
+        &self,
+        catalog: Option<&crate::source::catalog::ProjectCatalog>,
+        path: &str,
+        line: &str,
+    ) -> bool {
         match &self.boolean {
-            Some(exact) => exact.admits(Some(path), line),
+            Some(exact) => exact.admits(catalog, Some(path), line),
             None => self.regex.is_match(line),
         }
     }
@@ -670,6 +711,31 @@ mod tests {
         assert!(!plan.admits("any/x.rs", "nothing relevant"));
         let widened = content_plan("(repo:engine OR repo:tools) AND parser");
         assert!(widened.admits("elsewhere/y.py", "parser"));
+    }
+
+    #[test]
+    fn repo_atoms_decide_with_a_catalog_and_admit_without() {
+        let directory = tempfile::tempdir().unwrap();
+        let scope = directory.path();
+        std::fs::create_dir_all(scope.join("engine/src")).unwrap();
+        std::fs::create_dir(scope.join("engine/.git")).unwrap();
+        std::fs::create_dir_all(scope.join("tools")).unwrap();
+        std::fs::create_dir(scope.join("tools/.git")).unwrap();
+        let catalog = crate::source::catalog::ProjectCatalog::discover(scope, &|| false);
+        let plan = content_plan("(repo:engine OR repo:tools) NOT glob:**/vendor/** parser");
+        // Exact admission with the catalog: branch-sensitive.
+        assert!(plan.admits_in(Some(&catalog), "engine/src/a.rs", "parser here"));
+        assert!(plan.admits_in(Some(&catalog), "tools/b.py", "parser here"));
+        assert!(!plan.admits_in(Some(&catalog), "other/c.rs", "parser here"));
+        assert!(!plan.admits_in(Some(&catalog), "engine/vendor/x.rs", "parser here"));
+        // NOT repo: inverts exactly with a catalog.
+        let outside = content_plan("NOT repo:engine AND parser");
+        assert!(!outside.admits_in(Some(&catalog), "engine/src/a.rs", "parser"));
+        assert!(outside.admits_in(Some(&catalog), "tools/b.py", "parser"));
+        // Without a catalog (remote until 0058's worker): repo: is
+        // Unknown — the line admits when the decided atoms allow it.
+        assert!(plan.admits("other/c.rs", "parser here"));
+        assert!(!plan.admits("other/c.rs", "nothing"));
     }
 
     #[test]

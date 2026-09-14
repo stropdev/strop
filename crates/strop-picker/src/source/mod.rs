@@ -36,6 +36,7 @@ pub enum PickerMsg {
     Finished(Outcome<()>),
 }
 
+pub mod catalog;
 pub mod selection;
 
 pub use selection::{display_path, SelectionPolicy, RG_PROTECTED_ARGS};

@@ -78,7 +78,9 @@ fn search(
         })
     })?;
     records.finish()?;
-    super::snapshots::emit_snapshots(root, &content, snapshots, &mut paths, tx, token)?;
+    // Remote project discovery arrives with 0058's unified worker;
+    // until then `repo:` atoms admit (overfetch), never drop.
+    super::snapshots::emit_snapshots(root, &content, snapshots, &mut paths, tx, token, None)?;
     let pattern: std::ffi::OsString = content.provider_pattern().into();
     common.extend(["--json".into(), "-e".into(), pattern]);
     common.push(
@@ -120,10 +122,13 @@ fn search(
             }
         }
         let mut records = Records::new(b'\n');
-        let admitting = content.clone();
+        let admits = {
+            let content = content.clone();
+            move |path: &str, text: &str| content.admits_in(None, path, text)
+        };
         run(endpoint, root, args, token, tx, |chunk| {
             records.feed(chunk, |record| {
-                let items = parse_json_match_with(record, root, Some(&admitting))?;
+                let items = parse_json_match_with(record, root, Some(&admits))?;
                 tx.batch(items, token)
                     .map_err(|error| error.message().to_string())
             })

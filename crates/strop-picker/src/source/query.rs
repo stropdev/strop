@@ -47,13 +47,16 @@ fn parse_json_match(line: &[u8], root: &ResourceLocation) -> Result<Vec<Item>, S
     parse_json_match_with(line, root, None)
 }
 
-/// Parse one rg JSON match record; when a plan is given, its exact
-/// Boolean admission (0063 §4) filters lines the provider prefilter
-/// overfetched before any item is admitted.
+/// Exact per-(path, line) admission (0063 §4).
+pub type Admit = dyn Fn(&str, &str) -> bool;
+
+/// Parse one rg JSON match record; when an admission closure is given,
+/// its exact Boolean evaluation (0063 §4) filters lines the provider
+/// prefilter overfetched before any item is admitted.
 pub fn parse_json_match_with(
     line: &[u8],
     root: &ResourceLocation,
-    admit: Option<&crate::query::ContentPlan>,
+    admit: Option<&Admit>,
 ) -> Result<Vec<Item>, String> {
     if line.len() > RECORD_LIMIT {
         return Err("rg record exceeds the 1 MiB bound".into());
@@ -86,12 +89,12 @@ pub fn parse_json_match_with(
     if submatches.len() > MATCH_LIMIT {
         return Err("rg record exceeds the 4096-match bound".into());
     }
-    if let Some(plan) = admit {
+    if let Some(admits) = admit {
         let relative = location
             .path
             .strip_prefix(&root.path)
             .map_err(|_| "rg path escaped scope".to_string())?;
-        if !plan.admits(&relative.to_string_lossy(), &text) {
+        if !admits(&relative.to_string_lossy(), &text) {
             return Ok(Vec::new());
         }
     }
