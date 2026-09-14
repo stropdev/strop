@@ -305,3 +305,105 @@ fn locations_null_is_an_empty_list_and_errors_are_notes() {
         wire.stop().await;
     });
 }
+
+#[test]
+fn workspace_symbols_are_document_free_and_map_both_shapes() {
+    run(async {
+        let (client, rx, mut wire) = Wire::new();
+        client.caps.set(lt::ServerCapabilities {
+            workspace_symbol_provider: Some(lt::OneOf::Left(true)),
+            position_encoding: Some(lt::PositionEncodingKind::UTF8),
+            ..Default::default()
+        });
+        client.finish_initialize().unwrap();
+        // No document is ever opened: admission is warm + capability.
+        client.workspace_symbols(7, "dispatch").unwrap();
+        let request = wire.next().await;
+        assert_eq!(request["method"], "workspace/symbol");
+        assert_eq!(request["params"]["query"], "dispatch");
+        // Flat SymbolInformation reply decodes through the workspace.
+        wire.reply(
+            &request,
+            serde_json::json!([{
+                "name": "dispatch", "kind": 12, "containerName": "render",
+                "location": {
+                    "uri": "file:///workspace/src/lib.rs",
+                    "range": {"start": {"line": 41, "character": 3},
+                              "end": {"line": 41, "character": 11}}
+                }
+            }]),
+        )
+        .await;
+        let LspEvent::WorkspaceSymbols {
+            generation,
+            symbols,
+            ..
+        } = event(&rx).await
+        else {
+            panic!("workspace symbols event")
+        };
+        assert_eq!(generation, 7);
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "dispatch");
+        assert_eq!(symbols[0].kind, "Function");
+        assert_eq!(symbols[0].container, "render");
+        assert_eq!(symbols[0].location.position.line.get(), 41);
+        // Nested replies drop uri-only locations: the resolve-support
+        // contract is never advertised, so they have no jump position.
+        client.workspace_symbols(8, "").unwrap();
+        let request = wire.next().await;
+        assert_eq!(request["params"]["query"], "");
+        wire.reply(
+            &request,
+            serde_json::json!([{
+                "name": "unresolved", "kind": 12,
+                "location": { "uri": "file:///workspace/src/lib.rs" }
+            }]),
+        )
+        .await;
+        let LspEvent::WorkspaceSymbols {
+            generation,
+            symbols,
+            ..
+        } = event(&rx).await
+        else {
+            panic!("second workspace symbols event")
+        };
+        assert_eq!(generation, 8);
+        assert!(symbols.is_empty());
+        // A request error is a terminal failure carrying the
+        // generation (R9: exactly one terminal event).
+        client.workspace_symbols(9, "x").unwrap();
+        let request = wire.next().await;
+        wire.reply_error(&request, -32601, "no symbols here").await;
+        let LspEvent::WorkspaceSymbolsFailed {
+            generation, reason, ..
+        } = event(&rx).await
+        else {
+            panic!("failure event")
+        };
+        assert_eq!(generation, 9);
+        assert!(reason.contains("no symbols here"));
+        wire.stop().await;
+    });
+}
+
+#[test]
+fn workspace_symbols_refuse_unready_and_uncapable_servers() {
+    run(async {
+        let (cold, _rx, _wire) = Wire::new();
+        // Not initialized: NotReady, nothing on the wire.
+        assert!(matches!(
+            cold.workspace_symbols(1, "x"),
+            Err(crate::protocol::RequestRefusal::NotReady)
+        ));
+        let (capless, _rx, wire) = Wire::new();
+        capless.finish_initialize().unwrap();
+        // No provider advertised: Unsupported.
+        assert!(matches!(
+            capless.workspace_symbols(1, "x"),
+            Err(crate::protocol::RequestRefusal::Unsupported)
+        ));
+        wire.stop().await;
+    });
+}

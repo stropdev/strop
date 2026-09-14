@@ -16,6 +16,9 @@ impl Editor {
                         Some(warning) => format!("lsp: {name} ready — {warning}"),
                         None => format!("lsp: {name} ready"),
                     };
+                    // A server that warmed up while the workspace
+                    // symbols picker is open joins it now (0063 §2).
+                    self.query_workspace_symbols();
                 }
             }
             LspEvent::Failed { server, name, hint } => {
@@ -212,6 +215,28 @@ impl Editor {
                 // ranking: re-rank or the list renders empty.
                 self.request_picker_ranking();
             }
+
+            LspEvent::WorkspaceSymbols {
+                server: _,
+                generation,
+                symbols,
+            } => self.merge_workspace_symbols(generation, symbols),
+            LspEvent::WorkspaceSymbolsFailed {
+                server: _,
+                generation,
+                reason,
+            } => {
+                let live = self
+                    .picker
+                    .as_ref()
+                    .filter(|glue| glue.picker.kind == strop_picker::Kind::WorkspaceSymbols)
+                    .is_some_and(|glue| glue.wsymbols_generation == generation);
+                if live {
+                    self.message = format!("lsp: {reason}");
+                } else {
+                    trace::services::rejected("lsp", "workspace-symbol reply superseded");
+                }
+            }
             LspEvent::ActionList { context, actions } => {
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected("lsp", "code-action owner/revision changed");
@@ -322,6 +347,142 @@ impl Editor {
             }
         }
     }
+
+    /// Ask every warm attached server for workspace symbols (0063
+    /// §2): one generation bump per query change; only that
+    /// generation's replies merge. Refusals are per-server skips —
+    /// not-ready servers join on their `Ready` event.
+    pub(crate) fn query_workspace_symbols(&mut self) {
+        let (generation, query) = {
+            let Some(glue) = self.picker.as_mut() else {
+                return;
+            };
+            if glue.picker.kind != strop_picker::Kind::WorkspaceSymbols {
+                return;
+            }
+            glue.wsymbols_generation += 1;
+            (glue.wsymbols_generation, glue.picker.input.text.clone())
+        };
+        for attachment in self.lsp_state.attach.attached.clone() {
+            let args = serde_json::json!({
+                "server": attachment.server,
+                "generation": generation,
+                "query": query,
+            });
+            match self.tape.request("lsp.wsymbols", &args) {
+                Ok(true) => {
+                    if let Some(client) = self.lsp_live_client(attachment.server) {
+                        // Admission refusals (still initializing, no
+                        // provider) are skips, not errors: the syntax
+                        // tier already carries the surface.
+                        let _ = client.workspace_symbols(generation, &query);
+                    }
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    self.message = format!("workspace symbols diverged from trace: {error}");
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Merge one server's workspace-symbol reply into the open picker
+    /// (0063 §2): same row convention as the syntax tier, duplicates
+    /// by (location, name) skipped, then a local re-rank.
+    fn merge_workspace_symbols(&mut self, generation: u64, symbols: Vec<strop_lsp::ProtoSymbol>) {
+        let picker_live = self
+            .picker
+            .as_ref()
+            .filter(|glue| glue.picker.kind == strop_picker::Kind::WorkspaceSymbols)
+            .is_some_and(|glue| glue.wsymbols_generation == generation);
+        if !picker_live {
+            trace::services::rejected("lsp", "workspace-symbol reply superseded");
+            return;
+        }
+        use strop_picker::{Item, Payload};
+        let mut known: std::collections::HashSet<(String, usize, String)> = self
+            .picker
+            .as_ref()
+            .map(|glue| {
+                glue.picker
+                    .items
+                    .iter()
+                    .filter_map(|item| match &item.payload {
+                        Payload::Grep { location, line, .. } => Some((
+                            location.path.to_string_lossy().into_owned(),
+                            *line,
+                            item_symbol_name(item).to_owned(),
+                        )),
+                        Payload::Remote { path, line, .. } => Some((
+                            path.to_string_lossy().into_owned(),
+                            *line,
+                            item_symbol_name(item).to_owned(),
+                        )),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let cwd = self.cwd.clone();
+        let items = symbols
+            .into_iter()
+            .map(|symbol| (short_kind(&symbol.kind), symbol))
+            .filter_map(|(badge, symbol)| {
+                let line = symbol.location.position.line.get() + 1;
+                let col = symbol.location.position.column.get() + 1;
+                let path = symbol.location.doc.path.clone();
+                if !known.insert((
+                    path.to_string_lossy().into_owned(),
+                    line,
+                    symbol.name.clone(),
+                )) {
+                    return None;
+                }
+                let shown = path
+                    .strip_prefix(&cwd)
+                    .map(strop_picker::display_path)
+                    .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
+                    .into_owned();
+                let payload = match symbol.location.doc.filesystem {
+                    Filesystem::Local => Payload::Grep {
+                        location: strop_workspace::ResourceLocation::local(path),
+                        line,
+                        col,
+                        match_len: 1,
+                        line_text: "".into(),
+                    },
+                    Filesystem::Remote(endpoint) => Payload::Remote {
+                        endpoint,
+                        path,
+                        line,
+                        col,
+                    },
+                    Filesystem::Container(_) => {
+                        trace::services::rejected("lsp", "container symbol dropped");
+                        return None;
+                    }
+                };
+                Some(Item {
+                    badge: Some(badge.into()),
+                    text: format!("{}  {} · :{}", symbol.name, shown, line),
+                    payload,
+                })
+            })
+            .collect::<Vec<_>>();
+        if let Some(glue) = self.picker.as_mut() {
+            glue.picker.append(items);
+        }
+        self.request_picker_ranking();
+    }
+}
+
+/// The name field of a symbol row ("name  container · :line").
+fn item_symbol_name(item: &strop_picker::Item) -> &str {
+    item.text
+        .split_once("  ")
+        .map(|(name, _)| name.trim())
+        .unwrap_or(item.text.trim())
 }
 
 /// Compact chip text for a symbol kind (the picker's badge column).

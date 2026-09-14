@@ -64,6 +64,17 @@ impl ServerCaps {
     pub fn declaration(&self) -> bool {
         self.flag(|c| c.declaration_provider.is_some())
     }
+    /// Workspace-symbol provider advertised? (unknown-is-no)
+    pub fn workspace_symbols(&self) -> bool {
+        let Ok(guard) = self.0.lock() else {
+            return false;
+        };
+        guard
+            .as_ref()
+            .and_then(|c| c.workspace_symbol_provider.as_ref())
+            .is_some()
+    }
+
     pub fn document_symbols(&self) -> bool {
         self.flag(|c| {
             matches!(
@@ -135,6 +146,7 @@ impl ServerCaps {
             RequestKind::Rename => self.rename(),
             RequestKind::CodeAction => self.code_action(),
             RequestKind::DocumentSymbols => self.document_symbols(),
+            RequestKind::WorkspaceSymbols => self.workspace_symbols(),
         }
     }
 }

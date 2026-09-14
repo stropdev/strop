@@ -295,3 +295,24 @@ init merge into this surface next; `docs/vim-compat.md` regenerated.
 Evidence: source worker test (rows, chips, non-source exclusion),
 engine test (open → list → Enter jumps to name at line:col), render
 preview pin, compat report freshness.
+
+Warm-server merge slice (2026-09-14): the workspace-symbols surface
+now folds in language servers. `workspace/symbol` rides a
+document-free lane in strop-lsp (`Client::workspace_symbols` → a
+`WireJob::WorkspaceSymbols` on the ordered wire): admission requires
+a ready server advertising the provider — `NotReady` servers skip and
+join on their `Ready` event; both reply shapes map to the shared
+`ProtoSymbol` row form, and uri-only locations (a resolve-support
+contract never advertised) drop honestly. Replies correlate on the
+picker's query generation, not a document stamp: every input change
+bumps the generation and re-asks warm servers; superseded replies
+trace-reject and never merge. Merged rows dedup against the syntax
+tier by (path, line, name) and re-rank locally. Failures surface per
+server at the live generation (R9: one terminal event either way).
+Still open from §2: lazy initialization of eligible *unopened*
+projects (bounded concurrency, catalog-driven), per-project status
+for missing configuration, and incremental index reuse (0058).
+Evidence: client wire tests (flat/nested mapping, uri-only drop,
+error terminal, NotReady/Unsupported refusals with zero wire
+traffic), engine merge test (dedup against the syntax tier, stale
+generation rejection).

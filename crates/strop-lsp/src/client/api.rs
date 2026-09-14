@@ -61,6 +61,28 @@ impl Client {
         }
     }
 
+    /// Workspace-wide symbol query (0063 §2): document-free admission
+    /// — no open document, no revision stamp. Only a warm server that
+    /// advertises the provider admits; the reply carries the caller's
+    /// `generation` for ownership (stale generations drop silently at
+    /// the consumer, never cancel mid-wire).
+    pub fn workspace_symbols(&self, generation: u64, query: &str) -> Result<(), RequestRefusal> {
+        {
+            let state = self.sync.lock();
+            if !state.ready {
+                return Err(RequestRefusal::NotReady);
+            }
+        }
+        if !self.caps.supports(RequestKind::WorkspaceSymbols) {
+            return Err(RequestRefusal::Unsupported);
+        }
+        self.queue.send(WireJob::WorkspaceSymbols {
+            generation,
+            query: query.to_string(),
+        });
+        Ok(())
+    }
+
     /// Prepare and launch in one step for callers outside the tape
     /// seam (the probe example).
     pub fn request(&self, input: RequestInput) -> Result<RequestStamp, RequestRefusal> {
@@ -193,6 +215,10 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
             RequestKind::DocumentSymbols => {
                 document_symbols(env, tdp.text_document, context, path).await
             }
+            // Workspace queries take their own document-free lane
+            // (`Client::workspace_symbols`); they can never arrive
+            // through the position-bearing launcher.
+            RequestKind::WorkspaceSymbols => {}
         }
     });
 }
@@ -459,6 +485,81 @@ async fn code_actions(env: WireEnv, tdp: lt::TextDocumentPositionParams, context
 }
 
 /// `textDocument/documentSymbol`: both reply shapes flatten into
+/// One workspace-symbol query (0063 §2): both reply shapes land in the
+/// same row form as document symbols. A `WorkspaceSymbol` whose
+/// location is uri-only (a resolve-support server contract we do not
+/// advertise) has no position to jump to and is dropped.
+pub(crate) async fn workspace_symbols(env: WireEnv, generation: u64, query: String) {
+    let params = lt::WorkspaceSymbolParams {
+        partial_result_params: Default::default(),
+        work_done_progress_params: Default::default(),
+        query,
+    };
+    let response = env
+        .socket
+        .request::<lt::request::WorkspaceSymbolRequest>(params)
+        .await;
+    let server = env.id;
+    match response {
+        Ok(Some(lt::WorkspaceSymbolResponse::Flat(informations))) => {
+            let symbols = informations
+                .into_iter()
+                .filter_map(|info| {
+                    let location = wire::to_server_location(info.location, &env.workspace).ok()?;
+                    Some(ProtoSymbol {
+                        name: info.name,
+                        container: info.container_name.unwrap_or_default(),
+                        kind: symbol_kind_label(info.kind).into(),
+                        location,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let _ = env.tx.send(LspEvent::WorkspaceSymbols {
+                server,
+                generation,
+                symbols,
+            });
+        }
+        Ok(Some(lt::WorkspaceSymbolResponse::Nested(entries))) => {
+            let symbols = entries
+                .into_iter()
+                .filter_map(|entry| {
+                    let location = match entry.location {
+                        lt::OneOf::Left(location) => location,
+                        lt::OneOf::Right(_) => return None,
+                    };
+                    let location = wire::to_server_location(location, &env.workspace).ok()?;
+                    Some(ProtoSymbol {
+                        name: entry.name,
+                        container: entry.container_name.unwrap_or_default(),
+                        kind: symbol_kind_label(entry.kind).into(),
+                        location,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let _ = env.tx.send(LspEvent::WorkspaceSymbols {
+                server,
+                generation,
+                symbols,
+            });
+        }
+        Ok(None) => {
+            let _ = env.tx.send(LspEvent::WorkspaceSymbols {
+                server,
+                generation,
+                symbols: Vec::new(),
+            });
+        }
+        Err(error) => {
+            let _ = env.tx.send(LspEvent::WorkspaceSymbolsFailed {
+                server,
+                generation,
+                reason: format!("workspace symbols failed: {error}"),
+            });
+        }
+    }
+}
+
 /// [`ProtoSymbol`] rows (0047 §1). Hierarchical trees join ancestors
 /// with ` :: ` as the container path; the jump position is the
 /// selection range's start (the identifier, not the block).

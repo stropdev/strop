@@ -93,6 +93,9 @@ pub struct PickerGlue {
     pub(crate) indent_target: Option<strop_core::id::DocumentId>,
     pub(crate) search: Option<search::SearchContext>,
     preview_witness: Option<preview::WitnessCheck>,
+    /// Workspace-symbols ownership (0063 §2): bumped on every query
+    /// change; only the live generation's replies merge.
+    pub(crate) wsymbols_generation: u64,
 }
 
 /// The visible suggestion list: static candidates from the query's own
@@ -129,6 +132,7 @@ impl PickerGlue {
             indent_target: None,
             search: None,
             preview_witness: None,
+            wsymbols_generation: 0,
         }
     }
 
@@ -279,6 +283,7 @@ impl Editor {
         }
         if kind == Kind::WorkspaceSymbols {
             self.launch_workspace_symbols_request();
+            self.query_workspace_symbols();
         }
     }
 

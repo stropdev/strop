@@ -468,6 +468,7 @@ impl Editor {
                         format!("lsp: {} is not supported by this server", kind.label())
                     }
                     RequestRefusal::IdentityExhausted => "lsp: request identities exhausted".into(),
+                    RequestRefusal::NotReady => "lsp: the server is still initializing".into(),
                 };
             }
             Err(error) => self.message = format!("lsp prepare diverged from trace: {error}"),

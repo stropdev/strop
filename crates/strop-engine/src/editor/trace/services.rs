@@ -164,6 +164,22 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
                 // The hint carries the executable and the fix (0033 §3)
                 json!({"service":"lsp","result":"failed","server":server,"name":name,"hint":hint})
             }
+            LspEvent::WorkspaceSymbols {
+                server,
+                generation,
+                symbols,
+            } => json!({
+                "service":"lsp","result":"workspace-symbols","server":server,
+                "generation":generation,"count":symbols.len(),
+            }),
+            LspEvent::WorkspaceSymbolsFailed {
+                server,
+                generation,
+                reason,
+            } => json!({
+                "service":"lsp","result":"workspace-symbols-failed","server":server,
+                "generation":generation,"bytes":reason.len(),
+            }),
             LspEvent::ServerMessage { server, name, text } => {
                 json!({"service":"lsp","result":"message","server":server,"name":name,"bytes":text.len()})
             }

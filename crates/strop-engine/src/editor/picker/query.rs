@@ -277,6 +277,13 @@ impl Editor {
             self.restart_search_query();
             return;
         }
+        if kind == Kind::WorkspaceSymbols {
+            // Warm servers re-ask per query change under a new
+            // generation; the syntax tier keeps its static list.
+            self.query_workspace_symbols();
+            self.request_picker_ranking();
+            return;
+        }
         if let Some(glue) = self.picker.as_mut() {
             if kind == Kind::RemoteAddress {
                 glue.picker.error = None;

@@ -201,6 +201,9 @@ pub enum RequestKind {
     CodeAction,
     /// All symbols in one document — no position rides the request.
     DocumentSymbols,
+    /// All symbols in the workspace matching a query string —
+    /// document-free (0063 §2).
+    WorkspaceSymbols,
 }
 
 impl RequestKind {
@@ -214,6 +217,7 @@ impl RequestKind {
             Self::Rename => "rename",
             Self::CodeAction => "code action",
             Self::DocumentSymbols => "document symbols",
+            Self::WorkspaceSymbols => "workspace symbols",
         }
     }
 }
@@ -228,6 +232,8 @@ pub enum RequestRefusal {
     StaleRevision,
     /// The server advertised no provider for this request kind.
     Unsupported,
+    /// The server has not finished initializing — ask again later.
+    NotReady,
     /// The monotonic request-id domain has no unused identity.
     IdentityExhausted,
 }
@@ -405,6 +411,20 @@ pub enum LspEvent {
     Symbols {
         context: ReplyContext,
         symbols: Vec<ProtoSymbol>,
+    },
+    /// Workspace-symbol reply (0063 §2): document-free, so ownership
+    /// rides the caller's generation, not a document stamp.
+    WorkspaceSymbols {
+        server: ServerId,
+        generation: u64,
+        symbols: Vec<ProtoSymbol>,
+    },
+    /// The workspace-symbol request failed on this server (R9: the
+    /// request still ends in exactly one terminal event).
+    WorkspaceSymbolsFailed {
+        server: ServerId,
+        generation: u64,
+        reason: String,
     },
     /// context is the ORIGINAL request's — never re-derived.
     Note {

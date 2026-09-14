@@ -37,6 +37,12 @@ pub(crate) enum WireJob {
         uri: lt::Url,
     },
     Request(PendingRequest),
+    /// Workspace-wide symbol query (0063 §2): document-free, so the
+    /// reply correlates on the caller's generation.
+    WorkspaceSymbols {
+        generation: u64,
+        query: String,
+    },
 }
 
 /// Everything the worker and the request launcher need — deliberately
@@ -151,6 +157,18 @@ fn worker(env: WireEnv, rx: Receiver<WireJob>) {
                     .notify::<DidCloseTextDocument>(lt::DidCloseTextDocumentParams {
                         text_document: lt::TextDocumentIdentifier { uri },
                     });
+            }
+            WireJob::WorkspaceSymbols { generation, query } => {
+                // Same ordered-lane rule as requests: earlier frames
+                // are on the wire before the query leaves.
+                let launch = std::panic::AssertUnwindSafe(|| {
+                    env.handle.spawn(super::api::workspace_symbols(
+                        env.clone(),
+                        generation,
+                        query,
+                    ));
+                });
+                let _ = std::panic::catch_unwind(launch);
             }
             WireJob::Request(request) => {
                 // The job order already put every earlier frame on the

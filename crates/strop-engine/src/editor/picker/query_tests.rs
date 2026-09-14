@@ -261,3 +261,66 @@ fn workspace_symbols_lists_and_jump_lands_on_the_declaration() {
     assert_eq!(editor.head(), editor.buf().line_start(1) + 3);
     assert!(!editor.buf().dirty);
 }
+
+#[test]
+fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
+    use strop_lsp::protocol::{
+        ProtoSymbol, ServerColumn, ServerId, ServerLocation, ServerPosition,
+    };
+    use strop_lsp::LspEvent;
+    use strop_workspace::ResourceLocation;
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("lib.rs"),
+        "struct St;\nfn wrap() {\n    let x = 1;\n}\n",
+    )
+    .unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    // The syntax tier listed both declarations; the live generation is 1.
+    let generation = editor.picker.as_ref().unwrap().wsymbols_generation;
+    assert_eq!(generation, 1);
+    let symbol = |name: &str, line: usize| ProtoSymbol {
+        name: name.into(),
+        container: String::new(),
+        kind: "Function".into(),
+        location: ServerLocation {
+            doc: ResourceLocation::local(dir.path().join("lib.rs")),
+            position: ServerPosition {
+                line: strop_core::id::LineIndex::new(line),
+                column: ServerColumn::new(3),
+            },
+        },
+    };
+    // One new semantic hit, one duplicate of the syntax tier (dropped).
+    editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
+        server: ServerId::new(9),
+        generation,
+        symbols: vec![symbol("semantic_only", 0), symbol("wrap", 1)],
+    });
+    editor.wait_picker();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
+    assert!(texts.contains(&"semantic_only  lib.rs · :1"));
+    assert_eq!(
+        texts
+            .iter()
+            .filter(|text| text.starts_with("wrap  "))
+            .count(),
+        1,
+        "the duplicate collapses against the syntax tier: {texts:?}"
+    );
+    // A stale generation's reply never lands.
+    editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
+        server: ServerId::new(9),
+        generation: generation - 1,
+        symbols: vec![symbol("stale", 0)],
+    });
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    assert!(!picker
+        .items
+        .iter()
+        .any(|item| item.text.starts_with("stale  ")));
+}
