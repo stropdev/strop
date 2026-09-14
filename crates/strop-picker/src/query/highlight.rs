@@ -20,6 +20,9 @@ pub enum Role {
     Literal,
     Regex,
     Negation,
+    /// Boolean operator words (0063 §3) — distinct from literals so the
+    /// grammar is visible while typing.
+    Operator,
     Incomplete,
     Error,
 }
@@ -38,6 +41,12 @@ pub(super) fn from_tokens(
                 range: token.range.clone(),
                 role: Role::Incomplete,
             }),
+            TokenKind::Operator(_) | TokenKind::Paren { .. } => {
+                spans.push(HighlightSpan {
+                    range: token.range.clone(),
+                    role: Role::Operator,
+                });
+            }
             TokenKind::Word { text, quoted } => {
                 let role = if qualifier_shaped(text, *quoted) {
                     Role::Error

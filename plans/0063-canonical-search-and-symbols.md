@@ -200,3 +200,32 @@ These checks register in the actual CI/release gates alongside the 0058
 assurance work, with model bounds, assumptions, meaningful mutant failures and
 native/provider coverage recorded. A skipped fixture or an unrelated green
 gate is not passing evidence.
+
+### §3 grammar and §4 execution: landed slice (2026-09-14)
+
+The typed AST is live end to end in the one shared parser: standalone
+uppercase `AND`/`OR`/`NOT` tokenize as operators (lowercase and quoted
+forms stay literal content); operator-bearing queries group with
+balanced-paren scoping, where `(` opens a literal span so
+`glob:**/(1)/*.rs` and `foo(1).txt` stay whole and `)` only delimits at
+depth zero. Precedence NOT > AND > OR, juxtaposition is an implicit
+AND, and a bare-word run remains one phrase. Query-wide options
+(`case:`/`hidden:`/`ignored:`) keep their flat meaning outside
+branches. Every operator-free query parses byte-identically to the
+previous grammar — pinned by tests.
+
+Execution follows the §4 split: the provider pattern (rg) is the union
+of positive content atoms — an overfetching prefilter — while exact
+admission evaluates the original AST per (path, line) at every
+consumer (rg hits, dirty-buffer snapshots, directory names): content
+atoms against the complete logical line, metadata atoms against
+path/extension, branches never flattened, NOT never turning unknown
+evidence into a match. Negative terms contribute no highlights (the
+prefilter carries only positive spans). Evidence so far: precedence/
+grouping/negation corpus, literal-compatibility corpus, located
+dangling-operator diagnostics, parse-format-parse over the spec
+examples, same-line AND semantics, branch-preservation, prefilter
+soundness over an admitted corpus, and case-mode atom behavior. Still
+open from §3: stored-query syntax versioning, `kind:`/`type:` and
+`repo:` qualifiers, surface-by-surface inventory beyond the picker
+pipeline, and the §6 model/fuzzing tiers.

@@ -42,6 +42,11 @@ pub(super) fn emit_snapshots(
             let short: String = text.trim().chars().take(80).collect();
             let mut items = Vec::new();
             let mut expanded = text.len();
+            // Dirty sources are authoritative: exact admission first,
+            // then the prefilter's positive spans become the highlights.
+            if !content.admits(&relative.to_string_lossy(), &text) {
+                continue;
+            }
             for hit in content.regex.find_iter(&text).take(4097) {
                 let item = crate::Item {
                     badge: Some("buffer".into()),

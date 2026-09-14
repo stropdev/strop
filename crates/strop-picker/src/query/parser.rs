@@ -23,6 +23,35 @@ pub enum ContentExpr {
     Regex(String),
 }
 
+/// The Boolean expression tree (0063 §3). Present only when the query
+/// carries an operator — operator-free queries keep the flat lowering
+/// and their existing phrase behavior unchanged. Precedence on parse:
+/// NOT > AND > OR; juxtaposition of units is an implicit AND, and a run
+/// of bare words stays one phrase atom.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum BooleanExpr {
+    And(Vec<BooleanExpr>),
+    Or(Vec<BooleanExpr>),
+    Not(Box<BooleanExpr>),
+    Content(ContentAtom),
+    Metadata(MetadataAtom),
+}
+
+/// One content predicate: a phrase (literal) or an explicit `regex:`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContentAtom {
+    pub regex: bool,
+    pub text: String,
+}
+
+/// One metadata predicate, e.g. `language:python` / `-glob:vendor`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MetadataAtom {
+    pub key: String,
+    pub value: String,
+    pub negated: bool,
+}
+
 /// A located parse diagnostic; `suggestion` carries the closest valid
 /// alternative where one exists.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -44,8 +73,6 @@ pub enum QueryState {
     Invalid,
 }
 
-/// The typed query: filters for file selection, visibility policy, case
-/// behavior and an optional content expression.
 #[derive(Debug, Clone, Default)]
 pub struct SearchQuery {
     pub source: String,
@@ -59,6 +86,9 @@ pub struct SearchQuery {
     pub hidden: Option<bool>,
     pub ignored: Option<bool>,
     pub case: Option<CaseMode>,
+    /// Some when the query carries a Boolean operator (0063 §3); then
+    /// the flat `content` stays None and execution compiles from the AST.
+    pub boolean: Option<BooleanExpr>,
     pub content: Option<ContentExpr>,
     pub diagnostics: Vec<QueryDiagnostic>,
     pub state: QueryState,
@@ -133,6 +163,9 @@ impl SearchQuery {
             state: QueryState::Ready,
             ..Default::default()
         };
+        let boolean = tokens
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::Operator(_) | TokenKind::Paren { .. }));
         let mut free_text: Vec<(String, bool, std::ops::Range<usize>)> = Vec::new();
         for token in &tokens {
             match &token.kind {
@@ -146,11 +179,12 @@ impl SearchQuery {
                         suggestion: Some("close the quote to finish the value".into()),
                     });
                 }
+                TokenKind::Operator(_) | TokenKind::Paren { .. } => {}
                 TokenKind::Word { text, quoted } => {
                     if let Some(diag) = qualifier_shaped_error(text, *quoted, &token.range) {
                         query.state = QueryState::Invalid;
                         query.diagnostics.push(diag);
-                    } else {
+                    } else if !boolean {
                         free_text.push((text.clone(), *quoted, token.range.clone()));
                     }
                 }
@@ -169,13 +203,20 @@ impl SearchQuery {
                             message: format!("{key}: expects a value"),
                             suggestion: Some(format!("finish {key}:… or delete it")),
                         });
-                    } else {
+                    } else if !boolean || matches!(key.as_str(), "hidden" | "ignored" | "case") {
+                        // Query-wide options stay outside Boolean branches
+                        // and keep their flat meaning (0063 §3); selection
+                        // qualifiers live in the AST only.
                         query.apply_qualifier(key, value, *negated, &token.range);
                     }
                 }
             }
         }
-        query.resolve_content(free_text);
+        if boolean {
+            query.boolean = parse_boolean(&tokens, &mut query);
+        } else {
+            query.resolve_content(free_text);
+        }
         query.highlights = super::highlight::from_tokens(&tokens, &query.diagnostics, query.state);
         query.tokens = tokens;
         query
@@ -420,6 +461,254 @@ fn edit_distance(a: &str, b: &str) -> usize {
     prev[b.len()]
 }
 
+/// Recursive descent over the token stream (0063 §3): precedence
+/// NOT > AND > OR, juxtaposition of units is an implicit AND, and a run
+/// of bare words is one phrase atom. Located diagnostics for dangling
+/// operators and unbalanced groups; the parse recovers instead of
+/// stopping at the first error.
+fn parse_boolean(tokens: &[lexer::Token], query: &mut SearchQuery) -> Option<BooleanExpr> {
+    let mut parser = BooleanParser { tokens, at: 0 };
+    let expr = parser.or_level(query);
+    while parser.at < tokens.len() {
+        let token = &tokens[parser.at];
+        match &token.kind {
+            TokenKind::Paren { open: false } => query.fail(
+                &token.range,
+                "unbalanced )".into(),
+                Some("remove it or open the group with (".into()),
+            ),
+            TokenKind::Operator(operator) => query.fail(
+                &token.range,
+                format!("{} without a right operand", operator.as_str()),
+                Some("add an operand after it".into()),
+            ),
+            _ => {}
+        }
+        parser.at += 1;
+    }
+    expr
+}
+
+struct BooleanParser<'a> {
+    tokens: &'a [lexer::Token],
+    at: usize,
+}
+
+impl<'a> BooleanParser<'a> {
+    fn peek(&self) -> Option<&'a lexer::Token> {
+        self.tokens.get(self.at)
+    }
+
+    fn or_level(&mut self, query: &mut SearchQuery) -> Option<BooleanExpr> {
+        let first = self.and_level(query)?;
+        let mut branches = vec![first];
+        while matches!(
+            self.peek().map(|token| &token.kind),
+            Some(TokenKind::Operator(lexer::Operator::Or))
+        ) {
+            let range = self.peek().map(|token| token.range.clone());
+            self.at += 1;
+            match self.and_level(query) {
+                Some(branch) => branches.push(branch),
+                None => {
+                    if let Some(range) = range {
+                        query.fail(
+                            &range,
+                            "OR without a right operand".into(),
+                            Some("add a term after OR".into()),
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+        match branches.len() {
+            1 => branches.pop(),
+            _ => Some(BooleanExpr::Or(branches)),
+        }
+    }
+
+    fn and_level(&mut self, query: &mut SearchQuery) -> Option<BooleanExpr> {
+        let mut operands = Vec::new();
+        loop {
+            let joined = matches!(
+                self.peek().map(|token| &token.kind),
+                Some(TokenKind::Operator(lexer::Operator::And))
+            );
+            if joined {
+                self.at += 1;
+            }
+            if operands.is_empty() && joined {
+                // AND at operand position: a dangling operator.
+                if let Some(token) = self.peek() {
+                    query.fail(
+                        &token.range.clone(),
+                        "AND without a left operand".into(),
+                        Some("start with a term".into()),
+                    );
+                }
+            }
+            let before = self.at;
+            match self.unit(query) {
+                Some(operand) => operands.push(operand),
+                None => {
+                    if joined && before < self.tokens.len() {
+                        // Consumed AND, no operand followed.
+                    } else if joined {
+                        if let Some(token) = self.tokens.get(before.saturating_sub(1)) {
+                            query.fail(
+                                &token.range.clone(),
+                                "AND without a right operand".into(),
+                                Some("add a term after AND".into()),
+                            );
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        match operands.len() {
+            0 => None,
+            1 => operands.pop(),
+            _ => Some(BooleanExpr::And(operands)),
+        }
+    }
+
+    /// One operand: NOT-unit, group, qualifier atom, or a bare-word
+    /// phrase run (adjacent words stay one phrase, 0063 §3).
+    fn unit(&mut self, query: &mut SearchQuery) -> Option<BooleanExpr> {
+        let token = self.peek()?;
+        match &token.kind {
+            TokenKind::Operator(lexer::Operator::Not) => {
+                let range = token.range.clone();
+                self.at += 1;
+                match self.unit(query) {
+                    Some(operand) => Some(BooleanExpr::Not(Box::new(operand))),
+                    None => {
+                        query.fail(
+                            &range,
+                            "NOT without an operand".into(),
+                            Some("add a term after NOT".into()),
+                        );
+                        None
+                    }
+                }
+            }
+            TokenKind::Paren { open: true } => {
+                let range = token.range.clone();
+                self.at += 1;
+                let inner = self.or_level(query);
+                match self.peek().map(|token| &token.kind) {
+                    Some(TokenKind::Paren { open: false }) => {
+                        self.at += 1;
+                    }
+                    _ => query.fail(
+                        &range,
+                        "unclosed group".into(),
+                        Some("close it with )".into()),
+                    ),
+                }
+                inner
+            }
+            TokenKind::Paren { open: false }
+            | TokenKind::Operator(lexer::Operator::And)
+            | TokenKind::Operator(lexer::Operator::Or) => None,
+            TokenKind::UnclosedQuote => None,
+            TokenKind::Qualifier {
+                key,
+                value,
+                negated,
+                ..
+            } => {
+                self.at += 1;
+                if value.is_empty() {
+                    return None;
+                }
+                if key == "text" {
+                    Some(BooleanExpr::Content(ContentAtom {
+                        regex: false,
+                        text: value.clone(),
+                    }))
+                } else if key == "regex" {
+                    Some(BooleanExpr::Content(ContentAtom {
+                        regex: true,
+                        text: value.clone(),
+                    }))
+                } else {
+                    Some(BooleanExpr::Metadata(MetadataAtom {
+                        key: key.clone(),
+                        value: value.clone(),
+                        negated: *negated,
+                    }))
+                }
+            }
+            TokenKind::Word { .. } => {
+                let mut words = Vec::new();
+                while let Some(token) = self.peek() {
+                    match &token.kind {
+                        TokenKind::Word { text, .. } => {
+                            words.push(text.clone());
+                            self.at += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                Some(BooleanExpr::Content(ContentAtom {
+                    regex: false,
+                    text: words.join(" "),
+                }))
+            }
+        }
+    }
+}
+
+impl BooleanExpr {
+    /// Canonical fully-parenthesized formatting. Always re-parses to the
+    /// same tree (parse-format-parse property, 0063 §6.1).
+    pub fn to_query_string(&self) -> String {
+        match self {
+            Self::Content(atom) => {
+                let prefix = if atom.regex { "regex:" } else { "" };
+                let needs_quotes = atom.text.is_empty()
+                    || atom.text.chars().any(|c| c.is_whitespace())
+                    || lexer::Operator::from_word(&atom.text).is_some();
+                if needs_quotes {
+                    format!("{prefix}\"{}\"", atom.text.replace('"', "\\\""))
+                } else {
+                    format!("{prefix}{}", atom.text)
+                }
+            }
+            Self::Metadata(atom) => {
+                let negation = if atom.negated { "-" } else { "" };
+                let needs_quotes =
+                    atom.value.is_empty() || atom.value.chars().any(|c| c.is_whitespace());
+                if needs_quotes {
+                    format!("{negation}{}:\"{}\"", atom.key, atom.value)
+                } else {
+                    format!("{negation}{}:{}", atom.key, atom.value)
+                }
+            }
+            Self::Not(inner) => format!("NOT ({})", inner.to_query_string()),
+            Self::And(operands) => format!(
+                "({})",
+                operands
+                    .iter()
+                    .map(BooleanExpr::to_query_string)
+                    .collect::<Vec<_>>()
+                    .join(" AND ")
+            ),
+            Self::Or(branches) => format!(
+                "({})",
+                branches
+                    .iter()
+                    .map(BooleanExpr::to_query_string)
+                    .collect::<Vec<_>>()
+                    .join(" OR ")
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -566,5 +855,190 @@ mod tests {
         let query = SearchQuery::parse("-hidden:include needle");
         assert_eq!(query.state, QueryState::Invalid);
         assert_eq!(query.hidden, None);
+    }
+
+    fn boolean(input: &str) -> Option<BooleanExpr> {
+        let query = SearchQuery::parse(input);
+        assert_eq!(
+            query.state,
+            QueryState::Ready,
+            "diagnostics: {:?}",
+            query.diagnostics
+        );
+        query.boolean
+    }
+
+    fn content(text: &str) -> BooleanExpr {
+        BooleanExpr::Content(ContentAtom {
+            regex: false,
+            text: text.into(),
+        })
+    }
+
+    #[test]
+    fn boolean_precedence_not_and_or() {
+        assert_eq!(
+            boolean("a OR b AND c"),
+            Some(BooleanExpr::Or(vec![
+                content("a"),
+                BooleanExpr::And(vec![content("b"), content("c")]),
+            ]))
+        );
+        assert_eq!(
+            boolean("NOT a AND b"),
+            Some(BooleanExpr::And(vec![
+                BooleanExpr::Not(Box::new(content("a"))),
+                content("b"),
+            ]))
+        );
+        assert_eq!(
+            boolean("NOT (a AND b)"),
+            Some(BooleanExpr::Not(Box::new(BooleanExpr::And(vec![
+                content("a"),
+                content("b")
+            ]))))
+        );
+    }
+
+    #[test]
+    fn boolean_grouping_and_juxtaposition() {
+        assert_eq!(
+            boolean("(a OR b) AND c"),
+            Some(BooleanExpr::And(vec![
+                BooleanExpr::Or(vec![content("a"), content("b")]),
+                content("c"),
+            ]))
+        );
+        // Juxtaposition is an implicit AND; a bare-word run stays one phrase.
+        assert_eq!(
+            boolean("(a OR b) parser"),
+            Some(BooleanExpr::And(vec![
+                BooleanExpr::Or(vec![content("a"), content("b")]),
+                content("parser"),
+            ]))
+        );
+        assert_eq!(
+            boolean("foo bar AND baz"),
+            Some(BooleanExpr::And(vec![content("foo bar"), content("baz")]))
+        );
+    }
+
+    #[test]
+    fn operator_free_queries_are_untouched() {
+        // Lowercase operator words, punctuation, parens and quoted
+        // operators stay literal content (0063 §3 compatibility).
+        for literal in [
+            "foo and bar",
+            "not a test",
+            "!important",
+            "a|b",
+            "func(x)",
+            "foo(1).txt",
+        ] {
+            let query = SearchQuery::parse(literal);
+            assert_eq!(query.state, QueryState::Ready, "{literal}");
+            assert!(query.boolean.is_none(), "{literal}");
+            assert_eq!(
+                query.content,
+                Some(ContentExpr::Literal(literal.to_string())),
+                "{literal}"
+            );
+        }
+    }
+
+    #[test]
+    fn quoted_operator_word_stays_literal_content() {
+        let query = SearchQuery::parse("foo \"AND\" bar");
+        assert_eq!(query.state, QueryState::Ready);
+        assert!(query.boolean.is_none());
+        // Quotes are syntax: the phrase carries the word, not the quotes.
+        assert_eq!(
+            query.content,
+            Some(ContentExpr::Literal("foo AND bar".into()))
+        );
+    }
+
+    #[test]
+    fn qualifier_values_stay_opaque_to_grouping() {
+        let query = SearchQuery::parse("glob:**/(1)/*.rs AND parser");
+        assert_eq!(query.state, QueryState::Ready);
+        let expr = query.boolean.expect("operators present");
+        assert_eq!(
+            expr,
+            BooleanExpr::And(vec![
+                BooleanExpr::Metadata(MetadataAtom {
+                    key: "glob".into(),
+                    value: "**/(1)/*.rs".into(),
+                    negated: false,
+                }),
+                content("parser"),
+            ])
+        );
+    }
+
+    #[test]
+    fn quoted_operands_are_atoms() {
+        let query = SearchQuery::parse("text:\"retry request\" NOT text:\"test\"");
+        assert_eq!(query.state, QueryState::Ready);
+        assert_eq!(
+            query.boolean,
+            Some(BooleanExpr::And(vec![
+                BooleanExpr::Content(ContentAtom {
+                    regex: false,
+                    text: "retry request".into(),
+                }),
+                BooleanExpr::Not(Box::new(BooleanExpr::Content(ContentAtom {
+                    regex: false,
+                    text: "test".into(),
+                }))),
+            ]))
+        );
+    }
+
+    #[test]
+    fn dangling_operators_and_unbalanced_groups_diagnose_located() {
+        for (input, message) in [
+            ("foo AND", "AND without a right operand"),
+            ("AND foo", "AND without a left operand"),
+            ("a OR", "OR without a right operand"),
+            ("NOT", "NOT without an operand"),
+            ("(foo AND bar", "unclosed group"),
+            ("foo OR bar)", "unbalanced )"),
+        ] {
+            let query = SearchQuery::parse(input);
+            assert_ne!(query.state, QueryState::Ready, "{input}");
+            assert!(
+                query
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.message.contains(message)),
+                "{input}: {:?}",
+                query.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn parse_format_parse_round_trips() {
+        for input in [
+            "a OR b AND c",
+            "NOT a AND b",
+            "(a OR b) AND c",
+            "(a AND b) OR (c AND NOT d)",
+            "text:\"retry request\" NOT text:\"test\"",
+            "language:rust AND NOT glob:**/vendor/** AND parser",
+            "(language:python OR language:cpp OR language:lua) parser",
+        ] {
+            let first = SearchQuery::parse(input);
+            assert_eq!(first.state, QueryState::Ready, "{input}");
+            let canonical = first
+                .boolean
+                .as_ref()
+                .expect("operators present")
+                .to_query_string();
+            let second = SearchQuery::parse(&canonical);
+            assert_eq!(second.state, QueryState::Ready, "{input} -> {canonical}");
+            assert_eq!(first.boolean, second.boolean, "{input} -> {canonical}");
+        }
     }
 }

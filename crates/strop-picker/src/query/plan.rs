@@ -5,7 +5,7 @@
 
 use strop_core::languages;
 
-use super::parser::{CaseMode, ContentExpr, QueryDiagnostic, SearchQuery};
+use super::parser::{BooleanExpr, CaseMode, ContentExpr, QueryDiagnostic, SearchQuery};
 
 /// One compiled file-selection policy: which paths are eligible.
 /// Predicates are structured data — the adapters never re-parse text.
@@ -131,8 +131,205 @@ impl FileSelectionPlan {
 #[derive(Debug, Clone)]
 pub struct ContentPlan {
     pub expr: ContentExpr,
+    /// The provider prefilter: one regex matching every line the AST can
+    /// admit (the union of positive content atoms). Exact admission is
+    /// `matches_line`/`admits` — the prefilter only overfetches (0063 §4).
     pub regex: regex::Regex,
     pub case: CaseMode,
+    boolean: Option<BooleanPlan>,
+    /// The pattern a line provider (rg) runs: the exact expression for
+    /// simple queries, the positive-atom union prefilter for Boolean
+    /// ones (0063 §4).
+    provider: String,
+}
+
+impl ContentPlan {
+    /// The provider pattern (`rg -e`). `-F` only for simple literals.
+    pub fn provider_pattern(&self) -> &str {
+        &self.provider
+    }
+    pub fn is_literal(&self) -> bool {
+        self.boolean.is_none() && matches!(self.expr, ContentExpr::Literal(_))
+    }
+}
+
+/// The exact Boolean evaluator (0063 §3/§4): one typed AST with
+/// precompiled atom regexes, admitted per (path, line). Content atoms
+/// evaluate against the complete logical line; metadata atoms evaluate
+/// against the file's path/extension. NOT never turns failed evidence
+/// into a match: unknown or empty operands are errors at compile, not
+/// false at runtime.
+#[derive(Debug, Clone)]
+pub struct BooleanPlan {
+    root: CompiledExpr,
+}
+
+#[derive(Debug, Clone)]
+enum CompiledExpr {
+    And(Vec<CompiledExpr>),
+    Or(Vec<CompiledExpr>),
+    Not(Box<CompiledExpr>),
+    Content(regex::Regex),
+    Metadata {
+        key: MetadataKey,
+        value: String,
+        negated: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetadataKey {
+    Language,
+    Path,
+    Glob,
+}
+
+impl BooleanPlan {
+    /// Exact admission for one candidate line of one file (workspace-
+    /// relative path). `None` path treats path metadata as not matching.
+    pub fn admits(&self, path: Option<&str>, line: &str) -> bool {
+        self.root.matches(path, line)
+    }
+
+    fn compile(
+        expr: &BooleanExpr,
+        case: CaseMode,
+        range: std::ops::Range<usize>,
+    ) -> Result<CompiledExpr, QueryDiagnostic> {
+        let atom = |regex: bool, text: &str| {
+            let pattern = if regex {
+                text.to_string()
+            } else {
+                regex::escape(text)
+            };
+            build_regex(&pattern, case).map_err(|error| QueryDiagnostic {
+                range: range.clone(),
+                message: error.message,
+                suggestion: None,
+            })
+        };
+        Ok(match expr {
+            BooleanExpr::And(operands) => CompiledExpr::And(
+                operands
+                    .iter()
+                    .map(|operand| Self::compile(operand, case, range.clone()))
+                    .collect::<Result<_, _>>()?,
+            ),
+            BooleanExpr::Or(branches) => CompiledExpr::Or(
+                branches
+                    .iter()
+                    .map(|branch| Self::compile(branch, case, range.clone()))
+                    .collect::<Result<_, _>>()?,
+            ),
+            BooleanExpr::Not(inner) => {
+                CompiledExpr::Not(Box::new(Self::compile(inner, case, range.clone())?))
+            }
+            BooleanExpr::Content(atom_spec) => {
+                CompiledExpr::Content(atom(atom_spec.regex, &atom_spec.text)?)
+            }
+            BooleanExpr::Metadata(atom) => {
+                let key = match atom.key.as_str() {
+                    "language" => MetadataKey::Language,
+                    "path" => MetadataKey::Path,
+                    "glob" => MetadataKey::Glob,
+                    // Unsupported qualifiers are diagnosed at parse; a
+                    // surviving unknown key admits its file (overfetch,
+                    // never a silent drop).
+                    _ => return Ok(CompiledExpr::And(Vec::new())),
+                };
+                CompiledExpr::Metadata {
+                    key,
+                    value: atom.value.clone(),
+                    negated: atom.negated,
+                }
+            }
+        })
+    }
+
+    /// The provider prefilter pattern: alternation of every positive
+    /// content atom. Negative terms contribute nothing (0063 §4); a
+    /// query with no positive content atom matches every line.
+    fn prefilter_pattern(expr: &BooleanExpr, out: &mut Vec<String>) {
+        match expr {
+            BooleanExpr::And(operands) => {
+                for inner in operands {
+                    Self::prefilter_pattern(inner, out);
+                }
+            }
+            BooleanExpr::Or(branches) => {
+                for inner in branches {
+                    Self::prefilter_pattern(inner, out);
+                }
+            }
+            BooleanExpr::Not(_) => {}
+            BooleanExpr::Content(atom) => out.push(if atom.regex {
+                format!("(?:{})", atom.text)
+            } else {
+                regex::escape(&atom.text)
+            }),
+            BooleanExpr::Metadata(_) => {}
+        }
+    }
+}
+
+impl CompiledExpr {
+    fn matches(&self, path: Option<&str>, line: &str) -> bool {
+        match self {
+            Self::And(operands) => operands.iter().all(|operand| operand.matches(path, line)),
+            Self::Or(branches) => branches.iter().any(|branch| branch.matches(path, line)),
+            Self::Not(inner) => !inner.matches(path, line),
+            Self::Content(regex) => regex.is_match(line),
+            Self::Metadata {
+                key,
+                value,
+                negated,
+            } => {
+                let Some(path) = path else {
+                    return *negated;
+                };
+                let matched = match key {
+                    MetadataKey::Language => path
+                        .rsplit('.')
+                        .next()
+                        .and_then(languages::language_for_extension_name)
+                        .is_some_and(|name| {
+                            languages::extensions_for_language(value)
+                                .is_some_and(|known| known == extensions_for_language_name(name))
+                        }),
+                    MetadataKey::Path => path.contains(value.as_str()),
+                    MetadataKey::Glob => glob_literal_match(value, path),
+                };
+                matched != *negated
+            }
+        }
+    }
+}
+
+/// Bounded literal-glob semantics for admission: `*` and `**` span path
+/// separators or characters, everything else is literal.
+fn glob_literal_match(pattern: &str, path: &str) -> bool {
+    let mut pattern = pattern;
+    let mut path = path;
+    loop {
+        match pattern.find('*') {
+            None => break pattern == path,
+            Some(star) => {
+                let (literal, rest) = pattern.split_at(star);
+                let Some(found) = path.find(literal) else {
+                    return false;
+                };
+                path = &path[found + literal.len()..];
+                pattern = rest.trim_start_matches('*');
+                if pattern.is_empty() {
+                    return true;
+                }
+            }
+        }
+    }
+}
+
+fn extensions_for_language_name(name: &str) -> &'static [&'static str] {
+    languages::extensions_for_language(name).unwrap_or(&[])
 }
 
 impl ContentPlan {
@@ -140,19 +337,74 @@ impl ContentPlan {
     /// expression (0051 §3: a filter-only grep explains itself instead
     /// of searching every byte).
     pub fn compile(query: &SearchQuery) -> Result<Option<Self>, QueryDiagnostic> {
+        let case = query.case.unwrap_or(CaseMode::Smart);
+        if let Some(boolean) = &query.boolean {
+            if query.state != super::QueryState::Ready {
+                return Err(query.diagnostics.first().cloned().unwrap_or_else(|| {
+                    QueryDiagnostic {
+                        range: 0..query.source.len(),
+                        message: "incomplete query".into(),
+                        suggestion: None,
+                    }
+                }));
+            }
+            let exact = BooleanPlan::compile(boolean, case, query.content_range())?;
+            let mut positive = Vec::new();
+            BooleanPlan::prefilter_pattern(boolean, &mut positive);
+            let pattern = if positive.is_empty() {
+                // Pure-negative or metadata-only: providers must surface
+                // every line; exact admission decides.
+                "()".to_string()
+            } else {
+                positive.join("|")
+            };
+            let regex = build_regex(&pattern, case).map_err(|error| QueryDiagnostic {
+                range: query.content_range(),
+                message: error.message,
+                suggestion: None,
+            })?;
+            return Ok(Some(ContentPlan {
+                expr: ContentExpr::Regex(boolean.to_query_string()),
+                regex,
+                case,
+                boolean: Some(BooleanPlan { root: exact }),
+                provider: pattern,
+            }));
+        }
         let Some(expr) = &query.content else {
             return Ok(None);
         };
-        let case = query.case.unwrap_or(CaseMode::Smart);
         let regex = Self::compile_expression(expr, case).map_err(|mut diagnostic| {
             diagnostic.range = query.content_range();
             diagnostic
         })?;
+        let provider = match expr {
+            ContentExpr::Literal(text) | ContentExpr::Regex(text) => text.clone(),
+        };
         Ok(Some(ContentPlan {
             expr: expr.clone(),
             regex,
             case,
+            boolean: None,
+            provider,
         }))
+    }
+
+    /// Exact per-line admission (0063 §4). Simple queries are the regex
+    /// itself; Boolean queries evaluate the AST with path metadata.
+    pub fn matches_line(&self, line: &str) -> bool {
+        match &self.boolean {
+            Some(exact) => exact.admits(None, line),
+            None => self.regex.is_match(line),
+        }
+    }
+
+    /// Exact admission with the file's path for metadata atoms.
+    pub fn admits(&self, path: &str, line: &str) -> bool {
+        match &self.boolean {
+            Some(exact) => exact.admits(Some(path), line),
+            None => self.regex.is_match(line),
+        }
     }
 
     pub fn compile_expression(
@@ -265,5 +517,103 @@ mod tests {
     fn invalid_regex_is_a_diagnostic() {
         let query = SearchQuery::parse("regex:\"(unclosed\"");
         assert!(ContentPlan::compile(&query).is_err());
+    }
+
+    fn content_plan(input: &str) -> ContentPlan {
+        let query = SearchQuery::parse(input);
+        assert_eq!(
+            query.state,
+            super::super::QueryState::Ready,
+            "{input}: {:?}",
+            query.diagnostics
+        );
+        ContentPlan::compile(&query)
+            .unwrap()
+            .expect("content required")
+    }
+
+    #[test]
+    fn boolean_admits_same_line_conjunction_and_exclusion() {
+        // 0063 §4: AND means both literals on ONE logical line; NOT
+        // excludes the line. Git-grep line semantics, not file-level.
+        let plan = content_plan("text:\"retry\" AND text:\"request\" NOT text:\"test\"");
+        assert!(plan.admits("src/a.rs", "let request = retry(request);"));
+        assert!(!plan.admits("src/a.rs", "let request = retry(request); // test"));
+        assert!(!plan.admits("src/a.rs", "let request = x;"));
+        // Different lines are different candidates: neither line alone
+        // satisfies the conjunction.
+        assert!(!plan.admits("src/a.rs", "let retry = retry(x);"));
+        assert!(!plan.admits("src/a.rs", "let request = y;"));
+    }
+
+    #[test]
+    fn boolean_metadata_narrows_by_path_and_language() {
+        let plan = content_plan("(language:python OR language:cpp) parser");
+        assert!(plan.admits("pkg/main.py", "class Parser:"));
+        assert!(plan.admits("src/main.cpp", "Parser parser;"));
+        assert!(!plan.admits("src/main.rs", "struct Parser;"));
+    }
+
+    #[test]
+    fn boolean_branches_do_not_flatten() {
+        // (path:a AND foo) OR (path:b AND bar) — the branch relationship
+        // is preserved: a-with-bar or b-with-foo do not match (0063 §4).
+        let plan = content_plan("(path:alpha AND foo) OR (path:beta AND bar)");
+        assert!(plan.admits("alpha/x.rs", "fn foo() {}"));
+        assert!(plan.admits("beta/y.rs", "fn bar() {}"));
+        assert!(!plan.admits("alpha/x.rs", "fn bar() {}"));
+        assert!(!plan.admits("beta/y.rs", "fn foo() {}"));
+    }
+
+    #[test]
+    fn not_never_turns_failure_into_a_match() {
+        // Unknown evidence (a path with no extension) must not become
+        // false inside NOT and admit the line (0063 §4).
+        let plan = content_plan("NOT language:rust AND parser");
+        assert!(!plan.admits("src/main.rs", "struct Parser;"));
+        assert!(plan.admits("src/main.py", "class Parser:"));
+        assert!(plan.admits("noext", "parser here"));
+    }
+
+    #[test]
+    fn provider_prefilter_is_sound_for_every_admitted_line() {
+        // Prefilter soundness (0063 §6.2): every line the exact plan
+        // admits, the provider pattern also matches — overfetch only.
+        for input in [
+            "text:\"retry\" AND text:\"request\" NOT text:\"test\"",
+            "(path:alpha AND foo) OR (path:beta AND bar)",
+            "(language:python OR language:cpp) parser",
+            "NOT language:rust AND parser",
+            "foo OR bar AND NOT baz",
+        ] {
+            let plan = content_plan(input);
+            let corpus = [
+                ("src/a.rs", "let request = retry(request); // test"),
+                ("src/a.rs", "let retry = retry(x); let request = y;"),
+                ("pkg/main.py", "class Parser:"),
+                ("alpha/x.rs", "fn foo() {}"),
+                ("beta/y.rs", "fn bar() {}"),
+                ("src/main.cpp", "Parser parser;"),
+                ("noext", "parser here"),
+                ("src/b.rs", "baz foo bar"),
+            ];
+            for (path, line) in corpus {
+                if plan.admits(path, line) {
+                    assert!(
+                        plan.regex.is_match(line),
+                        "{input}: prefilter missed admitted line {line:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn boolean_case_modes_apply_to_atoms() {
+        let smart = content_plan("text:Parser AND text:Request");
+        assert!(smart.admits("x.rs", "Parser Request"));
+        assert!(!smart.admits("x.rs", "parser request"));
+        let ignore = content_plan("case:ignore text:Parser AND text:Request");
+        assert!(ignore.admits("x.rs", "parser request"));
     }
 }

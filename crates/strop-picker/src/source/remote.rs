@@ -1,10 +1,10 @@
 //! Read-only SSH search: select native paths first, then search bounded argv batches.
 use super::{
     flow::StreamSender,
-    query::{parse_json_match, scoped_path, RECORD_LIMIT},
+    query::{parse_json_match_with, scoped_path, RECORD_LIMIT},
     PickerMsg, SelectionPolicy, SourceSnapshot,
 };
-use crate::query::{CaseMode, ContentExpr, ContentPlan, FileSelectionPlan, SearchQuery};
+use crate::query::{CaseMode, ContentPlan, FileSelectionPlan, SearchQuery};
 use std::{ffi::OsString, path::PathBuf, sync::Arc};
 use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 use strop_workspace::{RemoteEndpoint, ResourceLocation};
@@ -79,10 +79,8 @@ fn search(
     })?;
     records.finish()?;
     super::snapshots::emit_snapshots(root, &content, snapshots, &mut paths, tx, token)?;
-    let pattern = match &content.expr {
-        ContentExpr::Literal(text) | ContentExpr::Regex(text) => text,
-    };
-    common.extend(["--json".into(), "-e".into(), pattern.into()]);
+    let pattern: std::ffi::OsString = content.provider_pattern().into();
+    common.extend(["--json".into(), "-e".into(), pattern]);
     common.push(
         match content.case {
             CaseMode::Smart => "--smart-case",
@@ -91,7 +89,7 @@ fn search(
         }
         .into(),
     );
-    if matches!(content.expr, ContentExpr::Literal(_)) {
+    if content.is_literal() {
         common.push("--fixed-strings".into());
     }
     common.push("--".into());
@@ -122,9 +120,10 @@ fn search(
             }
         }
         let mut records = Records::new(b'\n');
+        let admitting = content.clone();
         run(endpoint, root, args, token, tx, |chunk| {
             records.feed(chunk, |record| {
-                let items = parse_json_match(record, root)?;
+                let items = parse_json_match_with(record, root, Some(&admitting))?;
                 tx.batch(items, token)
                     .map_err(|error| error.message().to_string())
             })

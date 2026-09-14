@@ -11,7 +11,6 @@ use std::sync::mpsc::channel;
 
 use strop_core::worker::{self, CancelReason, FailureKind, Outcome};
 
-use super::query::parse_json_match;
 use super::PickerMsg;
 use super::SourceSnapshot;
 
@@ -136,15 +135,13 @@ pub(super) fn run(
     if cancel.is_cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
-    let pattern = match &content.expr {
-        crate::query::ContentExpr::Literal(text) => {
-            if text.is_empty() {
-                return Outcome::Success(());
-            }
-            text.clone()
-        }
-        crate::query::ContentExpr::Regex(pattern) => pattern.clone(),
-    };
+    let pattern = content.provider_pattern().to_string();
+    if content.is_literal() && pattern.is_empty() {
+        return Outcome::Success(());
+    }
+    // The reader thread admits every hit line through the exact plan:
+    // the provider pattern only prefilters (0063 §4).
+    let admitting = content.clone();
     // eligible paths from the shared selection authority;
     // bounded argv batches (0051 §3: real bounds, no shell)
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
@@ -195,7 +192,7 @@ pub(super) fn run(
         crate::query::CaseMode::Sensitive => argv.push("--case-sensitive".into()),
         crate::query::CaseMode::Ignore => argv.push("-i".into()),
     }
-    if matches!(content.expr, crate::query::ContentExpr::Literal(_)) {
+    if content.is_literal() {
         argv.push("-F".into());
     }
     if policy.effective(&plan).hidden {
@@ -250,6 +247,7 @@ pub(super) fn run(
             let Some(mut stderr) = process.child.stderr.take() else {
                 return Outcome::failed(FailureKind::Protocol, "rg: missing stderr");
             };
+            let admitting = admitting.clone();
             let out_events = events.clone();
             let out_tx = tx.clone();
             let root = strop_workspace::ResourceLocation::local(cwd.clone());
@@ -278,7 +276,11 @@ pub(super) fn run(
                                 return Outcome::failed(FailureKind::Io, error.to_string())
                             }
                         }
-                        let items = match parse_json_match(&line, &root) {
+                        let items = match super::query::parse_json_match_with(
+                            &line,
+                            &root,
+                            Some(&admitting),
+                        ) {
                             Ok(items) => items,
                             Err(error) => return Outcome::failed(FailureKind::Protocol, error),
                         };

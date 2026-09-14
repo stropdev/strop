@@ -41,7 +41,7 @@ pub fn suggest(query: &super::SearchQuery, caret: usize) -> Vec<Suggestion> {
         return qualifier_suggestions("", caret..caret);
     };
     match &token.kind {
-        TokenKind::UnclosedQuote => Vec::new(),
+        TokenKind::UnclosedQuote | TokenKind::Operator(_) | TokenKind::Paren { .. } => Vec::new(),
         TokenKind::Word { text, quoted } => {
             if *quoted {
                 return Vec::new();

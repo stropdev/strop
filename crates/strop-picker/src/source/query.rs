@@ -42,8 +42,19 @@ fn bytes(value: &serde_json::Value) -> Result<Vec<u8>, String> {
         _ => Err("rg text/bytes field is missing or ambiguous".into()),
     }
 }
-/// A validated event produces every admitted submatch, never a silent malformed prefix.
-pub fn parse_json_match(line: &[u8], root: &ResourceLocation) -> Result<Vec<Item>, String> {
+#[cfg(test)]
+fn parse_json_match(line: &[u8], root: &ResourceLocation) -> Result<Vec<Item>, String> {
+    parse_json_match_with(line, root, None)
+}
+
+/// Parse one rg JSON match record; when a plan is given, its exact
+/// Boolean admission (0063 §4) filters lines the provider prefilter
+/// overfetched before any item is admitted.
+pub fn parse_json_match_with(
+    line: &[u8],
+    root: &ResourceLocation,
+    admit: Option<&crate::query::ContentPlan>,
+) -> Result<Vec<Item>, String> {
     if line.len() > RECORD_LIMIT {
         return Err("rg record exceeds the 1 MiB bound".into());
     }
@@ -74,6 +85,15 @@ pub fn parse_json_match(line: &[u8], root: &ResourceLocation) -> Result<Vec<Item
         .ok_or("rg match has no submatch array")?;
     if submatches.len() > MATCH_LIMIT {
         return Err("rg record exceeds the 4096-match bound".into());
+    }
+    if let Some(plan) = admit {
+        let relative = location
+            .path
+            .strip_prefix(&root.path)
+            .map_err(|_| "rg path escaped scope".to_string())?;
+        if !plan.admits(&relative.to_string_lossy(), &text) {
+            return Ok(Vec::new());
+        }
     }
     let short: String = text.trim().chars().take(80).collect();
     let relative = location

@@ -49,11 +49,7 @@ pub(crate) fn apply_filter(
             .to_str()
             .map(std::borrow::Cow::Borrowed)
             .unwrap_or_else(|| std::borrow::Cow::Owned(entry.name.display()));
-        if selection.allows(&name)
-            && content
-                .as_ref()
-                .is_none_or(|plan| plan.regex.is_match(&name))
-        {
+        if selection.allows(&name) && content.as_ref().is_none_or(|plan| plan.matches_line(&name)) {
             visible.push(index);
         }
     }

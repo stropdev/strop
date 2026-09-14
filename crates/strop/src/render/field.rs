@@ -81,6 +81,7 @@ fn role_style(role: Role) -> Style {
     match role {
         Role::QualifierKey => Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         Role::Punctuation => Style::default().fg(MUTED),
+        Role::Operator => Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         Role::Value | Role::Literal => Style::default().fg(TEXT),
         Role::Regex => Style::default().fg(Color::Rgb(0xcb, 0xa6, 0xf7)),
         Role::Negation | Role::Error => Style::default()
