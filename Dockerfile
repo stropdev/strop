@@ -21,7 +21,7 @@ FROM builder AS test
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
 RUN cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
-    && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked
+    && STROP_REQUIRE_SSH_TESTS=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked
 
 FROM builder AS bin
 RUN cargo build --locked -p strop-editor

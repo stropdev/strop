@@ -12,9 +12,16 @@ use std::time::{Duration, Instant};
 
 /// Hang canary for the jobs barrier: the bound exists only to fail deadlocks,
 /// never to budget legitimate work. Real sshd handshakes inside the parallel
-/// Docker suite can outrun tens of seconds on a starved runner, so the margin
-/// is generous; the happy path returns the moment jobs clear.
-const JOBS_BUDGET: Duration = Duration::from_secs(120);
+/// Docker suite can outrun minutes on a starved runner, so the margin is
+/// generous and the gate raises it further via `STROP_JOBS_BUDGET_MS` (the
+/// same environment-seam precedent as `STROP_REQUIRE_SSH_TESTS`); the happy
+/// path returns the moment jobs clear.
+fn jobs_budget() -> Duration {
+    const DEFAULT: Duration = Duration::from_secs(120);
+    std::env::var_os("STROP_JOBS_BUDGET_MS")
+        .and_then(|raw| raw.to_str()?.parse::<u64>().ok())
+        .map_or(DEFAULT, Duration::from_millis)
+}
 
 struct Driver<'a> {
     editor: &'a mut Editor,
@@ -230,7 +237,7 @@ pub fn run_script(
             }
             DirectiveKind::Settle => {
                 driver.wait(
-                    directives::duration(arguments, Some(JOBS_BUDGET))?,
+                    directives::duration(arguments, Some(jobs_budget()))?,
                     WaitTarget::Jobs,
                     true,
                 )?;
@@ -266,7 +273,7 @@ pub fn run_script(
         }
     }
     driver.apply(Action::Finish)?;
-    driver.wait(JOBS_BUDGET, WaitTarget::Jobs, false)?;
+    driver.wait(jobs_budget(), WaitTarget::Jobs, false)?;
     driver.editor.tape.finish()?;
     if let Some(error) = driver.editor.take_shutdown_error() {
         return Err(io::Error::other(error));

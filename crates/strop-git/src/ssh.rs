@@ -113,6 +113,24 @@ mod tests {
     use super::*;
 
     fn resolve(program: &str, host: &str) -> Result<String, EffectiveHostError> {
+        // Executing a script this suite wrote microseconds earlier can hit
+        // Linux's close-to-exec ETXTBSY race (observed on loaded overlayfs in
+        // the ARM gate). It is transient with no deterministic wait
+        // primitive, so back off and retry the spawn instead of failing.
+        for attempt in 1.. {
+            let outcome = resolve_once(program, host);
+            let transient = matches!(
+                &outcome,
+                Err(EffectiveHostError::Spawn(message)) if message.contains("Text file busy")
+            );
+            if !transient || attempt == 8 {
+                return outcome;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25 * attempt));
+        }
+        unreachable!()
+    }
+    fn resolve_once(program: &str, host: &str) -> Result<String, EffectiveHostError> {
         let (tx, rx) = std::sync::mpsc::channel();
         let program = program.to_owned();
         let host = host.to_owned();
