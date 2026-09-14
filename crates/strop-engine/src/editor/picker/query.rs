@@ -162,6 +162,76 @@ impl Editor {
         }
     }
 
+    /// `space S` (0063 §2): one-shot — walk + syntax-fallback index,
+    /// then local ranking per keystroke. Replay registers like files.
+    pub(super) fn launch_workspace_symbols_request(&mut self) {
+        let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
+            return;
+        };
+        let request = match self.worker_ids.allocate() {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = error.message;
+                return;
+            }
+        };
+        let ticket = Ticket {
+            request,
+            key: PickerKey {
+                picker,
+                cwd: self.cwd.clone(),
+            },
+        };
+        if let Some(glue) = self.picker.as_mut() {
+            glue.active = Some(ticket.clone());
+            glue.picker.streaming = true;
+        }
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+            serde_json::json!({
+                "service":"picker","source":"workspace-symbols","id":picker.0.get(),
+                "request":request.get(),"cwd":self.cwd.to_string_lossy(),
+            })
+        });
+        match self.tape.request(
+            "picker-workspace-symbols",
+            &serde_json::json!({"ticket":ticket}),
+        ) {
+            Ok(false) => return,
+            Ok(true) => {}
+            Err(error) => {
+                self.handle_picker_event(PickerEvent {
+                    ticket,
+                    msg: PickerMsg::Finished(strop_core::worker::Outcome::failed(
+                        strop_core::worker::FailureKind::Protocol,
+                        error.to_string(),
+                    )),
+                });
+                return;
+            }
+        }
+        let policy = self.query_policy();
+        let tx = self.picker_source_sink(ticket.clone());
+        let root = self.cwd.clone();
+        let worker = match self.source_worker() {
+            Ok(source) => source.workspace_symbols(
+                root,
+                std::sync::Arc::new(SearchQuery::default()),
+                policy,
+                tx,
+            ),
+            Err(failure) => {
+                let _ = tx.send(PickerMsg::Finished(strop_core::worker::Outcome::Failed {
+                    failure,
+                    partial: None,
+                }));
+                return;
+            }
+        };
+        if let Some(glue) = self.picker.as_mut() {
+            glue.worker = Some(worker);
+        }
+    }
+
     pub(super) fn picker_input_changed(&mut self) {
         let Some(kind) = self.picker.as_ref().map(|glue| glue.picker.kind) else {
             return;

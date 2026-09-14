@@ -276,3 +276,22 @@ through `parse_json_match_with`, and suggestion listing. Still open:
 LSP lazy init and the workspace-symbols picker surface (§2),
 incremental cross-search reuse and invalidation (0058's worker),
 stored-query versioning (§3), and the §6 tiers.
+
+Workspace-symbols surface slice (2026-09-14): `space S` is live —
+the picker lists every declaration in the opened scope through the
+syntax-fallback tier, one bounded source (`run_workspace_symbols`):
+the shared selection walk, the symbol index, then deterministic
+path-ordered rows in the 0047 convention (`name  path · :line`, kind
+chip in the badge column). Rows jump like grep hits — cursor lands on
+the declaration's name via the new byte column on `Declaration`.
+Coverage stays honest: `SymbolIndex::coverage_gap()` (eligible files
+minus complete extractions) surfaces as a visible warning, never as
+silence; non-extractor languages are out of the tier's declared
+coverage, not a gap. The list is static — ranking is local per
+keystroke through the ordinary picker path; no per-keystroke respawn.
+The pane shares the symbols preview shape (numbered gutter, one ▶ on
+the declaration line). LSP warm sessions and unopened-project lazy
+init merge into this surface next; `docs/vim-compat.md` regenerated.
+Evidence: source worker test (rows, chips, non-source exclusion),
+engine test (open → list → Enter jumps to name at line:col), render
+preview pin, compat report freshness.

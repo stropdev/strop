@@ -5,7 +5,10 @@ use strop_picker::Kind;
 
 /// The floating/workspace card rect for the open kind (0050 §8).
 pub(super) fn card(area: Rect, kind: Kind) -> Rect {
-    if matches!(kind, Kind::Search | Kind::Files | Kind::Symbols) {
+    if matches!(
+        kind,
+        Kind::Search | Kind::Files | Kind::Symbols | Kind::WorkspaceSymbols
+    ) {
         Rect {
             x: area.x + 1,
             y: area.y,

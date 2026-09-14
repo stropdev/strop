@@ -268,7 +268,7 @@ impl Editor {
             Kind::FilesystemActions => {
                 unreachable!("filesystem actions build their own captured selector")
             }
-            Kind::Symbols => vec![],
+            Kind::Symbols | Kind::WorkspaceSymbols => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")
             }
@@ -277,6 +277,16 @@ impl Editor {
         if kind == Kind::Files {
             self.picker_input_changed();
         }
+        if kind == Kind::WorkspaceSymbols {
+            self.launch_workspace_symbols_request();
+        }
+    }
+
+    /// `space S` (0063 §2): every declaration in the opened scope —
+    /// syntax-fallback tier now, language servers merge in as they
+    /// warm up. The list is static; ranking is local per keystroke.
+    pub(crate) fn open_workspace_symbols(&mut self) {
+        self.open_picker(Kind::WorkspaceSymbols);
     }
 
     /// `:search-options` (0051 R03): the hidden/ignore controls with

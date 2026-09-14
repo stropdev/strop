@@ -103,7 +103,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ space k` — hover docs
 - `✓ space a` — context actions (code / filesystem)
 - `✓ space s` — document symbols picker
-- `· space S` — workspace symbols picker (soon)
+- `✓ space S` — workspace symbols picker
 - `✓ space j` — jumplist picker
 - `✓ space u` — undo-tree browser
 - `✓ space c` — cursor on next line too (multicursor)

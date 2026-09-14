@@ -273,6 +273,43 @@ mod tests {
     }
 
     #[test]
+    fn workspace_symbols_preview_points_at_the_declaration_line() {
+        // 0063 §2: the workspace tier shares the symbols pane shape —
+        // numbered gutter, one ▶ marker on the declaration line.
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("lib.rs");
+        let text = format!("{}fn dispatch() {{}}\n", "filler\n".repeat(41));
+        std::fs::write(&path, text).unwrap();
+        let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+        editor.open_fixture(&path).unwrap();
+        editor.open_picker(strop_picker::Kind::WorkspaceSymbols);
+        editor.picker_items_fixture(vec![strop_picker::Item {
+            badge: Some("fn".into()),
+            text: "dispatch  lib.rs · :42".into(),
+            payload: strop_picker::Payload::Grep {
+                location: strop_workspace::ResourceLocation::local(path.clone()),
+                line: 42,
+                col: 4,
+                match_len: 8,
+                line_text: "fn dispatch() {}".into(),
+            },
+        }]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        terminal
+            .draw(|frame| crate::render::render(&mut editor, frame))
+            .unwrap();
+        let grid = terminal.backend().buffer();
+        let right: Vec<String> = (0..30)
+            .map(|y| (56..100).map(|x| grid[(x, y)].symbol()).collect())
+            .collect();
+        assert!(
+            right.iter().any(|line| line.contains("▶ 42 │")),
+            "declaration marker on line 42: {right:?}"
+        );
+    }
+
+    #[test]
     fn symbols_preview_points_at_the_symbol_line_in_the_full_screen_workspace() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("mod.rs");

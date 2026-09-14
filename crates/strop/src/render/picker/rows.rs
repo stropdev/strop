@@ -143,7 +143,9 @@ fn compose_row(
     active: bool,
 ) -> Vec<Line<'static>> {
     match kind {
-        strop_picker::Kind::Symbols => vec![symbol_row(item, match_cols, width, active)],
+        strop_picker::Kind::Symbols | strop_picker::Kind::WorkspaceSymbols => {
+            vec![symbol_row(item, match_cols, width, active)]
+        }
         strop_picker::Kind::Files => vec![file_row(&item.text, match_cols, width, active)],
         _ => vec![generic_row(item, match_cols, width, active)],
     }

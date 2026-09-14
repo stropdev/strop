@@ -225,3 +225,39 @@ fn qualifier_edits_do_not_clear_ranked_results() {
         "results stay while the effective needle is unchanged"
     );
 }
+
+#[test]
+fn workspace_symbols_lists_and_jump_lands_on_the_declaration() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("lib.rs"),
+        "struct St;\nfn wrap() {\n    let x = 1;\n}\n",
+    )
+    .unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        vec!["St  lib.rs · :1", "wrap  lib.rs · :2"],
+        "path-sorted declaration rows with the symbol convention"
+    );
+    assert_eq!(
+        picker.items.get(0).unwrap().badge.as_deref(),
+        Some("struct")
+    );
+    assert_eq!(picker.items.get(1).unwrap().badge.as_deref(), Some("fn"));
+    editor.feed(Key::Down);
+    editor.feed(Key::Enter);
+    editor.wait_io().unwrap();
+    assert!(!editor.picker_open());
+    let path = strop_workspace::ResourceLocation::local(dir.path().join("lib.rs"));
+    assert!(editor
+        .doc(editor.current())
+        .matches_target(&crate::files::FileTarget::from_location(&path).unwrap()));
+    // The cursor sits on the name: line 2, byte column 4 (`fn |wrap`).
+    assert_eq!(editor.head(), editor.buf().line_start(1) + 3);
+    assert!(!editor.buf().dirty);
+}

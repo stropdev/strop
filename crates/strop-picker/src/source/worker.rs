@@ -137,6 +137,20 @@ impl SourceWorker {
             super::run_files(root, query, policy, tx, token)
         })
     }
+
+    /// One-shot: every declaration in the opened scope (0063 §2).
+    /// The item list is static — the picker ranks locally per keystroke.
+    pub fn workspace_symbols(
+        &self,
+        root: PathBuf,
+        query: Arc<SearchQuery>,
+        policy: SelectionPolicy,
+        sender: impl Into<SourceSink>,
+    ) -> CancelHandle {
+        self.submit(sender, move |tx, token| {
+            super::run_workspace_symbols(root, query, policy, tx, token)
+        })
+    }
     pub fn search(
         &self,
         query: Arc<SearchQuery>,

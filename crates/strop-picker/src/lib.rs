@@ -112,6 +112,9 @@ pub enum Kind {
     SearchOptions,
     /// A language server's document symbols (0047 §1).
     Symbols,
+    /// Every declaration in the opened scope: syntax-fallback tier now
+    /// (0063 §2), language servers merge in as they warm up.
+    WorkspaceSymbols,
     Files,
     Buffers,
     /// One content-search workspace with an optional replacement facet.
@@ -147,6 +150,7 @@ impl Kind {
             Kind::SearchOptions => " search options ",
             Kind::TabSize => " tab size ",
             Kind::Symbols => " symbols ",
+            Kind::WorkspaceSymbols => " workspace symbols ",
             Kind::RemoteAddress => " connect to remote ",
             Kind::CodeActions => " code actions ",
             Kind::FilesystemActions => " filesystem actions ",

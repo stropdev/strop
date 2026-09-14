@@ -28,6 +28,23 @@ pub enum SymbolKind {
     Constant,
 }
 
+impl SymbolKind {
+    /// Compact chip text (picker badge column), matching the LSP
+    /// tier's `short_kind` vocabulary.
+    pub fn chip(self) -> &'static str {
+        match self {
+            SymbolKind::Function => "fn",
+            SymbolKind::Method => "meth",
+            SymbolKind::Class => "class",
+            SymbolKind::Struct => "struct",
+            SymbolKind::Enum => "enum",
+            SymbolKind::Interface => "iface",
+            SymbolKind::Module => "mod",
+            SymbolKind::Constant => "const",
+        }
+    }
+}
+
 /// One extracted declaration: kind, name and inclusive line span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Declaration {
@@ -37,6 +54,8 @@ pub struct Declaration {
     pub line: usize,
     /// 1-based last line of the span (inclusive).
     pub end_line: usize,
+    /// 1-based byte column of the name (jump target, rg convention).
+    pub col: usize,
 }
 
 /// One language's extraction state: parser and compiled query are
@@ -141,6 +160,7 @@ impl DeclExtractor {
             let text = source
                 .get(name.byte_range())
                 .map(|bytes| String::from_utf8_lossy(bytes).into_owned());
+            let name_col = name.start_position().column;
             let (Some(name), start, end) = (text, decl.start_position(), decl.end_position())
             else {
                 continue;
@@ -157,6 +177,7 @@ impl DeclExtractor {
                 name,
                 line: start.row + 1,
                 end_line: end_row + 1,
+                col: name_col.saturating_add(1),
             });
         }
         found.sort_by_key(|declaration| (declaration.line, declaration.end_line));

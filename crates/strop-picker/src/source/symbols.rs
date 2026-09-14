@@ -34,6 +34,10 @@ pub struct FileSymbols {
 /// The per-search symbol evidence for `kind:` atoms.
 pub struct SymbolIndex {
     files: HashMap<Box<str>, FileSymbols>,
+    /// Files whose extension maps to an extractor language.
+    eligible: usize,
+    /// Eligible files with complete evidence (parse succeeded).
+    covered: usize,
 }
 
 impl SymbolIndex {
@@ -42,6 +46,8 @@ impl SymbolIndex {
     pub fn build(cwd: &Path, paths: &[std::path::PathBuf], cancelled: &dyn Fn() -> bool) -> Self {
         let mut index = Self {
             files: HashMap::new(),
+            eligible: 0,
+            covered: 0,
         };
         let mut extractors: HashMap<languages::LanguageId, DeclExtractor> = HashMap::new();
         let mut total = 0u64;
@@ -60,10 +66,13 @@ impl SymbolIndex {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     match DeclExtractor::for_language(spec.id) {
                         Some(extractor) => entry.insert(extractor),
+                        // Not extractor-eligible: out of the tier's
+                        // declared coverage, not a coverage gap.
                         None => continue,
                     }
                 }
             };
+            index.eligible += 1;
             let absolute = cwd.join(path);
             let Ok(metadata) = std::fs::metadata(&absolute) else {
                 continue;
@@ -77,6 +86,7 @@ impl SymbolIndex {
             total = total.saturating_add(source.len() as u64);
             let declarations = extractor.extract(&source, cancelled);
             let complete = declarations.is_some();
+            index.covered += usize::from(complete);
             index.files.insert(
                 path.to_string_lossy().into_owned().into_boxed_str(),
                 FileSymbols {
@@ -128,6 +138,22 @@ impl SymbolIndex {
                 && declaration.line <= line
                 && line <= declaration.end_line
         }))
+    }
+
+    /// Honest coverage (0063 §2): some eligible file contributed no
+    /// evidence — bounds, unreadable, or a failed parse. True means
+    /// the list is knowingly incomplete, never silently empty.
+    pub fn coverage_gap(&self) -> bool {
+        self.covered < self.eligible
+    }
+
+    /// Iterate every complete entry, path first: `(relative path,
+    /// declarations)`. Incomplete entries are absent — no evidence.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &[Declaration])> {
+        self.files
+            .iter()
+            .filter(|(_, entry)| entry.complete)
+            .map(|(path, entry)| (path.as_ref(), entry.declarations.as_slice()))
     }
 
     /// `kind:` values the query language accepts (0063 §2/§3).

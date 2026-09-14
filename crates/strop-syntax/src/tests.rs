@@ -554,6 +554,10 @@ mod symbols_fallback {
             extract(languages::LanguageId::Rust, src),
             vec![(SymbolKind::Function, "wrapped".into(), 1, 4)]
         );
+        // The name's byte column is the jump target (rg convention).
+        let mut extractor = DeclExtractor::for_language(languages::LanguageId::Rust).unwrap();
+        let found = extractor.extract(src.as_bytes(), &|| false).unwrap();
+        assert_eq!(found[0].col, 4, "fn wrapped: name starts at byte 3, col 4");
     }
 
     #[test]

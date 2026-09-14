@@ -841,9 +841,9 @@ pub const BINDINGS: &[Binding] = &[
         keys: "space S",
         desc: "workspace symbols picker",
         sections: &["leader"],
-        live: false,
+        live: true,
         id: "workspace-symbols",
-        handler: Handler::Soon,
+        handler: Handler::Leaf(|e, _| e.open_workspace_symbols()),
     },
     Binding {
         keys: "space j",
