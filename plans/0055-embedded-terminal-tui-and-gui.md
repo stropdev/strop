@@ -882,3 +882,12 @@ The flood test now asserts the trace ends `complete` and replays
 execution-free. Known follow-up compaction (not needed for the milestone):
 derive trailing padding on the wire, and inter-frame row identity so a
 keystroke does not re-record unchanged history.
+
+Release evidence (v0.32.2, tagged 2026-09-14): the workflow ran green end
+to end — both Darwin and both musl builds, 8 tarball assets, crates.io,
+homebrew tap and the site (hero chip, roadmap, changelog) at 0.32.2; ci
+and demo green (one ci rerun of a known SSH-budget flake under parallel
+load, clean on retry). The shipped x86_64-musl tarball was sha256-verified
+and its single static binary drove `:terminal` through the real PTY helper
+under `--headless` on this WSL2 host — live session, typed command echoed,
+`Ctrl-\ Ctrl-N` pinned snapshot — the T10 outer-terminal pattern.
