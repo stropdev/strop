@@ -128,7 +128,13 @@ impl Tui {
         }
     }
     fn until(&mut self, predicate: impl Fn(&str) -> bool) -> String {
-        let deadline = Instant::now() + Duration::from_secs(15);
+        self.until_within(Duration::from_secs(15), predicate)
+    }
+    /// Slow runners process a consented capture's flood of full-frame
+    /// records on the editor thread; a minute still distinguishes a drain
+    /// from a hang.
+    fn until_within(&mut self, budget: Duration, predicate: impl Fn(&str) -> bool) -> String {
+        let deadline = Instant::now() + budget;
         loop {
             let screen = self.screen.screen().contents();
             if predicate(&screen) {
@@ -269,15 +275,23 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     // and degrade the trace.
     tui.send(b"printf 'FLOOD-START\\n'; yes | head -c 16384; printf '\\r\\nFLOOD-DONE\\n'\r");
     tui.send(b"\x1c\x0e");
-    tui.until(|screen| screen.contains("NORMAL") && screen.contains("snapshot"));
+    // The capture's per-update frame records queue ahead of this escape on
+    // slow runners; the escape still lands in order — the mid-flood input
+    // contract — so the waits ride the drain, not the 15s default.
+    let drain = Duration::from_secs(60);
+    tui.until_within(drain, |screen| {
+        screen.contains("NORMAL") && screen.contains("snapshot")
+    });
     tui.send(b"i");
-    let settled = tui.until(|screen| line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>"));
+    let settled = tui.until_within(drain, |screen| {
+        line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>")
+    });
     assert!(
         !settled.contains("FLOOD-START"),
         "bounded history must drop the flood head"
     );
     tui.send(b"mkfifo pause; (exec 3<>pause; printf '\\r\\nINSPECTION-READY\\n'; read go <&3; printf '\\r\\nASYNC-INSPECTION-OUTPUT\\n') &\r");
-    tui.until(|screen| line(screen, "INSPECTION-READY"));
+    tui.until_within(drain, |screen| line(screen, "INSPECTION-READY"));
     tui.send(b"\x1c\x0e");
     tui.until(|screen| screen.contains("NORMAL") && screen.contains("snapshot"));
     File::options()
