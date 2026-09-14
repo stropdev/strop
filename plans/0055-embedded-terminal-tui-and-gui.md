@@ -314,13 +314,23 @@ The delayed spawn result cannot steal focus back from a pane the user selected.
 
 ### Terminal-input versus terminal-Normal mode
 
-- Terminal-input sends keys to the child: Esc, Ctrl-C, Ctrl-R, Ctrl-L and Ctrl-W
+- Terminal-input sends keys to the child: Esc, Ctrl-C, Ctrl-R and Ctrl-L
   keep their child/application meanings. Ctrl-C is normally a byte delivered to
   the PTY so termios/the foreground application decides what it means; it is not
   Strop QuitIntent or an unconditional kill of the shell.
 - **Ctrl-\\ Ctrl-N** leaves terminal-input for Strop Normal mode. `i`/`a` return
   to child input and the live cursor. Esc alone must keep working inside nested
   Vim/Neovim and other modal applications.
+- **Ctrl-W is an editor-owned window prefix in terminal-input** (2026-09-14,
+  after real-use feedback): `Ctrl-W h/j/k/l/w` (and arrows) move or cycle panes,
+  `Ctrl-W N` (or the Ctrl-N escape) enters terminal-Normal inspection, and
+  `Ctrl-W .` delivers the literal 0x17 to the child. Any other follow-up
+  forwards the prefix plus the key to the child unchanged. This is classic
+  Vim's documented `t_CTRL-W` grammar; neovim instead passes Ctrl-W through and
+  expects `tnoremap <C-w> <C-\><C-n><C-w>` — the dominant community default.
+  Strop is zero-config, so the useful prefix ships built in; the cost (a lone
+  Ctrl-W never reaches the child without `.`) is the documented Vim tradeoff,
+  and the prefix hint renders in the message line.
 - The escape prefix has an explicit owner. A nonmatching second key forwards the
   literal prefix plus that key in order; it must not disappear. Focus loss cancels
   the editor escape-prefix state without routing the next key into another session.
@@ -331,6 +341,12 @@ The delayed spawn result cannot steal focus back from a pane the user selected.
 - Output continues while inspecting scrollback without dragging the view to the
   bottom. Returning to terminal-input explicitly follows the live cursor again.
   Exited terminal buffers remain readable; restarting is an explicit new session.
+- Terminals are real switchable buffers: they list in the buffers picker with
+  Vim's `!` job badge and their live phase (`terminal #N · dir · running`),
+  jump rows use the same truthful label, and entering a terminal records a
+  jump so `Ctrl-O` returns to the editing position. No separate "open things"
+  concept is warranted (2026-09-14 review); panes + buffers + jumplist already
+  model it.
 
 ### Screen text is a projection, not an ordinary editable file
 

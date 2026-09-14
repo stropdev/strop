@@ -214,21 +214,46 @@ impl Editor {
             return;
         }
         let items = match kind {
-            Kind::Buffers => self
-                .mru
-                .iter()
-                .map(|&i| {
-                    let name = match self.doc(i).buf.path.as_ref() {
-                        Some(path) => path.to_string_lossy().into_owned(),
-                        None => "[scratch]".into(),
-                    };
-                    Item {
-                        badge: None,
-                        text: name,
-                        payload: Payload::Buffer(i),
-                    }
-                })
-                .collect(),
+            Kind::Buffers => {
+                let cwd = self.cwd.clone();
+                self.mru
+                    .iter()
+                    .map(|&i| {
+                        // Terminals are real switchable buffers: they list
+                        // with vim's `!` job flag and their live phase, so
+                        // "what is open?" has one truthful answer.
+                        let (badge, name) = match self.terminal_document(i) {
+                            Some(terminal) => {
+                                let phase = self
+                                    .terminal_phase(i)
+                                    .map(terminal_phase_label)
+                                    .unwrap_or_else(|| "unknown".into());
+                                let directory = self
+                                    .terminal_launch_directory(i)
+                                    .and_then(|path| {
+                                        path.file_name()
+                                            .map(|name| name.to_string_lossy().into_owned())
+                                    })
+                                    .unwrap_or_default();
+                                (
+                                    Some("!"),
+                                    format!(
+                                        "terminal #{} · {directory} · {phase}",
+                                        terminal.session.get()
+                                    ),
+                                )
+                            }
+                            None => (None, self.doc(i).label(&cwd)),
+                        };
+                        let badge = badge.map(str::to_owned);
+                        Item {
+                            badge,
+                            text: name,
+                            payload: Payload::Buffer(i),
+                        }
+                    })
+                    .collect()
+            }
             // Grep/Replace stream only once input registers a request;
             // Files launches its walk right after install.
             Kind::Files
@@ -680,14 +705,27 @@ pub type Previews = HashMap<strop_workspace::ResourceLocation, PreviewEntry>;
 /// One jumplist row; dead documents drop out (0047 §2). The payload
 /// stays a plain destination — accepting a menu entry is a NEW jump
 /// landing (0051 §7), not a ctrl-o view restore.
+fn terminal_phase_label(phase: &strop_terminal::model::Phase) -> String {
+    use strop_terminal::model::Phase;
+    match phase {
+        Phase::Starting => "starting".into(),
+        Phase::Running => "running".into(),
+        Phase::Closing => "closing".into(),
+        Phase::Exited {
+            code: Some(code),
+            signal: None,
+        } => format!("exited {code}"),
+        Phase::Exited {
+            code: None,
+            signal: Some(signal),
+        } => format!("killed {signal}"),
+        Phase::Exited { .. } => "exited".into(),
+        Phase::Failed(_) => "failed".into(),
+    }
+}
 fn jump_row(editor: &Editor, record: &super::jumps::JumpRecord, marker: &str) -> Option<Item> {
     let doc = editor.docs.get(record.document)?;
-    let name = doc
-        .buf
-        .path
-        .as_ref()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "[scratch]".into());
+    let name = doc.label(&editor.cwd);
     let line = doc.buf.line_of(record.offset.min(doc.buf.len_bytes()));
     let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
     Some(Item {

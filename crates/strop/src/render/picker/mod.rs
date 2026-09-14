@@ -308,32 +308,9 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     // 0050 §8: the decision list wins the budget; narrow terminals stack
     // a short preview below the list instead of two unreadable slivers;
     // very little height lists only.
-    let (results, preview_area) = if remote_picker {
-        (rows[1], None)
-    } else if card.width < 64 && rows[1].height >= 12 {
-        let stacked = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(8), Constraint::Length(8)])
-            .split(rows[1]);
-        (stacked[0], Some(stacked[1]))
-    } else if card.width < 64 {
-        (rows[1], None)
-    } else {
-        // The file preview carries the evidence: it gets the wider share of
-        // the full-screen workspace (grep 60/40, files/symbols 55/45).
-        let list = if kind == strop_picker::Kind::Search {
-            60
-        } else {
-            55
-        };
-        let cols = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(list),
-                Constraint::Percentage(100 - list),
-            ])
-            .split(rows[1]);
-        (cols[0], Some(cols[1]))
+    let (results, preview_area) = match layout::split_results(area, kind, replacement_visible) {
+        Some(pair) => pair,
+        None => (rows[1], None),
     };
 
     if kind == strop_picker::Kind::RemoteAddress {
@@ -450,4 +427,49 @@ pub(super) fn reveal_for_prepare(editor: &mut Editor, area: Rect) {
     };
     glue.picker
         .reveal_selected((results.height as usize / layout::per_row(kind, replace_visible)).max(1));
+    admit_preview(editor, area, kind, replace_visible);
+}
+
+/// AR01 admission for the picker preview: the mutable resolver requests the
+/// bounded read, then the visible window's syntax analysis is admitted with
+/// exactly the bounds paint will query. Paint reads only the cached twins,
+/// so without this the preview stays on `loading…` forever.
+fn admit_preview(editor: &mut Editor, area: Rect, kind: strop_picker::Kind, replace_visible: bool) {
+    let Some((_, focus_line, source)) = editor.picker_preview() else {
+        return;
+    };
+    let Some(preview_area) =
+        layout::split_results(area, kind, replace_visible).and_then(|(_, preview)| preview)
+    else {
+        return;
+    };
+    let visible = preview_area.height.saturating_sub(1) as usize;
+    let width = usize::from(preview_area.width.saturating_sub(1));
+    match source {
+        crate::editor::PreviewSource::Buffer(document) => {
+            let rope = editor.doc(document).buf.snapshot();
+            let window = preview::preview_window(&rope, focus_line, visible);
+            editor.document_analysis(
+                document,
+                rope.line_to_byte(window.start),
+                rope.line_to_byte(window.end),
+                0,
+                width,
+            );
+        }
+        crate::editor::PreviewSource::Cached(path) => {
+            let Some(entry) = editor.previews.get(&path) else {
+                return;
+            };
+            let rope = entry.rope.clone();
+            let window = preview::preview_window(&rope, focus_line, visible);
+            editor.preview_analysis(
+                &path,
+                rope.line_to_byte(window.start),
+                rope.line_to_byte(window.end),
+                width,
+            );
+        }
+        _ => {}
+    }
 }

@@ -55,6 +55,9 @@ impl Editor {
         let mut buffer = Buffer::from_text("");
         buffer.name = Some(format!("terminal #{}", session.get()));
         let mut document = Document::output(buffer);
+        // Entering a terminal is a jump: ctrl-o returns to the editing
+        // position the way any other buffer landing does.
+        document.set_return_point(self.jump_record());
         document.source = DocumentSource::Terminal(Box::new(TerminalDocument {
             session,
             frame: None,

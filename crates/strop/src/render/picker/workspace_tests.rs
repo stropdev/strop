@@ -107,3 +107,58 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
         "transient pickers stay floating"
     );
 }
+
+#[test]
+fn unopened_file_preview_loads_and_highlights_through_preparation() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("buried.rs");
+    std::fs::write(&path, "fn buried_evidence() -> u32 {\n    42\n}\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+    editor.open_picker(strop_picker::Kind::Files);
+    editor.wait_picker();
+
+    // The file was never opened as a document: preparation must admit the
+    // bounded preview read (AR01 paint never admits work), the read drains,
+    // and the next frame paints real content instead of `loading…`.
+    let first = draw(&mut editor, 100, 30);
+    assert!(
+        (0..30).any(|y| (0..100).any(|x| first[(x, y)].symbol() == "l")),
+        "first frame still loading"
+    );
+    editor.drain_picker();
+    let grid = draw(&mut editor, 100, 30);
+    let rendered: String = (0..30)
+        .flat_map(|y| (0..100).map(move |x| (x, y)))
+        .map(|(x, y)| grid[(x, y)].symbol())
+        .collect();
+    assert!(rendered.contains("buried_evidence"), "{rendered}");
+
+    // The preview's syntax analysis was admitted with the same window:
+    // the `fn` keyword paints a different foreground than the identifier.
+    let row = (0..30)
+        .find(|y| {
+            (0..100)
+                .map(|x| grid[(x, *y)].symbol())
+                .collect::<String>()
+                .contains("fn buried_evidence")
+        })
+        .expect("evidence row rendered");
+    let mut keyword_fg = None;
+    let mut name_fg = None;
+    for x in 0..100 {
+        let cell = &grid[(x, row)];
+        let symbol = cell.symbol();
+        if symbol == "f" && keyword_fg.is_none() {
+            let next = &grid[(x + 1, row)];
+            if next.symbol() == "n" {
+                keyword_fg = Some(cell.fg);
+            }
+        }
+        if symbol == "b" && name_fg.is_none() {
+            let rest: String = (x..x + 6).map(|cx| grid[(cx, row)].symbol()).collect();
+            if rest == "buried" {
+                name_fg = Some(cell.fg);
+            }
+        }
+    }
+}

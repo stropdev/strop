@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.32.1 — 2026-09-14
+
+Picker previews and terminal navigation, from first real-use feedback.
+
+### Fixed
+
+- **Picker previews never loaded** (find-file stuck on `loading…`, grep and
+  symbols without syntax highlighting): the readonly-rendering split left the
+  preview's bounded read and syntax analysis with no admission site — paint
+  only reads caches. Frame preparation now admits both with exactly the window
+  paint will query, restoring content, line numbers, the ▶ hit marker and
+  syntax colors across all workspace pickers.
+
+### Added
+
+- **`Ctrl-W` is an editor window prefix inside terminal input** (Vim's
+  documented `t_CTRL-W` grammar): `h/j/k/l/w` (and arrows) move or cycle panes,
+  `N` enters the pinned-snapshot inspection (same as `Ctrl-\ Ctrl-N`), and
+  `.` delivers the literal byte to the child. Any other follow-up passes
+  through unchanged, and the message line hints the grammar while the prefix
+  is open.
+- **Terminals are real switchable buffers**: the buffers picker lists them
+  with Vim's `!` job badge and their live phase (`terminal #N · dir ·
+  running`), jump rows use the same truthful labels, and entering a terminal
+  records a jump so `Ctrl-O` returns to your editing position.
+
 ## 0.32.0 — 2026-09-13
 
 Embedded local terminals, full-screen pickers with wider previews, and a

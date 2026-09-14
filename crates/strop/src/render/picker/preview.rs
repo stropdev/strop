@@ -110,7 +110,7 @@ fn source_lines(rope: &ropey::Rope) -> usize {
         .max(1)
 }
 
-fn preview_window(
+pub(super) fn preview_window(
     rope: &ropey::Rope,
     focus: Option<usize>,
     visible: usize,

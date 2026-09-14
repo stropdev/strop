@@ -153,6 +153,7 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 
 - `✓ :terminal :terminal-local :terminal-stop` — launch a local PTY, explicitly choose local context, or stop and retain output
 - `✓ ctrl-\ ctrl-n` — terminal input → editor Normal inspection; Esc stays with the child
+- `✓ ctrl-w h/j/k/l/w · ctrl-w N · ctrl-w .` — from terminal input: move/cycle panes, enter inspection, or send the literal byte (vim t_CTRL-W)
 - `✓ i a` — terminal Normal inspection → live child input (never relaunches an exited session)
 - `✓ :terminal-paste :terminal-paste-cancel` — confirm or discard the scoped held multiline/control paste
 - `✓ ctrl-4 ctrl-n` — legacy Ctrl-\ Ctrl-N spelling from the outer terminal decoder

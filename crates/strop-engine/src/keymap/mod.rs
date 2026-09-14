@@ -105,6 +105,14 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
+        keys: "ctrl-w h/j/k/l/w · ctrl-w N · ctrl-w .",
+        desc: "from terminal input: move/cycle panes, enter inspection, or send the literal byte (vim t_CTRL-W)",
+        sections: &["terminal"],
+        live: true,
+        id: "terminal-window",
+        handler: Handler::Contextual,
+    },
+    Binding {
         keys: "i a",
         desc: "terminal Normal inspection → live child input (never relaunches an exited session)",
         sections: &["terminal"],

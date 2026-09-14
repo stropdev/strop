@@ -143,6 +143,73 @@ fn terminal_snapshot_cannot_be_made_writable_saved_or_implicitly_relaunched() {
 }
 
 #[test]
+fn terminal_window_prefix_moves_panes_without_reaching_the_child() {
+    use strop_core::frontend_input::{Input, KeyCode, KeyEvent};
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("left"), directory.path().to_owned());
+    let id = retained_terminal(&mut editor);
+    assert!(editor.enter_terminal_input());
+    editor.split_pub('v');
+    assert_eq!(editor.panes.len(), 2);
+    let terminal_pane = editor.active_pane;
+
+    let ctrl = |code: KeyCode| {
+        Input::Key(KeyEvent {
+            code,
+            modifiers: strop_core::frontend_input::Modifiers {
+                control: true,
+                ..Default::default()
+            },
+            ..KeyEvent::press(code)
+        })
+    };
+    // Ctrl-W opens the prefix; the follow-up moves focus off the terminal
+    // pane without a single byte reaching the (service-less) child — the
+    // message stays clear, proving no failed send was attempted.
+    editor.feed_terminal(ctrl(KeyCode::Char('w')));
+    editor.message.clear();
+    editor.feed_terminal(Input::Key(KeyEvent::press(KeyCode::Char('l'))));
+    assert_ne!(editor.active_pane, terminal_pane);
+    assert!(editor.message.is_empty(), "{}", editor.message);
+    assert!(editor.terminals.prefix.is_none());
+
+    // the same prefix grammar escapes into pinned-snapshot inspection
+    let mut other = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    retained_terminal(&mut other);
+    other.feed_terminal(ctrl(KeyCode::Char('w')));
+    other.feed_terminal(Input::Key(KeyEvent::press(KeyCode::Char('N'))));
+    assert_eq!(other.mode, crate::editor::Mode::Normal);
+    assert!(other.message.contains("snapshot"), "{}", other.message);
+    // the exited session was never relaunched by any of it
+    assert!(matches!(
+        editor.terminal_phase(id),
+        Some(Phase::Exited { code: Some(0), .. })
+    ));
+}
+
+#[test]
+fn buffers_list_shows_terminals_with_their_live_phase() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    retained_terminal(&mut editor);
+    editor.open_picker(strop_picker::Kind::Buffers);
+    let glue = editor.picker.as_ref().unwrap();
+    let terminal_item = glue
+        .picker
+        .items
+        .iter()
+        .find(|item| item.text.starts_with("terminal #"))
+        .expect("terminal listed in buffers");
+    assert_eq!(terminal_item.badge.as_deref(), Some("!"));
+    assert!(
+        terminal_item.text.contains("exited 0"),
+        "{}",
+        terminal_item.text
+    );
+}
+
+#[test]
 fn private_terminal_command_paste_is_classified_before_action_capture() {
     use crate::editor::trace::drive::Action;
     use strop_core::frontend_input::Input;

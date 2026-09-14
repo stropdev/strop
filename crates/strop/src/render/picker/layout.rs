@@ -31,11 +31,15 @@ pub(super) fn card(area: Rect, kind: Kind) -> Rect {
     }
 }
 
-/// The results list area for the open kind: the same input/content split and
-/// narrow-terminal stacking the paint performs. `None` when the card is too
-/// short to show results at all — the active field owns the card and the
-/// results viewport must not move.
-pub(super) fn results(area: Rect, kind: Kind, replace_visible: bool) -> Option<Rect> {
+/// The results list and preview panes for the open kind: the same
+/// input/content split and narrow-terminal stacking the paint performs.
+/// `None` when the card is too short to show results at all — the active
+/// field owns the card and the results viewport must not move.
+pub(super) fn split_results(
+    area: Rect,
+    kind: Kind,
+    replace_visible: bool,
+) -> Option<(Rect, Option<Rect>)> {
     let card = card(area, kind);
     let search_mode = kind == Kind::Search;
     let remote_picker = matches!(kind, Kind::RemoteHosts | Kind::RemoteAddress);
@@ -54,30 +58,36 @@ pub(super) fn results(area: Rect, kind: Kind, replace_visible: bool) -> Option<R
             width: inner_width,
             height: inner_height,
         });
+    let split = |results, preview| Some((results, preview));
     if remote_picker {
-        return Some(rows[1]);
+        return split(rows[1], None);
     }
     if card.width < 64 && rows[1].height >= 12 {
-        return Some(
-            Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(8), Constraint::Length(8)])
-                .split(rows[1])[0],
-        );
+        let stacked = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(8), Constraint::Length(8)])
+            .split(rows[1]);
+        return split(stacked[0], Some(stacked[1]));
     }
     if card.width < 64 {
-        return Some(rows[1]);
+        return split(rows[1], None);
     }
+    // The file preview carries the evidence: it gets the wider share of
+    // the full-screen workspace (grep 60/40, files/symbols 55/45).
     let list = if search_mode { 60 } else { 55 };
-    Some(
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(list),
-                Constraint::Percentage(100 - list),
-            ])
-            .split(rows[1])[0],
-    )
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(list),
+            Constraint::Percentage(100 - list),
+        ])
+        .split(rows[1]);
+    split(cols[0], Some(cols[1]))
+}
+
+/// The results list area for the open kind.
+pub(super) fn results(area: Rect, kind: Kind, replace_visible: bool) -> Option<Rect> {
+    split_results(area, kind, replace_visible).map(|(results, _)| results)
 }
 
 /// Rows per logical result row for the open kind.

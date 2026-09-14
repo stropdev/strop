@@ -37,9 +37,19 @@ struct Entry {
 }
 struct Prefix {
     session: SessionId,
+    kind: PrefixKind,
     focus: u64,
     press: strop_core::frontend_input::KeyEvent,
     release: Option<strop_core::frontend_input::KeyEvent>,
+}
+/// Which editor-owned chord opened the prefix window: the mode escape
+/// (`Ctrl-\`, completed by `Ctrl-N`) or the window-command prefix (`Ctrl-W`,
+/// vim's terminal `t_CTRL-W` grammar: hjkl/w move panes, N inspects, `.`
+/// forwards the literal byte; anything else passes through to the child).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PrefixKind {
+    Escape,
+    Window,
 }
 pub(crate) struct State {
     entries: HashMap<SessionId, Entry>,

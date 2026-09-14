@@ -265,6 +265,13 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     assert!(!split.lines().any(|row| row
         .split_once('│')
         .is_some_and(|(left, _)| left.trim() == "ASYNC-INSPECTION-OUTPUT")));
+    // From terminal input, the t_CTRL-W grammar moves panes without the
+    // child seeing a byte: focus lands on the left editor pane (NORMAL),
+    // then returns to the terminal pane (TERMINAL) still owning input.
+    tui.send(b"\x17l");
+    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
+    tui.send(b"\x17h");
+    tui.until(|screen| screen.contains("TERMINAL"));
     tui.send(b"printf 'SIZE:'; stty size\r");
     tui.until(|screen| {
         screen.lines().any(|row| {
