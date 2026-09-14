@@ -28,7 +28,7 @@ impl SessionId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub struct Geometry {
     pub columns: u16,
     pub rows: u16,
@@ -40,14 +40,14 @@ impl Geometry {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub struct Rgb {
     pub red: u8,
     pub green: u8,
     pub blue: u8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, Default, Serialize, Deserialize)]
 pub enum Color {
     #[default]
     Default,
@@ -55,7 +55,7 @@ pub enum Color {
     Rgb(Rgb),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, Default, Serialize, Deserialize)]
 pub struct Style {
     pub foreground: Color,
     pub background: Color,
@@ -73,7 +73,7 @@ impl Style {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub struct Cell {
     /// End of this physical cell's UTF-8 symbol in Row::text. Continuations
     /// retain the preceding end and therefore expose an empty symbol.
@@ -83,7 +83,7 @@ pub struct Cell {
     pub style: Style,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Row {
     pub text: String,
     pub cells: Vec<Cell>,
@@ -373,17 +373,47 @@ mod frame_serde {
         "projection",
     ];
 
+    #[derive(Serialize)]
+    #[serde(untagged)]
+    enum WireEntry<'a> {
+        Repeated { repeat: u32, index: usize },
+        Inline(&'a Row),
+    }
+
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum RowEntry {
-        Projected { absolute_start: u64, row: Row },
+        /// Consecutive occurrences of one dictionary row.
+        Repeated {
+            repeat: u32,
+            index: usize,
+        },
+        Projected {
+            absolute_start: u64,
+            row: Row,
+        },
         Plain(Row),
+    }
+    fn pad_to_geometry(row: &mut Row, columns: u16) {
+        // The wire drops each row's trailing default-styled space padding;
+        // the frame geometry is the authority that puts it back,
+        // byte-for-byte as read_row produced it.
+        while row.cells.len() < usize::from(columns) {
+            row.text.push(' ');
+            let end = row.text.len() as u32;
+            row.cells.push(Cell {
+                end,
+                width: 1,
+                style: Style::default(),
+            });
+        }
     }
 
     fn rebuild(
         origin: u64,
         columns: u16,
         entries: Vec<RowEntry>,
+        dictionary: Vec<Row>,
         legacy_projection: Option<ropey::Rope>,
     ) -> Result<(imbl::Vector<ProjectedRow>, ropey::Rope), String> {
         let legacy = entries
@@ -392,52 +422,90 @@ mod frame_serde {
         if legacy
             && entries
                 .iter()
-                .any(|entry| matches!(entry, RowEntry::Plain(_)))
+                .any(|entry| !matches!(entry, RowEntry::Projected { .. }))
         {
-            return Err("terminal frame mixes projected and plain rows".into());
+            return Err("terminal frame mixes legacy projected rows".into());
         }
-        if entries.len() > MAX_HISTORY_LINES + usize::from(MAX_ROWS) {
+        if dictionary.len() > MAX_HISTORY_LINES + usize::from(MAX_ROWS) {
+            return Err("terminal frame dictionary exceeds its bound".into());
+        }
+        let mut padded: Vec<Arc<Row>> = Vec::with_capacity(dictionary.len());
+        for mut row in dictionary {
+            pad_to_geometry(&mut row, columns);
+            padded.push(Arc::new(row));
+        }
+        let dictionary = padded;
+        let mut total = 0usize;
+        for entry in &entries {
+            let count = match entry {
+                RowEntry::Repeated { repeat, index } => {
+                    if *repeat == 0 || *index >= dictionary.len() {
+                        return Err("terminal frame repeats an unknown row".into());
+                    }
+                    *repeat as usize
+                }
+                _ => 1,
+            };
+            total = total
+                .checked_add(count)
+                .ok_or("terminal frame row count exceeds its bound")?;
+        }
+        if total > MAX_HISTORY_LINES + usize::from(MAX_ROWS) {
             return Err("terminal frame row count exceeds its bound".into());
         }
-        let mut rows = imbl::Vector::new();
-        let mut builder = ropey::RopeBuilder::new();
-        let mut expected = origin;
-        let mut projected = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let (offset, mut row) = match entry {
-                RowEntry::Projected {
-                    absolute_start,
-                    row,
-                } => (Some(absolute_start), row),
-                RowEntry::Plain(row) => (None, row),
-            };
-            if !legacy {
-                // The wire drops each row's trailing default-styled space
-                // padding; the frame geometry is the authority that puts it
-                // back, byte-for-byte as read_row produced it.
-                while row.cells.len() < usize::from(columns) {
-                    row.text.push(' ');
-                    let end = row.text.len() as u32;
-                    row.cells.push(Cell {
-                        end,
-                        width: 1,
-                        style: Style::default(),
-                    });
-                }
-            }
-            let row = Arc::new(row);
+        fn emit(
+            builder: &mut ropey::RopeBuilder,
+            expected: &mut u64,
+            projected: &mut Vec<ProjectedRow>,
+            offset: Option<u64>,
+            row: &Arc<Row>,
+        ) -> Result<(), String> {
             let advance = row.text.len() as u64 + u64::from(!row.wrapped);
             builder.append(&row.text);
             if !row.wrapped {
                 builder.append("\n");
             }
             projected.push(ProjectedRow {
-                absolute_start: offset.unwrap_or(expected),
-                row,
+                absolute_start: offset.unwrap_or(*expected),
+                row: Arc::clone(row),
             });
-            expected = expected
+            *expected = expected
                 .checked_add(advance)
                 .ok_or("terminal text identity exhausted")?;
+            Ok(())
+        }
+
+        let mut rows = imbl::Vector::new();
+        let mut builder = ropey::RopeBuilder::new();
+        let mut expected = origin;
+        let mut projected = Vec::with_capacity(total);
+        for entry in entries {
+            match entry {
+                RowEntry::Repeated { repeat, index } => {
+                    let row = Arc::clone(&dictionary[index]);
+                    for _ in 0..repeat {
+                        emit(&mut builder, &mut expected, &mut projected, None, &row)?;
+                    }
+                }
+                RowEntry::Projected {
+                    absolute_start,
+                    row,
+                } => {
+                    let row = Arc::new(row);
+                    emit(
+                        &mut builder,
+                        &mut expected,
+                        &mut projected,
+                        Some(absolute_start),
+                        &row,
+                    )?;
+                }
+                RowEntry::Plain(mut row) => {
+                    pad_to_geometry(&mut row, columns);
+                    let row = Arc::new(row);
+                    emit(&mut builder, &mut expected, &mut projected, None, &row)?;
+                }
+            }
         }
         let projection = legacy_projection.unwrap_or_else(|| builder.finish());
         if projection.len_bytes() > MAX_PROJECTION_BYTES {
@@ -456,8 +524,45 @@ mod frame_serde {
 
     impl Serialize for Frame {
         fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            // Rows repeating anywhere in the frame travel once, in a
+            // dictionary in first-appearance order, and are referenced by
+            // index runs; unique rows stay inline. Terminal history is
+            // repetition-heavy, so a flood's frame collapses to its few
+            // distinct rows, and a unique-heavy frame pays nothing.
             let rows: Vec<&Row> = self.rows.iter().map(|projected| &*projected.row).collect();
-            let mut object = serializer.serialize_struct("Frame", FIELDS.len() - 1)?;
+            let mut counts: std::collections::HashMap<&Row, usize> =
+                std::collections::HashMap::with_capacity(rows.len());
+            for row in &rows {
+                *counts.entry(row).or_insert(0) += 1;
+            }
+            let mut dictionary: Vec<&Row> = Vec::new();
+            let mut index_of: std::collections::HashMap<&Row, usize> =
+                std::collections::HashMap::new();
+            for row in &rows {
+                if counts[row] >= 2 && !index_of.contains_key(row) {
+                    index_of.insert(row, dictionary.len());
+                    dictionary.push(row);
+                }
+            }
+            let mut entries: Vec<WireEntry> = Vec::with_capacity(rows.len());
+            for row in rows {
+                match index_of.get(row) {
+                    Some(index) => match entries.last_mut() {
+                        Some(WireEntry::Repeated {
+                            repeat,
+                            index: last,
+                        }) if last == index && *repeat < u32::MAX => {
+                            *repeat += 1;
+                        }
+                        _ => entries.push(WireEntry::Repeated {
+                            repeat: 1,
+                            index: *index,
+                        }),
+                    },
+                    None => entries.push(WireEntry::Inline(row)),
+                }
+            }
+            let mut object = serializer.serialize_struct("Frame", FIELDS.len())?;
             object.serialize_field("session", &self.session)?;
             object.serialize_field("revision", &self.revision)?;
             object.serialize_field("geometry", &self.geometry)?;
@@ -468,7 +573,10 @@ mod frame_serde {
             object.serialize_field("available_history_rows", &self.available_history_rows)?;
             object.serialize_field("history_limited", &self.history_limited)?;
             object.serialize_field("origin", &self.origin)?;
-            object.serialize_field("rows", &rows)?;
+            object.serialize_field("rows", &entries)?;
+            if !dictionary.is_empty() {
+                object.serialize_field("dictionary", &dictionary)?;
+            }
             object.end()
         }
     }
@@ -493,6 +601,7 @@ mod frame_serde {
                     let mut history_limited = None;
                     let mut origin = None;
                     let mut rows: Option<Vec<RowEntry>> = None;
+                    let mut dictionary: Option<Vec<Row>> = None;
                     let mut projection = None;
                     while let Some(key) = map.next_key::<String>()? {
                         match key.as_str() {
@@ -509,6 +618,7 @@ mod frame_serde {
                             "history_limited" => history_limited = Some(map.next_value()?),
                             "origin" => origin = Some(map.next_value()?),
                             "rows" => rows = Some(map.next_value()?),
+                            "dictionary" => dictionary = Some(map.next_value()?),
                             "projection" => {
                                 projection = Some(
                                     map.next_value::<ProjectionWire>()
@@ -524,10 +634,12 @@ mod frame_serde {
                     let rows = rows.ok_or_else(|| A::Error::custom("frame is missing rows"))?;
                     let origin =
                         origin.ok_or_else(|| A::Error::custom("frame is missing origin"))?;
+                    let dictionary = dictionary.unwrap_or_default();
                     let geometry =
                         geometry.ok_or_else(|| A::Error::custom("frame is missing geometry"))?;
-                    let (rows, projection) = rebuild(origin, geometry.columns, rows, projection)
-                        .map_err(A::Error::custom)?;
+                    let (rows, projection) =
+                        rebuild(origin, geometry.columns, rows, dictionary, projection)
+                            .map_err(A::Error::custom)?;
                     Ok(Frame {
                         session: session
                             .ok_or_else(|| A::Error::custom("frame is missing session"))?,
@@ -746,6 +858,7 @@ mod tests {
 
     /// A frame of full-width ASCII rows exactly as read_row produces them.
     fn full_frame(columns: u16, lines: &[&str]) -> Frame {
+        let screen = u16::try_from(lines.len()).unwrap_or(30).min(30);
         let mut projection = String::new();
         let mut rows = imbl::Vector::new();
         let mut offset = 0u64;
@@ -778,7 +891,7 @@ mod tests {
             revision: 3,
             geometry: Geometry {
                 columns,
-                rows: u16::try_from(lines.len()).unwrap_or(u16::MAX),
+                rows: screen,
                 revision: 0,
             },
             alternate: false,
@@ -809,8 +922,8 @@ mod tests {
                     256
                 ],
             }),
-            history_rows: 0,
-            available_history_rows: 0,
+            history_rows: rows.len().saturating_sub(usize::from(screen)),
+            available_history_rows: rows.len().saturating_sub(usize::from(screen)),
             history_limited: false,
             origin: 0,
             projection: ropey::Rope::from_str(&projection),
@@ -835,6 +948,55 @@ mod tests {
         }
         assert_eq!(decoded.rows[2].row.text, "     ");
         assert_eq!(decoded.rows[1].absolute_start, 6);
+    }
+
+    #[test]
+    fn frame_wire_interns_repeated_rows() {
+        // A flood's shape: thousands of identical rows plus a few unique.
+        let mut lines: Vec<&str> = vec!["prompt", "y"];
+        lines.extend(std::iter::repeat_n("y", 4000));
+        lines.push("done");
+        let frame = full_frame(6, &lines);
+        let wire = serde_json::to_string(&frame).unwrap();
+        // One index run carries the flood; unique rows stay inline.
+        assert!(
+            wire.contains(r#""repeat":4001,"index":"#),
+            "the flood must be one index run: {wire}"
+        );
+        // The palette alone costs ~7 KB; 4002 inline rows would be ~120 KB.
+        assert!(
+            wire.len() < 9000,
+            "frame must collapse: {} bytes",
+            wire.len()
+        );
+        let decoded: Frame = serde_json::from_str(&wire).unwrap();
+        decoded.validate().unwrap();
+        assert_eq!(decoded.rows.len(), lines.len());
+        assert_eq!(decoded.rows[0].row.text, "prompt");
+        assert_eq!(decoded.rows[1].row.text, "y     ");
+        assert_eq!(decoded.rows.last().unwrap().row.text, "done  ");
+        // Dictionary rows share identity: repeated positions are one Arc.
+        assert!(std::sync::Arc::ptr_eq(
+            &decoded.rows[1].row,
+            &decoded.rows[2].row
+        ));
+    }
+
+    #[test]
+    fn repeated_row_references_are_bounded_and_checked() {
+        let dictionary = serde_json::to_string(&full_frame(2, &["ab"]).rows[0].row).unwrap();
+        for wire in [
+            format!(
+                r#"{{"rows":[{{"repeat":0,"index":0}}],"dictionary":[{dictionary}],"wrapped":false}}"#
+            ),
+            format!(r#"{{"rows":[{{"repeat":2,"index":1}}],"dictionary":[{dictionary}]}}"#),
+            format!(r#"{{"rows":[{{"repeat":20000,"index":0}}],"dictionary":[{dictionary}]}}"#),
+        ] {
+            assert!(
+                serde_json::from_str::<Frame>(&wire).is_err(),
+                "frame must be refused: {wire}"
+            );
+        }
     }
 
     #[test]

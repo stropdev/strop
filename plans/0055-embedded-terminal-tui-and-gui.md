@@ -884,9 +884,13 @@ default-styled space padding no longer travels — the frame re-derives it
 from its geometry — and per-action observation checks witness document
 text by SHA-256 digest plus byte length instead of shipping it (the
 startup seed still carries full text), taking the same flood session's
-capture from ~20 MB to ~2.4 MB. Remaining known follow-up: inter-frame
-row identity so a keystroke does not re-record unchanged history.
-
+capture from ~20 MB to ~2.4 MB. Final follow-up (0.32.4): rows repeating
+within a frame travel once — a first-appearance dictionary referenced by
+index runs, unique rows inline — so a flood's frame collapses to its few
+distinct rows and repeated positions decode to one shared Arc. The same
+session now records ~0.7 MB (29× below the pre-0.32.3 wire), and the
+debug two-core flood test halved to ~22 s. Capture size is closed as a
+milestone concern; degradation at the bound stays honest.
 Release evidence (v0.32.2, tagged 2026-09-14): the workflow ran green end
 to end — both Darwin and both musl builds, 8 tarball assets, crates.io,
 homebrew tap and the site (hero chip, roadmap, changelog) at 0.32.2; ci

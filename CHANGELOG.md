@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.32.4 — 2026-09-14
+
+Captures of terminal sessions cost a third of 0.32.3's bytes.
+
+### Improved
+
+- **Repeating rows travel once per frame**: rows that recur anywhere in a
+  terminal frame serialize into a first-appearance dictionary and are
+  referenced by index runs; unique rows stay inline, so varied content
+  pays nothing. A flooded frame collapses to its few distinct rows and
+  repeated positions decode back to one shared row — the same session
+  that recorded ~2.4 MB now records ~0.7 MB, complete and replayable,
+  and slow-runner drains halve. Traces from every earlier version still
+  decode.
+
 ## 0.32.3 — 2026-09-14
 
 Captures of terminal sessions cost a tenth of the bytes.
