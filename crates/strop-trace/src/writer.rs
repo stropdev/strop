@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 pub(super) fn run(file: File, receiver: Receiver<Record>, failure: Arc<Failure>, limits: Limits) {
     if let Err(error) = drain(BufWriter::new(file), receiver, &failure, limits) {
-        failure.set(|| format!("writer I/O failed: {error}"));
+        failure.fatal(|| format!("writer I/O failed: {error}"));
     }
 }
 
@@ -47,7 +47,7 @@ fn drain(
                         .saturating_sub(bytes)
             {
                 capped = true;
-                failure.set(|| "capture limit reached".into());
+                failure.degraded(|| "capture limit reached".into());
                 break 'admission;
             }
             out.write_all(&encoded)?;

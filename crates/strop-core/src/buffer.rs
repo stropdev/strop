@@ -50,6 +50,25 @@ impl Buffer {
     pub fn snapshot(&self) -> Rope {
         self.rope.clone()
     }
+
+    /// Diagnostic head excerpt: copies at most [`strop_trace::MAX_EXCERPT_BYTES`]
+    /// instead of materializing the whole buffer, and reports whether the
+    /// text was cut.
+    pub fn text_excerpt(&self) -> (String, bool) {
+        let rope = &self.rope;
+        if rope.len_bytes() <= strop_trace::MAX_EXCERPT_BYTES {
+            return (rope.to_string(), false);
+        }
+        let mut end = strop_trace::MAX_EXCERPT_BYTES;
+        while end > 0 && (rope.byte(end - 1) & 0xC0) == 0x80 {
+            end -= 1;
+        }
+        (
+            rope.get_byte_slice(..end)
+                .map_or_else(String::new, |head| head.to_string()),
+            true,
+        )
+    }
     pub fn history(&self) -> &History {
         &self.history
     }

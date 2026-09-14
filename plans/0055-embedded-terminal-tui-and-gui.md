@@ -860,3 +860,25 @@ same host also passed `cargo test --release -p strop-editor --test
 terminal_editor` (real PTY, nvim/less/paste/replay coverage) natively outside
 Docker. This is scripted-but-real outer-environment evidence, not a claim of
 interactive GUI-class verification, which stays with milestone 2.
+
+Sustained-output capture evidence (2026-09-14, shipped in 0.32.2): the §12
+flood fixture first exposed a real forensic-capture failure — after a
+successful flood the editor exited 1 with `incomplete trace`. Three stacked
+causes, each fixed at its source: (1) terminal rows serialized one cell per
+column, so a full-history frame cost ~180 MB against the 64 MiB per-value
+cap — `Row` now travels as runs of equal (width, style, symbol) cells with
+byte ends and the projection rope derived on decode (legacy per-column
+captures still decode); (2) diagnostic records embedded whole buffer texts,
+so opening any large buffer (a terminal snapshot among them) exceeded the
+per-record cap and degraded the whole capture — mutation/history/document/
+paste texts now ride as explicitly-marked bounded excerpts beside true byte
+counts; (3) a capture that degrades honestly (value or budget cap) still
+failed the editor's exit at shutdown — degradation is now a property of the
+file (its terminal marker says incomplete), not of the process exit, while
+writer I/O failures remain fatal. The hard capture byte bound rose to
+512 MiB — terminals made captures a multi-content-class artifact; a
+consented interactive session legitimately records hundreds of full frames.
+The flood test now asserts the trace ends `complete` and replays
+execution-free. Known follow-up compaction (not needed for the milestone):
+derive trailing padding on the wire, and inter-frame row identity so a
+keystroke does not re-record unchanged history.

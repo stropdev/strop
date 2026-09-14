@@ -50,14 +50,32 @@ pub enum TraceError {
 
 #[derive(Default)]
 struct Failure {
-    message: Mutex<Option<String>>,
+    message: Mutex<Option<(Severity, String)>>,
     reported: AtomicBool,
 }
+
+/// How a capture ends short of complete. `Degraded` means the session
+/// continued honestly — the file's terminal marker says incomplete — so
+/// `finish` reports it but does not fail the editor's exit; `Fatal` means
+/// durability was lost (writer I/O or a vanished writer) and the session's
+/// reporting boundary must propagate the failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Severity {
+    Degraded,
+    Fatal,
+}
+
 impl Failure {
-    fn set(&self, message: impl FnOnce() -> String) {
+    fn degraded(&self, message: impl FnOnce() -> String) {
+        self.set(Severity::Degraded, message);
+    }
+    fn fatal(&self, message: impl FnOnce() -> String) {
+        self.set(Severity::Fatal, message);
+    }
+    fn set(&self, severity: Severity, message: impl FnOnce() -> String) {
         let mut failure = self.message.lock();
         if failure.is_none() {
-            *failure = Some(message());
+            *failure = Some((severity, message()));
         }
     }
 }
@@ -93,7 +111,7 @@ impl Admission {
         let fields = record.fields.len();
         let capped = self.remaining_events == 0 || fields > self.remaining_fields;
         if sender.send(record).is_err() {
-            failure.set(|| "capture writer unavailable".into());
+            failure.fatal(|| "capture writer unavailable".into());
             self.sender.take();
             return false;
         }
@@ -176,6 +194,26 @@ pub(crate) fn stop_content_capture() {
     CONTENT.store(false, Ordering::Release);
 }
 
+/// Diagnostic text excerpts stay well below the per-record cap even under
+/// the worst-case six-fold JSON escaping of control scalars, so an honest
+/// record of any edit still fits one line; the true byte size always
+/// travels in a sibling field and the excerpt says when it was cut.
+pub const MAX_EXCERPT_BYTES: usize = 32 * 1024;
+
+/// Bound a diagnostic payload to [`MAX_EXCERPT_BYTES`] on a char boundary.
+/// Replay values never take excerpts — they chunk instead, because replay
+/// equality is byte-exact; this is for diagnostic streams only.
+pub fn excerpt(text: &str) -> (&str, bool) {
+    if text.len() <= MAX_EXCERPT_BYTES {
+        return (text, false);
+    }
+    let mut end = MAX_EXCERPT_BYTES;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (&text[..end], true)
+}
+
 /// Lazy producer: no payload construction or allocation when disabled.
 pub fn record_with<T: Serialize>(kind: EventKind, fields: impl FnOnce() -> T) {
     if enabled() {
@@ -235,7 +273,7 @@ fn record_to<T: Serialize>(recorder: &Recorder, kind: EventKind, fields: &T) {
     }
     recorder
         .failure
-        .set(|| "record exceeds cap or cannot serialize".into());
+        .degraded(|| "record exceeds cap or cannot serialize".into());
     admission.sender.take();
 }
 
@@ -247,15 +285,16 @@ pub fn mark_incomplete(message: &'static str) {
     let Some(recorder) = ACTIVE.lock().clone() else {
         return;
     };
-    recorder.failure.set(|| message.into());
+    recorder.failure.degraded(|| message.into());
     recorder.admission.lock().sender.take();
     CONTENT.store(false, Ordering::Release);
 }
 
-/// Report once to the editor's status line; finish still returns the failure.
+/// Report once to the editor's status line; `finish` still fails on the
+/// fatal kind, while a degraded capture is only marked in the file.
 pub fn take_failure() -> Option<String> {
     let recorder = ACTIVE.lock().clone()?;
-    let message = recorder.failure.message.lock().clone()?;
+    let (_, message) = recorder.failure.message.lock().clone()?;
     (!recorder.failure.reported.swap(true, Ordering::Relaxed)).then_some(message)
 }
 
@@ -283,11 +322,11 @@ impl TraceSession {
         if worker.join().is_err() {
             self.recorder
                 .failure
-                .set(|| "writer thread panicked".into());
+                .fatal(|| "writer thread panicked".into());
         }
         match self.recorder.failure.message.lock().clone() {
-            Some(error) => Err(TraceError::Incomplete(error)),
-            None => Ok(()),
+            Some((Severity::Fatal, error)) => Err(TraceError::Incomplete(error)),
+            Some((Severity::Degraded, _)) | None => Ok(()),
         }
     }
 }

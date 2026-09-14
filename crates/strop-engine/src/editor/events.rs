@@ -126,10 +126,13 @@ impl Editor {
                     self.feed_terminal(strop_core::frontend_input::Input::Paste(text));
                     return;
                 }
-                strop_trace::record_with(strop_trace::EventKind::Paste, || {
-                    serde_json::json!({
-                        "bytes":text.len(),"text":strop_trace::capture_content().then_some(text.as_str()),
-                    })
+                let bytes = text.len();
+                let excerpt = strop_trace::capture_content().then(|| strop_trace::excerpt(&text));
+                strop_trace::record_with(strop_trace::EventKind::Paste, || match &excerpt {
+                    Some((text, truncated)) => serde_json::json!({
+                        "bytes": bytes, "text": text, "truncated": truncated,
+                    }),
+                    None => serde_json::json!({"bytes": bytes}),
                 });
                 if self.resolution.blocked() || !self.resolution.queue.is_empty() {
                     self.resolution

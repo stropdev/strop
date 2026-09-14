@@ -144,12 +144,8 @@ pub(crate) mod rope_serde {
     use super::MAX_PROJECTION_BYTES;
     use ropey::{Rope, RopeBuilder};
     use serde::de::{Error, SeqAccess, Visitor};
-    use serde::{Deserializer, Serializer};
+    use serde::Deserializer;
     use std::fmt;
-
-    pub fn serialize<S: Serializer>(rope: &Rope, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(rope.chunks())
-    }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Rope, D::Error> {
         struct Chunks;

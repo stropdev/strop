@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.32.2 — 2026-09-14
+
+Forensic captures survive real terminal sessions.
+
+### Fixed
+
+- **A flooded terminal no longer fails the editor's exit** (`:qa` after
+  sustained output exited 1 with `incomplete trace`): three stacked capture
+  bugs, each fixed at its source. Terminal frames now serialize as cell runs
+  with the projection derived on decode, so a full-history frame costs its
+  content size instead of ~180 MB; mutation, history, document and paste
+  records carry bounded, explicitly-marked text excerpts beside true byte
+  counts, so opening a large buffer can no longer degrade the whole capture;
+  and an honestly-degraded capture (value or budget cap) is reported by the
+  file's terminal marker instead of failing the process exit — writer I/O
+  failures remain fatal. The opt-in capture byte bound rose to 512 MB to
+  match what consented interactive terminal sessions legitimately record.
+  Captures written by earlier versions still replay; the sustained-output
+  test now asserts the trace stays complete and replays execution-free.
+
 ## 0.32.1 — 2026-09-14
 
 Picker previews and terminal navigation, from first real-use feedback.

@@ -132,7 +132,7 @@ fn replay_admission_checks_real_grapheme_and_projection_correspondence() {
     assert_eq!(decoded.projection, frame.projection);
     assert_eq!(decoded.cell_at_byte(1).unwrap().width, 2);
     let mut corrupt = wire;
-    corrupt["frame"]["rows"][0]["row"]["cells"][0]["end"] = serde_json::json!(u32::MAX);
+    corrupt["frame"]["geometry"]["columns"] = serde_json::json!(4);
     assert!(serde_json::from_value::<Update>(corrupt).is_err());
 }
 

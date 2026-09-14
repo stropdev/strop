@@ -245,10 +245,11 @@ fn event_cap_ends_with_explicit_incomplete_terminal_marker() {
     for value in 0..50 {
         record(EventKind::Input, &serde_json::json!({"value":value}));
     }
-    let failure = session.finish();
+    // A capped capture is degraded, not fatal: finish must not fail the
+    // session, and the file still says so honestly.
     assert!(
-        matches!(&failure, Err(TraceError::Incomplete(message)) if message.contains("capture limit")),
-        "finish reports the cap: {failure:?}"
+        session.finish().is_ok(),
+        "capped capture must not fail the session"
     );
     let events: Vec<serde_json::Value> = std::fs::read_to_string(&path)
         .unwrap()
@@ -279,7 +280,10 @@ fn oversize_record_marks_capture_incomplete() {
         EventKind::Input,
         &serde_json::json!({"after":"the failure"}),
     );
-    assert!(session.finish().is_err());
+    assert!(
+        session.finish().is_ok(),
+        "degraded capture must not fail the session"
+    );
     let events: Vec<serde_json::Value> = std::fs::read_to_string(&path)
         .unwrap()
         .lines()
@@ -591,7 +595,10 @@ fn metadata_mode_never_writes_chunked_payloads() {
     record(EventKind::Replay, &serde_json::json!({"data": needle}));
     // Same honest refusal as today: metadata capture never carries payloads,
     // chunked or otherwise.
-    assert!(session.finish().is_err());
+    assert!(
+        session.finish().is_ok(),
+        "degraded capture must not fail the session"
+    );
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(!text.contains("replay_chunk"));
     assert!(!text.contains("confidential"));

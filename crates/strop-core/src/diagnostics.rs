@@ -16,7 +16,7 @@ impl BufferTraceId {
 }
 
 #[derive(Serialize)]
-struct Mutation<'a> {
+struct Mutation {
     buffer: BufferTraceId,
     source: crate::ChangeOrigin,
     revision: u64,
@@ -24,7 +24,9 @@ struct Mutation<'a> {
     removed_bytes: usize,
     inserted_bytes: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    inserted_text: Option<&'a str>,
+    inserted_text: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    text_truncated: bool,
 }
 
 impl Buffer {
@@ -42,6 +44,9 @@ impl Buffer {
         if !enabled() {
             return;
         }
+        // True size always recorded; the text itself rides as a bounded
+        // excerpt so no edit can outgrow the per-record cap.
+        let (text, text_truncated) = strop_trace::excerpt(inserted);
         record(
             EventKind::Mutation,
             &Mutation {
@@ -51,7 +56,8 @@ impl Buffer {
                 start_byte,
                 removed_bytes,
                 inserted_bytes: inserted.len(),
-                inserted_text: capture_content().then_some(inserted),
+                inserted_text: capture_content().then(|| text.to_owned()),
+                text_truncated: text_truncated && capture_content(),
             },
         );
     }
@@ -60,7 +66,9 @@ impl Buffer {
         if !enabled() {
             return;
         }
-        let text = capture_content().then(|| self.text().to_string());
+        let (text, text_truncated) = capture_content()
+            .then(|| self.text_excerpt())
+            .map_or((None, false), |(text, truncated)| (Some(text), truncated));
         record(
             EventKind::Mutation,
             &Mutation {
@@ -70,7 +78,8 @@ impl Buffer {
                 start_byte: 0,
                 removed_bytes,
                 inserted_bytes: self.len_bytes(),
-                inserted_text: text.as_deref(),
+                inserted_text: text,
+                text_truncated,
             },
         );
     }
@@ -86,6 +95,8 @@ impl Buffer {
             kind: crate::history::EditKind,
             #[serde(skip_serializing_if = "Option::is_none")]
             text: Option<&'a str>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            text_truncated: bool,
         }
         #[derive(Serialize)]
         struct AppliedHistory<'a> {
@@ -100,11 +111,15 @@ impl Buffer {
                 revision: self.revision().get(),
                 edits: edits
                     .iter()
-                    .map(|edit| HistoryEdit {
-                        start_byte: edit.at,
-                        bytes: edit.text.len(),
-                        kind: edit.kind,
-                        text: capture_content().then_some(edit.text.as_str()),
+                    .map(|edit| {
+                        let (text, text_truncated) = strop_trace::excerpt(&edit.text);
+                        HistoryEdit {
+                            start_byte: edit.at,
+                            bytes: edit.text.len(),
+                            kind: edit.kind,
+                            text: capture_content().then_some(text),
+                            text_truncated: text_truncated && capture_content(),
+                        }
                     })
                     .collect(),
             },

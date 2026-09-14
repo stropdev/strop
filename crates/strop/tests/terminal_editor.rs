@@ -259,6 +259,23 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
             .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "1b 5b 41")
     });
     tui.until(|screen| line(screen, "MODE-DONE"));
+    // Sustained output (0055 §12): while a sixteen-KiB `yes` stream floods
+    // the PTY, the editor still admits input and renders — the mode escape
+    // lands mid-flood — and the bounded history drops the flood's head:
+    // FLOOD-START cannot survive, FLOOD-DONE does, and the shell prompt
+    // returns. Markers are line-anchored so the echoed command cannot
+    // satisfy them. The session must ALSO stay fully capturable: frames
+    // travel as cell runs, so the flood cannot exhaust the capture bound
+    // and degrade the trace.
+    tui.send(b"printf 'FLOOD-START\\n'; yes | head -c 16384; printf '\\r\\nFLOOD-DONE\\n'\r");
+    tui.send(b"\x1c\x0e");
+    tui.until(|screen| screen.contains("NORMAL") && screen.contains("snapshot"));
+    tui.send(b"i");
+    let settled = tui.until(|screen| line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>"));
+    assert!(
+        !settled.contains("FLOOD-START"),
+        "bounded history must drop the flood head"
+    );
     tui.send(b"mkfifo pause; (exec 3<>pause; printf '\\r\\nINSPECTION-READY\\n'; read go <&3; printf '\\r\\nASYNC-INSPECTION-OUTPUT\\n') &\r");
     tui.until(|screen| line(screen, "INSPECTION-READY"));
     tui.send(b"\x1c\x0e");
@@ -322,6 +339,21 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| screen.contains("terminal ended") || screen.contains("terminal exited"));
     tui.send(b":qa\r");
     assert!(tui.child.wait().unwrap().success());
+    // The flood never degraded the capture: the file says so itself.
+    let terminal = std::fs::read_to_string(&trace)
+        .unwrap()
+        .lines()
+        .last()
+        .and_then(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .unwrap_or_default();
+    assert_eq!(
+        terminal["event"], "trace_end",
+        "trace must end with its marker"
+    );
+    assert_eq!(
+        terminal["fields"]["complete"], true,
+        "flooded capture stayed complete: {terminal}"
+    );
     let before = std::fs::read(directory.path().join("run-count")).unwrap();
     assert_eq!(before, b"x");
     let replay = Command::new(env!("CARGO_BIN_EXE_strop"))

@@ -49,7 +49,12 @@ impl Editor {
                     bytes: usize,
                     readonly: bool,
                     text: Option<String>,
+                    #[serde(skip_serializing_if = "std::ops::Not::not")]
+                    text_truncated: bool,
                 }
+                let excerpt = (capture_content() && !self.private_terminal_document(id))
+                    .then(|| document.buf.text_excerpt())
+                    .map_or((None, false), |(text, truncated)| (Some(text), truncated));
                 record(
                     EventKind::Document,
                     &DocumentRecord {
@@ -60,8 +65,8 @@ impl Editor {
                         revision: document.buf.revision(),
                         bytes: document.buf.len_bytes(),
                         readonly: document.buf.readonly,
-                        text: (capture_content() && !self.private_terminal_document(id))
-                            .then(|| document.buf.text().to_string()),
+                        text: excerpt.0,
+                        text_truncated: excerpt.1,
                     },
                 );
             }

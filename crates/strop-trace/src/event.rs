@@ -13,7 +13,10 @@ pub const SCHEMA_VERSION: u32 = 3;
 /// Hard upper bounds a capture may use. They exist so a runaway producer
 /// cannot fill the disk; `start` refuses anything outside them, and the
 /// reader applies the same totals, so writer and reader agree everywhere.
-pub const MAX_CAPTURE_BYTES: usize = 64 * 1024 * 1024;
+/// Embedded terminals made captures a multi-content-class artifact: one
+/// sustained-output session re-records full frames per update, which stays
+/// honest and bounded but no longer fits a text-editor-sized budget.
+pub const MAX_CAPTURE_BYTES: usize = 512 * 1024 * 1024;
 pub const MAX_CAPTURE_EVENTS: u64 = 100_000;
 pub const MAX_RECORD_BYTES: usize = 256 * 1024;
 /// The writer always reserves this much of the byte budget for the
