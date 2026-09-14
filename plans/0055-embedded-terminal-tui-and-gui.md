@@ -810,15 +810,37 @@ clipped), close-then-reenter, `:qa` refusal → `:terminal-stop` → clean exit,
 and execution-free `--replay` of the captured trace. Container evidence uses
 busybox `sh`, Alpine nvim/less. The `docker compose run --build --rm test`
 gate passed on this tree (fmt, locked all-target clippy `-D warnings`, locked
-tests incl. SSH-required suites). T10 packaging/release gates and Windows/WSL
-physical-terminal evidence remain open.
+tests incl. SSH-required suites). T10 release and outer-terminal evidence are
+recorded below.
 
 T10 packaging (Linux): the compose `release` stage now installs the pinned Zig
 0.16.0 and gates the static build (`! readelf NEEDED`, static-pie). The
 shipped tarball's single binary was smoked on the host: `--headless` drove
 `:terminal` through the real PTY helper (the helper re-executes the same
 static binary via `--terminal-helper`), `--help` documents the terminal
-commands/capture flag, `--version` reports the workspace version. macOS
-release runners install the pinned Zig and run `terminal_helper` tests; actual
-macOS/Windows Terminal→WSL physical evidence remains with the next tagged
-release workflow, not this working tree.
+commands/capture flag, `--version` reports the workspace version.
+
+T10 release evidence (v0.32.0, tagged 2026-09-14): the release workflow ran
+green end to end — both `aarch64-apple-darwin` and `x86_64-apple-darwin` jobs
+installed the pinned Zig, built natively, and passed the `terminal_helper`
+ownership gate on real macOS 14 runners; both Darwin tarballs plus both musl
+tarballs published with checksums, crates.io and the homebrew tap updated.
+That gate earned its keep before shipping: it caught two genuine Darwin-only
+helper bugs that no Docker/Linux run could see — XNU's background-ioctl gate
+failing `TIOCSWINSZ` with EIO for the orphaned post-`setsid` helper (fixed by
+blocking SIGTTOU around the ioctl) and Darwin's lack of any master read-EOF
+or `POLLHUP` report on last-slave closure (fixed by treating a dead session
+sweep plus a bounded 100 ms quiet drain as session end). Both fixes shipped in
+the tagged commit, proven by the green macOS reproduce runs.
+
+Windows Terminal→WSL physical-path evidence (2026-09-14): on the actual
+WSL2 host (kernel 6.18, the user's Windows Terminal execution path) the
+shipped x86_64-musl tarball was sha256-verified and its single static binary
+drove `:terminal` through the real PTY helper under `--headless` — a live
+session with text input routed to the child, echoed command and output
+rendered into the frame, TERMINAL-mode state with running-session geometry
+revision 2, private-capture statusline, and `:qa!` draining to exit 0. The
+same host also passed `cargo test --release -p strop-editor --test
+terminal_editor` (real PTY, nvim/less/paste/replay coverage) natively outside
+Docker. This is scripted-but-real outer-environment evidence, not a claim of
+interactive GUI-class verification, which stays with milestone 2.
