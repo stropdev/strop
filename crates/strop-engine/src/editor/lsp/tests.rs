@@ -313,3 +313,105 @@ mod navigation;
 mod diagnostics;
 
 mod attachment;
+
+mod warm_up {
+    use super::super::attach::{AttachDecision, AttachKey, Attachment};
+    use super::*;
+    use strop_workspace::Filesystem;
+
+    fn warm_editor(dir: &std::path::Path) -> Editor {
+        let mut editor = Editor::new_in(Buffer::from_text(""), dir.to_path_buf());
+        editor.lsp_state.attach.enabled = true;
+        editor.open_picker(strop_picker::Kind::WorkspaceSymbols);
+        editor
+    }
+
+    fn rust_key(root: &std::path::Path) -> AttachKey {
+        AttachKey {
+            target: Filesystem::Local,
+            language: "rust".into(),
+            path: root.to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn marker_families_map_to_languages_and_ambiguity_stays_cold() {
+        use super::super::lifecycle::warm_language;
+        assert_eq!(warm_language("Cargo.toml"), Some(("rust", ".rs")));
+        assert_eq!(warm_language("pyproject.toml"), Some(("python", ".py")));
+        assert_eq!(warm_language("setup.py"), Some(("python", ".py")));
+        assert_eq!(warm_language("CMakeLists.txt"), Some(("cpp", ".cpp")));
+        assert_eq!(warm_language("go.mod"), Some(("go", ".go")));
+        assert_eq!(warm_language("package.json"), None);
+    }
+
+    #[test]
+    fn warm_up_requires_services_and_the_symbols_picker() {
+        let dir = tempfile::tempdir().unwrap();
+        // Services never started: nothing queues, nothing spawns.
+        let mut cold = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+        cold.open_picker(strop_picker::Kind::WorkspaceSymbols);
+        cold.lsp_warm_scope_projects(vec![(dir.path().join("p"), "Cargo.toml".into())]);
+        assert!(cold.lsp_state.attach.warm_queue.is_empty());
+        let mut warm = warm_editor(dir.path());
+        // An ambiguous marker queues but maps to no language: the
+        // queue drains past it with nothing in flight.
+        warm.lsp_warm_scope_projects(vec![(dir.path().join("web"), "package.json".into())]);
+        assert!(warm.lsp_state.attach.warm_queue.is_empty());
+        assert!(warm.lsp_state.attach.pending.is_empty());
+        // A project already pending discovery is not rediscovered:
+        // the candidate drains, the pending key stays exactly one.
+        let root = dir.path().join("p");
+        let key = rust_key(&root);
+        let ticket = WorkerId::new(77);
+        warm.lsp_state.attach.pending.insert(key.clone(), ticket);
+        warm.lsp_warm_scope_projects(vec![(root, "Cargo.toml".into())]);
+        assert!(warm.lsp_state.attach.warm_queue.is_empty());
+        assert_eq!(
+            warm.lsp_state.attach.pending.get(&key),
+            Some(&ticket),
+            "the live attempt is neither duplicated nor superseded"
+        );
+        // Installing another surface ends warm-up entirely.
+        warm.lsp_state
+            .attach
+            .warm_queue
+            .push_back((dir.path().join("q"), "Cargo.toml".into()));
+        warm.open_picker(strop_picker::Kind::Files);
+        assert!(
+            warm.lsp_state.attach.warm_queue.is_empty(),
+            "installing another surface ends warm-up"
+        );
+    }
+
+    #[test]
+    fn live_placements_and_sticky_refusals_are_never_rediscovered() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("engine");
+        let mut editor = warm_editor(dir.path());
+        // An attachment already serves this (language, root): warm-up
+        // must not rediscover or supersede it.
+        editor.lsp_state.attach.attached.push(Attachment {
+            language: "rust".into(),
+            root: root.clone(),
+            server: ServerId::new(31),
+            target: Filesystem::Local,
+        });
+        editor.lsp_warm_scope_projects(vec![(root.clone(), "Cargo.toml".into())]);
+        assert!(editor.lsp_state.attach.warm_queue.is_empty());
+        assert!(editor.lsp_state.attach.pending.is_empty());
+        // A sticky refusal for another project is respected — no spawn,
+        // the queue drains past it.
+        let other = dir.path().join("tools");
+        editor.lsp_state.attach.refused.insert(
+            AttachKey {
+                target: Filesystem::Local,
+                language: "rust".into(),
+                path: other.clone(),
+            },
+            AttachDecision::NoServer,
+        );
+        editor.lsp_warm_scope_projects(vec![(other, "Cargo.toml".into())]);
+        assert!(editor.lsp_state.attach.pending.is_empty());
+    }
+}

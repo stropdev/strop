@@ -144,6 +144,10 @@ pub(crate) struct AttachState {
     pub layer_diagnostics: Vec<LayerDiagnostic>,
     /// Servers placed for (target, language, root) — live or replayed.
     pub attached: Vec<Attachment>,
+    /// Unopened projects waiting for bounded warm-up (0063 §2):
+    /// absolute root + marker file. Drained while the
+    /// workspace-symbols picker is open.
+    pub warm_queue: std::collections::VecDeque<(PathBuf, String)>,
     /// Live transports published by discovery workers, keyed by server.
     pub transport: Arc<Mutex<HashMap<ServerId, LiveTransport>>>,
     pub rx: Receiver<AttachRecord>,
@@ -160,6 +164,7 @@ impl AttachState {
             trust_roots: HashMap::new(),
             layer_diagnostics: Vec::new(),
             attached: Vec::new(),
+            warm_queue: std::collections::VecDeque::new(),
             transport: Arc::new(Mutex::new(HashMap::new())),
             rx,
             tx,

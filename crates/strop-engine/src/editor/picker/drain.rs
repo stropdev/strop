@@ -69,6 +69,10 @@ impl Editor {
             return;
         }
         let appended = matches!(&event.msg, PickerMsg::Items(_));
+        let warm_scope = match &event.msg {
+            PickerMsg::ScopeProjects(projects) => Some(projects.clone()),
+            _ => None,
+        };
         match event.msg {
             PickerMsg::Items(items) => {
                 let items = items.into_items();
@@ -78,6 +82,7 @@ impl Editor {
                 }
             }
             PickerMsg::Warning(message) => glue.picker.warning = Some(message),
+            PickerMsg::ScopeProjects(_) => {} // handled after the match
             PickerMsg::QueryError(diagnostic) => {
                 let range = match (&glue.query, &glue.file_scope) {
                     (Some(current), Some(previous)) => {
@@ -117,6 +122,9 @@ impl Editor {
                     }
                 }
             }
+        }
+        if let Some(projects) = warm_scope {
+            self.lsp_warm_scope_projects(projects);
         }
         if appended {
             self.request_picker_ranking();

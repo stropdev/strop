@@ -316,3 +316,26 @@ Evidence: client wire tests (flat/nested mapping, uri-only drop,
 error terminal, NotReady/Unsupported refusals with zero wire
 traffic), engine merge test (dedup against the syntax tier, stale
 generation rejection).
+
+Lazy warm-up slice (2026-09-14): eligible *unopened* projects start
+their servers. The catalog's marker subprojects now carry their
+marker file (`ProjectKind::Marker(&str)`); the workspace-symbols
+source reports them once per run (`PickerMsg::ScopeProjects` — the
+same walk, no second scan), and the engine enqueues bounded warm
+attaches: at most four in flight, one completion drains the next,
+installing any other surface or closing the picker ends the queue —
+never every installed server for every query. A warm attach reuses
+the ordinary discovery path (config layers → trust → executability →
+spawn) keyed by the project root; live placements and sticky
+refusals are respected, and no document is ever faked. Marker
+families map explicitly (Cargo.toml→rust, pyproject/setup.py→python,
+CMakeLists.txt→cpp, go.mod→go); `package.json` stays cold — JS/TS is
+ambiguous without configuration evidence. Combined with the
+Ready-event join, the acceptance flow works: open a parent directory,
+`space S`, and servers warm up, attach, and merge their symbols
+without opening a file. Still open from §2: per-project status rows
+for missing configuration, and incremental index reuse/invalidation
+(0058's worker). Evidence: catalog marker test, source ScopeProjects
+emission test, engine gate tests (services-off, queue lifecycle,
+live-placement and sticky-refusal respect, ambiguous-marker cold
+path).

@@ -154,6 +154,11 @@ impl Editor {
     /// its streams and previews) and allocates a fresh identity from
     /// the worker id pool.
     pub(crate) fn set_picker(&mut self, mut glue: PickerGlue) {
+        // Warm-up is on demand (0063 §2): another surface installing
+        // ends the queue — servers never start for a closed picker.
+        if glue.picker.kind != Kind::WorkspaceSymbols {
+            self.lsp_state.attach.warm_queue.clear();
+        }
         self.cancel_pending();
         self.close_picker();
         let id = match self.worker_ids.allocate() {

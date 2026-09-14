@@ -46,8 +46,9 @@ pub enum ProjectKind {
     /// A `.git` file points at a linked worktree's gitdir.
     GitWorktree,
     /// A language-project marker sits at the root (a subproject boundary
-    /// even inside a repository).
-    Marker,
+    /// even inside a repository); the marker file names the language
+    /// project family for server warm-up (0063 §2).
+    Marker(&'static str),
     /// The opened scope with no deeper boundary discovered.
     Scope,
 }
@@ -61,6 +62,11 @@ pub struct ProjectCatalog {
 }
 
 impl ProjectCatalog {
+    /// Every discovered boundary, discovery order.
+    pub fn projects(&self) -> impl Iterator<Item = &Project> {
+        self.projects.iter()
+    }
+
     /// One bounded scan of `scope`. Cancellation is cooperative; an
     /// unreadable entry is skipped, never fatal — discovery degrades to
     /// fewer boundaries, and undecidable atoms admit.
@@ -146,10 +152,11 @@ fn inspect(absolute: &Path, relative: &Path) -> Option<Project> {
         ProjectKind::GitWorktree
     } else if git.is_dir() {
         ProjectKind::GitRepository
-    } else if MARKERS.iter().any(|marker| absolute.join(marker).is_file()) {
-        ProjectKind::Marker
     } else {
-        return None;
+        let marker = MARKERS
+            .iter()
+            .find(|marker| absolute.join(marker).is_file())?;
+        ProjectKind::Marker(marker)
     };
     Some(Project {
         root: relative.to_path_buf(),
@@ -207,8 +214,8 @@ mod tests {
             Some(ProjectKind::GitWorktree)
         );
         assert_eq!(
-            by_root("engine/tools/py").map(|project| project.kind),
-            Some(ProjectKind::Marker)
+            by_root("engine/tools/py").map(|project| &project.kind),
+            Some(&ProjectKind::Marker("pyproject.toml"))
         );
         assert!(by_root("notes").is_none());
 

@@ -29,6 +29,11 @@ pub enum PickerMsg {
     /// A successful source can still issue a useful warning (rg's
     /// stderr on exit 0): it lands in the picker, not the void.
     Warning(String),
+    /// Language-project boundaries the walk discovered (0063 §2):
+    /// absolute roots with their marker file, for bounded LSP warm-up
+    /// of unopened projects. Delivered once per workspace-symbols
+    /// source run.
+    ScopeProjects(Vec<(PathBuf, String)>),
     QueryError(crate::query::QueryDiagnostic),
     /// Terminal: exactly one per request, on every path — success,
     /// failure (keeping whatever items already streamed), panic or
@@ -160,6 +165,23 @@ fn run_workspace_symbols(
     if cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
+    // The same walk feeds LSP warm-up (0063 §2): marker subprojects
+    // are the eligible unopened projects. Git-only repositories carry
+    // no language evidence and stay cold until a document opens.
+    let catalog = catalog::ProjectCatalog::discover(&cwd, &cancelled);
+    let mut warm: Vec<(PathBuf, String)> = catalog
+        .projects()
+        .filter_map(|project| match project.kind {
+            catalog::ProjectKind::Marker(marker) => {
+                Some((cwd.join(&project.root), marker.to_string()))
+            }
+            _ => None,
+        })
+        .collect();
+    warm.sort();
+    if !warm.is_empty() {
+        let _ = tx.control(PickerMsg::ScopeProjects(warm));
+    }
     let root = strop_workspace::ResourceLocation::local(cwd);
     let mut batch = Vec::with_capacity(512);
     let mut delivery_error = None;
@@ -265,6 +287,17 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.path().join("notes.txt"), "fn not rust\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("engine/src")).unwrap();
+        std::fs::write(
+            dir.path().join("engine/Cargo.toml"),
+            "[package]\nname = \"engine\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("engine/src/lib.rs"),
+            "pub fn engine_fn() {}\n",
+        )
+        .unwrap();
         let (tx, rx) = channel();
         let worker = super::SourceWorker::new().unwrap();
         let _request = worker.workspace_symbols(
@@ -277,6 +310,7 @@ mod tests {
             tx,
         );
         let mut rows: Vec<(Option<String>, String)> = Vec::new();
+        let mut scope: Option<Vec<(std::path::PathBuf, String)>> = None;
         let mut done = false;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while !done && std::time::Instant::now() < deadline {
@@ -287,6 +321,7 @@ mod tests {
                         .map(|item| (item.badge.clone(), item.text.clone())),
                 ),
                 Ok(super::PickerMsg::Warning(_)) => {}
+                Ok(super::PickerMsg::ScopeProjects(projects)) => scope = Some(projects),
                 Ok(super::PickerMsg::Finished(super::Outcome::Success(()))) => done = true,
                 Ok(other) => panic!("unexpected terminal: {other:?}"),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -302,6 +337,14 @@ mod tests {
         assert!(
             !rows.iter().any(|(_, text)| text.contains("notes.txt")),
             "non-source files contribute no rows"
+        );
+        // The same walk reports the marker project for LSP warm-up
+        // (0063 §2), sorted, with its marker file.
+        let scope = scope.expect("scope projects message");
+        assert_eq!(
+            scope,
+            vec![(dir.path().join("engine"), "Cargo.toml".to_string())],
+            "one marker project with its family"
         );
     }
 }

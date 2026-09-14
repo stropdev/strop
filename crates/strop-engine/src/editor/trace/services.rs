@@ -224,6 +224,9 @@ pub fn picker(event: &crate::editor::picker::PickerEvent) {
         let outcome = match &event.msg {
             PickerMsg::Items(items) => json!({"result":"items","count":items.len()}),
             PickerMsg::Warning(warning) => json!({"result":"warning","bytes":warning.len()}),
+            PickerMsg::ScopeProjects(projects) => {
+                json!({"result":"scope-projects","count":projects.len()})
+            }
             PickerMsg::QueryError(diagnostic) => {
                 json!({"result":"query-error","range":diagnostic.range})
             }
