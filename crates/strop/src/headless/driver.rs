@@ -10,6 +10,12 @@ use std::io::{self, Write};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
+/// Hang canary for the jobs barrier: the bound exists only to fail deadlocks,
+/// never to budget legitimate work. Real sshd handshakes inside the parallel
+/// Docker suite can outrun tens of seconds on a starved runner, so the margin
+/// is generous; the happy path returns the moment jobs clear.
+const JOBS_BUDGET: Duration = Duration::from_secs(120);
+
 struct Driver<'a> {
     editor: &'a mut Editor,
     terminal: Terminal<TestBackend>,
@@ -224,7 +230,7 @@ pub fn run_script(
             }
             DirectiveKind::Settle => {
                 driver.wait(
-                    directives::duration(arguments, Some(Duration::from_secs(30)))?,
+                    directives::duration(arguments, Some(JOBS_BUDGET))?,
                     WaitTarget::Jobs,
                     true,
                 )?;
@@ -260,7 +266,7 @@ pub fn run_script(
         }
     }
     driver.apply(Action::Finish)?;
-    driver.wait(Duration::from_secs(30), WaitTarget::Jobs, false)?;
+    driver.wait(JOBS_BUDGET, WaitTarget::Jobs, false)?;
     driver.editor.tape.finish()?;
     if let Some(error) = driver.editor.take_shutdown_error() {
         return Err(io::Error::other(error));
