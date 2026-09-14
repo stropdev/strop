@@ -128,7 +128,11 @@ impl Tui {
         }
     }
     fn until(&mut self, predicate: impl Fn(&str) -> bool) -> String {
-        self.until_within(Duration::from_secs(15), predicate)
+        // This session carries a consented terminal capture throughout:
+        // per-update frame records and snapshot searches legitimately cost
+        // seconds on slow debug runners. A minute still distinguishes a
+        // slow drain from a hang.
+        self.until_within(Duration::from_secs(60), predicate)
     }
     /// Slow runners process a consented capture's flood of full-frame
     /// records on the editor thread; a minute still distinguishes a drain
@@ -277,23 +281,18 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x1c\x0e");
     // The capture's per-update frame records queue ahead of this escape on
     // slow runners; the escape still lands in order — the mid-flood input
-    // contract — so the waits ride the drain, not the 15s default. The
-    // pinned-view proof is the mode chip: the transient "snapshot" message
-    // is cleared by the very next update while the flood streams.
-    let drain = Duration::from_secs(60);
-    tui.until_within(drain, |screen| {
-        screen.contains("NORMAL") && !screen.contains("TERMINAL")
-    });
+    // contract. The pinned-view proof is the mode chip: the transient
+    // "snapshot" message is cleared by the very next update while the
+    // flood streams.
+    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
     tui.send(b"i");
-    let settled = tui.until_within(drain, |screen| {
-        line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>")
-    });
+    let settled = tui.until(|screen| line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>"));
     assert!(
         !settled.contains("FLOOD-START"),
         "bounded history must drop the flood head"
     );
     tui.send(b"mkfifo pause; (exec 3<>pause; printf '\\r\\nINSPECTION-READY\\n'; read go <&3; printf '\\r\\nASYNC-INSPECTION-OUTPUT\\n') &\r");
-    tui.until_within(drain, |screen| line(screen, "INSPECTION-READY"));
+    tui.until(|screen| line(screen, "INSPECTION-READY"));
     tui.send(b"\x1c\x0e");
     tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
     File::options()
