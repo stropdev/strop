@@ -11,7 +11,7 @@ Release sequence:
 0054 filesystem -> 0055 terminal -> 0056 architecture prerequisites
     -> 0057 whole-core verification
     -> 0058 native worker + assurance migration
-    -> 0059 completion -> 0060 debugger -> 0061 GUI
+    -> [deferred last:] 0059 completion -> 0060 debugger -> 0061 GUI
 ```
 
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI distribution rather

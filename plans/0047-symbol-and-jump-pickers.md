@@ -37,7 +37,10 @@ fuzzy-filtered, Enter jumps.
   buffer edited between request and accept jumps to the recorded line
   (same contract as `gd` replies). No live re-query in v1.
 - **Keymap**: `space s` becomes a live row (`document-symbols`);
-  `space S` gains a muted soon-row reserving workspace symbols.
+  `space S` gains a muted soon-row reserving workspace symbols — the
+  reservation is fulfilled by [0063](0063-canonical-search-and-symbols.md),
+  which owns the automatic mixed-repository symbol experience; this plan
+  deliberately does not cover it.
 
 ## 2. Jumplist picker — `Space j`, `:jumps`
 

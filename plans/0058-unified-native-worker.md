@@ -10,7 +10,7 @@ This document records a future release contract, not a shipped worker or passed 
 ```text
 0054 filesystem -> 0055 TUI terminal -> 0056 architecture -> 0057 core verification
     -> 0058 unified native worker + assurance migration
-    -> 0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
+    -> [deferred last:] 0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
 ```
 
 The user explicitly chose deployment of a native worker: development hosts normally
@@ -90,6 +90,29 @@ rename preserved bytes, and a destination created after preparation caused a con
 while preserving both files. This was not SSH/lease/power-loss or alternative-worker
 performance evidence. 0057 must verify what actually ships in its baseline even if
 this later release will replace it.
+
+
+### Filesystem notifications and invalidation are owned here
+
+Amendment (2026-09-14): filesystem notifications, reconciliation, guarded
+reload, Git/catalog invalidation and their verification fold into **this
+plan**; there is no separate filesystem-notification plan. The unified
+worker is the natural owner: one notification source per filesystem session
+— local inotify-style watches, remote worker relays, container mounts —
+normalized into the existing generation-stamped catalog. Requirements:
+
+- Notification delivery is advisory freshness, never authority: a confirmed
+  rename or save result cannot be erased by a late watch event
+  ([0054](0054-unified-filesystem-workspace.md) keeps this precedence).
+- Guarded reload uses the existing admission/receipt vocabulary — the same
+  checked operations, conflicts and recovery as any other filesystem
+  mutation; dirty buffers overlay and are never silently clobbered.
+- Git state and the project catalog (0063's discovery consumer) invalidate
+  by observed generation, not by trust in watch completeness; a missed or
+  coalesced event self-heals on the next observation.
+- Verification rides the WK16–WK19 proof/correspondence additions: watch
+  loss, event storms, reconnect replays and generation-skew cases extend the
+  existing model registry and negative controls.
 
 ## 3. Required release ledger
 

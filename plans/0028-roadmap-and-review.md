@@ -243,10 +243,19 @@ priority does not waive 0058 §2's accepted AR/VF baseline or retarget their can
 Completion, debugger and GUI remain behind the worker release.
 
 ```text
-0054 filesystem -> 0055 TUI terminal -> 0056 architecture -> 0057 core verification
+0054 filesystem -> 0055 TUI terminal -> 0063 canonical search
+    -> 0064 UI polish -> 0056 architecture -> 0057 core verification
     -> 0058 unified native worker + assurance migration
-    -> 0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
+        (owns filesystem notifications/reconciliation/guarded reload/catalog invalidation)
+    -> [deferred, in order, until everything before them is landed and bug-hardened:]
+       0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
 ```
+
+Amendment (2026-09-14): the search epic ([0063](0063-canonical-search-and-symbols.md))
+and UI polish ([0064](0064-ui-polish-scrollbars-and-cursor-fade.md)) precede the
+foundation arc; filesystem notifications live in 0058, not a separate plan; and the
+user has explicitly deferred completion (0059), debugger (0060) and GUI (0061) to
+last — landing stops before them.
 
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,

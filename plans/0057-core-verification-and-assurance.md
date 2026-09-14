@@ -12,7 +12,7 @@ The implementation sequence is:
 0054 unified filesystem -> 0055 terminal -> 0056 architecture closure
     -> 0057 whole-core verification
     -> 0058 native worker + assurance migration
-    -> 0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
+    -> [deferred last:] 0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
 ```
 
 The user has dispatched architecture and this verification release. Complete the

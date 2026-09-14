@@ -1,0 +1,202 @@
+# 0063 — Canonical search: one query language, automatic workspace symbols
+
+Status: **authorized** after [0058 unified native worker](0058-unified-native-worker.md).
+This plan supersedes the earlier search-deferral grouping: everything
+query-bearing converges here, and filesystem notifications/reconciliation move
+to 0058 rather than a separate plan. UI polish lives in
+[0064](0064-ui-polish-scrollbars-and-cursor-fade.md). Completion (0059),
+debugger (0060) and GUI (0061) stay deferred until the functionality landing
+before them is complete and bug-hardened.
+
+This document records requirements; it does not claim that new editor code,
+tests, models or proofs have been executed.
+
+## 1. Ownership and boundaries
+
+| Concern | Owner |
+|---|---|
+| Filesystem notifications, reconciliation, guarded reload, Git/catalog invalidation and their verification | [0058 unified native worker](0058-unified-native-worker.md) — folded in there, no separate plan |
+| Shared query language, Boolean operators, all query-bearing panes, typed document/workspace symbols, automatic project discovery, mixed-language providers and verification | **This plan** |
+| Per-pane scrollbar/Git overview, then optional slow cursor fading | [0064 UI polish](0064-ui-polish-scrollbars-and-cursor-fade.md) |
+
+Workspace symbols were reserved as future work in
+[0047](0047-symbol-and-jump-pickers.md); that reservation is fulfilled here —
+0047 did not, and does not need to, cover the automatic mixed-repository
+experience described below.
+
+## 2. Automatic symbol search
+
+The acceptance flow: open an ordinary parent directory containing several
+projects, invoke workspace symbols, and search. No repository list, no
+prior file-opening ritual, no repository/workspace mode selection.
+
+- The opened directory is the common search scope for Files, Search and
+  workspace symbols. Repository and language-project boundaries are
+  discovered internally through one shared catalog and the canonical
+  filesystem worker (0058). Nested repositories, Git worktrees, monorepos,
+  non-Git projects and loose source directories are all recognized. No
+  special behavior for any directory name — `workarea` included.
+- Repository boundaries and language-server roots are different concepts. A
+  repository may contain several languages or independently configured
+  subprojects. Native namespace, project root, server profile,
+  configuration/environment and provider incarnation are preserved in their
+  identities.
+- Reuse Strop's existing LSP attachment owner (it already distinguishes
+  filesystem target, language and root). Extend it to initialize eligible
+  unopened projects without creating fake buffers. Providers start lazily
+  with bounded concurrency; warm sessions are reused; servers serving active
+  documents are protected. Never start every installed server for every query.
+- Respect each project's actual configuration: compilation information for
+  C++, Python environment/configuration roots, Lua library settings. Missing
+  configuration produces an actionable project status while other projects
+  continue returning results.
+- A bounded syntax-definition fallback covers Python, C++, Lua and Rust,
+  reusing existing parser foundations with tested declaration extraction.
+  It provides useful results when a semantic server is unavailable or still
+  loading, and its coverage is labeled accurately: syntax extraction does
+  not guarantee macro-expanded or inferred declarations.
+- Indexing is incremental and outside the input/render path. Unchanged
+  results are reused, unsaved sources overlay, and invalidation is driven by
+  source observation, catalog generation and filesystem notifications.
+  Watching improves freshness; it is never the only cache-validity mechanism.
+- The picker combines results, preserves project/source provenance and
+  avoids duplicate locations. Same-name symbols in different projects remain
+  distinct. Loading, unavailable and truncated coverage are shown clearly; a
+  partial empty result must never appear to mean "no symbols exist."
+
+## 3. Canonical query language
+
+Uppercase `AND`, `OR`, `NOT` and parentheses, with precedence
+**NOT > AND > OR** — a familiar searchable-code convention
+([GitHub code-search syntax](https://docs.github.com/en/search-github/github-code-search/understanding-github-code-search-syntax))
+that preserves Strop's existing simple-query behavior.
+
+| Example | Meaning |
+|---|---|
+| `(language:python OR language:cpp OR language:lua) parser` | Search the selected source-language families. |
+| `(kind:class OR kind:struct) parser` | Either symbol classification. |
+| `(repo:engine OR repo:tools) NOT glob:**/vendor/** parser` | Optional repository narrowing and an exclusion. |
+| `text:"retry" AND text:"request" NOT text:"test"` | Both positive literals occur on the same logical line; the excluded literal does not. |
+
+Preserved simple-clause conventions:
+
+- Repeated positive qualifiers in one family remain OR alternatives; different
+  families and exclusions combine with AND.
+- Bare multiword content remains one phrase. Explicit `AND` requests separate
+  predicates.
+- Existing negative metadata qualifiers remain supported.
+- `NOT` binds one atom or a parenthesized expression. Quote multiword operands.
+- Code punctuation such as `!` and `|` stays literal outside explicit regex
+  syntax.
+- `kind:` is canonical; `type:` normalizes as an input alias through the same
+  qualifier catalog.
+
+Specify lexical boundaries, parentheses, quoting and escapes before
+implementation. Literal URLs, namespace separators, backslashes and
+negative-looking filenames survive parsing. Regex contents stay opaque to
+Boolean parsing.
+
+**One typed AST and one shared evaluator.** All accepted syntax lowers once;
+no pane selects a different parser, and no separate Boolean implementation
+survives beside the existing query parser.
+
+Inventory and migrate every query-bearing surface: Files, Search, Directory,
+document/workspace symbols, other search pickers and embedded search
+operands. Qualifier metadata, diagnostics, completion and highlighting are
+shared. Surface-specific candidate types and default matching modes are
+explicit; unsupported qualifiers produce diagnostics rather than silently
+disappearing.
+
+The `With` replacement payload remains replacement text. Command syntax stays
+owned by the command parser; embedded search operands delegate to the
+canonical query machinery.
+
+Stored queries carry a syntax version and migration. Previously literal
+operator words and newly recognized qualifiers must not silently change
+saved-query meaning. Query-wide options (`case:`, `hidden:`, `ignored:`) stay
+outside Boolean branches; canonical formatting places them in a leading
+preamble.
+
+The language catalog consolidates during this work: at the 0.32.4 tag Lua
+exists in syntax support but is missing from the shared core language catalog
+and the default LSP registry, and C++ extension membership is inconsistent.
+Resolve both centrally, with one policy for ambiguous headers.
+
+## 4. Execution and replacement
+
+- Boolean content expressions evaluate against complete logical source lines,
+  consistently across disk results and unsaved-buffer overlays. `AND` never
+  means "matches somewhere on different lines in the same file"; file-level
+  conjunction would require an explicit additional feature
+  ([git-grep's distinction](https://git-scm.com/docs/git-grep)).
+- Branch relationships are preserved: `(repo:a AND foo) OR (repo:b AND bar)`
+  cannot flatten into independent repository and text alternatives. Provider
+  prefilters may overfetch; final admission uses the original AST. Parsing,
+  compilation, candidate retrieval, provider fan-out and retained results are
+  bounded.
+- Negative terms contribute no highlights or replacement spans. Failed or
+  unavailable evidence must not become false and then a successful match
+  through `NOT`.
+- LSP accepts a query string, not Strop's grammar
+  ([workspace/symbol contract](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_symbol)).
+  Provider requests are planned and bounded; returned candidates are filtered
+  locally against the AST. Coverage stays honest — server-defined retrieval
+  is not guaranteed to enumerate every matching symbol.
+- First replacement implementation: exactly one identifiable positive
+  literal/regex target, optionally constrained by Boolean metadata and
+  negative content guards. Multiple positive targets (`foo OR bar`) remain
+  valid searches but replacement requires an explicit ambiguity diagnostic.
+  Preview and apply share the same frozen AST, scope, source evidence and
+  checked ChangePlan.
+
+## 5. Code structure
+
+Separate owners for query parsing/evaluation, shared language/kind metadata,
+project discovery/catalog state, syntax extraction/index scheduling, LSP
+lifecycle, result admission and presentation. Extend or extract the existing
+canonical owner when dependencies justify it. No competing crawlers,
+pane-specific parsers, duplicate language tables or proof-only
+implementations; migrated callers and removed paths land together. Native
+work, regex compilation, indexing and process startup stay outside
+input/render.
+
+## 6. Required verification
+
+Verification is part of this epic's acceptance criteria:
+
+1. **Grammar:** reviewed parse-tree/result corpus, precedence/grouping/
+   negation cases, incomplete-input diagnostics, Unicode/escaping,
+   parse-format-parse properties, syntax-version migration and bounded parser
+   fuzzing.
+2. **Semantics:** an independent reference interpreter; Boolean algebra checks
+   over complete inputs; differential disk/dirty-buffer evaluation;
+   branch-sensitive filtering; cross-surface consistency; provider-prefilter
+   soundness.
+3. **Replacement:** single-target eligibility, negative guards, rejection of
+   ambiguous targets, literal replacement payloads, frozen preview/apply
+   scope, stale-review rejection.
+4. **Lifecycle:** extend the existing TLA+/TLC search lifecycle model or add a
+   focused model in the same verification registry. Cover scope/query/provider
+   generations, cancellation, popup dismissal, partial results, indexing,
+   restart, invalidation, lazy resolution and resource bounds.
+5. **Named safety properties:** no foreign results, no retired-query
+   publication, no known-stale symbol acceptance, no cross-project
+   configuration leakage, no false completeness. Progress assumptions stated
+   explicitly.
+6. **Production correspondence:** replay model traces through actual
+   admission/decoder handlers; extend applicable Verus/TLAPS obligations and
+   test real synchronization through the repository's established seam.
+7. **Negative controls:** deliberately remove `NOT`, swap `AND`/`OR`, flatten
+   branches, ignore qualifiers, accept stale generations and mark unopened
+   projects complete. Each defect must fail its intended assertion.
+8. **End to end:** open a mixed parent directory containing separate Python
+   environments, C++, Lua, nested repositories, a worktree and non-Git
+   sources. Obtain expected symbols without first opening files or
+   configuring a repository list. Exercise missing servers, syntax fallback,
+   dirty sources, cancellation, restart, Unicode locations and remote
+   namespace isolation.
+
+These checks register in the actual CI/release gates alongside the 0058
+assurance work, with model bounds, assumptions, meaningful mutant failures and
+native/provider coverage recorded. A skipped fixture or an unrelated green
+gate is not passing evidence.
