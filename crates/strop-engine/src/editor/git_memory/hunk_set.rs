@@ -22,6 +22,12 @@ impl Default for HunkSet {
     }
 }
 impl HunkSet {
+    /// Public fixture construction (the worker path stays
+    /// crate-private by design): parsed hunks over a known line count.
+    pub fn from_parts(hunks: Vec<Hunk>, total_lines: usize) -> Self {
+        Self::new(hunks, total_lines)
+    }
+
     pub(crate) fn new(hunks: Vec<Hunk>, total_lines: usize) -> Self {
         let mut signs = BTreeMap::new();
         let mut additions = BTreeSet::new();
@@ -53,6 +59,12 @@ impl HunkSet {
     pub fn identity(&self) -> usize {
         Arc::as_ptr(&self.0) as *const () as usize
     }
+    /// Sparse changed-line iteration for the scrollbar overview
+    /// (0064 §1): one item per signed line, never a full-file scan.
+    pub(crate) fn sign_lines(&self) -> impl Iterator<Item = (usize, char)> + '_ {
+        self.0.signs.iter().map(|(&line, &(_, sign))| (line, sign))
+    }
+
     pub(crate) fn sign(&self, line: usize) -> Option<char> {
         self.0.signs.get(&line).map(|(_, sign)| *sign)
     }

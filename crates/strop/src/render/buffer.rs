@@ -30,6 +30,7 @@ use super::{ACCENT, BASE, FLASH_BG, MUTED, PAIR_BG, PREVIEW_BG, SELECT_BG, TEXT}
 mod content;
 mod directory;
 mod rows;
+mod scrollbar;
 use content::{content_spans, fixed_spans};
 use rows::render_pane;
 
@@ -160,6 +161,13 @@ pub(super) fn admit_visible_work(editor: &mut Editor, area: Rect, view: &PaneVie
         );
     }
 }
+/// The pane's text budget: the scrollbar's reserved column excluded
+/// (0064 §1) — the SAME budget prepare clamps against and paint draws
+/// into, so viewport geometry and cells can never diverge.
+pub(super) fn text_budget(rect: Rect) -> Rect {
+    scrollbar::reserved(rect)
+}
+
 pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Rect {
     let rects = pane_rects(editor, area);
     let n = rects.len();
@@ -237,14 +245,20 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
         };
         let terminal_input = editor.terminal_view_input(pane);
         if w != 0 && h != 0 && editor.docs.get(view.doc).is_some() {
+            // 0064 §1: the scrollbar column is reserved before every
+            // text budget the pane computes — content, carets and the
+            // terminal grid all live inside it.
+            let text_rect = scrollbar::reserved(*rect);
             if terminal_input {
-                super::terminal::render(editor, frame, *rect, view.doc, active);
+                super::terminal::render(editor, frame, text_rect, view.doc, active);
+                scrollbar::terminal(editor, frame, *rect, view.doc);
             } else {
-                render_pane(editor, frame, *rect, &view);
+                render_pane(editor, frame, text_rect, &view);
+                scrollbar::render(editor, frame, *rect, &view);
                 if active {
-                    render_extra_cursors(editor, frame, *rect, &view);
+                    render_extra_cursors(editor, frame, text_rect, &view);
                 } else {
-                    render_static_caret(editor, frame, *rect, &view);
+                    render_static_caret(editor, frame, text_rect, &view);
                 }
             }
         }

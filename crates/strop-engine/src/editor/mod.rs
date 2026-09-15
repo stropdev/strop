@@ -29,7 +29,7 @@ mod document;
 pub mod events;
 mod explain;
 mod git;
-mod git_memory;
+pub mod git_memory;
 mod help;
 mod indent;
 mod input;

@@ -6,7 +6,7 @@
 //! `git_memory::jobs` handlers which validate ownership first.
 
 mod file_list;
-mod hunk_set;
+pub mod hunk_set;
 mod jobs;
 mod presentation;
 mod sidebar;

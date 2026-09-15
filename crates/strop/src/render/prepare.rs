@@ -35,7 +35,9 @@ pub(super) fn prepare_frame(editor: &mut Editor, area: Rect) {
             editor.scroll_to_cursor(h);
         }
         if !terminal_input && h != 0 {
-            let width = usize::from(rect.width)
+            // 0064 §1: clamp against the same reserved budget paint
+            // draws into — the track column is never content.
+            let width = usize::from(super::buffer::text_budget(*rect).width)
                 .saturating_sub(super::diff::left_inset(editor, editor.current()));
             let head = editor.head();
             let column_probe = editor
@@ -46,7 +48,8 @@ pub(super) fn prepare_frame(editor: &mut Editor, area: Rect) {
             }
         }
         if terminal_input && rect.width != 0 && rect.height != 0 {
-            editor.prepare_terminal_geometry(pane_doc, rect.width, rect.height);
+            let budget = super::buffer::text_budget(*rect);
+            editor.prepare_terminal_geometry(pane_doc, budget.width, budget.height);
         }
     }
 
@@ -66,7 +69,10 @@ pub(super) fn prepare_frame(editor: &mut Editor, area: Rect) {
         .collect();
     if stamp_changed {
         for (index, view) in views.iter().enumerate() {
-            buffer::admit_visible_work(editor, rects[index], view);
+            // 0064 §1: admission and paint share one text budget —
+            // the reserved track column is excluded from both, so the
+            // analysis cache can never miss between them.
+            buffer::admit_visible_work(editor, buffer::text_budget(rects[index]), view);
         }
     }
 

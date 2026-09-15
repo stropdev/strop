@@ -68,17 +68,19 @@ fn folder_rows_align_metadata_and_keep_selection_and_marks_visible() {
     let grid = frame(&mut editor, 80, 9);
     assert_eq!(
         row_text(&grid, 2),
-        "▸  3 src/                         4.0 KiB  drwxr-xr-x"
+        "▸  3 src/                         4.0 KiB  drwxr-xr-x                          │"
     );
     assert_eq!(
         row_text(&grid, 3),
-        "   4 README.md                    8.0 KiB  -rw-r--r--"
+        "   4 README.md                    8.0 KiB  -rw-r--r--                          │"
     );
     assert_eq!(
         row_text(&grid, 4),
-        "   5 zero.txt                         0 B  -rw-r--r--"
+        "   5 zero.txt                         0 B  -rw-r--r--                          │"
     );
-    assert!((0..80).all(|x| grid[(x, 2)].bg == diff::CURSOR_ROW_BG));
+    // the cursor-row band spans the pane; the reserved track column
+    // (0064 §1) keeps its own surface at the last cell
+    assert!((0..79).all(|x| grid[(x, 2)].bg == diff::CURSOR_ROW_BG));
     assert_eq!(grid[(5, 2)].fg, ACCENT);
     assert_eq!(grid[(5, 3)].fg, TEXT);
     assert_eq!(grid[(34, 3)].fg, MUTED);
@@ -88,8 +90,9 @@ fn folder_rows_align_metadata_and_keep_selection_and_marks_visible() {
     let marked = frame(&mut editor, 80, 9);
     assert_eq!(marked[(0, 2)].symbol(), "●");
     assert_eq!(marked[(0, 3)].symbol(), "▸");
-    assert_eq!(marked[(79, 2)].bg, diff::CURSOR_ROW_BG);
-    assert_eq!(marked[(79, 3)].bg, diff::CURSOR_ROW_BG);
+    // the track column keeps its own surface (0064 §1)
+    assert_eq!(marked[(78, 2)].bg, diff::CURSOR_ROW_BG);
+    assert_eq!(marked[(79, 2)].symbol(), "\u{2502}");
 }
 
 #[test]
@@ -130,6 +133,12 @@ fn narrow_round_trip_keeps_native_names_and_cursor_mapping() {
 fn empty_folder_is_not_rendered_as_missing_file_rows() {
     let mut editor = folder(Vec::new(), ListingState::Complete);
     let grid = frame(&mut editor, 60, 8);
-    assert_eq!(row_text(&grid, 2), "     Empty folder");
-    assert!((3..7).all(|row| row_text(&grid, row).is_empty()));
+    // 0064 §1: the last column is the reserved scrollbar track.
+    assert_eq!(
+        row_text(&grid, 2),
+        "     Empty folder                                          │"
+    );
+    assert!((3..7).all(|row| row_text(&grid, row)
+        .chars()
+        .all(|c| c.is_whitespace() || c == '\u{2502}')));
 }

@@ -269,6 +269,13 @@ impl Editor {
 
     /// Gutter sign for a 1-based buffer line: `+` add, `~` change,
     /// `-` deletion below (0001 pillar 3.1).
+    /// Sparse iteration of the live document's changed lines with
+    /// their gutter signs — the scrollbar's Git overview source
+    /// (0064 §1). Empty when no diff is live.
+    pub fn sign_lines(&self) -> impl Iterator<Item = (usize, char)> + '_ {
+        self.hunks.sign_lines()
+    }
+
     pub fn sign_at(&self, line_1based: usize) -> Option<char> {
         self.hunks.sign(line_1based)
     }

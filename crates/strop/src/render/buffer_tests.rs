@@ -157,19 +157,19 @@ fn narrower_than_the_gutter_keeps_the_margin_fixed() {
     // R6: a 4-column pane cannot fit the 5-cell number gutter — the
     // content width collapses to zero, nothing overwrites the gutter,
     // and restoring width brings the same origin back. Cells: 40 x's
-    // (0..40), a=40, b=41, Z=42; origin 37, window 37..43.
+    // (0..40), a=40, b=41, Z=42; origin 38, window 38..42 + track.
     let mut e = Editor::new(Buffer::from_text(&format!("{}abZ\n", "x".repeat(40))));
     e.set_head(42); // Z
     let mut terminal = viewport_terminal(11, 4);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     let origin = e.view().hscroll.get();
-    assert_eq!(origin, 37);
+    assert_eq!(origin, 38);
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 5, 0, 6),
-        ["x", "x", "x", "a", "b", "Z"],
+        ["x", "x", "a", "b", "Z", "\u{2502}"],
         "Z at the caret, origin {origin}"
     );
-    terminal.backend_mut().assert_cursor_position((10, 0));
+    terminal.backend_mut().assert_cursor_position((9, 0));
     // shrink below the gutter: zero content width keeps the origin
     terminal.backend_mut().resize(4, 4);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
@@ -178,7 +178,7 @@ fn narrower_than_the_gutter_keeps_the_margin_fixed() {
     terminal.backend_mut().resize(11, 4);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(e.view().hscroll.get(), origin);
-    terminal.backend_mut().assert_cursor_position((10, 0));
+    terminal.backend_mut().assert_cursor_position((9, 0));
 }
 
 #[test]
@@ -339,25 +339,28 @@ fn long_line_tabs_unicode_and_native_caret_share_origin() {
         e.config.tab_size = tab;
         e.reresolve_indents(); // config changes re-resolve open documents
         e.set_head(70_010); // Z, after a CJK cluster, combining cluster and ESC
-        let mut terminal = viewport_terminal(11, 4); // 5 fixed + 6 content cells
+        let mut terminal = viewport_terminal(11, 4); // 5 fixed + 5 content + track
         terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
         e.wait_analysis();
         terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
-        assert_eq!(e.view().hscroll.get(), origin);
+        // the reserved track column (0064 §1) narrows the budget by
+        // one: the same caret visibility needs one more scroll step
+        assert_eq!(e.view().hscroll.get(), origin + 1);
         assert_eq!(
             row_symbols(terminal.backend().buffer(), 0, 0, 7),
-            [" ", " ", " ", "1", " ", " ", "界"]
+            [" ", " ", " ", "1", " ", "界", "x"]
         );
         // TestBackend retains arbitrary old storage under wide glyphs; it is
         // not a visible cell. Assert the next visible positions, not that storage.
         assert_eq!(
-            row_symbols(terminal.backend().buffer(), 8, 0, 3),
-            ["e\u{301}", "\u{fffd}", "Z"]
+            row_symbols(terminal.backend().buffer(), 7, 0, 4),
+            ["e\u{301}", "\u{fffd}", "Z", "\u{2502}"]
         );
         // the tab's clipped remainder is a blank, 界 renders whole (its
         // continuation cell stays untouched), ESC is the replacement
-        // glyph — and the native caret sits on Z through the SAME origin
-        terminal.backend_mut().assert_cursor_position((10, 0));
+        // glyph — the native caret sits on Z and the track column
+        // (0064 §1) closes the pane
+        terminal.backend_mut().assert_cursor_position((9, 0));
         assert_eq!(e.buf().cell_col_with_tab(e.head(), tab).get(), origin + 5);
     }
 }
@@ -374,11 +377,11 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
-        (0, 11)
+        (0, 12)
     );
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 5, 1, 10),
-        ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+        ["0", "1", "2", "3", "4", "5", "6", "7", "8", "\u{2502}"]
     );
     // the inactive pane's saved cursor (head 3 → cell 3) paints a
     // muted block, pane-local, through its own zero origin
@@ -388,42 +391,48 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     );
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 21, 1, 10),
-        ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]
+        ["C", "D", "E", "F", "G", "H", "I", "J", "K", "\u{2502}"]
     );
-    terminal.backend_mut().assert_cursor_position((30, 1));
+    terminal.backend_mut().assert_cursor_position((29, 1));
+    // 0064 §1: pull the pane-1 caret one column inside the reserved
+    // budget (a frozen-origin cursor at the old last column now clips
+    // honestly rather than painting into the track).
+    e.set_head(19);
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     e.active_pane = 0;
     e.set_head(25);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
-        (16, 11)
+        (17, 12)
     );
     assert_eq!(
-        terminal.backend().buffer()[(30, 1)].bg,
+        terminal.backend().buffer()[(28, 1)].bg,
         ratatui::style::Color::Rgb(0x3a, 0x3d, 0x4d)
     );
+    assert_eq!(terminal.backend().buffer()[(30, 1)].symbol(), "\u{2502}");
     terminal.backend_mut().resize(21, 5);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
-        (21, 11)
+        (22, 12)
     );
-    terminal.backend_mut().assert_cursor_position((9, 1));
+    terminal.backend_mut().assert_cursor_position((8, 1));
     e.active_pane = 1;
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
-        (21, 16)
+        (22, 16)
     );
-    terminal.backend_mut().assert_cursor_position((20, 1));
+    terminal.backend_mut().assert_cursor_position((19, 1));
     terminal.backend_mut().resize(61, 5);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes[0].hscroll.get(), e.panes[1].hscroll.get()),
-        (21, 16)
+        (22, 16)
     );
     assert_eq!(terminal.backend().buffer()[(36, 1)].symbol(), "G");
-    terminal.backend_mut().assert_cursor_position((40, 1));
+    terminal.backend_mut().assert_cursor_position((39, 1));
 }
 
 #[test]
@@ -433,10 +442,10 @@ fn extra_carets_and_vertical_bounds_do_not_alias() {
     e.view_mut().sels.set_extras([0, 8]);
     let mut terminal = viewport_terminal(10, 4);
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
-    assert_eq!(e.view().hscroll.get(), 6);
-    assert_eq!(terminal.backend().buffer()[(7, 0)].symbol(), "i");
-    assert_eq!(terminal.backend().buffer()[(7, 0)].bg, crate::render::TEXT);
-    assert_ne!(terminal.backend().buffer()[(5, 0)].bg, crate::render::TEXT);
+    assert_eq!(e.view().hscroll.get(), 7);
+    assert_eq!(terminal.backend().buffer()[(6, 0)].symbol(), "i");
+    assert_eq!(terminal.backend().buffer()[(6, 0)].bg, crate::render::TEXT);
+    assert_ne!(terminal.backend().buffer()[(4, 0)].bg, crate::render::TEXT);
     let area = ratatui::layout::Rect::new(2, 3, 10, 2);
     let origin = strop_core::id::DisplayColumn::new(6);
     // rows above the top and columns left of the origin are absent,
@@ -609,19 +618,20 @@ fn typed_diff_rows_keep_fixed_numbers_and_scrolled_content() {
         None,
     );
     e.set_head(e.buf().line_start(2) + 10);
-    let mut terminal = viewport_terminal(13, 6); // 9 fixed diff cells + 4 content
+    let mut terminal = viewport_terminal(13, 6); // 9 fixed diff cells + 3 content + track
     terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
-    assert_eq!(e.view().hscroll.get(), 5);
+    assert_eq!(e.view().hscroll.get(), 6);
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 0, 2, 13),
-        ["▸", " ", " ", " ", " ", " ", " ", "1", " ", " ", "e\u{301}", "\u{fffd}", "Z"]
+        ["▸", " ", " ", " ", " ", " ", " ", "1", " ", "e\u{301}", "\u{fffd}", "Z", "\u{2502}"]
     );
-    // the stats band scrolls WITH the content; the number gutter does not
+    // the stats band scrolls WITH the content; the number gutter does
+    // not — and the reserved track column (0064 §1) closes the band
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 9, 0, 4),
-        ["f", " ", "+", "1"]
+        [" ", "+", "1", "\u{2502}"]
     );
-    terminal.backend_mut().assert_cursor_position((12, 2));
+    terminal.backend_mut().assert_cursor_position((11, 2));
 }
 
 #[test]
@@ -707,7 +717,7 @@ fn markdown_semantics_reach_the_real_cell_grid() {
     use ratatui::style::Modifier;
     let mut editor = Editor::new(Buffer::from_text("# Heading\n\n**bold** and *italic*\n"));
     editor.buf_mut().path = Some(std::path::PathBuf::from("guide.md"));
-    editor.analysis_fixture();
+    editor.analysis_fixture_width(79); // 0064 §1: the track reserves one column
     let mut terminal = viewport_terminal(80, 10);
     terminal
         .draw(|frame| crate::render::render(&mut editor, frame))
@@ -720,4 +730,66 @@ fn markdown_semantics_reach_the_real_cell_grid() {
     assert!(grid[(7, 2)].modifier.contains(Modifier::BOLD));
     assert_eq!(grid[(19, 2)].symbol(), "i");
     assert!(grid[(19, 2)].modifier.contains(Modifier::ITALIC));
+}
+
+#[test]
+fn pane_scrollbar_carries_track_thumb_and_git_overview() {
+    // 0064 §1: one reserved column per pane — quiet track, viewport
+    // thumb, sparse Git spans; detached documents keep the honest
+    // empty track.
+    let text = format!("{}\n", "line\n".repeat(200));
+    let mut e = Editor::new(Buffer::from_text(&text));
+    let mut terminal = viewport_terminal(40, 10);
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    let grid = terminal.backend().buffer();
+    // The pane rows of the right column are the track (the bottom
+    // row is the status line); the thumb sits at the top while the
+    // viewport is at line 0, painted over the track.
+    assert_eq!(grid[(39, 0)].symbol(), "\u{25ae}");
+    assert!((1..9).all(|y| grid[(39, y)].symbol() == "\u{2502}"));
+    // No hunks: no change spans anywhere in the track.
+    assert!((0..9).all(|y| grid[(39, y)].symbol() != "\u{258e}"));
+
+    // Seed one addition at line 150: a green span appears, mapped
+    // fractionally into the track (150/200 of 9 rows ≈ row 7).
+    let hunk = strop_git::Hunk {
+        kind: strop_git::HunkKind::Add,
+        new_start: 150,
+        new_count: 1,
+        old_start: 149,
+        old_count: 0,
+        lines: vec![strop_git::DiffLine {
+            origin: strop_git::LineOrigin::Addition,
+            old_lineno: None,
+            new_lineno: Some(150),
+            text: b"added\n".to_vec(),
+            has_newline: true,
+        }],
+    };
+    e.hunks = strop_engine::editor::git_memory::hunk_set::HunkSet::from_parts(vec![hunk], 201);
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    let grid = terminal.backend().buffer();
+    assert_eq!(
+        grid[(39, 6)].symbol(),
+        "\u{258e}",
+        "the addition maps to its track row"
+    );
+    assert_eq!(
+        grid[(39, 6)].fg,
+        ratatui::style::Color::Rgb(0xa9, 0xc4, 0x7c)
+    );
+
+    // Scrolling moves the thumb down the same fractional mapping;
+    // move the caret (the viewport follows it) — a bare view_top is
+    // clamped back to the caret by admission.
+    e.set_head(99 * 5); // start of line 100 in the 5-byte-lines fixture
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    let grid = terminal.backend().buffer();
+    let thumb_row = (0..10)
+        .find(|&y| grid[(39, y)].symbol() == "\u{25ae}")
+        .unwrap();
+    assert!(
+        thumb_row >= 4,
+        "half the document scrolled past: thumb at {thumb_row}"
+    );
 }

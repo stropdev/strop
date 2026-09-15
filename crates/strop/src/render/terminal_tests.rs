@@ -120,9 +120,9 @@ fn horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes() {
     let mut editor = Editor::new(Buffer::from_text("ab\t界e\u{301}\x1bZ\n"));
     editor.config.tab_size = 4;
     editor.set_head(10);
-    let mut screen = Screen::new(9, 4); // 5 gutter + 4 content, origin 5
+    let mut screen = Screen::new(9, 4); // 5 gutter + 3 content + track
     screen.draw(&mut editor);
-    assert_eq!(editor.view().hscroll.get(), 5);
+    assert_eq!(editor.view().hscroll.get(), 6);
     let cell = |screen: &Screen, col: u16| {
         screen
             .physical
@@ -133,16 +133,18 @@ fn horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes() {
             .trim_matches(' ')
             .to_string()
     };
-    // the tab's clipped remainder, the e+combining cluster, the ESC
-    // replacement, Z — no half 界, no protocol bytes reach the tty
-    assert_eq!(cell(&screen, 5), "");
-    assert_eq!(cell(&screen, 6), "e\u{301}");
-    assert_eq!(cell(&screen, 7), "\u{fffd}");
-    assert_eq!(cell(&screen, 8), "Z");
+    // the e+combining cluster, the ESC replacement, Z — no half 界,
+    // no protocol bytes reach the tty; the track column (0064 §1)
+    // closes the pane
+    assert_eq!(cell(&screen, 5), "e\u{301}");
+    assert_eq!(cell(&screen, 6), "\u{fffd}");
+    assert_eq!(cell(&screen, 7), "Z");
+    assert_eq!(cell(&screen, 8), "\u{2502}");
     editor.set_head(0);
     screen.draw(&mut editor);
     screen.draw(&mut editor);
     assert_eq!(cell(&screen, 5), "a");
     assert_eq!(cell(&screen, 6), "b");
-    assert_eq!(cell(&screen, 8), "");
+    // scrolled to the head: the reserved track column stays painted
+    assert_eq!(cell(&screen, 8), "\u{2502}");
 }

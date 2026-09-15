@@ -150,7 +150,7 @@ impl Tui {
             );
             let mut bytes = [0; 8192];
             match self.master.read(&mut bytes) {
-                Ok(0) => panic!("terminal closed: {screen}"),
+                Ok(0) => panic!("terminal read closed: {screen}"),
                 Ok(count) => self.screen.process(&bytes[..count]),
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     self.poll(libc::POLLIN, deadline)
@@ -169,8 +169,21 @@ impl Drop for Tui {
         let _ = self.child.wait();
     }
 }
+/// 0064 §1: every pane reserves its last column for the scrollbar
+/// track (`│`/`▮`/`▎`), so full-row comparisons ignore that cell.
+fn strip_track(row: &str) -> &str {
+    let trimmed = row.trim();
+    trimmed
+        .strip_suffix(['\u{2502}', '\u{25ae}', '\u{258e}'])
+        .map_or(trimmed, str::trim_end)
+}
 fn line(screen: &str, expected: &str) -> bool {
-    screen.lines().any(|line| line.trim() == expected)
+    screen.lines().any(|line| strip_track(line) == expected)
+}
+/// The text of one pane column range (0064 §1 geometry-aware split
+/// checks; the divider and track glyphs stay out of the slice).
+fn cells(row: &str, from: usize, to: usize) -> String {
+    row.chars().skip(from).take(to - from).collect::<String>()
 }
 
 #[test]
@@ -232,7 +245,11 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x12\x1bx\x1b[15~");
     tui.until(|screen| {
         screen.lines().any(|row| {
-            row.split_whitespace().collect::<Vec<_>>().join(" ") == "12 1b 78 1b 5b 31 35 7e"
+            strip_track(row)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                == "12 1b 78 1b 5b 31 35 7e"
         })
     });
     tui.until(|screen| line(screen, "BYTE-DONE"));
@@ -244,9 +261,13 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| line(screen, "PREFIX-READY"));
     tui.send(b"\x17.\x1cz\x17z");
     tui.until(|screen| {
-        screen
-            .lines()
-            .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "17 1c 7a 17 7a")
+        screen.lines().any(|row| {
+            strip_track(row)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                == "17 1c 7a 17 7a"
+        })
     });
     tui.until(|screen| line(screen, "PREFIX-DONE"));
     // Application versus normal cursor-key mode (0055 §12): the child's
@@ -257,16 +278,24 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| line(screen, "MODE-APP"));
     tui.send(b"\x1b[A");
     tui.until(|screen| {
-        screen
-            .lines()
-            .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "1b 4f 41")
+        screen.lines().any(|row| {
+            strip_track(row)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                == "1b 4f 41"
+        })
     });
     tui.until(|screen| line(screen, "MODE-NORM"));
     tui.send(b"\x1b[A");
     tui.until(|screen| {
-        screen
-            .lines()
-            .any(|row| row.split_whitespace().collect::<Vec<_>>().join(" ") == "1b 5b 41")
+        screen.lines().any(|row| {
+            strip_track(row)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                == "1b 5b 41"
+        })
     });
     tui.until(|screen| line(screen, "MODE-DONE"));
     // Sustained output (0055 §12): while a sixteen-KiB `yes` stream floods
@@ -310,7 +339,8 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| {
         !screen.contains("terminal #")
             && screen.lines().any(|row| {
-                row.trim_start()
+                strip_track(row)
+                    .trim_start()
                     .split_once(' ')
                     .is_some_and(|(number, text)| {
                         number.bytes().all(|byte| byte.is_ascii_digit())
@@ -321,15 +351,17 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b":q!\r");
     tui.until(|screen| screen.contains("NORMAL") && screen.contains("terminal #"));
     tui.send(b":vs\ri");
+    // 0064 §1 geometry: left pane cols 0..58, its track 58, divider 59,
+    // right pane content 60..119, right track 119 — compare by range,
+    // never by the divider glyph (the track shares it).
     let split = tui.until(|screen| {
-        screen.lines().any(|row| {
-            row.split_once('│')
-                .is_some_and(|(_, right)| right.trim() == "ASYNC-INSPECTION-OUTPUT")
-        })
+        screen
+            .lines()
+            .any(|row| cells(row, 60, 119).trim() == "ASYNC-INSPECTION-OUTPUT")
     });
-    assert!(!split.lines().any(|row| row
-        .split_once('│')
-        .is_some_and(|(left, _)| left.trim() == "ASYNC-INSPECTION-OUTPUT")));
+    assert!(!split
+        .lines()
+        .any(|row| cells(row, 0, 58).trim() == "ASYNC-INSPECTION-OUTPUT"));
     // From terminal input, the t_CTRL-W grammar moves panes without the
     // child seeing a byte: focus lands on the left editor pane (NORMAL),
     // then returns to the terminal pane (TERMINAL) still owning input.
@@ -339,14 +371,21 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| screen.contains("TERMINAL"));
     tui.send(b"printf 'SIZE:'; stty size\r");
     tui.until(|screen| {
-        screen.lines().any(|row| {
-            row.split_once('│')
-                .is_some_and(|(_, right)| right.trim() == "SIZE:28 60")
-        })
+        // The 60-column right pane reserves one track column (0064 §1),
+        // so the child's grid is 28x59.
+        screen
+            .lines()
+            .any(|row| cells(row, 60, 119).trim() == "SIZE:28 59")
     });
     tui.send(b"\x1c\x0e:q\ri");
     tui.until(|screen| {
-        screen.contains("TERMINAL") && !screen.lines().take(29).any(|row| row.contains('│'))
+        // split closed: no divider remains; the only reserved cell is
+        // the single pane's own track at the last column (0064 §1).
+        screen.contains("TERMINAL")
+            && !screen
+                .lines()
+                .take(29)
+                .any(|row| row.chars().take(119).any(|cell| cell == '\u{2502}'))
     });
     tui.send(b"\x1c\x0e:qa\r");
     tui.until(|screen| screen.contains("terminal sessions are running"));

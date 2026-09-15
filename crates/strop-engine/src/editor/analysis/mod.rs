@@ -551,9 +551,16 @@ impl Editor {
     }
 
     pub fn analysis_fixture(&mut self) -> Arc<FrameAnalysis> {
+        self.analysis_fixture_width(80)
+    }
+
+    /// The fixture at an explicit text budget: the pane's reserved
+    /// scrollbar column (0064 §1) narrows what paint requests, so a
+    /// test seeding spans for an N-wide terminal seeds at N-1.
+    pub fn analysis_fixture_width(&mut self, width: usize) -> Arc<FrameAnalysis> {
         loop {
             if let Some(frame) =
-                self.document_analysis(self.current(), 0, self.buf().len_bytes(), 0, 80)
+                self.document_analysis(self.current(), 0, self.buf().len_bytes(), 0, width)
             {
                 return frame;
             }
