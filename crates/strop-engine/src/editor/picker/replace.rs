@@ -465,4 +465,73 @@ mod tests {
         assert_eq!(p.items.len(), 2, "py excluded via -glob:");
         assert!(p.items.iter().all(|i| !format!("{i:?}").contains("c.py")));
     }
+
+    /// 0063 §4: With under a Boolean query replaces the single
+    /// positive atom, guarded by negatives — foreign lines never edit.
+    #[test]
+    fn boolean_replacement_targets_the_single_positive_atom() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        std::fs::write(&a, "sword shield\nbroken sword\n").unwrap();
+        std::fs::write(&b, "sword alone\n").unwrap();
+        let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
+        let a_doc = e.open_fixture(&a).unwrap();
+
+        e.feed_text(" Rsword NOT broken");
+        e.wait_picker();
+        let p = &e.picker.as_ref().unwrap().picker;
+        assert_eq!(p.items.len(), 2, "the guard drops the broken line");
+        e.feed(crate::editor::Key::Tab);
+        e.feed_text("blade");
+        e.accept_current_picker();
+        e.wait_io().unwrap();
+        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
+        let proposal = e.buf().text().to_string();
+        assert!(proposal.contains("-sword shield"), "{proposal}");
+        assert!(proposal.contains("+blade shield"), "{proposal}");
+        assert!(proposal.contains("-sword alone"), "{proposal}");
+        assert!(proposal.contains("+blade alone"), "{proposal}");
+        assert!(
+            !proposal.contains("-broken sword") && !proposal.contains("+broken"),
+            "context may show the guarded line, an edit never touches it: {proposal}"
+        );
+        e.review_apply_pub();
+        assert_eq!(text_of(&e, a_doc), "blade shield\nbroken sword\n");
+        let b_doc = e
+            .docs
+            .iter()
+            .find_map(|(id, doc)| (doc.buf.path.as_deref() == Some(b.as_path())).then_some(id))
+            .expect("unopened target loaded");
+        assert_eq!(text_of(&e, b_doc), "blade alone\n");
+    }
+
+    /// 0063 §4/§6.3: several positive atoms are a valid search but an
+    /// explicit ambiguity refusal — never a first-match replace.
+    #[test]
+    fn ambiguous_boolean_queries_refuse_replacement_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        std::fs::write(&a, "retry request\n").unwrap();
+        let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
+        let a_doc = e.open_fixture(&a).unwrap();
+
+        e.feed_text(" Rretry AND request");
+        e.wait_picker();
+        // One admitted line, one item per matching positive span.
+        assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 2);
+        e.feed(crate::editor::Key::Tab);
+        e.feed_text("again");
+        e.accept_current_picker();
+        // Named refusal: the ambiguity diagnostic, the picker stays
+        // open, nothing mutated.
+        assert!(
+            e.message
+                .contains("exactly one positive term to replace — this query has 2"),
+            "{}",
+            e.message
+        );
+        assert_eq!(text_of(&e, a_doc), "retry request\n");
+        assert!(e.picker.is_some(), "a refused With keeps the search open");
+    }
 }

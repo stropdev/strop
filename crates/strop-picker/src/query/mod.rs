@@ -13,4 +13,4 @@ pub mod suggest;
 
 pub use highlight::{HighlightSpan, Role};
 pub use parser::{CaseMode, ContentExpr, QueryDiagnostic, QueryState, SearchQuery};
-pub use plan::{ContentPlan, Evidence, FileSelectionPlan};
+pub use plan::{ContentPlan, Evidence, FileSelectionPlan, ReplacementTarget};

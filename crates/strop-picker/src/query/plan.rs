@@ -401,6 +401,68 @@ impl CompiledExpr {
     }
 }
 
+/// What a With/Review flow may replace (0063 §4): the single
+/// identifiable positive target. Negative terms and metadata constrain
+/// admission but are never targets; more than one positive atom is an
+/// explicit ambiguity, not a silent first-match.
+#[derive(Debug, Clone)]
+pub enum ReplacementTarget {
+    /// Exactly one positive content atom, compiled with the query's
+    /// case behavior.
+    Single(regex::Regex),
+    /// N positive content atoms: a valid search, an ambiguous replace.
+    Ambiguous(usize),
+    /// No positive content atom: nothing identifiable to replace.
+    Missing,
+}
+
+impl ContentPlan {
+    /// The plan's replaceable target. Simple queries target their
+    /// content expression; Boolean queries target the unique positive
+    /// content atom (parity of `NOT` respected — `NOT NOT x` is x).
+    pub fn replacement_target(&self) -> ReplacementTarget {
+        match &self.boolean {
+            None => ReplacementTarget::Single(self.regex.clone()),
+            Some(exact) => exact.replacement_target(),
+        }
+    }
+}
+
+impl BooleanPlan {
+    fn replacement_target(&self) -> ReplacementTarget {
+        let mut atoms: Vec<&regex::Regex> = Vec::new();
+        collect_positive_atoms(&self.root, false, &mut atoms);
+        match atoms.len() {
+            0 => ReplacementTarget::Missing,
+            1 => ReplacementTarget::Single(atoms[0].clone()),
+            count => ReplacementTarget::Ambiguous(count),
+        }
+    }
+}
+
+/// Positive content atoms by NOT-parity: a atom under an even number
+/// of negations is a candidate target.
+fn collect_positive_atoms<'a>(
+    expr: &'a CompiledExpr,
+    negated: bool,
+    out: &mut Vec<&'a regex::Regex>,
+) {
+    match expr {
+        CompiledExpr::And(operands) | CompiledExpr::Or(operands) => {
+            for operand in operands {
+                collect_positive_atoms(operand, negated, out);
+            }
+        }
+        CompiledExpr::Not(inner) => collect_positive_atoms(inner, !negated, out),
+        CompiledExpr::Content(regex) => {
+            if !negated {
+                out.push(regex);
+            }
+        }
+        CompiledExpr::Metadata { .. } | CompiledExpr::Unknown => {}
+    }
+}
+
 /// Per-candidate evidence for exact admission (0063 §4): everything
 /// the AST may consult beyond the line text. Missing evidence keeps
 /// its atoms Unknown — admitting, never false.
@@ -1021,5 +1083,57 @@ mod tests {
         let prefix = content_plan("glob:a/* AND parser");
         assert!(admits_line(&prefix, "a/anything/x.rs", "parser"));
         assert!(!admits_line(&prefix, "b/anything/x.rs", "parser"));
+    }
+
+    #[test]
+    fn replacement_targets_are_single_positive_atoms_only() {
+        use super::ReplacementTarget;
+        let target = |input: &str| {
+            ContentPlan::compile(&SearchQuery::parse(input))
+                .unwrap()
+                .unwrap()
+                .replacement_target()
+        };
+        // Simple queries: the content expression is the target.
+        assert!(matches!(target("needle"), ReplacementTarget::Single(_)));
+        // Boolean with one positive atom: that atom, guarded by
+        // negatives and metadata at will.
+        assert!(matches!(
+            target("needle NOT test"),
+            ReplacementTarget::Single(_)
+        ));
+        assert!(matches!(
+            target("language:rust AND kind:function AND needle NOT vendor"),
+            ReplacementTarget::Single(_)
+        ));
+        // Double negation restores positivity.
+        assert!(matches!(
+            target("NOT (NOT needle)"),
+            ReplacementTarget::Single(_)
+        ));
+        // Several positive atoms: a valid search, an ambiguous replace.
+        assert!(matches!(
+            target("retry AND request"),
+            ReplacementTarget::Ambiguous(2)
+        ));
+        assert!(matches!(
+            target("a OR b OR c"),
+            ReplacementTarget::Ambiguous(3)
+        ));
+        assert!(matches!(
+            target("(a OR b) AND c NOT d"),
+            ReplacementTarget::Ambiguous(3)
+        ));
+        // No positive content atom: nothing identifiable to replace.
+        assert!(matches!(
+            target("language:rust AND NOT kind:function"),
+            ReplacementTarget::Missing
+        ));
+        // The single target carries the query's case behavior.
+        let ReplacementTarget::Single(re) = target("case:sensitive needle") else {
+            panic!("single");
+        };
+        assert!(re.is_match("needle"));
+        assert!(!re.is_match("Needle"));
     }
 }

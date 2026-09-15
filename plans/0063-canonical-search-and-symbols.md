@@ -387,3 +387,25 @@ interpreter owns it), per-project LSP configuration scoping,
 liveness. Still open from §6: Verus/TLAPS correspondence (§6.6) and
 the full §6.8 fixture (worktrees, dirty buffers, cancellation, remote
 isolation).
+
+Replacement slice (2026-09-15, §4/§6.3): With/Review works under the
+Boolean grammar. `ContentPlan::replacement_target()` decides
+eligibility — simple queries target their content expression; Boolean
+queries target the unique positive content atom by NOT-parity
+(`NOT NOT x` is x); several positives are an explicit ambiguity
+refusal ("this query has N"), none a named refusal — never a
+first-match. The review worker re-checks every span against the
+single target: foreign prefilter spans (and any stale provider span)
+never edit. With one positive atom the provider union equals the
+target, so streamed rows and previews are target-true by
+construction. The frozen-AST/stale-review machinery is unchanged —
+preview and apply already shared the ChangePlan freeze. The flow
+tests exposed and fixed a real §3 migration gap: the engine's Search
+surface itself rejected Boolean queries (`content search needs a
+text or regex expression`) — the grammar had only ever been exercised
+through the worker-level sources; the gate now accepts either form
+and the mode chip reads "boolean". Evidence: eligibility unit pins
+(single/ambiguity/missing/parity/case), engine flow tests
+(negative-guarded replacement edits only target spans; ambiguity
+refuses by name and mutates nothing; conjunction and negative search
+through the surface), all through real rg.

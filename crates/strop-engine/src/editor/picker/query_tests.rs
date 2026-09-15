@@ -324,3 +324,42 @@ fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
         .iter()
         .any(|item| item.text.starts_with("stale  ")));
 }
+
+#[test]
+fn boolean_queries_search_through_the_engine_surface() {
+    // 0063 §3: the Search surface accepts the Boolean grammar — the
+    // gate that demanded a flat content expression was a migration
+    // gap the replacement flow exposed.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "retry request\nretry only\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_search(false);
+    editor.paste_bracketed("retry AND request");
+    editor.wait_picker();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    assert!(picker.error.is_none(), "{:?}", picker.error);
+    assert!(
+        !picker.items.is_empty(),
+        "the conjunction matches its line: {:?}",
+        picker.items.iter().map(|i| &i.text).collect::<Vec<_>>()
+    );
+    assert!(editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .query_summary
+        .contains("boolean"));
+}
+
+#[test]
+fn boolean_negative_guards_narrow_the_engine_surface() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "retry request\nretry only\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_search(false);
+    editor.paste_bracketed("retry NOT request");
+    editor.wait_picker();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    assert!(picker.error.is_none(), "{:?}", picker.error);
+    assert_eq!(picker.items.len(), 1, "only the unguarded line survives");
+}

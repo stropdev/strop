@@ -37,6 +37,9 @@ struct Snapshot {
     readonly: bool,
 }
 struct Input {
+    /// The single replaceable target (0063 §4): spans whose text does
+    /// not match it are foreign prefilter spans and never edited.
+    target: Option<regex::Regex>,
     scope: SearchScope,
     catalog: strop_picker::Catalog,
     workset: strop_picker::WorksetSnapshot,
@@ -83,14 +86,31 @@ impl Editor {
                 "Search dataset is incomplete; finish or refresh it before Review".into();
             return;
         }
-        if glue
-            .query
-            .as_ref()
-            .is_none_or(|query| query.content.is_none())
-        {
-            self.message = "Review needs a content search expression".into();
-            return;
-        }
+        // 0063 §4: the replaceable target must be exactly one
+        // identifiable positive atom — an ambiguous query is a valid
+        // search but an explicit refusal here, never a first-match.
+        let target = glue.query.as_ref().and_then(|query| {
+            strop_picker::query::ContentPlan::compile(query)
+                .ok()
+                .flatten()
+        });
+        let target = match target.as_ref().map(|plan| plan.replacement_target()) {
+            None => {
+                self.message = "Review needs a content search expression".into();
+                return;
+            }
+            Some(strop_picker::query::ReplacementTarget::Single(regex)) => Some(regex),
+            Some(strop_picker::query::ReplacementTarget::Ambiguous(count)) => {
+                self.message = format!(
+                    "With needs exactly one positive term to replace — this query has {count}"
+                );
+                return;
+            }
+            Some(strop_picker::query::ReplacementTarget::Missing) => {
+                self.message = "With needs a positive term to replace".into();
+                return;
+            }
+        };
         if glue.picker.rows.len() <= glue.picker.excluded_count() {
             self.message = "Review has no included matches".into();
             return;
@@ -161,6 +181,7 @@ impl Editor {
             catalog,
             workset,
             replacement,
+            target,
             snapshots,
         };
         let tx = self.io.tx.clone();
@@ -299,6 +320,15 @@ fn prepare(input: Input, cancel: &worker::CancelToken) -> Outcome<PreparedReview
             line_text,
         } = &item.payload
         {
+            // 0063 §4: only spans matching the single target are
+            // replaceable — a prefilter span of any other atom (or a
+            // stale provider span) is foreign and never edited.
+            if let Some(target) = &input.target {
+                let (start, end) = strop_picker::replace_span(line_text, *col, *match_len);
+                if !target.is_match(&line_text[start..end]) {
+                    continue;
+                }
+            }
             if location.filesystem != strop_workspace::Filesystem::Local
                 || input.scope.root.filesystem != strop_workspace::Filesystem::Local
                 || !location.path.is_absolute()

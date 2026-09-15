@@ -28,6 +28,8 @@ impl Editor {
         let ignored = query.ignored.unwrap_or(!self.config.search_respect_ignore);
         let expression_mode = if kind == Kind::Files && !query.exact_file_expression {
             "fuzzy"
+        } else if query.boolean.is_some() {
+            "boolean"
         } else if matches!(
             query.content,
             Some(strop_picker::query::ContentExpr::Regex(_))
@@ -362,7 +364,9 @@ impl Editor {
         };
         self.invalidate_search_review(session);
         let Some(plans) = plans else { return };
-        if plans.content.is_none() {
+        // Boolean queries carry their content in the AST (0063 §3):
+        // either form is a searchable expression.
+        if plans.content.is_none() && plans.boolean.is_none() {
             if let Some(glue) = self.picker.as_mut() {
                 if !query.is_empty() {
                     glue.picker.error =
