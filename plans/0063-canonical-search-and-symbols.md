@@ -366,3 +366,24 @@ branch-plus-exclusion, `kind:function` and cross-language
 the TLA+/TLC lifecycle model, negative controls in the model tier,
 Verus/TLAPS correspondence, and the full §6.8 fixture with worktrees,
 dirty buffers, cancellation and remote isolation.
+
+Lifecycle model slice (2026-09-15, §6.4/§6.5/§6.7): `specs/
+SearchLifecycle.tla` joins the verification registry — generation-
+tagged provider jobs, late-arriving evidence, dirty-source revisions,
+bounded warm-up and scope restart, at the publication boundary the
+Rust code has. The §6.5 named properties are the model's invariants:
+RowsCurrent (no retired-query publication), RowsInScope (no foreign
+results), StaleAcceptsNever (no known-stale symbol acceptance),
+CompletionHonest (no false completeness — the flag requires the
+current generation's untruncated terminal and dies with the surface),
+WarmBounded (resource bound). The kept mutant drops the publication
+generation guard and the acceptance revision check; TLC kills it by
+exactly RowsCurrent + StaleAcceptsNever (negative control §6.7 — any
+other kill would be a modeling bug). Wired into `specs/gate.sh` via
+`search-gate.sh` (the compose `model` service and CI's Protocol-model
+step run it); bounds: 2 generations, 2 paths, 2 revisions, warm ≤ 4.
+Not modeled (header states it): text/scoring (the differential
+interpreter owns it), per-project LSP configuration scoping,
+liveness. Still open from §6: Verus/TLAPS correspondence (§6.6) and
+the full §6.8 fixture (worktrees, dirty buffers, cancellation, remote
+isolation).

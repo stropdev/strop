@@ -38,3 +38,4 @@ sh specs/ssh-gate.sh
 sh specs/remote-gate.sh
 sh specs/save-gate.sh
 sh specs/change-gate.sh
+sh specs/search-gate.sh
