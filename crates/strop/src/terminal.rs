@@ -103,6 +103,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     editor.trace_state();
     let mut redraw = true;
     let mut painted_flash = false;
+    let mut painted_fade = false;
     let mut animation_due = std::time::Instant::now();
     while !editor.should_quit {
         let started = std::time::Instant::now();
@@ -142,7 +143,13 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             break;
         }
         let flashing = editor.flash_range().is_some();
-        if redraw || ((flashing || painted_flash) && std::time::Instant::now() >= animation_due) {
+        // 0064 §2: the cursor fade shares the flash's 16 ms animation
+        // budget — one cadence, never an extra thread or await.
+        let fading = editor.cursor_fade_progress().is_some();
+        if redraw
+            || ((flashing || painted_flash || fading || painted_fade)
+                && std::time::Instant::now() >= animation_due)
+        {
             use crossterm::cursor::SetCursorStyle;
             let terminal_cursor = (editor.input_owner() == editor::InputOwner::Terminal)
                 .then(|| {
@@ -183,6 +190,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             terminal.draw(|frame| crate::render::frame_capture::draw(&mut editor, frame, true))?;
             redraw = false;
             painted_flash = flashing;
+            painted_fade = fading;
             animation_due = std::time::Instant::now() + Duration::from_millis(16);
         }
         if processed == 0 {

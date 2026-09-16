@@ -157,16 +157,44 @@ pub(crate) fn dim_color(c: Color) -> Color {
 fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
     // one projection shared with every painted caret: vertical top +
     // horizontal origin + fixed inset, checked, narrowed once
-    if let Some(at) = buffer::caret_position(
+    let Some(at) = buffer::caret_position(
         editor,
         area,
         editor.current(),
         editor.head(),
         editor.view_top(),
         editor.view().hscroll,
-    ) {
-        crate::render::frame_capture::place_cursor(frame, at);
+    ) else {
+        return;
+    };
+    // 0064 §2: while the fade-in runs, the Normal-mode block is
+    // software-painted toward its final appearance and the native
+    // cursor stays hidden; when the window closes the final frame is
+    // exactly the unfaded cursor below. Presentation only.
+    if matches!(editor.mode, Mode::Normal)
+        && !editor.picker_open()
+        && editor.pending_sigil().is_none()
+    {
+        if let Some(progress) = editor.cursor_fade_progress() {
+            let cell = &mut frame.buffer_mut()[at];
+            let fg = cell.fg;
+            cell.set_bg(fade_mix(BASE, TEXT, progress));
+            cell.set_fg(fade_mix(fg, BASE, progress));
+            return;
+        }
     }
+    crate::render::frame_capture::place_cursor(frame, at);
+}
+
+/// Linear RGB ramp for the cursor fade (0064 §2). Terminal-palette
+/// (non-RGB) colors have no interpoland and switch over halfway.
+fn fade_mix(from: Color, to: Color, pct: u8) -> Color {
+    let (Color::Rgb(fr, fg, fb), Color::Rgb(tr, tg, tb)) = (from, to) else {
+        return if pct >= 50 { to } else { from };
+    };
+    let mix =
+        |a: u8, b: u8| (i32::from(a) + (i32::from(b) - i32::from(a)) * i32::from(pct) / 100) as u8;
+    Color::Rgb(mix(fr, tr), mix(fg, tg), mix(fb, tb))
 }
 
 /// First-launch card: brand + the three keys that matter. Only on an

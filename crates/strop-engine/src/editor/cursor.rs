@@ -3,7 +3,7 @@
 
 use strop_core::Range;
 
-use super::{Editor, Mode, FLASH_FOR};
+use super::{Editor, Mode, CURSOR_FADE_MS, FLASH_FOR};
 
 impl Editor {
     /// The primary cursor's byte offset (was the `cursor` field).
@@ -39,6 +39,46 @@ impl Editor {
                 < FLASH_FOR.as_millis() as u64)
                 .then_some(range)
         })
+    }
+
+    /// While the cursor fade-in runs: its progress in percent
+    /// (0064 §2). Presentation-only — None once the window closes, and
+    /// the final frame is exactly the unfaded cursor. Progress is
+    /// quantized over the window, so a terminal that cannot hold the
+    /// 16 ms paint cadence simply shows fewer, larger steps.
+    pub fn cursor_fade_progress(&self) -> Option<u8> {
+        if !self.config.cursor_fade {
+            return None;
+        }
+        let at = self.cursor_fade?;
+        let elapsed = self.tape.now().monotonic_ms.saturating_sub(at.monotonic_ms);
+        (elapsed < CURSOR_FADE_MS).then_some((elapsed * 100 / CURSOR_FADE_MS) as u8)
+    }
+
+    /// Fade retrigger bookkeeping, run after every recorded action
+    /// (0064 §2): focus returns, pane/buffer switches and jumps beyond
+    /// half a screen restart the fade; ordinary typing and small
+    /// motions keep the cursor steadily visible.
+    pub(crate) fn track_cursor_fade(&mut self, focus_gained: bool) {
+        if !self.config.cursor_fade || self.docs.is_empty() {
+            return;
+        }
+        let mark = (
+            self.active_pane,
+            self.current(),
+            self.buf().line_of(self.head()),
+        );
+        let jumped = match self.fade_track.replace(mark) {
+            Some((pane, doc, line)) => {
+                pane != mark.0
+                    || doc != mark.1
+                    || mark.2.abs_diff(line) > (self.view_rows / 2).max(4)
+            }
+            None => false,
+        };
+        if focus_gained || jumped {
+            self.cursor_fade = Some(self.tape.now());
+        }
     }
 
     pub fn clamp_cursor(&mut self) {

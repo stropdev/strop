@@ -793,3 +793,48 @@ fn pane_scrollbar_carries_track_thumb_and_git_overview() {
         "half the document scrolled past: thumb at {thumb_row}"
     );
 }
+
+#[test]
+fn cursor_fade_paints_the_block_then_restores_the_unfaded_cursor() {
+    // 0064 §2: mid-fade the caret cell is software-painted toward the
+    // block's final appearance; when the window closes the frame is
+    // exactly the unfaded cursor — untouched cell, native position.
+    use ratatui::backend::Backend;
+    let mut e = Editor::new(Buffer::from_text("alpha\nbeta\n"));
+    let mut terminal = viewport_terminal(20, 4);
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    let caret = terminal.backend_mut().get_cursor_position().unwrap();
+    let caret = (caret.x, caret.y);
+    let unfaded = terminal.backend().buffer()[caret].clone();
+
+    // Mid-fade (50%): the cell ramps toward the block appearance.
+    e.cursor_fade = Some(e.tape.now());
+    let mut tick = e.tape.now();
+    tick.monotonic_ms += 80;
+    e.tape.set_tick(tick).unwrap();
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    eprintln!(
+        "progress={:?} fade={:?} now={:?}",
+        e.cursor_fade_progress(),
+        e.cursor_fade,
+        e.tape.now()
+    );
+    let faded = &terminal.backend().buffer()[caret];
+    assert_eq!(
+        faded.bg,
+        ratatui::style::Color::Rgb(0x7f, 0x7d, 0x7c),
+        "half-faded block bg"
+    );
+    assert_eq!(
+        faded.fg,
+        ratatui::style::Color::Rgb(0x7f, 0x7d, 0x7c),
+        "half-faded block fg"
+    );
+
+    // Window closed: exactly the unfaded frame, native cursor back.
+    tick.monotonic_ms += 200;
+    e.tape.set_tick(tick).unwrap();
+    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    assert_eq!(terminal.backend().buffer()[caret], unfaded);
+    terminal.backend_mut().assert_cursor_position(caret);
+}

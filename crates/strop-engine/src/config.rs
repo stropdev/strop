@@ -48,6 +48,10 @@ pub struct Config {
     /// Search surfaces respect .gitignore/.ignore/.rgignore (0051 R03).
     /// `ignored:include|exclude` in a query overrides.
     pub search_respect_ignore: bool,
+    /// Fade the Normal-mode block cursor back in after focus returns,
+    /// pane/buffer switches and large jumps (0064 §2). Presentation
+    /// only; off leaves the cursor steady with zero behavior change.
+    pub cursor_fade: bool,
 }
 
 /// `indent_style` in config.toml.
@@ -68,6 +72,7 @@ impl Default for Config {
             auto_format: true,
             search_show_hidden: true,
             search_respect_ignore: true,
+            cursor_fade: true,
         }
     }
 }
@@ -116,6 +121,11 @@ pub const KNOBS: &[Knob] = &[
         kind: "bool",
         desc: "search respects ignore files",
     },
+    Knob {
+        key: "cursor_fade",
+        kind: "bool",
+        desc: "fade the Normal-mode cursor in after jumps/focus returns",
+    },
 ];
 
 impl Config {
@@ -131,6 +141,7 @@ impl Config {
             "auto_format" => self.auto_format.to_string(),
             "search_show_hidden" => self.search_show_hidden.to_string(),
             "search_respect_ignore" => self.search_respect_ignore.to_string(),
+            "cursor_fade" => self.cursor_fade.to_string(),
             _ => return None,
         })
     }
@@ -246,8 +257,8 @@ mod tests {
         }
         assert_eq!(
             KNOBS.len(),
-            7,
-            "tab_size, indent_guides, indent_style, indent_detect, auto_format, search_show_hidden, search_respect_ignore"
+            8,
+            "tab_size, indent_guides, indent_style, indent_detect, auto_format, search_show_hidden, search_respect_ignore, cursor_fade"
         );
     }
 

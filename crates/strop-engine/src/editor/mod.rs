@@ -148,6 +148,10 @@ pub enum Key {
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
 
+/// The cursor fade-in window (0064 §2): one short, bounded interval
+/// sharing the flash's 16 ms animation budget.
+pub const CURSOR_FADE_MS: u64 = 160;
+
 /// The injected frame renderer's shape (0046): editor, columns, rows,
 /// record-action flag — the binary's implementation renders via TestBackend.
 pub type FrameDraw = fn(&mut Editor, u16, u16, bool) -> std::io::Result<()>;
@@ -202,6 +206,14 @@ pub struct Editor {
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
     pub marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
     pub flash: Option<(Range, strop_trace::replay::Tick)>,
+    /// Cursor fade-in (0064 §2): the Normal-mode block cursor fades
+    /// back in from this tick after a focus return, pane/buffer switch
+    /// or a jump beyond half a screen. Presentation-only — never part
+    /// of the recorded observation.
+    pub cursor_fade: Option<strop_trace::replay::Tick>,
+    /// Last cursor-fade track mark (pane, document, head line) for
+    /// jump detection across recorded actions.
+    pub(crate) fade_track: Option<(usize, strop_core::id::DocumentId, usize)>,
     pub message: String,
     pub should_quit: bool,
     /// ctrl-c is armed after the first warn (0015 quit policy).
@@ -426,6 +438,8 @@ impl Editor {
             marks: HashMap::new(),
             last_find: None,
             flash: None,
+            cursor_fade: None,
+            fade_track: None,
             message: String::new(),
             should_quit: false,
             ctrl_c_armed: false,

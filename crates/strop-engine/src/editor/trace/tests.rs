@@ -17,10 +17,11 @@ use super::drive::{self, Action};
 use super::seed::Seed;
 
 fn fixture() -> Editor {
-    let mut editor = Editor::new_in(
-        strop_core::Buffer::from_text("source\n"),
-        "/recorded".into(),
-    );
+    fixture_with("source\n")
+}
+
+fn fixture_with(text: &str) -> Editor {
+    let mut editor = Editor::new_in(strop_core::Buffer::from_text(text), "/recorded".into());
     editor.tape = Rc::new(Tape::fixture(|operation, _| match operation {
         "analysis.start" => Ok(serde_json::json!({"Ok": null})),
         _ => Err(io::Error::other("unexpected native observation")),
@@ -34,6 +35,40 @@ fn action(editor: &mut Editor, event: AppEvent) {
     let mut tick = editor.tape.now();
     tick.monotonic_ms += 1;
     editor.recorded_action(Action::Event(event), tick).unwrap();
+}
+/// 0064 §2: focus returns and large jumps restart the cursor fade;
+/// small motions keep it steady; the window always closes on the
+/// unfaded cursor; the knob disables the feature wholesale; replay
+/// reproduces the faded journey exactly.
+#[test]
+fn cursor_fade_retriggers_only_on_focus_returns_and_large_jumps() {
+    let mut editor = fixture_with(&"x\n".repeat(40));
+    keys(&mut editor, "j"); // the first action adopts the track mark (Start does live)
+    assert_eq!(editor.cursor_fade, None, "adopting the mark is no fade");
+    keys(&mut editor, "G"); // line 1 → 39, beyond half a screen
+    let started = editor
+        .cursor_fade
+        .expect("a large jump fades the cursor back in");
+    assert_eq!(editor.cursor_fade_progress(), Some(0));
+    keys(&mut editor, "kk"); // small steps keep the cursor steady
+    assert_eq!(editor.cursor_fade, Some(started));
+    action(&mut editor, AppEvent::Focus(true));
+    let refocused = editor.cursor_fade.unwrap();
+    assert!(refocused.monotonic_ms > started.monotonic_ms);
+    // The window closes: 200 ms later the cursor is unfaded again.
+    let mut tick = editor.tape.now();
+    tick.monotonic_ms += 200;
+    editor.tape.set_tick(tick).unwrap();
+    assert_eq!(editor.cursor_fade_progress(), None);
+    // The knob disables the feature wholesale.
+    editor.cursor_fade = None;
+    editor.config.cursor_fade = false;
+    keys(&mut editor, "gg");
+    assert_eq!(editor.cursor_fade, None);
+    // Replay reproduces the recorded journey exactly.
+    let expected = editor.buf().text().to_string();
+    let replayed = replay_fixture(&editor);
+    assert_eq!(replayed.buf().text().to_string(), expected);
 }
 
 fn keys(editor: &mut Editor, text: &str) {

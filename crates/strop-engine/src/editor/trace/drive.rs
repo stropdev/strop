@@ -56,6 +56,10 @@ impl Editor {
     /// to the tape-gated call sites inside these handlers.
     pub(crate) fn apply_recorded(&mut self, action: Action) -> io::Result<()> {
         let frame = matches!(action, Action::Frame { .. });
+        let focus_gained = matches!(
+            &action,
+            Action::Event(crate::editor::events::AppEvent::Focus(true))
+        );
         match action {
             Action::Start { open } => {
                 self.resolution.enabled = true;
@@ -105,6 +109,7 @@ impl Editor {
                 self.finish_background_work();
             }
         }
+        self.track_cursor_fade(focus_gained);
         self.tape.healthy()?;
         if !frame && self.tape.observes() {
             // Frames check the canonical cell grid instead; every other
