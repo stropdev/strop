@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.33.0 — 2026-09-16
+
+One canonical query language across every search surface, automatic
+workspace symbols, per-pane scrollbars with a Git overview, and the
+optional cursor fade.
+
+### Added
+
+- **One typed Boolean query grammar everywhere**: standalone `AND`/`OR`/
+  `NOT` (balanced-paren grouping, NOT > AND > OR, juxtaposition is an
+  implicit AND), `kind:`/`repo:` qualifiers decided exactly from the
+  syntax-fallback index and project catalog, and three-valued admission
+  that never drops a line on undecidable evidence. Files, Search,
+  Replace, the Directory filter and both symbol pickers share the one
+  parser; operator-free queries behave byte-identically to before.
+- **Workspace symbols without ceremony** (`Space S`): open a parent
+  directory and every declaration is listed through the bounded
+  syntax-fallback index — nested repositories, worktrees and marker
+  projects discovered automatically, no repository list to configure.
+  Eligible unopened projects warm their language servers behind the
+  picker (at most four in flight) and merge server symbols into the same
+  list; per-project status rows name missing or blocked server
+  configuration (`cold`, `no srv`, `trust`, `no exec`) instead of
+  leaving silence, and Enter on a status row opens the project.
+- **Per-pane scrollbars**: every editor and terminal pane reserves its
+  rightmost column for a quiet track carrying the fractional viewport
+  thumb and the document's added/changed/deleted Git spans; terminal
+  panes show position over their bounded history.
+- **Optional cursor fade**: the Normal-mode block cursor fades back in
+  over 160 ms after focus returns or a large jump (`cursor_fade =
+  false` in config.toml disables it wholesale).
+- **Stored-query syntax versioning**: persisted queries carry an
+  explicit syntax version with typed rejection of unknown versions and a
+  fixed-point v1→v2 migration that keeps previously-literal operator
+  words and qualifiers literal.
+
+### Improved
+
+- **Replacement through the Boolean grammar**: With/Review decides one
+  identifiable target by NOT-parity and re-checks every span, so foreign
+  or stale provider spans never edit.
+- **Symbol pickers filter with the real query**: document and workspace
+  symbols narrow by content and `kind:` through the same admission as
+  search; only bare content text ever reaches language servers, and
+  replies are filtered locally before merging.
+
+### Fixed
+
+- **Query-wide options no longer leak into Boolean branches**:
+  `case:`/`hidden:`/`ignored:` inside an operator expression used to
+  become inert atoms that silently broadened `OR` admission; they now
+  live only as query-wide options and canonical formatting places them
+  in a leading preamble.
+- **Wildcard globs match unanchored stars correctly**: `*.rs` no longer
+  misses `a/src/x.rs` (found by the differential reference interpreter).
+
+### Verification
+
+- The search lifecycle is modeled in TLA+ with a kept mutant the model
+  checker kills on exactly the named invariants; the publication
+  boundary's guards are a Verus-verified kernel the production handlers
+  call, with model traces replayed through the real admission paths; and
+  the end-to-end mixed-directory fixture now covers worktrees, dirty
+  sources, cancellation, supersede, Unicode locations and remote
+  namespace isolation.
+
 ## 0.32.4 — 2026-09-14
 
 Captures of terminal sessions cost a third of 0.32.3's bytes.

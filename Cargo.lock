@@ -1314,7 +1314,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-containers"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "strop-core"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "libc",
  "parking_lot",
@@ -1344,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "crossterm",
  "indicatif",
@@ -1370,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "strop-engine"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "imbl",
  "ratatui",
@@ -1399,7 +1399,7 @@ dependencies = [
 
 [[package]]
 name = "strop-fs"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "getrandom",
  "libc",
@@ -1419,7 +1419,7 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "git2",
  "serde",
@@ -1433,7 +1433,7 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "ropey",
  "serde",
@@ -1442,7 +1442,7 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "async-lsp",
  "libc",
@@ -1463,7 +1463,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "base64",
  "globset",
@@ -1480,11 +1480,12 @@ dependencies = [
  "strop-syntax",
  "strop-workspace",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
 name = "strop-remote"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "parking_lot",
  "ropey",
@@ -1500,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "strop-syntax"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "imbl",
  "ropey",
@@ -1534,7 +1535,7 @@ dependencies = [
 
 [[package]]
 name = "strop-terminal"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "cc",
  "flate2",
@@ -1554,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "parking_lot",
  "serde",
@@ -1566,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "strop-workspace"
-version = "0.32.4"
+version = "0.33.0"
 dependencies = [
  "serde",
  "serde_json",
