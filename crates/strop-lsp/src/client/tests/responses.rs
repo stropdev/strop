@@ -389,6 +389,36 @@ fn workspace_symbols_are_document_free_and_map_both_shapes() {
 }
 
 #[test]
+fn workspace_symbols_crosses_the_engine_probe_verbatim() {
+    run(async {
+        // 0063 §4: the engine sends only the bare content probe (the
+        // positive content atoms' literal text, or empty); qualifiers
+        // and operators are stripped before this API. The client must
+        // cross that string untouched — never re-parse, never decorate.
+        let (client, rx, mut wire) = Wire::new();
+        client.caps.set(lt::ServerCapabilities {
+            workspace_symbol_provider: Some(lt::OneOf::Left(true)),
+            ..Default::default()
+        });
+        client.finish_initialize().unwrap();
+        for (generation, probe) in [(1, "foo bar"), (2, ""), (3, "wrap")] {
+            client.workspace_symbols(generation, probe).unwrap();
+            let request = wire.next().await;
+            assert_eq!(request["method"], "workspace/symbol");
+            assert_eq!(
+                request["params"]["query"], probe,
+                "the engine's probe crosses verbatim"
+            );
+            wire.reply(&request, serde_json::json!([])).await;
+            let LspEvent::WorkspaceSymbols { .. } = event(&rx).await else {
+                panic!("workspace symbols event")
+            };
+        }
+        wire.stop().await;
+    });
+}
+
+#[test]
 fn workspace_symbols_refuse_unready_and_uncapable_servers() {
     run(async {
         let (cold, _rx, _wire) = Wire::new();

@@ -49,6 +49,11 @@ impl Editor {
             Payload::FilesystemAction(_) => {
                 self.message = "filesystem choice requires its original selector".into()
             }
+            // A project status row (0063 §2): Enter browses the project
+            // root as a directory — never a symbol location jump.
+            Payload::ProjectStatus(root) => {
+                self.request_open(root, super::super::io::OpenIntent::Browse);
+            }
             Payload::File(rel) => {
                 self.request_open(
                     rel,

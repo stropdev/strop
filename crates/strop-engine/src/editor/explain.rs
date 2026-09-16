@@ -180,7 +180,7 @@ impl Editor {
 
 /// A refusal with its actionable reason — the install hint or the trust
 /// command, not just a label.
-fn explain_decision(decision: &AttachDecision) -> String {
+pub(crate) fn explain_decision(decision: &AttachDecision) -> String {
     match decision {
         AttachDecision::TrustRequired { command } => {
             format!("project config wants `{command}` — :trust to allow")

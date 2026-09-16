@@ -148,6 +148,10 @@ pub(crate) struct AttachState {
     /// absolute root + marker file. Drained while the
     /// workspace-symbols picker is open.
     pub warm_queue: std::collections::VecDeque<(PathBuf, String)>,
+    /// Warm-up attempts in flight (0063 §2): their completions record
+    /// per-project status rows; document attach completions never do.
+    /// Cleared with the warm queue when the surface changes.
+    pub warm_attempts: std::collections::HashSet<AttachKey>,
     /// Live transports published by discovery workers, keyed by server.
     pub transport: Arc<Mutex<HashMap<ServerId, LiveTransport>>>,
     pub rx: Receiver<AttachRecord>,
@@ -166,6 +170,7 @@ impl AttachState {
             attached: Vec::new(),
             warm_queue: std::collections::VecDeque::new(),
             transport: Arc::new(Mutex::new(HashMap::new())),
+            warm_attempts: std::collections::HashSet::new(),
             rx,
             tx,
         }

@@ -1,4 +1,5 @@
 //! Attachment admission, publication, trust and server lifetime ownership.
+use super::super::picker::ProjectStatus;
 use super::attach::{AttachKey, AttachRecord};
 use super::*;
 use std::sync::mpsc::channel;
@@ -46,7 +47,11 @@ impl Editor {
     /// completion. Never every installed server at once.
     fn lsp_drain_warm_queue(&mut self) {
         const WARM_ATTACH_LIMIT: usize = 4;
-        while self.lsp_state.attach.pending.len() < WARM_ATTACH_LIMIT {
+        // WarmBounded (0063 §6.6): the verified kernel's slot decision.
+        while strop_core::searchguard::warm_slot_free(
+            self.lsp_state.attach.pending.len(),
+            WARM_ATTACH_LIMIT,
+        ) {
             let Some((root, marker)) = self.lsp_state.attach.warm_queue.pop_front() else {
                 break;
             };
@@ -68,6 +73,9 @@ impl Editor {
     /// document attach — the same trust and executability gates.
     fn lsp_warm_attach(&mut self, root: PathBuf, marker: String) {
         let Some((language, ext)) = warm_language(&marker) else {
+            // The only outcome discovery never reports: the marker
+            // pins no language, so the project stays cold (0063 §2).
+            self.record_project_status(root, ProjectStatus::ambiguous(&marker));
             return;
         };
         let target = Filesystem::Local;
@@ -82,13 +90,24 @@ impl Editor {
                 && attachment.target == target
         }) || self.lsp_state.attach.pending.contains_key(&key)
         {
+            // Served or in flight: healthy — clears any stale row.
+            self.record_project_status(root, ProjectStatus::healthy());
             return;
         }
-        match self.lsp_state.attach.refused.get(&key) {
+        let refusal = self.lsp_state.attach.refused.get(&key).cloned();
+        match refusal {
             Some(attach::AttachDecision::TrustRequired { .. })
             | Some(attach::AttachDecision::TrustError { .. })
             | Some(attach::AttachDecision::RemoteIo { .. }) => {}
-            Some(_) => return,
+            Some(decision) => {
+                // Sticky refusals are not rediscovered — but the row
+                // still reports them (0063 §2).
+                self.record_project_status(
+                    root,
+                    ProjectStatus::from_decision(&decision, &key.language),
+                );
+                return;
+            }
             None => {}
         }
         let ticket = match self.worker_ids.allocate() {
@@ -98,7 +117,8 @@ impl Editor {
                 return;
             }
         };
-        self.lsp_state.attach.pending.insert(key, ticket);
+        self.lsp_state.attach.pending.insert(key.clone(), ticket);
+        self.lsp_state.attach.warm_attempts.insert(key);
         let args = attach::AttachArgs {
             ticket,
             path: root.clone(),
@@ -115,6 +135,7 @@ impl Editor {
             Ok(false) => {}
             Err(error) => {
                 self.lsp_state.attach.pending.remove(&args_key(&args));
+                self.lsp_state.attach.warm_attempts.remove(&args_key(&args));
                 self.message = format!("lsp attach diverged from trace: {error}");
             }
         }
@@ -333,6 +354,9 @@ impl Editor {
             return;
         };
         self.lsp_state.attach.pending.remove(&key);
+        // Warm-up completions feed per-project status rows (0063 §2);
+        // document attach completions already have the status line.
+        let warm = self.lsp_state.attach.warm_attempts.remove(&key);
         if key.target != record.target || key.language != record.language {
             self.retire_superseded_transport(record.server);
             trace::services::rejected("lsp", "attach result differs from its requested workspace");
@@ -355,6 +379,9 @@ impl Editor {
         match outcome {
             attach::AttachDecision::Cancelled => {}
             attach::AttachDecision::Attached => {
+                if warm {
+                    self.record_project_status(key.path.clone(), ProjectStatus::healthy());
+                }
                 let Some(server) = server else { return };
                 if self.lsp_state.attach.attached.iter().any(|attachment| {
                     attachment.language == language
@@ -433,6 +460,12 @@ impl Editor {
                 self.lsp_did_open_current();
             }
             decision => {
+                if warm {
+                    self.record_project_status(
+                        key.path.clone(),
+                        ProjectStatus::from_decision(&decision, &name),
+                    );
+                }
                 if matches!(
                     decision,
                     attach::AttachDecision::TrustRequired { .. }

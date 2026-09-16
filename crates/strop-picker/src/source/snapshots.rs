@@ -68,6 +68,7 @@ pub(super) fn emit_snapshots(
                 symbols: symbols.as_deref(),
                 path: Some(&relative),
                 line: Some(line + 1),
+                symbol: None,
             };
             if !content.admits(evidence, &text) {
                 continue;

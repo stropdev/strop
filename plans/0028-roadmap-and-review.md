@@ -257,6 +257,18 @@ foundation arc; filesystem notifications live in 0058, not a separate plan; and 
 user has explicitly deferred completion (0059), debugger (0060) and GUI (0061) to
 last — landing stops before them.
 
+Amendment (2026-09-16): per the user's direction, the deferred tail is
+off the roadmap for now — completion (0059), debugger (0060), GUI (0061)
+and distribution (0062) are out of scope, not merely sequenced last.
+0063 canonical search and 0064 UI polish landed completely on
+2026-09-16 (including the §2 per-project status rows, §3 stored-query
+versioning + surface inventory + symbols AST adoption, and the §6.6/§6.8
+verification tiers) and ship as the next release. The foundation arc
+(0056 architecture → 0057 whole-core verification → 0058 unified native
+worker) remains the programme after that release; 0063's residual
+obligations (index invalidation, remote catalog/kind evidence, TLAPS
+lane) are owned by 0058 and 0057 respectively.
+
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,
 platform or evidence ledger is silently removed by inserting the worker.

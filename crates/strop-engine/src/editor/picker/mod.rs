@@ -14,12 +14,15 @@ use super::{Editor, Key};
 
 mod accept;
 mod drain;
+#[cfg(test)]
+mod lifecycle_traces;
 mod preview;
 mod query;
 #[cfg(test)]
 mod query_tests;
 pub(crate) mod ranking;
 mod replace;
+pub(crate) mod status;
 pub use replace::checked_hit_range;
 pub use replace::ReplacementHit;
 pub(crate) mod search;
@@ -65,6 +68,8 @@ pub struct PreviewKey {
 /// The terminal result of a preview request.
 pub type PreviewResult = strop_core::worker::Completion<PreviewKey, preview::PreparedPreview>;
 
+pub(crate) use status::ProjectStatus;
+
 pub struct PickerGlue {
     pub picker: Picker,
     pub id: PickerId,
@@ -96,6 +101,16 @@ pub struct PickerGlue {
     /// Workspace-symbols ownership (0063 §2): bumped on every query
     /// change; only the live generation's replies merge.
     pub(crate) wsymbols_generation: u64,
+    /// Per-project warm-attach outcomes (0063 §2), keyed by project
+    /// root: the source of truth behind the picker's pinned status rows.
+    /// Recorded at every warm-up decision point; lives and dies with
+    /// the workspace-symbols surface that owns it.
+    pub(crate) project_statuses: Vec<(PathBuf, ProjectStatus)>,
+    /// The document-symbols reply, retained whole (0063 §3):
+    /// `textDocument/documentSymbol` carries no query, so Boolean and
+    /// `kind:` narrowing re-filters these candidates locally as the
+    /// picker's query changes.
+    pub(crate) symbols_candidates: Vec<strop_lsp::ProtoSymbol>,
 }
 
 /// The visible suggestion list: static candidates from the query's own
@@ -127,11 +142,13 @@ impl PickerGlue {
             suggestions: None,
             query_highlights: Vec::new(),
             query_summary: String::new(),
+            project_statuses: Vec::new(),
             file_scope: None,
             query: None,
             indent_target: None,
             search: None,
             preview_witness: None,
+            symbols_candidates: Vec::new(),
             wsymbols_generation: 0,
         }
     }
@@ -158,6 +175,7 @@ impl Editor {
         // ends the queue — servers never start for a closed picker.
         if glue.picker.kind != Kind::WorkspaceSymbols {
             self.lsp_state.attach.warm_queue.clear();
+            self.lsp_state.attach.warm_attempts.clear();
         }
         self.cancel_pending();
         self.close_picker();
@@ -287,14 +305,14 @@ impl Editor {
             self.picker_input_changed();
         }
         if kind == Kind::WorkspaceSymbols {
-            self.launch_workspace_symbols_request();
-            self.query_workspace_symbols();
+            self.picker_input_changed();
         }
     }
 
     /// `space S` (0063 §2): every declaration in the opened scope —
     /// syntax-fallback tier now, language servers merge in as they
-    /// warm up. The list is static; ranking is local per keystroke.
+    /// warm up. The canonical query AST drives admission; ranking is
+    /// local per keystroke.
     pub(crate) fn open_workspace_symbols(&mut self) {
         self.open_picker(Kind::WorkspaceSymbols);
     }

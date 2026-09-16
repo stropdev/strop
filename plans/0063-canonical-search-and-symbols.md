@@ -1,15 +1,19 @@
 # 0063 — Canonical search: one query language, automatic workspace symbols
 
-Status: **authorized** after [0058 unified native worker](0058-unified-native-worker.md).
-This plan supersedes the earlier search-deferral grouping: everything
-query-bearing converges here, and filesystem notifications/reconciliation move
-to 0058 rather than a separate plan. UI polish lives in
-[0064](0064-ui-polish-scrollbars-and-cursor-fade.md). Completion (0059),
-debugger (0060) and GUI (0061) stay deferred until the functionality landing
-before them is complete and bug-hardened.
+Status: **landed** (2026-09-16). Every section's code and verification
+slices are in the tree with their evidence; the only residual obligations
+are owned by [0058](0058-unified-native-worker.md) (incremental index
+reuse/invalidation across searches, remote catalog/kind evidence) and by
+[0057](0057-core-verification-and-assurance.md) (the TLAPS proof lane the
+lifecycle model's proof obligations attach to — §6.6 landed its Verus and
+trace-replay correspondence). Filesystem notifications/reconciliation stay
+folded into 0058; UI polish lives in
+[0064](0064-ui-polish-scrollbars-and-cursor-fade.md). Per the user's
+2026-09-16 direction, completion (0059), debugger (0060), GUI (0061) and
+distribution (0062) are out of scope — not sequenced, not started.
 
-This document records requirements; it does not claim that new editor code,
-tests, models or proofs have been executed.
+This document now records executed work; each landed slice below names its
+evidence.
 
 ## 1. Ownership and boundaries
 
@@ -409,3 +413,146 @@ and the mode chip reads "boolean". Evidence: eligibility unit pins
 (negative-guarded replacement edits only target spans; ambiguity
 refuses by name and mutates nothing; conjunction and negative search
 through the surface), all through real rg.
+
+Per-project status rows slice (2026-09-16, §2): every warm-attach
+outcome now lands as a per-project status row in the workspace-symbols
+picker instead of only flashing by on the status line. Recording happens
+at all four decision points — ambiguous marker (package.json stays
+`cold`), sticky-refusal skip, dedup/live-placement skip (recorded
+healthy, superseding stale rows, never rendered), and warm-originated
+attach completions (`AttachState::warm_attempts` gates recording so
+document attaches keep status-line-only reporting). Rows ride a pinned
+tail inside `Picker` (`set_pinned`; `append` re-seats the tail so late
+source batches and LSP merges can never bury them; filtering never hides
+them, ranking never reranks them) with a dedicated
+`Payload::ProjectStatus(root)` — accept opens the project root as a
+directory buffer, and the payload marker structurally excludes status
+rows from symbol candidacy in merge/dedup/preview. Only non-healthy
+outcomes render (NoServer "no srv", TrustRequired/TrustError "trust",
+NotExecutable "no exec", SpawnFailed, RemoteIo, Ambiguous "cold");
+wording reuses `explain_decision`'s actionable-reason convention.
+Installing any non-WorkspaceSymbols surface clears the statuses with the
+warm queue. Evidence: five new `warm_up` tests (ambiguous-cold row,
+sticky-refusal row, surface-change clearing, NoServer completion row,
+document-keyed completions record nothing) plus an engine test ending in
+`editor.directory() == root` on accept.
+
+Workspace-symbols AST slice (2026-09-16, §3/§4): the surface consumes
+the one shared parser end to end. Input parses through
+`picker_query_eval` — diagnostics, highlights and the error card are
+exactly the Search surface's path. The syntax tier compiles a
+`ContentPlan` when the query is Boolean and admits each declaration by
+three-valued AST admission (content against name/qualified form via the
+new `SymbolEvidence`, `kind:` from the candidate's own classification,
+`repo:` against the run's catalog, path-family atoms against the
+relative path; Unknown admits). The LSP tier's wire carries only
+`SearchQuery::wsymbols_probe()` — positive content literals or empty;
+qualifiers, operators and regex never reach `workspace/symbol` — and
+replies are filtered locally against the full AST at the live generation
+before dedup/merge (no engine-side catalog, so `repo:` honestly
+overfetches). Operator-free input keeps the byte-identical static list +
+local fuzzy narrowing; invalid/incomplete queries keep rows, show the
+diagnostic, retire in-flight replies and ask servers nothing. Evidence:
+plan tests (probe carries only bare content, kind decides from the
+candidate, qualified-form matching), a source admission test, five
+engine tests across both tiers, and a strop-lsp wire test pinning that
+the probe crosses verbatim. Document symbols followed the same migration
+(see below).
+
+Stored-query versioning slice (2026-09-16, §3/§6.1):
+`strop_picker::query::store` is the one versioned record convention for
+persisted queries (no picker query persists yet; search history and
+session storage will use this record): `StoredQuery { syntax_version,
+source }`, version 1 = the pre-Boolean flat literal semantics, version 2
+= this grammar. Unknown versions are typed rejections at the serde
+boundary and at use time, never silent re-reads (the path_serde
+precedent). `migrate_v1` is pure and reuses the lexer's token
+boundaries: standalone AND/OR/NOT words and unquoted
+`kind:`/`type:`/`repo:` tokens are quoted so v1 literal meaning survives
+verbatim (quoting transitively keeps zero-depth parens literal, since
+grouping triggers only on unquoted operator words); migration is a fixed
+point. The slice exposed and fixed a real source bug: query-wide options
+(`case:`/`hidden:`/`ignored:`) previously surfaced as inert Metadata
+atoms *inside* Boolean branches — compiled to Unknown, silently
+broadening OR admission. `BooleanParser::peek` now skips option tokens,
+options exist only as the query-wide fields, and
+`canonical_source` emits them in a leading preamble (`case:… hidden:…
+ignored:…` order) — a Ready-query fixed point. Evidence: the §6.1
+migration corpus (14 cases), unknown-version rejection, parse→format→
+parse over migrated output, a serde wire-shape pin, and the
+leading-preamble pin.
+
+Surface inventory slice (2026-09-16, §3): the complete query-bearing
+inventory, with each surface's engine made explicit:
+
+| Surface | Engine | Mode |
+|---|---|---|
+| Files picker, Search picker, Replace query field, Directory filter | shared `SearchQuery` AST | full Boolean + qualifiers |
+| Workspace symbols (`space S`), Document symbols | shared `SearchQuery` AST over `SymbolEvidence` | Boolean + qualifiers; LSP wire carries the bare probe only |
+| Buffers, Jumps, Diagnostics, Locations pickers | raw fuzzy needle | explicit surface-specific default matching (fzf-style filter; not qualifier-bearing) |
+| Normal-mode `/` `?` `*` `#` `n`/`N`, incsearch, command-parser search operands | `strop_grammar::CompiledQuery` (vim-magic regex) | the vim pattern dialect — 0001's fidelity doctrine keeps vim semantics; this is not a second *Boolean* implementation |
+| Ex `:[range]s/pat/repl/` | literal split on `/` | vim ex semantics, unchanged |
+| Occurrence session | raw literal needle | literal, unchanged |
+
+Qualifier-typed input on the fuzzy surfaces matches literally by design
+(their mode is explicit); every qualifier-bearing surface goes through
+the one parser, so unsupported qualifiers produce located diagnostics,
+never silence.
+
+Document-symbols AST slice (2026-09-16, §3): `Kind::Symbols` parses
+through `picker_query_eval` and filters candidates locally with the
+`SymbolEvidence` admission (content against name/qualified form, `kind:`
+from the candidate's classification); documentSymbol has no server-side
+query parameter, so filtering is purely local. Operator-free narrowing
+is byte-identical to the previous fuzzy behavior. Evidence: targeted
+engine tests (kind narrowing, Boolean content+kind, literal
+compatibility, diagnostics path).
+
+§6.6 production-correspondence slice (2026-09-16):
+`strop_core::searchguard` is the verified publication-boundary kernel
+(0045's same-source pattern — verus! blocks with spec/exec tie-outs,
+ghost code erased in normal builds; the compose `verify` stage proves
+it). One decision per named invariant: `generation_is_live`
+(RowsCurrent), `revision_is_current` (StaleAcceptsNever),
+`completion_is_honest` (CompletionHonest), `warm_slot_free`
+(WarmBounded). Production guard sites call the kernel
+behavior-preservingly: `handle_picker_event` ticket ownership,
+`merge_workspace_symbols` generation check, `lsp_drain_warm_queue` warm
+bound, and the replacement-preview witness `BufferRevision` re-check
+(the numeric correspondent of the model's Accept guard;
+`SymbolIndex::overlay`'s staleness is structural — dirty text replaces
+the disk entry before admission — and is exercised by the trace replay
+instead). `completion_is_honest` has no pre-existing production boolean
+to replace and is asserted at the handler seam rather than force-wired.
+Model-trace replay drives the actual handlers with the spec's transition
+vocabulary on both sides: engine-side (`picker/lifecycle_traces.rs` —
+submit/supersede, late retired-generation publish refused, truncated
+completion dishonest, warm-bound enforcement) and picker-side
+(`source/lifecycle_traces.rs` — EditBuffer → acceptance re-check through
+`SymbolIndex::overlay`). Negative traces the model rejects are refused
+by the handlers. TLAPS proof obligations for the lifecycle model attach
+to 0057's planned tlaps lane; the applicable Verus obligations landed
+here. Evidence: the trace suites pass, and each guard assertion fails
+when its guard is removed (kept-mutant reasoning per test).
+
+§6.8 full-fixture slice (2026-09-16): `source/grep/e2e.rs` extends the
+mixed-directory harness through the REAL pipeline (rg child, reader
+threads, catalog, symbol index): a worktree whose `.git` is a file
+(`repo:wt-feature` narrows to the worktree basename, not the parent), a
+dirty `SourceSnapshot` contradicting disk (buffer text authoritative for
+content AND `kind:` evidence, with a differential control), cancellation
+of a provably-running search (exactly one terminal
+`Finished(Cancelled)`, zero late rows, then disconnect), supersede
+(retired generation never publishes; the current generation publishes
+the complete 9-row result set), Unicode paths/symbols with exact byte
+columns, and remote namespace isolation at the seam (remote hits keep
+`Filesystem::Remote`; forged `../` and absolute paths and NUL-bearing
+names are rejected before any item exists — hermetic, no sshd; remote
+catalog/kind evidence stays 0058-deferred per `remote.rs`). Evidence:
+`cargo test -p strop-picker source` — 34 passed, the six new e2e tests
+repeated 10× with zero flakes.
+
+Remaining obligations, by owner: incremental cross-search index
+reuse/invalidation and remote marker/catalog evidence →
+[0058](0058-unified-native-worker.md); TLAPS proof lane for the
+lifecycle model → [0057](0057-core-verification-and-assurance.md).

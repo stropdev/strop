@@ -414,4 +414,194 @@ mod warm_up {
         editor.lsp_warm_scope_projects(vec![(other, "Cargo.toml".into())]);
         assert!(editor.lsp_state.attach.pending.is_empty());
     }
+
+    #[test]
+    fn ambiguous_marker_records_a_cold_status_row() {
+        use crate::editor::picker::status::{ProjectStatus, ProjectStatusKind};
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = warm_editor(dir.path());
+        let web = dir.path().join("web");
+        editor.lsp_warm_scope_projects(vec![(web.clone(), "package.json".into())]);
+        let glue = editor.picker.as_ref().unwrap();
+        assert_eq!(
+            glue.project_statuses,
+            vec![(
+                web.clone(),
+                ProjectStatus {
+                    kind: ProjectStatusKind::Ambiguous,
+                    reason: glue.project_statuses[0].1.reason.clone(),
+                }
+            )],
+            "the ambiguous project records exactly one cold status"
+        );
+        assert!(
+            glue.project_statuses[0].1.reason.contains("package.json"),
+            "the reason names the ambiguous marker"
+        );
+        // The row is the pinned tail: chip + `name  path · reason`,
+        // never filtered, never a symbol candidate.
+        assert_eq!(glue.picker.pinned_tail, 1);
+        let row = glue.picker.items.iter().last().unwrap();
+        assert_eq!(row.badge.as_deref(), Some("cold"));
+        assert!(row.text.starts_with("web  "), "{row:?}");
+        assert!(row.text.contains("· "), "{row:?}");
+        assert!(
+            matches!(row.payload, strop_picker::Payload::ProjectStatus(_)),
+            "status rows are never symbol locations"
+        );
+    }
+
+    #[test]
+    fn sticky_refusal_records_its_status_row() {
+        use crate::editor::picker::status::ProjectStatusKind;
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = warm_editor(dir.path());
+        let root = dir.path().join("tools");
+        editor.lsp_state.attach.refused.insert(
+            AttachKey {
+                target: Filesystem::Local,
+                language: "rust".into(),
+                path: root.clone(),
+            },
+            AttachDecision::NoServer,
+        );
+        editor.lsp_warm_scope_projects(vec![(root.clone(), "Cargo.toml".into())]);
+        let glue = editor.picker.as_ref().unwrap();
+        assert_eq!(glue.project_statuses.len(), 1);
+        assert_eq!(glue.project_statuses[0].0, root);
+        assert_eq!(glue.project_statuses[0].1.kind, ProjectStatusKind::NoServer);
+        assert!(
+            glue.project_statuses[0].1.reason.contains("rust"),
+            "the refusal reason is actionable"
+        );
+        assert!(
+            editor.lsp_state.attach.pending.is_empty(),
+            "sticky refusals are not rediscovered"
+        );
+    }
+
+    #[test]
+    fn surface_change_clears_project_statuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = warm_editor(dir.path());
+        editor.lsp_warm_scope_projects(vec![(dir.path().join("web"), "package.json".into())]);
+        assert_eq!(editor.picker.as_ref().unwrap().project_statuses.len(), 1);
+        // An in-flight warm attempt's tracking dies with the surface too.
+        let key = AttachKey {
+            target: Filesystem::Local,
+            language: "rust".into(),
+            path: dir.path().join("api"),
+        };
+        editor
+            .lsp_state
+            .attach
+            .pending
+            .insert(key.clone(), WorkerId::new(9));
+        editor.lsp_state.attach.warm_attempts.insert(key);
+        editor.open_picker(strop_picker::Kind::Files);
+        assert!(editor.lsp_state.attach.warm_queue.is_empty());
+        assert!(editor.lsp_state.attach.warm_attempts.is_empty());
+        let glue = editor.picker.as_ref().unwrap();
+        assert!(glue.project_statuses.is_empty());
+        assert!(glue
+            .picker
+            .items
+            .iter()
+            .all(|item| !matches!(item.payload, strop_picker::Payload::ProjectStatus(_))));
+    }
+
+    #[test]
+    fn warm_completion_records_no_server_status_row() {
+        use crate::editor::picker::status::ProjectStatusKind;
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = warm_editor(dir.path());
+        let root = dir.path().join("api");
+        // The NoServer fixture shape (attach.rs): local target, the
+        // project root, no layer diagnostics.
+        let key = AttachKey {
+            target: Filesystem::Local,
+            language: "nosuchlanguage".into(),
+            path: root.clone(),
+        };
+        let ticket = WorkerId::new(41);
+        editor.lsp_state.attach.pending.insert(key.clone(), ticket);
+        editor.lsp_state.attach.warm_attempts.insert(key);
+        editor.handle_lsp_attach(AttachRecord {
+            ticket,
+            server: None,
+            language: "nosuchlanguage".into(),
+            name: "nosuchlanguage".into(),
+            root: root.clone(),
+            target: Filesystem::Local,
+            outcome: AttachDecision::NoServer,
+            layers: Vec::new(),
+        });
+        // The transient status line keeps its exact behavior.
+        assert_eq!(editor.message, "no language server for nosuchlanguage");
+        let glue = editor.picker.as_ref().unwrap();
+        assert_eq!(glue.project_statuses.len(), 1);
+        assert_eq!(glue.project_statuses[0].0, root);
+        assert_eq!(glue.project_statuses[0].1.kind, ProjectStatusKind::NoServer);
+        let row = glue.picker.items.iter().last().unwrap();
+        assert_eq!(row.badge.as_deref(), Some("no srv"));
+        assert!(row.text.contains("api  "), "{row:?}");
+        assert!(row.text.contains("no language server"), "{row:?}");
+        // A document attach completion (no warm-attempt tracking)
+        // never records a project status.
+        let doc_key = AttachKey {
+            target: Filesystem::Local,
+            language: "rust".into(),
+            path: dir.path().join("opened.rs"),
+        };
+        let doc_ticket = WorkerId::new(42);
+        editor.lsp_state.attach.pending.insert(doc_key, doc_ticket);
+        editor.handle_lsp_attach(AttachRecord {
+            ticket: doc_ticket,
+            server: None,
+            language: "rust".into(),
+            name: "rust-analyzer".into(),
+            root: dir.path().to_path_buf(),
+            target: Filesystem::Local,
+            outcome: AttachDecision::NoServer,
+            layers: Vec::new(),
+        });
+        assert_eq!(
+            editor.picker.as_ref().unwrap().project_statuses.len(),
+            1,
+            "only warm-up completions record project statuses"
+        );
+    }
+
+    #[test]
+    fn status_row_accepts_as_directory_never_a_symbol() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("web")).unwrap();
+        let mut editor = warm_editor(dir.path());
+        let web = dir.path().join("web");
+        editor.lsp_warm_scope_projects(vec![(web.clone(), "package.json".into())]);
+        editor.wait_picker();
+        {
+            let glue = editor.picker.as_ref().unwrap();
+            let row = glue
+                .picker
+                .current()
+                .expect("the status row survives ranking");
+            assert_eq!(row.badge.as_deref(), Some("cold"));
+            assert!(row.text.contains("web"), "{row:?}");
+            assert!(row.text.contains('·'), "{row:?}");
+        }
+        let jumps = editor.jumplist_past.len();
+        editor.accept_current_picker();
+        editor.wait_io().unwrap();
+        assert_eq!(
+            editor.directory().unwrap().location.path,
+            web,
+            "Enter browses the project root"
+        );
+        assert_eq!(
+            editor.jumplist_past.len(),
+            jumps,
+            "a status row never lands as a symbol jump"
+        );
+    }
 }

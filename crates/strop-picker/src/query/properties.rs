@@ -399,6 +399,7 @@ fn admission_agrees_with_the_reference_interpreter() {
                         symbols: Some(&index),
                         path: Some(path),
                         line: Some(line_number),
+                        symbol: None,
                     },
                     line,
                 );

@@ -1,13 +1,11 @@
 # 0064 — UI polish: per-pane scrollbars, Git overview, optional cursor fade
 
-Status: **authorized** as the UI-polish slice of the pre-completion arc
-([0063](0063-canonical-search-and-symbols.md) search, then this plan, then
-0056/0057/0058 foundation work per the roadmap). Completion (0059), debugger
-(0060) and GUI (0061) stay deferred until everything before them lands and is
-bug-hardened; the GUI milestone owns any pixel work beyond this plan's
-terminal-UI scope.
-
-This document records requirements; it does not claim executed work.
+Status: **landed** (2026-09-16). Both slices and the §3 picker adoption
+are in the tree with golden cell-grid evidence; see the landed-slices
+ledger below. Per the user's 2026-09-16 direction, completion (0059),
+debugger (0060), GUI (0061) and distribution (0062) are out of scope —
+not sequenced, not started; the GUI milestone still owns any pixel work
+beyond this plan's terminal-UI scope should it resume.
 
 ## 1. Per-pane scrollbar with Git overview
 
@@ -88,8 +86,18 @@ updated resize/gutter/directory/markdown golden grids, and the full
 real-terminal PTY journey whose row predicates are now track-aware (the
 reserved cell broke exact full-row matches — a test-contract update, not an
 editor defect; verified by thread-state capture of a healthy idle editor).
-Still open from §3: picker surfaces adopting the vocabulary where they
-present scrollable results.
+§3's picker adoption closed 2026-09-16: the reserved-column vocabulary
+was already painted by every picker kind (`render/picker/mod.rs`
+reserves the column before text budgets and paints the border-column
+track/thumb); the missing evidence landed as golden cell-grid pins in
+`render/picker/workspace_tests.rs` —
+`workspace_symbols_scrollbar_paints_track_thumb_and_moves_with_selection`
+(quiet track, exactly one accent thumb, thumb follows selection through
+real key feeds, selection band ends one column left of the track),
+`short_lists_keep_the_reserved_column_empty_when_text_overflows` (the
+carve with no overpaint to mask it) and
+`floating_card_picker_uses_the_same_scrollbar_vocabulary` (Buffers
+card).
 
 ### §2 cursor fade: landed (2026-09-16)
 

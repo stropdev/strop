@@ -341,14 +341,17 @@ fn symbol_row(
 /// (name, container, location) from the symbol row's own construction
 /// fields — the text is `name  container · :line` from the Symbols arm.
 fn symbol_fields(item: &strop_picker::Item) -> (String, String, String) {
+    // the Symbols arm writes "name  container · :line" or "name  · :line";
+    // status rows write "name  path · reason" (0063 §2)
+    let text = item.text.trim_end();
+    let (head, tail) = text.rsplit_once('·').unwrap_or((text, ""));
     let location = match &item.payload {
         strop_picker::Payload::Grep { line, .. } => format!(":{line}"),
         strop_picker::Payload::Remote { line, .. } => format!(":{line}"),
+        // A project status row's right-edge field is its reason.
+        strop_picker::Payload::ProjectStatus(_) => tail.trim().to_string(),
         _ => String::new(),
     };
-    // the Symbols arm writes "name  container · :line" or "name  · :line"
-    let text = item.text.trim_end();
-    let (head, _) = text.rsplit_once('·').unwrap_or((text, ""));
     let mut parts = head.splitn(2, "  ");
     let name = parts.next().unwrap_or("").trim().to_string();
     let container = parts

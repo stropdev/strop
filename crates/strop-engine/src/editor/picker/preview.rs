@@ -114,7 +114,7 @@ impl Editor {
         if let Some(cached) = glue.preview_witness.as_ref().filter(|cached| {
             cached.item == row.item
                 && cached.dataset == context.stamp.dataset
-                && cached.document == document
+                && witness_document_current(&cached.document, &document)
                 && cached.path.as_ref() == path
         }) {
             return result(cached.range);
@@ -201,7 +201,7 @@ impl RangeProbe<'_> {
         if let Some(cached) = glue.preview_witness.as_ref().filter(|cached| {
             cached.item == row.item
                 && cached.dataset == context.stamp.dataset
-                && cached.document == document
+                && witness_document_current(&cached.document, &document)
                 && cached.path.as_ref() == path
         }) {
             return cached
@@ -229,6 +229,25 @@ impl RangeProbe<'_> {
             },
         );
         range.map(Some).ok_or("source changed — refresh Search")
+    }
+}
+
+/// StaleAcceptsNever (0063 §6.6): a cached witness stands only while
+/// the source document is still observed at the revision the witness
+/// was checked against — the verified kernel's revision decision; a
+/// moved source recomputes (and refuses when the hit no longer
+/// witnesses) instead of consuming stale evidence.
+fn witness_document_current(
+    cached: &Option<(strop_core::id::DocumentId, strop_core::id::BufferRevision)>,
+    current: &Option<(strop_core::id::DocumentId, strop_core::id::BufferRevision)>,
+) -> bool {
+    match (cached, current) {
+        (None, None) => true,
+        (Some((cached_id, cached_rev)), Some((id, rev))) => {
+            cached_id == id
+                && strop_core::searchguard::revision_is_current(cached_rev.get(), rev.get())
+        }
+        _ => false,
     }
 }
 
@@ -324,6 +343,7 @@ impl PreviewProbe<'_> {
             | Payload::CodeAction(_)
             | Payload::Container(_)
             | Payload::FilesystemAction(_)
+            | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_) => None,
             Payload::Buffer(_) => None, // handled via label in the admitting path
             Payload::File(path) => Some((
@@ -354,6 +374,7 @@ impl Editor {
             | Payload::CodeAction(_)
             | Payload::Container(_)
             | Payload::FilesystemAction(_)
+            | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_) => return None,
             Payload::Buffer(document) => {
                 let name = self.docs.get(*document)?.label(&self.cwd);

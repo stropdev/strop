@@ -503,7 +503,19 @@ struct BooleanParser<'a> {
 }
 
 impl<'a> BooleanParser<'a> {
-    fn peek(&self) -> Option<&'a lexer::Token> {
+    /// The next significant token. Query-wide options
+    /// (`case:`/`hidden:`/`ignored:`) are applied in the flat pass and
+    /// never become branch predicates (0063 §3), so the descent skips
+    /// them; an operator next to an option diagnoses as dangling, never
+    /// silently matches.
+    fn peek(&mut self) -> Option<&'a lexer::Token> {
+        while matches!(
+            self.tokens.get(self.at).map(|token| &token.kind),
+            Some(TokenKind::Qualifier { key, .. })
+                if matches!(key.as_str(), "case" | "hidden" | "ignored")
+        ) {
+            self.at += 1;
+        }
         self.tokens.get(self.at)
     }
 

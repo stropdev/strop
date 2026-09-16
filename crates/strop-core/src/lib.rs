@@ -12,6 +12,7 @@ pub mod layout;
 pub mod path_serde;
 pub mod process;
 mod range;
+pub mod searchguard;
 pub mod selection;
 pub mod worker;
 

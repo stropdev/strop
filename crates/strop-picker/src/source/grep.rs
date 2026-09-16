@@ -275,6 +275,7 @@ pub(super) fn run(
                             symbols: symbols.as_deref(),
                             path: Some(path),
                             line,
+                            symbol: None,
                         },
                         text,
                     )
@@ -700,3 +701,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod e2e;

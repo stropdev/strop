@@ -25,8 +25,17 @@ impl Catalog {
     pub fn append(&mut self, items: Vec<Item>) {
         self.items.extend(items.into_iter().map(Arc::new));
     }
-    pub fn clear(&mut self) {
-        self.items.clear();
+    /// Drop trailing items (0063 §2): the pinned tail re-seats by
+    /// truncating itself off before source rows append behind it.
+    pub fn truncate(&mut self, len: usize) {
+        self.items.truncate(len);
+    }
+
+    /// Split at `index`, returning the tail; this catalog keeps the head.
+    pub fn split_off(&mut self, index: usize) -> Self {
+        Self {
+            items: self.items.split_off(index),
+        }
     }
 }
 impl From<Vec<Item>> for Catalog {

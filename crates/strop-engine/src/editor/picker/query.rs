@@ -164,9 +164,10 @@ impl Editor {
         }
     }
 
-    /// `space S` (0063 §2): one-shot — walk + syntax-fallback index,
-    /// then local ranking per keystroke. Replay registers like files.
-    pub(super) fn launch_workspace_symbols_request(&mut self) {
+    /// `space S` (0063 §2): one bounded source run per admission
+    /// surface — the walk, the symbol index and AST admission all
+    /// consume the one parsed query. Replay registers like files.
+    pub(super) fn launch_workspace_symbols_request(&mut self, parsed: Arc<SearchQuery>) {
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return;
         };
@@ -215,12 +216,7 @@ impl Editor {
         let tx = self.picker_source_sink(ticket.clone());
         let root = self.cwd.clone();
         let worker = match self.source_worker() {
-            Ok(source) => source.workspace_symbols(
-                root,
-                std::sync::Arc::new(SearchQuery::default()),
-                policy,
-                tx,
-            ),
+            Ok(source) => source.workspace_symbols(root, parsed, policy, tx),
             Err(failure) => {
                 let _ = tx.send(PickerMsg::Finished(strop_core::worker::Outcome::Failed {
                     failure,
@@ -280,9 +276,65 @@ impl Editor {
             return;
         }
         if kind == Kind::WorkspaceSymbols {
+            let previous = self
+                .picker
+                .as_ref()
+                .and_then(|glue| glue.query.as_ref().cloned());
+            let Some(parsed) = self.picker_query_eval(kind) else {
+                // The diagnostic is on the card (the shared parse
+                // path); retire in-flight LSP replies — they answered
+                // a query the input has left behind (0063 §4: no
+                // retired-query publication).
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.wsymbols_generation += 1;
+                }
+                return;
+            };
+            // The syntax tier re-runs only when the query's admission
+            // surface moved (scope qualifiers or the Boolean AST).
+            // Operator-free typing keeps the static list and narrows
+            // through local fuzzy ranking, exactly as before the
+            // grammar existed (0063 §3 literal compatibility).
+            let relaunch = previous.is_none_or(|previous| {
+                !previous.same_scope(&parsed) || previous.boolean != parsed.boolean
+            });
+            if relaunch {
+                if let Some(glue) = self.picker.as_mut() {
+                    glue.revoke(CancelReason::Superseded);
+                    glue.picker.clear_items();
+                    glue.rank_pending = None;
+                    glue.ranked_query = None;
+                }
+                self.launch_workspace_symbols_request(parsed);
+            }
             // Warm servers re-ask per query change under a new
-            // generation; the syntax tier keeps its static list.
+            // generation; only bare content text crosses the wire.
             self.query_workspace_symbols();
+            self.request_picker_ranking();
+            return;
+        }
+        if kind == Kind::Symbols {
+            let previous = self
+                .picker
+                .as_ref()
+                .and_then(|glue| glue.query.as_ref().cloned());
+            let Some(parsed) = self.picker_query_eval(kind) else {
+                // Rows stay; the diagnostic is on the card (the shared
+                // parse path), exactly like workspace symbols (0063 §4).
+                return;
+            };
+            // `documentSymbol` carries no query (0063 §3): the retained
+            // tree is re-filtered locally only when the Boolean AST
+            // moved. Operator-free typing keeps the static list and
+            // narrows through local fuzzy ranking, exactly as before
+            // the grammar existed (0063 §3 literal compatibility).
+            let rebuild = match &previous {
+                Some(previous) => previous.boolean != parsed.boolean,
+                None => parsed.boolean.is_some(),
+            };
+            if rebuild {
+                self.rebuild_document_symbols();
+            }
             self.request_picker_ranking();
             return;
         }

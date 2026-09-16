@@ -5,6 +5,8 @@
 //! successes, no stream that never ends).
 
 mod grep;
+#[cfg(test)]
+mod lifecycle_traces;
 mod query;
 mod remote;
 mod snapshots;
@@ -136,6 +138,24 @@ fn run_workspace_symbols(
             return Outcome::failed(FailureKind::Protocol, message);
         }
     };
+    // AST admission (0063 §4): Boolean queries filter declarations
+    // exactly — content atoms against the declaration name, `kind:`
+    // against its classification, `repo:` against the catalog;
+    // undecidable evidence admits. Operator-free queries keep the flat
+    // lowering: the list stays whole and narrowing is the picker's
+    // local fuzzy ranking, exactly as before the grammar existed.
+    let admission = if query.boolean.is_some() {
+        match crate::query::ContentPlan::compile(&query) {
+            Ok(plan) => plan,
+            Err(diagnostic) => {
+                let message = diagnostic.message.clone();
+                let _ = tx.control(PickerMsg::QueryError(diagnostic));
+                return Outcome::failed(FailureKind::Protocol, message);
+            }
+        }
+    } else {
+        None
+    };
     let cancelled = || cancel.is_cancelled();
     let mut paths: Vec<PathBuf> = Vec::new();
     let mut path_bytes = 0usize;
@@ -192,6 +212,24 @@ fn run_workspace_symbols(
         for declaration in declarations {
             if cancelled() {
                 return Outcome::Cancelled(CancelReason::OwnerClosed);
+            }
+            if let Some(plan) = &admission {
+                // The candidate IS the declaration: `kind:` decides
+                // from its own classification, content atoms from its
+                // name, `repo:` from the catalog (0063 §4).
+                let evidence = crate::query::Evidence {
+                    catalog: Some(&catalog),
+                    path: Some(path),
+                    line: Some(declaration.line),
+                    symbol: Some(crate::query::SymbolEvidence {
+                        kind: Some(declaration.kind),
+                        qualified: None,
+                    }),
+                    ..crate::query::Evidence::default()
+                };
+                if !plan.admits(evidence, &declaration.name) {
+                    continue;
+                }
             }
             let relative = PathBuf::from(path);
             batch.push(Item {
@@ -346,5 +384,86 @@ mod tests {
             vec![(dir.path().join("engine"), "Cargo.toml".to_string())],
             "one marker project with its family"
         );
+    }
+
+    #[test]
+    fn workspace_symbols_ast_admission_narrows_declarations() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "struct St;\nimpl St {\n    fn method(&self) {}\n}\nfn wrap() {}\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("engine/src")).unwrap();
+        std::fs::write(
+            dir.path().join("engine/Cargo.toml"),
+            "[package]\nname = \"engine\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("engine/src/lib.rs"),
+            "pub fn engine_fn() {}\npub struct EngineSt;\n",
+        )
+        .unwrap();
+        let run = |input: &str| -> Vec<String> {
+            let (tx, rx) = channel();
+            let worker = super::SourceWorker::new().unwrap();
+            let _request = worker.workspace_symbols(
+                dir.path().to_path_buf(),
+                std::sync::Arc::new(crate::query::SearchQuery::parse(input)),
+                super::selection::SelectionPolicy {
+                    hidden: true,
+                    respect_ignore: true,
+                },
+                tx,
+            );
+            let mut rows: Vec<String> = Vec::new();
+            let mut done = false;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !done && std::time::Instant::now() < deadline {
+                match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                    Ok(super::PickerMsg::Items(batch)) => {
+                        rows.extend(batch.iter().map(|item| item.text.clone()));
+                    }
+                    Ok(super::PickerMsg::Warning(_) | super::PickerMsg::ScopeProjects(_)) => {}
+                    Ok(super::PickerMsg::Finished(super::Outcome::Success(()))) => done = true,
+                    Ok(other) => panic!("unexpected terminal: {other:?}"),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            drop(worker);
+            assert!(done, "source settled with a terminal event");
+            rows
+        };
+        // `kind:` narrows exactly, methods subsumed by function (0063 §2).
+        let rows = run("kind:function");
+        assert_eq!(
+            rows,
+            vec![
+                "engine_fn  engine/src/lib.rs · :1",
+                "method  lib.rs · :3",
+                "wrap  lib.rs · :5",
+            ],
+        );
+        // Content + kind combine across the AST (0063 §4).
+        let rows = run("kind:function engine");
+        assert_eq!(rows, vec!["engine_fn  engine/src/lib.rs · :1"]);
+        // `repo:` decides against the catalog; the loose scope is out.
+        let rows = run("repo:engine");
+        assert_eq!(
+            rows,
+            vec![
+                "engine_fn  engine/src/lib.rs · :1",
+                "EngineSt  engine/src/lib.rs · :2",
+            ],
+        );
+        // An unrecognized kind value stays Unknown and admits.
+        let rows = run("kind:bogus");
+        assert_eq!(rows.len(), 5, "{rows:?}");
+        // Operator-free input lists everything: narrowing stays the
+        // picker's local fuzzy ranking (0063 §3 literal compatibility).
+        let rows = run("wrap");
+        assert_eq!(rows.len(), 5, "{rows:?}");
     }
 }

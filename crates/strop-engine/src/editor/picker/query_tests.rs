@@ -363,3 +363,244 @@ fn boolean_negative_guards_narrow_the_engine_surface() {
     assert!(picker.error.is_none(), "{:?}", picker.error);
     assert_eq!(picker.items.len(), 1, "only the unguarded line survives");
 }
+
+#[test]
+fn workspace_symbols_ast_narrows_syntax_and_lsp_tiers() {
+    use strop_lsp::protocol::{
+        ProtoSymbol, ServerColumn, ServerId, ServerLocation, ServerPosition,
+    };
+    use strop_lsp::LspEvent;
+    use strop_workspace::ResourceLocation;
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("lib.rs"),
+        "struct St;\nfn parse_config() {}\nfn wrap() {}\n",
+    )
+    .unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    assert_eq!(
+        editor.picker.as_ref().unwrap().picker.items.len(),
+        3,
+        "the full declaration list"
+    );
+    // `kind:` + content narrow the syntax tier exactly (0063 §4).
+    editor.paste_bracketed("kind:function parse");
+    editor.wait_picker();
+    let generation = editor.picker.as_ref().unwrap().wsymbols_generation;
+    {
+        let picker = &editor.picker.as_ref().unwrap().picker;
+        assert!(picker.error.is_none(), "{:?}", picker.error);
+        let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
+        assert_eq!(texts, vec!["parse_config  lib.rs · :2"], "{texts:?}");
+    }
+    let symbol = |file: &str, name: &str, kind: &str, container: &str, line: usize| ProtoSymbol {
+        name: name.into(),
+        container: container.into(),
+        kind: kind.into(),
+        location: ServerLocation {
+            doc: ResourceLocation::local(dir.path().join(file)),
+            position: ServerPosition {
+                line: strop_core::id::LineIndex::new(line),
+                column: ServerColumn::new(3),
+            },
+        },
+    };
+    editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
+        server: ServerId::new(9),
+        generation,
+        symbols: vec![
+            symbol("semantic.rs", "parse_semantic", "Function", "", 0),
+            // A true duplicate of the syntax row (path, line, name).
+            symbol("lib.rs", "parse_config", "Function", "", 1),
+            symbol("semantic.rs", "run", "Method", "parse", 2), // qualified form matches
+            symbol("semantic.rs", "wrap", "Function", "", 3),   // content says No
+            symbol("semantic.rs", "parse_struct", "Struct", "", 4), // kind says No
+        ],
+    });
+    editor.wait_picker();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        vec![
+            "parse_config  lib.rs · :2",
+            "parse_semantic  semantic.rs · :1",
+            "run  semantic.rs · :3",
+        ],
+        "{texts:?}"
+    );
+    assert_eq!(
+        picker
+            .items
+            .iter()
+            .filter(|item| item.text.starts_with("parse_config  "))
+            .count(),
+        1,
+        "the duplicate still collapses against the syntax tier"
+    );
+}
+
+#[test]
+fn workspace_symbols_operator_free_keeps_static_list_fuzzy_narrowing() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("lib.rs"),
+        "struct St;\nfn parse_config() {}\nfn wrap() {}\n",
+    )
+    .unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    editor.paste_bracketed("wrap");
+    editor.wait_picker();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    assert!(picker.error.is_none(), "{:?}", picker.error);
+    // Literal compatibility (0063 §3): the syntax tier does not
+    // respawn per keystroke — the catalog stays whole and the local
+    // fuzzy ranking narrows, exactly as before the grammar existed.
+    assert_eq!(picker.items.len(), 3, "the static list is untouched");
+    let visible: Vec<&str> = picker
+        .rows
+        .iter()
+        .map(|row| picker.items.get(row.item).unwrap().text.as_str())
+        .collect();
+    assert_eq!(visible, vec!["wrap  lib.rs · :3"], "{visible:?}");
+}
+
+#[test]
+fn workspace_symbols_wire_probe_never_carries_qualifiers() {
+    use strop_trace::replay::{Node, Tape};
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("lib.rs"), "fn wrap() {}\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    // A hermetic recorder from here on: every `lsp.wsymbols` ask is
+    // captured; native launches are suppressed.
+    let tape = std::rc::Rc::new(Tape::fixture(|_, _| {
+        Err(std::io::Error::other("native observation forbidden"))
+    }));
+    editor.tape = tape.clone();
+    editor
+        .lsp_state
+        .attach
+        .attached
+        .push(crate::editor::lsp::attach::Attachment {
+            language: "rust".into(),
+            root: dir.path().to_path_buf(),
+            server: strop_lsp::protocol::ServerId::new(7),
+            target: strop_workspace::Filesystem::Local,
+        });
+    let probes = || {
+        tape.fixture_nodes()
+            .iter()
+            .filter_map(|node| match node {
+                Node::Request {
+                    operation,
+                    arguments,
+                } if operation == "lsp.wsymbols" => {
+                    Some(arguments["query"].as_str().unwrap().to_string())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    editor.paste_bracketed("kind:function wrap");
+    assert_eq!(probes(), vec!["wrap"], "only bare content text crosses");
+    // A qualifier-only query probes empty — never the raw input.
+    editor.picker.as_mut().unwrap().picker.input.text = "kind:function".into();
+    editor.picker_input_changed();
+    assert_eq!(probes(), vec!["wrap", ""], "{:?}", probes());
+}
+
+#[test]
+fn workspace_symbols_unknown_evidence_and_invalid_query_stay_honest() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("lib.rs"),
+        "struct St;\nfn parse_config() {}\n",
+    )
+    .unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    // An unrecognized kind value stays Unknown and admits (0063 §4).
+    editor.paste_bracketed("kind:bogus");
+    editor.wait_picker();
+    {
+        let picker = &editor.picker.as_ref().unwrap().picker;
+        assert_eq!(picker.items.len(), 2, "unknown evidence admits");
+        assert!(picker.error.is_none(), "{:?}", picker.error);
+    }
+    // A broken query keeps the rows, surfaces the diagnostic through
+    // the shared path, and retires in-flight LSP replies.
+    let generation = editor.picker.as_ref().unwrap().wsymbols_generation;
+    editor.paste_bracketed(" NOT");
+    {
+        let picker = &editor.picker.as_ref().unwrap().picker;
+        assert!(picker.error.is_some(), "the diagnostic is on the card");
+        assert_eq!(picker.items.len(), 2, "rows stay while typing");
+    }
+    assert_eq!(
+        editor.picker.as_ref().unwrap().wsymbols_generation,
+        generation + 1,
+        "in-flight replies for the previous query are retired"
+    );
+}
+
+#[test]
+fn workspace_symbols_status_rows_survive_ast_relaunch_unconsumed() {
+    use crate::editor::picker::ProjectStatus;
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("lib.rs"), "struct St;\nfn wrap() {}\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    editor.record_project_status(
+        dir.path().join("web"),
+        ProjectStatus::ambiguous("package.json"),
+    );
+    editor.wait_picker();
+    assert!(editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .picker
+        .items
+        .iter()
+        .any(|item| matches!(item.payload, Payload::ProjectStatus(_))));
+    // A Boolean query relaunches the syntax tier (0063 §4): the
+    // informational status row is neither AST-filtered as a symbol
+    // candidate nor reranked into the results — it stays the pinned
+    // tail across the relaunch.
+    editor.paste_bracketed("kind:function");
+    editor.wait_picker();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
+    assert!(
+        texts.iter().any(|text| text.starts_with("wrap  ")),
+        "{texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|text| text.starts_with("St  ")),
+        "kind: narrowed the declarations: {texts:?}"
+    );
+    let tail = picker.items.iter().last().unwrap();
+    assert!(
+        matches!(tail.payload, Payload::ProjectStatus(_)),
+        "the pinned tail survived the relaunch: {tail:?}"
+    );
+    let last_row = picker.rows.last().expect("rows are visible");
+    assert!(
+        matches!(
+            picker.items.get(last_row.item).unwrap().payload,
+            Payload::ProjectStatus(_)
+        ),
+        "visible, unranked, at the tail"
+    );
+}

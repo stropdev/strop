@@ -64,7 +64,18 @@ impl Editor {
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
-        if glue.active.as_ref() != Some(&event.ticket) {
+        // RowsCurrent (0063 §6.6): the delivering ticket may touch the
+        // model iff it IS the active request. The request id is the
+        // stream's generation — decided by the verified kernel — and
+        // the key pins the owning instance and directory; together they
+        // are exactly the ticket equality this guard always was.
+        let owns = glue.active.as_ref().is_some_and(|active| {
+            strop_core::searchguard::generation_is_live(
+                active.request.get(),
+                event.ticket.request.get(),
+            ) && active.key == event.ticket.key
+        });
+        if !owns {
             trace::services::rejected("picker", "picker request superseded or completed");
             return;
         }

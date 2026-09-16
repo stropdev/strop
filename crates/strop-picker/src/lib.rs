@@ -66,6 +66,10 @@ pub enum Payload {
     },
     /// A `:tab-size` selector row (0051 R08).
     IndentChoice(IndentChoice),
+    /// An engine-appended per-project status row (0063 §2): the
+    /// absolute project root. Informational chrome, never a symbol
+    /// candidate; accepting opens the root as a directory.
+    ProjectStatus(#[serde(with = "strop_core::path_serde")] PathBuf),
 }
 
 /// A `:tab-size` selector row's action (0051 R08): the width/style
@@ -194,6 +198,10 @@ pub struct Picker {
     pub warning: Option<String>,
     /// Trailing catalog items that filtering never hides (pinned_tail).
     pub pinned_tail: usize,
+    /// The pinned tail's owned rows (0063 §2 project statuses): every
+    /// append re-seats them at the catalog end so late source rows never
+    /// bury them, and clearing results preserves them.
+    pinned: Vec<Item>,
     /// The ranking needle when it differs from the raw input (0051:
     /// qualifiers never fuzzy-match paths — only the free text ranks).
     pub rank_query: Option<String>,
@@ -218,6 +226,7 @@ impl Picker {
             error: None,
             warning: None,
             pinned_tail: 0,
+            pinned: Vec::new(),
             rank_query: None,
             rank_mode: rank::MatchMode::default(),
         };
@@ -400,16 +409,22 @@ impl Picker {
     }
 
     pub fn clear_items(&mut self) {
-        self.items.clear();
-        self.clear_results();
+        self.clear_catalog();
         self.workset = workset::Workset::default();
     }
 
     /// Refresh the same query without transferring index-based decisions.
     pub fn refresh_items(&mut self) {
-        self.items.clear();
-        self.clear_results();
+        self.clear_catalog();
         self.workset.begin_refresh();
+    }
+
+    /// Results clear; the pinned tail (0063 §2 project statuses) is
+    /// chrome owned by the engine, not results — it survives.
+    fn clear_catalog(&mut self) {
+        let pinned_from = self.items.len().saturating_sub(self.pinned.len());
+        self.items = self.items.split_off(pinned_from);
+        self.clear_results();
     }
 
     pub fn finish_workset_refresh(&mut self) -> usize {
@@ -427,10 +442,34 @@ impl Picker {
     }
 
     pub fn append(&mut self, items: Vec<Item>) {
+        // Source rows never bury the pinned tail (0063 §2): pop it,
+        // append, re-seat.
+        if !self.pinned.is_empty() {
+            let unpinned = self.items.len().saturating_sub(self.pinned.len());
+            self.items.truncate(unpinned);
+        }
         for item in &items {
             self.workset.observe(&item.payload);
         }
         self.items.append(items);
+        if !self.pinned.is_empty() {
+            self.items.append(self.pinned.clone());
+        }
+    }
+
+    /// Replace the pinned tail (0063 §2 per-project status rows):
+    /// engine-owned chrome that filtering never hides and later source
+    /// appends never bury. Replaces, never stacks — the caller rebuilds
+    /// the full set from its own map on every change.
+    pub fn set_pinned(&mut self, items: Vec<Item>) {
+        let unpinned = self.items.len().saturating_sub(self.pinned.len());
+        self.items.truncate(unpinned);
+        for item in &items {
+            self.workset.observe(&item.payload);
+        }
+        self.pinned_tail = items.len();
+        self.pinned = items;
+        self.items.append(self.pinned.clone());
     }
 
     pub fn move_by(&mut self, delta: i32) {

@@ -9,8 +9,12 @@ pub mod parser;
 pub mod plan;
 #[cfg(test)]
 mod properties;
+pub mod store;
 pub mod suggest;
 
 pub use highlight::{HighlightSpan, Role};
 pub use parser::{CaseMode, ContentExpr, QueryDiagnostic, QueryState, SearchQuery};
-pub use plan::{ContentPlan, Evidence, FileSelectionPlan, ReplacementTarget};
+pub use plan::{ContentPlan, Evidence, FileSelectionPlan, ReplacementTarget, SymbolEvidence};
+pub use store::{
+    canonical_source, migrate_v1, StoredQuery, StoredQueryError, SYNTAX_VERSION_CURRENT,
+};
