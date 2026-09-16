@@ -114,6 +114,60 @@ normalized into the existing generation-stamped catalog. Requirements:
   loss, event storms, reconnect replays and generation-skew cases extend the
   existing model registry and negative controls.
 
+Amendment (2026-09-16, per the external review handoff §9 “Filesystem
+notification obligations retained inside 0058”, 2026-09-15): the 2026-09-14
+ownership assignment above stands; this amendment deepens it into the detailed
+contract the handoff requires. The same filesystem foundation serves local and
+admitted Linux SSH/container execution: the worker beside the files owns native
+watching; the editor owns application of observations to documents, search
+indexes, Directory buffers and Git state.
+
+Required protocol properties:
+
+- **Events are hints.** Invalidation triggers observation/reconciliation; it is
+  never an authoritative edit, save receipt or total write log.
+- **Subscription identity.** Bind each subscription to the client/worker/context
+  incarnation, the logical scope and a subscription generation. Reused
+  descriptors or inodes cannot resurrect old authority.
+- **Replacement and rename.** Watch parent/name coverage as well as relevant
+  objects; reconcile atomic replacement and ambiguous rename. Never silently
+  relocate a document from a guessed rename pair.
+- **Loss and partial coverage.** Overflow, registration failure, disconnect and
+  excluded subtrees are explicit outcomes. Invalidate the relevant baseline,
+  reobserve and reestablish coverage before claiming freshness.
+- **Bounded flow.** Bound native-to-service queues, retained dirty scopes and
+  client publication. Coalesce invalidation into a conservative rescan
+  obligation rather than silently dropping the only sign of staleness.
+- **Ordering/reconciliation.** Subscription installation, the initial scan and
+  later events have a defined reconciliation boundary; scan completion cannot
+  erase a newer invalidation.
+- **Document publication.** Clean-buffer reload is checked against the expected
+  document/binding/observation. A dirty buffer is preserved and receives
+  external-change state; newer edits are never cleared by a stale reload.
+- **Namespace.** Watch/read in the actual selected Linux filesystem namespace.
+  No local fallback for a remote path or a guessed container bind mount.
+- **Unsupported filesystems.** Report native, polling or on-demand coverage
+  honestly. A periodic full-tree crawl is not an invisible default.
+
+Model and verification obligations: extend the existing TLA+/TLC model for
+subscription lifetimes, loss, reconciliation and publication, reusing 0057's
+applicable TLAPS/Verus obligations. The model must cover two clients, restarted
+workers, reordered/duplicate observations, overflow during rescan, save versus
+external write and dirty-buffer races. Name the OS/filesystem assumptions and
+provide real Linux traces. The model must correspond to production handlers: a
+proof of a toy watcher does not establish editor reload correctness.
+
+Backend note: Linux inotify through a small backend adapter remains the initial
+direction. The chosen maintained `notify` crate or thin native adapter must be
+inspected at implementation time for actual overflow reporting, queue bounds,
+recursive registration and static-build compatibility. Do not pin a dependency
+from a stale handoff, and never expose its event enum as Strop's wire contract.
+
+Consumer note: search invalidation (0063) and optional task reruns consume this
+service; they never each install unrelated local-only watchers. Protocol
+additions remain capability/version checked and preserve control/cancellation
+progress under data pressure.
+
 ## 3. Required release ledger
 
 All WK requirements are mandatory. A mode flag, a remote upload, a passing protocol
