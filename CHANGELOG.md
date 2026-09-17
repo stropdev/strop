@@ -118,9 +118,11 @@ lanes.
   (Verus); new Verus kernels verify mutation authority, projection
   admission, recovery cohort, UI freshness and ID-exhaustion decisions
   the production guards call; admission-freshness trace correspondence
-  replays the protocol model through the real handlers; new TLA+ models
-  cover terminal, install and recovery domains with kept mutants and
-  witnesses (VF02–VF04, VF12–VF13, VF16–VF18 partial).
+  replays the protocol model through the real handlers; new gated TLA+
+  models cover terminal and install domains with kept mutants and
+  witnesses (VF02–VF04, VF12, VF16–VF18 partial — the recovery and
+  LSP-wire models exist but are not gate-chained yet: state-space
+  calibration resumes in 0.35.0).
 
 ## 0.33.0 — 2026-09-16
 
