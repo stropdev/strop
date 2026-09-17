@@ -747,3 +747,72 @@ rejection is unproved obligations, never tool failure. Evidence:
 + mutant rejected, exit 0. This discharges 0063 §6.6's TLAPS half. The
 remaining VF17 families (UI ownership, cohort recovery, resource-effect
 authority) await their models from the VF11–VF16 slices.
+
+### VF01 boundary inventory + freeze tooling: landed (2026-09-17)
+
+`verification/` holds the machine-readable boundary/claim inventory: 18
+boundary rows (the 14 required families plus collection-projection,
+local-fs-authority, remote-save, identity-exhaustion) carrying 55
+claims, each with live evidence pointers (named test fns, proof symbols,
+model files, scripts) and sha256 pins over owning sources and evidence
+content. `check.py` (stdlib) fails CI on any claim without evidence,
+any dangling pointer, any missing required family, and any source drift
+without evidence drift (all four failure modes demonstrated); `--stamp`
+re-pins only after re-validating and refuses unexplained drift.
+`freeze.sh` records the exact candidate (commit, lockfile, helper-source
+digests, Dockerfile stage pins, tool downloads) into
+`verification/candidate.json` and `--check` guards it. CI runs the
+checker as its first step. Evidence: `inventory check ok: 18
+boundaries, 55 claims, all evidence live, all pins current`.
+
+### VF18 Verus kernel expansion: landed (2026-09-17)
+
+Five verified kernel families joined editmap/searchguard, all same-
+source with production call sites rewired (0045's no-copied-algorithm
+rule): `mutguard` (mutation/save authority — classify_edit with the
+readonly-before-stale precedence proved, save admission and save-ack
+recency), `projectguard` (projection span ownership — a span owns a
+journal edit iff the edit starts inside the writable view body and ends
+within the rendered span), `cohortguard` (recovery — CohortComplete:
+a draft joins whole iff it fits the remaining budget, never truncated;
+SaveRetirement staleness halves; WatermarkOrdering), `viewguard` (UI
+freshness — a prepared pane is stale iff its keyed revision moved), and
+the in-place `id.rs` block (slot reuse advances the generation, wrap
+retires forever, full index space refuses instead of truncating).
+Evidence: `docker compose run --build --rm verify` — 50 verified,
+0 errors in strop-core.
+
+### VF02 batch composition + VF03 correspondence + VF04 ChangePlan: landed (2026-09-17)
+
+The 0045 stretch obligation closed: `batch_map_composition` proves
+folding per-edit mappings in reverse application order equals the direct
+whole-batch map over original coordinates (production's apply_prepared
+fold), with monotonicity and in-bounds preserved; the new spec fns are
+#[verifier::opaque] with explicit reveals so definitional axioms never
+inflate unrelated queries (rlimit bisected, documented). VF03's
+correspondence landed as six trace-replay tests replaying
+EditorProtocol.tla action sequences through the ACTUAL admission
+handlers (stale-revision delivery drops without publication, dead-
+document and reincarnation deliveries are NoDocument, tickets are one-
+shot, readonly refusal precedes freshness). Resolver fidelity (the
+nvim differential) and readonly-presentation checks were confirmed
+registered in the required lanes. VF04: ChangePlan.tla gained the
+projection-admission properties with four kept mutants killed by exactly
+the named invariants. Evidence: `docker compose run --build --rm verify`
+and `--rm model` both green.
+
+### VF12 Terminal + VF16 Install models (VF11–VF16 partial): landed (2026-09-17)
+
+`specs/Terminal.tla` models session lifecycle, pinned-snapshot and
+refresh/exit boundaries over the 0055+0065 semantics — gate green with
+six kept mutants rejected and nine witnesses reached.
+`specs/Install.tla` models staged/verified/atomic publish, interruption
+preserving the old binary, receipt identity and catalog facts over the
+AR11/AR12 semantics — five mutants, nine witnesses. Both are chained
+into specs/gate.sh. Recovery.tla (VF13) and LspWire.tla (VF05) exist
+but are NOT gate-chained yet: Recovery's main instance does not settle
+in bounded time (state-space calibration) and LspWire's first
+calibration run never completed; their re-entry condition is recorded
+in specs/gate.sh. Loom campaigns (VF11) landed for the LSP queue
+(fifo/barrier/drain-disconnect); the event-channel campaigns and the
+remaining VF13/VF05/VF14/VF15 work continue in the next release.
