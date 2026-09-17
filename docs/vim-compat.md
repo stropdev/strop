@@ -156,4 +156,5 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 - `✓ ctrl-w h/j/k/l/w · ctrl-w N · ctrl-w .` — from terminal input: move/cycle panes, enter inspection, or send the literal byte (vim t_CTRL-W)
 - `✓ i a` — terminal Normal inspection → live child input (never relaunches an exited session)
 - `✓ :terminal-paste :terminal-paste-cancel` — confirm or discard the scoped held multiline/control paste
+- `✓ :terminal-refresh` — reinstall the latest output into the pinned inspection snapshot (never auto-refreshes a selection)
 - `✓ ctrl-4 ctrl-n` — legacy Ctrl-\ Ctrl-N spelling from the outer terminal decoder

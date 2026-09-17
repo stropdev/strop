@@ -12,9 +12,10 @@ use std::io::Read;
 use std::process::Command;
 use strop_containers::{
     engine, inspect, list_dir, list_running, read_file, revalidate, ContainerError, ContainerRef,
-    DirEntryKind,
+    DirEntryKind, ExecRecord, ExecSpec,
 };
 use strop_core::worker::CancelToken;
+use strop_workspace::ContainerId;
 
 fn required() -> bool {
     std::env::var_os("STROP_CONTAINER_TESTS").as_deref() == Some(OsStr::new("1"))
@@ -388,5 +389,255 @@ fn restart_and_recreation_are_stale_identity_refusals() {
             first_id
         );
         drop(fixture2);
+    });
+}
+
+/// Live (non-zombie) `sleep` processes inside the fixture, counted in
+/// the container's own PID namespace via a plain `docker exec` probe —
+/// never `docker top`, whose PIDs are host-namespace identities. The
+/// fixture's own PID 1 (`sleep`) is the baseline of one.
+fn live_sleeps(id: &str) -> u32 {
+    run_docker(&[
+        "exec",
+        id,
+        "sh",
+        "-c",
+        "n=0; for p in /proc/[0-9]*; do \
+           s=$(cut -d\" \" -f3 $p/stat 2>/dev/null); [ \"$s\" = Z ] && continue; \
+           c=$(tr \"\\0\" \" \" < $p/cmdline 2>/dev/null); \
+           case $c in sleep*) n=$((n+1));; esac; \
+         done; echo $n",
+    ])
+    .parse()
+    .expect("probe prints a count")
+}
+
+/// Poll `cond` for up to 20 seconds — daemon-observed cleanup is prompt
+/// on the local socket but not synchronous with the local kill.
+fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        if cond() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    panic!("timed out waiting for {what}");
+}
+
+/// One relay-mode supervised session running a worker with a descendant;
+/// returns the child and the admitted session key.
+fn spawn_leaked_pair(
+    engine: &strop_containers::EngineRef,
+    id: &ContainerId,
+    token: &CancelToken,
+) -> (std::process::Child, strop_containers::SessionKey) {
+    let admitted = ExecSpec::resolve(
+        engine,
+        id,
+        "sh",
+        &["-c".into(), "sleep 240 & exec sleep 180".into()],
+        std::path::Path::new("/"),
+        token,
+    )
+    .expect("admit lease session");
+    let key = admitted.key().clone();
+    let mut command = admitted.command();
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+    let child = command.spawn().expect("supervised exec spawns");
+    (child, key)
+}
+
+#[test]
+fn supervised_capture_classifies_launch_and_exit_codes() {
+    if !gate("supervised_capture_classifies_launch_and_exit_codes") {
+        return;
+    }
+    let tag = tag();
+    let name = format!("strop-ar07-capture-{tag}");
+    let _fixture = Fixture::launch(&tag, &name);
+    with_token(|token| {
+        let engine = engine(&token).expect("engine probes");
+        let id = ContainerId::canonical(_fixture.id.clone()).expect("canonical fixture id");
+        let root = std::path::Path::new("/");
+
+        // Happy path: the program's own exit code and stdout arrive, and
+        // the supervisor's launch/exit records ride stderr.
+        let admitted = ExecSpec::resolve(
+            &engine,
+            &id,
+            "sh",
+            &["-c".into(), "echo hello-lease".into()],
+            root,
+            &token,
+        )
+        .expect("admit echo");
+        let out = admitted.capture(4096, &token).expect("capture echo");
+        assert_eq!(out.code, Some(0));
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hello-lease");
+        let records = admitted.key().records(&out.stderr);
+        assert!(
+            records
+                .iter()
+                .any(|record| matches!(record, ExecRecord::Launched { .. })),
+            "launch record present: {records:?}"
+        );
+        assert!(
+            records.contains(&ExecRecord::Exit { code: 0 }),
+            "exit record present: {records:?}"
+        );
+
+        // A non-zero exit stays data, never a transport error.
+        let three = ExecSpec::resolve(
+            &engine,
+            &id,
+            "sh",
+            &["-c".into(), "exit 3".into()],
+            root,
+            &token,
+        )
+        .expect("admit exit-3");
+        assert_eq!(
+            three.capture(4096, &token).expect("capture exit-3").code,
+            Some(3)
+        );
+
+        // A missing program is a typed launch refusal — the supervisor
+        // classifies from inside the namespace; no silent fallback.
+        let missing = ExecSpec::resolve(&engine, &id, "definitely-not-a-binary", &[], root, &token)
+            .expect("admit missing");
+        match missing.capture(4096, &token) {
+            Err(ContainerError::ExecLaunch { detail }) => {
+                assert!(detail.contains("not found"), "{detail}")
+            }
+            other => panic!("a missing program is a typed refusal, never fake output: {other:?}"),
+        }
+
+        // Readiness is a bounded version handshake through the same
+        // channel — not a PATH lookup: busybox answers its version.
+        let version =
+            ExecSpec::resolve(&engine, &id, "busybox", &["--version".into()], root, &token)
+                .expect("admit version probe");
+        let out = version.capture(4096, &token).expect("capture version");
+        assert_eq!(out.code, Some(0));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("BusyBox"));
+    });
+}
+
+#[test]
+fn lease_close_and_client_kill_reap_the_whole_group() {
+    if !gate("lease_close_and_client_kill_reap_the_whole_group") {
+        return;
+    }
+    let tag = tag();
+    let name = format!("strop-ar07-lease-{tag}");
+    let fixture = Fixture::launch(&tag, &name);
+    with_token(|token| {
+        let engine = engine(&token).expect("engine probes");
+        let id = ContainerId::canonical(fixture.id.clone()).expect("canonical fixture id");
+
+        // Scenario one: closing the stdin lease. The worker (`sleep 180`)
+        // and its descendant (`sleep 240`) share the session group; the
+        // supervisor must TERM/KILL the whole group.
+        let (mut child, key) = spawn_leaked_pair(&engine, &id, &token);
+        wait_until("worker and descendant running", || {
+            live_sleeps(&fixture.id) == 3
+        });
+        drop(child.stdin.take().expect("stdin lease"));
+        let status = child.wait().expect("session reaped");
+        assert_eq!(
+            status.code(),
+            Some(245),
+            "the supervisor reports lease-closed teardown"
+        );
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .expect("stderr")
+            .read_to_string(&mut stderr)
+            .expect("stderr drains");
+        let records = key.records(stderr.as_bytes());
+        assert!(
+            records.contains(&ExecRecord::LeaseClosed) && records.contains(&ExecRecord::Terminated),
+            "the teardown is recorded: {records:?}"
+        );
+        wait_until("group reaped after lease close", || {
+            live_sleeps(&fixture.id) == 1
+        });
+
+        // Scenario two: SIGKILL the local client. The daemon observes the
+        // disconnect, closes the session's stdin, and the supervisor
+        // performs the same teardown — the EOF comment's old claim, now
+        // real.
+        let (mut child, _key) = spawn_leaked_pair(&engine, &id, &token);
+        wait_until("worker and descendant running again", || {
+            live_sleeps(&fixture.id) == 3
+        });
+        child.kill().expect("SIGKILL the local client");
+        child.wait().expect("killed client reaped");
+        wait_until("group reaped after client kill", || {
+            live_sleeps(&fixture.id) == 1
+        });
+    });
+}
+
+#[test]
+fn admission_refuses_stale_and_unknown_incarnations() {
+    if !gate("admission_refuses_stale_and_unknown_incarnations") {
+        return;
+    }
+    let tag = tag();
+    let name = format!("strop-ar07-stale-{tag}");
+    let _fixture = Fixture::launch(&tag, &name);
+    with_token(|token| {
+        let engine = engine(&token).expect("engine probes");
+        let (identity, reference) = fixture_ref(&engine, &name, &token);
+        let root = std::path::Path::new("/");
+
+        // The live incarnation admits.
+        let spec = ExecSpec::new(
+            &engine,
+            &reference,
+            "sh",
+            &["-c".into(), "true".into()],
+            root,
+        )
+        .expect("spec validates");
+        spec.admit(&token).expect("the live incarnation admits");
+
+        // Restart: same id, new StartedAt — the frozen request is stale.
+        run_docker(&["restart", &identity.id]);
+        assert!(
+            matches!(
+                spec.admit(&token),
+                Err(ContainerError::StaleIdentity { .. })
+            ),
+            "a recycled container never receives the stale request"
+        );
+
+        // resolve() re-selects: the new incarnation admits fresh.
+        let id = ContainerId::canonical(identity.id.clone()).expect("canonical id");
+        ExecSpec::resolve(
+            &engine,
+            &id,
+            "sh",
+            &["-c".into(), "true".into()],
+            root,
+            &token,
+        )
+        .expect("resolve re-pins the new incarnation");
+
+        // A canonical id no engine container has: the wrong context, a
+        // typed refusal — never a best-effort exec.
+        let ghost = ContainerId::canonical("f".repeat(64)).expect("canonical ghost");
+        assert!(
+            matches!(
+                ExecSpec::resolve(&engine, &ghost, "sh", &[], root, &token),
+                Err(ContainerError::NoSuchContainer { .. })
+            ),
+            "an id from another context is a typed refusal"
+        );
     });
 }

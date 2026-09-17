@@ -389,7 +389,7 @@ impl Editor {
                         version,
                     });
                     source.selection = strop_remote::ReadSelection::Full;
-                    doc.buf.readonly = false;
+                    doc.buf.clear_readonly();
                 }
                 drop(doc);
                 self.message =
@@ -528,7 +528,8 @@ impl Editor {
         if let Some(doc) = self.docs.get_mut(document) {
             if let DocumentSource::Remote(source) = &mut doc.source {
                 source.write = None;
-                doc.buf.readonly = true;
+                doc.buf
+                    .set_readonly(strop_core::ReadonlyReason::RemoteAuthority);
             }
         }
         self.remote.writes.attempts.remove(&document);

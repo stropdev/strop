@@ -35,7 +35,7 @@ pub(super) fn reserved(rect: Rect) -> Rect {
 /// `▎`, gutter colors) — sparse over the hunk signs, never a scan of
 /// every line.
 pub(super) fn render(editor: &Editor, output: &mut ratatui::Frame, rect: Rect, view: &PaneView) {
-    let Some(doc) = editor.docs.get(view.doc) else {
+    let Some(doc) = editor.document(view.doc) else {
         return;
     };
     let total = doc.buf.len_lines();

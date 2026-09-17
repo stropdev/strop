@@ -42,7 +42,7 @@ pub(super) fn render_results(
     };
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
     if picker.rows.is_empty()
-        && picker.input.text.is_empty()
+        && picker.input.text().is_empty()
         && matches!(
             picker.kind,
             strop_picker::Kind::Files | strop_picker::Kind::Search
@@ -64,7 +64,7 @@ pub(super) fn render_results(
         )));
     }
     if picker.rows.is_empty()
-        && picker.input.text.is_empty()
+        && picker.input.text().is_empty()
         && !matches!(
             picker.kind,
             strop_picker::Kind::Files | strop_picker::Kind::Search
@@ -82,7 +82,7 @@ pub(super) fn render_results(
             Style::default().fg(MUTED),
         )));
     }
-    if picker.rows.is_empty() && !picker.input.text.is_empty() {
+    if picker.rows.is_empty() && !picker.input.text().is_empty() {
         // 0050 §8: an empty filtered set is explained, never a blank
         // card with a nonzero count
         let noun = match picker.kind {
@@ -90,7 +90,7 @@ pub(super) fn render_results(
             _ => format!("{} match", picker.kind.title().trim()),
         };
         lines.push(Line::from(Span::styled(
-            format!(" No {noun} “{}”", picker.input.text),
+            format!(" No {noun} “{}”", picker.input.text()),
             Style::default().fg(SECONDARY),
         )));
         lines.push(Line::from(Span::styled(
@@ -119,7 +119,7 @@ pub(super) fn render_results(
                 item,
                 picker
                     .replacement_visible
-                    .then_some(picker.replace_input.text.as_str()),
+                    .then_some(picker.replace_input.text()),
                 picker.is_excluded(row.item),
                 area.width,
                 active,

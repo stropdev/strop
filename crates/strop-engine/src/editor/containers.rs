@@ -185,14 +185,38 @@ impl Editor {
                         return;
                     }
                 };
+                // Incarnation guard (0056 AR07): while this container is
+                // attached, a same-id answer carrying a *different*
+                // StartedAt means the container was recycled underneath
+                // us. The held attachment is the authority views and
+                // completions compare against — silently rebinding the
+                // new incarnation would let stale state address a fresh
+                // container, so the rebind is refused with both
+                // incarnations named.
+                if let Some(held) = self.containers.attached.get(&identity.id) {
+                    if held != &identity {
+                        self.message = format!(
+                            "container {} was recycled (incarnation {} → {}); refusing to rebind a stale attachment",
+                            identity.name, held.started_at, identity.started_at
+                        );
+                        return;
+                    }
+                }
                 let ContainerJob::Attach { path, intent, .. } = key.job else {
                     self.message = "unexpected container attachment result".into();
                     return;
                 };
-                self.workspaces.bind(
-                    strop_workspace::Filesystem::Container(reference.id().clone()),
-                    None,
-                );
+                if self
+                    .workspaces
+                    .bind(
+                        strop_workspace::Filesystem::Container(reference.id().clone()),
+                        None,
+                    )
+                    .is_err()
+                {
+                    self.message = "workspace identity space exhausted".into();
+                    return;
+                }
                 self.containers
                     .attached
                     .insert(identity.id.clone(), identity);

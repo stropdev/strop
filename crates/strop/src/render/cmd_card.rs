@@ -24,7 +24,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     if editor.picker_open() {
         return;
     }
-    let pending = editor.pending.text();
+    let pending = editor.pending().text();
 
     let area = frame.area();
     // ex completion rides along: candidates under the input (0003 §1)
@@ -70,7 +70,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         height: inner.height.min(1),
     };
     let caret_byte = editor
-        .pending
+        .pending()
         .cursor()
         .saturating_sub(kind.len_utf8())
         .min(body.len());

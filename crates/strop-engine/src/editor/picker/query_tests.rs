@@ -80,8 +80,8 @@ fn dirty_source_search_and_cancelled_replace_preserve_working_context() {
     );
     editor.feed_text(":cancel-change<cr>");
     let picker = &editor.picker.as_ref().unwrap().picker;
-    assert_eq!(picker.input.text, "text:unsaved");
-    assert_eq!(picker.replace_input.text, "changed");
+    assert_eq!(picker.input.text(), "text:unsaved");
+    assert_eq!(picker.replace_input.text(), "changed");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "disk old\n");
 }
 
@@ -208,7 +208,7 @@ fn qualifier_edits_do_not_clear_ranked_results() {
         },
     }]);
     // a parsed qualifier query: raw input differs from the rank needle
-    glue.picker.input.text = "language:rust".into();
+    glue.picker.input.set_text("language:rust");
     glue.picker.rank_query = Some(String::new());
     let ranking = strop_picker::rank::rank(&glue.picker.filter_request(), || false)
         .unwrap()
@@ -216,7 +216,7 @@ fn qualifier_edits_do_not_clear_ranked_results() {
     assert!(glue.picker.install_ranking(ranking));
     glue.ranked_query = Some(String::new());
     // typing another qualifier leaves the needle unchanged
-    glue.picker.input.text = "language:rust path:src/".into();
+    glue.picker.input.set_text("language:rust path:src/");
     editor.request_picker_ranking();
     let glue = editor.picker.as_ref().unwrap();
     assert_eq!(
@@ -512,9 +512,75 @@ fn workspace_symbols_wire_probe_never_carries_qualifiers() {
     editor.paste_bracketed("kind:function wrap");
     assert_eq!(probes(), vec!["wrap"], "only bare content text crosses");
     // A qualifier-only query probes empty — never the raw input.
-    editor.picker.as_mut().unwrap().picker.input.text = "kind:function".into();
+    editor
+        .picker
+        .as_mut()
+        .unwrap()
+        .picker
+        .input
+        .set_text("kind:function");
     editor.picker_input_changed();
     assert_eq!(probes(), vec!["wrap", ""], "{:?}", probes());
+}
+
+#[test]
+fn workspace_symbols_field_edits_notify_exactly_once_per_completed_command() {
+    use strop_trace::replay::{Node, Tape};
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("lib.rs"), "fn wrap() {}\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    // A hermetic recorder from here on: every `lsp.wsymbols` ask is
+    // captured; each picker_input_changed re-asks exactly once.
+    let tape = std::rc::Rc::new(Tape::fixture(|_, _| {
+        Err(std::io::Error::other("native observation forbidden"))
+    }));
+    editor.tape = tape.clone();
+    editor
+        .lsp_state
+        .attach
+        .attached
+        .push(crate::editor::lsp::attach::Attachment {
+            language: "rust".into(),
+            root: dir.path().to_path_buf(),
+            server: strop_lsp::protocol::ServerId::new(7),
+            target: strop_workspace::Filesystem::Local,
+        });
+    let probes = || {
+        tape.fixture_nodes()
+            .iter()
+            .filter_map(|node| match node {
+                Node::Request {
+                    operation,
+                    arguments,
+                } if operation == "lsp.wsymbols" => {
+                    Some(arguments["query"].as_str().unwrap().to_string())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    editor.paste_bracketed("one two");
+    assert_eq!(probes(), vec!["one two"]);
+    editor.feed(crate::editor::Key::Esc);
+    // Pure motions must never rerank.
+    editor.feed_text("0lhw$");
+    assert_eq!(probes(), vec!["one two"], "motions do not notify");
+    // One completed operator = one notification (the revision diff,
+    // not a key whitelist — dw ranks exactly like x did).
+    editor.feed_text("0dw");
+    assert_eq!(probes(), vec!["one two", "two"], "dw notifies once");
+    editor.feed_text("x");
+    assert_eq!(probes(), vec!["one two", "two", "wo"], "x notifies once");
+    // A motion that finds nothing notifies nothing.
+    editor.feed_text("db");
+    assert_eq!(probes().len(), 3, "db at the line start finds nothing");
+    // Linewise clears the field's one line — one notification.
+    editor.feed_text("dd");
+    assert_eq!(probes().len(), 4, "dd notifies once");
+    assert_eq!(editor.picker.as_ref().unwrap().picker.input.text(), "");
 }
 
 #[test]

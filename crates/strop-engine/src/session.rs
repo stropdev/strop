@@ -8,7 +8,7 @@ use strop_core::{history::History, Buffer};
 
 mod trust;
 pub use trust::{is_trusted, is_trusted_remote, trust, trust_remote};
-mod persistence;
+pub(crate) mod persistence;
 pub(crate) mod remotes;
 #[cfg(test)]
 mod tests;
@@ -257,13 +257,23 @@ impl Session {
         let top = b.view_top.min(last_line);
         // All fallible work is complete. Insert first, then remove old IDs, so
         // arena generations cannot accidentally alias an outstanding old ID.
+        // Preflight capacity (0056 AR13): refusal leaves every existing
+        // document/edit untouched — no half-published restore.
+        if (editor.docs.insert_capacity() as usize) < documents.len() {
+            return Err(SessionError::Invalid(
+                "document identity space exhausted".into(),
+            ));
+        }
         let old: Vec<_> = editor.docs.iter().map(|(id, _)| id).collect();
         for &id in &old {
             editor.lsp_close_document(id);
         }
         let mut ids = Vec::with_capacity(documents.len());
         for doc in documents {
-            ids.push(editor.docs.insert(doc));
+            let Ok(id) = editor.docs.try_insert(doc) else {
+                unreachable!("restore preflighted the arena's capacity");
+            };
+            ids.push(id);
         }
         let current = ids[self.current];
         for pane in &mut editor.panes {

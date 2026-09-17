@@ -61,22 +61,20 @@ impl std::fmt::Display for SpawnError {
 impl std::error::Error for SpawnError {}
 
 /// What the runtime thread spawns: a local process described by the
-/// spec, or the supervised SSH client of a remote server command.
+/// spec, the supervised SSH client of a remote server command, or the
+/// supervised docker-exec client of an admitted container exec.
 enum Launch {
     Local {
         cmd: String,
         args: Vec<String>,
         cwd: PathBuf,
     },
-    /// A server inside a running container: `docker exec -i` carries
-    /// stdio; the local client's death ends the in-container program
-    /// (stdin EOF), no SSH and no supervisor anywhere (0037 DC1b).
-    Container {
-        id: strop_workspace::ContainerId,
-        cmd: String,
-        args: Vec<String>,
-        cwd: PathBuf,
-    },
+    /// A server inside a running container (0037 DC1b, 0056 AR07): an
+    /// admitted, incarnation-pinned exec request. `docker exec -i`
+    /// carries stdio through a fixed in-container supervisor whose stdin
+    /// is the lifetime lease — the local client's death ends the whole
+    /// in-container session group, no SSH and nothing left behind.
+    Container(strop_containers::AdmittedExec),
     Remote(RemoteLaunch),
 }
 
@@ -131,6 +129,24 @@ fn remote_launch(
         command: ssh,
         supervision,
     })
+}
+
+/// The admitted container launch: probe the selected engine, resolve the
+/// workspace's canonical id to its current incarnation, freeze the exec
+/// request (program, argv, in-container cwd) and admit it — the engine
+/// re-checks id + `StartedAt` before the command is built, so a recycled
+/// container is a typed refusal here, not a server spawned in the wrong
+/// namespace. Runs on the discovery worker; `token` is its cancellation.
+fn container_launch(
+    id: &strop_workspace::ContainerId,
+    spec: &registry::ServerSpec<'_>,
+    root: &Path,
+    token: &strop_core::worker::CancelToken,
+) -> Result<strop_containers::AdmittedExec, SpawnError> {
+    let engine = strop_containers::engine(token)
+        .map_err(|error| SpawnError::Startup(format!("container engine: {error}")))?;
+    strop_containers::ExecSpec::resolve(&engine, id, spec.command, spec.args, root, token)
+        .map_err(|error| SpawnError::Startup(format!("container exec admission: {error}")))
 }
 
 /// The production client router: diagnostics, server messages, and a
@@ -240,11 +256,15 @@ impl Client {
     /// its runtime, wire queue and initialize handshake. Nothing is
     /// executed before this call; executability was settled by
     /// discovery's checks. The spec is only borrowed for the duration
-    /// of the call.
+    /// of the call. `token` is the discovery worker's cancellation: a
+    /// container workspace is *admitted* here — engine probe, incarnation
+    /// revalidation — so a recycled container or a changed engine context
+    /// is a typed spawn refusal, never a silent exec elsewhere.
     pub fn spawn(
         spec: &registry::ServerSpec<'_>,
         workspace: Workspace,
         tx: Sender<LspEvent>,
+        token: &strop_core::worker::CancelToken,
     ) -> Result<Self, SpawnError> {
         let root_uri = workspace.uri(workspace.root()).ok_or(SpawnError::RootUri)?;
         let launch = match &workspace {
@@ -256,12 +276,9 @@ impl Client {
             Workspace::Remote { endpoint, root } => {
                 Launch::Remote(remote_launch(endpoint, spec, root)?)
             }
-            Workspace::Container { container, root } => Launch::Container {
-                id: container.clone(),
-                cmd: spec.command.to_string(),
-                args: spec.args.to_vec(),
-                cwd: root.clone(),
-            },
+            Workspace::Container { container, root } => {
+                Launch::Container(container_launch(container, spec, root, token)?)
+            }
         };
         let remote = workspace.endpoint().is_some();
         let in_container = matches!(workspace, Workspace::Container { .. });
@@ -271,7 +288,7 @@ impl Client {
         let endpoint_display = workspace.endpoint().map(|e| e.to_string());
         let supervision = match &launch {
             Launch::Remote(remote) => Some(remote.supervision.clone()),
-            Launch::Local { .. } | Launch::Container { .. } => None,
+            Launch::Local { .. } | Launch::Container(_) => None,
         };
         let id = ServerId::allocate();
         let self_caps = ServerCaps::default();
@@ -353,12 +370,13 @@ impl Client {
                             command.kill_on_drop(true);
                             command
                         }
-                        Launch::Container {
-                            id, cmd, args, cwd,
-                        } => {
-                            let mut command = tokio::process::Command::from(
-                                strop_containers::exec_command(&id, &cmd, &args, &cwd),
-                            );
+                        // kill_on_drop: a dropped runtime kills the local
+                        // docker client; the daemon then closes the exec
+                        // session's stdin and the in-container supervisor
+                        // TERM/KILLs the whole session group.
+                        Launch::Container(exec) => {
+                            let mut command =
+                                tokio::process::Command::from(exec.command());
                             command.kill_on_drop(true);
                             command
                         }

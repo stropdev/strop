@@ -5,7 +5,7 @@ fn hover_error_receives_a_terminal_note_with_the_original_stamp() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(
@@ -34,7 +34,7 @@ fn hover_null_and_empty_results_are_explicit_empties() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(
@@ -88,7 +88,7 @@ fn goto_null_is_a_note_and_switch_header_null_is_a_note() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(
@@ -148,7 +148,7 @@ fn document_symbols_flatten_both_reply_shapes() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         client.caps.set(lt::ServerCapabilities {
             document_symbol_provider: Some(lt::OneOf::Left(true)),
@@ -244,7 +244,7 @@ fn locations_null_is_an_empty_list_and_errors_are_notes() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(

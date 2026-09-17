@@ -147,7 +147,7 @@ mod tests {
         send(&mut editor, KeyCode::Null, false, false);
         editor.feed(Key::Enter);
         assert_eq!(
-            editor.picker.as_ref().unwrap().picker.input.text,
+            editor.picker.as_ref().unwrap().picker.input.text(),
             "language:"
         );
     }

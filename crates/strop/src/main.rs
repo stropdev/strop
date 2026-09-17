@@ -5,6 +5,7 @@ mod headless;
 mod render;
 mod replay;
 mod terminal;
+mod ui_stdio;
 mod update;
 
 use strop_engine::{config, editor, files, keymap, session};
@@ -53,6 +54,12 @@ fn launch() -> Result<(), Box<dyn Error>> {
             let source = io::BufReader::new(std::fs::File::open(trace)?);
             strop_trace::export::metadata(source, &mut io::stdout().lock())?;
             return Ok(());
+        }
+        cli::Command::UiStdio => {
+            // Early like replay/export (0056 AR09): stdout is reserved
+            // for protocol frames from the first byte; bounded
+            // diagnostics go to stderr.
+            return ui_stdio::run();
         }
         _ => {}
     }
@@ -123,8 +130,10 @@ fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn 
         cli::Command::Update { check_only } => update::update(check_only)?,
         cli::Command::Bench { scenario } => bench::run(&scenario)?,
         cli::Command::Replay { trace } => replay::write_script(&trace, &mut io::stdout().lock())?,
-        cli::Command::ReplayFull { .. } | cli::Command::ExportMetadata { .. } => {
-            return Err("replay/export must run outside live startup".into());
+        cli::Command::ReplayFull { .. }
+        | cli::Command::ExportMetadata { .. }
+        | cli::Command::UiStdio => {
+            return Err("replay/export/ui-stdio must run outside live startup".into());
         }
         cli::Command::Headless {
             script,
@@ -137,21 +146,17 @@ fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn 
             editor.set_terminal_capture(terminal_capture);
             editor.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)?;
             let (configuration, error) = config::Config::load();
-            editor.config = configuration;
+            editor.set_config(configuration);
             editor.reresolve_indents();
-            editor.state_dir = session::state_root();
+            editor.set_state_dir(session::state_root());
             if let Some(error) = error {
-                editor.message = error;
+                editor.set_message(error);
             }
             apply_initial_line(
                 &mut editor,
                 path.as_ref().and_then(|location| location.line),
             );
-            let open = startup_open(
-                &path,
-                remote_view,
-                directory.then_some(editor.cwd.as_path()),
-            );
+            let open = startup_open(&path, remote_view, directory.then_some(editor.cwd()));
             headless::run_script(
                 &mut editor,
                 &script,
@@ -166,18 +171,20 @@ fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn 
             readonly,
             remote_view,
         } => {
-            let (buffer, directory) = initial_buffer(&path)?;
+            let (mut buffer, directory) = initial_buffer(&path)?;
+            // The CLI --readonly flag lands on the buffer before
+            // admission; the editor never sees a post-hoc mutation.
+            buffer.readonly = readonly;
             let mut editor = editor::Editor::new(buffer);
             editor.set_terminal_capture(terminal_capture);
-            editor.frame_draw = Some(headless::frame_draw);
-            editor.buf_mut().readonly = readonly;
+            editor.set_frame_draw(Some(headless::frame_draw));
             let (configuration, error) = config::Config::load();
-            editor.config = configuration;
+            editor.set_config(configuration);
             editor.reresolve_indents();
-            editor.state_dir = session::state_root();
+            editor.set_state_dir(session::state_root());
             if path.is_none() {
                 if let Err(error) = session::restore(&mut editor) {
-                    editor.message = format!("session restore failed: {error}");
+                    editor.set_message(format!("session restore failed: {error}"));
                 }
             }
             apply_initial_line(
@@ -186,21 +193,17 @@ fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn 
             );
             editor.trace_state();
             if let Some(error) = error {
-                editor.message = error;
+                editor.set_message(error);
             }
-            if editor.tape.observes() {
+            if editor.tape().observes() {
                 editor
-                    .tape
+                    .tape()
                     .seed(&editor::trace::seed::Seed::capture(&editor)?)?;
             }
-            let tick = editor.tape.sample_tick();
+            let tick = editor.tape().sample_tick();
             editor.recorded_action(
                 editor::trace::drive::Action::Start {
-                    open: startup_open(
-                        &path,
-                        remote_view,
-                        directory.then_some(editor.cwd.as_path()),
-                    ),
+                    open: startup_open(&path, remote_view, directory.then_some(editor.cwd())),
                 },
                 tick,
             )?;
@@ -273,6 +276,7 @@ USAGE:\n  strop [+LINE] [FILE[:LINE]|DIR] terminal editor (-R: readonly)\n\
   strop --headless SCRIPT [+LINE] [FILE[:LINE]]  scripted driver\n\
   strop --script SCRIPT [+LINE] [FILE[:LINE]]    same scripted driver\n\
   strop --replay-script TRACE     extract a headless reproduction script\n\
+  strop --ui-stdio                UI protocol backend on stdin/stdout (0056 AR09)\n\
   strop update [--check]          self-update\n\
   strop config | --version | --dump-compat\n\n\
   strop -- FILE:3                open a literal colon-suffixed filename\n\n\

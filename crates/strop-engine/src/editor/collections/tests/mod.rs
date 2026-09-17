@@ -83,6 +83,26 @@ fn collection_builds_from_picker_hits() {
     assert!(text.contains("╭─ a.txt"), "card top: {text}");
 }
 
+/// 0056 AR14: a stale collection explains its readonly reason from the
+/// failed projection — never a generic hint.
+#[test]
+fn stale_collection_explains_its_readonly_source() {
+    let (mut e, _, _) = fixture();
+    e.feed(crate::editor::Key::CtrlO);
+    let collection = e.current();
+    e.invalidate_collection_projection(collection, strop_core::EditError::InvalidRange);
+    assert_eq!(
+        e.buf().readonly_reason,
+        Some(strop_core::ReadonlyReason::CollectionProjection)
+    );
+    e.open_explain();
+    let text = current_text(&e);
+    assert!(
+        text.contains("collection projection failed — this stale view refuses edits"),
+        "{text}"
+    );
+}
+
 #[test]
 fn editing_an_excerpt_writes_back_to_the_source() {
     let (mut e, a, _) = fixture();
@@ -327,7 +347,7 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
             write: None,
         },
     );
-    e.docs.insert(remote_doc);
+    e.docs.try_insert(remote_doc).unwrap();
     e.open_picker(Kind::Search);
     e.picker_items_fixture(vec![
         Item {

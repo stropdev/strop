@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://strop.dev/verification/inventory.schema.json",
+  "title": "0057 VF01 whole-core boundary/claim inventory",
+  "description": "One row per mutating/authority/IO boundary. verification/check.py is the enforcing validator; this schema is the readable contract. Statuses per plans/0057 §2 are not interchangeable. Pins bind sha256 of owning sources plus a digest over claim text and evidence CONTENT (named Rust fn bodies, whole TLA+/cfg/script files) — never mtimes.",
+  "type": "object",
+  "required": ["schema", "release", "plan", "boundaries"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1 },
+    "release": { "const": "0057" },
+    "plan": { "type": "string" },
+    "boundaries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/boundary" }
+    }
+  },
+  "$defs": {
+    "boundary": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "promise",
+        "exclusions",
+        "authoritative_state",
+        "trusted",
+        "files",
+        "claims",
+        "gates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "kebab-case; the VF01-required families are enforced by check.py:REQUIRED_BOUNDARIES"
+        },
+        "kind": {
+          "enum": [
+            "mutation",
+            "admission",
+            "authority",
+            "io",
+            "persistence",
+            "transport",
+            "lifecycle"
+          ]
+        },
+        "title": { "type": "string" },
+        "promise": {
+          "type": "string",
+          "description": "the observable promise this boundary makes"
+        },
+        "exclusions": {
+          "type": "string",
+          "description": "explicit exclusions; what is NOT promised"
+        },
+        "authoritative_state": {
+          "type": "string",
+          "description": "authoritative input/state, owner/namespace/revision and admission boundary"
+        },
+        "trusted": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "parser/observer/executor/foreign-runtime trust assumptions"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "owning production sources, repo-relative; content-pinned under pins.sources"
+        },
+        "claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/claim" }
+        },
+        "gates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "test",
+              "model",
+              "verify",
+              "tlaps",
+              "container-test",
+              "install-fixture",
+              "release"
+            ]
+          }
+        },
+        "pins": {
+          "type": "object",
+          "required": ["sources", "evidence"],
+          "additionalProperties": false,
+          "description": "written by `check.py --stamp`; check mode fails on any drift",
+          "properties": {
+            "sources": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "description": "sha256 of each entry in files"
+            },
+            "evidence": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "digest over claim id/statement/status plus per-evidence content hashes"
+            }
+          }
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "required": ["id", "statement", "status", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9-]*$" },
+        "statement": { "type": "string" },
+        "status": {
+          "enum": [
+            "specified",
+            "bounded-model-checked",
+            "proved-kernel",
+            "proved-theorem",
+            "correspondence-tested",
+            "native-tested",
+            "blocked",
+            "superseded"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "path", "gate"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["test", "proof", "model", "script"] },
+        "path": {
+          "type": "string",
+          "description": "repo-relative file the checker resolves and content-binds"
+        },
+        "gate": {
+          "enum": [
+            "test",
+            "model",
+            "verify",
+            "tlaps",
+            "container-test",
+            "install-fixture",
+            "release"
+          ]
+        },
+        "tests": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "kind=test: Rust test fn names; the checker binds their bodies"
+        },
+        "symbols": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "kind=proof on .rs: proved fn names; the checker binds their bodies"
+        },
+        "config": {
+          "type": "string",
+          "description": "kind=model (required): the TLC/TLAPS config the gate runs"
+        }
+      }
+    }
+  }
+}

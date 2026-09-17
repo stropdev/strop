@@ -5,7 +5,7 @@ fn format_returns_edits_and_null_is_an_explicit_empty() {
     run(async {
         let (client, rx, mut wire) = Wire::production();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         client.caps.set(lt::ServerCapabilities {
             document_formatting_provider: Some(lt::OneOf::Left(true)),
@@ -77,7 +77,7 @@ fn rename_over_changes_map_and_document_changes_produce_workspace_edits() {
     run(async {
         let (client, rx, mut wire) = Wire::production();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         // No positionEncoding: the spec-default UTF-16 is exercised at
         // a non-ASCII boundary.
@@ -179,7 +179,7 @@ fn rename_with_resource_operations_or_a_foreign_version_is_a_refusal_note() {
     run(async {
         let (client, rx, mut wire) = Wire::production();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         client.caps.set(lt::ServerCapabilities {
             rename_provider: Some(lt::OneOf::Left(true)),
@@ -257,7 +257,7 @@ fn code_actions_decode_edits_and_commands() {
     run(async {
         let (client, rx, mut wire) = Wire::production();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         client.caps.set(lt::ServerCapabilities {
             code_action_provider: Some(lt::CodeActionProviderCapability::Simple(true)),
@@ -350,7 +350,7 @@ fn format_rename_and_code_action_refuse_admission_without_providers() {
     run(async {
         let (client, rx, mut wire) = Wire::production();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         // Ready, but none of the edit providers were advertised.
         client.caps.set(lt::ServerCapabilities {
@@ -391,6 +391,62 @@ fn format_rename_and_code_action_refuse_admission_without_providers() {
         );
         // No frame and no event: refusals never touch the wire.
         assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+        wire.stop().await;
+    });
+}
+
+#[test]
+fn superseded_unsent_snapshots_reach_the_wire_as_the_final_version() {
+    // 0056 AR06: rapid changes may coalesce in the bounded wire queue,
+    // but the server must see strictly increasing versions and end at
+    // the newest full snapshot — whatever the worker's drain timing.
+    run(async {
+        let (client, _rx, mut wire) = Wire::production();
+        let mut docs = Documents::default();
+        let document = docs.try_insert(()).unwrap();
+        let path = Path::new("/workspace/a.rs");
+        client.caps.set(lt::ServerCapabilities {
+            position_encoding: Some(lt::PositionEncodingKind::UTF8),
+            ..Default::default()
+        });
+        client.finish_initialize().unwrap();
+        assert!(client.did_open(
+            document,
+            BufferRevision::new(0),
+            path,
+            "rust",
+            Rope::from_str("fn a() {}\n")
+        ));
+        let open = wire.next().await;
+        assert_eq!(open["method"], "textDocument/didOpen");
+        let opened_version = open["params"]["textDocument"]["version"].as_i64().unwrap();
+        for revision in 1..8u64 {
+            assert!(client.did_change(
+                document,
+                BufferRevision::new(revision),
+                path,
+                Rope::from_str(&format!("fn a{revision}() {{}}\n"))
+            ));
+        }
+        // Drain didChange frames until the newest admitted version is on
+        // the wire; intermediate versions may legally be superseded.
+        let mut last_version = opened_version;
+        loop {
+            let frame = wire.next().await;
+            assert_eq!(frame["method"], "textDocument/didChange");
+            let version = frame["params"]["textDocument"]["version"].as_i64().unwrap();
+            assert!(
+                version > last_version,
+                "wire versions increase strictly ({version} after {last_version})"
+            );
+            last_version = version;
+            let text = frame["params"]["contentChanges"][0]["text"]
+                .as_str()
+                .unwrap();
+            if text == "fn a7() {}\n" {
+                break;
+            }
+        }
         wire.stop().await;
     });
 }

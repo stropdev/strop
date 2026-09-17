@@ -1,11 +1,8 @@
 # 0065 — Modal terminal experience: handoff and feasibility
 
-Status: handoff only — **no source changes are authorized by this document**.
-Written 2026-09-15 against the current worktree (post-0055 TUI milestone:
-`strop-terminal` with the vendored ghostty-vt emulator, real PTY sessions and
-engine integration in `editor/terminal/`). Another agent is active on this
-worktree: the implementing session MUST `git status`/`git diff` first and
-reconcile in-flight work before touching any file named here.
+Status: **implemented** (2026-09-16) — the user's explicit authorization
+superseded the handoff-only status. Slices W1–W5 are in the tree with
+their evidence; see the landed-slices ledger at the bottom.
 
 The request (user, 2026-09-15): the built-in terminal should be a **modal
 terminal** — a terminal buffer that behaves like a strop buffer. Normal mode:
@@ -229,3 +226,52 @@ terminal graphics, and all GUI work remain with 0055/0061. Do not touch the
 emulator, the PTY supervisor, the input encoder or the projection format —
 this plan is the editor-experience layer only. Do not add a theme engine or
 config surface beyond the single strop-core seed; 0005 owns configuration.
+
+## Landed slices (2026-09-16)
+
+**S0 baseline journeys.** Hermetic engine-level spine with synthetic
+frames (`editor/terminal/mod.rs` fixture constructors, cfg(test /
+test-support)) — `modal_terminal_baseline_journey` drives :terminal → i
+entry → raw keys to the PTY → Ctrl-\\ Ctrl-N inspection → motions + yy
+yank → output-under-inspection pinning → :terminal-refresh → i returns
+live. (The headless driver cannot exec a PTY hermetically; the engine
+journey is the deterministic equivalent.)
+
+**S1 honest mode presentation (G1).** Mode::Normal stays internal, but
+terminal input now presents as its own state: the TERMINAL chip gets its
+own hue (type teal) against Normal amber/Insert green/Visual violet,
+with the escape hint in every terminal state; inspection presents NORMAL
+with "snapshot · i returns to input". Golden TestBackend statusline
+cells pin both states. A/I stay unwired; i/a only.
+
+**S2 escape discoverability (D1 Option A — Esc stays child-bound).**
+Every dispatchable terminal escape renders in `?` help (0003 §5.7),
+pinned by `terminal_escapes_render_live_in_help`; the focus-loss
+prefix-cancel invariant gained its direct test
+(`focus_loss_cancels_a_pending_terminal_escape_prefix`). No routing
+change.
+
+**S3 strop-owned palette (G4/D3).** The single seed lives in
+`strop-core/src/theme.rs` (BASE/TEXT/MUTED/ACCENT + diagnostic and
+syntax-class triples + ANSI-16 harmonized — red=diag error,
+bright-yellow=ACCENT, magenta=keyword violet, cyan=type teal; 16-255
+keep the standard xterm ramps); the frontend constants DERIVE from it.
+A new `strop_vt_palette_set` FFI (bridge.c/h, ghostty color options)
+configures the palette at Vt creation, threaded Service::start → worker
+→ client → vt; per-index OSC 4 runtime overrides survive (documented).
+Wire format untouched; one Arc per frame, never per cell. Goldens pin
+indexed/default/RGB mapping plus one vt100 outer-screen end-to-end
+colored case.
+
+**S4 inspection polish (G3/D2).** `:terminal-refresh` re-installs the
+latest published frame into the pinned view (remapped caret/marks follow
+the content; "refreshed"/"already shows latest" messages). The real-PTY
+journey drives the documented signal→refresh loop: deferred output never
+drags the pinned view, refresh installs it, and a `/` search in
+inspection mode reveals it (caret follows the match). Motion-surface
+tests cover j/k, gg/G, Ctrl-D/U, /?+n/N, visual yank and wide/CJK
+cell↔byte mapping.
+
+Note: a walker-idle guard now keeps absorbers (`ma`, pending operators)
+from being swallowed by the terminal-input interception — a real bug the
+motion tests exposed.

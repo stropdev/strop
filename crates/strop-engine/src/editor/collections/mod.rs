@@ -369,9 +369,13 @@ impl Editor {
         });
         let excerpt_count = excerpts.len();
         let title_for_trace = title.clone();
-        let id = self.docs.insert(Document::output(Buffer::from_text("")));
         // The modeline names the collection, never [scratch] (0049 §6).
-        self.docs.get_mut(id).unwrap().buf.name = Some(format!("collection: {title}"));
+        let mut document = Document::output(Buffer::from_text(""));
+        document.buf.name = Some(format!("collection: {title}"));
+        let Ok(id) = self.docs.try_insert(document) else {
+            self.message = "document identity space exhausted".into();
+            return;
+        };
         let mut collection = Collection {
             title,
             excerpts,
@@ -386,9 +390,15 @@ impl Editor {
         let text = render(&self.docs, &self.cwd, &mut collection);
         self.collections.insert(id, collection);
         let _ = self.doc_mut(id).buf.system_edit().replace_all(&text);
-        self.docs.get_mut(id).unwrap().buf.readonly = false;
-        let revision = self.docs.get(id).unwrap().buf.revision();
-        self.collections.get_mut(&id).unwrap().revision = revision;
+        let Some(revision) = self.docs.get(id).map(|document| document.buf.revision()) else {
+            return; // the id was minted above; a miss is impossible
+        };
+        if let Some(document) = self.docs.get_mut(id) {
+            document.buf.clear_readonly();
+        }
+        if let Some(collection) = self.collections.get_mut(&id) {
+            collection.revision = revision;
+        }
         strop_trace::record_with(strop_trace::EventKind::JobFinished, || {
             serde_json::json!({
                 "service":"collection","result":"built","excerpts":excerpt_count,

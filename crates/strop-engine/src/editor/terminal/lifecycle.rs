@@ -3,7 +3,7 @@ use crate::editor::{Document, DocumentSource, Mode};
 use strop_core::Buffer;
 use strop_terminal::{
     launch::Launch,
-    model::{Effect, Update, MAX_COLUMNS, MAX_ROWS, MAX_SESSIONS},
+    model::{Effect, Palette, Update, MAX_COLUMNS, MAX_ROWS, MAX_SESSIONS},
 };
 
 impl Editor {
@@ -62,7 +62,10 @@ impl Editor {
             session,
             frame: None,
         }));
-        let id = self.docs.insert(document);
+        let Ok(id) = self.docs.try_insert(document) else {
+            self.message = "document identity space exhausted".into();
+            return;
+        };
         self.terminals.entries.insert(
             session,
             Entry {
@@ -91,9 +94,16 @@ impl Editor {
                     directory.clone(),
                     (!command.is_empty()).then(|| command.into()),
                 );
-                Service::start(session, launch, geometry, keyboard, move |session| {
-                    let _ = sender.send(session);
-                })
+                Service::start(
+                    session,
+                    launch,
+                    geometry,
+                    keyboard,
+                    Some(Palette::strop()),
+                    move |session| {
+                        let _ = sender.send(session);
+                    },
+                )
                 .map(|service| {
                     if let Some(entry) = self.terminals.entries.get_mut(&session) {
                         entry.service = Some(service);
@@ -141,7 +151,7 @@ impl Editor {
         }
     }
 
-    fn apply_terminal_update(&mut self, update: Update) {
+    pub(super) fn apply_terminal_update(&mut self, update: Update) {
         let current = self.current();
         let Some(entry) = self.terminals.entries.get_mut(&update.session) else {
             return;
@@ -259,6 +269,46 @@ impl Editor {
         if self.current() == document && self.view().terminal_input {
             self.set_head(frame.cursor_byte());
         }
+    }
+
+    /// D2's explicit refresh: reinstall the latest published frame into an
+    /// inspected (pinned) terminal. Explicit-only — output never drags a
+    /// view — and the origin-based remap in `install_terminal_frame`
+    /// carries cursor, selections and anchors to the same content.
+    pub(crate) fn refresh_terminal(&mut self) {
+        let document = self.current();
+        let Some(session) = self
+            .terminal_document(document)
+            .map(|source| source.session)
+        else {
+            self.message = "current buffer is not a terminal".into();
+            return;
+        };
+        if self.terminal_input_active() {
+            self.message =
+                "terminal input follows live output; Ctrl-\\ Ctrl-N inspects a snapshot".into();
+            return;
+        }
+        if !self
+            .terminals
+            .entries
+            .get(&session)
+            .is_some_and(|entry| entry.live.is_some())
+        {
+            self.message = "terminal has no output yet".into();
+            return;
+        }
+        let stale = self.terminal_has_new_output(document);
+        if self.terminals.capture {
+            self.install_terminal_frame(document);
+        } else {
+            strop_trace::without_content(|| self.install_terminal_frame(document));
+        }
+        self.message = if stale {
+            "terminal view refreshed to the latest output".into()
+        } else {
+            "terminal view already shows the latest output".into()
+        };
     }
 
     pub fn prepare_terminal_geometry(&mut self, document: DocumentId, columns: u16, rows: u16) {

@@ -123,3 +123,135 @@ impl Editor {
         Some(&self.terminals.entries.get(&terminal.session)?.directory)
     }
 }
+
+/// The frame half of `terminal_fixture`, factored so tests can publish a
+/// later revision through the real update path.
+#[cfg(any(test, feature = "test-support"))]
+fn fixture_frame(
+    session: SessionId,
+    rows: &[(&str, strop_terminal::model::Style)],
+    revision: u64,
+    origin: u64,
+) -> Arc<Frame> {
+    use strop_terminal::model::{Cell, Cursor, CursorShape, Palette, ProjectedRow, Row, Style};
+    use unicode_width::UnicodeWidthChar;
+    let display_width = |text: &str| {
+        text.chars()
+            .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(1))
+            .sum::<usize>()
+    };
+    let columns = rows
+        .iter()
+        .map(|(text, _)| display_width(text))
+        .max()
+        .unwrap_or(1);
+    let geometry = Geometry {
+        columns: columns.max(1) as u16,
+        rows: rows.len().max(1) as u16,
+        revision,
+    };
+    let mut projected = Vec::with_capacity(rows.len());
+    let mut projection = String::new();
+    for (text, style) in rows {
+        let mut padded = (*text).to_owned();
+        let mut cells: Vec<Cell> = Vec::with_capacity(columns);
+        for (index, ch) in text.char_indices() {
+            let end = (index + ch.len_utf8()) as u32;
+            let width = UnicodeWidthChar::width(ch).unwrap_or(1).clamp(1, 2) as u8;
+            cells.push(Cell {
+                end,
+                width,
+                style: *style,
+            });
+            for _ in 1..width {
+                cells.push(Cell {
+                    end,
+                    width: 0,
+                    style: *style,
+                });
+            }
+        }
+        while cells.len() < columns {
+            padded.push(' ');
+            cells.push(Cell {
+                end: padded.len() as u32,
+                width: 1,
+                style: Style::default(),
+            });
+        }
+        let absolute_start = origin + projection.len() as u64;
+        projection.push_str(&padded);
+        projection.push('\n');
+        projected.push(ProjectedRow {
+            absolute_start,
+            row: Arc::new(Row {
+                text: padded,
+                cells,
+                wrapped: false,
+            }),
+        });
+    }
+    let frame = Arc::new(Frame {
+        session,
+        revision,
+        geometry,
+        alternate: false,
+        cursor: Cursor {
+            column: 0,
+            row: 0,
+            visible: true,
+            blinking: false,
+            shape: CursorShape::Block,
+        },
+        palette: Arc::new(Palette::strop()),
+        history_rows: 0,
+        available_history_rows: 0,
+        history_limited: false,
+        origin,
+        rows: projected.into(),
+        projection: ropey::Rope::from_str(&projection),
+    });
+    frame.validate().unwrap();
+    frame
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Editor {
+    /// A synthetic terminal with one styled frame and no worker or PTY —
+    /// the deterministic shape journeys and surface goldens drive (0065).
+    /// Rows are (text, style) pairs mapped like the VT projection: wide
+    /// clusters get a continuation cell and every row is space-padded to
+    /// the geometry, as `read_row` produces.
+    pub fn terminal_fixture(
+        &mut self,
+        rows: &[(&str, strop_terminal::model::Style)],
+        phase: Phase,
+    ) -> DocumentId {
+        let session = SessionId::from_request(self.worker_ids.allocate().unwrap());
+        let frame = fixture_frame(session, rows, 1, 0);
+        let geometry = frame.geometry;
+        let mut document =
+            super::Document::output(strop_core::Buffer::from_snapshot(frame.projection.clone()));
+        document.source = super::DocumentSource::Terminal(Box::new(TerminalDocument {
+            session,
+            frame: Some(frame.clone()),
+        }));
+        let id = self.docs.try_insert(document).unwrap();
+        self.terminals.entries.insert(
+            session,
+            Entry {
+                document: id,
+                phase,
+                live: Some(frame),
+                service: None,
+                directory: self.cwd.clone(),
+                title: None,
+                geometry,
+                paste: None,
+                keyboard: 0,
+            },
+        );
+        self.switch_to(id);
+        id
+    }
+}

@@ -2,6 +2,10 @@ use super::*;
 use strop_core::frontend_input::Input;
 
 fn terminal(columns: u16, rows: u16) -> Vt {
+    themed_terminal(columns, rows, None)
+}
+
+fn themed_terminal(columns: u16, rows: u16, palette: Option<&Palette>) -> Vt {
     Vt::new(
         SessionId::from_request(strop_core::worker::WorkerId::new(1)),
         Geometry {
@@ -9,6 +13,7 @@ fn terminal(columns: u16, rows: u16) -> Vt {
             rows,
             revision: 1,
         },
+        palette,
     )
     .unwrap()
 }
@@ -219,4 +224,48 @@ fn osc_and_window_attempts_stay_in_their_namespace() {
         .projection
         .to_string()
         .starts_with("link"));
+}
+
+#[test]
+fn the_embedder_palette_configures_defaults_and_survives_indexed_output() {
+    // 0065 D3: the embedder-owned palette lands at creation; indexed and
+    // default colors resolve through it, and one Arc serves every frame
+    // until the child overrides a color itself.
+    let palette = Palette::strop();
+    let mut vt = themed_terminal(20, 3, Some(&palette));
+    vt.feed(b"\x1b[31mred \x1b[38;2;1;2;3mtrue \x1b[mplain")
+        .unwrap();
+    let (frame, _) = vt.snapshot().unwrap();
+    assert_eq!(frame.palette.foreground, palette.foreground);
+    assert_eq!(frame.palette.background, palette.background);
+    assert_eq!(frame.palette.colors, palette.colors);
+    let row = &frame.rows[0].row;
+    assert_eq!(row.symbol(0), Some("r"));
+    assert_eq!(row.cells[0].style.foreground, Color::Indexed(1));
+    assert_eq!(
+        row.cells[4].style.foreground,
+        Color::Rgb(Rgb {
+            red: 1,
+            green: 2,
+            blue: 3,
+        })
+    );
+    assert_eq!(row.cells[9].style.foreground, Color::Default);
+    let (again, _) = vt.snapshot().unwrap();
+    assert!(
+        Arc::ptr_eq(&frame.palette, &again.palette),
+        "an unchanged palette is one Arc, cloned per frame never per cell"
+    );
+    // A child's OSC 4 override of an index still wins over the embedder
+    // default for that index (native palette-set semantics).
+    vt.feed(b"\x1b]4;1;rgb:12/34/56\x07\x1b[31mx").unwrap();
+    let (overridden, _) = vt.snapshot().unwrap();
+    assert_eq!(
+        overridden.palette.colors[1],
+        Rgb {
+            red: 0x12,
+            green: 0x34,
+            blue: 0x56,
+        }
+    );
 }

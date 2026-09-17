@@ -129,6 +129,14 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
+        keys: ":terminal-refresh",
+        desc: "reinstall the latest output into the pinned inspection snapshot (never auto-refreshes a selection)",
+        sections: &["terminal"],
+        live: true,
+        id: "terminal-refresh",
+        handler: Handler::Contextual,
+    },
+    Binding {
         keys: "ctrl-4 ctrl-n",
         desc: "legacy Ctrl-\\ Ctrl-N spelling from the outer terminal decoder",
         sections: &["terminal"],

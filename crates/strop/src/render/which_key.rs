@@ -29,12 +29,12 @@ pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
     if editor.picker_open() {
         return;
     }
-    let prefix = editor.walker.prefix_display();
+    let prefix = editor.walker().prefix_display();
     let pending = prefix.as_str();
     let Some(&(_, title)) = PREFIXES.iter().find(|(p, _)| *p == pending) else {
         return;
     };
-    let hints = keymap::children_of(pending, editor.mode);
+    let hints = keymap::children_of(pending, editor.mode());
     if hints.is_empty() {
         return;
     }

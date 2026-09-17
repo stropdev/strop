@@ -56,11 +56,22 @@ impl Editor {
             cwd: self.cwd.clone(),
             original: None,
         };
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({
+        // 0056 AR08: command lines are content — the Process family's
+        // classification, not an unconditional record.
+        let class = crate::editor::privacy::classify(
+            &self.effect_policy(),
+            crate::editor::privacy::EffectFamily::Process,
+            crate::editor::privacy::EffectTarget::Local,
+        );
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || match class.capture {
+            strop_trace::ContentPolicy::Full => serde_json::json!({
                 "service":"shell","request":request.get(),
                 "command":cmd,"cwd":self.cwd.to_string_lossy(),
-            })
+            }),
+            strop_trace::ContentPolicy::Metadata => serde_json::json!({
+                "service":"shell","request":request.get(),
+                "command_bytes":cmd.len(),"cwd":self.cwd.to_string_lossy(),
+            }),
         });
         self.shell_focus = Some(request);
         self.message = format!("sh: {cmd} …");
@@ -112,11 +123,20 @@ impl Editor {
             cwd: self.cwd.clone(),
             original: Some(original),
         };
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({
+        let class = crate::editor::privacy::classify(
+            &self.effect_policy(),
+            crate::editor::privacy::EffectFamily::Process,
+            crate::editor::privacy::EffectTarget::Local,
+        );
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || match class.capture {
+            strop_trace::ContentPolicy::Full => serde_json::json!({
                 "service":"pipe","request":request.get(),"command":cmd,
                 "start_byte":s,"end_byte":e,"revision":revision.get(),
-            })
+            }),
+            strop_trace::ContentPolicy::Metadata => serde_json::json!({
+                "service":"pipe","request":request.get(),"command_bytes":cmd.len(),
+                "start_byte":s,"end_byte":e,"revision":revision.get(),
+            }),
         });
         self.message = format!("| {cmd} …");
         let input = intent.original.clone();
@@ -267,10 +287,12 @@ impl Editor {
                 let mut buffer = strop_core::Buffer::from_text(&text);
                 buffer.name = Some(format!("sh: {}", intent.command));
                 if may_focus {
-                    self.open_temporary_output(buffer);
+                    let _ = self.open_temporary_output(buffer);
                 } else {
-                    let doc = self.docs.insert(Document::output(buffer));
-                    self.mru.push(doc);
+                    match self.docs.try_insert(Document::output(buffer)) {
+                        Ok(doc) => self.mru.push(doc),
+                        Err(_) => self.message = "document identity space exhausted".into(),
+                    }
                 }
                 self.generation += 1;
                 if may_focus {

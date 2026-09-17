@@ -91,7 +91,7 @@ impl Editor {
                 "cursor":cursor,"documents":documents,"panes":self.panes,"active_pane":self.active_pane,
                 "view_rows":self.view_rows,"message":(!self.tape.content_omitted()).then_some(self.message.as_str()),"should_quit":self.should_quit,
                 "picker":self.picker.as_ref().map(|glue|json!({"id":glue.id.0.get(),
-                    "request":glue.active.as_ref().map(|ticket|ticket.request.get()),"query":(!self.tape.content_omitted()).then_some(glue.picker.input.text.as_str()),
+                    "request":glue.active.as_ref().map(|ticket|ticket.request.get()),"query":(!self.tape.content_omitted()).then_some(glue.picker.input.text()),
                     "items":glue.picker.items.len(),"streaming":glue.picker.streaming})),
                 "config":self.config,
                 "terminal":self.panes.get(self.active_pane).and_then(|pane| self.terminal_status(pane.doc)),

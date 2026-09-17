@@ -214,3 +214,68 @@ fn atomic_publication_replaces_destination_symlink_without_touching_target() {
         0o600
     );
 }
+
+#[test]
+fn a_malformed_trust_store_fails_closed() {
+    // 0057 VF15: a corrupt trust store is an honest error — never a
+    // silent grant, never a silent wipe-and-grant on top of it.
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let store = state.join("strop").join("trusted-projects");
+    std::fs::create_dir_all(store.parent().unwrap()).unwrap();
+    std::fs::write(&store, b"[{\"not\": \"closed\"").unwrap();
+    let root = Path::new("/tmp/proj-a");
+    assert!(is_trusted(Some(&state), root).is_err());
+    assert!(
+        trust(Some(&state), root).is_err(),
+        "a grant does not silently overwrite a store it cannot read"
+    );
+    assert!(is_trusted(Some(&state), root).is_err());
+}
+
+#[test]
+fn trust_rejects_unusable_native_paths() {
+    // 0057 VF15: invalid native paths cannot manufacture a capability.
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    #[cfg(unix)]
+    let bad = {
+        use std::os::unix::ffi::OsStrExt;
+        PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/nul\0byte"))
+    };
+    #[cfg(not(unix))]
+    let bad = PathBuf::new();
+    assert!(trust(Some(&state), &bad).is_err());
+    assert!(
+        !trust(Some(&state), Path::new("/tmp/valid")).is_ok()
+            || !is_trusted(Some(&state), &bad).unwrap()
+    );
+}
+
+#[test]
+fn remote_trust_is_endpoint_scoped() {
+    // 0057 VF15: a trust grant names (endpoint, root) — a different
+    // endpoint with the same path, and a local path with the same
+    // spelling, are both untrusted.
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let endpoint_a = strop_workspace::RemoteEndpoint::parse("ssh://a.example").unwrap();
+    let endpoint_b = strop_workspace::RemoteEndpoint::parse("ssh://b.example").unwrap();
+    let root = PathBuf::from("/srv/project");
+    let file_a = strop_workspace::RemoteFile::from_path(endpoint_a.clone(), root.clone()).unwrap();
+    trust_remote(Some(&state), &file_a).unwrap();
+    assert!(is_trusted_remote(Some(&state), &endpoint_a, &root).unwrap());
+    assert!(
+        !is_trusted_remote(Some(&state), &endpoint_b, &root).unwrap(),
+        "another endpoint's namespace is not covered"
+    );
+    assert!(
+        !is_trusted(Some(&state), &root).unwrap(),
+        "a remote grant never authorizes the local path spelling"
+    );
+    // And the reverse: a local grant never leaks into the endpoint.
+    let dir2 = tempfile::tempdir().unwrap();
+    let state2 = dir2.path().join("state");
+    trust(Some(&state2), &root).unwrap();
+    assert!(!is_trusted_remote(Some(&state2), &endpoint_a, &root).unwrap());
+}

@@ -73,26 +73,35 @@ fn color_code(color: ratatui::style::Color) -> u32 {
     }
 }
 
+/// The binary's frame boundary (AR01): record the frame action, run the
+/// admitted engine preparation for this frame's exact geometry, then
+/// paint through the readonly query. Recording order is load-bearing for
+/// native-free replay: the Frame action precedes the work requests
+/// preparation admits, matching replay's consumption order.
 pub fn draw(editor: &mut Editor, frame: &mut Frame, record_action: bool) {
     let started = enabled().then(Instant::now);
     let area = frame.area();
-    if record_action && !editor.tape.is_replay() {
-        // Render itself can admit hunk/preview work: its action comes first.
+    if record_action && !editor.tape().is_replay() {
+        // Preparation can admit hunk/preview work: its action comes first.
         let action = crate::editor::trace::drive::Action::Frame {
             columns: area.width,
             rows: area.height,
         };
-        if let Err(error) = editor.tape.action(editor.tape.sample_tick(), &action) {
-            editor.message = error.to_string();
+        if let Err(error) = editor.tape().action(editor.tape().sample_tick(), &action) {
+            editor.note_tape_divergence(error);
         }
     }
+    editor.prepare_view(strop_engine::editor::prepare::ViewGeometry {
+        columns: area.width,
+        rows: area.height,
+    });
     CURSOR.with(|cursor| cursor.set(None));
     crate::render::render(editor, frame);
     let cursor = CURSOR.with(std::cell::Cell::get);
     let grid = frame.buffer_mut();
     if let Some(started) = started {
         let cell_hash =
-            (!editor.tape.content_omitted() && !editor.private_terminal_view()).then(|| {
+            (!editor.tape().content_omitted() && !editor.private_terminal_view()).then(|| {
                 let mut hash = std::collections::hash_map::DefaultHasher::new();
                 for cell in &grid.content {
                     cell.symbol().hash(&mut hash);
@@ -108,16 +117,16 @@ pub fn draw(editor: &mut Editor, frame: &mut Frame, record_action: bool) {
             &json!({
                 "duration_us":started.elapsed().as_micros(),"columns":area.width,"rows":area.height,
                 "cursor":cursor.map(|(column,row)|json!({"column":column,"row":row})),
-                "cell_hash":cell_hash,"active_pane":editor.active_pane,
+                "cell_hash":cell_hash,"active_pane":editor.active_pane(),
             }),
         );
     }
-    if editor.tape.observes() {
+    if editor.tape().observes() {
         let cells = frame_observation(grid, area);
-        if let Err(error) = editor.tape.check(&json!({
+        if let Err(error) = editor.tape().check(&json!({
             "columns":area.width,"rows":area.height,"cursor":cursor,"cells":cells,
         })) {
-            editor.message = error.to_string();
+            editor.note_tape_divergence(error);
         }
     }
 }

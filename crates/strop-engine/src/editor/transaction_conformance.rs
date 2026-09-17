@@ -51,6 +51,7 @@ macro_rules! must {
 
 mod batch;
 mod service;
+mod traces;
 use batch::{gen_batch_stream, run_batch_stream, BatchOp};
 use service::{gen_service_stream, run_service_stream, ServiceOp};
 
@@ -533,7 +534,10 @@ fn editor_apply_refuses_dead_and_stale_without_side_effects() {
     }
     assert_eq!((e.buf().text().to_string(), e.buf().revision()), snapshot);
     // a second document; applying to it preserves focus everywhere
-    let other = e.docs.insert(Document::new(Buffer::from_text("other\n")));
+    let other = e
+        .docs
+        .try_insert(Document::new(Buffer::from_text("other\n")))
+        .unwrap();
     let focus = (e.current(), e.active_pane);
     e.apply(other, e.doc(other).buf.revision(), cs("Z"))
         .expect("applies to a background doc");
@@ -553,7 +557,10 @@ fn editor_apply_refuses_dead_and_stale_without_side_effects() {
         matches!(got, Err(ApplyError::NoDocument)),
         "dead id must be NoDocument, got {got:?}"
     );
-    let fresh = e.docs.insert(Document::new(Buffer::from_text("again\n")));
+    let fresh = e
+        .docs
+        .try_insert(Document::new(Buffer::from_text("again\n")))
+        .unwrap();
     if fresh.index() == dead.index() {
         assert_ne!(
             fresh.generation(),

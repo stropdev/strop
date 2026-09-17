@@ -43,7 +43,7 @@ pub enum Action {
 impl Editor {
     /// Live drivers: record the action, then run the shared body.
     pub fn recorded_action(&mut self, action: Action, tick: Tick) -> io::Result<()> {
-        if self.private_terminal_action(&action) {
+        if self.tape_action_private(&action) {
             self.tape.omit_content("terminal")?;
             self.tape.action(tick, &action)?;
             return strop_trace::without_content(|| self.apply_recorded(action));

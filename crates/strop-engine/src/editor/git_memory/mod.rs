@@ -103,9 +103,13 @@ impl Editor {
         buf.name = name.map(|n| n.to_string());
         // surfaces render via delta/plain rules: no tree-sitter;
         // readonly derives from the source (0021 §4)
-        let id = self
+        let Ok(id) = self
             .docs
-            .insert(super::Document::surface(buf, surface, context));
+            .try_insert(super::Document::surface(buf, surface, context))
+        else {
+            self.message = "document identity space exhausted".into();
+            return;
+        };
         self.drop_stale_scratch(id);
         self.push_jump(); // opening a surface is a jumplist entry
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)

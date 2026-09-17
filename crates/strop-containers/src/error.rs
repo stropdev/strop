@@ -37,11 +37,19 @@ pub enum ContainerError {
     NoSuchPath { id: String, path: String },
 
     /// The operation is outside this crate's read-only capability
-    /// boundary (writes, arbitrary exec, reading a directory as a file).
-    /// This is a policy answer, not a failure to be retried.
+    /// boundary (writes, reading a directory as a file). This is a
+    /// policy answer, not a failure to be retried.
     #[error("capability refused: {what}")]
     CapabilityRefused { what: String },
 
+    /// The in-container program never launched: the supervisor could not
+    /// start (the image carries no POSIX shell, or permission was
+    /// refused) or the program did not resolve/was not executable in the
+    /// container's namespace. A typed diagnostic — never a silent
+    /// fallback to unsupervised exec, another program, or another
+    /// namespace.
+    #[error("container exec launch refused: {detail}")]
+    ExecLaunch { detail: String },
     /// A user-supplied name/id could inject CLI options or otherwise
     /// cannot be a Docker name or id prefix. Refused before the engine
     /// ever sees it.

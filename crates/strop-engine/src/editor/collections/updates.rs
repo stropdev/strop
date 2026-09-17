@@ -183,7 +183,9 @@ impl Editor {
     ) {
         // A stale representation must never regain source write authority.
         if let Some(document) = self.docs.get_mut(id) {
-            document.buf.readonly = true;
+            document
+                .buf
+                .set_readonly(strop_core::ReadonlyReason::CollectionProjection);
             document.buf.name = Some("stale collection — projection failed".into());
         }
         self.collections.remove(&id);

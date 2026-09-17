@@ -13,8 +13,9 @@ use strop_git::memory::ChangedFile;
 use super::super::text;
 use super::super::{ACCENT, MUTED, SELECT_BG, TEXT};
 
-/// Blame gutter width: `sha˟7 author˟9 age˟3` + separators.
-pub(crate) const BLAME_W: usize = 22;
+/// Blame gutter width: `sha˟7 author˟9 age˟3` + separators — the
+/// engine-owned constant preparation's left inset clamps against.
+pub(crate) use strop_engine::editor::prepare::BLAME_GUTTER_WIDTH as BLAME_W;
 /// Pane-divider color — the sidebar's rule matches it.
 const RULE: Color = Color::Rgb(0x3a, 0x3d, 0x4d);
 /// Younger than this counts as "recent" → accent (0011 §3).

@@ -282,7 +282,9 @@ impl Document {
         source.view_revision = buffer.revision();
         buffer.path = None;
         buffer.name = Some(format!("directory {}", source.location.label()));
-        buffer.readonly = source.draft.as_ref().is_none_or(|draft| !draft.editable());
+        if source.draft.as_ref().is_none_or(|draft| !draft.editable()) {
+            buffer.set_readonly(strop_core::ReadonlyReason::DirectoryListing);
+        }
         Self {
             buf: buffer,
             syntax_hint: None,

@@ -5,7 +5,7 @@ fn preinit_close_cancels_queued_requests_with_terminal_notes() {
     run(async {
         let (client, rx, wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         assert!(client.did_open(
             document,
@@ -23,6 +23,40 @@ fn preinit_close_cancels_queued_requests_with_terminal_notes() {
         initialize(&client);
         // Nothing was ever framed: the open was cancelled pre-init.
         assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+        wire.stop().await;
+    });
+}
+
+#[test]
+fn preinit_request_backlog_is_bounded_with_terminal_notes() {
+    // 0056 AR06: a server stuck in handshake cannot accumulate requests
+    // without limit; the overflow request still ends in exactly one
+    // terminal event (R9).
+    run(async {
+        let (client, rx, wire) = Wire::new();
+        let mut docs = Documents::default();
+        let document = docs.try_insert(()).unwrap();
+        let path = Path::new("/workspace/a.rs");
+        assert!(client.did_open(
+            document,
+            BufferRevision::new(0),
+            path,
+            "rust",
+            Rope::from_str("x")
+        ));
+        for _ in 0..super::super::sync::MAX_PENDING_REQUESTS {
+            ask(&client, document, 0);
+        }
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+        let overflow = ask(&client, document, 0);
+        let LspEvent::Note { context, text } = event(&rx).await else {
+            panic!("overflow request gets a terminal note")
+        };
+        assert_eq!(context.stamp, overflow);
+        assert!(
+            text.contains("too many requests pending server startup"),
+            "{text}"
+        );
         wire.stop().await;
     });
 }
@@ -52,7 +86,7 @@ fn startup_notifications_do_not_kill_the_client() {
         assert_eq!(text, "a user-facing notice");
         // The connection survived: a real request still round-trips.
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         assert!(client.did_open(
             document,

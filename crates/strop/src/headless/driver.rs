@@ -1,13 +1,12 @@
 //! Scripted inputs and native completions use the same channel and recording edge.
 use super::directives::{self, DirectiveKind};
 use crate::editor::{
-    events::AppEvent,
+    events::{AppEvent, EventReceiver, RecvTimeoutError},
     trace::{drive::Action, seed::Seed},
     Editor,
 };
 use ratatui::{backend::TestBackend, Terminal};
 use std::io::{self, Write};
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 /// Hang canary for the jobs barrier: the bound exists only to fail deadlocks,
@@ -26,7 +25,7 @@ fn jobs_budget() -> Duration {
 struct Driver<'a> {
     editor: &'a mut Editor,
     terminal: Terminal<TestBackend>,
-    events: Receiver<AppEvent>,
+    events: EventReceiver,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WaitTarget {
@@ -39,15 +38,15 @@ impl WaitTarget {
         match self {
             Self::Delay => true,
             Self::Jobs => editor.async_pending(),
-            Self::Input => editor.resolution.pending(),
+            Self::Input => editor.resolution().pending(),
         }
     }
 }
 impl Driver<'_> {
     fn apply(&mut self, action: Action) -> io::Result<()> {
         self.editor
-            .recorded_action(action, self.editor.tape.sample_tick())?;
-        self.editor.terminal_output.clear();
+            .recorded_action(action, self.editor.tape().sample_tick())?;
+        drop(self.editor.take_terminal_output());
         Ok(())
     }
     fn drain(&mut self) -> io::Result<()> {
@@ -64,14 +63,14 @@ impl Driver<'_> {
         Ok(())
     }
     fn draw(&mut self) -> io::Result<()> {
-        if !self.editor.should_quit && !self.editor.docs.is_empty() {
-            if std::mem::take(&mut self.editor.needs_repaint) {
+        if !self.editor.should_quit() && self.editor.has_documents() {
+            if self.editor.take_repaint_request() {
                 self.terminal.clear()?;
             }
             self.terminal
                 .draw(|frame| crate::render::frame_capture::draw(self.editor, frame, true))?;
         }
-        self.editor.tape.healthy()
+        self.editor.tape().healthy()
     }
     fn input(&mut self, event: AppEvent) -> io::Result<()> {
         self.apply(Action::Event(event))?;
@@ -145,20 +144,20 @@ pub fn run_script(
         .transpose()?
     {
         let text: String = serde_json::from_str(text).map_err(io::Error::other)?;
-        let configuration = std::mem::take(&mut editor.config);
-        let cwd = editor.cwd.clone();
-        let state_dir = editor.state_dir.take();
-        let message = std::mem::take(&mut editor.message);
+        let configuration = editor.config().clone();
+        let cwd = editor.cwd().to_owned();
+        let state_dir = editor.state_dir().map(std::path::PathBuf::from);
+        let message = editor.message().to_owned();
         *editor = Editor::new_in(strop_core::Buffer::from_text(&text), cwd);
-        editor.config = configuration;
-        editor.state_dir = state_dir;
-        editor.message = message;
+        editor.set_config(configuration);
+        editor.set_state_dir(state_dir);
+        editor.set_message(message);
         steps.next();
     }
-    editor.session_policy = crate::session::SessionPolicy::Disabled;
-    editor.frame_draw = Some(crate::headless::frame_draw);
-    if editor.tape.observes() {
-        editor.tape.seed(&Seed::capture(editor)?)?;
+    editor.set_session_policy(crate::session::SessionPolicy::Disabled);
+    editor.set_frame_draw(Some(crate::headless::frame_draw));
+    if editor.tape().observes() {
+        editor.tape().seed(&Seed::capture(editor)?)?;
     }
     let (tx, events) = crate::editor::events::channel();
     editor.connect_events(tx);
@@ -170,7 +169,7 @@ pub fn run_script(
     driver.apply(Action::Start { open })?;
     driver.draw()?;
     for line in steps {
-        if driver.editor.should_quit {
+        if driver.editor.should_quit() {
             break;
         }
         let (kind, arguments) = directives::parse(line)?;
@@ -184,11 +183,11 @@ pub fn run_script(
             DirectiveKind::Keys => {
                 for key in crate::editor::keys::parse(arguments) {
                     driver.input(AppEvent::Input(strop_core::frontend_input::Input::Key(key)))?;
-                    if driver.editor.should_quit {
+                    if driver.editor.should_quit() {
                         break;
                     }
                 }
-                if driver.editor.resolution.pending() {
+                if driver.editor.resolution().pending() {
                     driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
                 }
             }
@@ -196,7 +195,7 @@ pub fn run_script(
                 driver.input(AppEvent::Input(
                     serde_json::from_str(arguments).map_err(io::Error::other)?,
                 ))?;
-                if driver.editor.resolution.pending() {
+                if driver.editor.resolution().pending() {
                     driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
                 }
             }
@@ -204,7 +203,7 @@ pub fn run_script(
                 driver.input(AppEvent::EditorKey(
                     serde_json::from_str(arguments).map_err(io::Error::other)?,
                 ))?;
-                if driver.editor.resolution.pending() {
+                if driver.editor.resolution().pending() {
                     driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
                 }
             }
@@ -212,7 +211,7 @@ pub fn run_script(
                 driver.input(AppEvent::Paste(
                     serde_json::from_str(arguments).map_err(io::Error::other)?,
                 ))?;
-                if driver.editor.resolution.pending() {
+                if driver.editor.resolution().pending() {
                     driver.wait(Duration::from_secs(30), WaitTarget::Input, true)?;
                 }
             }
@@ -274,7 +273,7 @@ pub fn run_script(
     }
     driver.apply(Action::Finish)?;
     driver.wait(jobs_budget(), WaitTarget::Jobs, false)?;
-    driver.editor.tape.finish()?;
+    driver.editor.tape().finish()?;
     if let Some(error) = driver.editor.take_shutdown_error() {
         return Err(io::Error::other(error));
     }

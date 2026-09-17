@@ -33,6 +33,10 @@ pub enum Command {
     ExportMetadata {
         trace: PathBuf,
     },
+    /// `--ui-stdio`: the bounded UI protocol backend on stdin/stdout
+    /// (0056 AR09); executed early like replay/export — stdout carries
+    /// frames only.
+    UiStdio,
     Help,
     Version,
     Compat,
@@ -169,6 +173,13 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     command = Some(Command::ReplayFull { trace });
                     continue;
                 }
+                "--ui-stdio" => {
+                    if command.is_some() || replay.is_some() || headless {
+                        return Err("--ui-stdio conflicts with other launch modes".into());
+                    }
+                    command = Some(Command::UiStdio);
+                    continue;
+                }
                 "--export-metadata" => {
                     let trace = args
                         .next()
@@ -255,6 +266,14 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
             "--replay/--export-metadata take exactly one trace and record no log; unset STROP_LOG"
                 .into(),
         );
+    }
+    // The protocol backend runs early like replay/export: no file
+    // operand (clients open through admitted actions), no trace flags
+    // (startup returns before trace setup).
+    if matches!(&command, Some(Command::UiStdio))
+        && (trace_path.is_some() || content == ContentPolicy::Full || operand.is_some())
+    {
+        return Err("--ui-stdio takes no operand and records no log; unset STROP_LOG".into());
     }
     let command = match (command, replay, headless) {
         (Some(command), None, false) => command,

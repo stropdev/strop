@@ -275,6 +275,10 @@ impl Editor {
                 self.terminal_paste_decision(false);
                 return;
             }
+            "terminal-refresh" => {
+                self.refresh_terminal();
+                return;
+            }
             _ => {}
         }
         if cmd == "fs" {
@@ -338,7 +342,8 @@ impl Editor {
                 // vim's option surface, narrowly: ro/noro only for now
                 match arg {
                     "ro" | "readonly" => {
-                        self.buf_mut().readonly = true;
+                        self.buf_mut()
+                            .set_readonly(strop_core::ReadonlyReason::Command);
                         self.message = "readonly".into();
                     }
                     "noro" | "noreadonly" => {
@@ -364,7 +369,7 @@ impl Editor {
                             self.message =
                                 "remote file is read-only; use :remote edit first".into();
                         } else {
-                            self.buf_mut().readonly = false;
+                            self.buf_mut().clear_readonly();
                             self.message = "writable".into();
                         }
                     }
@@ -375,7 +380,8 @@ impl Editor {
                 // vim view: edit readonly — no arg marks the current
                 // buffer readonly
                 if arg.is_empty() {
-                    self.buf_mut().readonly = true;
+                    self.buf_mut()
+                        .set_readonly(strop_core::ReadonlyReason::Command);
                     self.message = "readonly".into();
                 } else {
                     self.request_user_open(
@@ -435,6 +441,7 @@ impl Editor {
             }
             "symbols" => self.lsp_document_symbols_pub(),
             "explain" => self.open_explain(),
+            "recover" => self.run_recovery_ex(arg),
             "containers" => self.request_containers(),
             "format" => self.lsp_format(),
             "rename" => {

@@ -302,7 +302,8 @@ fn document_switch_cancels_before_rebinding_and_never_executes_the_old_operator(
     let first = e.current();
     let other = e
         .docs
-        .insert(Document::scratch(Buffer::from_text("different\n")));
+        .try_insert(Document::scratch(Buffer::from_text("different\n")))
+        .unwrap();
     e.feed_text("d/foo");
     e.switch_to(other);
     assert!(!e.pending.is_active());
@@ -373,7 +374,8 @@ fn unrelated_document_commit_preserves_the_live_prompt_and_focus() {
     let doc = e.current();
     let other = e
         .docs
-        .insert(Document::scratch(Buffer::from_text("other\n")));
+        .try_insert(Document::scratch(Buffer::from_text("other\n")))
+        .unwrap();
     e.feed_text("d/hit");
     let shown = selection_pairs(&e);
     e.apply(other, e.doc(other).buf.revision(), insertion(0, "X"))
@@ -397,7 +399,8 @@ fn equal_revision_and_reused_slot_cannot_accept_another_documents_prompt() {
         }
         let other = e
             .docs
-            .insert(Document::scratch(Buffer::from_text("other\n")));
+            .try_insert(Document::scratch(Buffer::from_text("other\n")))
+            .unwrap();
         // Simulate delivery that bypassed the normal switch hook; validity is
         // still checked at acceptance using generation-bearing DocumentId.
         e.view_mut().doc = other;

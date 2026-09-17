@@ -119,7 +119,7 @@ impl Editor {
         let scope = context.scope.clone();
         let catalog = glue.picker.items.clone();
         let workset = glue.picker.workset_snapshot();
-        let replacement: Arc<str> = glue.picker.replace_input.text.as_str().into();
+        let replacement: Arc<str> = glue.picker.replace_input.text().into();
         let snapshots: Vec<_> = self
             .docs
             .iter()
@@ -272,7 +272,16 @@ impl Editor {
                         ));
                         continue;
                     }
-                    let id = self.docs.insert(opened.document);
+                    let id = match self.docs.try_insert(opened.document) {
+                        Ok(id) => id,
+                        Err(_) => {
+                            plan.refused.push((
+                                target.location,
+                                "document identity space exhausted; review again".into(),
+                            ));
+                            continue;
+                        }
+                    };
                     self.mru.push(id);
                     self.generation += 1;
                     self.resolve_indent_for(id);

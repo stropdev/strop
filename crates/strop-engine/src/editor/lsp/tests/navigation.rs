@@ -430,7 +430,7 @@ fn goto_completion_uses_target_encoding_and_records_original_jump() {
     let context = arm(&mut e, 0, RequestKind::Goto, PositionEncoding::Utf8);
     let mut target = Buffer::from_text("a😀z\n");
     target.path = Some(PathBuf::from("/workspace/target.txt"));
-    let target = e.docs.insert(Document::new(target));
+    let target = e.docs.try_insert(Document::new(target)).unwrap();
     e.finish_lsp_jump(
         target,
         ServerPosition {
@@ -450,7 +450,10 @@ fn navigation_changed_during_load_does_not_switch_or_consume_new_request() {
     let mut e = editor("origin text\n");
     let old = arm(&mut e, 0, RequestKind::Goto, PositionEncoding::Utf8);
     let current = arm(&mut e, 1, RequestKind::Goto, PositionEncoding::Utf8);
-    let target = e.docs.insert(Document::new(Buffer::from_text("target\n")));
+    let target = e
+        .docs
+        .try_insert(Document::new(Buffer::from_text("target\n")))
+        .unwrap();
     let before = (e.current(), e.head());
     e.finish_lsp_jump(
         target,

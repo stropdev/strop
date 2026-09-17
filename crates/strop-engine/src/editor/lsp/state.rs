@@ -469,6 +469,9 @@ impl Editor {
                     }
                     RequestRefusal::IdentityExhausted => "lsp: request identities exhausted".into(),
                     RequestRefusal::NotReady => "lsp: the server is still initializing".into(),
+                    RequestRefusal::Overloaded => {
+                        "lsp: the server is not draining its queue — try again".into()
+                    }
                 };
             }
             Err(error) => self.message = format!("lsp prepare diverged from trace: {error}"),

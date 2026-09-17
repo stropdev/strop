@@ -17,6 +17,37 @@ pub use mutation::{
 };
 use ropey::Rope;
 
+/// Why a buffer refuses edits (0056 AR14): the typed owner `:explain`
+/// renders, recorded at the site that actually imposed the policy — never
+/// a generic hint. `None` alongside `readonly` is reserved for tests that
+/// poke the mutation guard directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadonlyReason {
+    /// The filesystem reports the file not writable.
+    Filesystem,
+    /// `:set ro` or `:view`.
+    Command,
+    /// A remote snapshot without write authority (`:remote edit` grants it).
+    RemoteAuthority,
+    /// Container bytes have no local write path (0037 DC1b).
+    Container,
+    /// A git memory surface — content derived from history.
+    GitSurface,
+    /// Transient named output (help, `:!`, the undo browser, `:explain`).
+    Output,
+    /// A directory listing without an editable filename draft.
+    DirectoryListing,
+    /// A directory operation is applying or reloading.
+    DirectoryOperation,
+    /// A stale collection whose projection failed.
+    CollectionProjection,
+    /// The recovery checkpoint surface.
+    RecoveryCheckpoint,
+    /// Navigation landed outside the workspace root.
+    OutsideWorkspace,
+}
+
 /// A text buffer. Positions are UTF-8 byte offsets, everywhere (0001 §5.1).
 pub struct Buffer {
     pub(crate) trace_identity: BufferTraceId,
@@ -30,6 +61,8 @@ pub struct Buffer {
     epoch: u64,
     /// Read-only views (git surfaces): motions/yank work, edits refuse.
     pub readonly: bool,
+    /// The typed owner of the readonly policy (0056 AR14).
+    pub readonly_reason: Option<ReadonlyReason>,
     /// Display name for virtual buffers (statusline shows "[scratch]"
     /// otherwise): "git log", "commit 1a2b3c", …
     pub name: Option<String>,
@@ -44,6 +77,23 @@ pub struct Buffer {
 }
 
 impl Buffer {
+    /// Impose readonly policy with its typed reason. Re-imposing while a
+    /// reason stands keeps the original owner — a later generic open must
+    /// not erase a more specific source.
+    pub fn set_readonly(&mut self, reason: ReadonlyReason) {
+        if !self.readonly {
+            self.readonly_reason = Some(reason);
+        }
+        self.readonly = true;
+    }
+
+    /// Explicit write authority (`:set noro`, a granted `:remote edit`, a
+    /// successful collection projection) clears the flag and its reason.
+    pub fn clear_readonly(&mut self) {
+        self.readonly = false;
+        self.readonly_reason = None;
+    }
+
     pub fn text(&self) -> &Rope {
         &self.rope
     }
@@ -100,6 +150,7 @@ impl Buffer {
             rope,
             path: None,
             dirty: false,
+            readonly_reason: None,
             epoch: 0,
             readonly: false,
             name: None,
@@ -113,30 +164,42 @@ impl Buffer {
 
     /// Open a file; a missing file is a new empty buffer with that path
     /// (vim semantics — `:w` creates it). Real I/O errors still error.
+    /// A file whose permissions report not writable opens readonly with
+    /// that typed reason (0056 AR14) — `:set noro` / `:w!` stay explicit.
     pub fn open(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
         let path = path.as_ref();
-        let (rope, disk_stamp) = match std::fs::File::open(path) {
+        let (rope, disk_stamp, writable) = match std::fs::File::open(path) {
             Ok(file) => {
-                let stamp = file.metadata()?.modified()?;
-                (Rope::from_reader(file)?, Some(stamp))
+                let metadata = file.metadata()?;
+                let stamp = metadata.modified()?;
+                (
+                    Rope::from_reader(file)?,
+                    Some(stamp),
+                    !metadata.permissions().readonly(),
+                )
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Rope::new(), None),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Rope::new(), None, true),
             Err(e) => return Err(e),
         };
-        Ok(Self {
+        let mut buffer = Self {
             trace_identity: BufferTraceId::next(),
             rope,
             path: Some(path.to_path_buf()),
             dirty: false,
             epoch: 0,
             readonly: false,
+            readonly_reason: None,
             name: None,
             history: History::default(),
             changes: Vec::new(),
             disk_stamp,
             file_identity: Some(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())),
             line_layouts: layout_cache::LineLayouts::default(),
-        })
+        };
+        if !writable {
+            buffer.set_readonly(ReadonlyReason::Filesystem);
+        }
+        Ok(buffer)
     }
 
     /// Display CELL of an offset within its line (0017/R6): cursor placement

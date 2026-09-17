@@ -111,6 +111,7 @@ impl Editor {
             return;
         };
         self.hunk_load = Load::Running(ticket.clone());
+        self.admissions.hunks += 1;
         // stale signs paint WRONG lines after an edit — clear honestly
         // for the frames the diff takes, never lie
         self.hunks = HunkSet::default();

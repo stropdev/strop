@@ -1,11 +1,13 @@
 //! File I/O is owned work. Only matching completions may publish into a view.
 mod codec;
+mod indent;
 pub(super) mod native;
 mod navigation;
 mod open;
 #[cfg(test)]
 mod remote_tests;
 mod save;
+mod session;
 use super::{Document, Editor};
 use crate::files::FileTarget;
 use std::collections::HashMap;
@@ -111,6 +113,11 @@ pub enum IoEvent {
     Session {
         request: WorkerId,
         outcome: Outcome<()>,
+    },
+    /// Draft checkpoint/recovery publications and store reads (0056 AR04).
+    Recovery {
+        request: WorkerId,
+        outcome: Outcome<super::recovery::RecoveryReport>,
     },
 }
 
@@ -339,63 +346,6 @@ impl Editor {
             && self.buf().revision() == key.revision
     }
 
-    /// Re-resolve every open document (config lands after the startup
-    /// buffer's construction in main).
-    pub fn reresolve_indents(&mut self) {
-        let ids: Vec<_> = self.docs.iter().map(|(id, _)| id).collect();
-        for id in ids {
-            self.resolve_indent_for(id);
-        }
-    }
-
-    /// Indent resolution (0051 R08): manual override → confident
-    /// detection → config, decided independently for style and width.
-    /// Overrides live on the document, so reloads and config refreshes
-    /// preserve them; a detected Tab style never dictates a width —
-    /// display width falls through to the configured/manual width.
-    pub(crate) fn resolve_indent_for(&mut self, document: DocumentId) {
-        use super::document::{Detection, IndentSource};
-        let detection = if self.config.indent_detect {
-            self.docs.get(document).and_then(|doc| doc.detection)
-        } else {
-            None
-        };
-        let configured = super::document::Indent {
-            style: self.config.indent_style,
-            width: self.config.tab_size,
-            style_source: IndentSource::Configured,
-            width_source: IndentSource::Configured,
-        };
-        let Some(doc) = self.docs.get_mut(document) else {
-            return;
-        };
-        let (style, style_source) = match (doc.indent_override.style, detection) {
-            (Some(style), _) => (style, IndentSource::Manual),
-            (None, Some(Detection::Tabs { .. })) => {
-                (crate::config::IndentStyle::Tabs, IndentSource::Detected)
-            }
-            (None, Some(Detection::Spaces { .. })) => {
-                (crate::config::IndentStyle::Spaces, IndentSource::Detected)
-            }
-            (None, _) => (configured.style, IndentSource::Configured),
-        };
-        let (width, width_source) = match (doc.indent_override.width, detection, style_source) {
-            (Some(width), _, _) => (width, IndentSource::Manual),
-            // A detected width is meaningful only with the detected
-            // spaces style it was measured on.
-            (None, Some(Detection::Spaces { width, .. }), IndentSource::Detected) => {
-                (width, IndentSource::Detected)
-            }
-            (None, _, _) => (configured.width, IndentSource::Configured),
-        };
-        doc.indent = super::document::Indent {
-            style,
-            width,
-            style_source,
-            width_source,
-        };
-    }
-
     fn finish_open(&mut self, document: DocumentId, intent: OpenIntent) {
         self.resolve_indent_for(document);
         match intent {
@@ -431,7 +381,9 @@ impl Editor {
                     self.view_mut().view_top = 0;
                 }
                 match intent {
-                    OpenIntent::Switch { readonly: true } => self.buf_mut().readonly = true,
+                    OpenIntent::Switch { readonly: true } => self
+                        .buf_mut()
+                        .set_readonly(strop_core::ReadonlyReason::Command),
                     OpenIntent::DirectoryParent { child } => {
                         if let Some(line) = self
                             .directory()
@@ -482,52 +434,6 @@ impl Editor {
                 self.lsp_maybe_attach();
             }
         }
-    }
-
-    pub(crate) fn request_session_save(&mut self) {
-        let Some(work) = crate::session::capture_save(self) else {
-            return;
-        };
-        if self.io.session.is_some() {
-            // Serialized writes; newest queued capture replaces an unwritten one.
-            self.io.queued_session = Some(work);
-        } else {
-            self.start_session_save(work);
-        }
-    }
-
-    fn start_session_save(&mut self, work: crate::session::SaveRequest) {
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                self.message = error.message;
-                return;
-            }
-        };
-        self.io.session = Some(request);
-        match self.tape.request("io.session", &request) {
-            Ok(false) => return,
-            Ok(true) => {}
-            Err(error) => {
-                self.handle_io(IoEvent::Session {
-                    request,
-                    outcome: Outcome::failed(FailureKind::Protocol, error.to_string()),
-                });
-                return;
-            }
-        }
-        let tx = self.io.tx.clone();
-        let handle = worker::spawn(
-            "strop-session",
-            move |outcome| {
-                let _ = tx.send(IoEvent::Session { request, outcome });
-            },
-            move |_| match work.persist() {
-                Ok(()) => Outcome::Success(()),
-                Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
-            },
-        );
-        self.worker_handles.insert(request, handle);
     }
 
     pub fn handle_io(&mut self, event: IoEvent) {
@@ -614,11 +520,25 @@ impl Editor {
                                             directory.location.filesystem.endpoint().cloned()
                                         })
                                 });
-                            if let Some(endpoint) = endpoint {
-                                self.workspaces
-                                    .bind(strop_workspace::Filesystem::Remote(endpoint), None);
-                            }
-                            let id = self.docs.insert(opened.document);
+                            // Identity admission is the last fallible
+                            // step (0056 AR13): workspace binding and
+                            // arena insertion both refuse exhaustion
+                            // before any view/mru state moves.
+                            let admitted = match endpoint {
+                                Some(endpoint) => self
+                                    .workspaces
+                                    .bind(strop_workspace::Filesystem::Remote(endpoint), None)
+                                    .and_then(|_| self.docs.try_insert(opened.document)),
+                                None => self.docs.try_insert(opened.document),
+                            };
+                            let Ok(id) = admitted else {
+                                if let OpenIntent::CollectionSource { owner } = key.intent {
+                                    self.collection_source_ready(owner);
+                                }
+                                self.message =
+                                    format!("open {}: identity space exhausted", key.path);
+                                return;
+                            };
                             if takes_focus {
                                 self.drop_stale_scratch(id);
                             }
@@ -677,6 +597,7 @@ impl Editor {
                         }
                         .into();
                         self.request_session_save();
+                        self.recovery_note_saved();
                         self.collection_save_progress(key.document, saved);
                         if saved
                             && key.close
@@ -698,20 +619,10 @@ impl Editor {
                 }
                 self.finish_save_feedback(key.document);
             }
-            IoEvent::Session { request, outcome } => {
-                if self.io.session != Some(request) {
-                    return;
-                }
-                self.io.session = None;
-                self.worker_handles.remove(&request);
-                if let Outcome::Failed { failure, .. } = outcome {
-                    self.message = format!("session save failed: {}", failure.message);
-                    self.io.session_error = Some(self.message.clone());
-                }
-                if let Some(work) = self.io.queued_session.take() {
-                    self.start_session_save(work);
-                }
+            IoEvent::Recovery { request, outcome } => {
+                self.handle_recovery(request, outcome);
             }
+            IoEvent::Session { request, outcome } => self.handle_session(request, outcome),
         }
     }
 
@@ -724,12 +635,14 @@ impl Editor {
             || self.io.session.is_some()
             || !self.io.native.is_empty()
             || self.remote_work_pending()
+            || self.recovery.pending()
     }
 }
 
 impl Editor {
     pub(crate) fn io_write_pending(&self, request: WorkerId) -> bool {
         self.io.session == Some(request)
+            || self.recovery.write_pending(request)
             || self.remote_write_pending(request)
             || self.destination_write_pending(request)
             || self.filesystem.mutation_pending(request)

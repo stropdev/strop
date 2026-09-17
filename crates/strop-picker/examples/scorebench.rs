@@ -14,7 +14,7 @@ fn main() {
             })
             .collect();
         let mut picker = Picker::new(Kind::Files, items, false);
-        picker.input.text = "mainrs".into();
+        picker.input.set_text("mainrs");
         let mut snapshots = Vec::new();
         for _ in 0..100 {
             let start = Instant::now();

@@ -601,3 +601,262 @@ this architecture release incomplete; missing AR behavior or existing evidence d
   obligations as the immediate next release. No new proof is claimed here.
 - [0058](0058-unified-native-worker.md): subsequent native-worker decision and
   verification migration, not a change to the already-dispatched AR/VF ownership.
+
+## Landed slices
+
+### AR15 build pins: landed (2026-09-16)
+
+Every external base image in the Dockerfile is pinned to its multi-arch
+manifest-list digest — `rust:alpine@sha256:1716b3aa…` (builder/test/
+release chain), `eclipse-temurin:21-jre@sha256:6cbdfc89…` (model),
+`rust:1.98.0-slim@sha256:17d1ba89…` (verify) — so amd64 and arm64 both
+resolve and a mutable tag can no longer drift the toolchain. The
+Dockerfile header records the bump command (`docker buildx imagetools
+inspect`) and checklist. docker-compose.yml and the workflows were
+audited: all image use flows through the pinned Dockerfile; the one
+direct workflow image was already digest-pinned. Required-mode gates
+preserved exactly (STROP_REQUIRE_SSH_TESTS=1, tests/docker.rs opt-in).
+Evidence: `docker compose build test` green inside the pinned image.
+
+### AR11/AR12 install transaction + release catalog: landed (2026-09-16)
+
+install.sh and the updater now share one staged, verified, atomic
+transaction (stage in the destination filesystem → verify staged bytes
+against the catalog/sidecar sha256 → atomic rename; interruption before
+rename preserves any old binary; the install/cp fallback chain is gone).
+Channel identity comes solely from a private installation receipt
+(`.strop-install.json` beside the binary, written by both install.sh and
+the updater with previous_version carry-forward) — path-substring
+inference is deleted; missing/malformed receipt is an honest Unknown
+with actionable routing, never a guessed overwrite authorization. One
+generated release catalog (`.github/scripts/release-catalog.py`) is the
+single source of truth (version, tag, per-target artifact digests);
+install.sh and update.rs resolve "latest" through
+`releases/latest/download/catalog.json`, and the release workflow
+records a resumable per-step promotion ledger with public-vs-built
+catalog verification. The website lives in a separate repo
+(stropdev/stropdev.github.io): the release workflow vendors the
+canonical install.sh there and the catalog's stable latest-URL is the
+site's consumption contract. Evidence: hermetic shell fixtures
+(tests/install.sh: interrupted install preserves old binary, SIGTERM
+mid-transaction, digest-mismatch refusal, foreign-target refusal,
+pinned install with carry-forward; tests/release-catalog.sh:
+deterministic generation, tampered sidecar rejection, ledger
+idempotence) plus updater unit tests.
+
+### AR07 selected-context execution: landed (2026-09-16)
+
+Container execution now freezes the selected context: ExecSpec pins the
+probe-selected EngineRef (`--context` on every invocation unless env
+selects), an incarnation-pinned ContainerRef, principal, cwd, argv and
+env; `admit()` revalidates canonical id + StartedAt + running through
+one bounded inspect, so a recycled container never receives a stale
+request (typed StaleIdentity/NoSuchContainer/NotRunning). The old
+EOF-comment cleanup claim is replaced by a fixed POSIX-sh supervisor per
+exec session: the lease rides fd 3, session group SIGTERM→SIGKILL after
+grace on lease close or client death, and normal exit sweeps leftover
+descendants; nonce-marked stderr records (STROP-EXEC-v1) report
+launched/exit/terminated honestly. Launch classification happens inside
+the selected namespace — a found-but-unusable shim and a distroless
+image without sh are typed ExecLaunch refusals, never silent fallbacks
+or implicit installs. Host docker-top PIDs are never used as identity.
+Every caller migrated (strop-git exec, strop-lsp container spawn with
+the discovery CancelToken threaded, engine attach paths). Evidence:
+gated live-engine integration tests (STROP_CONTAINER_TESTS=1) proving
+descendant reaping after lease close AND after SIGKILL of the client,
+exit-code propagation, and stale-incarnation refusal; unit suites green
+across strop-containers/strop-engine/strop-lsp/strop-git.
+
+### AR04 draft checkpoint/recovery: landed (2026-09-16)
+
+Real dirty/scratch draft recovery lives in `editor/recovery/` — a
+separate owned module, not a session-metadata rename. Records carry
+workspace/namespace, source-or-scratch identity, binding epoch
+(filesystem + root + registry incarnation), captured revision,
+last-saved observation (mtime+len), the actual snapshot bytes and the
+cohort identity; native handles, permits, leases and commands are never
+serialized. Snapshots coalesce on a bounded queue (one in-flight + one
+queued, newest replaces unwritten) off the input path; per-record 16MiB
+budget demotes whole records instead of truncating them; publish is
+staged and atomic under `$state/strop/recovery/` with 0700/0600
+permissions reusing the session primitives. Applied/captured/durable
+checkpoints stay separate; a confirmed save retires only the checkpoint
+it supersedes; checkpointing never marks text clean. The `:recover`
+surface lists checkpoints with original location, time/revision and
+current/conflict/missing/renamed/remote/scratch/over-bound state;
+restore lands in a checked pathless dirty draft — never overwriting
+changed disk content, never recreating a deleted target, never
+re-granting remote authority. Remote/sensitive content requires explicit
+`:recover consent remote`; memory-only mode is visible in `:explain`'s
+new [recovery] section alongside policy, watermarks and the last error.
+Orderly close/EOF checkpoints eligible drafts; shutdown never cancels an
+in-flight checkpoint. The trace records recovery event shapes only —
+never draft bytes. Evidence: 13 journey tests (dirty, scratch, cohort,
+rename, delete, over-bound, memory-only, remote-without-consent, save
+retirement, crash/restart cycles).
+
+### AR13 checked identity exhaustion: landed (2026-09-16)
+
+`Arena::insert` is gone; `try_insert` returns a typed `ArenaExhausted`
+and a free slot is reused only when its generation advances without
+wrapping — a slot at u32::MAX retires permanently, so a stale key can
+never alias a new occupant; full index space refuses instead of
+truncating onto a live slot. `insert_capacity()` preflights
+multi-document operations; session restore fails BEFORE any live state
+moves; seeds round-trip retired slots (`from_seed` treats
+empty-not-in-free as retired, not corruption). Every caller migrated —
+the 11 `open_temporary_output` consumers each handle refusal without
+side effects (no wrong-buffer help topics, no mis-bound undo browser).
+Seeded boundary tests: MAX-generation seed hands out one last id then
+retires the slot; retirement survives seed round-trips. Audit confirmed
+the other identity counters (LSP RequestId, WorkerId, BufferRevision,
+review seq) were already checked.
+
+### AR06 bounded services: landed (2026-09-16)
+
+The event transport is a bounded shared-lane channel (1024 semantic
+events, 8 MiB retained paste payload; an empty lane always admits one
+oversize event so a giant paste can never strand input behind its own
+bound; wake hints — terminal updates, resize, focus — coalesce
+latest-wins/per-session while semantic events are never dropped,
+reordered or coalesced; admission refusal hands the event back AND
+records a ledger entry the status line surfaces). The native input
+reader backpressures against the OS pty buffer via send_blocking —
+input/paste/quit are never dropped. The LSP wire queue is bounded (256
+jobs, 32 MiB unsent snapshots, 64 pre-init requests); didClose is exempt
+from the count bound (a refused close would desync lifecycle), Open
+from the byte bound but counts against the lane; superseded unsent
+didChange snapshots coalesce in place ONLY when no queued request/own-
+uri barrier sits between (a request's answer is computed against the
+intermediate version, so that version must reach the wire). Liveness is
+finite-work-only: ready servers and running terminals never count
+toward settle; once finishing, readiness/hover/navigation stop counting.
+Shutdown quiesces, drains, clears retained snapshots off the editor
+thread and refuses late work as typed Closed. Evidence: 13 new engine
+tests (wake coalescing, latest-wins, never-coalesced ordering, paste
+byte bound, oversize-singleton admission, closed-refusal settlement) +
+LSP queue/refusal tests; full crate suites green.
+
+### AR08/AR14 privacy classifier + explain provenance: landed (2026-09-16)
+
+One native-free effect classifier (`editor/privacy.rs`): EffectFamily
+(Clipboard/ExternalOpen/Process/Mutation/Persistence/Observation) ×
+EffectTarget (Local/Ssh/Container) → ContentPolicy, with defaults
+withholding; Clipboard and Persistence are Metadata always; persistence
+admission is target-aware (Local admitted, Ssh only with session
+consent, Container never). Call sites migrated: shell/pipe command
+lines (Metadata records command_bytes, never the command string),
+recovery remote-draft eligibility, tape admission, `:explain`. Buffers
+carry a typed ReadonlyReason (Filesystem/Command/RemoteAuthority/
+Container/GitSurface/Output/DirectoryListing/DirectoryOperation/
+CollectionProjection/RecoveryCheckpoint/OutsideWorkspace) that
+round-trips seed/witness lockstep; `Buffer::open` opens
+permission-unwritable files readonly with the Filesystem reason (vim
+semantics; `:set noro`/`:w!` stay explicit). `:explain` renders readonly
+reasons from the actual typed owner (never a generic ':remote edit'
+hint) and config provenance from the winning layer; `strop config`
+prints the layer column. Evidence: per-source explain tests (chmod 0444
+fixture, remote, command, recovery, terminal, collection), provenance
+tests, classifier decision pins (6 families × 3 targets × 2 policies);
+strop-engine 651 green.
+
+### AR05 binding/outcome integration: landed (2026-09-16)
+
+The audit of every consumer against 0054's machinery found the
+incarnation-based model intact almost everywhere (LSP bindings,
+analysis, search stamps, collections, jumplist, recovery watermarks,
+blame, pending opens/saves, changes review, resolution worker — all
+retire by DocumentId/generational incarnation or ticket identity, never
+by display pathname). One real gap fixed at the source: preview cache
+and in-flight load purges covered only resolved operation spellings, so
+a preview keyed through a symlinked-parent alias survived a committed
+move — `touched` now chains the operation intent's logical
+source/destination alongside the resolved paths, matching what document
+relocation and directory history already did. Namespace/capability
+contracts verified as backend facts (no literal /mnt/c classification
+anywhere, grep-proven); rename/move always goes through typed
+relocation. Evidence: four acceptance tests (outcome survives focus
+change, alias-spelled preview retirement, idempotent redelivery,
+conflicting-authority block) in editor/filesystem/tests.rs.
+
+### AR01/AR03 pure render + stable semantic views: landed (2026-09-16)
+
+`render(&Editor)` is now a pure presentation query: all admission
+(hunk refresh, visible-window/preview analysis, pair matching) and
+viewport/caret adjustment moved engine-side into the admitted
+`Editor::prepare_view(ViewGeometry)` update (`editor/prepare.rs` +
+`prepare/geometry.rs`). Preparation is stamp-guarded over geometry +
+view-relevant state (per-pane doc id + revision + source identity,
+head/view_top/hscroll, picker selection, hunk and repo identity, config
+guards) and idempotent — unchanged repaints admit zero worker tickets,
+pinned by AdmissionProbe counters at both engine and render level
+(`unchanged_preparation_admits_zero_work`,
+`repeated_paint_without_change_admits_no_work_or_viewport_drift`).
+Geometry is engine-owned cell arithmetic, pinned cell-for-cell against
+the historical toolkit solver (28 widths × 16 heights × 8 kinds sweep).
+Cold long-line layout keeps preparation pending until analysis installs
+it — explicit convergence, never a stale clamp. The engine publishes
+`PreparedView` (generation + per-pane `PreparedPane` keyed by
+DocumentId + buffer revision) with declared bounds
+Complete/Partial/Loading/Stale/Error refreshed every pass — no
+empty-success fallback; stale windows are detectable and paint cannot
+act on them (debug_assert in tests). Paint updates only its own frontend
+caches; replay order (Frame action before preparation's work requests)
+is preserved and the native-free replay gate passes with cell-grid
+comparison. Evidence: strop-engine 659, strop-editor all-targets 136
+incl. every render golden.
+
+### AR02 public-boundary closure: landed (2026-09-17)
+
+The Editor struct's pub fields are gone — all 107 fields are
+pub(crate), and the cross-crate frontend boundary is one module
+(`editor/api.rs`): readonly borrowed queries (mode, tape, picker,
+previews, hunks/staged_hunks, hunks_untracked, blame_card, git,
+hover_card, message, should_quit, cwd, resolution, pending, walker, mru,
+last_search, cursor_fade) and admitted writers (set_message,
+note_tape_divergence, request_quit, take_repaint_request,
+take_terminal_output, set_frame_draw). Paint's tape-divergence message
+write is an admitted engine method; the TUI's OSC52 drain, repaint
+consume, quit-on-disconnect and the headless driver's state polling all
+ride the same boundary. Document/selection/pane mutation left the
+frontend entirely: buf_mut, sels_mut, view_mut and touch_mru are
+engine-internal, and frontend tests plant state through test-support
+fixtures that reuse the real transaction gateway (fixture_buf_mut keeps
+sync-on-drop semantics). The CLI --readonly flag now lands on the Buffer
+before admission instead of a post-construction buf_mut write. doc()'s
+panic is a documented engine invariant — pane and prepared-window ids
+are rebound before their document closes — while the picker's cached
+preview source, the one frontend id that can legitimately outlive its
+document, looks up through document() and renders nothing on None.
+Frontend mutation of documents, service maps, leases, config and
+recovery state through public paths: none remain. Evidence: cargo check
+-p strop-editor --all-targets clean; strop-engine 659 tests,
+strop-editor bin 114 tests and the hermetic integration suites
+(terminal_editor, tracing, cli_locations, terminal_helper) all green.
+
+### AR09/AR10 UI protocol + driver: landed (2026-09-17)
+
+`strop --ui-stdio` is real: a bounded, versioned UI protocol
+(`crates/strop-ui-protocol`, Content-Length framing with typed frame
+errors, 8 KiB header / 32 MiB body ceilings) over the AR02 admitted
+surface — `AdmittedAction` mirrors the client-initiated AppEvent subset
+1:1 and every action enters through `Editor::recorded_action`, the same
+admitted path the TUI and headless driver use; there is no parallel
+command table. Views are `PreparedView`-keyed snapshots/sparse deltas
+stamped by backend incarnation + generation; wrong-incarnation,
+future-generation and proven-stale bases are typed refusals, a dropped
+delta poisons the client cache until a resync snapshot clears it, and
+semantic-state moves (save completion flipping dirty at the same buffer
+revision) still publish. The server session lives in
+`crates/strop/src/ui_stdio/` — bounded request channel, turn-shaped
+drain, quit gate against the last published generation, typed
+truncated-EOF violation, host effects (OSC52 clipboard) emitted and
+recorded. The AR10 Rust driver (`strop-ui-protocol/src/driver.rs`)
+provides spawn/handshake/ack/generation barriers, deterministic
+schedules and hang-canary budgets. Evidence: 16 protocol unit/property
+tests (a seeded 64-sequence drop/reorder property proves the cache never
+applies onto a wrong base and always recovers via snapshot) + 11 closure
+tests over real pipes in `crates/strop/tests/ui_stdio.rs` —
+open/edit/undo/search/save/terminal journeys matching headless
+semantics, malformed-traffic resync, WSL/stdio smoke; strop-editor suite
+137 green.

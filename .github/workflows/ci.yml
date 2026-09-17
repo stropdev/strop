@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # 0057 VF01: whole-core boundary/claim inventory completeness.
+      # Every mutating/authority/IO boundary row must carry live evidence,
+      # hash-bound to its owning sources; a boundary source change without
+      # an evidence change fails here. Cheap and host-only, so it runs
+      # first. Re-pin after re-review with verification/check.py --stamp.
+      - name: Boundary inventory completeness (VF01)
+        run: python3 verification/check.py
+
       # The gate is the docker compose test service (AGENTS.md): fmt +
       # clippy -D warnings + cargo test, at image-build time. One command,
       # no host toolchain, layer-cached.
@@ -24,3 +32,8 @@ jobs:
       # the verified edit-geometry kernel (0045) — pinned Verus/z3 image
       - name: Edit geometry proof (Verus)
         run: docker compose run --build --rm verify
+
+      # the search lifecycle's inductive safety proofs + kept-mutant
+      # negative control (0057 VF17, discharging 0063 §6.6)
+      - name: Search lifecycle proof (TLAPS)
+        run: docker compose run --build --rm tlaps

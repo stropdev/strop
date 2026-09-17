@@ -6,11 +6,11 @@ license.workspace = true
 description = "strop lsp: async-lsp client, server registry, diagnostics store"
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.33.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.33.0" }
-strop-containers = { path = "../strop-containers", version = "0.33.0" }
-strop-remote = { path = "../strop-remote", version = "0.33.0" }
-strop-trace = { path = "../strop-trace", version = "0.33.0" }
+strop-core = { path = "../strop-core", version = "0.34.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.34.0" }
+strop-containers = { path = "../strop-containers", version = "0.34.0" }
+strop-remote = { path = "../strop-remote", version = "0.34.0" }
+strop-trace = { path = "../strop-trace", version = "0.34.0" }
 async-lsp = "0.2"
 tokio = { version = "1", features = ["rt", "process", "io-util", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -25,3 +25,13 @@ tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# 0057 VF11: Loom-instrumented campaigns over the REAL bounded wire
+# queue (client/queue.rs). Runs as `RUSTFLAGS="--cfg strop_loom" cargo test
+# -p strop-lsp loom` — the dependency and the seam exist only under
+# cfg(strop_loom), never in release artifacts.
+[target.'cfg(strop_loom)'.dependencies]
+loom = "0.7"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(strop_loom)"] }

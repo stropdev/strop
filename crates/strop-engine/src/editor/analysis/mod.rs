@@ -432,6 +432,7 @@ impl Editor {
             request,
             key: key.clone(),
         };
+        self.admissions.analysis += 1;
         let cancel = Arc::new(AtomicBool::new(false));
         self.analysis.registered.insert(key.target.clone());
         self.analysis.pending.insert(

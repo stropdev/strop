@@ -131,8 +131,14 @@ impl Editor {
             && !self.finishing;
         match completion.outcome {
             Outcome::Success(ControlResult::Connected { endpoint, lease }) => {
-                self.workspaces
-                    .bind(strop_workspace::Filesystem::Remote(endpoint.clone()), None);
+                if self
+                    .workspaces
+                    .bind(strop_workspace::Filesystem::Remote(endpoint.clone()), None)
+                    .is_err()
+                {
+                    self.message = "workspace identity space exhausted".into();
+                    return;
+                }
                 if let Some(lease) = lease.filter(|_| !self.finishing) {
                     self.remote.pins.insert(endpoint, lease);
                 }
@@ -172,7 +178,9 @@ impl Editor {
             Outcome::Success(ControlResult::Listing(text)) if focused => {
                 let mut buffer = strop_core::Buffer::from_text(&text);
                 buffer.name = Some("remote connections".into());
-                self.open_temporary_output(buffer);
+                if self.open_temporary_output(buffer).is_none() {
+                    return; // message set
+                }
                 self.generation += 1;
                 self.message.clear();
             }

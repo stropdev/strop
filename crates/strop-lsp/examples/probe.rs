@@ -10,13 +10,30 @@ fn main() {
         return;
     };
     let root = std::path::Path::new("/tmp/lsp-proj");
-    let client = match strop_lsp::Client::spawn(
-        &spec,
-        strop_lsp::Workspace::Local {
-            root: root.to_path_buf(),
-        },
-        tx,
-    ) {
+    // Client::spawn takes the caller's cancellation token; the example
+    // has no worker, so one is scoped in purely to issue the token.
+    let client = std::thread::scope(|scope| {
+        let (tokens, issued) = channel();
+        let _handle = strop_core::worker::spawn_scoped(
+            scope,
+            "probe-token",
+            |_| {},
+            move |token| {
+                let _ = tokens.send(token);
+                strop_core::worker::Outcome::Success(())
+            },
+        );
+        let token = issued.recv().expect("worker issued token");
+        strop_lsp::Client::spawn(
+            &spec,
+            strop_lsp::Workspace::Local {
+                root: root.to_path_buf(),
+            },
+            tx,
+            &token,
+        )
+    });
+    let client = match client {
         Ok(client) => client,
         Err(error) => {
             println!("spawn failed: {error}");
@@ -32,7 +49,7 @@ fn main() {
         }
     };
     let mut documents = strop_core::id::Arena::<strop_core::id::DocumentKind, ()>::default();
-    let document = documents.insert(());
+    let document = documents.try_insert(()).unwrap();
     let revision = strop_core::id::BufferRevision::new(0);
     client.did_open(document, revision, &path, "rust", Rope::from_str(&text));
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);

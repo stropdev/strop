@@ -1,0 +1,13 @@
+[package]
+name = "strop-ui-protocol"
+description = "strop UI protocol (0056 AR09/AR10): bounded versioned envelopes, semantic snapshots/deltas, the Rust-first stdio driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+strop-core = { path = "../strop-core", version = "0.34.0" }
+strop-engine = { path = "../strop-engine", version = "0.34.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

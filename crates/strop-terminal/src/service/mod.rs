@@ -96,6 +96,7 @@ impl Service {
         launch: Launch,
         geometry: Geometry,
         keyboard: u8,
+        palette: Option<crate::model::Palette>,
         notify: impl Fn(SessionId) + Send + Sync + 'static,
     ) -> Result<Self, Error> {
         launch.validate()?;
@@ -124,6 +125,7 @@ impl Service {
             launch,
             geometry,
             keyboard,
+            palette,
             receiver,
             wake: listening,
             mailbox: mailbox.clone(),

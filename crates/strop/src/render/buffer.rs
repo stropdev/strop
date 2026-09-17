@@ -34,8 +34,9 @@ mod scrollbar;
 use content::{content_spans, fixed_spans};
 use rows::render_pane;
 
-/// Width of the standard gutter: sign column + 3-digit number + space.
-pub(crate) const GUTTER: u16 = 5;
+/// Width of the standard gutter: sign column + 3-digit number + space
+/// (engine-owned; preparation clamps against the same constant).
+pub(crate) const GUTTER: u16 = strop_engine::editor::prepare::STANDARD_GUTTER as u16;
 
 /// Invariant guard: every pane row is written out to the pane's full
 /// width. ratatui's Paragraph clears the cells its lines don't touch
@@ -61,133 +62,31 @@ pub(crate) struct PaneView {
     pub(crate) overlays: bool,
 }
 
-/// Final pane rects (identity title row already subtracted) for the current
-/// layout. Pure over editor state and the frame area; shared by preparation
-/// and paint so both agree on the exact same geometry.
-pub(crate) fn pane_rects(editor: &Editor, area: Rect) -> Vec<Rect> {
-    let n = editor.panes.len();
-    if n == 0 {
-        return Vec::new();
-    }
-    let is_row = editor.layout == LayoutDir::Row;
-    let total_w = usize::from(area.width);
-    let total_h = usize::from(area.height.saturating_sub(1)); // statusline
-    let axis = if is_row { total_w } else { total_h };
-    let usable = axis.saturating_sub(n - 1);
-    let base = usable / n;
-    let mut offset = 0usize;
-    let mut rects = Vec::with_capacity(n);
-    for i in 0..n {
-        let size = if i + 1 == n {
-            usable - base * (n - 1)
-        } else {
-            base
-        };
-        let size = size.min(axis.saturating_sub(offset));
-        let offset_in_area = offset.min(axis);
-        let (x, y, w, h) = if is_row {
-            (
-                usize::from(area.x) + offset_in_area,
-                usize::from(area.y),
-                size,
-                total_h,
-            )
-        } else {
-            (
-                usize::from(area.x),
-                usize::from(area.y) + offset_in_area,
-                total_w,
-                size,
-            )
-        };
-        let mut rect = Rect::new(x as u16, y as u16, w as u16, h as u16);
-        if n > 1 && h > 0 && w > 0 {
-            rect.y = rect.y.saturating_add(1);
-            rect.height = rect.height.saturating_sub(1);
-        }
-        rects.push(rect);
-        offset = offset.saturating_add(size).saturating_add(1);
-    }
-    rects
-}
-
-/// Frame-preparation admission for one pane's visible window: analysis for
-/// the pane document plus its collection's projected sources, and the active
-/// pane's pair-match job. Paint serves the identical windows from cache.
-pub(super) fn admit_visible_work(editor: &mut Editor, area: Rect, view: &PaneView) {
-    let rows = usize::from(area.height);
-    if rows == 0 || editor.docs.get(view.doc).is_none() {
-        return;
-    }
-    let buf = &editor.doc(view.doc).buf;
-    let last_line = view.view_top.saturating_add(rows).min(buf.len_lines());
-    let first = buf.line_start(view.view_top);
-    let last = buf.line_end(last_line.saturating_sub(1));
-    editor.document_analysis(
-        view.doc,
-        first,
-        last,
-        view.hscroll.get(),
-        usize::from(area.width),
-    );
-    let collection_rows: Vec<Option<crate::editor::CollectionRowInfo>> = (0..rows)
-        .map(|row| editor.collection_row_info(view.doc, view.view_top.saturating_add(row)))
-        .collect();
-    let mut windows: Vec<(DocumentId, usize, usize)> = Vec::new();
-    for info in collection_rows.iter().flatten() {
-        if let Some((source, start, end)) = info.source {
-            if let Some((_, first, last)) = windows.iter_mut().find(|(doc, ..)| *doc == source) {
-                *first = (*first).min(start);
-                *last = (*last).max(end);
-            } else {
-                windows.push((source, start, end));
-            }
-        }
-    }
-    for (source, first, last) in windows {
-        editor.document_analysis(
-            source,
-            first,
-            last,
-            view.hscroll.get(),
-            usize::from(area.width),
-        );
-    }
-    if view.overlays {
-        let _ = editor.pair_highlight(
-            view.doc,
-            view.cursor,
-            matches!(editor.mode, crate::editor::Mode::Insert),
-        );
-    }
-}
-/// The pane's text budget: the scrollbar's reserved column excluded
-/// (0064 §1) — the SAME budget prepare clamps against and paint draws
-/// into, so viewport geometry and cells can never diverge.
-pub(super) fn text_budget(rect: Rect) -> Rect {
-    scrollbar::reserved(rect)
-}
-
+/// Paint the prepared panes (AR03): the published windows preparation
+/// clamped and admitted work for — doc, revision-keyed scroll/cursor and
+/// the exact cell rects. Paint never recomputes or adjusts them.
 pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Rect {
-    let rects = pane_rects(editor, area);
-    let n = rects.len();
+    let prepared = editor.prepared_view();
+    let n = prepared.panes.len();
     let mut active_rect = Rect::new(area.x, area.y, 0, 0);
     if n == 0 {
         return active_rect;
     }
-    let is_row = editor.layout == LayoutDir::Row;
+    let is_row = editor.layout() == LayoutDir::Row;
     let axis = if is_row {
         usize::from(area.width)
     } else {
         usize::from(area.height.saturating_sub(1))
     };
     let mut offset = 0usize;
-    for (i, rect) in rects.iter().enumerate() {
-        let active = i == editor.active_pane;
+    for (i, window) in prepared.panes.iter().enumerate() {
+        let rect = super::from_cells(window.rect);
+        let rect = &rect;
+        let active = i == prepared.active_pane;
         let w = usize::from(rect.width);
         let h = usize::from(rect.height);
         if n > 1 && h > 0 && w > 0 {
-            let document = editor.doc(editor.panes[i].doc);
+            let document = editor.doc(window.doc);
             let name = document
                 .remote_metadata()
                 .map(|remote| remote.file.to_string())
@@ -235,16 +134,16 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
         if active {
             active_rect = *rect;
         }
-        let pane = &editor.panes[i];
+        let pane = &editor.panes()[i];
         let view = PaneView {
-            doc: pane.doc,
-            cursor: pane.sels.primary().head,
-            view_top: pane.view_top,
-            hscroll: pane.hscroll,
+            doc: window.doc,
+            cursor: window.cursor,
+            view_top: window.view_top,
+            hscroll: window.hscroll,
             overlays: active,
         };
         let terminal_input = editor.terminal_view_input(pane);
-        if w != 0 && h != 0 && editor.docs.get(view.doc).is_some() {
+        if w != 0 && h != 0 && editor.document(view.doc).is_some() {
             // 0064 §1: the scrollbar column is reserved before every
             // text budget the pane computes — content, carets and the
             // terminal grid all live inside it.
@@ -308,7 +207,7 @@ pub(crate) fn caret_position(
     }
     let column = buf.try_cell_col_with_tab(byte, editor.indentation_at(doc, byte).width)?;
     let relative = column.get().checked_sub(origin.get())?;
-    let col = diff::left_inset(editor, doc).checked_add(relative)?;
+    let col = editor.left_inset(doc).checked_add(relative)?;
     if col >= usize::from(area.width) {
         return None;
     }
@@ -389,5 +288,4 @@ struct RowStyle<'a> {
 }
 
 #[cfg(test)]
-#[path = "buffer_tests.rs"]
 mod tests;

@@ -554,5 +554,8 @@ repeated 10× with zero flakes.
 
 Remaining obligations, by owner: incremental cross-search index
 reuse/invalidation and remote marker/catalog evidence →
-[0058](0058-unified-native-worker.md); TLAPS proof lane for the
-lifecycle model → [0057](0057-core-verification-and-assurance.md).
+[0058](0058-unified-native-worker.md). The TLAPS lane landed in 0057 on
+2026-09-16 and this plan's SearchLifecycle proof obligations are
+DISCHARGED there (specs/SearchLifecycleProofs.tla — Init⇒Inv,
+inductiveness, Inv⇒the five named invariants, with the kept mutant as
+negative control; see 0057's landed slices).

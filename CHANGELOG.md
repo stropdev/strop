@@ -1,5 +1,127 @@
 # Changelog
 
+
+## 0.34.0 — 2026-09-17
+
+The architecture release: readonly rendering behind a narrow admitted
+API, real draft recovery, a modal terminal, vim grammar in every input
+field, a process UI protocol, and the first whole-core verification
+lanes.
+
+### Added
+
+- **Modal terminal** (0065): the embedded terminal presents honestly as
+  its own state — a distinct TERMINAL chip, every escape discoverable in
+  `?` help (Esc stays with the child; Ctrl-\ Ctrl-N and Ctrl-W N enter
+  inspection), a strop-owned palette (single `strop-core` theme seed
+  configuring the emulator through a new native palette FFI), and
+  `:terminal-refresh` to pull the latest output into the pinned
+  inspection view. Motions, visual yank and search work over terminal
+  text like any buffer.
+- **Real dirty/scratch draft recovery** (0056 AR04): unsaved changes
+  checkpoint continuously to a private, bounded, atomically-published
+  store — coherent multi-document cohorts, never half-mixed, whole
+  records demoted rather than truncated. `:recover` lists checkpoints
+  with origin, time/revision and conflict state and restores into a
+  checked draft without touching disk, recreating deleted targets or
+  re-granting remote authority; remote drafts persist only with
+  explicit consent. Crash, kill and power-loss keep the last completed
+  checkpoint.
+
+- **Non-graphical UI protocol, `strop --ui-stdio` backend and Rust
+  driver** (0056 AR09/AR10): a bounded, versioned process protocol for
+  frontends without a terminal. Content-Length-framed envelopes (the
+  LSP byte convention, distinct envelopes) carry a
+  version/build/capability handshake keyed by backend incarnation;
+  admitted actions reuse the engine's exact admitted input surface (no
+  parallel command table); semantic views publish as snapshots/deltas
+  keyed by incarnation + view generation + pane document revisions; a
+  dropped delta poisons the client until an explicit resync ships a
+  complete snapshot; stale-generation, wrong-incarnation, oversized and
+  malformed traffic earn typed refusals/errors, never a panic or silent
+  divergence; OSC52 clipboard writes cross as host effect
+  request/result; shutdown is authorized and orderly. The
+  `strop-ui-protocol` crate ships the pure client state machine plus a
+  stdio driver whose deterministic schedules barrier on
+  acknowledgements, generations and named view states — closure tests
+  spawn the real binary over pipes (the WSL stdio lane) and pin
+  open/edit/undo/search/save/terminal parity with the headless driver.
+
+
+### Improved
+
+- **Pure render cutover** (0056 AR01/AR03): painting is now a readonly
+  query over the engine. Hunk refresh, visible-window analysis/preview
+  admission and viewport/caret adjustment moved out of the renderer into
+  `Editor::prepare_view`, an admitted engine update keyed by an explicit
+  terminal-cell geometry and a stamp over view-relevant state — an
+  unchanged repaint admits zero worker tickets and touches no viewport.
+  The engine publishes a prepared view (per-pane windows keyed by
+  document revision and view generation, with declared
+  complete/partial/loading/stale/error bounds) that the TUI borrows; no
+  whole-editor clones. Picker card/pane/gutter geometry lives in the
+  engine as plain cell arithmetic, pinned cell-for-cell against the
+  historical layout.
+- **Input fields speak the real vim grammar** (0003 §2): picker
+  query/replace fields and the `: / ? |` line are backed by persistent
+  one-line buffers whose normal mode resolves through the same
+  `strop_grammar::resolve` as the document — `dw`/`db`/`de`/`cw`/`dfx`/
+  `2dw`/`diw` work in every field, a completed operator reranks exactly
+  once, pure motions never do, and unsupported keys refuse with a
+  message instead of vanishing.
+- **One narrow admitted engine API** (0056 AR02): `Editor` no longer has
+  public fields — the frontend boundary is one module of readonly
+  borrowed queries and admitted writers. Paint cannot mutate anything;
+  document/selection/pane mutation is engine-internal.
+- **Bounded event and LSP transport** (0056 AR06): the event channel and
+  LSP wire queue have real byte/count bounds. Semantic events (input,
+  paste, outcomes) are never dropped or reordered — admission refuses
+  visibly instead; wake hints coalesce legally; superseded unsent
+  LSP snapshots coalesce only when no request barrier needs them;
+  shutdown drains without hangs.
+- **Container execution tells the truth** (0056 AR07): exec requests pin
+  the selected engine context, cwd, principal and container incarnation
+  — a recycled container never receives a stale request. A supervised
+  lease reaps the whole session's descendants on close or client death;
+  missing programs and shim toolchains are typed diagnostics.
+- **`:explain` names real owners** (0056 AR08/AR14): readonly buffers
+  carry typed reasons (filesystem, remote capability, command,
+  recovery, terminal…) instead of a generic hint, config shows the
+  winning layer per knob, and one privacy classifier now governs
+  capture/persistence across local, SSH and container targets.
+- **Identities refuse to wrap** (0056 AR13): arena document identities
+  check exhaustion instead of incrementing blindly — a slot at the
+  generation limit retires forever, so a stale id can never alias a new
+  document.
+- **Installs and updates are one verified transaction** (0056 AR11/12):
+  install.sh and the updater share staged, sha256-verified, atomic
+  publishing (interruption preserves the old binary); channel identity
+  comes from an installation receipt, never path guessing; releases
+  generate a single catalog that installer, updater and site consume.
+- **Build inputs are pinned** (0056 AR15): every Docker base image is
+  digest-pinned multi-arch, with the bump procedure documented.
+
+### Fixed
+
+- **Preview caches could survive a rename through a symlinked path**
+  (0056 AR05): purges now cover the operation's logical spellings, not
+  only resolved ones.
+
+### Verification
+
+- The 0057 whole-core assurance programme opened: a machine-readable
+  boundary/claim inventory with hash-pinned evidence and candidate
+  freeze tooling guards the tree in CI (VF01); a pinned TLAPS lane
+  proves the search lifecycle's safety invariants inductively — with the
+  kept mutant failing proof on exactly its own steps — and the 0045
+  batch-composition obligation is now proved in production editmap.rs
+  (Verus); new Verus kernels verify mutation authority, projection
+  admission, recovery cohort, UI freshness and ID-exhaustion decisions
+  the production guards call; admission-freshness trace correspondence
+  replays the protocol model through the real handlers; new TLA+ models
+  cover terminal, install and recovery domains with kept mutants and
+  witnesses (VF02–VF04, VF12–VF13, VF16–VF18 partial).
+
 ## 0.33.0 — 2026-09-16
 
 One canonical query language across every search surface, automatic

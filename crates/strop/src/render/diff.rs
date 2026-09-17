@@ -9,7 +9,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::editor::{DiffRow, Editor, Surface};
+use crate::editor::{DiffRow, Surface};
 use strop_git::{DiffLine, LineOrigin};
 
 use super::{ACCENT, MUTED, TEXT};
@@ -18,7 +18,7 @@ mod list;
 mod margins;
 
 pub(crate) use list::{surface_list_row, RowDecoration, CURSOR_ROW_BG};
-pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans, BLAME_W};
+pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans};
 
 pub(crate) const ADD_FG: Color = Color::Rgb(0xa9, 0xc4, 0x7c);
 pub(crate) const DEL_FG: Color = Color::Rgb(0xe8, 0x67, 0x7a);
@@ -60,16 +60,6 @@ pub(crate) fn emphasis_span(surface: Option<&Surface>, row: usize) -> Option<(us
         return None;
     };
     hunks.emphasis(row)
-}
-
-/// Gutter width for a surface's buffer: the diff gutter widens to fit
-/// both sides' numbers (min 3 digits each); everything else is the
-/// standard sign+number gutter.
-pub(crate) fn gutter_width(surface: Option<&Surface>) -> usize {
-    let Some(Surface::Diff { hunks, .. }) = surface else {
-        return super::buffer::GUTTER as usize;
-    };
-    hunks.gutter_width()
 }
 
 /// The diff gutter for one content row: origin marker + both sides'
@@ -164,41 +154,6 @@ fn hunk_header_spans(hunk: &strop_git::Hunk) -> Vec<Span<'static>> {
         ),
         Span::styled(" @@", Style::default().fg(MUTED)),
     ]
-}
-
-/// The number gutter for a pane's buffer: diff surfaces keep their
-/// two-sided gutter; ordinary buffers size to the largest line number
-/// (a fixed 5-cell gutter misaligned the caret past line 999).
-pub(crate) fn number_gutter_width(editor: &Editor, doc: strop_core::id::DocumentId) -> usize {
-    let buffer = editor.doc(doc);
-    let surface = buffer.surface_payload();
-    if matches!(surface, Some(Surface::Diff { .. })) {
-        return gutter_width(surface);
-    }
-    let number = buffer.buf.last_content_line() + 1;
-    let digits = number.ilog10() as usize + 1;
-    2 + digits.max(3)
-}
-
-/// Total left inset before a pane's content: file sidebar + blame
-/// column + the surface's number gutter. Cursor placement and the
-/// inactive-pane caret both derive from here — one composition, no
-/// per-surface drift (0011 §3/§4). The sidebar contributes exactly
-/// what its emission draws (`Sidebar::outer_width`), so the caret and
-/// the tree can never disagree (0032 §3).
-pub(crate) fn left_inset(editor: &Editor, buffer: strop_core::id::DocumentId) -> usize {
-    let surface = editor.docs.get(buffer).and_then(|d| d.surface_payload());
-    let mut inset = number_gutter_width(editor, buffer);
-    if editor.blame_gutter_for(buffer).is_some() {
-        inset += BLAME_W;
-    }
-    if let Some(Surface::Diff {
-        commit: Some(cf), ..
-    }) = surface
-    {
-        inset += cf.files.sidebar().outer_width();
-    }
-    inset
 }
 
 #[cfg(test)]

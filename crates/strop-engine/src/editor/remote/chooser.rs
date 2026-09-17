@@ -184,7 +184,7 @@ impl Editor {
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
-        let text = glue.picker.input.text.trim();
+        let text = glue.picker.input.text().trim();
         let spelling = if text.starts_with("ssh://") {
             text.to_string()
         } else {

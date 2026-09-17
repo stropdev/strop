@@ -2,6 +2,15 @@
 //! resolution. Every `docker` invocation is a supervised capture — argv
 //! arrays, a caller's [`CancelToken`], a deadline and bounded retention —
 //! and every non-zero exit is classified into a typed refusal.
+//!
+//! The probe records *which connection* was selected and every later
+//! invocation is pinned to it: when the CLI config's current context made
+//! the selection, the context name rides every argv (`--context <name>`),
+//! so a `docker context use` in another terminal between probe and exec
+//! cannot redirect strop's traffic to a different daemon. A selection made
+//! through `DOCKER_HOST`/`DOCKER_CONTEXT` lives in strop's own environment
+//! and is inherited unchanged — pinning a flag there would override the
+//! user's explicit selection, the exact opposite of honoring it.
 
 use crate::identity::{validate_name, ContainerIdentity, ContainerRef};
 use crate::ContainerError;
@@ -37,6 +46,18 @@ pub(crate) const LIST_LIMIT: u64 = 16 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub struct EngineRef {
     server_version: String,
+    context: EngineContext,
+}
+
+/// How invocations stay pinned to the connection the probe selected.
+#[derive(Debug, Clone)]
+enum EngineContext {
+    /// `DOCKER_HOST`/`DOCKER_CONTEXT` in strop's own environment selected
+    /// the connection; children inherit that environment unchanged.
+    Environment,
+    /// The CLI config's current context at probe time, pinned explicitly
+    /// on every invocation.
+    Named(String),
 }
 
 impl EngineRef {
@@ -44,10 +65,35 @@ impl EngineRef {
     pub fn server_version(&self) -> &str {
         &self.server_version
     }
+
+    /// The invocation prefix that pins the selected connection: the
+    /// probed context name, or nothing when the environment selects.
+    pub(crate) fn context_args(&self) -> Vec<&str> {
+        match &self.context {
+            EngineContext::Environment => Vec::new(),
+            EngineContext::Named(name) => vec!["--context", name.as_str()],
+        }
+    }
+}
+
+/// Test-only constructors (no probe).
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::{EngineContext, EngineRef};
+
+    /// A fixture engine pinned to a named CLI context, as the probe
+    /// would capture it when no environment override is set.
+    pub(crate) fn engine_fixture() -> EngineRef {
+        EngineRef {
+            server_version: "29.7.2".into(),
+            context: EngineContext::Named("test-context".into()),
+        }
+    }
 }
 
 /// One supervised `docker` run's retained bytes — public for the
-/// `exec_capture` boundary.
+/// exec boundary.
+#[derive(Debug)]
 pub struct Captured {
     pub code: Option<i32>,
     pub stdout: Vec<u8>,
@@ -55,10 +101,29 @@ pub struct Captured {
     pub stdout_dropped: u64,
 }
 
-/// Run `docker <args>` under supervision: own process group, the caller's
-/// token, `deadline`, bounded pipes, no stdin. Spawn failure means the
-/// CLI itself is missing — that is the engine being unavailable.
-pub(crate) fn capture(
+/// Map a supervised capture failure to the typed engine refusal. The
+/// first argv element names the operation in timeout diagnostics.
+fn capture_error(args: &[&str], error: CaptureError) -> ContainerError {
+    match error {
+        CaptureError::Spawn(detail) => ContainerError::EngineUnavailable { detail },
+        CaptureError::Cancelled => ContainerError::Cancelled,
+        CaptureError::TimedOut(deadline) => ContainerError::Io {
+            detail: format!(
+                "docker {} timed out after {}s",
+                args.first().copied().unwrap_or("<none>"),
+                deadline.as_secs()
+            ),
+        },
+        CaptureError::Failure(failure) => ContainerError::Io {
+            detail: failure.message,
+        },
+    }
+}
+
+/// Run `docker <args>` unpinned — the probe path only, which *establishes*
+/// the selection an [`EngineRef`] then pins. Everything else goes through
+/// [`capture`].
+fn run(
     args: &[&str],
     stdout_limit: u64,
     deadline: Duration,
@@ -73,26 +138,30 @@ pub(crate) fn capture(
         deadline,
         stdin: StdinPolicy::Null,
     };
-    let output = capture_with(&mut command, token, &policy).map_err(|error| match error {
-        CaptureError::Spawn(detail) => ContainerError::EngineUnavailable { detail },
-        CaptureError::Cancelled => ContainerError::Cancelled,
-        CaptureError::TimedOut(deadline) => ContainerError::Io {
-            detail: format!(
-                "docker {} timed out after {}s",
-                args.first().copied().unwrap_or("<none>"),
-                deadline.as_secs()
-            ),
-        },
-        CaptureError::Failure(failure) => ContainerError::Io {
-            detail: failure.message,
-        },
-    })?;
+    let output =
+        capture_with(&mut command, token, &policy).map_err(|error| capture_error(args, error))?;
     Ok(Captured {
         code: output.status.code(),
         stdout: output.stdout,
         stderr: output.stderr,
         stdout_dropped: output.stdout_dropped,
     })
+}
+
+/// Run `docker <args>` on the *selected* engine under supervision: own
+/// process group, the caller's token, `deadline`, bounded pipes, no
+/// stdin. Spawn failure means the CLI itself is missing — that is the
+/// engine being unavailable.
+pub(crate) fn capture(
+    engine: &EngineRef,
+    args: &[&str],
+    stdout_limit: u64,
+    deadline: Duration,
+    token: &CancelToken,
+) -> Result<Captured, ContainerError> {
+    let mut pinned = engine.context_args();
+    pinned.extend_from_slice(args);
+    run(&pinned, stdout_limit, deadline, token)
 }
 
 /// One supervised `docker` run whose stdout streamed through a consumer.
@@ -108,13 +177,16 @@ pub(crate) struct Streamed {
 /// and cancellation behave exactly as in [`capture`]; a consumer error
 /// kills the child and surfaces as its own typed [`ContainerError`].
 pub(crate) fn stream(
+    engine: &EngineRef,
     args: &[&str],
     deadline: Duration,
     token: &CancelToken,
     consume: impl FnMut(&[u8]) -> Result<(), ContainerError>,
 ) -> Result<Streamed, ContainerError> {
+    let mut pinned = engine.context_args();
+    pinned.extend_from_slice(args);
     let mut command = Command::new("docker");
-    command.args(args);
+    command.args(&pinned);
     let policy = StreamPolicy {
         stderr_limit: STDERR_LIMIT,
         stderr_tail: 0,
@@ -153,9 +225,11 @@ pub(crate) fn stderr_tail(stderr: &[u8]) -> String {
 
 /// Probe the local engine: `docker info` must succeed and report a
 /// server version. CLI missing, daemon down or a timed-out probe are all
-/// [`ContainerError::EngineUnavailable`].
+/// [`ContainerError::EngineUnavailable`]. The probe also records which
+/// connection was selected (see the module docs) so every later
+/// invocation stays on it.
 pub fn engine(token: &CancelToken) -> Result<EngineRef, ContainerError> {
-    let output = capture(
+    let output = run(
         &["info", "--format", "{{json .ServerVersion}}"],
         META_LIMIT,
         INFO_DEADLINE,
@@ -175,7 +249,40 @@ pub fn engine(token: &CancelToken) -> Result<EngineRef, ContainerError> {
             detail: "docker info reported an empty server version".into(),
         });
     }
-    Ok(EngineRef { server_version })
+    let context = probe_context(token)?;
+    Ok(EngineRef {
+        server_version,
+        context,
+    })
+}
+
+/// Which connection did the probe select? `DOCKER_HOST`/`DOCKER_CONTEXT`
+/// in strop's own environment win by CLI precedence and are inherited by
+/// every child unchanged; otherwise the CLI config's current context name
+/// is captured so later invocations can pin it explicitly.
+fn probe_context(token: &CancelToken) -> Result<EngineContext, ContainerError> {
+    let env_selects = ["DOCKER_HOST", "DOCKER_CONTEXT"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()));
+    if env_selects {
+        return Ok(EngineContext::Environment);
+    }
+    let output = run(&["context", "show"], META_LIMIT, INFO_DEADLINE, token)?;
+    if output.code != Some(0) {
+        return Err(ContainerError::EngineUnavailable {
+            detail: stderr_tail(&output.stderr),
+        });
+    }
+    let name = String::from_utf8(output.stdout)
+        .map_err(|_| ContainerError::Protocol {
+            detail: "docker context show answered in non-UTF-8".into(),
+        })?
+        .trim()
+        .to_string();
+    // Context names share the name grammar; an option-shaped or empty
+    // answer is a protocol violation, never an argv element.
+    validate_name(&name)?;
+    Ok(EngineContext::Named(name))
 }
 
 /// The engine's running containers as full identities: `ps` for the id
@@ -185,8 +292,8 @@ pub fn list_running(
     engine: &EngineRef,
     token: &CancelToken,
 ) -> Result<Vec<ContainerIdentity>, ContainerError> {
-    let _ = engine;
     let output = capture(
+        engine,
         &["ps", "--quiet", "--no-trunc"],
         META_LIMIT,
         META_DEADLINE,
@@ -213,7 +320,7 @@ pub fn list_running(
     }
     let mut args = vec!["inspect"];
     args.extend(ids);
-    let output = capture(&args, META_LIMIT, META_DEADLINE, token)?;
+    let output = capture(engine, &args, META_LIMIT, META_DEADLINE, token)?;
     inspect_records("docker ps ids", &output)?
         .into_iter()
         .filter(|record| record.state.running)
@@ -230,9 +337,14 @@ pub fn inspect(
     name_or_id: &str,
     token: &CancelToken,
 ) -> Result<ContainerIdentity, ContainerError> {
-    let _ = engine;
     validate_name(name_or_id)?;
-    let output = capture(&["inspect", name_or_id], META_LIMIT, META_DEADLINE, token)?;
+    let output = capture(
+        engine,
+        &["inspect", name_or_id],
+        META_LIMIT,
+        META_DEADLINE,
+        token,
+    )?;
     identity(inspect_record(name_or_id, &output)?)
 }
 
@@ -265,9 +377,8 @@ pub(crate) fn refresh(
     reference: &ContainerRef,
     token: &CancelToken,
 ) -> Result<(), ContainerError> {
-    let _ = engine;
     let id = reference.id().as_str();
-    let output = capture(&["inspect", id], META_LIMIT, META_DEADLINE, token)?;
+    let output = capture(engine, &["inspect", id], META_LIMIT, META_DEADLINE, token)?;
     let record = inspect_record(id, &output)?;
     if record.state.started_at != reference.started_at() {
         return Err(ContainerError::StaleIdentity {

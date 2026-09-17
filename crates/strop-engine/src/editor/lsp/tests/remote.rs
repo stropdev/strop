@@ -3,20 +3,22 @@ use super::*;
 
 fn remote_doc(e: &mut Editor, uri: &str, text: &str) -> strop_core::id::DocumentId {
     let file = strop_workspace::RemoteFile::parse(uri).expect("canonical remote uri");
-    e.docs.insert(Document::remote(
-        strop_core::Buffer::from_text(text),
-        crate::editor::document::RemoteDocument {
-            file,
-            window: strop_remote::RemoteWindow::resolve(
-                &strop_remote::ReadSelection::Full,
-                strop_remote::RemoteSize::new(text.len() as u64),
-            ),
-            selection: strop_remote::ReadSelection::Full,
-            connection: None,
-            return_to: None,
-            write: None,
-        },
-    ))
+    e.docs
+        .try_insert(Document::remote(
+            strop_core::Buffer::from_text(text),
+            crate::editor::document::RemoteDocument {
+                file,
+                window: strop_remote::RemoteWindow::resolve(
+                    &strop_remote::ReadSelection::Full,
+                    strop_remote::RemoteSize::new(text.len() as u64),
+                ),
+                selection: strop_remote::ReadSelection::Full,
+                connection: None,
+                return_to: None,
+                write: None,
+            },
+        ))
+        .unwrap()
 }
 
 fn remote_arm(
@@ -99,7 +101,7 @@ fn remote_navigation_context_never_binds_local_targets() {
     let context = remote_arm(&mut e, origin, &endpoint, Path::new("/w/proj/origin.rs"));
     let mut buffer = Buffer::from_text("local\n");
     buffer.path = Some(PathBuf::from("/usr/include/twin.hpp"));
-    let local = e.docs.insert(Document::new(buffer));
+    let local = e.docs.try_insert(Document::new(buffer)).unwrap();
     e.switch_to(origin);
     e.finish_lsp_jump(
         local,
@@ -217,20 +219,25 @@ fn closing_the_last_remote_document_retires_its_server() {
 fn partial_remote_window_refuses_attach_visibly() {
     let mut e = editor("tail window\n");
     let file = strop_workspace::RemoteFile::parse("ssh://builder.example/w/proj/a.rs").unwrap();
-    let id = e.docs.insert(Document::remote(
-        strop_core::Buffer::from_text("tail\n"),
-        crate::editor::document::RemoteDocument {
-            file,
-            selection: strop_remote::ReadSelection::Tail(strop_remote::ReadLimit::new(5).unwrap()),
-            window: strop_remote::RemoteWindow::resolve(
-                &strop_remote::ReadSelection::Tail(strop_remote::ReadLimit::new(5).unwrap()),
-                strop_remote::RemoteSize::new(100),
-            ),
-            connection: None,
-            return_to: None,
-            write: None,
-        },
-    ));
+    let id = e
+        .docs
+        .try_insert(Document::remote(
+            strop_core::Buffer::from_text("tail\n"),
+            crate::editor::document::RemoteDocument {
+                file,
+                selection: strop_remote::ReadSelection::Tail(
+                    strop_remote::ReadLimit::new(5).unwrap(),
+                ),
+                window: strop_remote::RemoteWindow::resolve(
+                    &strop_remote::ReadSelection::Tail(strop_remote::ReadLimit::new(5).unwrap()),
+                    strop_remote::RemoteSize::new(100),
+                ),
+                connection: None,
+                return_to: None,
+                write: None,
+            },
+        ))
+        .unwrap();
     e.switch_to(id);
     e.lsp_start_services();
     assert!(e.lsp_state.attach.pending.is_empty());

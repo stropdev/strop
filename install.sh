@@ -6,10 +6,11 @@
 #   curl -fsSL https://strop.dev/install.sh | sh
 #
 # Environment variables:
-#   STROP_VERSION      Version to install (default: latest)
+#   STROP_VERSION      Version to install (default: latest, resolved through the release catalog)
 #   STROP_INSTALL_DIR  Where to install the binary (default: $HOME/.local/bin)
 #   STROP_INSTALL_YES  Skip the confirmation prompt (default: prompt if a tty is attached)
-#   STROP_BASE_URL     Release download base URL (default: GitHub releases; for mirrors/testing)
+#   STROP_BASE_URL     Release download base URL for pinned versions (default: GitHub releases)
+#   STROP_CATALOG_URL  Release catalog URL for latest resolution (default: GitHub releases)
 
 set -e
 
@@ -17,6 +18,8 @@ REPO="stropdev/strop"
 BIN="strop"
 INSTALL_DIR="${STROP_INSTALL_DIR:-$HOME/.local/bin}"
 BASE_URL="${STROP_BASE_URL:-https://github.com/$REPO/releases/download}"
+CATALOG_URL="${STROP_CATALOG_URL:-https://github.com/$REPO/releases/latest/download/catalog.json}"
+RECEIPT_NAME=".strop-install.json"
 
 # Color setup: only emit escapes when stdout is a tty and NO_COLOR is unset
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -83,20 +86,39 @@ case "$OS/$ARCH" in
         ;;
 esac
 
-# Resolve version
+# Resolve version + artifact facts. "latest" goes through the generated
+# release catalog (0056 AR12) — the single source of truth for version,
+# artifact names and digests, shared with the updater and the site; no
+# independent API scraping. A pinned STROP_VERSION falls back to the
+# release's own checksum sidecar.
 VERSION="${STROP_VERSION:-}"
+DIGEST=""
 if [ -z "$VERSION" ]; then
     info "Resolving latest release..."
-    RELEASES_URL="https://api.github.com/repos/${REPO}/releases/latest"
-    TAG=$(fetch "$RELEASES_URL" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"\(v[^"]*\)".*/\1/')
-    [ -n "$TAG" ] || err "could not resolve latest release from $RELEASES_URL"
-    VERSION="${TAG#v}"
+    CATALOG=$(fetch "$CATALOG_URL") || err "could not fetch release catalog at $CATALOG_URL"
+    [ -n "$CATALOG" ] || err "empty release catalog at $CATALOG_URL"
+    VERSION=$(printf '%s\n' "$CATALOG" | sed -n 's/^  "version": "\([^"]*\)".*$/\1/p' | head -1)
+    [ -n "$VERSION" ] || err "no version in release catalog at $CATALOG_URL"
+    # The catalog pretty-prints one object per artifact, one field per
+    # line; extract name/sha256/url from the block for this target.
+    FACTS=$(printf '%s\n' "$CATALOG" | awk -v target="$TARGET" '
+        $0 ~ "\"target\": \"" target "\"" { found = 1 }
+        found && /"name": "/   { v = $0; sub(/.*"name": "/, "", v);   sub(/".*/, "", v); name = v }
+        found && /"sha256": "/ { v = $0; sub(/.*"sha256": "/, "", v); sub(/".*/, "", v); sha = v }
+        found && /"url": "/    { v = $0; sub(/.*"url": "/, "", v);    sub(/".*/, "", v); url = v }
+        found && name && sha && url { print name; print sha; print url; exit }
+    ')
+    ARCHIVE=$(printf '%s\n' "$FACTS" | sed -n '1p')
+    DIGEST=$(printf '%s\n' "$FACTS" | sed -n '2p')
+    URL=$(printf '%s\n' "$FACTS" | sed -n '3p')
+    { [ -n "$ARCHIVE" ] && [ -n "$DIGEST" ] && [ -n "$URL" ]; } \
+        || err "release catalog has no artifact for $TARGET"
+else
+    # Normalize: strip leading v if the user passed v0.1.1
+    VERSION="${VERSION#v}"
+    ARCHIVE="${BIN}-${VERSION}-${TARGET}.tar.gz"
+    URL="${BASE_URL}/v${VERSION}/${ARCHIVE}"
 fi
-# Normalize: strip leading v if the user passed v0.1.1
-VERSION="${VERSION#v}"
-
-ARCHIVE="${BIN}-${VERSION}-${TARGET}.tar.gz"
-URL="${BASE_URL}/v${VERSION}/${ARCHIVE}"
 
 # Show install plan and confirm
 info ""
@@ -119,14 +141,19 @@ fi
 info "Downloading ${ARCHIVE}..."
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+STAGED=""
+trap 'rm -rf "$TMP"; [ -z "$STAGED" ] || rm -f "$STAGED"' EXIT
+trap 'exit 1' HUP INT TERM
 
 fetch_to "$URL" "$TMP/$ARCHIVE"
 
 # Verify the checksum — mandatory (0023: install and update share one
-# policy; a missing sidecar or checker aborts rather than installs
-# unverified bytes).
-if ! fetch_to "${URL}.sha256" "$TMP/$ARCHIVE.sha256"; then
+# policy; unverified bytes never install). The digest comes from the
+# release catalog for latest, or from the release's checksum sidecar for
+# a pinned version; a missing sidecar or checker aborts.
+if [ -n "$DIGEST" ]; then
+    printf '%s  %s\n' "$DIGEST" "$ARCHIVE" > "$TMP/$ARCHIVE.sha256"
+elif ! fetch_to "${URL}.sha256" "$TMP/$ARCHIVE.sha256"; then
     err "no checksum sidecar at ${URL}.sha256 — refusing to install unverified"
 fi
 if command -v sha256sum >/dev/null 2>&1; then
@@ -139,12 +166,53 @@ fi
 
 info "Extracting..."
 tar -xzf "$TMP/$ARCHIVE" -C "$TMP"
+SRC="$TMP/${BIN}-${VERSION}-${TARGET}/$BIN"
+[ -f "$SRC" ] || SRC="$TMP/$BIN"
+[ -f "$SRC" ] || err "archive did not contain $BIN"
 
 info "Installing to $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
-install -m 0755 "$TMP/${BIN}-${VERSION}-${TARGET}/$BIN" "$INSTALL_DIR/$BIN" 2>/dev/null \
-    || install -m 0755 "$TMP/$BIN" "$INSTALL_DIR/$BIN" 2>/dev/null \
-    || cp "$TMP/${BIN}-${VERSION}-${TARGET}/$BIN" "$INSTALL_DIR/$BIN"
+
+# One staged verified transaction (0056 AR11), the same contract the
+# native updater keeps: stage in the destination directory (same
+# filesystem), verify the staged bytes against the checksum-verified
+# extraction, then publish with an atomic rename. Interrupt at any point
+# before the rename and any old binary is untouched; the install/cp
+# fallback chain is gone.
+STAGED=$(mktemp "$INSTALL_DIR/.strop-stage.XXXXXX") || err "cannot stage in $INSTALL_DIR"
+cat "$SRC" > "$STAGED" || err "failed to stage $BIN"
+chmod 0755 "$STAGED" || err "failed to mark staged $BIN executable"
+cmp -s "$SRC" "$STAGED" || err "staged bytes diverged — aborting"
+mv -f "$STAGED" "$INSTALL_DIR/$BIN" || err "failed to publish $INSTALL_DIR/$BIN"
+STAGED=""
+
+# Installation receipt (0056 AR11): channel/version/root/method facts the
+# updater reads instead of guessing from path substrings. Pre-receipt
+# installs stay honestly unknown until reinstalled; a replaced install's
+# version is remembered as previous_version for recovery/rollback.
+RECEIPT="$INSTALL_DIR/$RECEIPT_NAME"
+PREVIOUS=""
+if [ -f "$RECEIPT" ]; then
+    PREVIOUS=$(grep -o '"version": *"[^"]*"' "$RECEIPT" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+fi
+if RSTAGE=$(mktemp "$INSTALL_DIR/.strop-receipt.XXXXXX"); then
+    {
+        printf '{\n'
+        printf '  "schema": 1,\n'
+        printf '  "channel": "tarball",\n'
+        printf '  "method": "install.sh",\n'
+        printf '  "version": "%s",\n' "$VERSION"
+        [ -z "$PREVIOUS" ] || printf '  "previous_version": "%s",\n' "$PREVIOUS"
+        printf '  "install_root": "%s",\n' "$INSTALL_DIR"
+        printf '  "installed_at": %s\n' "$(date +%s)"
+        printf '}\n'
+    } > "$RSTAGE" && mv -f "$RSTAGE" "$RECEIPT" || {
+        rm -f "$RSTAGE"
+        info "warning: could not write installation receipt — strop update will report this install as unknown"
+    }
+else
+    info "warning: could not write installation receipt — strop update will report this install as unknown"
+fi
 
 info ""
 info "${GREEN}${BOLD}strop $VERSION installed${RESET} → $INSTALL_DIR/$BIN"

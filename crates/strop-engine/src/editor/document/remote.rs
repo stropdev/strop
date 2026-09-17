@@ -33,7 +33,7 @@ impl Document {
             "remote identity cannot become a local file"
         );
         buffer.name = Some(source.file.to_string());
-        buffer.readonly = true;
+        buffer.set_readonly(strop_core::ReadonlyReason::RemoteAuthority);
         let detection = Some(super::detect_indent(buffer.text()));
         Self {
             buf: buffer,

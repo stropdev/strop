@@ -75,7 +75,8 @@ impl Editor {
             {
                 draft.phase = Phase::Reloading;
             }
-            doc.buf.readonly = true;
+            doc.buf
+                .set_readonly(strop_core::ReadonlyReason::DirectoryOperation);
             doc.buf.dirty = false;
         }
         self.start_directory_task(document, DirectoryTask::Reload, None)
@@ -238,7 +239,8 @@ impl Editor {
                 .filter(|draft| draft.id == stamp.id)
             {
                 draft.phase = Phase::Applying(operation);
-                doc.buf.readonly = true;
+                doc.buf
+                    .set_readonly(strop_core::ReadonlyReason::DirectoryOperation);
             }
         }
     }

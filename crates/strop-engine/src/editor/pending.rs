@@ -73,18 +73,18 @@ impl TextPrompt {
 
     /// The text after the sigil — the command/pattern body.
     pub(crate) fn body(&self) -> &str {
-        &self.line.text[1..]
+        &self.line.text()[1..]
     }
 
     /// The full line, sigil included (empty string semantics live on
     /// `PendingInput`, which knows whether a prompt is open at all).
     pub(crate) fn text(&self) -> &str {
-        &self.line.text
+        self.line.text()
     }
 
     /// Caret byte offset into `text()` (sigil-inclusive).
     pub(crate) fn cursor(&self) -> usize {
-        self.line.cursor
+        self.line.cursor()
     }
 
     /// True when Esc put the line's own caret into normal mode.
@@ -121,9 +121,12 @@ impl TextPrompt {
 }
 
 /// The editor's one prompt slot: open or closed, nothing in between.
+/// The field machine rides alongside: key-sequence state (a pending
+/// operator) survives between the prompt's normal-mode key events.
 #[derive(Debug, Default)]
 pub struct PendingInput {
     active: Option<TextPrompt>,
+    machine: super::field::FieldMachine,
 }
 
 /// One input event for the open prompt.
@@ -147,8 +150,9 @@ pub(crate) enum PendingEffect {
     CompleteEx,
     /// Ctrl-L: terminal desync recovery.
     Repaint,
-    /// The event was refused (e.g. a pasted newline).
-    Rejected(&'static str),
+    /// The event was refused (a pasted newline, a key the field's
+    /// grammar does not admit) — the message is the feedback.
+    Rejected(String),
     /// Enter: consume and execute (Pipe/Search/Ex by context).
     Accepted(TextPrompt),
     /// Esc-Esc / sigil deletion / Cancel: consume and restore.
@@ -184,12 +188,15 @@ impl PendingInput {
     }
 
     /// Open a prompt. Opening while another is active is a caller bug:
-    /// the previous origin would be silently discarded.
+    /// the previous origin would be silently discarded. The field
+    /// machine grounds here, so a dead prompt's pending operator never
+    /// leaks into the next line.
     pub(crate) fn open(&mut self, prompt: TextPrompt) {
         assert!(
             self.active.is_none(),
             "cancel the previous prompt before opening another"
         );
+        self.machine.clear();
         self.active = Some(prompt);
     }
 
@@ -208,15 +215,14 @@ impl PendingInput {
         if matches!(event, PendingEvent::Key(Key::Enter)) {
             return PendingEffect::Accepted(self.active.take().expect("active prompt"));
         }
-        let old_len = prompt.line.text.len();
+        let old_revision = prompt.line.revision();
         let old_normal = prompt.line.normal;
         match event {
             PendingEvent::Paste(text) => {
                 if text.contains(['\r', '\n']) {
-                    return PendingEffect::Rejected("input line cannot contain a newline");
+                    return PendingEffect::Rejected("input line cannot contain a newline".into());
                 }
-                prompt.line.text.insert_str(prompt.line.cursor, &text);
-                prompt.line.cursor += text.len();
+                prompt.line.insert_str(&text);
             }
             PendingEvent::CompleteEx(body) if prompt.sigil() == ':' => {
                 prompt.line.set_text(format!(":{body}"));
@@ -225,16 +231,23 @@ impl PendingInput {
             PendingEvent::CompleteEx(_) | PendingEvent::Cancel => return PendingEffect::None,
             PendingEvent::Key(Key::Esc) => {
                 prompt.line.normal = true;
-                prompt.line.cursor = prompt.line.text.len();
+                prompt.line.set_cursor(usize::MAX);
             }
             PendingEvent::Key(Key::Backspace) if prompt.line.normal => {
-                let _ = prompt.line.normal_key('h'); // vim: bs in normal = h
+                // vim: BS in normal mode is h — a pure grammar motion
+                let _ = self.machine.feed(&mut prompt.line, Key::Char('h'));
             }
             PendingEvent::Key(Key::Backspace) => {
                 prompt.line.backspace();
             }
             PendingEvent::Key(Key::Char(c)) if prompt.line.normal => {
-                let _ = prompt.line.normal_key(c);
+                // the real vim grammar (0003 §2): the field machine
+                // resolves every sequence against the line's buffer
+                if let super::field::FieldReply::Refused(message) =
+                    self.machine.feed(&mut prompt.line, Key::Char(c))
+                {
+                    return PendingEffect::Rejected(message);
+                }
             }
             PendingEvent::Key(Key::Char(c)) => {
                 prompt.line.insert_char(c);
@@ -247,12 +260,13 @@ impl PendingInput {
             PendingEvent::Key(Key::CtrlL) => return PendingEffect::Repaint,
             PendingEvent::Key(_) => return PendingEffect::None,
         }
-        // The sigil is structural: deleting it (backspace at 1, `x` at
-        // 0) closes the prompt — same gesture as Esc-Esc.
-        if !prompt.line.text.starts_with(prompt.sigil()) {
+        // The sigil is structural: an edit that removes it (backspace
+        // at 1, `x` at 0, an operator range covering the sigil) closes
+        // the prompt — same gesture as Esc-Esc.
+        if !prompt.line.text().starts_with(prompt.sigil()) {
             return PendingEffect::Aborted(self.active.take().expect("active prompt"));
         }
-        if old_len != prompt.line.text.len() {
+        if old_revision != prompt.line.revision() {
             PendingEffect::Edited
         } else if old_normal != prompt.line.normal {
             PendingEffect::ModeChanged
@@ -356,8 +370,50 @@ mod tests {
         assert_eq!(pending.text(), ":w q");
         assert!(matches!(
             pending.reduce(PendingEvent::Paste("\nx".into())),
-            PendingEffect::Rejected("input line cannot contain a newline")
+            PendingEffect::Rejected(message) if message == "input line cannot contain a newline"
         ));
         assert_eq!(pending.text(), ":w q");
+    }
+
+    /// Body typed on the `:` line, Esc into the line's normal mode,
+    /// then edited with the given keys: the resulting line text.
+    fn ex_after(body: &str, keys: &str) -> String {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(":");
+        e.feed_text(body);
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text(keys);
+        e.pending.text().to_string()
+    }
+
+    #[test]
+    fn ex_line_normal_mode_is_the_real_grammar() {
+        // the same grammar machine as the picker fields (0003 §2)
+        assert_eq!(ex_after("w foo", "bdw"), ":w ");
+        assert_eq!(ex_after("w foo", "db"), ":w ");
+        // de on a one-char word: e sits at the word's end already, so
+        // it extends to the next word's end (vim does the same)
+        assert_eq!(ex_after("w foo", "0lde"), ":");
+        assert_eq!(ex_after("w:x", "0ldf:"), ":x");
+        assert_eq!(ex_after("a b c", "0l2dw"), ":c");
+        assert_eq!(ex_after("w foo", "bdiw"), ":w ");
+        // j/k are motions that cannot leave the one line: honest no-ops
+        assert_eq!(ex_after("w", "jk"), ":w");
+    }
+
+    #[test]
+    fn ex_line_change_reenters_insert_and_sigil_ops_abort() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(":w foo");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("bcwbar");
+        assert_eq!(e.pending.text(), ":w bar");
+        assert!(!e.pending.normal(), "cw re-enters the line's insert mode");
+        // an operator range covering the sigil trips the standing
+        // sigil rule: the prompt closes, exactly like x at 0
+        e.feed(crate::editor::Key::Esc);
+        assert!(e.pending.normal());
+        e.feed_text("0dw");
+        assert!(!e.pending.is_active(), "0dw covers the sigil: abort");
     }
 }

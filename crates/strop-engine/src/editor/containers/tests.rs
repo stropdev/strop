@@ -154,6 +154,32 @@ fn superseded_container_result_cannot_open_an_old_context() {
 }
 
 #[test]
+fn recycled_container_cannot_replace_a_held_attachment() {
+    let mut editor = editor();
+    editor.attach_container("a".repeat(64));
+    deliver(&mut editor, ContainerResult::Attached(identity('a')));
+    assert_eq!(editor.containers.attached.len(), 1);
+    // The container restarts: a re-attach resolves the same id to a NEW
+    // incarnation. The held attachment — the authority views and
+    // completions compare against — must not be silently rebound.
+    let mut recycled = identity('a');
+    recycled.started_at = "2026-09-10T00:00:00Z".into();
+    editor.attach_container("a".repeat(64));
+    deliver(&mut editor, ContainerResult::Attached(recycled));
+    let held = editor.containers.attached.get(&"a".repeat(64)).unwrap();
+    assert_eq!(
+        held.started_at, "2026-09-09T00:00:00Z",
+        "the held attachment is not replaced by the recycled incarnation"
+    );
+    assert!(editor.message.contains("recycled"), "{}", editor.message);
+    assert_eq!(
+        editor.io.open.len(),
+        1,
+        "no new target opens from the refused rebind"
+    );
+}
+
+#[test]
 fn container_files_refuse_writes_and_writable_flag_bypasses() {
     let mut editor = editor();
     editor.attach_container_target(

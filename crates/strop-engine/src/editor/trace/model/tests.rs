@@ -3,7 +3,7 @@ use super::*;
 fn document() -> Document {
     let mut ids = strop_core::id::Arena::<strop_core::id::DocumentKind, ()>::default();
     Document {
-        id: ids.insert(()),
+        id: ids.try_insert(()).unwrap(),
         revision: BufferRevision::new(0),
         text: "aé\n".into(),
     }

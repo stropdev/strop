@@ -542,9 +542,10 @@ fn failed_log_settles_the_surface() {
     // an unrelated document with a message must keep it
     let other = e
         .docs
-        .insert(crate::editor::Document::scratch(Buffer::from_text(
+        .try_insert(crate::editor::Document::scratch(Buffer::from_text(
             "other\n",
-        )));
+        )))
+        .unwrap();
     e.message = "unrelated".into();
     e.handle_git_job(GitJob::Log(Completion {
         ticket: owner,

@@ -21,7 +21,7 @@ impl Editor {
     }
     pub(super) fn picker_query_eval(&mut self, kind: Kind) -> Option<Arc<SearchQuery>> {
         let glue = self.picker.as_mut()?;
-        let query = Arc::new(SearchQuery::parse(&glue.picker.input.text));
+        let query = Arc::new(SearchQuery::parse(glue.picker.input.text()));
         glue.query = Some(query.clone());
         glue.query_highlights = query.highlights.clone();
         let hidden = query.hidden.unwrap_or(self.config.search_show_hidden);
@@ -408,7 +408,7 @@ impl Editor {
             context.stamp.dataset = next;
             context.refreshing = true;
             (
-                glue.picker.input.text.clone(),
+                glue.picker.input.text().to_string(),
                 glue.id,
                 context.scope.root.clone(),
                 context.stamp.session,
@@ -529,8 +529,8 @@ impl Editor {
         }
         let query = glue
             .query
-            .get_or_insert_with(|| Arc::new(SearchQuery::parse(&glue.picker.input.text)));
-        let items = strop_picker::query::suggest::suggest(query, glue.picker.input.cursor);
+            .get_or_insert_with(|| Arc::new(SearchQuery::parse(glue.picker.input.text())));
+        let items = strop_picker::query::suggest::suggest(query, glue.picker.input.cursor());
         if !items.is_empty() {
             glue.suggestions = Some(SuggestionList { items, selected: 0 });
         }
@@ -549,13 +549,13 @@ impl Editor {
             return;
         };
         let input = &mut glue.picker.input;
-        let mut text = String::with_capacity(input.text.len() + suggestion.insert.len());
-        text.push_str(&input.text[..suggestion.range.start]);
+        let mut text = String::with_capacity(input.text().len() + suggestion.insert.len());
+        text.push_str(&input.text()[..suggestion.range.start]);
         text.push_str(&suggestion.insert);
         let caret = text.len();
-        text.push_str(&input.text[suggestion.range.end..]);
-        input.text = text;
-        input.cursor = caret;
+        text.push_str(&input.text()[suggestion.range.end..]);
+        input.set_text(text);
+        input.set_cursor(caret);
         self.picker_input_changed();
     }
 }

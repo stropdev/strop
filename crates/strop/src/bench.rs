@@ -18,7 +18,6 @@
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use ratatui::backend::TestBackend;
@@ -26,7 +25,9 @@ use ratatui::Terminal;
 use strop_core::Buffer;
 use strop_picker::Kind;
 
-use crate::editor::events::{AppEvent, EVENTS_PER_TURN, TURN_BUDGET};
+use crate::editor::events::{
+    AppEvent, EventReceiver, RecvTimeoutError, EVENTS_PER_TURN, TURN_BUDGET,
+};
 use crate::editor::io::OpenIntent;
 use crate::editor::{Editor, Key};
 
@@ -132,12 +133,12 @@ impl Drop for Fixture {
 struct Drive {
     editor: Editor,
     terminal: Terminal<TestBackend>,
-    events: Receiver<AppEvent>,
+    events: EventReceiver,
 }
 
 impl Drive {
     fn new(mut editor: Editor, cols: u16, rows: u16) -> io::Result<Self> {
-        editor.session_policy = crate::session::SessionPolicy::Disabled;
+        editor.set_session_policy(crate::session::SessionPolicy::Disabled);
         let (tx, events) = crate::editor::events::channel();
         editor.connect_events(tx);
         let mut drive = Self {
@@ -177,8 +178,8 @@ impl Drive {
     }
 
     fn draw(&mut self) -> io::Result<()> {
-        if !self.editor.should_quit && !self.editor.docs.is_empty() {
-            if std::mem::take(&mut self.editor.needs_repaint) {
+        if !self.editor.should_quit() && self.editor.has_documents() {
+            if self.editor.take_repaint_request() {
                 self.terminal.clear()?;
             }
             self.terminal.draw(|frame| {
@@ -240,12 +241,7 @@ impl Drive {
 /// measured a failure path (rg missing, dead worker) — refuse to
 /// report timings for it.
 fn picker_settled_ok(drive: &Drive) -> io::Result<()> {
-    match drive
-        .editor
-        .picker
-        .as_ref()
-        .and_then(|g| g.picker.error.as_ref())
-    {
+    match drive.editor.picker().and_then(|g| g.picker.error.as_ref()) {
         Some(error) => Err(io::Error::other(format!("picker stream failed: {error}"))),
         None => Ok(()),
     }
@@ -585,8 +581,7 @@ fn bench_drop_stale() -> io::Result<()> {
             // Consume until 10k items have landed; the rest of the 50k
             // is still in flight — that tail is what gets dropped.
             drive.wait_until(SETTLE, |e| {
-                e.picker
-                    .as_ref()
+                e.picker()
                     .is_none_or(|g| !g.picker.streaming || g.picker.items.len() >= 10_000)
             })
         })?;

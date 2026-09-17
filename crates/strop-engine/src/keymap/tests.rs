@@ -24,6 +24,40 @@ fn coverage_shape() {
     }
 }
 
+/// 0065 S2 / 0003 §5.7: every escape that dispatches out of (or into)
+/// terminal-input renders live in the `?` terminal section — the exit
+/// from terminal input can never be undiscoverable.
+#[test]
+fn terminal_escapes_render_live_in_help() {
+    let terminal: Vec<&Binding> = BINDINGS
+        .iter()
+        .filter(|b| b.sections.contains(&"terminal"))
+        .collect();
+    for keys in [
+        "ctrl-\\ ctrl-n",
+        "ctrl-4 ctrl-n",
+        "i a",
+        ":terminal-refresh",
+    ] {
+        assert!(
+            terminal.iter().any(|b| b.live && b.keys == keys),
+            "terminal escape {keys:?} has no live row in the terminal section"
+        );
+    }
+    let window = terminal
+        .iter()
+        .find(|b| b.id == "terminal-window")
+        .expect("terminal-window row");
+    assert!(window.live);
+    for token in ["ctrl-w h/j/k/l/w", "ctrl-w N", "ctrl-w ."] {
+        assert!(
+            window.keys.contains(token),
+            "terminal-window row lost {token:?}: {}",
+            window.keys
+        );
+    }
+}
+
 /// The notation expands: leaders glue, alternatives fan out, a
 /// leading `/` is the search-forward key (never an alternative).
 #[test]

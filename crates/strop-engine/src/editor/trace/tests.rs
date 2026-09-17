@@ -223,6 +223,32 @@ fn stale_picker_terminal_cannot_end_recorded_new_query() {
     assert_eq!(picker.items[0].text, "matching row");
 }
 
+/// A picker field edited through the real vim grammar records and
+/// replays exactly: the tape captures keys pre-dispatch, and the
+/// field machine is deterministic, so the same `dw` re-resolves.
+#[test]
+fn recorded_picker_field_dw_replays() {
+    let mut editor = fixture();
+    keys(&mut editor, " /one two");
+    keys(&mut editor, "<esc>");
+    keys(&mut editor, "0dw");
+    let live = editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .picker
+        .input
+        .text()
+        .to_string();
+    assert_eq!(live, "two");
+    let replayed = replay_fixture(&editor);
+    assert_eq!(
+        replayed.picker.as_ref().unwrap().picker.input.text(),
+        live,
+        "the recorded field dw round-trips through replay"
+    );
+}
+
 /// Tampering with a recorded request's owner identity fails replay at the
 /// gate — before any native launch could have happened.
 #[test]

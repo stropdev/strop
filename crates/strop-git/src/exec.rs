@@ -1,8 +1,8 @@
 //! Three real Git execution backends (0036 RW7/RW8, 0037 DC1b): local
 //! `git` via std::process with `-C workdir`, bounded remote `git` via
 //! the shared remote-execution boundary ([`strop_remote::run`]), and
-//! bounded in-container `git` via `docker exec` argv through
-//! [`strop_containers::exec_capture`]. Not a provider framework — the
+//! bounded in-container `git` via a supervised `docker exec` lease
+//! ([`strop_containers::ExecSpec`]). Not a provider framework — the
 //! enum's variants are every backend that exists.
 //!
 //! Exit codes are data on both sides (`diff --quiet` exits 1): [`GitRun`]
@@ -202,16 +202,16 @@ impl<'a> GitExec<'a> {
                     args.push(argv_text(arg)?);
                 }
                 let engine = strop_containers::engine(cancel).map_err(GitExecError::Container)?;
-                let output = strop_containers::exec_capture(
-                    &engine,
-                    container,
-                    "git",
-                    &args,
-                    workdir,
-                    CONTAINER_STDOUT_LIMIT,
-                    cancel,
+                // Selection happens here: resolve pins the container's
+                // current incarnation and admission revalidates it; the
+                // supervised lease owns the in-container `git`.
+                let exec = strop_containers::ExecSpec::resolve(
+                    &engine, container, "git", &args, workdir, cancel,
                 )
                 .map_err(GitExecError::Container)?;
+                let output = exec
+                    .capture(CONTAINER_STDOUT_LIMIT, cancel)
+                    .map_err(GitExecError::Container)?;
                 Ok(GitRun {
                     success: output.code == Some(0),
                     code: output.code,

@@ -34,6 +34,10 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
         "terminal-paste-cancel",
         "discard the current terminal's held paste",
     ),
+    (
+        "terminal-refresh",
+        "reinstall the latest output into an inspected terminal snapshot",
+    ),
     ("w", "write"),
     ("w!", "write, force (file changed on disk)"),
     ("wq!", "write forced + quit"),
@@ -83,6 +87,10 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     (
         "collection",
         "source, expand or contract the excerpt at the caret",
+    ),
+    (
+        "recover",
+        "draft recovery: list, restore N, discard N, consent remote|off",
     ),
     ("qa", "quit all (fails on unsaved; :qa! discards)"),
 ];

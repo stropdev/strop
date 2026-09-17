@@ -128,7 +128,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         editor.pair_highlight_cached(
             view.doc,
             view.cursor,
-            matches!(editor.mode, crate::editor::Mode::Insert),
+            matches!(editor.mode(), crate::editor::Mode::Insert),
         )
     } else {
         [None, None]
@@ -157,7 +157,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         // its range like the primary's visual selection
         extra_selections: if view.overlays
             && view.doc == editor.current()
-            && matches!(editor.mode, crate::editor::Mode::Visual)
+            && matches!(editor.mode(), crate::editor::Mode::Visual)
         {
             editor
                 .extra_selections()
@@ -201,8 +201,10 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         .as_ref()
         .map_or(0, |(tree, _, _)| tree.outer_width());
     let blame = editor.blame_gutter_for(view.doc);
-    let number_width = diff::number_gutter_width(editor, view.doc);
-    let inset = sidebar_w + blame.map_or(0, |_| diff::BLAME_W) + number_width;
+    let number_width = editor.number_gutter_width(view.doc);
+    let inset = sidebar_w
+        + blame.map_or(0, |_| strop_engine::editor::prepare::BLAME_GUTTER_WIDTH)
+        + number_width;
     let width = usize::from(area.width).saturating_sub(inset);
     // 0051 R08: the fixed margins measure with the viewed document's
     // resolved width too — one setting, no render-side config shortcut.
@@ -236,12 +238,16 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                     if repeats_prev {
                         diff::blame_blank()
                     } else {
-                        diff::blame_spans(bl, editor.tape.now().unix_seconds)
+                        diff::blame_spans(bl, editor.tape().now().unix_seconds)
                     }
                 }
                 None => diff::blame_blank(),
             };
-            left.extend(fixed_spans(vec![span], diff::BLAME_W, margin_tab));
+            left.extend(fixed_spans(
+                vec![span],
+                strop_engine::editor::prepare::BLAME_GUTTER_WIDTH,
+                margin_tab,
+            ));
         }
         if line_idx > buf.last_content_line() {
             if let Some(directory) = directory {
@@ -479,7 +485,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
 
 /// Digits per side for a Diff surface's number columns.
 fn diff_digits(surface: Option<&crate::editor::Surface>) -> usize {
-    let width = diff::gutter_width(surface);
+    let width = strop_engine::editor::prepare::gutter_width(surface);
     if width == crate::render::buffer::GUTTER as usize {
         3
     } else {

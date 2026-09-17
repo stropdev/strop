@@ -15,7 +15,7 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
     if editor.input_owner() != crate::editor::InputOwner::HoverCard {
         return;
     }
-    let Some(text) = &editor.hover_card else {
+    let Some(text) = editor.hover_card() else {
         return;
     };
     let area = frame.area();
@@ -56,7 +56,7 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
         height: inner.height,
     };
     frame.render_widget(
-        Paragraph::new(text.clone())
+        Paragraph::new(text)
             .style(Style::default().fg(TEXT))
             .wrap(Wrap { trim: false }),
         inner,

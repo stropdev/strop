@@ -4,13 +4,22 @@
 //! loop the instant they post. Gone: the 500ms poll latency between a
 //! job finishing and the UI noticing.
 //!
+//! The transport itself is bounded (0056 AR06): wake hints coalesce,
+//! semantic events are admitted under count/byte bounds with visible
+//! refusal, and native readers backpressure off the UI thread. Fairness
+//! (EVENTS_PER_TURN/TURN_BUDGET) stays a scheduling property, not a
+//! substitute for a retention bound.
+//!
 //! Forwarder threads move each job channel into the app channel. The
 //! headless harness keeps the raw channels (no forwarders) and drives
 //! the same per-event handlers through the drains.
 
 use std::sync::mpsc::Receiver;
 mod channel;
-pub use channel::{channel, EventSender, EVENTS_PER_TURN, TURN_BUDGET};
+pub use channel::{
+    channel, AdmissionRefusal, EventReceiver, EventSender, RecvTimeoutError, TryRecvError,
+    EVENTS_PER_TURN, MAX_QUEUED_PASTE_BYTES, MAX_SEMANTIC_EVENTS, TURN_BUDGET,
+};
 
 use super::{Editor, Key, ShellResult};
 
@@ -168,11 +177,44 @@ impl Editor {
             AppEvent::Preview(result) => self.handle_preview(result),
             AppEvent::Clipboard(content) => self.handle_clipboard(content),
         }
+        // Coalesced draft checkpointing (0056 AR04): cheap staleness check
+        // after every event; captures only what actually moved.
+        self.recovery_after_event();
+        self.surface_event_refusals();
+    }
+
+    /// A refused admission is visible (0056 AR06): the bounded lane
+    /// records every refusal and the loop reports it rather than
+    /// pretending the event landed.
+    fn surface_event_refusals(&mut self) {
+        let Some(tx) = &self.app_tx else { return };
+        let refusals = tx.take_refusals();
+        if refusals.is_empty() {
+            return;
+        }
+        let mut classes: std::collections::BTreeMap<&'static str, usize> =
+            std::collections::BTreeMap::new();
+        for refusal in &refusals {
+            *classes.entry(refusal.class).or_insert(0) += 1;
+        }
+        let summary = classes
+            .iter()
+            .map(|(class, count)| format!("{count}×{class}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.message = format!("event queue full — refused: {summary}");
     }
 }
 
 impl Editor {
-    /// Outstanding finite work, independent of whether channels are forwarded.
+    /// Outstanding finite work, independent of whether channels are
+    /// forwarded (0056 AR06): start/handshake, mutation, checkpoint and
+    /// stopping steps — never the liveness of a long-lived service. A
+    /// running terminal session or a ready language server is NOT
+    /// pending; a terminal in Starting/Closing or a server in
+    /// start/handshake is, until it reaches its terminal outcome. Once
+    /// `finishing` is set, LSP start/readiness stops counting: shutdown
+    /// quiesces and closes services rather than waiting on them.
     pub fn async_pending(&self) -> bool {
         use strop_core::worker::Load;
         self.io_pending()
@@ -230,6 +272,7 @@ impl Editor {
         self.resolution.stop();
         self.git_mutations.clear();
         self.request_session_save();
+        self.recovery_on_finish();
         let cancel: Vec<_> = self
             .worker_handles
             .keys()
@@ -245,13 +288,22 @@ impl Editor {
 
     /// Report admitted effects that did not reach a confirmed shutdown outcome.
     pub fn take_shutdown_error(&mut self) -> Option<String> {
-        match (
+        let mut errors: Vec<String> = [
             self.io.session_error.take(),
             self.filesystem_shutdown_error(),
-        ) {
-            (Some(session), Some(filesystem)) => Some(format!("{session}\n{filesystem}")),
-            (Some(error), None) | (None, Some(error)) => Some(error),
-            (None, None) => None,
+            self.recovery.last_error.take(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        match errors.len() {
+            0 => None,
+            1 => errors.pop(),
+            _ => Some(errors.join("\n")),
         }
     }
 }
+
+#[cfg(test)]
+#[path = "events/tests.rs"]
+mod tests;

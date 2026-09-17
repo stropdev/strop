@@ -140,6 +140,17 @@ jobs:
           count="$(ls dist/strop-*.tar.gz | wc -l)"
           test "$count" -eq 4 || {
             echo "::error::expected 4 platform tarballs, got $count"; exit 1; }
+
+      # 0056 AR12: the generated release catalog is the single source of
+      # truth for version/artifact/digest facts — install.sh, `strop
+      # update` and the site all resolve "latest" through it. It ships as
+      # a release asset, so releases/latest/download/catalog.json always
+      # tracks the newest tag (that URL is the site repo's handoff).
+      - name: Generate the release catalog
+        run: |
+          python3 .github/scripts/release-catalog.py catalog \
+            --tag "$GITHUB_REF_NAME" --dist dist --out dist/catalog.json
+
       # signed build provenance for every tarball (the gripsack lesson,
       # plan/0020 §5.8 there): verify with
       # `gh attestation verify <file> -R stropdev/strop`
@@ -159,6 +170,7 @@ jobs:
           echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
 
       - name: Publish to crates.io (dependency order)
+        id: crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -192,6 +204,7 @@ jobs:
       # darwin binaries. Needs HOMEBREW_TAP_TOKEN (fine-grained PAT,
       # contents:write on stropdev/homebrew-tap) — skipped while unset.
       - name: Bump homebrew formula + cask
+        id: homebrew
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -247,6 +260,7 @@ jobs:
           git push
 
       - name: Create GitHub release
+        id: ghrelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -257,6 +271,7 @@ jobs:
       # Redeploy the site so the version chip and demo stay current.
       # Best-effort: a site hiccup must not fail a release.
       - name: Ping the site to redeploy
+        id: siteping
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
@@ -264,10 +279,13 @@ jobs:
           gh api repos/stropdev/stropdev.github.io/dispatches \
             -f event_type=rebuild
 
-      # Ship the changelog with the release: vendor CHANGELOG.md into the
-      # site repo, rebuild changelog.html (the checked-in script), push.
-      # Best-effort like the redeploy ping.
-      - name: Publish changelog to the site repo
+      # Ship the changelog and the canonical installer with the release:
+      # vendor CHANGELOG.md + install.sh (0056 AR12: one installer copy,
+      # no stale duplicated site installer) into the site repo, rebuild
+      # changelog.html (the checked-in script), push. Best-effort like
+      # the redeploy ping.
+      - name: Publish changelog and installer to the site repo
+        id: changelog
         continue-on-error: true
         env:
           SITE_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
@@ -275,9 +293,68 @@ jobs:
           set -e
           git clone --depth 1 "https://x-access-token:${SITE_TOKEN}@github.com/stropdev/stropdev.github.io.git" /tmp/site
           cp CHANGELOG.md /tmp/site/CHANGELOG.md
+          cp install.sh /tmp/site/install.sh
           (cd /tmp/site && python3 build_changelog.py)
           git -C /tmp/site config user.name "github-actions[bot]"
           git -C /tmp/site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C /tmp/site add CHANGELOG.md changelog.html
-          git -C /tmp/site commit -m "changelog: strop ${GITHUB_REF_NAME}" || echo "no changelog change"
+          git -C /tmp/site add CHANGELOG.md changelog.html install.sh
+          git -C /tmp/site commit -m "changelog + installer: strop ${GITHUB_REF_NAME}" || echo "no site change"
           git -C /tmp/site push
+
+      # 0056 AR12: promotion evidence is observable. Record every
+      # promotion step in a resumable ledger, verify the actual public
+      # download facts against the build outputs, and attach the ledger
+      # to the release. A partially promoted release (e.g. site hiccup)
+      # is recorded honestly, never hidden behind a fully-promoted status.
+      - name: Record promotion evidence and verify public facts
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LEDGER="$RUNNER_TEMP/promotion.json"
+          rec() {
+            status="$2"
+            python3 .github/scripts/release-catalog.py ledger \
+              --file "$LEDGER" --tag "$GITHUB_REF_NAME" \
+              --step "$1" --status "${status:-skipped}" ${3:+--detail "$3"}
+          }
+          rec crates.io "${{ steps.crates.outcome }}"
+          rec homebrew-tap "${{ steps.homebrew.outcome }}"
+          rec github-release "${{ steps.ghrelease.outcome }}"
+          rec site-rebuild-dispatch "${{ steps.siteping.outcome }}"
+          rec site-changelog "${{ steps.changelog.outcome }}"
+
+          if [ "${{ steps.ghrelease.outcome }}" != "success" ]; then
+            echo "::warning::release not created; ledger kept as workflow artifact only"
+            exit 0
+          fi
+
+          # The catalog served at /releases/latest/download/ must record
+          # exactly what this workflow built — that is what install.sh,
+          # `strop update` and the site will resolve.
+          curl -fsSL -o "$RUNNER_TEMP/public-catalog.json" \
+            https://github.com/stropdev/strop/releases/latest/download/catalog.json
+          python3 .github/scripts/release-catalog.py verify \
+            --local dist/catalog.json --public "$RUNNER_TEMP/public-catalog.json"
+          rec public-download-facts ok
+
+          # Rendered-site evidence: the site repo rebuilds asynchronously
+          # off the dispatch, so record what is observable now — never a
+          # misleading fully-promoted status.
+          if curl -fsSL https://strop.dev/ | grep -q "${GITHUB_REF_NAME#v}"; then
+            rec rendered-site-version ok
+          else
+            rec rendered-site-version pending \
+              "site rebuild is asynchronous; version not yet rendered"
+          fi
+
+          # Resumable: a re-run rewrites the ledger asset in place.
+          gh release upload "$GITHUB_REF_NAME" "$LEDGER" --clobber
+
+      - name: Upload the promotion ledger
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: promotion-ledger
+          path: ${{ runner.temp }}/promotion.json
+          if-no-files-found: warn

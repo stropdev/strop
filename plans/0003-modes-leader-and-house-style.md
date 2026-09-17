@@ -21,6 +21,14 @@ Not modes, never modes:
 - **Which-key overlay / transients** — key-hint layer over pending key state (§3).
 - **Pickers** — a layout of real buffers; the input line is insert mode in a prompt
   buffer, the results list is a normal-mode buffer (§2).
+
+  Fulfilled 2026-09-16: every input field (picker query/replace, the
+  `:`/`/`/`?`/`|` line) is backed by a persistent one-line
+  `strop_core::Buffer` driven by the real Walker + grammar resolver
+  (`editor/field.rs`) — the bespoke LineEdit key table is deleted.
+  Operators, counts, motions and text objects work identically to a file
+  buffer (`dw`, `2dw`, `diw`, `cw`→insert, `dfx`); exclusions refuse
+  loudly; picker j/k still walks results.
 - **Git** — surfaces with buffer-local keymaps (§4). No git mode exists; "modal-on-modal"
   would force redefining every operator (`dw`, `dd`) per mode and breaks plan 0001's
   fidelity promise.

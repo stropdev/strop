@@ -3,6 +3,7 @@
 //!
 //! Mode handlers live beside this file: `normal`, `visual`, `insert`.
 
+mod api;
 mod blame;
 pub mod block;
 #[cfg(test)]
@@ -28,6 +29,7 @@ mod dive;
 mod document;
 pub mod events;
 mod explain;
+pub(crate) mod field;
 mod git;
 pub mod git_memory;
 mod help;
@@ -50,6 +52,9 @@ mod panes;
 pub mod pending;
 mod permalink;
 mod picker;
+pub mod prepare;
+mod privacy;
+pub mod recovery;
 mod registers;
 pub mod remote;
 mod remote_completion;
@@ -157,101 +162,104 @@ pub const CURSOR_FADE_MS: u64 = 160;
 pub type FrameDraw = fn(&mut Editor, u16, u16, bool) -> std::io::Result<()>;
 
 pub struct Editor {
-    pub docs: strop_core::id::Arena<strop_core::id::DocumentKind, Document>,
+    /// Document arena (0056 AR02): frontends read through
+    /// [`Editor::document`]/[`Editor::has_documents`] and admit new
+    /// documents through [`Editor::admit_document`].
+    pub(crate) docs: strop_core::id::Arena<strop_core::id::DocumentKind, Document>,
     pub(crate) trace_documents:
         HashMap<strop_core::id::DocumentId, strop_core::diagnostics::BufferTraceId>,
-    pub io: io::IoState,
     pub(crate) remote: remote::RemoteState,
     pub(crate) directories: directory::DirectoryState,
     pub(crate) filesystem: filesystem::FsState,
+    pub(crate) io: io::IoState,
     pub(crate) remote_completion: remote_completion::RemoteCompletionState,
     pub(crate) worker_ids: strop_core::worker::WorkerIds,
     pub(crate) worker_handles:
         HashMap<strop_core::worker::WorkerId, strop_core::worker::CancelHandle>,
     pub(crate) focus_epoch: u64,
     pub(crate) finishing: bool,
-    pub tape: std::rc::Rc<strop_trace::replay::Tape>,
-    pub git_view: strop_core::worker::WorkerId,
-    pub git_discovery: strop_core::worker::Load<git_memory::ContextKey>,
-    pub hunk_load: strop_core::worker::Load<git_memory::HunkKey>,
-    pub hunks_untracked: bool,
-    pub log_requests:
+    pub(crate) tape: std::rc::Rc<strop_trace::replay::Tape>,
+    pub(crate) git_view: strop_core::worker::WorkerId,
+    pub(crate) git_discovery: strop_core::worker::Load<git_memory::ContextKey>,
+    pub(crate) hunk_load: strop_core::worker::Load<git_memory::HunkKey>,
+    pub(crate) hunks_untracked: bool,
+    pub(crate) log_requests:
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::LogKey>>,
-    pub card_request: Option<strop_core::worker::Ticket<git_memory::CardKey>>,
-    pub dive_requests:
+    pub(crate) card_request: Option<strop_core::worker::Ticket<git_memory::CardKey>>,
+    pub(crate) dive_requests:
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,
-    pub git_mutations: std::collections::VecDeque<git_memory::GitMutation>,
-    pub git_mutation: Option<strop_core::worker::Ticket<git_memory::MutationKey>>,
+    pub(crate) git_mutations: std::collections::VecDeque<git_memory::GitMutation>,
+    pub(crate) git_mutation: Option<strop_core::worker::Ticket<git_memory::MutationKey>>,
     /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks of named
     /// navigation/view records — caret, selection, viewport and
     /// horizontal origin (0051 §7, jumps.rs).
-    pub jumplist_past: Vec<jumps::JumpRecord>,
-    pub jumplist_future: Vec<jumps::JumpRecord>,
-    pub mode: Mode,
-    pub pending: pending::PendingInput,
+    pub(crate) jumplist_past: Vec<jumps::JumpRecord>,
+    pub(crate) jumplist_future: Vec<jumps::JumpRecord>,
+    pub(crate) mode: Mode,
+    pub(crate) pending: pending::PendingInput,
     /// The input walker (0008 stage 2): typed parser state for
     /// counts/registers/operators/prefixes — pending stays for the
     /// free-text lines only.
-    pub walker: input::Walker,
+    pub(crate) walker: input::Walker,
     /// `Space u` browser state (editor/undo.rs); None when closed.
-    pub undo_browser: Option<undo::UndoBrowser>,
+    pub(crate) undo_browser: Option<undo::UndoBrowser>,
     /// Last `f/F/t/T` find: (char, backward, till). `;` and `,` replay it.
-    pub last_find: Option<(char, bool, bool)>,
+    pub(crate) last_find: Option<(char, bool, bool)>,
     /// Armed by `/`/`?`/`*`/`#` searches. `n`/`N` replay it; the render
     /// highlights matches persistently (rootle: current match underlined).
-    pub last_search: Option<LastSearch>,
+    pub(crate) last_search: Option<LastSearch>,
     /// Live occurrence selection (0049 §7): needle + add-order ranges.
     pub(crate) occurrence: Option<occurrence::OccurrenceState>,
-    pub registers: HashMap<char, Register>,
+    pub(crate) registers: HashMap<char, Register>,
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
-    pub marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
-    pub flash: Option<(Range, strop_trace::replay::Tick)>,
+    pub(crate) marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
+    pub(crate) flash: Option<(Range, strop_trace::replay::Tick)>,
     /// Cursor fade-in (0064 §2): the Normal-mode block cursor fades
     /// back in from this tick after a focus return, pane/buffer switch
     /// or a jump beyond half a screen. Presentation-only — never part
     /// of the recorded observation.
-    pub cursor_fade: Option<strop_trace::replay::Tick>,
+    pub(crate) cursor_fade: Option<strop_trace::replay::Tick>,
     /// Last cursor-fade track mark (pane, document, head line) for
     /// jump detection across recorded actions.
     pub(crate) fade_track: Option<(usize, strop_core::id::DocumentId, usize)>,
-    pub message: String,
-    pub should_quit: bool,
+    pub(crate) message: String,
+    pub(crate) should_quit: bool,
     /// ctrl-c is armed after the first warn (0015 quit policy).
-    pub ctrl_c_armed: bool,
+    pub(crate) ctrl_c_armed: bool,
     /// Last visual range for `gv` (recorded per visual-mode key).
-    pub last_visual: Option<(usize, usize)>,
+    pub(crate) last_visual: Option<(usize, usize)>,
     /// Where the last insert session was for `gi`.
-    pub last_insert_pos: Option<usize>,
+    pub(crate) last_insert_pos: Option<usize>,
     /// g;/g, walk: (index, history depth it was taken at) — a new
     /// commit invalidates the walk.
-    pub change_idx: Option<(usize, usize)>,
+    pub(crate) change_idx: Option<(usize, usize)>,
     /// Text area height in rows — the render loop feeds it via
     /// scroll_to_cursor; viewport motions read it.
-    pub view_rows: usize,
+    pub(crate) view_rows: usize,
     /// Macro recording (0016): the register being recorded into.
-    pub recording: Option<char>,
+    pub(crate) recording: Option<char>,
     /// The app event channel (0018): set by connect_events; late LSP
     /// attaches forward through it.
-    pub app_tx: Option<events::EventSender>,
+    pub(crate) app_tx: Option<events::EventSender>,
     pub(crate) lsp_state: lsp::state::LspState,
     /// Recorded macros: register → key events.
-    pub macros: std::collections::HashMap<char, Vec<Key>>,
+    pub(crate) macros: std::collections::HashMap<char, Vec<Key>>,
     /// The last replayed macro register (@@).
-    pub last_macro: Option<char>,
+    pub(crate) last_macro: Option<char>,
     /// The rows and cell edge owned by an ongoing block insert/change.
     pub(crate) block_insert_state: Option<block::BlockInsertState>,
     /// Macro self-replay depth guard.
-    pub macro_depth: usize,
-    pub picker: Option<PickerGlue>,
+    pub(crate) macro_depth: usize,
+    pub(crate) picker: Option<PickerGlue>,
     pub(crate) retained_search: Option<PickerGlue>,
     pub(crate) picker_source: Option<strop_picker::SourceWorker>,
     pub(crate) picker_ranking: picker::ranking::State,
     pub(crate) analysis: analysis::AnalysisState,
     pub(crate) terminals: terminal::State,
-    pub resolution: resolution::ResolutionState,
-    pub cwd: PathBuf,
+    pub(crate) resolution: resolution::ResolutionState,
+    pub(crate) cwd: PathBuf,
     /// Bound workspace contexts (0042 slice 2): one per filesystem in use.
-    pub workspaces: workspaces::WorkspaceRegistry,
+    pub(crate) workspaces: workspaces::WorkspaceRegistry,
     /// Applied change plans and their receipts (0043); grouped undo reads it.
     pub(crate) changes: changes::ChangeState,
     pub(crate) review: changes::review::ReviewState,
@@ -262,67 +270,83 @@ pub struct Editor {
     /// Container attach/browse state (0037 DC1a).
     pub(crate) containers: containers::ContainerState,
     /// MRU document order (most recent first); drives `Space b`.
-    pub mru: Vec<strop_core::id::DocumentId>,
+    pub(crate) mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
-    pub previews: Previews,
+    pub(crate) previews: Previews,
     /// Git working surface state (M2).
-    pub git: Option<strop_git::GitContext>,
+    pub(crate) git: Option<strop_git::GitContext>,
     /// Preview file reads run on worker threads (0001 §3); results and
     /// the in-flight set are drained in drain_picker.
-    pub preview_tx: std::sync::mpsc::Sender<PreviewResult>,
-    pub preview_rx: Option<std::sync::mpsc::Receiver<PreviewResult>>,
+    pub(crate) preview_tx: std::sync::mpsc::Sender<PreviewResult>,
+    pub(crate) preview_rx: Option<std::sync::mpsc::Receiver<PreviewResult>>,
     pub(crate) preview_loads:
         HashMap<strop_workspace::ResourceLocation, strop_core::worker::Load<PreviewKey>>,
-    pub hunks: git_memory::HunkSet,
+    pub(crate) hunks: git_memory::HunkSet,
     /// HEAD↔index — the staged set (0014 wave 4); rendered in the
     /// gutter's committed-adjacent color.
-    pub staged_hunks: git_memory::HunkSet,
+    pub(crate) staged_hunks: git_memory::HunkSet,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
-    pub blame_card: Option<strop_git::memory::BlameCard>,
+    pub(crate) blame_card: Option<strop_git::memory::BlameCard>,
     /// Each full/range/tail document owns its own revision-checked gutter.
-    pub blame_gutters: HashMap<strop_core::id::DocumentId, BlameGutter>,
+    pub(crate) blame_gutters: HashMap<strop_core::id::DocumentId, BlameGutter>,
     /// Bumped on every buffer-list mutation; git jobs carry the
     /// generation they were spawned under so results for dead
     /// surfaces are dropped (0011 §2).
-    pub generation: u64,
-    pub git_tx: std::sync::mpsc::Sender<GitJob>,
-    pub git_rx: Option<std::sync::mpsc::Receiver<GitJob>>,
-    pub osc52: Option<String>,
-    pub terminal_output: Vec<String>,
+    pub(crate) generation: u64,
+    pub(crate) git_tx: std::sync::mpsc::Sender<GitJob>,
+    pub(crate) git_rx: Option<std::sync::mpsc::Receiver<GitJob>>,
+    pub(crate) osc52: Option<String>,
+    pub(crate) terminal_output: Vec<String>,
     /// ctrl-l: the terminal desynced from the model — the draw loop
     /// answers with a full repaint (vim's redraw).
-    pub needs_repaint: bool,
-    /// Last frame-preparation stamp (AR01): preparation runs only when the
+    pub(crate) needs_repaint: bool,
+    /// Last view-preparation stamp (AR01): preparation runs only when the
     /// view-relevant state or geometry changed; unchanged repaints stay pure.
-    pub frame_stamp: u64,
+    /// `None` until the first [`Editor::prepare_view`].
+    pub(crate) frame_stamp: Option<u64>,
+    /// Accepted-preparation generation (AR03): bumps on every meaningful
+    /// state/geometry change; the prepared view is keyed by it.
+    pub(crate) view_generation: u64,
+    /// The published prepared view (AR03), rebuilt by preparation and
+    /// borrowed by the frontend per frame.
+    pub(crate) prepared: prepare::PreparedView,
+    /// Worker-ticket admission counters (AR01 evidence).
+    pub(crate) admissions: prepare::AdmissionProbe,
     /// System-clipboard reads (paste from `+`) run on a worker thread;
     /// `clip_paste_pending` remembers before/after AND the initiating
     /// document until the read lands (0023 §4).
-    pub clip_tx: std::sync::mpsc::Sender<ClipboardResult>,
-    pub clip_rx: Option<std::sync::mpsc::Receiver<ClipboardResult>>,
-    pub clip_paste_pending: Option<(bool, strop_core::worker::Ticket<ClipboardKey>)>,
+    pub(crate) clip_tx: std::sync::mpsc::Sender<ClipboardResult>,
+    pub(crate) clip_rx: Option<std::sync::mpsc::Receiver<ClipboardResult>>,
+    pub(crate) clip_paste_pending: Option<(bool, strop_core::worker::Ticket<ClipboardKey>)>,
     /// LSP server pool (0014 wave 2): one client per (workspace root,
     /// server) — a rust file and a python file in one session get their
     /// own servers. Diagnostics by path, hover card, open bookkeeping.
-    pub lsp_servers: Vec<crate::editor::lsp::LspServer>,
-    pub diags: HashMap<strop_core::id::DocumentId, DocumentDiagnostics>,
-    pub hover_card: Option<String>,
+    pub(crate) lsp_servers: Vec<crate::editor::lsp::LspServer>,
+    pub(crate) diags: HashMap<strop_core::id::DocumentId, DocumentDiagnostics>,
+    pub(crate) hover_card: Option<String>,
     /// Shell jobs (`:!cmd` output buffers, `|cmd` pipes): results land
     /// in drain_shell — never a subprocess on the input path (0001 §3).
-    pub shell_tx: std::sync::mpsc::Sender<ShellResult>,
-    pub shell_rx: Option<std::sync::mpsc::Receiver<ShellResult>>,
-    pub(crate) shell_requests: HashMap<strop_core::worker::WorkerId, ShellIntent>,
+    pub(crate) shell_tx: std::sync::mpsc::Sender<ShellResult>,
+    pub(crate) shell_rx: Option<std::sync::mpsc::Receiver<ShellResult>>,
     pub(crate) shell_focus: Option<strop_core::worker::WorkerId>,
+    pub(crate) shell_requests: HashMap<strop_core::worker::WorkerId, ShellIntent>,
     /// Splits: flat row/column of panes (v1; tree layout later).
-    pub panes: Vec<Pane>,
-    pub active_pane: usize,
-    pub layout: LayoutDir,
+    /// Frontends read through [`Editor::panes`]/[`Editor::active_pane`]/
+    /// [`Editor::layout`] and act through admitted actions (0056 AR02).
+    pub(crate) panes: Vec<Pane>,
+    pub(crate) active_pane: usize,
+    pub(crate) layout: LayoutDir,
     /// User config (0005-lite: TOML, embedded defaults, never bricks).
-    pub config: crate::config::Config,
+    /// Frontends read [`Editor::config`] and replace it through
+    /// [`Editor::set_config`].
+    pub(crate) config: crate::config::Config,
     /// Shared state root for explicit trust and optional session persistence.
-    pub state_dir: Option<PathBuf>,
-    pub session_policy: crate::session::SessionPolicy,
+    pub(crate) state_dir: Option<PathBuf>,
+    pub(crate) session_policy: crate::session::SessionPolicy,
+    /// Draft checkpoint/recovery (0056 AR04): durable dirty/scratch draft
+    /// bytes in private state storage — a different product from session.
+    pub(crate) recovery: recovery::RecoveryState,
 
     /// The last grammar-level change (dot-repeat's semantic form).
     pub(crate) last_change: Option<strop_grammar::Command>,
@@ -337,14 +361,7 @@ pub struct Editor {
     /// Injected frame renderer (0046): cell-grid production belongs to the
     /// binary; replay of a recorded `Frame` action renders through this
     /// hook. The engine never renders on its own.
-    pub frame_draw: Option<FrameDraw>,
-}
-
-impl Editor {
-    /// Focus identity for frame-preparation stamps (AR01).
-    pub fn focus_epoch(&self) -> u64 {
-        self.focus_epoch
-    }
+    pub(crate) frame_draw: Option<FrameDraw>,
 }
 
 /// The compiled query owns matching semantics for repeat, preview and highlighting.
@@ -393,7 +410,9 @@ impl Editor {
         } else {
             Document::scratch(buf)
         };
-        let current = docs.insert(doc);
+        let Ok(current) = docs.try_insert(doc) else {
+            unreachable!("a fresh arena cannot exhaust its identity space")
+        };
         Self {
             docs,
             trace_documents: HashMap::new(),
@@ -465,12 +484,19 @@ impl Editor {
             picker_source: None,
             workspaces: {
                 let mut registry = workspaces::WorkspaceRegistry::default();
-                registry.bind(strop_workspace::Filesystem::Local, Some(cwd.clone()));
+                let Ok(_) = registry.bind(strop_workspace::Filesystem::Local, Some(cwd.clone()))
+                else {
+                    unreachable!("a fresh workspace registry cannot exhaust its identity space")
+                };
                 registry
             },
             cwd,
             blame_gutters: HashMap::new(),
             generation: 0,
+            frame_stamp: None,
+            view_generation: 0,
+            prepared: prepare::PreparedView::empty(),
+            admissions: prepare::AdmissionProbe::default(),
             previews: HashMap::new(),
             shell_tx,
             shell_rx: Some(shell_rx),
@@ -481,7 +507,6 @@ impl Editor {
             git_tx,
             git_rx: Some(git_rx),
             needs_repaint: false,
-            frame_stamp: 0,
             osc52: None,
             terminal_output: Vec::new(),
             preview_tx,
@@ -508,6 +533,7 @@ impl Editor {
             config: crate::config::Config::default(),
             state_dir: None,
             session_policy: crate::session::SessionPolicy::Automatic,
+            recovery: recovery::RecoveryState::default(),
             frame_draw: None,
         }
     }
@@ -545,6 +571,7 @@ impl Editor {
             editor.prepare_resolution_preview();
         });
         self.trace_state();
+        self.recovery_after_event();
     }
 
     fn feed_inner(&mut self, key: Key) {
@@ -704,7 +731,7 @@ pub fn state_json(editor: &Editor) -> String {
         "panes": editor.panes.len(),
         "active_pane": editor.active_pane,
         "picker": editor.picker_open(),
-        "picker_input": editor.picker.as_ref().map(|g| g.picker.input.text.clone()),
+        "picker_input": editor.picker.as_ref().map(|g| g.picker.input.text().to_string()),
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
         "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
         "register": editor.register(None).text,

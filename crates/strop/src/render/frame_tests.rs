@@ -13,13 +13,16 @@ fn review_tab_glyph_and_caret_use_same_layout() {
     e.feed_text("l");
     let backend = ratatui::backend::TestBackend::new(40, 8);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let x_col = (0..40u16)
         .find(|x| terminal.backend().buffer()[(*x, 0)].symbol() == "X")
         .unwrap() as usize;
     // the contract: the glyph and the caret read the same layout,
     // driven by the editor's tab width
-    let caret = 5 + e.buf().cell_col_with_tab(e.head(), e.config.tab_size).get();
+    let caret = 5 + e
+        .buf()
+        .cell_col_with_tab(e.head(), e.config().tab_size)
+        .get();
     assert_eq!(x_col, caret, "rendered X and caret must agree after a tab");
 }
 
@@ -32,8 +35,8 @@ fn extra_cursors_render_without_panicking() {
 }
 
 /// AR01: paint is a readonly query. Repeated draws with no engine/view
-/// change run no new preparation (same stamp), admit no analysis work and
-/// leave the viewport untouched.
+/// change keep the view epoch, admit ZERO worker tickets (hunk/analysis/
+/// preview/pair counters stay flat) and leave the viewport untouched.
 #[test]
 fn repeated_paint_without_change_admits_no_work_or_viewport_drift() {
     let directory = tempfile::tempdir().unwrap();
@@ -43,19 +46,26 @@ fn repeated_paint_without_change_admits_no_work_or_viewport_drift() {
     e.open_fixture(&path).unwrap();
     e.wait_analysis();
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
-    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     e.wait_analysis();
     assert!(
         !e.analysis_pending_probe(),
         "work admitted by first paint drained"
     );
-    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
-    let stamp = e.frame_stamp;
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    e.wait_analysis();
+    let epoch = e.view_epoch();
+    let admitted = e.admission_probe();
     let (top, origin, head) = (e.view().view_top, e.view().hscroll.get(), e.head());
-    for _ in 0..3 {
-        terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    for _ in 0..5 {
+        terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     }
-    assert_eq!(e.frame_stamp, stamp, "unchanged repaints skip preparation");
+    assert_eq!(e.view_epoch(), epoch, "unchanged repaints skip preparation");
+    assert_eq!(
+        e.admission_probe(),
+        admitted,
+        "unchanged repaints admit zero tickets"
+    );
     assert!(
         !e.analysis_pending_probe(),
         "unchanged repaints admit no analysis"
@@ -66,9 +76,40 @@ fn repeated_paint_without_change_admits_no_work_or_viewport_drift() {
     );
     // A real change re-arms preparation exactly once.
     e.feed(Key::Char('j'));
-    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
-    assert_ne!(e.frame_stamp, stamp);
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    assert_ne!(e.view_epoch(), epoch);
     assert_ne!(e.head(), head);
+}
+
+/// AR03: an edit between preparation and paint leaves the published
+/// window stale-keyed — a stale-revision viewport cannot act, and the
+/// readonly paint cannot mutate engine state to cover for it.
+#[test]
+fn stale_prepared_window_reports_stale_and_paint_cannot_act() {
+    let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    let doc = e.current();
+    let epoch = e.view_epoch();
+    e.feed_text("x");
+    let live = e.document(doc).map(|d| d.buf.revision()).unwrap();
+    let prepared = &e.prepared_view().panes[0];
+    assert!(
+        prepared.is_stale(live),
+        "prepared window keys the old revision"
+    );
+    let admitted = e.admission_probe();
+    let (top, head) = (e.view().view_top, e.head());
+    // The readonly paint itself (no preparation): no admission, no
+    // viewport mutation, no selection/history effect.
+    terminal.draw(|f| crate::render::render(&e, f)).unwrap();
+    assert_eq!(e.admission_probe(), admitted);
+    assert_eq!((e.view().view_top, e.head()), (top, head));
+    assert_eq!(e.view_epoch(), epoch, "paint never re-prepares");
+    // The next admitted preparation re-keys the window.
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    assert!(!e.prepared_view().panes[0].is_stale(live));
+    assert!(e.view_epoch().generation > epoch.generation);
 }
 
 #[test]
@@ -116,7 +157,7 @@ fn gutters_and_sidebar_render() {
 
     let (dir, mut e) = fixture();
     let root = dir.path().to_path_buf();
-    settle(&mut e, |e| e.git.is_some());
+    settle(&mut e, |e| e.git().is_some());
     e.feed_text(" gb");
     pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
     let frame = crate::headless::frame_string(&mut e, 100, 10).unwrap();
@@ -180,7 +221,7 @@ fn snapshot_search_yank_and_readonly_commands_use_the_real_buffer() {
         !editor.io_pending(),
         "write is refused, never pending on a worker"
     );
-    assert!(editor.message.contains("remote"));
+    assert!(editor.message().contains("remote"));
     assert!(editor.buf().path.is_none());
     assert!(matches!(editor.cur().source, DocumentSource::Remote(_)));
     editor.feed(Key::Esc); // dismiss the long write error before inspecting identity
@@ -196,7 +237,7 @@ fn narrow_remote_modeline_retains_source_identity_during_status_messages() {
 
     let mut editor = editor("origin\n");
     open(&mut editor, "remote contents\n");
-    editor.message = "an active operation has detailed status information ".repeat(8);
+    editor.set_message("an active operation has detailed status information ".repeat(8));
     let frame = crate::headless::frame_string(&mut editor, 80, 8).unwrap();
     let modeline = frame.lines().last().unwrap();
     assert!(modeline.contains("ssh:fixture"), "{modeline}");
@@ -212,14 +253,13 @@ fn respawn_never_renders_stale_rows() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "alpha one\nalpha two\n").unwrap();
     std::fs::write(dir.path().join("b.txt"), "alpha three\n").unwrap();
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.cwd = dir.path().to_path_buf();
+    let mut e = Editor::new_in(Buffer::from_text("x\n"), dir.path().to_path_buf());
     e.open_search(true);
 
     e.feed_text("alpha");
     e.wait_picker();
     assert!(
-        !e.picker.as_ref().unwrap().picker.items.is_empty(),
+        !e.picker().unwrap().picker.items.is_empty(),
         "rg delivered matches"
     );
     e.feed_text("b"); // respawn: items + rows both clear
@@ -233,15 +273,13 @@ fn respawn_never_renders_stale_rows() {
 fn rg_error_is_sticky_in_the_card() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.rs"), "foo\n").unwrap();
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.cwd = dir.path().to_path_buf();
+    let mut e = Editor::new_in(Buffer::from_text("x\n"), dir.path().to_path_buf());
     e.open_search(true);
     // Semantic compilation belongs to the owned worker, never input/render.
     e.feed_text("foo glob:\"**/bad[\"");
     e.wait_picker();
     let err = e
-        .picker
-        .as_ref()
+        .picker()
         .unwrap()
         .picker
         .error
@@ -302,7 +340,7 @@ fn directory_metadata_preserves_unknown_zero_and_native_row_identity() {
     });
     let mut editor = editor("origin\n");
     let document = Document::directory(Buffer::from_text(&directory.text()), directory);
-    let id = editor.docs.insert(document);
+    let id = editor.admit_document(document).unwrap();
     editor.switch_to(id);
     let frame = crate::headless::frame_string(&mut editor, 80, 10).unwrap();
     let missing = frame.lines().find(|line| line.contains("missing")).unwrap();
@@ -340,7 +378,7 @@ fn last_search_highlights_persistently() {
     e.feed_text("/foo\r");
     // committed: no pending pattern, but hits must still compute
     assert!(e.search_pattern().is_none());
-    assert_eq!(e.last_search.as_ref().unwrap().query.source(), "foo");
+    assert_eq!(e.last_search().unwrap().query.source(), "foo");
     let frame = crate::headless::frame_string(&mut e, 40, 8).unwrap();
     assert!(frame.contains("foo bar foo"));
 }
@@ -392,7 +430,7 @@ fn same_line_replacements_share_one_exact_styled_review() {
     let added = editor.buf().line_of(text.find("+bar bar").unwrap()) as u16;
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
     terminal
-        .draw(|frame| crate::render::render(&mut editor, frame))
+        .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     let grid = terminal.backend().buffer();
     assert_eq!(grid[(5, removed)].fg, crate::render::diff::DEL_FG);
@@ -420,12 +458,12 @@ fn search_keeps_outer_geometry_and_recovers_active_field_after_tiny_resize() {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|frame| crate::render::render(&mut editor, frame))
+            .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
         let before = terminal.backend().buffer().clone();
         editor.feed(Key::CtrlR);
         terminal
-            .draw(|frame| crate::render::render(&mut editor, frame))
+            .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
         let after = terminal.backend().buffer();
         for (x, y) in [
@@ -436,19 +474,19 @@ fn search_keeps_outer_geometry_and_recovers_active_field_after_tiny_resize() {
         ] {
             assert_eq!(before[(x, y)].symbol(), after[(x, y)].symbol());
         }
-        assert_eq!(editor.picker.as_ref().unwrap().picker.selected, 20);
+        assert_eq!(editor.picker().unwrap().picker.selected, 20);
         editor.feed(Key::CtrlR);
     }
     editor.feed(Key::CtrlR);
     editor.paste_bracketed("replacement");
-    let top = editor.picker.as_ref().unwrap().picker.scroll_top;
+    let top = editor.picker().unwrap().picker.scroll_top;
     let tiny = crate::headless::frame_string(&mut editor, 12, 4).unwrap();
     assert!(tiny.contains("With"), "{tiny}");
-    assert_eq!(editor.picker.as_ref().unwrap().picker.scroll_top, top);
+    assert_eq!(editor.picker().unwrap().picker.scroll_top, top);
     for (width, height) in [(1, 1), (2, 2), (3, 3), (140, 40)] {
         crate::headless::frame_string(&mut editor, width, height).unwrap();
     }
     let restored = crate::headless::frame_string(&mut editor, 140, 40).unwrap();
     assert!(restored.contains("replacement"), "{restored}");
-    assert_eq!(editor.picker.as_ref().unwrap().picker.selected, 20);
+    assert_eq!(editor.picker().unwrap().picker.selected, 20);
 }

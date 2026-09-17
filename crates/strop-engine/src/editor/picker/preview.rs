@@ -493,6 +493,7 @@ impl Editor {
             request,
             key: key.clone(),
         };
+        self.admissions.previews += 1;
         // registration precedes launch — replay mode stops here and
         // only injected results populate the cache
         self.preview_loads

@@ -66,3 +66,14 @@ expect_kills() {
     fi
     grep -E 'states generated|Finished in' "$WORK/$name.log"
 }
+
+# Each targeted fault gets its own configuration; a first counterexample
+# must violate exactly that invariant, not a parser failure or another
+# property. (The helper remote-gate.sh established, shared here.)
+check_fault() {
+    fault_label=$1 base_config=$2 fault_module=$3 invariant=$4
+    selected="$WORK/$fault_label.cfg"
+    sed -n '1,/^INVARIANTS/p' "$base_config" >"$selected"
+    printf 'TypeOK\n%s\n' "$invariant" >>"$selected"
+    expect_kills "$fault_label" "$selected" "$fault_module" no "$invariant"
+}

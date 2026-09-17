@@ -56,7 +56,8 @@ impl Buffer {
     }
 
     pub fn prepare_save(&self, target: Option<PathBuf>, force: bool) -> io::Result<SaveRequest> {
-        if self.readonly && !force {
+        // The verified save-authority decision (0057 VF18, crate::mutguard).
+        if !crate::mutguard::save_admitted(self.readonly, force) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "readonly buffer — :w! to force",
@@ -100,7 +101,8 @@ impl Buffer {
     /// Pure acknowledgment for an externally owned save. The caller validates
     /// document/request identity; no local filesystem path is created or changed.
     pub fn acknowledge_saved_revision(&mut self, revision: BufferRevision) -> bool {
-        let current = self.revision() == revision;
+        // The verified retirement rule: only the live revision retires.
+        let current = crate::mutguard::save_ack_is_current(revision.get(), self.revision().get());
         if current {
             self.dirty = false;
         }

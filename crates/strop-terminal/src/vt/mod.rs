@@ -47,7 +47,11 @@ pub(crate) struct Vt {
 }
 
 impl Vt {
-    pub fn new(session: SessionId, geometry: Geometry) -> Result<Self, Error> {
+    pub fn new(
+        session: SessionId,
+        geometry: Geometry,
+        palette: Option<&Palette>,
+    ) -> Result<Self, Error> {
         if !geometry.valid() {
             return Err(Error::Capacity("invalid terminal geometry"));
         }
@@ -69,7 +73,7 @@ impl Vt {
         check("create", result)?;
         let handle = NonNull::new(handle)
             .ok_or_else(|| Error::Protocol("native constructor returned no terminal".into()))?;
-        Ok(Self {
+        let vt = Self {
             handle,
             events,
             session,
@@ -82,6 +86,37 @@ impl Vt {
             alternate: false,
             rebuild: true,
             history_limited: false,
+        };
+        // The embedder-owned default palette (0065 D3) lands before the
+        // first byte: default colors are strop's from birth, never a
+        // ghostty default that later swaps.
+        if let Some(palette) = palette {
+            vt.configure_palette(palette)?;
+        }
+        Ok(vt)
+    }
+
+    fn configure_palette(&self, palette: &Palette) -> Result<(), Error> {
+        if palette.colors.len() != 256 {
+            return Err(Error::Capacity("terminal palette must hold 256 colors"));
+        }
+        let rgb = |value: Rgb| ffi::Rgb {
+            r: value.red,
+            g: value.green,
+            b: value.blue,
+        };
+        let mut native = ffi::Palette {
+            foreground: rgb(palette.foreground),
+            background: rgb(palette.background),
+            ..Default::default()
+        };
+        for (target, source) in native.colors.iter_mut().zip(&palette.colors) {
+            *target = rgb(*source);
+        }
+        // SAFETY: live unique terminal; the native call copies the palette
+        // synchronously and retains no pointer into it.
+        check("palette set", unsafe {
+            ffi::strop_vt_palette_set(self.handle.as_ptr(), &native)
         })
     }
 

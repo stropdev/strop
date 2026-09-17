@@ -75,6 +75,7 @@ unsafe extern "C" {
     pub fn strop_vt_state(handle: *mut c_void, out: *mut State) -> i32;
     pub fn strop_vt_dirty_rows(handle: *mut c_void, out: *mut u8, capacity: usize) -> i32;
     pub fn strop_vt_palette(handle: *mut c_void, out: *mut Palette) -> i32;
+    pub fn strop_vt_palette_set(handle: *mut c_void, palette: *const Palette) -> i32;
     pub fn strop_vt_cell(handle: *mut c_void, row: i32, column: u16, out: *mut Cell) -> i32;
     pub fn strop_vt_graphemes(
         handle: *mut c_void,

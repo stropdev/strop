@@ -39,3 +39,7 @@ sh specs/remote-gate.sh
 sh specs/save-gate.sh
 sh specs/change-gate.sh
 sh specs/search-gate.sh
+sh specs/recovery-gate.sh
+sh specs/terminal-gate.sh
+sh specs/install-gate.sh
+sh specs/lsp-gate.sh

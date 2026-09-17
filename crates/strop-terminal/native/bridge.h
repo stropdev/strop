@@ -24,6 +24,7 @@ int strop_vt_resize(void *, uint16_t, uint16_t);
 int strop_vt_state(void *, StropVtState *);
 int strop_vt_dirty_rows(void *, uint8_t *, size_t);
 int strop_vt_palette(void *, StropVtPalette *);
+int strop_vt_palette_set(void *, const StropVtPalette *);
 int strop_vt_cell(void *, int32_t, uint16_t, StropVtCell *);
 int strop_vt_graphemes(void *, int32_t, uint16_t, uint32_t *, size_t, size_t *);
 int strop_vt_mark_history(void *);

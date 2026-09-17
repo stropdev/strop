@@ -47,9 +47,7 @@ impl Editor {
             self.buf().revision().get()
         );
         if self.buf().readonly {
-            text.push_str(
-                "  readonly  yes — :remote edit grants write authority on remote files\n",
-            );
+            let _ = writeln!(text, "  readonly  yes — {}", self.readonly_explanation());
         }
         match self.lsp_state.bindings.get(&self.current()) {
             Some(binding) => {
@@ -106,10 +104,22 @@ impl Editor {
             let Some(value) = self.config.knob_value(knob.key) else {
                 continue;
             };
-            let _ = writeln!(text, "  {} = {}  — {}", knob.key, value, knob.desc);
+            // 0056 AR14: the winning layer with its origin, per knob.
+            let layer = match self.config.knob_layer(knob.key) {
+                crate::config::ConfigLayer::Default => "default".to_string(),
+                crate::config::ConfigLayer::User => match self.config.user_layer_path() {
+                    Some(path) => format!("user {}", path.display()),
+                    None => "user config.toml".into(),
+                },
+            };
+            let _ = writeln!(
+                text,
+                "  {} = {}  [{}]  — {}",
+                knob.key, value, layer, knob.desc
+            );
         }
         text.push_str(
-            "  (config.toml layers over embedded defaults; :trust gates project layers)\n",
+            "  (user config.toml layers over embedded defaults; project layering is languages.toml under :trust)\n",
         );
 
         // 0051 R08: the current document's effective indent with its
@@ -170,11 +180,134 @@ impl Editor {
             }
         }
 
+        // 0056 AR04: recovery tells the truth — policy, the durable
+        // watermark, consent and failures; never a bare "enabled" flag.
+        let status = self.recovery_status();
+        text.push_str("\n[recovery]\n");
+        if status.memory_only {
+            text.push_str(
+                "  policy      memory-only — drafts are NOT durable; nothing is persisted\n",
+            );
+        } else {
+            text.push_str("  policy      automatic — dirty local documents and scratch drafts checkpoint to private state storage\n");
+        }
+        match status.durable_cohort {
+            Some((cohort, ms)) => {
+                let _ = writeln!(
+                    text,
+                    "  checkpoint  durable cohort {cohort} captured at {ms} ({} draft(s))",
+                    status.durable_records
+                );
+            }
+            None => text.push_str("  checkpoint  none completed this session\n"),
+        }
+        if status.in_flight || status.queued {
+            text.push_str("  checkpoint  publication in progress — the guarantee is the last COMPLETED cohort\n");
+        }
+        let _ = writeln!(
+            text,
+            "  remote      {}",
+            if status.consent_remote {
+                "session consent granted — remote drafts persist"
+            } else {
+                "no consent — remote/sensitive drafts are not persisted (:recover consent remote)"
+            }
+        );
+        if !status.over_bound.is_empty() {
+            let _ = writeln!(
+                text,
+                "  over-limit  {} draft(s) exceed the 16 MiB capture limit — not durable",
+                status.over_bound.len()
+            );
+        }
+        if let Some(error) = &status.last_error {
+            let _ = writeln!(text, "  last error  {error}");
+        }
+
+        // 0056 AR08: the effect/privacy classification actually in force
+        // for the current document's target — from the typed classifier,
+        // never a restated policy file.
+        let policy = self.effect_policy();
+        let target = super::privacy::target_of(&self.cur().source);
+        text.push_str("\n[effects]\n");
+        let _ = writeln!(text, "  target        {}", target.label());
+        for family in super::privacy::EffectFamily::ALL {
+            let class = super::privacy::classify(&policy, family, target);
+            let capture = match class.capture {
+                strop_trace::ContentPolicy::Full => "full content",
+                strop_trace::ContentPolicy::Metadata => "metadata only",
+            };
+            let _ = writeln!(
+                text,
+                "  {:<13} {:<14} {}",
+                family.label(),
+                capture,
+                class.reason
+            );
+        }
+        let admitted = super::privacy::persistence_admitted(&policy, target);
+        let _ = writeln!(
+            text,
+            "  persistence   {}",
+            if admitted {
+                "drafts admitted to private state storage".to_string()
+            } else if target == super::privacy::EffectTarget::Ssh {
+                "remote drafts not persisted without :recover consent remote".to_string()
+            } else {
+                "container bytes are never draft-persisted".to_string()
+            }
+        );
+        if !strop_trace::enabled() {
+            text.push_str("  (no trace active — capture policy applies when recording)\n");
+        }
+
         let mut buffer = strop_core::Buffer::from_text(&text);
         buffer.name = Some("explain".into());
         // a temporary surface (0051 §7 R07): ctrl-o AND `:q` restore
         // the exact view the user came from, like :help
-        self.open_temporary_output(buffer);
+        let _ = self.open_temporary_output(buffer);
+    }
+    /// The true source of the current buffer's readonly policy (0056
+    /// AR14): the typed terminal owner first, then the recorded reason
+    /// — never a generic hint.
+    fn readonly_explanation(&self) -> &'static str {
+        if self.terminal_document(self.current()).is_some() {
+            return "terminal session — the child program owns the output; i enters child input";
+        }
+        match self.buf().readonly_reason {
+            Some(strop_core::ReadonlyReason::Filesystem) => {
+                "filesystem permissions report not writable — :set noro to edit anyway, :w! to force a write"
+            }
+            Some(strop_core::ReadonlyReason::Command) => {
+                "set by :set ro / :view — :set noro restores editing"
+            }
+            Some(strop_core::ReadonlyReason::RemoteAuthority) => {
+                "remote snapshot without write authority — :remote edit grants it"
+            }
+            Some(strop_core::ReadonlyReason::Container) => {
+                "container file — container bytes have no local write path"
+            }
+            Some(strop_core::ReadonlyReason::GitSurface) => {
+                "git surface — content is derived from history"
+            }
+            Some(strop_core::ReadonlyReason::Output) => "transient output view — not a source",
+            Some(strop_core::ReadonlyReason::DirectoryListing) => {
+                "directory listing — :fs edit opens filename drafts"
+            }
+            Some(strop_core::ReadonlyReason::DirectoryOperation) => {
+                "directory operation in flight — editing resumes when it lands"
+            }
+            Some(strop_core::ReadonlyReason::CollectionProjection) => {
+                "collection projection failed — this stale view refuses edits"
+            }
+            Some(strop_core::ReadonlyReason::RecoveryCheckpoint) => {
+                "recovery checkpoint surface — :recover restore N opens a checked draft"
+            }
+            Some(strop_core::ReadonlyReason::OutsideWorkspace) => {
+                "outside the workspace root — :set noro to edit"
+            }
+            None => "set directly — :set noro restores editing",
+        }
     }
 }
 
@@ -240,5 +373,160 @@ mod tests {
         assert!(text.contains("search_show_hidden = true"), "{text}");
         assert!(text.contains("search_respect_ignore = true"), "{text}");
         assert!(!text.contains("= ?"), "no placeholder values: {text}");
+    }
+    /// 0056 AR14: a file whose permissions report not writable opens
+    /// readonly, and :explain names the filesystem as the source.
+    #[test]
+    fn explain_names_filesystem_readonly_source() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("locked.txt");
+        std::fs::write(&path, "locked\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+        let buffer = Buffer::open(&path).unwrap();
+        assert_eq!(
+            buffer.readonly_reason,
+            Some(strop_core::ReadonlyReason::Filesystem)
+        );
+        let mut e = Editor::new(buffer);
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(
+            text.contains("filesystem permissions report not writable"),
+            "{text}"
+        );
+        assert!(!text.contains(":remote edit grants"), "{text}");
+    }
+
+    /// 0056 AR14: a remote snapshot names its authority source; AR08:
+    /// the effects section follows the document's ssh target.
+    #[test]
+    fn explain_names_remote_readonly_source_and_ssh_target() {
+        use crate::editor::document::RemoteDocument;
+        let file = strop_workspace::RemoteFile::parse("ssh://fixture/work/file.txt").unwrap();
+        let selection = strop_remote::ReadSelection::Full;
+        let mut e = Editor::new(Buffer::from_text("local\n"));
+        let document = e
+            .docs
+            .try_insert(crate::editor::Document::remote(
+                Buffer::from_text("before\n"),
+                RemoteDocument {
+                    file,
+                    window: strop_remote::RemoteWindow::resolve(
+                        &selection,
+                        strop_remote::RemoteSize::new(7),
+                    ),
+                    selection,
+                    connection: None,
+                    return_to: None,
+                    write: None,
+                },
+            ))
+            .unwrap();
+        e.switch_to(document);
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(
+            text.contains("remote snapshot without write authority — :remote edit grants it"),
+            "{text}"
+        );
+        assert!(text.contains("target        ssh"), "{text}");
+        assert!(
+            text.contains("remote drafts not persisted without :recover consent remote"),
+            "{text}"
+        );
+    }
+
+    /// 0056 AR14: `:set ro` is its own source — not a remote hint.
+    #[test]
+    fn explain_names_command_readonly_source() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(":set ro\r");
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(text.contains("set by :set ro / :view"), "{text}");
+        assert!(!text.contains(":remote edit grants"), "{text}");
+    }
+
+    /// 0056 AR14: the recovery checkpoint surface names itself.
+    #[test]
+    fn explain_names_recovery_surface_readonly_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+        e.feed_text(":recover\r");
+        assert_eq!(
+            e.buf().readonly_reason,
+            Some(strop_core::ReadonlyReason::RecoveryCheckpoint)
+        );
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(text.contains("recovery checkpoint surface"), "{text}");
+    }
+
+    /// 0056 AR14: a terminal session names the child program as the
+    /// owner of its output — the typed terminal source, not the generic
+    /// output reason the document was built with.
+    #[test]
+    fn explain_names_terminal_readonly_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = Editor::new_in(Buffer::from_text("origin"), dir.path().to_path_buf());
+        e.terminal_fixture(
+            &[("safe", strop_terminal::model::Style::default())],
+            strop_terminal::model::Phase::Exited {
+                code: Some(0),
+                signal: None,
+            },
+        );
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(
+            text.contains("terminal session — the child program owns the output"),
+            "{text}"
+        );
+    }
+
+    /// 0056 AR14: config provenance shows the actual winning layer per
+    /// knob — the user file with its path where it won, default else.
+    #[test]
+    fn explain_shows_config_provenance_layers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "tab_size = 8\n").unwrap();
+        let (config, error) = crate::config::Config::load_from(&path);
+        assert!(error.is_none());
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.config = config;
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(
+            text.contains(&format!("tab_size = 8  [user {}]", path.display())),
+            "{text}"
+        );
+        assert!(text.contains("indent_guides = true  [default]"), "{text}");
+        assert!(text.contains("cursor_fade = true  [default]"), "{text}");
+    }
+
+    /// 0056 AR08: the effects section renders the classifier's actual
+    /// decisions for the local target with no opt-ins granted.
+    #[test]
+    fn explain_lists_effect_classification() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(text.contains("[effects]"), "{text}");
+        assert!(text.contains("target        local"), "{text}");
+        assert!(
+            text.contains("clipboard     metadata only  clipboard payloads never enter"),
+            "{text}"
+        );
+        assert!(
+            text.contains("process       metadata only  command lines and environment"),
+            "{text}"
+        );
+        assert!(
+            text.contains("persistence   drafts admitted to private state storage"),
+            "{text}"
+        );
+        assert!(text.contains("no trace active"), "{text}");
     }
 }

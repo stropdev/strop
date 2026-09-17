@@ -719,3 +719,31 @@ race edits to active kernels/proofs or move the release boundary by implication.
 The worker owner is responsible for all newly introduced obligations. A necessary
 fix to an inherited defect is corrected at its source and requalified, not hidden
 behind a worker-specific exception or deferred to debugger/GUI.
+
+## Landed slices
+
+### VF17 TLAPS lane bootstrap + SearchLifecycle proofs: landed (2026-09-16)
+
+The `tlaps` lane exists: a Dockerfile `tlaps` stage pins TLAPS 1.5.0
+(tlaplus/tlapm tag 202210041448, installer
+`--checksum=sha256:ebb7a3f2…`, on digest-pinned debian:bookworm-slim;
+the moving 1.6.0-pre asset was rejected per the tla2tools precedent),
+wired as a separate compose `tlaps` service and CI step — deliberately
+NOT chained into specs/gate.sh, since the model stage has no tlapm.
+`specs/SearchLifecycleProofs.tla` (EXTENDS the exact module TLC checks)
+proves Init⇒Inv, Inv∧[Next]⇒Inv′ across all 12 actions plus stuttering,
+and Inv⇒(RowsCurrent ∧ RowsInScope ∧ StaleAcceptsNever ∧ CompletionHonest
+∧ WarmBounded); the inductive core needed three strengthening
+auxiliaries (JobsBounded, JobsUnique, RowsAreRecords), recorded in-file.
+Constants are never instantiated — the proof covers arbitrary finite
+GENS/REV_MAX/WARM_MAX and an arbitrary PATHS set; the binary scope
+domain, warm-queue capacity and counter cap remain at the spec's shape
+(a spec edit, not a proof gap). Negative control:
+`specs/SearchLifecycle_MutantProofs.tla` fails proof on exactly the
+mutation's own steps (3/225 obligations — unguarded ProviderPartial
+publication, Accept's stale-accept, the counter bound); the gate asserts
+rejection is unproved obligations, never tool failure. Evidence:
+`docker compose run --build --rm tlaps` — "All 225 obligations proved"
++ mutant rejected, exit 0. This discharges 0063 §6.6's TLAPS half. The
+remaining VF17 families (UI ownership, cohort recovery, resource-effect
+authority) await their models from the VF11–VF16 slices.

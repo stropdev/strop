@@ -100,6 +100,13 @@ impl Walker {
         self.motion.clear();
     }
 
+    /// Ground state: no trie prefix, count, register, operator or
+    /// absorbed motion in flight. Surface interceptions (terminal-input
+    /// entry) must yield to a mid-sequence walk.
+    pub fn idle(&self) -> bool {
+        self.path.is_empty() && self.motion.is_empty() && self.state.empty()
+    }
+
     /// A rejected complete sequence must remain observable after grounding.
     fn invalid(&mut self) -> Action {
         let keys = self.display();

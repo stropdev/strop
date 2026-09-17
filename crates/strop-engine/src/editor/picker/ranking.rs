@@ -77,7 +77,7 @@ impl Editor {
             .picker
             .rank_query
             .clone()
-            .unwrap_or_else(|| glue.picker.input.text.clone());
+            .unwrap_or_else(|| glue.picker.input.text().to_string());
         if glue.ranked_query.as_deref() != Some(effective.as_str()) {
             glue.picker.clear_results();
         }
@@ -164,7 +164,7 @@ impl Editor {
                             .picker
                             .rank_query
                             .clone()
-                            .unwrap_or_else(|| glue.picker.input.text.clone());
+                            .unwrap_or_else(|| glue.picker.input.text().to_string());
                         if completion.ticket.key.query != effective
                             || !glue.picker.install_ranking(ranking)
                         {

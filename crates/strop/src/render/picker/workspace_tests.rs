@@ -111,8 +111,10 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
 /// The results-list track column for the open kind, read from the same
 /// layout the paint uses so both agree on the reserved column.
 fn track_column(kind: strop_picker::Kind, width: u16, height: u16) -> (u16, std::ops::Range<u16>) {
-    let area = ratatui::layout::Rect::new(0, 0, width, height);
-    let (results, _) = super::layout::split_results(area, kind, false).expect("results area");
+    let area = crate::render::to_cells(ratatui::layout::Rect::new(0, 0, width, height));
+    let (results, _) =
+        strop_engine::editor::prepare::picker_split(area, kind, false).expect("results area");
+    let results = crate::render::from_cells(results);
     (
         results.x + results.width - 1,
         results.y..results.y + results.height,
@@ -175,7 +177,7 @@ fn workspace_symbols_scrollbar_paints_track_thumb_and_moves_with_selection() {
     editor.open_picker(strop_picker::Kind::WorkspaceSymbols);
     editor.picker_items_fixture((0..40).map(|n| symbol_fixture(&path, n)).collect());
     let (track_x, rows) = track_column(strop_picker::Kind::WorkspaceSymbols, 100, 30);
-    let row_count = editor.picker.as_ref().unwrap().picker.rows.len();
+    let row_count = editor.picker().unwrap().picker.rows.len();
     assert!(
         row_count > rows.len(),
         "fixture list scrolls: {row_count} rows"
@@ -255,7 +257,7 @@ fn floating_card_picker_uses_the_same_scrollbar_vocabulary() {
     // and the thumb moves with the selection.
     let mut editor = Editor::new(Buffer::from_text("scratch\n"));
     editor.open_picker(strop_picker::Kind::Buffers);
-    let scratch = editor.mru[0];
+    let scratch = editor.mru()[0];
     editor.picker_items_fixture(
         (0..30)
             .map(|n| strop_picker::Item {
@@ -266,7 +268,7 @@ fn floating_card_picker_uses_the_same_scrollbar_vocabulary() {
             .collect(),
     );
     let (track_x, rows) = track_column(strop_picker::Kind::Buffers, 100, 30);
-    let row_count = editor.picker.as_ref().unwrap().picker.rows.len();
+    let row_count = editor.picker().unwrap().picker.rows.len();
     assert!(
         row_count > rows.len(),
         "fixture list scrolls: {row_count} rows"
@@ -340,4 +342,159 @@ fn unopened_file_preview_loads_and_highlights_through_preparation() {
             }
         }
     }
+}
+
+/// AR01/AR03 seam pin: the engine-owned picker cell geometry
+/// (`strop_engine::editor::prepare`) must reproduce the toolkit solver's
+/// splits exactly across the size domain — the historical layout is the
+/// contract, so the cutover cannot move a single cell.
+#[test]
+fn engine_picker_geometry_matches_the_toolkit_solver() {
+    use ratatui::layout::{Constraint, Direction, Layout, Rect};
+    use strop_engine::editor::prepare::{
+        picker_card, picker_field_split, picker_inner, picker_split,
+    };
+    use strop_picker::Kind;
+
+    let kinds = [
+        Kind::Search,
+        Kind::Files,
+        Kind::Symbols,
+        Kind::WorkspaceSymbols,
+        Kind::Buffers,
+        Kind::Jumps,
+        Kind::RemoteHosts,
+        Kind::RemoteAddress,
+    ];
+    for width in [
+        1u16, 2, 3, 4, 5, 6, 10, 19, 20, 21, 30, 60, 61, 63, 64, 65, 70, 75, 76, 94, 95, 100, 101,
+        120, 121, 150, 151, 170, 190, 200, 240,
+    ] {
+        for height in [1u16, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 16, 20, 24, 30, 50] {
+            let area = Rect::new(0, 0, width, height);
+            let cells = crate::render::to_cells(area);
+            for kind in kinds {
+                // card geometry
+                let expected_card = solver_card(area, kind);
+                assert_eq!(
+                    crate::render::from_cells(picker_card(cells, kind)),
+                    expected_card,
+                    "card {width}x{height} {kind:?}"
+                );
+                for replace in [false, true] {
+                    // field split + results/preview split
+                    let engine = picker_split(cells, kind, replace).map(|(r, p)| {
+                        (
+                            crate::render::from_cells(r),
+                            p.map(crate::render::from_cells),
+                        )
+                    });
+                    let solver = solver_split(area, kind, replace);
+                    assert_eq!(
+                        engine, solver,
+                        "split {width}x{height} {kind:?} replace={replace}"
+                    );
+                }
+            }
+            // the field split itself across input heights
+            let inner = picker_inner(picker_card(cells, Kind::Files));
+            for input_h in [2u16, 3] {
+                let (f, c) = picker_field_split(inner, input_h);
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(input_h), Constraint::Min(1)])
+                    .split(crate::render::from_cells(inner));
+                assert_eq!(
+                    (crate::render::from_cells(f), crate::render::from_cells(c)),
+                    (rows[0], rows[1]),
+                    "field split {width}x{height} input_h={input_h}"
+                );
+            }
+        }
+    }
+}
+
+/// The pre-cutover toolkit-solver layout, kept here as the reference
+/// oracle for the engine-owned geometry (`engine_picker_geometry_matches
+/// _the_toolkit_solver` pins every cell).
+fn solver_card(area: ratatui::layout::Rect, kind: strop_picker::Kind) -> ratatui::layout::Rect {
+    use ratatui::layout::Rect;
+    use strop_picker::Kind;
+    if matches!(
+        kind,
+        Kind::Search | Kind::Files | Kind::Symbols | Kind::WorkspaceSymbols
+    ) {
+        Rect {
+            x: area.x + 1,
+            y: area.y,
+            width: area.width.saturating_sub(2),
+            height: area.height.saturating_sub(1),
+        }
+    } else {
+        let width = ((u32::from(area.width) * 84 / 100) as u16)
+            .max(50)
+            .min(area.width.saturating_sub(2));
+        let height = if kind == Kind::RemoteAddress {
+            8
+        } else {
+            ((u32::from(area.height) * 70 / 100) as u16).max(12)
+        }
+        .min(area.height.saturating_sub(2));
+        Rect {
+            x: (area.width - width) / 2,
+            y: (area.height - height) / 2,
+            width,
+            height,
+        }
+    }
+}
+
+fn solver_split(
+    area: ratatui::layout::Rect,
+    kind: strop_picker::Kind,
+    replace_visible: bool,
+) -> Option<(ratatui::layout::Rect, Option<ratatui::layout::Rect>)> {
+    use ratatui::layout::{Constraint, Direction, Layout, Rect};
+    use strop_picker::Kind;
+    let card = solver_card(area, kind);
+    let search_mode = kind == Kind::Search;
+    let remote_picker = matches!(kind, Kind::RemoteHosts | Kind::RemoteAddress);
+    let inner_width = card.width.saturating_sub(4);
+    let inner_height = card.height.saturating_sub(2);
+    let input_h: u16 = if search_mode && replace_visible { 3 } else { 2 };
+    if inner_height < input_h + 1 {
+        return None;
+    }
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(input_h), Constraint::Min(1)])
+        .split(Rect {
+            x: card.x + 2,
+            y: card.y + 1,
+            width: inner_width,
+            height: inner_height,
+        });
+    let split = |results, preview| Some((results, preview));
+    if remote_picker {
+        return split(rows[1], None);
+    }
+    if card.width < 64 && rows[1].height >= 12 {
+        let stacked = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(8), Constraint::Length(8)])
+            .split(rows[1]);
+        return split(stacked[0], Some(stacked[1]));
+    }
+    if card.width < 64 {
+        return split(rows[1], None);
+    }
+    let list = if search_mode { 60 } else { 55 };
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(list),
+            Constraint::Percentage(100 - list),
+        ])
+        .split(rows[1]);
+    split(cols[0], Some(cols[1]))
 }

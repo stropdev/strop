@@ -228,7 +228,7 @@ impl Editor {
                 if let Some(entry) = self.docs.get_mut(*document) {
                     entry.buf.detach_file_binding();
                     entry.buf.name = Some(format!("detached {} — original removed", old.label()));
-                    entry.buf.readonly = false;
+                    entry.buf.clear_readonly();
                     entry.buf.dirty = true;
                     entry.syntax_hint = Some(old.path.clone());
                     entry.source = DocumentSource::Scratch;
@@ -252,7 +252,17 @@ impl Editor {
         for collection in collections {
             self.collection_render_view(collection);
         }
-        let touched: Vec<_> = source.into_iter().chain(destination).collect();
+        // Retire by every spelling of the resource: the resolved operation
+        // locations AND the intent's logical spelling. A symlinked parent
+        // names the same resource incarnation; pathname matching on the
+        // resolved spelling alone would leave alias-keyed previews and
+        // directory views addressing content that no longer exists there.
+        let touched: Vec<&ResourceLocation> = source
+            .into_iter()
+            .chain(destination)
+            .chain(operation.intent.source.iter())
+            .chain(operation.intent.destination.iter())
+            .collect();
         let previews: Vec<_> = self
             .previews
             .keys()

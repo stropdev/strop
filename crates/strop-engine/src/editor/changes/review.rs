@@ -445,6 +445,12 @@ impl Editor {
         search: Option<crate::editor::picker::search::SearchStamp>,
         focus: bool,
     ) {
+        // Preflight (0056 AR13): refuse before the old proposal is
+        // retired, so exhaustion never leaves a half-published review.
+        if self.docs.insert_capacity() == 0 {
+            self.message = "document identity space exhausted".into();
+            return;
+        }
         self.retire_filesystem_review("superseded by a text review");
         if let Some(old) = self.review.pending.take() {
             let note = format!(
@@ -466,7 +472,7 @@ impl Editor {
         let mut buf = Buffer::from_text(&text.text);
         buf.name = Some(format!("change proposal {id}"));
         let view_revision = buf.revision();
-        let buffer = if focus {
+        let Some(buffer) = (if focus {
             self.open_temporary_output(buf)
         } else {
             let mut document = crate::editor::Document::output(buf);
@@ -478,9 +484,18 @@ impl Editor {
             {
                 document.set_return_point(origin);
             }
-            let id = self.docs.insert(document);
-            self.mru.push(id);
-            id
+            match self.docs.try_insert(document) {
+                Ok(id) => {
+                    self.mru.push(id);
+                    Some(id)
+                }
+                Err(_) => {
+                    self.message = "document identity space exhausted".into();
+                    None
+                }
+            }
+        }) else {
+            return;
         };
         self.review.rows.insert(buffer, text.rows);
         self.review.pending = Some(ChangeProposal {

@@ -55,21 +55,39 @@ impl Editor {
         &self.panes[self.active_pane]
     }
 
+    /// Engine-internal pane mutation (0056 AR02): the frontend reads
+    /// through [`Editor::view`]/[`Editor::panes`] and moves viewports
+    /// through admitted actions and [`Editor::prepare_view`].
     #[inline]
-    pub fn view_mut(&mut self) -> &mut Pane {
+    pub(crate) fn view_mut(&mut self) -> &mut Pane {
         &mut self.panes[self.active_pane]
     }
 
+    /// Readonly pane list (0056 AR02): frontends lay out and stamp
+    /// against this; splits/focus go through admitted actions.
+    pub fn panes(&self) -> &[Pane] {
+        &self.panes
+    }
+
+    #[inline]
+    pub fn active_pane(&self) -> usize {
+        self.active_pane
+    }
+
+    #[inline]
+    pub fn layout(&self) -> LayoutDir {
+        self.layout
+    }
     /// Split the active pane. `vertical` = `:vs` (new pane to the right).
     /// Without a path the pane shows the same document (the split point).
-    pub(crate) fn split(&mut self, vertical: bool, path: Option<&str>) {
+    pub fn split(&mut self, vertical: bool, path: Option<&str>) {
         if let Some(path) = path {
             self.request_user_open(path, super::io::OpenIntent::Split { vertical });
         } else {
             self.split_document(vertical, self.current());
         }
     }
-    pub(crate) fn split_document(&mut self, vertical: bool, doc: strop_core::id::DocumentId) {
+    pub fn split_document(&mut self, vertical: bool, doc: strop_core::id::DocumentId) {
         // a text prompt belongs to the pane/document it was opened on:
         // splitting away cancels it (R7) before any view state moves
         self.cancel_pending();
@@ -166,10 +184,20 @@ impl Editor {
             (_, 'w') => (self.active_pane + 1) % n,
             _ => return,
         };
-        if next != self.active_pane {
+        self.focus_pane(next);
+    }
+
+    /// Focus a pane by index (0056 AR02): the admitted form of a
+    /// frontend pointer/focus action. State is already per-pane: no
+    /// sync. Unknown indexes are ignored.
+    pub fn focus_pane(&mut self, index: usize) {
+        if index >= self.panes.len() {
+            return;
+        }
+        if index != self.active_pane {
             self.cancel_pending();
         }
-        self.active_pane = next; // state is already per-pane: no sync
+        self.active_pane = index;
         self.focus_epoch += 1;
         self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.discover_git();

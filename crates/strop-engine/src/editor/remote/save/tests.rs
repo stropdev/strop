@@ -13,17 +13,20 @@ fn fixture(selection: ReadSelection) -> Editor {
             "native observation forbidden in ownership fixture",
         ))
     }));
-    let document = editor.docs.insert(Document::remote(
-        Buffer::from_text("before\n"),
-        RemoteDocument {
-            file,
-            window: RemoteWindow::resolve(&selection, RemoteSize::new(7)),
-            selection,
-            connection: None,
-            return_to: None,
-            write: None,
-        },
-    ));
+    let document = editor
+        .docs
+        .try_insert(Document::remote(
+            Buffer::from_text("before\n"),
+            RemoteDocument {
+                file,
+                window: RemoteWindow::resolve(&selection, RemoteSize::new(7)),
+                selection,
+                connection: None,
+                return_to: None,
+                write: None,
+            },
+        ))
+        .unwrap();
     editor.switch_to(document);
     editor
 }

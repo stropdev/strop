@@ -78,10 +78,13 @@ fn same_path_snapshots_never_share_cached_gutters() {
     );
     // A tail may cover an entire small file. Same path, line count and buffer
     // revision still do not make two captured contents the same document.
-    let tail = e.docs.insert(document(
-        "uvwxyz\n",
-        ReadSelection::Tail(ReadLimit::new(7).unwrap()),
-    ));
+    let tail = e
+        .docs
+        .try_insert(document(
+            "uvwxyz\n",
+            ReadSelection::Tail(ReadLimit::new(7).unwrap()),
+        ))
+        .unwrap();
     assert!(e.blame_gutter_for(full).is_some());
     assert!(e.blame_gutter_for(tail).is_none());
 }

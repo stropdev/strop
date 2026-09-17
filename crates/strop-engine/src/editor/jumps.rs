@@ -288,7 +288,10 @@ mod tests {
         e.feed_text("j"); // line 2
         e.push_jump(); // (docA, line 2)
         e.feed_text("G"); // line 3
-        let b = e.docs.insert(Document::output(Buffer::from_text("x\ny\n")));
+        let b = e
+            .docs
+            .try_insert(Document::output(Buffer::from_text("x\ny\n")))
+            .unwrap();
         e.switch_to(b);
         e.push_jump(); // (docB, 0) — dead after the close below
         e.close_buffer(true); // back to docA, cursor on line 3
@@ -368,7 +371,10 @@ mod tests {
     fn jump_restores_view_across_buffers() {
         let mut e = viewed_editor(200, 80, 75, 3);
         e.push_jump();
-        let b = e.docs.insert(Document::output(Buffer::from_text("x\ny\n")));
+        let b = e
+            .docs
+            .try_insert(Document::output(Buffer::from_text("x\ny\n")))
+            .unwrap();
         e.switch_to(b);
         e.jump_back();
         assert_ne!(e.current(), b, "switched back to the first document");

@@ -7,7 +7,9 @@ use super::{Arena, Slot};
 
 /// Per-slot `(generation, value)` plus the free list. Empty slots keep
 /// their generation: reuse bumps it, and a replay that skipped them would
-/// hand out different ids for later inserts.
+/// hand out different ids for later inserts. An empty slot ABSENT from
+/// the free list is retired (0056 AR13): its generation wrapped out, so
+/// it never hands out an id again — retirement must survive the round-trip.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArenaSeed<T> {
     pub slots: Vec<(u32, Option<T>)>,
@@ -22,8 +24,6 @@ pub enum ArenaSeedError {
     FreeOutOfBounds,
     #[error("invalid or repeated free slot")]
     InvalidFreeSlot,
-    #[error("missing free slot")]
-    MissingFreeSlot,
 }
 
 impl<K, T> Arena<K, T> {
@@ -39,9 +39,10 @@ impl<K, T> Arena<K, T> {
         }
     }
 
-    /// Rebuild an arena. The free list must name exactly the empty slots
-    /// and nothing else; a seed that disagrees is rejected, never coerced
-    /// into a plausible-but-wrong identity layout.
+    /// Rebuild an arena. The free list must name only empty slots, each
+    /// at most once; a seed that disagrees is rejected, never coerced
+    /// into a plausible-but-wrong identity layout. Empty slots missing
+    /// from the free list are retired identities, not corruption.
     pub fn from_seed(seed: ArenaSeed<T>) -> Result<Self, ArenaSeedError> {
         if seed.slots.len() > u32::MAX as usize {
             return Err(ArenaSeedError::TooManySlots);
@@ -55,14 +56,6 @@ impl<K, T> Arena<K, T> {
                 return Err(ArenaSeedError::InvalidFreeSlot);
             }
             *seen = true;
-        }
-        if seed
-            .slots
-            .iter()
-            .enumerate()
-            .any(|(index, (_, value))| value.is_none() != free[index])
-        {
-            return Err(ArenaSeedError::MissingFreeSlot);
         }
         Ok(Self {
             slots: seed
@@ -84,14 +77,14 @@ mod tests {
     #[test]
     fn seed_round_trips_ids_free_slots_and_generations() {
         let mut arena: Arena<DocumentKind, String> = Arena::default();
-        let a = arena.insert("a".into());
-        let b = arena.insert("b".into());
+        let a = arena.try_insert("a".into()).unwrap();
+        let b = arena.try_insert("b".into()).unwrap();
         arena.remove(a);
         let seed = arena.seed_with(|value| value.clone());
         let mut rebuilt = Arena::from_seed(seed).unwrap();
         assert_eq!(rebuilt.get(a), None, "freed id stays dead");
         assert_eq!(rebuilt.get(b).map(String::as_str), Some("b"));
-        let c = rebuilt.insert("c".into());
+        let c = rebuilt.try_insert("c".into()).unwrap();
         assert_eq!(c.index(), a.index(), "free slot is reused");
         assert_eq!(c.generation(), a.generation() + 1);
     }
@@ -99,7 +92,7 @@ mod tests {
     #[test]
     fn corrupt_seeds_are_rejected_not_repaired() {
         let mut arena: Arena<DocumentKind, ()> = Arena::default();
-        let a = arena.insert(());
+        let a = arena.try_insert(()).unwrap();
         let seed = arena.seed_with(|&()| ());
         let ArenaSeed { slots, .. } = seed;
         // A free entry naming an occupied slot.
@@ -111,15 +104,15 @@ mod tests {
             Arena::<DocumentKind, _>::from_seed(corrupt),
             Err(ArenaSeedError::InvalidFreeSlot)
         ));
-        // An occupied slot absent from the free list's complement.
-        let corrupt = ArenaSeed {
-            slots: vec![(0, None)],
+        // An empty slot absent from the free list is a retired identity,
+        // not corruption: it rebuilds and is never reused (0056 AR13).
+        let retired = ArenaSeed {
+            slots: vec![(u32::MAX, None)],
             free: Vec::new(),
         };
-        assert!(matches!(
-            Arena::<DocumentKind, ()>::from_seed(corrupt),
-            Err(ArenaSeedError::MissingFreeSlot)
-        ));
+        let mut rebuilt = Arena::<DocumentKind, ()>::from_seed(retired).unwrap();
+        let id = rebuilt.try_insert(()).unwrap();
+        assert_eq!(id.index(), 1, "retired slot stays dead");
         let corrupt = ArenaSeed {
             slots,
             free: vec![9],

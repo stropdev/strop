@@ -551,3 +551,241 @@ fn closing_an_unapplied_review_releases_only_its_preparation() {
         "kept\n"
     );
 }
+
+#[test]
+fn committed_mutation_outcome_survives_focus_change() {
+    let (root, mut editor) = fixture();
+    let old = root.path().join("old.txt");
+    let other = root.path().join("other.txt");
+    std::fs::write(&old, "kept\n").unwrap();
+    std::fs::write(&other, "other\n").unwrap();
+    let source = editor.open_fixture(&old).unwrap();
+    let elsewhere = editor.open_fixture(&other).unwrap();
+    editor.switch_to(source);
+    command(&mut editor, ":fs rename new.txt<cr>");
+    let review = editor.current();
+    assert!(editor.apply_filesystem_review());
+    // Focus leaves both the report and the source before the worker's
+    // receipt arrives; the admitted outcome must reconcile regardless.
+    editor.switch_to(elsewhere);
+    editor.wait_io().unwrap();
+    assert_eq!(editor.current(), elsewhere);
+    let attempt = editor.filesystem.history.back().unwrap();
+    assert_eq!(attempt.report, review);
+    assert!(attempt.receipts[0].outcome.is_committed());
+    assert_eq!(
+        editor.doc(source).buf.file_identity(),
+        Some(root.path().join("new.txt").as_path())
+    );
+    assert!(!old.exists());
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("new.txt")).unwrap(),
+        "kept\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn committed_move_retires_alias_spelled_preview_state() {
+    let (root, mut editor) = fixture();
+    let real = root.path().join("real");
+    let alias = root.path().join("alias");
+    std::fs::create_dir(&real).unwrap();
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    std::fs::write(real.join("victim.txt"), "cached\n").unwrap();
+    // A picker preview cached under the ALIAS spelling: the same resource
+    // incarnation at a pathname the resolved operation never names
+    // (guard::resolve canonicalizes ancestors, never the final entry).
+    let alias_victim = ResourceLocation::local(alias.join("victim.txt"));
+    editor.previews.insert(
+        alias_victim.clone(),
+        crate::editor::picker::PreviewEntry {
+            rope: ropey::Rope::from_str("cached\n"),
+        },
+    );
+    let key = crate::editor::picker::PreviewKey {
+        picker: crate::editor::picker::PickerId(editor.worker_ids.allocate().unwrap()),
+        path: alias_victim.clone(),
+    };
+    editor
+        .preview_loads
+        .insert(alias_victim.clone(), worker::Load::Ready(key));
+    let document = editor.open_fixture(&real.join("victim.txt")).unwrap();
+    let renamed = root.path().join("renamed.txt");
+    editor
+        .prepare_filesystem(
+            vec![OperationIntent {
+                kind: OperationKind::Rename,
+                source: Some(ResourceLocation::local(alias.join("victim.txt"))),
+                destination: Some(ResourceLocation::local(renamed.clone())),
+                copy_version: CopyVersion::Stored,
+                expected_content: None,
+            }],
+            None,
+        )
+        .unwrap();
+    editor.wait_io().unwrap();
+    command(&mut editor, ":apply-change<cr>");
+    assert!(!real.join("victim.txt").exists());
+    assert_eq!(std::fs::read_to_string(&renamed).unwrap(), "cached\n");
+    assert_eq!(
+        editor.doc(document).buf.file_identity(),
+        Some(renamed.as_path())
+    );
+    assert!(
+        !editor.previews.contains_key(&alias_victim),
+        "an alias-spelled preview of the moved incarnation must retire"
+    );
+    assert!(
+        !editor.preview_loads.contains_key(&alias_victim),
+        "an alias-spelled preview load record must retire with its cache"
+    );
+}
+
+#[test]
+fn a_redelivered_applied_receipt_reconciles_once() {
+    let (root, mut editor) = fixture();
+    let old = root.path().join("old.txt");
+    std::fs::write(&old, "kept\n").unwrap();
+    let source = editor.open_fixture(&old).unwrap();
+    command(&mut editor, ":fs rename new.txt<cr>");
+    assert!(editor.apply_filesystem_review());
+    let event = editor
+        .io
+        .rx
+        .as_ref()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    let IoEvent::Filesystem(event) = event else {
+        panic!("expected native filesystem completion");
+    };
+    let FsEvent::Applied(completion) = *event else {
+        panic!("expected applied receipt");
+    };
+    let redelivery = completion.clone();
+    editor.handle_filesystem(FsEvent::Applied(completion));
+    assert!(editor.filesystem.history.back().unwrap().receipts[0]
+        .outcome
+        .is_committed());
+    // The same operation identity delivered again is a transport duplicate,
+    // never a second reconciliation.
+    editor.handle_filesystem(FsEvent::Applied(redelivery));
+    assert_eq!(editor.filesystem.history.len(), 1);
+    assert_eq!(editor.filesystem.history.back().unwrap().receipts.len(), 1);
+    assert!(editor.filesystem.running.is_none());
+    assert_eq!(
+        editor.doc(source).buf.file_identity(),
+        Some(root.path().join("new.txt").as_path())
+    );
+    assert!(!old.exists());
+}
+
+#[test]
+fn an_unconfirmed_outcome_blocks_conflicting_authority_until_verified() {
+    let (root, mut editor) = fixture();
+    let old = root.path().join("old.txt");
+    std::fs::write(&old, "kept\n").unwrap();
+    let document = editor.open_fixture(&old).unwrap();
+    command(&mut editor, ":fs rename new.txt<cr>");
+    assert!(editor.apply_filesystem_review());
+    let event = editor
+        .io
+        .rx
+        .as_ref()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    let IoEvent::Filesystem(event) = event else {
+        panic!("expected native filesystem completion");
+    };
+    let FsEvent::Applied(completion) = *event else {
+        panic!("expected applied receipt");
+    };
+    let operation = completion.ticket.request;
+    let Outcome::Success(receipts) = completion.outcome else {
+        panic!("native rename must complete");
+    };
+    // The mutation ran and published; its acknowledgment was lost in
+    // transport. The receipt keeps the post-publication evidence — the
+    // outcome is unconfirmed, never silently committed or rolled back.
+    let receipts: Vec<StepReceipt> = receipts
+        .into_iter()
+        .map(|mut receipt| {
+            if let StepOutcome::Committed {
+                destination_after,
+                recovery,
+                publication,
+                ..
+            } = receipt.outcome
+            {
+                receipt.outcome = StepOutcome::Unconfirmed {
+                    detail: "transport lost the receipt".into(),
+                    observed_destination: destination_after,
+                    recovery,
+                    publication,
+                };
+            }
+            receipt
+        })
+        .collect();
+    editor.handle_filesystem(FsEvent::Applied(Box::new(Completion {
+        ticket: completion.ticket,
+        outcome: Outcome::Failed {
+            failure: worker::Failure::new(FailureKind::Io, "transport lost the receipt"),
+            partial: Some(receipts),
+        },
+    })));
+    assert!(editor.filesystem.history.back().unwrap().receipts[0]
+        .outcome
+        .is_unconfirmed());
+    assert!(editor.filesystem_shutdown_error().is_some());
+    // Conflicting authority is refused while the outcome is pending.
+    let blocked = editor.prepare_filesystem(
+        vec![OperationIntent {
+            kind: OperationKind::Rename,
+            source: Some(ResourceLocation::local(root.path().join("new.txt"))),
+            destination: Some(ResourceLocation::local(root.path().join("other.txt"))),
+            copy_version: CopyVersion::Stored,
+            expected_content: None,
+        }],
+        None,
+    );
+    assert!(blocked.is_err(), "{:?}", editor.message);
+    assert!(
+        !editor.request_save_document(document, None, false, false),
+        "a save through the blocked binding must refuse"
+    );
+    assert!(!old.exists(), "no automatic rollback of the lost receipt");
+    // Explicit verification settles the receipt against current names and
+    // releases the block; the rename is never re-executed.
+    editor.verify_filesystem_step(operation, 0).unwrap();
+    editor.wait_io().unwrap();
+    assert!(
+        editor.filesystem.history.back().unwrap().receipts[0]
+            .outcome
+            .is_committed(),
+        "outcome after verify: {:?}; message: {}",
+        editor.filesystem.history.back().unwrap().receipts[0].outcome,
+        editor.message
+    );
+    assert!(editor.filesystem_shutdown_error().is_none());
+    assert_eq!(
+        editor.doc(document).buf.file_identity(),
+        Some(root.path().join("new.txt").as_path())
+    );
+    editor
+        .prepare_filesystem(
+            vec![OperationIntent {
+                kind: OperationKind::Rename,
+                source: Some(ResourceLocation::local(root.path().join("new.txt"))),
+                destination: Some(ResourceLocation::local(root.path().join("other.txt"))),
+                copy_version: CopyVersion::Stored,
+                expected_content: None,
+            }],
+            None,
+        )
+        .unwrap();
+    editor.wait_io().unwrap();
+    command(&mut editor, ":cancel-change<cr>");
+}

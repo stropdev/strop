@@ -97,7 +97,8 @@ fn step_service(
             if let Some(editor) = editor.as_deref_mut() {
                 let id = editor
                     .docs
-                    .insert(Document::new(Buffer::from_text(TEXTS[*text])));
+                    .try_insert(Document::new(Buffer::from_text(TEXTS[*text])))
+                    .unwrap();
                 model.ids[slot] = Some(id);
                 let document = editor.docs.get(id).expect("freshly inserted");
                 must!(

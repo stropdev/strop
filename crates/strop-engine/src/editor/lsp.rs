@@ -35,10 +35,14 @@ impl Editor {
         let Some(text) = self.hover_card.take() else {
             return;
         };
-        self.push_jump();
         let mut document = super::Document::documentation(strop_core::Buffer::from_text(&text));
         document.set_return_point(self.jump_record());
-        let id = self.docs.insert(document);
+        let Ok(id) = self.docs.try_insert(document) else {
+            self.hover_card = Some(text);
+            self.message = "document identity space exhausted".into();
+            return;
+        };
+        self.push_jump();
         self.switch_to(id);
         self.set_head(0);
         self.view_mut().view_top = 0;

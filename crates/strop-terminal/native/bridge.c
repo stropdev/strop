@@ -240,6 +240,21 @@ int strop_vt_palette(void *handle, StropVtPalette *out) {
     }
     return 0;
 }
+int strop_vt_palette_set(void *handle, const StropVtPalette *palette) {
+    StropVt *state = handle;
+    GhosttyColorRgb foreground = { palette->foreground.r, palette->foreground.g, palette->foreground.b };
+    GhosttyColorRgb background = { palette->background.r, palette->background.g, palette->background.b };
+    GhosttyColorRgb colors[256];
+    for (size_t index = 0; index < 256; index++) {
+        colors[index] = (GhosttyColorRgb){ palette->colors[index].r, palette->colors[index].g, palette->colors[index].b };
+    }
+    /* The palette set preserves per-index OSC overrides a program already
+     * applied; only unmodified indices adopt the new defaults. */
+    CHECK(ghostty_terminal_set(state->terminal, GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, &foreground));
+    CHECK(ghostty_terminal_set(state->terminal, GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND, &background));
+    CHECK(ghostty_terminal_set(state->terminal, GHOSTTY_TERMINAL_OPT_COLOR_PALETTE, &colors));
+    return state->memory.failed ? -901 : 0;
+}
 
 static int grid_ref(StropVt *state, int32_t row, uint16_t column, GhosttyGridRef *out) {
     GhosttyPoint point = { .tag = GHOSTTY_POINT_TAG_ACTIVE,

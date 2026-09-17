@@ -99,6 +99,25 @@ pub fn io(event: &crate::editor::io::IoEvent) {
             request,
             outcome: value,
         } => json!({"service":"io","result":"session","request":request,"outcome":outcome(value)}),
+        // 0056 AR04: never the draft bytes — the report's shape only.
+        IoEvent::Recovery {
+            request,
+            outcome: value,
+        } => {
+            let result = match value {
+                strop_core::worker::Outcome::Success(
+                    crate::editor::recovery::RecoveryReport::Checkpoint(_),
+                ) => "checkpoint",
+                strop_core::worker::Outcome::Success(
+                    crate::editor::recovery::RecoveryReport::Loaded(_),
+                ) => "load",
+                strop_core::worker::Outcome::Success(
+                    crate::editor::recovery::RecoveryReport::Discarded(_),
+                ) => "discard",
+                _ => "publication",
+            };
+            json!({"service":"io","result":result,"request":request,"outcome":outcome(value)})
+        }
     });
 }
 

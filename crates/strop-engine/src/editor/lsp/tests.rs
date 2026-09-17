@@ -119,7 +119,7 @@ fn equal_revision_documents_do_not_share_hover_ownership() {
     let old = arm(&mut e, 0, RequestKind::Hover, PositionEncoding::Utf8);
     let mut buffer = Buffer::from_text("b\n");
     buffer.path = Some(PathBuf::from("/workspace/other.txt"));
-    let other = e.docs.insert(Document::new(buffer));
+    let other = e.docs.try_insert(Document::new(buffer)).unwrap();
     e.switch_to(other);
     e.feed_text("iy");
     e.feed(Key::Esc);
@@ -184,11 +184,11 @@ fn close_reopen_same_path_rejects_old_incarnation_reply() {
     let path = e.buf().path.clone().unwrap();
     let mut other = Buffer::from_text("keep editor alive\n");
     other.path = Some(PathBuf::from("/workspace/other.txt"));
-    e.docs.insert(Document::new(other));
+    e.docs.try_insert(Document::new(other)).unwrap();
     assert!(e.close_buffer(true));
     let mut reopened = Buffer::from_text("externally replaced content\n");
     reopened.path = Some(path);
-    let replacement = e.docs.insert(Document::new(reopened));
+    let replacement = e.docs.try_insert(Document::new(reopened)).unwrap();
     e.switch_to(replacement);
     let new = arm(&mut e, 1, RequestKind::Hover, PositionEncoding::Utf8);
     assert_ne!(old.stamp.document, new.stamp.document);
@@ -253,7 +253,7 @@ fn cpp_editor() -> Editor {
 fn insert_target(e: &mut Editor, path: &str, text: &str) -> strop_core::id::DocumentId {
     let mut buffer = Buffer::from_text(text);
     buffer.path = Some(PathBuf::from(path));
-    e.docs.insert(Document::new(buffer))
+    e.docs.try_insert(Document::new(buffer)).unwrap()
 }
 
 fn at_origin() -> ServerPosition {

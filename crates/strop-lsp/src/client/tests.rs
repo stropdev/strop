@@ -243,7 +243,7 @@ fn preinit_close_discards_old_open_and_queued_requests_and_converts_after_negoti
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let old = docs.insert(());
+        let old = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         assert!(client.did_open(
             old,
@@ -261,7 +261,7 @@ fn preinit_close_discards_old_open_and_queued_requests_and_converts_after_negoti
         ));
         client.did_close(old, path);
         docs.remove(old);
-        let reopened = docs.insert(());
+        let reopened = docs.try_insert(()).unwrap();
         assert!(client.did_open(
             reopened,
             BufferRevision::new(0),
@@ -302,7 +302,7 @@ fn preinit_change_is_coalesced_into_first_open() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         assert!(client.did_open(
             document,
@@ -345,7 +345,7 @@ fn live_close_reopen_sends_fresh_content_and_reordered_replies_keep_original_own
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let old = docs.insert(());
+        let old = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(
@@ -360,7 +360,7 @@ fn live_close_reopen_sends_fresh_content_and_reordered_replies_keep_original_own
         let old_request = wire.next().await;
         client.did_close(old, path);
         docs.remove(old);
-        let new = docs.insert(());
+        let new = docs.try_insert(()).unwrap();
         assert!(client.did_open(
             new,
             BufferRevision::new(0),
@@ -432,7 +432,7 @@ fn wire_order_is_admission_order_change_before_request() {
     run(async {
         let (client, _rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(
@@ -474,7 +474,7 @@ fn unsupported_capability_refuses_admission_without_wire_traffic() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         // Ready, but hover was never advertised.
         client.caps.set(lt::ServerCapabilities {
@@ -513,7 +513,7 @@ fn stale_revision_and_unopened_documents_refuse_admission() {
     run(async {
         let (client, _rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(
@@ -555,7 +555,7 @@ fn default_negotiation_is_utf16_and_converts_columns() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         // No positionEncoding in the server capabilities: spec default.
         client.caps.set(lt::ServerCapabilities {
@@ -593,7 +593,7 @@ fn content_modified_retries_once_and_keeps_the_original_context() {
     run(async {
         let (client, rx, mut wire) = Wire::new();
         let mut docs = Documents::default();
-        let document = docs.insert(());
+        let document = docs.try_insert(()).unwrap();
         let path = Path::new("/workspace/a.rs");
         initialize(&client);
         assert!(client.did_open(

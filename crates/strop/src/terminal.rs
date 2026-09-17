@@ -96,7 +96,10 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             }
         };
         // FIFO input ownership is resolved by the engine, never this reader.
-        if input_sender.send(application_event).is_err() {
+        // Blocking admission (0056 AR06): input/paste/quit may never be
+        // dropped, so backpressure parks THIS reader against the OS
+        // buffer — the UI thread never blocks on a send.
+        if input_sender.send_blocking(application_event).is_err() {
             return;
         }
     });
@@ -105,29 +108,29 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     let mut painted_flash = false;
     let mut painted_fade = false;
     let mut animation_due = std::time::Instant::now();
-    while !editor.should_quit {
+    while !editor.should_quit() {
         let started = std::time::Instant::now();
         let mut processed = 0;
         for _ in 0..editor::events::EVENTS_PER_TURN {
             let event = match input_receiver.try_recv() {
                 Ok(event) => Some(event),
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    editor.should_quit = true;
+                Err(editor::events::TryRecvError::Disconnected) => {
+                    editor.request_quit();
                     break;
                 }
-                Err(std::sync::mpsc::TryRecvError::Empty) => receiver.try_recv().ok(),
+                Err(editor::events::TryRecvError::Empty) => receiver.try_recv().ok(),
             };
             let Some(event) = event else {
                 break;
             };
             editor.recorded_action(
                 editor::trace::drive::Action::Event(event),
-                editor.tape.sample_tick(),
+                editor.tape().sample_tick(),
             )?;
             editor.trace_state();
             redraw = true;
             processed += 1;
-            for payload in std::mem::take(&mut editor.terminal_output) {
+            for payload in editor.take_terminal_output() {
                 write!(
                     terminal.backend_mut(),
                     "\x1b]52;c;{}\x07",
@@ -135,11 +138,11 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
                 )?;
                 terminal.backend_mut().flush()?;
             }
-            if editor.should_quit || started.elapsed() >= editor::events::TURN_BUDGET {
+            if editor.should_quit() || started.elapsed() >= editor::events::TURN_BUDGET {
                 break;
             }
         }
-        if editor.should_quit {
+        if editor.should_quit() {
             break;
         }
         let flashing = editor.flash_range().is_some();
@@ -172,11 +175,11 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
                 SetCursorStyle::SteadyBlock
             } else if editor.picker_open()
                 || editor.pending_sigil().is_some()
-                || editor.mode == Mode::Insert
+                || editor.mode() == Mode::Insert
             {
                 SetCursorStyle::SteadyBar
             } else if matches!(
-                editor.mode,
+                editor.mode(),
                 Mode::Visual | Mode::VisualLine | Mode::VisualBlock
             ) {
                 SetCursorStyle::SteadyUnderScore
@@ -184,7 +187,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
                 SetCursorStyle::SteadyBlock
             };
             crossterm::execute!(terminal.backend_mut(), shape)?;
-            if std::mem::take(&mut editor.needs_repaint) {
+            if editor.take_repaint_request() {
                 terminal.clear()?;
             }
             terminal.draw(|frame| crate::render::frame_capture::draw(&mut editor, frame, true))?;
@@ -201,7 +204,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     }
     editor.recorded_action(
         editor::trace::drive::Action::Finish,
-        editor.tape.sample_tick(),
+        editor.tape().sample_tick(),
     )?;
     while editor.async_pending() {
         let event = receiver
@@ -209,10 +212,10 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             .map_err(io::Error::other)?;
         editor.recorded_action(
             editor::trace::drive::Action::Event(event),
-            editor.tape.sample_tick(),
+            editor.tape().sample_tick(),
         )?;
     }
-    editor.tape.finish()?;
+    editor.tape().finish()?;
     if let Some(error) = editor.take_shutdown_error() {
         return Err(io::Error::other(error));
     }

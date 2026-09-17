@@ -1,15 +1,15 @@
 //! strop-containers: attach to an *existing* container on the local Docker
-//! engine and browse/read its filesystem (0037 DC1a — browse/read).
+//! engine, browse/read its filesystem (0037 DC1a), and run supervised
+//! in-container programs (0037 DC1b, hardened for 0056 AR07).
 //!
-//! # Capability boundary (read-only by construction)
+//! # Capability boundary
 //!
-//! This crate exposes exactly four engine conversations: probe (`docker
-//! info`), discovery (`docker ps` + `docker inspect`), and filesystem reads
-//! (`docker cp … -` tar streams). There is deliberately **no** write, delete,
-//! exec-of-arbitrary-argv, LSP or Git surface: those are DC1b policy
-//! decisions, not accidental omissions. Unsupported operations are refused
-//! with typed errors ([`ContainerError::CapabilityRefused`]), never silently
-//! approximated.
+//! The engine conversations are: probe (`docker info`), discovery
+//! (`docker ps` + `docker inspect`), filesystem reads (`docker cp … -`
+//! tar streams) and supervised exec. There is deliberately **no** write,
+//! delete, create, stop/restart, provisioning or install surface:
+//! unsupported operations are refused with typed errors
+//! ([`ContainerError::CapabilityRefused`]), never silently approximated.
 //!
 //! # Ownership and identity
 //!
@@ -19,11 +19,15 @@
 //! - The engine is the **local** Docker CLI only (argv arrays, never shell
 //!   strings). Remote engines are DC5; no SSH daemon inside the container
 //!   is required or used.
+//! - The probe pins the selected connection: every invocation carries
+//!   the probed CLI context, so a `docker context use` elsewhere cannot
+//!   redirect strop's traffic between probe and exec.
 //! - Identity is the canonical 64-hex inspect id plus the incarnation
 //!   (`State.StartedAt`), never a container name alone. A name that
-//!   re-resolves to a different id is a stale-identity refusal; a container
-//!   that restarts between inspect and read is detected by a cheap
-//!   `started_at` re-check before every read.
+//!   re-resolves to a different id is a stale-identity refusal; a
+//!   container that restarts between inspect and read is detected by a
+//!   cheap `started_at` re-check before every read, and execution
+//!   revalidates id + incarnation again at admission.
 //!
 //! # Process policy
 //!
@@ -36,6 +40,14 @@
 //! whose retained metadata overflows its bound is refused, and file reads
 //! truncate by explicit `max` semantics — nothing partial is ever
 //! presented as complete.
+//!
+//! Execution additionally runs the in-container program under a fixed
+//! POSIX sh supervisor whose stdin is the lifetime lease: local close or
+//! client death ends the whole session group in-container (TERM, bounded
+//! grace, KILL), with nonce-marked launch/exit/termination records. See
+//! [`ExecSpec`] for the honest limits (a `setsid`-ing descendant escapes;
+//! zombie reaping belongs to the container's init; distroless images
+//! without a shell get a typed refusal).
 
 mod engine;
 mod error;
@@ -44,8 +56,8 @@ mod identity;
 mod read;
 mod tar;
 
-pub use engine::{engine, inspect, list_running, revalidate, EngineRef};
+pub use engine::{engine, inspect, list_running, revalidate, Captured, EngineRef};
 pub use error::ContainerError;
-pub use exec::{exec_capture, exec_command};
+pub use exec::{AdmittedExec, ExecRecord, ExecSpec, LaunchCause, SessionKey};
 pub use identity::{ContainerIdentity, ContainerRef};
 pub use read::{list_dir, read_file, DirEntry, DirEntryKind};

@@ -127,7 +127,11 @@ impl Editor {
 
     /// The mode machine: insert/visual/normal dispatch.
     fn feed_document(&mut self, key: Key) {
+        // Terminal-input entry is a bare-key interception: a walker
+        // mid-sequence (mark absorber, register, operator) keeps its
+        // grammar — `ma` sets a mark, it never opens the PTY (0065 W2).
         if self.mode == Mode::Normal
+            && self.walker.idle()
             && matches!(key, Key::Char('i' | 'a'))
             && self.enter_terminal_input()
         {
@@ -152,7 +156,7 @@ mod tests {
         editor.open_picker(strop_picker::Kind::RemoteAddress);
         editor.hover_card = Some("late docs".into());
         editor.feed_text("host");
-        assert_eq!(editor.picker.as_ref().unwrap().picker.input.text, "host");
+        assert_eq!(editor.picker.as_ref().unwrap().picker.input.text(), "host");
     }
 
     #[test]

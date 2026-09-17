@@ -1,4 +1,5 @@
 //! Private exclusive staging; updates replace the directory entry atomically.
+//! Shared by session state and draft-recovery checkpoints (0056 AR04).
 use super::{io, SessionError};
 use serde::Serialize;
 use std::fs::{self, File};
@@ -6,9 +7,9 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 /// This is retention, not redaction. Oversize snapshots fail visibly.
-const MAX_BYTES: u64 = 16 * 1024 * 1024;
+pub(crate) const MAX_BYTES: u64 = 16 * 1024 * 1024;
 
-pub(super) fn read(path: &Path) -> Result<Vec<u8>, SessionError> {
+pub(crate) fn read(path: &Path) -> Result<Vec<u8>, SessionError> {
     let file = File::open(path).map_err(|e| io(path, e))?;
     let mut bytes = Vec::new();
     file.take(MAX_BYTES + 1)
@@ -22,7 +23,7 @@ pub(super) fn read(path: &Path) -> Result<Vec<u8>, SessionError> {
     Ok(bytes)
 }
 
-pub(super) fn write(path: &Path, value: &impl Serialize) -> Result<(), SessionError> {
+pub(crate) fn write(path: &Path, value: &impl Serialize) -> Result<(), SessionError> {
     let bytes = serde_json::to_vec(value)?;
     if bytes.len() as u64 > MAX_BYTES {
         return Err(SessionError::Invalid(
@@ -36,7 +37,7 @@ pub(super) fn write(path: &Path, value: &impl Serialize) -> Result<(), SessionEr
 
 /// The store callback is the fault-injection seam; privacy and publication
 /// ordering are identical for successful writes and real write/sync failures.
-pub(super) fn publish(
+pub(crate) fn publish(
     path: &Path,
     store: impl FnOnce(&mut File) -> std::io::Result<()>,
 ) -> Result<(), SessionError> {

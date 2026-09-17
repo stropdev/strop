@@ -133,11 +133,16 @@ impl Editor {
         buf.name = Some("help".into());
         // a temporary surface (0051 §7 R07): ctrl-o AND `:q` restore
         // the exact view the user came from
-        self.open_temporary_output(buf);
+        let _ = self.open_temporary_output(buf);
     }
 
     pub(crate) fn open_help_topic(&mut self, topic: &str) {
         self.open_help();
+        // Identity exhaustion leaves us on the origin buffer: never
+        // search/scroll the wrong document (0056 AR13).
+        if self.cur().buf.name.as_deref() != Some("help") {
+            return;
+        }
         let topic = topic.trim();
         if topic.is_empty() {
             return;
@@ -170,6 +175,16 @@ mod tests {
         let text = e.buf().text().to_string();
         for section in crate::keymap::SECTIONS {
             assert!(text.contains(&format!("[{section}]")), "missing {section}");
+        }
+        // 0065 S2: the terminal section names every dispatchable escape —
+        // the exit from terminal input is discoverable from `?` alone.
+        for escape in [
+            "ctrl-\\ ctrl-n",
+            "ctrl-w N",
+            "ctrl-w .",
+            ":terminal-refresh",
+        ] {
+            assert!(text.contains(escape), "help lost the {escape} escape");
         }
         // it's a real buffer: / searches it
         e.feed_text("/undo-tree\r");

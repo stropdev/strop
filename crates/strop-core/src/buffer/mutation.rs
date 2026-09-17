@@ -135,14 +135,17 @@ impl Buffer {
         base: BufferRevision,
         mut replacements: Vec<Replacement>,
     ) -> Result<PreparedReplacements, EditError> {
-        if self.readonly {
-            return Err(EditError::ReadOnly);
-        }
-        if base != self.revision() {
-            return Err(EditError::StaleRevision {
-                expected: base,
-                found: self.revision(),
-            });
+        // The verified admission decision (0057 VF18, crate::mutguard):
+        // readonly refuses first, then a stale base.
+        match crate::mutguard::classify_edit(self.readonly, base.get(), self.revision().get()) {
+            crate::mutguard::EditAdmission::Admitted => {}
+            crate::mutguard::EditAdmission::Readonly => return Err(EditError::ReadOnly),
+            crate::mutguard::EditAdmission::Stale => {
+                return Err(EditError::StaleRevision {
+                    expected: base,
+                    found: self.revision(),
+                });
+            }
         }
         replacements.retain(|edit| !edit.range.is_empty() || !edit.text.is_empty());
         for edit in &replacements {
@@ -182,14 +185,20 @@ impl Buffer {
         if prepared.buffer != self.trace_id() {
             return Err(EditError::WrongBuffer);
         }
-        if self.readonly {
-            return Err(EditError::ReadOnly);
-        }
-        if prepared.revision != self.revision() {
-            return Err(EditError::StaleRevision {
-                expected: prepared.revision,
-                found: self.revision(),
-            });
+        // The same verified admission decision as preparation.
+        match crate::mutguard::classify_edit(
+            self.readonly,
+            prepared.revision.get(),
+            self.revision().get(),
+        ) {
+            crate::mutguard::EditAdmission::Admitted => {}
+            crate::mutguard::EditAdmission::Readonly => return Err(EditError::ReadOnly),
+            crate::mutguard::EditAdmission::Stale => {
+                return Err(EditError::StaleRevision {
+                    expected: prepared.revision,
+                    found: self.revision(),
+                });
+            }
         }
         if prepared.is_empty() {
             return Ok(self.revision());
@@ -293,7 +302,7 @@ impl UserEdit<'_> {
         self.replace(Range::charwise(at, at), text)
     }
     pub fn delete(&mut self, range: Range) -> Result<String, EditError> {
-        if self.buffer.readonly {
+        if !crate::mutguard::writable(self.buffer.readonly) {
             return Err(EditError::ReadOnly);
         }
         self.buffer.validate_range(range)?;
@@ -302,7 +311,7 @@ impl UserEdit<'_> {
         Ok(removed)
     }
     pub fn replace(&mut self, range: Range, text: &str) -> Result<(), EditError> {
-        if self.buffer.readonly {
+        if !crate::mutguard::writable(self.buffer.readonly) {
             return Err(EditError::ReadOnly);
         }
         self.buffer.validate_range(range)?;
@@ -415,7 +424,7 @@ impl Buffer {
         &self,
         action: crate::history::HistoryAction,
     ) -> Result<Option<usize>, EditError> {
-        if self.readonly {
+        if !crate::mutguard::writable(self.readonly) {
             return Err(EditError::ReadOnly);
         }
         let cost = self.history.movement_cost(action);

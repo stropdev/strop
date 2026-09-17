@@ -373,6 +373,7 @@ pub(super) fn discover(
             root: root.clone(),
         },
         tx,
+        token,
     ) {
         Ok(client) => {
             let server = client.id();

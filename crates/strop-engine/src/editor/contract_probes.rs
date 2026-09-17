@@ -72,7 +72,8 @@ fn review_clipboard_reply_preserves_destination() {
     e.clip_paste_pending = Some((false, ticket.clone()));
     let second = e
         .docs
-        .insert(Document::scratch(Buffer::from_text("second\n")));
+        .try_insert(Document::scratch(Buffer::from_text("second\n")))
+        .unwrap();
     e.switch_to(second);
     e.handle_clipboard(strop_core::worker::Completion {
         ticket,
@@ -174,7 +175,8 @@ fn review_marks_map_in_two_documents_with_equal_history_depth() {
     e.feed_text("ggOnew<esc>");
     let second = e
         .docs
-        .insert(Document::scratch(Buffer::from_text("b\nTARGET\n")));
+        .try_insert(Document::scratch(Buffer::from_text("b\nTARGET\n")))
+        .unwrap();
     e.switch_to(second);
     e.set_head(0);
     e.feed_text("jmb");

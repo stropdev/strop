@@ -46,7 +46,7 @@ const MIN_GROUP: usize = 4;
 const MIN_STATUS: usize = 3;
 
 pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
-    if area.width == 0 || area.height == 0 || editor.panes.is_empty() {
+    if area.width == 0 || area.height == 0 || editor.panes().is_empty() {
         return; // a 0-sized resize must not underflow (0027 §2)
     }
     let cells = area.width as usize;
@@ -136,14 +136,13 @@ impl Modeline {
         let git_context = match commit {
             Some(sha) => format!("@{}", sha.get(..8).unwrap_or(sha)),
             None if namespace.is_empty() => editor
-                .git
-                .as_ref()
+                .git()
                 .and_then(|git| git.head_branch.clone())
                 .unwrap_or_default(),
             None => String::new(),
         };
         Self {
-            chip: if let Some(glue) = editor.picker.as_ref() {
+            chip: if let Some(glue) = editor.picker() {
                 format!(
                     " {} {} ",
                     glue.picker.kind.title().trim().to_uppercase(),
@@ -164,7 +163,7 @@ impl Modeline {
             } else {
                 format!(
                     " {}{} ",
-                    editor.mode.chip(),
+                    editor.mode().chip(),
                     if terminal && editor.terminal_capture_enabled() {
                         " REC"
                     } else {
@@ -172,13 +171,17 @@ impl Modeline {
                     }
                 )
             },
-            accent: mode_color(editor.mode),
+            accent: if terminal_input {
+                super::TERMINAL_CHIP
+            } else {
+                mode_color(editor.mode())
+            },
             git_context: printable(git_context),
             namespace: printable(namespace),
             worktree_dirty: !terminal
                 && commit.is_none()
-                && (!editor.hunks.is_empty() || editor.hunks_untracked),
-            staged_mark: !terminal && commit.is_none() && !editor.staged_hunks.is_empty(),
+                && (!editor.hunks().is_empty() || editor.hunks_untracked()),
+            staged_mark: !terminal && commit.is_none() && !editor.staged_hunks().is_empty(),
             dir: printable(dir),
             name: printable(name),
             dirty: buf.dirty || editor.collection_unsaved(editor.current()),
@@ -660,7 +663,7 @@ fn file_display(editor: &Editor) -> (String, String) {
         );
     };
     let relative = path
-        .strip_prefix(&editor.cwd)
+        .strip_prefix(editor.cwd())
         .ok()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(path);
@@ -684,17 +687,21 @@ fn file_display(editor: &Editor) -> (String, String) {
 /// filtered here — whatever wins is what the user sees.
 fn transient(editor: &Editor) -> String {
     if let Some(phase) = editor.terminal_phase(editor.current()) {
-        if editor.pending.is_active() {
-            return editor.pending.text().to_owned();
+        if editor.pending().is_active() {
+            return editor.pending().text().to_owned();
         }
         let new_output = !editor.terminal_input_active()
             && editor.terminal_has_new_output(editor.current())
             && phase.live();
-        if !editor.message.is_empty() {
+        if !editor.message().is_empty() {
             return format!(
                 "{}{}",
-                if new_output { "new output · " } else { "" },
-                editor.message
+                if new_output {
+                    "new output · :terminal-refresh · "
+                } else {
+                    ""
+                },
+                editor.message()
             );
         }
         let phase = match phase {
@@ -704,19 +711,27 @@ fn transient(editor: &Editor) -> String {
             strop_terminal::model::Phase::Exited { .. } => "exited",
             strop_terminal::model::Phase::Failed(_) => "failed",
         };
-        return format!(
-            "{phase} · {}{}",
-            if new_output {
-                "new output · i follows · "
-            } else {
-                ""
-            },
-            if editor.terminal_capture_enabled() {
-                "PRIVATE CAPTURE"
-            } else {
-                "private input"
-            }
-        );
+        // 0065 S2: the transient names the escape out of every terminal
+        // state — the escape is the discovery surface, not a secret.
+        let hint = if editor.terminal_input_active() {
+            "ctrl-\\ ctrl-n normal"
+        } else if new_output {
+            "new output · :terminal-refresh · i follows"
+        } else if phase == "running" || phase == "starting" || phase == "closing" {
+            "snapshot · i returns to input"
+        } else {
+            ""
+        };
+        let capture = if editor.terminal_capture_enabled() {
+            "PRIVATE CAPTURE"
+        } else {
+            "private input"
+        };
+        return if hint.is_empty() {
+            format!("{phase} · {capture}")
+        } else {
+            format!("{phase} · {hint} · {capture}")
+        };
     }
     let preview = match editor.preview() {
         Ok(Some((_, spec))) => Some(spec),
@@ -725,15 +740,15 @@ fn transient(editor: &Editor) -> String {
     };
     preview
         .or_else(|| {
-            (editor.pending.is_active() && !cmd_card_active(editor))
-                .then(|| editor.pending.text().trim_end_matches('\r').to_owned())
+            (editor.pending().is_active() && !cmd_card_active(editor))
+                .then(|| editor.pending().text().trim_end_matches('\r').to_owned())
         })
         .or_else(|| {
-            (!editor.walker.prefix_display().is_empty() || !editor.walker.state.empty())
-                .then(|| editor.walker.display())
+            (!editor.walker().prefix_display().is_empty() || !editor.walker().state.empty())
+                .then(|| editor.walker().display())
         })
         .or_else(|| editor.io_status().map(str::to_owned))
-        .or_else(|| (!editor.message.is_empty()).then(|| editor.message.clone()))
+        .or_else(|| (!editor.message().is_empty()).then(|| editor.message().to_owned()))
         .or_else(|| editor.directory_visibility_summary().map(str::to_owned))
         .unwrap_or_default()
 }

@@ -5,7 +5,7 @@
 //! marker, accent+bold matched chars, hints in the bottom border,
 //! border-column scrollbar.
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
@@ -13,7 +13,6 @@ use ratatui::Frame;
 
 use crate::editor::Editor;
 
-mod layout;
 mod preview;
 mod rows;
 mod window;
@@ -47,10 +46,10 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
 
     // Search, files and symbols own one stable near-full-frame workspace;
     // the smaller floating card remains for transient pickers.
-    let card = layout::card(
-        area,
-        editor.picker.as_ref().expect("picker open").picker.kind,
-    );
+    let card = super::from_cells(strop_engine::editor::prepare::picker_card(
+        super::to_cells(area),
+        editor.picker().expect("picker open").picker.kind,
+    ));
     frame.render_widget(Clear, card);
 
     let (
@@ -72,15 +71,15 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
         // must not block Enter on valid results like an error would.
         picker_notice,
     ) = {
-        let glue = editor.picker.as_ref().expect("picker open");
+        let glue = editor.picker().expect("picker open");
         let p = &glue.picker;
         (
             p.kind,
             p.replacement_visible,
-            p.input.text.clone(),
-            p.replace_input.text.clone(),
-            p.input.cursor,
-            p.replace_input.cursor,
+            p.input.text().to_string(),
+            p.replace_input.text().to_string(),
+            p.input.cursor(),
+            p.replace_input.cursor(),
             p.field,
             p.rows.len(),
             p.selected,
@@ -107,8 +106,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     );
     let narrow_card = card.width < 64;
     let suggestions_open = editor
-        .picker
-        .as_ref()
+        .picker()
         .is_some_and(|glue| glue.suggestions.is_some());
     let read_only_search = editor
         .search_scope()
@@ -208,18 +206,15 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
         ))
         .title_bottom(Span::styled(hint, Style::default().fg(MUTED)))
         .title_top(Line::from(Span::styled(count, Style::default().fg(MUTED))).right_aligned());
-    // 1-cell inner padding (0001 §4: floating panes breathe)
-    let inner = block.inner(card);
-    let inner = Rect {
-        x: inner.x + 1,
-        y: inner.y,
-        width: inner.width.saturating_sub(2),
-        height: inner.height,
-    };
+    // 1-cell border + 1-cell inner padding (0001 §4: floating panes
+    // breathe) — the engine's card geometry, shared with preparation.
+    let inner = super::from_cells(strop_engine::editor::prepare::picker_inner(
+        super::to_cells(card),
+    ));
     frame.render_widget(&block, card);
 
     // input row(s) + content split; replace mode adds a second field
-    let input_h = if replace_mode { 3 } else { 2 };
+    let input_h = strop_engine::editor::prepare::picker_input_height(kind, replacement_visible);
     // A tiny terminal spends its last row on the active editor, not results.
     // Do not rewrite the retained viewport while it cannot be displayed.
     if inner.height < input_h + 1 {
@@ -239,15 +234,16 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
         }
         return;
     }
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(input_h), Constraint::Min(1)])
-        .split(inner);
+    let (field_area, content_area) = {
+        let (fields, content) =
+            strop_engine::editor::prepare::picker_field_split(super::to_cells(inner), input_h);
+        (super::from_cells(fields), super::from_cells(content))
+    };
+    let rows = [field_area, content_area];
     let glyph = if normal_mode { "▮" } else { "❯" };
     let query_roles = matches!(kind, strop_picker::Kind::Files | strop_picker::Kind::Search);
     let highlights = editor
-        .picker
-        .as_ref()
+        .picker()
         .map(|glue| glue.query_highlights.as_slice())
         .unwrap_or(&[]);
     let search_active = !replace_mode || field == strop_picker::Field::Search;
@@ -285,8 +281,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     let rule_y = rows[0].y + input_h - 1;
     if rule_y < rows[1].y {
         let rule = editor
-            .picker
-            .as_ref()
+            .picker()
             .filter(|_| query_roles)
             .map(|glue| glue.query_summary.clone())
             .filter(|summary| !summary.is_empty())
@@ -308,8 +303,12 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     // 0050 §8: the decision list wins the budget; narrow terminals stack
     // a short preview below the list instead of two unreadable slivers;
     // very little height lists only.
-    let (results, preview_area) = match layout::split_results(area, kind, replacement_visible) {
-        Some(pair) => pair,
+    let (results, preview_area) = match strop_engine::editor::prepare::picker_split(
+        super::to_cells(area),
+        kind,
+        replacement_visible,
+    ) {
+        Some((results, preview)) => (super::from_cells(results), preview.map(super::from_cells)),
         None => (rows[1], None),
     };
 
@@ -324,7 +323,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
             results,
         );
     } else {
-        let p = &editor.picker.as_ref().expect("picker open").picker;
+        let p = &editor.picker().expect("picker open").picker;
         // the scrollbar track is reserved BEFORE text budgets (0050 §8)
         let text_area = Rect {
             width: results.width.saturating_sub(1),
@@ -356,7 +355,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     }
     // Manual suggestions own focus without resizing the underlying card.
     {
-        let glue = editor.picker.as_ref().expect("picker open");
+        let glue = editor.picker().expect("picker open");
         if let Some(list) = &glue.suggestions {
             let available = frame.area().bottom().saturating_sub(rows[0].y + input_h);
             let show = (list.items.len().min(6) as u16).min(available.saturating_sub(2));
@@ -408,68 +407,5 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
                 (rows[0].x + column, rows[0].y + row),
             );
         }
-    }
-}
-
-/// Preparation-time scroll clamping for the open picker: the same results
-/// area paint uses, so the viewport matches what is about to be drawn.
-pub(super) fn reveal_for_prepare(editor: &mut Editor, area: Rect) {
-    let Some(glue) = editor.picker.as_mut() else {
-        return;
-    };
-    if matches!(glue.picker.kind, strop_picker::Kind::RemoteAddress) {
-        return;
-    }
-    let kind = glue.picker.kind;
-    let replace_visible = glue.picker.replacement_visible;
-    let Some(results) = layout::results(area, kind, replace_visible) else {
-        return;
-    };
-    glue.picker
-        .reveal_selected((results.height as usize / layout::per_row(kind, replace_visible)).max(1));
-    admit_preview(editor, area, kind, replace_visible);
-}
-
-/// AR01 admission for the picker preview: the mutable resolver requests the
-/// bounded read, then the visible window's syntax analysis is admitted with
-/// exactly the bounds paint will query. Paint reads only the cached twins,
-/// so without this the preview stays on `loading…` forever.
-fn admit_preview(editor: &mut Editor, area: Rect, kind: strop_picker::Kind, replace_visible: bool) {
-    let Some((_, focus_line, source)) = editor.picker_preview() else {
-        return;
-    };
-    let Some(preview_area) =
-        layout::split_results(area, kind, replace_visible).and_then(|(_, preview)| preview)
-    else {
-        return;
-    };
-    let visible = preview_area.height.saturating_sub(1) as usize;
-    let width = usize::from(preview_area.width.saturating_sub(1));
-    match source {
-        crate::editor::PreviewSource::Buffer(document) => {
-            let rope = editor.doc(document).buf.snapshot();
-            let window = preview::preview_window(&rope, focus_line, visible);
-            editor.document_analysis(
-                document,
-                rope.line_to_byte(window.start),
-                rope.line_to_byte(window.end),
-                0,
-                width,
-            );
-        }
-        crate::editor::PreviewSource::Cached(path) => {
-            let Some(entry) = editor.previews.get(&path) else {
-                return;
-            };
-            let rope = entry.rope.clone();
-            let window = preview::preview_window(&rope, focus_line, visible);
-            editor.preview_analysis(
-                &path,
-                rope.line_to_byte(window.start),
-                rope.line_to_byte(window.end),
-                width,
-            );
-        }
-        _ => {}
     }
 }

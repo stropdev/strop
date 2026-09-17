@@ -236,6 +236,9 @@ pub enum RequestRefusal {
     NotReady,
     /// The monotonic request-id domain has no unused identity.
     IdentityExhausted,
+    /// The bounded wire queue is full — the connection is not
+    /// draining (0056 AR06). Visible refusal, never a silent drop.
+    Overloaded,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

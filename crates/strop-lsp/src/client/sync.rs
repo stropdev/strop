@@ -10,7 +10,7 @@ use async_lsp::lsp_types as lt;
 use ropey::Rope;
 use strop_core::id::{BufferRevision, DocumentId};
 
-use super::queue::{WireEnv, WireJob};
+use super::queue::{Admission, WireEnv, WireJob};
 use super::Client;
 use crate::protocol::*;
 
@@ -18,12 +18,19 @@ use crate::protocol::*;
 pub(super) struct SyncState {
     pub(super) ready: bool,
     pub(super) documents: HashMap<PathBuf, OpenDocument>,
+    /// Pre-init admitted requests, flushed in order by
+    /// `finish_initialize`. Bounded (0056 AR06): a server stuck in
+    /// handshake cannot accumulate requests without limit.
     pub(super) pending_requests: Vec<PendingRequest>,
     /// Allocated versions are monotonic across reopens, so a stale
     /// versioned diagnostic can never relabel itself.
     next_version: Option<WireVersion>,
     seen_paths: HashSet<PathBuf>,
 }
+
+/// Bound on pre-init admitted requests (AR06). Launch refusal is a
+/// terminal Note, never a silent drop (R9).
+pub(super) const MAX_PENDING_REQUESTS: usize = 64;
 
 pub(super) struct OpenDocument {
     pub(super) document: DocumentId,
@@ -109,12 +116,17 @@ impl Client {
             let Some(version) = state.next_version() else {
                 return false;
             };
-            self.queue.send(WireJob::Open {
+            // A full wire queue refuses BEFORE admission: no binding is
+            // recorded, the caller's `false` surfaces the refusal.
+            if self.queue.send(WireJob::Open {
                 uri: uri.clone(),
                 language_id: language_id.to_owned(),
                 version,
                 text,
-            });
+            }) == Admission::Refused
+            {
+                return false;
+            }
             state.seen_paths.insert(path.to_owned());
             state.documents.insert(
                 path.to_owned(),
@@ -167,7 +179,14 @@ impl Client {
             let Some(version) = state.next_version() else {
                 return false;
             };
-            self.queue.send(WireJob::Change { uri, version, text });
+            // Refusal before admission (queue full): the recorded
+            // revision stays stale, so the next sync retries with a
+            // newer full snapshot — full-text sync makes the skipped
+            // version safe. `Coalesced` means an unsent snapshot was
+            // replaced in place; the wire state below is identical.
+            if self.queue.send(WireJob::Change { uri, version, text }) == Admission::Refused {
+                return false;
+            }
             if let Some(open) = state.documents.get_mut(path) {
                 open.version = Some(version);
                 open.revision = revision;
@@ -242,29 +261,41 @@ impl Client {
             let Some(text) = open.pending_text.take() else {
                 continue;
             };
-            self.queue.send(WireJob::Open {
+            // Rope clones are cheap; keeping the snapshot until the
+            // queue admits it lets a refusal leave state untouched.
+            let admitted = self.queue.send(WireJob::Open {
                 uri: open.uri.clone(),
                 language_id: open.language_id.clone(),
                 version,
-                text,
+                text: text.clone(),
             });
+            if admitted == Admission::Refused {
+                // The wire is not draining: keep the snapshot pending
+                // and fail the flush rather than half-publish it.
+                open.pending_text = Some(text);
+                return Err(FlushError::QueueFull);
+            }
             open.version = Some(version);
             state.seen_paths.insert(path);
         }
         // Lock stays held: dispatch happens in queue order, after every
-        // open frame above it.
+        // open frame above it. Every admitted request ends in exactly
+        // one terminal event (R9): dispatched, or an explicit cancel.
         for request in std::mem::take(&mut state.pending_requests) {
-            if owns_state(&state, self.id, &request) {
-                self.queue.send(WireJob::Request(request));
-            } else {
-                let context = ReplyContext {
-                    stamp: request.stamp,
-                    encoding: self.caps.encoding(),
-                    kind: request.input.kind,
-                };
+            let context = ReplyContext {
+                stamp: request.stamp,
+                encoding: self.caps.encoding(),
+                kind: request.input.kind,
+            };
+            if !owns_state(&state, self.id, &request) {
                 let _ = self.tx.send(LspEvent::Note {
                     context,
                     text: "cancelled — the document changed or closed during startup".into(),
+                });
+            } else if self.queue.send(WireJob::Request(request)) == Admission::Refused {
+                let _ = self.tx.send(LspEvent::Note {
+                    context,
+                    text: "cancelled — the server's wire queue is full".into(),
                 });
             }
         }
@@ -287,4 +318,7 @@ fn owns_state(state: &SyncState, server: ServerId, request: &PendingRequest) -> 
 #[derive(Debug)]
 pub(super) enum FlushError {
     VersionExhausted,
+    /// The bounded wire queue refused a pending open: the connection
+    /// is not draining, so initialization cannot honestly complete.
+    QueueFull,
 }

@@ -34,25 +34,41 @@ pub struct WorkspaceRegistry {
 impl WorkspaceRegistry {
     /// The context for a filesystem, binding it on first use. Idempotent:
     /// an already-bound filesystem keeps its identity and incarnation.
-    pub fn bind(&mut self, filesystem: Filesystem, root: Option<PathBuf>) -> WorkspaceId {
+    /// Checked (0056 AR13): an exhausted identity space refuses without
+    /// touching existing bindings.
+    pub fn bind(
+        &mut self,
+        filesystem: Filesystem,
+        root: Option<PathBuf>,
+    ) -> Result<WorkspaceId, strop_core::id::ArenaExhausted> {
         if let Some(id) = self.by_filesystem.get(&filesystem) {
-            return *id;
+            return Ok(*id);
         }
-        let id = self.arena.insert(WorkspaceContext {
+        let id = self.arena.try_insert(WorkspaceContext {
             filesystem: filesystem.clone(),
             root,
             incarnation: 0,
-        });
+        })?;
         self.by_filesystem.insert(filesystem, id);
-        id
+        Ok(id)
     }
 
     /// A disconnect ends the incarnation: the next bind/reconnect observes
     /// a bumped counter rather than silently continuing the old session.
+    /// If the counter itself is exhausted the identity is retired instead —
+    /// a reconnect binds a fresh one (0056 AR13).
     pub fn note_disconnect(&mut self, filesystem: &Filesystem) {
-        if let Some(id) = self.by_filesystem.get(filesystem) {
-            if let Some(context) = self.arena.get_mut(*id) {
-                context.incarnation += 1;
+        let Some(id) = self.by_filesystem.get(filesystem).copied() else {
+            return;
+        };
+        let Some(context) = self.arena.get_mut(id) else {
+            return;
+        };
+        match context.incarnation.checked_add(1) {
+            Some(next) => context.incarnation = next,
+            None => {
+                self.by_filesystem.remove(filesystem);
+                self.arena.remove(id);
             }
         }
     }
@@ -70,11 +86,18 @@ mod tests {
     #[test]
     fn rebinding_keeps_identity_and_disconnect_bumps_incarnation() {
         let mut registry = WorkspaceRegistry::default();
-        let local = registry.bind(Filesystem::Local, Some(PathBuf::from("/work")));
-        assert_eq!(registry.bind(Filesystem::Local, None), local, "idempotent");
+        let local = registry
+            .bind(Filesystem::Local, Some(PathBuf::from("/work")))
+            .unwrap();
+        assert_eq!(
+            registry.bind(Filesystem::Local, None).unwrap(),
+            local,
+            "idempotent"
+        );
         let endpoint = RemoteEndpoint::parse("ssh://dev@example.com:2222").unwrap();
-        let remote = registry.bind(Filesystem::Remote(endpoint.clone()), None);
-        assert_ne!(local, remote, "namespaces never share a slot");
+        let remote = registry
+            .bind(Filesystem::Remote(endpoint.clone()), None)
+            .unwrap();
         let remote_fs = Filesystem::Remote(endpoint.clone());
         let incarnation = |registry: &WorkspaceRegistry| {
             registry
@@ -86,7 +109,7 @@ mod tests {
         registry.note_disconnect(&remote_fs);
         assert_eq!(incarnation(&registry), Some(1));
         assert_eq!(
-            registry.bind(Filesystem::Remote(endpoint), None),
+            registry.bind(Filesystem::Remote(endpoint), None).unwrap(),
             remote,
             "reconnect reuses the slot with the bumped incarnation"
         );

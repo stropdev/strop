@@ -16,7 +16,7 @@ mod picker_tests {
         e.feed(crate::editor::Key::Esc);
         assert!(e.picker_open(), "esc once: picker stays open");
         e.feed_text("0x"); // to 0, delete 'm'
-        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "ain");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "ain");
         e.feed(crate::editor::Key::Esc);
         assert!(!e.picker_open(), "esc twice closes");
     }
@@ -43,9 +43,61 @@ mod picker_tests {
         e.feed_text("i"); // back to insert
         e.feed_text("j"); // types into the query instead
         assert_eq!(
-            e.picker.as_ref().unwrap().picker.input.text,
+            e.picker.as_ref().unwrap().picker.input.text(),
             "j",
             "insert mode: j filters"
+        );
+    }
+
+    /// A query typed, Esc'd into normal mode, then edited with the
+    /// given keys: (final field text, still-normal?).
+    fn field_after(query: &str, keys: &str) -> (String, bool) {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::Files);
+        e.feed_text(query);
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text(keys);
+        let picker = &e.picker.as_ref().unwrap().picker;
+        (picker.input.text().to_string(), picker.input_normal())
+    }
+
+    #[test]
+    fn picker_field_normal_mode_is_the_real_grammar() {
+        // user report: dw did nothing in the symbol-search input — the
+        // field's normal mode is the real vim grammar now (0003 §2)
+        assert_eq!(field_after("main", "0dw").0, "");
+        assert_eq!(field_after("main", "db").0, "");
+        assert_eq!(field_after("main one", "0de").0, " one");
+        assert_eq!(field_after("ma:in", "0df:").0, "in");
+        assert_eq!(field_after("one two three", "02dw").0, "three");
+        assert_eq!(field_after("one two", "0wdiw").0, "one ");
+        assert_eq!(field_after("main", "0dd").0, "", "dd clears the field");
+        // change re-enters the field's own insert mode: x lands as text
+        let (text, normal) = field_after("main", "0cwx");
+        assert_eq!((text.as_str(), normal), ("x", false));
+        // i/a/A return to insert too
+        assert!(!field_after("main", "i").1);
+        assert!(!field_after("main", "A").1);
+    }
+
+    #[test]
+    fn picker_field_refusals_are_surfaced_never_swallowed() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.open_picker(Kind::Files);
+        e.feed_text("main");
+        e.feed(crate::editor::Key::Esc);
+        e.feed_text("qa"); // macros belong to the document surface
+        assert!(e.message.contains("record macro"), "{}", e.message);
+        e.feed_text("ds\"");
+        assert!(e.message.contains("surround"), "{}", e.message);
+        e.feed_text(":");
+        assert!(e.message.contains("prompt"), "{}", e.message);
+        e.feed_text(">w");
+        assert!(e.message.contains("indent"), "{}", e.message);
+        assert_eq!(
+            e.picker.as_ref().unwrap().picker.input.text(),
+            "main",
+            "refusals never edit"
         );
     }
 
@@ -72,12 +124,12 @@ mod picker_tests {
         assert_eq!(e.picker.as_ref().unwrap().picker.selected, 0);
         e.feed(crate::editor::Key::Left);
         assert_eq!(
-            e.picker.as_ref().unwrap().picker.input.cursor,
+            e.picker.as_ref().unwrap().picker.input.cursor(),
             0,
             "Left moves the caret"
         );
         e.feed(crate::editor::Key::Right);
-        assert_eq!(e.picker.as_ref().unwrap().picker.input.cursor, 1);
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.cursor(), 1);
     }
 
     #[test]
@@ -88,19 +140,19 @@ mod picker_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.open_picker(Kind::Files);
         e.paste_bracketed("main");
-        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "main");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "main");
         assert_eq!(e.buf().text(), "x\n", "the document is untouched");
         // caret placement is honored
         e.feed(crate::editor::Key::Left);
         e.feed(crate::editor::Key::Left);
         e.paste_bracketed("__");
-        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "ma__in");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "ma__in");
         // paste works in the field's normal mode too (the ex line's
         // pending reducer pastes the same way)
         e.feed(crate::editor::Key::Esc);
         e.feed_text("0");
         e.paste_bracketed("#");
-        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "#ma__in");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "#ma__in");
     }
 
     #[test]
@@ -112,7 +164,7 @@ mod picker_tests {
             e.message, "picker input cannot contain a newline",
             "a refused paste says so — silence reads as a broken terminal"
         );
-        assert_eq!(e.picker.as_ref().unwrap().picker.input.text, "");
+        assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "");
     }
 
     #[test]
@@ -210,7 +262,8 @@ mod picker_tests {
         let glue = e.picker.as_ref().expect("the address box opens");
         assert_eq!(glue.picker.kind, Kind::RemoteAddress);
         assert_eq!(
-            glue.picker.input.text, "ewosd-tt-925",
+            glue.picker.input.text(),
+            "ewosd-tt-925",
             "the typed destination arrives as the address draft"
         );
     }
@@ -245,7 +298,7 @@ mod picker_tests {
         e.open_picker(Kind::RemoteAddress);
         e.paste_bracketed("ssh://user@example.com:2222/tmp/dir");
         assert_eq!(
-            e.picker.as_ref().unwrap().picker.input.text,
+            e.picker.as_ref().unwrap().picker.input.text(),
             "ssh://user@example.com:2222/tmp/dir"
         );
     }
@@ -308,7 +361,7 @@ mod picker_tests {
         assert_eq!(list.items[0].insert, "language:");
         e.feed(crate::editor::Key::Enter);
         assert_eq!(
-            e.picker.as_ref().unwrap().picker.input.text,
+            e.picker.as_ref().unwrap().picker.input.text(),
             "language:",
             "the span replaced"
         );

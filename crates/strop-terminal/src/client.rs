@@ -59,10 +59,11 @@ impl Client {
         launch: &Launch,
         geometry: Geometry,
         keyboard: u8,
+        palette: Option<&Palette>,
         token: &CancelToken,
     ) -> Result<Self, Error> {
         let body = WireLaunch::encode(launch, geometry)?;
-        let mut vt = Vt::new(session, geometry)?;
+        let mut vt = Vt::new(session, geometry, palette)?;
         vt.keyboard_capabilities(keyboard)?;
         let (channel, inherited) =
             UnixStream::pair().map_err(|error| io_error("create helper channel", error))?;

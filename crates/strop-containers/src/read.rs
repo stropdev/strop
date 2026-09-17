@@ -132,8 +132,13 @@ fn fetch_archive(
     limit: u64,
     token: &CancelToken,
 ) -> Result<Archive, ContainerError> {
-    let _ = engine;
-    let output = capture(&["cp", &target(id, path), "-"], limit, READ_DEADLINE, token)?;
+    let output = capture(
+        engine,
+        &["cp", &target(id, path), "-"],
+        limit,
+        READ_DEADLINE,
+        token,
+    )?;
     if output.code != Some(0) {
         return Err(classify_cp(id, path, &output.stderr));
     }
@@ -233,9 +238,9 @@ fn list_once(
     path: &str,
     token: &CancelToken,
 ) -> Result<Listing, ContainerError> {
-    let _ = engine;
     let mut listing = ListingConsumer::new(path);
     let streamed = stream(
+        engine,
         &["cp", &target(id, path), "-"],
         READ_DEADLINE,
         token,

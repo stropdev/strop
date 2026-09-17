@@ -21,6 +21,10 @@ pub struct BufferSeed {
     pub name: Option<String>,
     pub dirty: bool,
     pub readonly: bool,
+    /// Typed owner of the readonly policy (0056 AR14); absent in seeds
+    /// written before reasons existed.
+    #[serde(default)]
+    pub readonly_reason: Option<super::ReadonlyReason>,
     pub disk_stamp: Option<std::time::SystemTime>,
     #[serde(with = "crate::path_serde::option")]
     pub file_identity: Option<std::path::PathBuf>,
@@ -36,6 +40,7 @@ impl Buffer {
             name: self.name.clone(),
             dirty: self.dirty,
             readonly: self.readonly,
+            readonly_reason: self.readonly_reason,
             disk_stamp: self.disk_stamp,
             file_identity: self.file_identity.clone(),
         }
@@ -57,6 +62,7 @@ pub struct BufferWitness {
     pub name: Option<String>,
     pub dirty: bool,
     pub readonly: bool,
+    pub readonly_reason: Option<super::ReadonlyReason>,
     pub disk_stamp: Option<std::time::SystemTime>,
     #[serde(with = "crate::path_serde::option")]
     pub file_identity: Option<std::path::PathBuf>,
@@ -75,6 +81,7 @@ impl Buffer {
             name: self.name.clone(),
             dirty: self.dirty,
             readonly: self.readonly,
+            readonly_reason: self.readonly_reason,
             disk_stamp: self.disk_stamp,
             file_identity: self.file_identity.clone(),
         }
@@ -108,6 +115,7 @@ impl BufferSeed {
         buffer.name = self.name;
         buffer.dirty = self.dirty;
         buffer.readonly = self.readonly;
+        buffer.readonly_reason = self.readonly_reason;
         buffer.disk_stamp = self.disk_stamp;
         buffer.file_identity = self.file_identity;
         Ok(buffer)

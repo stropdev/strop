@@ -236,11 +236,17 @@ pub(crate) fn discover(input: DiscoverInput, token: &CancelToken) -> Option<Atta
             abs,
             cwd,
             git_workdir,
-        } => Some(discover_local(&input, abs, cwd, git_workdir.as_deref())),
+        } => Some(discover_local(
+            &input,
+            abs,
+            cwd,
+            git_workdir.as_deref(),
+            token,
+        )),
         DiscoverPlace::Remote { file, client } => {
             super::remote::discover(&input, file, client, token)
         }
-        DiscoverPlace::Container { id, root } => Some(discover_container(&input, id, root)),
+        DiscoverPlace::Container { id, root } => Some(discover_container(&input, id, root, token)),
     }
 }
 
@@ -251,6 +257,7 @@ fn discover_local(
     abs: &Path,
     cwd: &Path,
     git_workdir: Option<&Path>,
+    token: &CancelToken,
 ) -> AttachRecord {
     let DiscoverInput {
         ticket,
@@ -315,6 +322,7 @@ fn discover_local(
         &spec,
         strop_lsp::Workspace::Local { root: root.clone() },
         tx,
+        token,
     ) {
         Ok(client) => {
             let server = client.id();
@@ -350,6 +358,7 @@ fn discover_container(
     input: &DiscoverInput,
     id: &strop_workspace::ContainerId,
     root: &Path,
+    token: &CancelToken,
 ) -> AttachRecord {
     let languages = strop_lsp::languages::Languages::load(input.xdg.as_deref(), None);
     let layers: Vec<LayerDiagnostic> = languages.layer_diagnostics().to_vec();
@@ -376,6 +385,7 @@ fn discover_container(
             root: root.to_path_buf(),
         },
         tx,
+        token,
     ) {
         Ok(client) => {
             let server = client.id();
@@ -492,19 +502,33 @@ mod tests {
         // NoServer refusal, target local, no layer diagnostics.
         let dir = std::path::Path::new("/w/definitely-not-here");
         let abs = dir.join("a.nosuchlang");
-        let record = discover_local(
-            &input(
-                DiscoverPlace::Local {
-                    abs: abs.clone(),
-                    cwd: dir.to_path_buf(),
-                    git_workdir: None,
+        let record = std::thread::scope(|scope| {
+            let (tokens, issued) = std::sync::mpsc::channel();
+            let _handle = strop_core::worker::spawn_scoped(
+                scope,
+                "attach-test-token",
+                |_| {},
+                move |token| {
+                    let _ = tokens.send(token);
+                    strop_core::worker::Outcome::Success(())
                 },
-                ".nosuchlang",
-            ),
-            &abs,
-            dir,
-            None,
-        );
+            );
+            let token = issued.recv().expect("worker issued token");
+            discover_local(
+                &input(
+                    DiscoverPlace::Local {
+                        abs: abs.clone(),
+                        cwd: dir.to_path_buf(),
+                        git_workdir: None,
+                    },
+                    ".nosuchlang",
+                ),
+                &abs,
+                dir,
+                None,
+                &token,
+            )
+        });
         assert_eq!(record.outcome, AttachDecision::NoServer);
         assert_eq!(record.target, Filesystem::Local);
         assert_eq!(record.root, dir);

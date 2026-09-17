@@ -31,7 +31,9 @@ impl Editor {
         }
         let mut buffer = Buffer::from_text("strop save receipt — per-file persistence results\nApply and Save are separate; newer edits remain unsaved.\n\n");
         buffer.name = Some("change save receipt".into());
-        let report = self.open_temporary_output(buffer);
+        let Some(report) = self.open_temporary_output(buffer) else {
+            return; // message already names the exhaustion
+        };
         self.review.rows.insert(
             report,
             vec![ReviewRow::Heading, ReviewRow::Context, ReviewRow::Context],

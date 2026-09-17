@@ -194,7 +194,7 @@ impl Editor {
         }) {
             if replacement {
                 glue.picker.replacement_visible = true;
-                if !glue.picker.input.text.is_empty() {
+                if !glue.picker.input.text().is_empty() {
                     glue.picker.field = strop_picker::Field::Replace;
                 }
                 glue.suggestions = None;
@@ -235,7 +235,7 @@ impl Editor {
         };
         if replacement {
             glue.picker.replacement_visible = true;
-            glue.picker.field = if glue.picker.input.text.is_empty() {
+            glue.picker.field = if glue.picker.input.text().is_empty() {
                 strop_picker::Field::Search
             } else {
                 strop_picker::Field::Replace

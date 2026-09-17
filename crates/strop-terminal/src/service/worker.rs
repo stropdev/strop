@@ -24,6 +24,9 @@ pub(super) struct Start {
     pub launch: Launch,
     pub geometry: Geometry,
     pub keyboard: u8,
+    /// Embedder-owned default palette (0065 D3); `None` keeps the native
+    /// engine's compiled-in defaults.
+    pub palette: Option<crate::model::Palette>,
     pub receiver: Receiver<Request>,
     pub wake: UnixDatagram,
     pub mailbox: Arc<Mailbox>,
@@ -48,6 +51,7 @@ impl Start {
             &self.launch,
             self.geometry,
             self.keyboard,
+            self.palette.as_ref(),
             &token,
         ) {
             Ok(client) => client,

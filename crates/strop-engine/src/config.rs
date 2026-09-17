@@ -52,6 +52,37 @@ pub struct Config {
     /// pane/buffer switches and large jumps (0064 §2). Presentation
     /// only; off leaves the cursor steady with zero behavior change.
     pub cursor_fade: bool,
+    /// Winning-layer record per knob (0056 AR14); populated by `load`.
+    /// Crate-visible so struct-update test fixtures keep working.
+    #[serde(skip)]
+    pub(crate) provenance: Provenance,
+}
+
+/// Which layer won for a knob (0056 AR14): the embedded default or the
+/// user config file. Editor knobs have no project layer; project
+/// layering exists for `languages.toml` under `:trust`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigLayer {
+    Default,
+    User,
+}
+
+impl ConfigLayer {
+    pub fn label(self) -> &'static str {
+        match self {
+            ConfigLayer::Default => "default",
+            ConfigLayer::User => "user",
+        }
+    }
+}
+
+/// Where each knob's winning value came from. Not part of the file
+/// schema: deserializing a bare Config (tests, defaults) yields empty
+/// provenance, and every knob reports `Default`.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Provenance {
+    pub(crate) user_path: Option<std::path::PathBuf>,
+    user_keys: std::collections::BTreeSet<String>,
 }
 
 /// `indent_style` in config.toml.
@@ -73,6 +104,7 @@ impl Default for Config {
             search_show_hidden: true,
             search_respect_ignore: true,
             cursor_fade: true,
+            provenance: Provenance::default(),
         }
     }
 }
@@ -146,15 +178,38 @@ impl Config {
         })
     }
 
-    /// `strop config`: the knobs with live values (KNOBS is the data
-    /// source; this is its first consumer — the settings popup is next).
+    /// `strop config`: the knobs with live values and winning layers
+    /// (KNOBS is the data source; this is its first consumer — the
+    /// settings popup is next).
     pub fn print_knobs(&self) {
         for k in KNOBS {
             let Some(value) = self.knob_value(k.key) else {
                 continue; // tests pin every KNOBS key to a value
             };
-            println!("  {:<16} {:<7} {:<8} {}", k.key, k.kind, value, k.desc);
+            println!(
+                "  {:<16} {:<7} {:<8} {:<8} {}",
+                k.key,
+                k.kind,
+                value,
+                self.knob_layer(k.key).label(),
+                k.desc
+            );
         }
+    }
+
+    /// The winning layer for one knob (0056 AR14): `User` when the user
+    /// file actually set the key, `Default` otherwise.
+    pub fn knob_layer(&self, key: &str) -> ConfigLayer {
+        if self.provenance.user_keys.contains(key) {
+            ConfigLayer::User
+        } else {
+            ConfigLayer::Default
+        }
+    }
+
+    /// The origin of the user layer, when one was loaded.
+    pub fn user_layer_path(&self) -> Option<&std::path::Path> {
+        self.provenance.user_path.as_deref()
     }
 
     /// Load the user config; errors are returned as a message for the
@@ -163,19 +218,42 @@ impl Config {
         let Some(path) = config_path() else {
             return (Self::default(), None);
         };
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        Self::load_from(&path)
+    }
+
+    /// Load one explicit layer file; absent is defaults, malformed is
+    /// defaults plus the message. Provenance records the path and the
+    /// keys the layer actually set (0056 AR14).
+    pub fn load_from(path: &std::path::Path) -> (Self, Option<String>) {
+        let Ok(text) = std::fs::read_to_string(path) else {
             return (Self::default(), None); // absent is fine
         };
-        let parsed = toml::from_str::<Config>(&text)
-            .map_err(|e| e.to_string())
-            .and_then(Config::validated);
-        match parsed {
-            Ok(c) => (c, None),
+        match Self::parse(&text) {
+            Ok((mut config, keys)) => {
+                config.provenance = Provenance {
+                    user_path: Some(path.to_path_buf()),
+                    user_keys: keys,
+                };
+                (config, None)
+            }
             Err(e) => (
                 Self::default(),
                 Some(format!("config {}: {e} — using defaults", path.display())),
             ),
         }
+    }
+    /// actually set — provenance names a knob's winning layer only when
+    /// the layer named the key (0056 AR14).
+    fn parse(text: &str) -> Result<(Self, std::collections::BTreeSet<String>), String> {
+        let keys = toml::from_str::<toml::Table>(text)
+            .map_err(|e| e.to_string())?
+            .keys()
+            .cloned()
+            .collect();
+        let config = toml::from_str::<Config>(text)
+            .map_err(|e| e.to_string())
+            .and_then(Config::validated)?;
+        Ok((config, keys))
     }
 
     /// `tab_size` outside the supported range (0051 R08): refused
@@ -278,6 +356,35 @@ mod tests {
             );
         }
         assert!(config.knob_value("not_a_knob").is_none());
+    }
+    #[test]
+    fn provenance_names_the_actual_winning_layer() {
+        // 0056 AR14: a knob the user file set reports User; every other
+        // knob reports Default — never a blanket "user config" claim.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "tab_size = 8\nauto_format = false\n").unwrap();
+        let (config, error) = Config::load_from(&path);
+        assert!(error.is_none());
+        assert_eq!(config.tab_size, 8);
+        assert_eq!(config.knob_layer("tab_size"), ConfigLayer::User);
+        assert_eq!(config.knob_layer("auto_format"), ConfigLayer::User);
+        assert_eq!(config.knob_layer("indent_guides"), ConfigLayer::Default);
+        assert_eq!(config.knob_layer("cursor_fade"), ConfigLayer::Default);
+        assert_eq!(config.user_layer_path(), Some(path.as_path()));
+        // A config that never went through a layer is all defaults.
+        let bare: Config = toml::from_str("tab_size = 2").unwrap();
+        assert_eq!(bare.knob_layer("tab_size"), ConfigLayer::Default);
+        assert!(bare.user_layer_path().is_none());
+    }
+
+    #[test]
+    fn malformed_layer_sets_no_provenance() {
+        assert!(Config::parse("tab_size = \"oops\"").is_err());
+        assert!(
+            Config::parse("tab_size = 99").is_err(),
+            "validated() still gates"
+        );
     }
 
     #[test]

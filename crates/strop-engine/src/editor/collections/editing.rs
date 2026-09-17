@@ -29,11 +29,17 @@ impl Editor {
             .collect();
         for change in &changes {
             let edit = change.edit;
+            // The verified admission decision (0057 VF18,
+            // strop_core::projectguard): the span owns the edit iff it
+            // lands inside the writable body, never chrome or a seam.
             let owner = spans.iter().position(|&(start, end, rendered_end)| {
-                edit.start_byte >= start
-                    && edit.start_byte <= end
-                    && edit.old_end_byte <= rendered_end
-                    && (edit.start_byte < rendered_end || start == rendered_end)
+                strop_core::projectguard::span_owns_edit(
+                    edit.start_byte,
+                    edit.old_end_byte,
+                    start,
+                    end,
+                    rendered_end,
+                )
             });
             if change.origin != ChangeOrigin::User || owner.is_none() {
                 self.refuse_collection_edit(id, "edit touches generated chrome or spans excerpts");

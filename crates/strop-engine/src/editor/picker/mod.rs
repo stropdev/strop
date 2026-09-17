@@ -14,8 +14,10 @@ use super::{Editor, Key};
 
 mod accept;
 mod drain;
+mod keys;
 #[cfg(test)]
 mod lifecycle_traces;
+mod open;
 mod preview;
 mod query;
 #[cfg(test)]
@@ -72,6 +74,9 @@ pub(crate) use status::ProjectStatus;
 
 pub struct PickerGlue {
     pub picker: Picker,
+    /// Normal-mode key sequences on the picker fields: counts, pending
+    /// operators, motion text (the vim grammar, 0003 §2).
+    pub(crate) field_keys: super::field::FieldMachine,
     pub id: PickerId,
     /// The request owning the stream: set at launch, cleared by its
     /// terminal Finished event or by cancellation.
@@ -128,6 +133,7 @@ impl PickerGlue {
     pub fn diagnostics(picker: Picker) -> Self {
         Self {
             picker,
+            field_keys: super::field::FieldMachine::default(),
             id: PickerId(WorkerId::new(0)), // replaced on install
             active: None,
             rx: None,
@@ -213,162 +219,6 @@ impl Editor {
         {
             self.start_picker_ranking();
         }
-    }
-
-    pub fn open_picker(&mut self, kind: Kind) {
-        if kind == Kind::FilesystemActions {
-            self.open_filesystem_actions();
-            return;
-        }
-        if kind == Kind::Search {
-            self.open_search(false);
-            return;
-        }
-        if kind == Kind::RemoteHosts {
-            self.open_remote_picker();
-            return;
-        }
-        if kind == Kind::Jumps {
-            self.open_jumps_picker();
-            return;
-        }
-        if kind == Kind::RemoteAddress {
-            self.open_remote_address();
-            return;
-        }
-        if kind == Kind::TabSize {
-            self.open_tab_size_picker();
-            return;
-        }
-        let items = match kind {
-            Kind::Buffers => {
-                let cwd = self.cwd.clone();
-                self.mru
-                    .iter()
-                    .map(|&i| {
-                        // Terminals are real switchable buffers: they list
-                        // with vim's `!` job flag and their live phase, so
-                        // "what is open?" has one truthful answer.
-                        let (badge, name) = match self.terminal_document(i) {
-                            Some(terminal) => {
-                                let phase = self
-                                    .terminal_phase(i)
-                                    .map(terminal_phase_label)
-                                    .unwrap_or_else(|| "unknown".into());
-                                let directory = self
-                                    .terminal_launch_directory(i)
-                                    .and_then(|path| {
-                                        path.file_name()
-                                            .map(|name| name.to_string_lossy().into_owned())
-                                    })
-                                    .unwrap_or_default();
-                                (
-                                    Some("!"),
-                                    format!(
-                                        "terminal #{} · {directory} · {phase}",
-                                        terminal.session.get()
-                                    ),
-                                )
-                            }
-                            None => (None, self.doc(i).label(&cwd)),
-                        };
-                        let badge = badge.map(str::to_owned);
-                        Item {
-                            badge,
-                            text: name,
-                            payload: Payload::Buffer(i),
-                        }
-                    })
-                    .collect()
-            }
-            // Grep/Replace stream only once input registers a request;
-            // Files launches its walk right after install.
-            Kind::Files
-            | Kind::Search
-            | Kind::RemoteHosts
-            | Kind::RemoteAddress
-            | Kind::CodeActions
-            | Kind::Containers => vec![],
-            Kind::Jumps => unreachable!("the jumplist builds its own items"),
-            Kind::SearchOptions => unreachable!("search options build their own items"),
-            Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
-            Kind::FilesystemActions => {
-                unreachable!("filesystem actions build their own captured selector")
-            }
-            Kind::Symbols | Kind::WorkspaceSymbols => vec![],
-            Kind::Diagnostics | Kind::Locations => {
-                unreachable!("location lists use PickerGlue::diagnostics")
-            }
-        };
-        self.set_picker(PickerGlue::diagnostics(Picker::new(kind, items, false)));
-        if kind == Kind::Files {
-            self.picker_input_changed();
-        }
-        if kind == Kind::WorkspaceSymbols {
-            self.picker_input_changed();
-        }
-    }
-
-    /// `space S` (0063 §2): every declaration in the opened scope —
-    /// syntax-fallback tier now, language servers merge in as they
-    /// warm up. The canonical query AST drives admission; ranking is
-    /// local per keystroke.
-    pub(crate) fn open_workspace_symbols(&mut self) {
-        self.open_picker(Kind::WorkspaceSymbols);
-    }
-
-    /// `:search-options` (0051 R03): the hidden/ignore controls with
-    /// their live values; Enter toggles and the row updates in place.
-    pub(crate) fn open_search_options(&mut self) {
-        let item = |setting: strop_picker::SearchSetting, on: bool| strop_picker::Item {
-            badge: None,
-            text: format!(
-                "{}: {}",
-                match setting {
-                    strop_picker::SearchSetting::Hidden => "hidden (dotfiles)",
-                    strop_picker::SearchSetting::RespectIgnore => "ignored entries",
-                },
-                match (setting, on) {
-                    (strop_picker::SearchSetting::Hidden, true)
-                    | (strop_picker::SearchSetting::RespectIgnore, false) => "include",
-                    _ => "exclude",
-                },
-            ),
-            payload: strop_picker::Payload::SearchOption(setting),
-        };
-        let items = vec![
-            item(
-                strop_picker::SearchSetting::Hidden,
-                self.config.search_show_hidden,
-            ),
-            item(
-                strop_picker::SearchSetting::RespectIgnore,
-                self.config.search_respect_ignore,
-            ),
-        ];
-        self.set_picker(PickerGlue::diagnostics(Picker::new(
-            Kind::SearchOptions,
-            items,
-            false,
-        )));
-    }
-
-    /// The jumplist as a menu (0047 §2): past newest-first, the current
-    /// position marked, then the future; dead documents are filtered.
-    pub(crate) fn open_jumps_picker(&mut self) {
-        let mut items = Vec::new();
-        for entry in self.jumplist_past.iter().rev() {
-            items.extend(jump_row(self, entry, "  "));
-        }
-        items.extend(jump_row(self, &self.jump_record(), "> "));
-        for entry in self.jumplist_future.iter().rev() {
-            items.extend(jump_row(self, entry, "  "));
-        }
-        self.set_picker(PickerGlue::diagnostics(Picker::new(
-            Kind::Jumps,
-            items,
-            false,
-        )));
     }
 
     /// Register headless delivery before launch, or stamp directly onto the live
@@ -467,152 +317,6 @@ impl Editor {
         }
     }
 
-    pub(crate) fn feed_picker(&mut self, key: Key) {
-        let Some(glue) = &mut self.picker else {
-            return;
-        };
-        if key != Key::Enter {
-            glue.accept_when_ranked = false;
-        }
-        let search = glue.picker.kind == Kind::Search;
-        let replace = search && glue.picker.replacement_visible;
-        // the suggestion list owns accept/cancel while open (0051 R02)
-        if glue.suggestions.is_some() {
-            match key {
-                Key::Up => {
-                    let list = glue.suggestions.as_mut().unwrap();
-                    list.selected = list.selected.saturating_sub(1);
-                    return;
-                }
-                Key::Down | Key::Tab => {
-                    let list = glue.suggestions.as_mut().unwrap();
-                    list.selected = (list.selected + 1).min(list.items.len().saturating_sub(1));
-                    return;
-                }
-                Key::Enter => {
-                    self.accept_suggestion();
-                    return;
-                }
-                Key::Esc => {
-                    glue.suggestions = None;
-                    return;
-                }
-                _ => {
-                    glue.suggestions = None;
-                }
-            }
-        }
-        match key {
-            Key::CtrlSpace => {
-                self.open_suggestions();
-            }
-            Key::Esc => {
-                if glue.picker.input_normal() {
-                    let origin = glue.search.as_ref().map(|context| context.origin.clone());
-                    self.close_picker();
-                    if let Some(origin) =
-                        origin.filter(|origin| self.docs.get(origin.document).is_some())
-                    {
-                        self.jump_to(origin);
-                    }
-                } else {
-                    glue.picker.enter_normal();
-                }
-            }
-            Key::Enter => self.accept_current_picker(),
-            Key::Tab | Key::Backtab if replace => {
-                if glue.search.as_ref().is_some_and(|context| {
-                    context.scope.root.filesystem != strop_workspace::Filesystem::Local
-                }) {
-                    self.message =
-                        "SSH Search is read-only; With and Review are unavailable".into();
-                } else {
-                    glue.picker.toggle_field();
-                }
-            }
-            // ctrl-o: the listed hits become an editable collection (0044).
-            Key::CtrlO => self.open_collection_from_picker(),
-            Key::CtrlD if search => {
-                if glue.picker.toggle_file_excluded() {
-                    self.search_intent_changed();
-                } else {
-                    self.message = "no source match selected".into();
-                }
-            }
-            Key::CtrlX if search => {
-                if glue.picker.toggle_excluded() {
-                    self.search_intent_changed();
-                } else {
-                    self.message = "no source match selected".into();
-                }
-            }
-            Key::CtrlD | Key::CtrlX => {}
-            Key::Backspace => {
-                if glue.picker.input_normal() {
-                    glue.picker.normal_key('h');
-                } else if replace && glue.picker.field == strop_picker::Field::Replace {
-                    glue.picker.pop_replace_char();
-                    self.search_intent_changed();
-                } else {
-                    glue.picker.pop_char();
-                    self.picker_input_changed();
-                }
-            }
-            Key::CtrlL => self.needs_repaint = true,
-            Key::CtrlR if search => self.toggle_search_replacement(),
-            Key::CtrlR | Key::CtrlW => {}
-            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
-            Key::Up => glue.picker.move_by(-1),
-            Key::Down => glue.picker.move_by(1),
-            Key::Tab => glue.picker.move_by(1),
-            Key::Backtab => glue.picker.move_by(-1),
-            Key::Left => glue.picker.caret_left(),
-            Key::Right => glue.picker.caret_right(),
-            Key::Char('j') if glue.picker.input_normal() => glue.picker.move_by(1),
-            Key::Char('k') if glue.picker.input_normal() => glue.picker.move_by(-1),
-            Key::Char(c) => {
-                if glue.picker.input_normal() {
-                    if glue.picker.normal_key(c) {
-                        if replace && glue.picker.field == strop_picker::Field::Replace {
-                            self.search_intent_changed();
-                        } else {
-                            self.picker_input_changed();
-                        }
-                    }
-                } else if replace && glue.picker.field == strop_picker::Field::Replace {
-                    glue.picker.push_replace_char(c);
-                    self.search_intent_changed();
-                } else {
-                    glue.picker.push_char(c);
-                    self.picker_input_changed();
-                }
-            }
-        }
-    }
-
-    /// Bracketed paste while a picker is open edits the focused field
-    /// (query, replacement or remote address); it never reaches the
-    /// document behind the card. Multi-line payloads are rejected with
-    /// a message — a dropped keystroke with no feedback reads as a
-    /// broken terminal, not as an editor decision.
-    pub(crate) fn paste_picker(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        let Some(glue) = &mut self.picker else {
-            return;
-        };
-        if text.contains(['\r', '\n']) {
-            self.message = "picker input cannot contain a newline".into();
-            return;
-        }
-        if glue.picker.paste(text) {
-            self.picker_input_changed();
-        } else {
-            self.search_intent_changed();
-        }
-    }
-
     pub(crate) fn accept_current_picker(&mut self) {
         if self
             .picker
@@ -654,7 +358,7 @@ impl Editor {
         if glue.picker.kind == Kind::RemoteHosts && matches!(payload, Some(Payload::RemoteConnect))
         {
             let draft = {
-                let text = glue.picker.input.text.trim();
+                let text = glue.picker.input.text().trim();
                 // Filter text that matches the pinned row's own label was
                 // aimed AT the row ("Add"); only text that matched
                 // nothing — a bare hostname — becomes the address draft.
@@ -677,7 +381,7 @@ impl Editor {
         // rides along so the pinned custom row can validate it as a
         // width (the RemoteHosts draft pattern, 0.21.0).
         if glue.picker.kind == Kind::TabSize {
-            let draft = glue.picker.input.text.trim().to_string();
+            let draft = glue.picker.input.text().trim().to_string();
             let Some(Payload::IndentChoice(choice)) = payload else {
                 self.message = "no matching entries".into();
                 return;
@@ -739,39 +443,3 @@ pub enum PreviewSource {
 }
 
 pub type Previews = HashMap<strop_workspace::ResourceLocation, PreviewEntry>;
-
-/// One jumplist row; dead documents drop out (0047 §2). The payload
-/// stays a plain destination — accepting a menu entry is a NEW jump
-/// landing (0051 §7), not a ctrl-o view restore.
-fn terminal_phase_label(phase: &strop_terminal::model::Phase) -> String {
-    use strop_terminal::model::Phase;
-    match phase {
-        Phase::Starting => "starting".into(),
-        Phase::Running => "running".into(),
-        Phase::Closing => "closing".into(),
-        Phase::Exited {
-            code: Some(code),
-            signal: None,
-        } => format!("exited {code}"),
-        Phase::Exited {
-            code: None,
-            signal: Some(signal),
-        } => format!("killed {signal}"),
-        Phase::Exited { .. } => "exited".into(),
-        Phase::Failed(_) => "failed".into(),
-    }
-}
-fn jump_row(editor: &Editor, record: &super::jumps::JumpRecord, marker: &str) -> Option<Item> {
-    let doc = editor.docs.get(record.document)?;
-    let name = doc.label(&editor.cwd);
-    let line = doc.buf.line_of(record.offset.min(doc.buf.len_bytes()));
-    let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
-    Some(Item {
-        badge: None,
-        text: format!("{marker}{name}:{}  {text}", line + 1),
-        payload: Payload::Jump {
-            document: record.document,
-            offset: record.offset,
-        },
-    })
-}

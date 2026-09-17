@@ -15,7 +15,7 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
     if editor.input_owner() != crate::editor::InputOwner::BlameCard {
         return;
     }
-    let Some(card) = &editor.blame_card else {
+    let Some(card) = editor.blame_card() else {
         return;
     };
     let area = frame.area();

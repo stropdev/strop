@@ -22,8 +22,14 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
 
     let lines: Vec<Line> = match source {
         PreviewSource::Buffer(document) => {
-            let tab = editor.doc(document).indent.width;
-            let rope = editor.doc(document).buf.snapshot();
+            // A cached preview source can outlive its document (the
+            // picker streams while buffers close): render nothing for a
+            // stale id instead of panicking mid-paint (0056 AR02).
+            let Some(doc) = editor.document(document) else {
+                return;
+            };
+            let tab = doc.indent.width;
+            let rope = doc.buf.snapshot();
             if let Err(message) = matched {
                 vec![Line::from(message)]
             } else {
@@ -51,7 +57,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
             // its buffer's would — the open document's setting when one
             // matches, else the configured fallback; never a second source.
             let tab = editor.tab_width_for_location(&path);
-            let Some(entry) = editor.previews.get(&path) else {
+            let Some(entry) = editor.previews().get(&path) else {
                 return;
             };
             let rope = entry.rope.clone();
@@ -100,26 +106,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-/// Like an editor buffer, a trailing newline terminates the last source line;
-/// it is not an extra numbered line in a read-only preview.
-fn source_lines(rope: &ropey::Rope) -> usize {
-    rope.len_lines()
-        .saturating_sub(usize::from(
-            rope.len_bytes() > 0 && rope.byte(rope.len_bytes() - 1) == b'\n',
-        ))
-        .max(1)
-}
-
-pub(super) fn preview_window(
-    rope: &ropey::Rope,
-    focus: Option<usize>,
-    visible: usize,
-) -> std::ops::Range<usize> {
-    let first = focus
-        .map_or(0, |line| line.saturating_sub(1).saturating_sub(visible / 3))
-        .min(source_lines(rope).saturating_sub(1));
-    first..first.saturating_add(visible).min(source_lines(rope))
-}
+use strop_engine::editor::prepare::{preview_source_lines, preview_window};
 
 fn highlight_lines_owned(
     rope: &ropey::Rope,
@@ -133,7 +120,7 @@ fn highlight_lines_owned(
     use strop_core::layout::{clip, printable_grapheme, RopeGraphemes};
     let spans = spans.unwrap_or_default();
     let mut out = Vec::with_capacity(window.len());
-    let digits = source_lines(rope).ilog10() as usize + 1;
+    let digits = preview_source_lines(rope).ilog10() as usize + 1;
     let gutter = if width > digits + 5 {
         digits + 5
     } else if width > digits + 2 {
@@ -297,7 +284,7 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
         terminal
-            .draw(|frame| crate::render::render(&mut editor, frame))
+            .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
         let grid = terminal.backend().buffer();
         let right: Vec<String> = (0..30)
@@ -335,7 +322,7 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
         terminal
-            .draw(|frame| crate::render::render(&mut editor, frame))
+            .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
         let grid = terminal.backend().buffer();
         let right: Vec<String> = (0..30)

@@ -340,7 +340,10 @@ pub mod remote {
         editor.tape = Rc::new(Tape::fixture(|_, _| {
             Err(std::io::Error::other("native work forbidden"))
         }));
-        let id = editor.docs.insert(document(text, ReadSelection::Full));
+        let id = editor
+            .docs
+            .try_insert(document(text, ReadSelection::Full))
+            .unwrap();
         editor.switch_to(id);
         editor
     }

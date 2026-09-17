@@ -1,0 +1,1774 @@
+{
+  "schema": 1,
+  "release": "0057",
+  "plan": "plans/0057-core-verification-and-assurance.md",
+  "boundaries": [
+    {
+      "id": "mutation-gateway",
+      "kind": "mutation",
+      "title": "Buffer mutation gateway and edit geometry",
+      "promise": "Every text mutation passes the validated-batch gateway: ranges are well-formed, UTF-8-boundary-admitted, in-bounds and non-overlapping; a rejected whole batch changes no text, dirty state, revision, history, selection or mark; prepared payloads stay bound to their buffer incarnation and base revision through sorting and apply.",
+      "exclusions": "Crash/power-loss durability is the recovery-store boundary, not this one; undo grouping promises no durability. Ropey storage internals are trusted. Batch anchor-mapping composition across the full validated order remains an open VF02 proof obligation (bounded to the landed single-edit kernel).",
+      "authoritative_state": "the live Buffer/rope plus its revision and history, owned by the Editor; admission via editor/transact capabilities on the correct incarnation",
+      "trusted": [
+        "Ropey rope storage and its UTF-8 slicing",
+        "the OS for ordinary process memory (no crash durability claimed here)"
+      ],
+      "files": [
+        "crates/strop-core/src/buffer/mutation.rs",
+        "crates/strop-core/src/editmap.rs",
+        "crates/strop-core/src/history.rs",
+        "crates/strop-core/src/history/validate.rs",
+        "crates/strop-core/src/mutguard.rs",
+        "crates/strop-engine/src/editor/transact/capability.rs"
+      ],
+      "claims": [
+        {
+          "id": "MUT-GEOMETRY",
+          "statement": "Anchor mapping through an edit is monotone and in-bounds, and insertion preserves anchors outside the replaced span; the shipped mapping functions are the proved ones.",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/editmap.rs",
+              "gate": "verify",
+              "symbols": [
+                "map_spec_monotone",
+                "map_spec_in_bounds",
+                "insert_preserves"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "MUT-BATCH-ORDER",
+          "statement": "Change plan construction/apply preserves per-document ordering and payload association; progress is bounded and terminal.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/ChangePlan.tla",
+              "gate": "model",
+              "config": "specs/cfg/change-plan.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/ChangePlan.tla",
+              "gate": "model",
+              "config": "specs/cfg/change-plan-progress.cfg"
+            }
+          ]
+        },
+        {
+          "id": "MUT-REJECTION-ATOMICITY",
+          "statement": "A rejected batch changes nothing observable: text, dirty/saved state, revisions, history grouping, selections and marks are all untouched, and dead/stale buffers refuse application without side effects.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/transaction_conformance.rs",
+              "gate": "test",
+              "tests": [
+                "rejected_batches_change_nothing",
+                "prepared_batches_are_bound_to_their_buffer_and_revision",
+                "editor_apply_refuses_dead_and_stale_without_side_effects"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "MUT-STREAM-CONFORMANCE",
+          "statement": "Real batch/service edit streams match the conformance oracle, witnesses roundtrip, and undo groups batches while honestly promising no durability.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/transaction_conformance.rs",
+              "gate": "test",
+              "tests": [
+                "batch_oracle_generated_streams_match_the_contract",
+                "service_oracle_generated_streams_match_the_contract",
+                "replay_witnesses_roundtrip",
+                "undo_groups_batches_but_promises_no_durability"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "MUT-ADMISSION-KERNEL",
+          "statement": "Edit admission is a proved pure kernel: readonly buffers are never admitted and a stale base is never admitted; the production guard calls these functions (VF18 same-source extraction).",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/mutguard.rs",
+              "gate": "verify",
+              "symbols": [
+                "classify_edit",
+                "writable",
+                "readonly_never_admitted",
+                "stale_base_never_admitted"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "MUT-SAVE-ADMISSION",
+          "statement": "Save admission/ack authority is a proved pure kernel: a save is admitted only for the current binding, an ack is current only for its own save, and an older save retires nothing.",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/mutguard.rs",
+              "gate": "verify",
+              "symbols": [
+                "save_admitted",
+                "save_ack_is_current",
+                "older_save_retires_nothing"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test",
+        "model",
+        "verify"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/buffer/mutation.rs": "6de53bcbedcd92b4ca40d4a4d29c307ac4620cc399b8f9ed1b094873a9691a40",
+          "crates/strop-core/src/editmap.rs": "c8a55eb201150511bc3a0f92b0f5b09581df9747e8266e23ffbada3b7a2ff9c0",
+          "crates/strop-core/src/history.rs": "818cbe77ad7ec8e2765a0ba955f4a53fb893f58fee9c2593801b8d813777a353",
+          "crates/strop-core/src/history/validate.rs": "a50952412b43d1fa9edf7fabe656a9a14118f232a61aa1b83815690639ec1c2a",
+          "crates/strop-core/src/mutguard.rs": "81cd772ea21b5ca5e7e9e7755d0216b5313f900f0f85aa5279426bafcbea589c",
+          "crates/strop-engine/src/editor/transact/capability.rs": "a3aba86cdd865382b14a55f9e2ad6d675fd7f2c20a5a529fecea581efeec3772"
+        },
+        "evidence": "eeb2ccce7e2d4f9cfd7301eb75c1a1c7469c4d52652f77198a6a7339e42ee44e"
+      }
+    },
+    {
+      "id": "action-admission",
+      "kind": "admission",
+      "title": "Admitted action/view boundary and readonly authority",
+      "promise": "Consumers see the engine only through admitted accessors and PreparedView snapshots; mutation authority exists only inside the transaction gateway. Readonly sources carry a typed ReadonlyReason, the refusal and the :explain decision name the same actual owner, and stale/dead document identities never authorize an edit.",
+      "exclusions": "Generated-view (collection/review) write-through admission is the collection-projection boundary. The UI-stdio server admission (AR09) is tracked under ui-protocol.",
+      "authoritative_state": "Editor document arena plus per-document readonly reason; admission via Editor::admit_document and the transact capability path",
+      "trusted": [
+        "the Rust type system for pub(crate) field encapsulation"
+      ],
+      "files": [
+        "crates/strop-core/src/buffer.rs",
+        "crates/strop-core/src/viewguard.rs",
+        "crates/strop-engine/src/editor/document/mod.rs",
+        "crates/strop-engine/src/editor/prepare.rs",
+        "crates/strop-engine/src/editor/prepare/geometry.rs"
+      ],
+      "claims": [
+        {
+          "id": "ADM-READONLY-EXPLAIN",
+          "statement": "A readonly refusal, its typed reason and the :explain presentation agree on the actual owner (filesystem, remote/SSH, command, recovery surface, terminal) — no generic hint substituting for the decision.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/explain.rs",
+              "gate": "test",
+              "tests": [
+                "readonly_explanation",
+                "explain_names_filesystem_readonly_source",
+                "explain_names_remote_readonly_source_and_ssh_target",
+                "explain_names_command_readonly_source",
+                "explain_names_recovery_surface_readonly_source",
+                "explain_names_terminal_readonly_source"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ADM-STALE-REFUSAL",
+          "statement": "Edits addressed to a dead or superseded document incarnation are refused without side effects; prepared batches are bound to their buffer and base revision.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/transaction_conformance.rs",
+              "gate": "test",
+              "tests": [
+                "editor_apply_refuses_dead_and_stale_without_side_effects",
+                "prepared_batches_are_bound_to_their_buffer_and_revision"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ADM-STALE-KERNEL",
+          "statement": "View staleness is a proved pure kernel: a revision is stale exactly outside the live window, and a fresh window is live — the admitted-view accessor routes through it (VF18).",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/viewguard.rs",
+              "gate": "verify",
+              "symbols": [
+                "revision_is_stale",
+                "fresh_window_is_live"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test",
+        "verify"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/buffer.rs": "5afcec273eda38bd32bf818551455daccaffc46a4ffa15ffbca6fbd5b1438f38",
+          "crates/strop-core/src/viewguard.rs": "b63dab8d76faf464ad78c2663fe3a317d60a24cf9c7a42e8217eb3887fdbb746",
+          "crates/strop-engine/src/editor/document/mod.rs": "c70c86f980cd59f1a5bb5a576ed7ad450880c095b3f2a796e44dcb55d7b8d7cb",
+          "crates/strop-engine/src/editor/prepare.rs": "87ca38d5fc0d461a20cca74081841080d1c2fa7c56a93bd12aa52af8ab883de4",
+          "crates/strop-engine/src/editor/prepare/geometry.rs": "f50dd9e147dbc419422e786f6a655fbe8d4f4618703e50ce98dc6b534880db9a"
+        },
+        "evidence": "68710ed4ebeb62736fe1a467490252d171d3e12d6b62d379c94248e5d5e1724a"
+      }
+    },
+    {
+      "id": "collection-projection",
+      "kind": "mutation",
+      "title": "Collections, generated views and grouped edits",
+      "promise": "A change review applies to exactly the planned sources and leaves a receipt; cancel mutates nothing and leaves a cancelled receipt; a source edited or closed since the proposal is refused by name; a partial outcome is identified per member.",
+      "exclusions": "Protected-span projection proofs (writable spans resolve to exactly their source) remain a VF04 proof obligation; today's evidence is correspondence through the real review/prepare/save path.",
+      "authoritative_state": "the plan/receipt in editor/changes; source documents remain the only writable text",
+      "trusted": [
+        "diff rendering is presentation, not authority"
+      ],
+      "files": [
+        "crates/strop-core/src/projectguard.rs",
+        "crates/strop-engine/src/editor/changes/mod.rs",
+        "crates/strop-engine/src/editor/changes/review.rs",
+        "crates/strop-engine/src/editor/changes/review/prepare.rs",
+        "crates/strop-engine/src/editor/changes/review/save.rs",
+        "crates/strop-engine/src/editor/collections/mod.rs"
+      ],
+      "claims": [
+        {
+          "id": "COL-RECEIPT",
+          "statement": "Apply mutates exactly the planned sources and records a receipt; cancel mutates nothing; opening a multi-target review mutates nothing by itself.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/changes/review/tests.rs",
+              "gate": "test",
+              "tests": [
+                "apply_mutates_exactly_the_planned_sources_and_leaves_a_receipt",
+                "cancel_mutates_nothing_and_leaves_a_cancelled_receipt",
+                "a_single_clean_document_applies_directly_with_the_existing_receipt",
+                "multi_target_plan_opens_a_diff_review_without_mutating"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "COL-STALE-SOURCE",
+          "statement": "A source edited or closed since the proposal is refused by name rather than silently rebased; a newer proposal supersedes the older buffer visibly.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/changes/review/tests.rs",
+              "gate": "test",
+              "tests": [
+                "a_source_edited_since_the_proposal_is_refused_by_name",
+                "a_source_closed_since_the_proposal_is_refused_by_name",
+                "a_newer_proposal_supersedes_the_older_buffer_visibly"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "COL-SPAN-KERNEL",
+          "statement": "Projection span ownership is a proved pure kernel: an edit owned by a span stays inside it, so protected headers/gaps and foreign sources cannot receive the mutation (VF18).",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/projectguard.rs",
+              "gate": "verify",
+              "symbols": [
+                "span_owns",
+                "span_owns_edit",
+                "owned_edit_stays_in_span"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test",
+        "verify"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/projectguard.rs": "6dc7e5835cb5a3e2b90bc8dc03285e428aef07eb11c8219c1c7a538178d34298",
+          "crates/strop-engine/src/editor/changes/mod.rs": "5706da205dd88a1f0381326b5cdb9709774009a55da58d7429321f7a71b2a0ee",
+          "crates/strop-engine/src/editor/changes/review.rs": "ddc4936b40959af85476641b00f6a160494d7b35ccc0767d768c4b6cd08fd71e",
+          "crates/strop-engine/src/editor/changes/review/prepare.rs": "d63080e00ec3c68f762d575b5d9ef4038cb97ee4e5399d43e14e87e0c69da6fb",
+          "crates/strop-engine/src/editor/changes/review/save.rs": "23794e6d49c5a25e371077b33da018a0af87d37b2ffef45dabc9ad7c3043b6d9",
+          "crates/strop-engine/src/editor/collections/mod.rs": "4b081a3186bc8fb2f345fb91594ac49bc288e43f3f558f971db9a96124b7f6cd"
+        },
+        "evidence": "1237d74a77b0e0307fc895652ebece29dd5293599dbf99617f1af241d0cabbee"
+      }
+    },
+    {
+      "id": "recovery-store",
+      "kind": "persistence",
+      "title": "Draft checkpoint/recovery store (AR04)",
+      "promise": "A durable checkpoint names a complete admitted cohort with source baselines; crash recovery restores drafts without overwriting changed/deleted/rebound sources; failures are visible and write nothing; a confirmed save retires only the checkpoint it supersedes; memory-only and remote draft policies are honored.",
+      "exclusions": "Checkpointing is not Save and never clears newer dirty edits. Physical power-loss ordering of the underlying filesystem is trusted, not proved. Generalized cohort/watermark theorems are a VF17 obligation.",
+      "authoritative_state": "the recovery store's private staging area and watermarks, owned per editor data directory",
+      "trusted": [
+        "filesystem rename/sync ordering on the supported platforms",
+        "tempfile crate for private staging directories"
+      ],
+      "files": [
+        "crates/strop-core/src/cohortguard.rs",
+        "crates/strop-engine/src/editor/recovery/mod.rs",
+        "crates/strop-engine/src/editor/recovery/record.rs",
+        "crates/strop-engine/src/editor/recovery/store.rs",
+        "crates/strop-engine/src/editor/recovery/surface.rs"
+      ],
+      "claims": [
+        {
+          "id": "REC-COHORT",
+          "statement": "A multi-document change captures one coherent cohort; dirty documents and scratch drafts checkpoint and restore after a crash; orderly close checkpoints eligible drafts.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/recovery/tests.rs",
+              "gate": "test",
+              "tests": [
+                "a_multi_document_change_captures_one_coherent_cohort",
+                "dirty_document_checkpoints_and_restores_after_crash",
+                "scratch_draft_checkpoints_and_restores_after_crash",
+                "orderly_close_checkpoints_eligible_drafts"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "REC-FAILCLOSED",
+          "statement": "Corrupt/unknown/changed source state fails closed: an external change reports conflict and never overwrites, a deleted source restores without recreating it, a persistence failure is visible and writes nothing, an over-bound draft is reported not truncated.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/recovery/tests.rs",
+              "gate": "test",
+              "tests": [
+                "an_external_change_reports_conflict_and_never_overwrites",
+                "a_deleted_source_restores_without_recreating_it",
+                "a_persistence_failure_is_visible_and_writes_nothing",
+                "an_over_bound_draft_is_reported_not_truncated"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "REC-AUTHORITY",
+          "statement": "A confirmed save retires only the checkpoint it supersedes; memory-only mode persists nothing and says so; remote drafts persist only with explicit session consent; deliberate discard drops the record; rename updates the binding.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/recovery/tests.rs",
+              "gate": "test",
+              "tests": [
+                "a_confirmed_save_retires_only_the_checkpoint_it_supersedes",
+                "memory_only_mode_persists_nothing_and_says_so",
+                "remote_drafts_persist_only_with_explicit_session_consent",
+                "a_deliberate_discard_drops_the_record",
+                "a_live_rename_reports_the_renamed_state"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "REC-KERNEL",
+          "statement": "Cohort admission is a proved pure kernel: an unfit draft exceeds the limit rather than truncating, a fit draft preserves the budget, capture requires currency, retained-checkpoint staleness and cohort succession are decided by the kernel (VF18).",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/cohortguard.rs",
+              "gate": "verify",
+              "symbols": [
+                "fits",
+                "capture_is_current",
+                "retained_is_stale",
+                "next_cohort",
+                "unfit_draft_exceeds_limit",
+                "fit_draft_preserves_budget"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test",
+        "verify"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/cohortguard.rs": "9e4b3e012b4fe6ee22ee33acce039433bc48882389f1d62466e499e40e9c1d39",
+          "crates/strop-engine/src/editor/recovery/mod.rs": "c0c6bdba12a03ac90403da6cc8888c181d6e9e3abf34270a09cd8c2939978bad",
+          "crates/strop-engine/src/editor/recovery/record.rs": "64a88efe6afc3be8e33e4c2445d789e6cdba6cb5d3856a832c3877f0c3737a71",
+          "crates/strop-engine/src/editor/recovery/store.rs": "96487f2746f21479240073bfe05a33faa2cdd360ed7f8750774a1a2288f5a096",
+          "crates/strop-engine/src/editor/recovery/surface.rs": "cbd41816eeae1e5eef84248e4051c114492a65c95d8003a5906def9b3d87d2fd"
+        },
+        "evidence": "77bdc45fe73790b378010be98931b60f076fcf4e1fb0cd7d43d1f6c6cc912ca5"
+      }
+    },
+    {
+      "id": "privacy-classifier",
+      "kind": "authority",
+      "title": "Effect/privacy classification before capture (AR08)",
+      "promise": "Privacy classification happens before generic recording: metadata scope withholds payloads end to end, opaque capture is valid diagnostics but cannot replay missing private actions, omitted content cannot enable native requests or calls, and persistence admission is target-aware per family.",
+      "exclusions": "Classification pins policy per family/target; it does not prove the absence of side channels in third-party emulators or the OS.",
+      "authoritative_state": "the per-target effect/privacy policy tables in strop-trace and the editor's classifier",
+      "trusted": [
+        "the classifier's callers pass the real target (checked at the editor boundary)"
+      ],
+      "files": [
+        "crates/strop-engine/src/editor/privacy.rs",
+        "crates/strop-trace/src/privacy.rs"
+      ],
+      "claims": [
+        {
+          "id": "PRIV-SCOPE",
+          "statement": "Metadata scope withholds payload bytes and restores them after unwinding; replay/native enablement requires full-content capture of the actual actions.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-trace/src/privacy/tests.rs",
+              "gate": "test",
+              "tests": [
+                "metadata_scope_withholds_payload_and_restores_after_unwinding",
+                "opaque_capture_is_valid_diagnostics_but_cannot_replay_missing_private_actions",
+                "omitted_fixture_content_cannot_enable_native_requests_or_calls"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "PRIV-TARGET",
+          "statement": "Effect decisions are pinned per family and target, and persistence admission is target-aware — one policy table, not per-call improvisation.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/privacy.rs",
+              "gate": "test",
+              "tests": [
+                "decisions_pinned_per_family_and_target",
+                "persistence_admission_is_target_aware"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-engine/src/editor/privacy.rs": "ed525b81edf8c19d259aaa8e469e706850dfb89494bc26c7d06be4f93df70e8a",
+          "crates/strop-trace/src/privacy.rs": "59a3e9e3117548870dae0c1889440f2b90468650363bfd351cc4c285850d6b0f"
+        },
+        "evidence": "900afc1602a963faa91ae4571858c46f1f546700cee186c8dc0194271ee29c5a"
+      }
+    },
+    {
+      "id": "event-transport",
+      "kind": "transport",
+      "title": "Bounded event channel and trace recording (AR06)",
+      "promise": "Event transport is physically bounded: sustained output floods stay bounded without losing input, semantic events are never coalesced or reordered, a full semantic lane refuses visibly and recovers after drain, and lanes alternate so neither class starves. Trace capture is exclusive, ordered, durable within its budget, and refuses invalid limits before any file exists.",
+      "exclusions": "Bounds are about retention/backpressure, not service liveness; a healthy peer is not owed a deadline by this boundary.",
+      "authoritative_state": "the bounded lanes in editor/events/channel.rs and the trace writer's recorded limits",
+      "trusted": [
+        "the OS pipe/file primitives the writer sits on"
+      ],
+      "files": [
+        "crates/strop-engine/src/editor/events.rs",
+        "crates/strop-engine/src/editor/events/channel.rs",
+        "crates/strop-trace/src/bounded.rs",
+        "crates/strop-trace/src/chunk.rs",
+        "crates/strop-trace/src/event.rs",
+        "crates/strop-trace/src/export.rs",
+        "crates/strop-trace/src/replay.rs",
+        "crates/strop-trace/src/writer.rs"
+      ],
+      "claims": [
+        {
+          "id": "EVT-BOUNDED",
+          "statement": "Bounded lanes with legal coalescing only: terminal wakes coalesce per session without losing sessions, resize/focus are latest-wins, paste bytes are bounded but a lone oversize paste is never stranded.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/events/tests.rs",
+              "gate": "test",
+              "tests": [
+                "sustained_output_flood_stays_bounded_and_input_is_never_lost",
+                "semantic_events_are_never_coalesced_or_reordered",
+                "a_full_semantic_lane_refuses_visibly_and_recovers_after_drain",
+                "lanes_alternate_so_neither_class_starves",
+                "paste_bytes_are_bounded_but_a_lone_oversize_paste_is_never_stranded",
+                "terminal_wakes_coalesce_per_session_without_losing_sessions",
+                "resize_and_focus_are_latest_wins"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "EVT-RECORD",
+          "statement": "Trace lifecycle is exclusive/ordered/durable within the declared budget; readers reject sequence gaps, duplicates and trailing records; caps end with an explicit incomplete marker; metadata export removes every content-bearing field.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-trace/src/tests.rs",
+              "gate": "test",
+              "tests": [
+                "trace_lifecycle_is_exclusive_ordered_and_durable",
+                "reader_rejects_sequence_gaps_duplicates_and_trailing_records",
+                "event_cap_ends_with_explicit_incomplete_terminal_marker",
+                "oversize_record_marks_capture_incomplete",
+                "metadata_export_removes_every_content_bearing_field",
+                "replay_nodes_require_complete_full_content_capture"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-engine/src/editor/events.rs": "d5f76136c55d9f2dcae3cc817d6c3ed3a581c4ec9fd70da4478c90284459f2b7",
+          "crates/strop-engine/src/editor/events/channel.rs": "2b62f18fb3eb541b5d3ec058a2d3412a51eb2844a0bdbfa4bf7ac82e2833f642",
+          "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
+          "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
+          "crates/strop-trace/src/event.rs": "8863ed01aa88c21609f137fd201a22e7db1be8b76adf6111f600f24399d9e963",
+          "crates/strop-trace/src/export.rs": "882480107025c2d7f38aacba111d18f70ae8eef71e4c42fce06f2fd950ac63ec",
+          "crates/strop-trace/src/replay.rs": "e2e3578f5c7f23964609778eb4f77d7d572c55572c5affed67c88fdfde91b2c8",
+          "crates/strop-trace/src/writer.rs": "20ea24a24dcf8f88321e8d4cb2ef9fb40c6fb7ede89ed9ec69c0fdbab2923591"
+        },
+        "evidence": "17002d7c1144d6fcf6bc49f8dc0700293b2c1e373dc518f2b058420854f4fd34"
+      }
+    },
+    {
+      "id": "lsp-wire",
+      "kind": "transport",
+      "title": "LSP client wire, synchronization and bounded queues",
+      "promise": "Document identity is (document, revision, incarnation): epoch zero is valid, close/reopen changes incarnation, equal revisions in different documents share no ownership, and late replies never publish into a new owner. Unsent snapshots/requests are bounded by count and bytes; superseded snapshots coalesce only where no barrier separates them and reach the wire as the final version.",
+      "exclusions": "Completion query semantics are 0059 feature work. The server peer is trusted to be misbehaving-but-framed: malformed framing is rejected, semantic server bugs are not this boundary.",
+      "authoritative_state": "per-server client state (sync queue, pending requests, incarnation map) in strop-lsp and the editor's routing stamps",
+      "trusted": [
+        "the spawned server process speaks framed JSON-RPC (framing checked, semantics not)"
+      ],
+      "files": [
+        "crates/strop-engine/src/editor/lsp/routing.rs",
+        "crates/strop-engine/src/editor/lsp/state.rs",
+        "crates/strop-lsp/src/client/api.rs",
+        "crates/strop-lsp/src/client/process.rs",
+        "crates/strop-lsp/src/client/queue.rs",
+        "crates/strop-lsp/src/client/spawn.rs",
+        "crates/strop-lsp/src/client/sync.rs",
+        "crates/strop-lsp/src/client/wire.rs",
+        "crates/strop-lsp/src/convert.rs",
+        "crates/strop-lsp/src/protocol.rs"
+      ],
+      "claims": [
+        {
+          "id": "LSP-IDENTITY",
+          "statement": "Revision zero is valid but does not bypass edit rejection; equal-revision documents do not share reply ownership; close/reopen and binding replacement reject the old incarnation's replies; an older hover cannot overwrite a newer reply.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/lsp/tests.rs",
+              "gate": "test",
+              "tests": [
+                "revision_zero_is_valid_but_does_not_bypass_edit_rejection",
+                "equal_revision_documents_do_not_share_hover_ownership",
+                "close_reopen_same_path_rejects_old_incarnation_reply",
+                "old_server_reply_is_not_accepted_by_replacement_binding",
+                "older_hover_cannot_overwrite_newer_reply_at_revision_zero"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "LSP-BOUNDED",
+          "statement": "Unsent change retention is bounded (AR06: MAX_QUEUED_JOBS count, bounded snapshot bytes); superseded unsent changes coalesce only without an intervening barrier and reach the wire as the final version.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/queue.rs",
+              "gate": "test",
+              "tests": [
+                "superseded_unsent_changes_coalesce_without_a_barrier"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/tests/changes.rs",
+              "gate": "test",
+              "tests": [
+                "superseded_unsent_snapshots_reach_the_wire_as_the_final_version"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "LSP-ADMISSION",
+          "statement": "Workspace edits are admitted only from providers that advertised the capability; resource operations or a foreign document version produce a refusal note, never a partial silent apply.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/tests/changes.rs",
+              "gate": "test",
+              "tests": [
+                "format_rename_and_code_action_refuse_admission_without_providers",
+                "rename_with_resource_operations_or_a_foreign_version_is_a_refusal_note",
+                "code_actions_decode_edits_and_commands"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-engine/src/editor/lsp/routing.rs": "e651b494cd481713411e5a1ad64247ede9e6246cc13e85f2073c5b2c7cbc30f9",
+          "crates/strop-engine/src/editor/lsp/state.rs": "9de05c89014dd92277cb80ba1a6760dda0efd49af1f6e4586a133082ed564e46",
+          "crates/strop-lsp/src/client/api.rs": "c55a3d01288fedc49de12e72f3d131bd5fda290e2f2bd17832905a4e745563a1",
+          "crates/strop-lsp/src/client/process.rs": "c64293470c612bfeab8495348a2b3bd552608fd77c539f2a53dfd61163c33ecc",
+          "crates/strop-lsp/src/client/queue.rs": "8a768420402aaa884ac1b9e4950d43e7abc2c0ceb104bdaeed780f21f1452e06",
+          "crates/strop-lsp/src/client/spawn.rs": "3ed4d28947ddd997552b1184a60a90218995449c0abfd52a58d59a8afb28e4f7",
+          "crates/strop-lsp/src/client/sync.rs": "31942e4ef8a5a3cf1866e5644b3756a48c2e383eb8b785fc13375fae5d77ffc9",
+          "crates/strop-lsp/src/client/wire.rs": "f64dd60975d074cd52587e888d99a5bcf4300d89772453aac3102382eb36520f",
+          "crates/strop-lsp/src/convert.rs": "2cce26f33656dc5b2a1c0b0f499c2b68ba3bfc72e7fd72d1c04675a96b26d541",
+          "crates/strop-lsp/src/protocol.rs": "a70836bb3894b7bd6e7d7b7bf523d5114a0052b1cbffd1e8dc23c6e32e677a92"
+        },
+        "evidence": "8a35ae72e553ea7a6331285f90843250bee0699704a1b83d14f56d10003514a5"
+      }
+    },
+    {
+      "id": "container-admission",
+      "kind": "authority",
+      "title": "Container context/incarnation and exec admission (AR07)",
+      "promise": "Accepted container work is bound to the selected engine/context, the canonical container ID plus StartedAt incarnation, and the declared user/cwd; a restarted container or changed context cannot retarget it. Exec argv is pinned, supervised stdio only, and status records are accepted only for this session's marked lines.",
+      "exclusions": "A setsid-ing descendant escapes the lease (documented honest limit); docker top's host PID is not an adapter-local PID. Docker Engine itself is trusted.",
+      "authoritative_state": "the admitted ExecSpec/AdmittedExec token and the container identity record",
+      "trusted": [
+        "Docker Engine API truthfulness about id/StartedAt/state",
+        "the docker CLI selected by the engine reference"
+      ],
+      "files": [
+        "crates/strop-containers/src/engine.rs",
+        "crates/strop-containers/src/error.rs",
+        "crates/strop-containers/src/exec.rs",
+        "crates/strop-containers/src/identity.rs",
+        "crates/strop-containers/src/read.rs",
+        "crates/strop-containers/src/tar.rs"
+      ],
+      "claims": [
+        {
+          "id": "CON-ADMIT",
+          "statement": "Spec validation refuses unsafe shapes before any engine call; the admitted command is pinned argv with supervised stdio; capture mode selects the null lease.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-containers/src/exec/tests.rs",
+              "gate": "container-test",
+              "tests": [
+                "spec_validation_refuses_unsafe_shape_before_any_engine",
+                "command_is_pinned_argv_only_supervised_stdio",
+                "capture_mode_selects_the_null_lease"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "CON-LEASE",
+          "statement": "Record parsing accepts only this session's nonce-marked lines; foreign keys record empty; nonces are unique per session; retention keeps head plus tail and counts the middle.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-containers/src/exec/tests.rs",
+              "gate": "container-test",
+              "tests": [
+                "records_parse_only_this_sessions_marked_lines",
+                "foreign_key_records_empty",
+                "nonces_are_unique_per_session",
+                "retain_keeps_head_plus_tail_and_counts_the_middle"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "container-test",
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-containers/src/engine.rs": "be84fc92a3ad3f340e65f8b958b9d1516111bcb503b5c8be1ec1ba1947777859",
+          "crates/strop-containers/src/error.rs": "a1ac25bec5034769c5a866d0971b454b2e851bfec1ff43b7b5ce00f79925a697",
+          "crates/strop-containers/src/exec.rs": "2995bdecfcc696ae51b340258a10d5a734767543f9d02386abb73a64fe2d47f5",
+          "crates/strop-containers/src/identity.rs": "7e2529505f5ca06dd02c3dbed9aefa6254ebf81be6a019876d2e835461f6fd46",
+          "crates/strop-containers/src/read.rs": "775e58c3761c495349a2d8ab3bbd77f39fdb12fc73c009bb71acbacc46fbe5cd",
+          "crates/strop-containers/src/tar.rs": "d177ed42f2f0ff4f8c1f895f1a2111e428831ea6ca1855be24575b09cfe71a38"
+        },
+        "evidence": "1d611e2adcd7fb32f79382c3d8d8c65f4a82132e7467e07ed3394488d39a3349"
+      }
+    },
+    {
+      "id": "ssh-sftp",
+      "kind": "transport",
+      "title": "SSH/SFTP wire, remote reads and workspace identity",
+      "promise": "SFTP packet bounds are checked before reading or allocating; a reply for another request cannot supply a file handle; a server cannot append beyond the captured snapshot length; early EOF never becomes a successful partial snapshot; failed close cannot complete a snapshot. Remote identity is namespace-bound: remote paths are never reinterpreted as local files or another endpoint's data.",
+      "exclusions": "OpenSSH and its cryptography are trusted dependencies; base64 and correlation nonces are not secrecy or authentication mechanisms.",
+      "authoritative_state": "per-connection transport session plus request-id correlation; workspace/endpoint identity in the pool",
+      "trusted": [
+        "OpenSSH client/server and the system crypto underneath",
+        "the host key policy configured by the user"
+      ],
+      "files": [
+        "crates/strop-remote/src/client.rs",
+        "crates/strop-remote/src/hosts/mod.rs",
+        "crates/strop-remote/src/pool.rs",
+        "crates/strop-remote/src/pool/lifecycle.rs",
+        "crates/strop-remote/src/ssh.rs",
+        "crates/strop-remote/src/transport/error.rs",
+        "crates/strop-remote/src/transport/process.rs",
+        "crates/strop-remote/src/transport/session.rs",
+        "crates/strop-remote/src/transport/stderr.rs",
+        "crates/strop-remote/src/transport/wire.rs"
+      ],
+      "claims": [
+        {
+          "id": "SFTP-FRAMING",
+          "statement": "Packet length is checked before allocation; wrong-id, over-read, UTF-8 and unbounded-allocation mutants violate the model's invariants; malformed nested lengths and extra reply bytes are rejected.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/SftpWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/sftp-wire.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/SftpWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/sftp-wire-wrong-id.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/SftpWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/sftp-wire-unbounded-alloc.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/SftpWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/sftp-wire-utf8.cfg"
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/transport/wire_tests.rs",
+              "gate": "test",
+              "tests": [
+                "packet_bound_is_checked_before_reading_or_allocating_payload",
+                "a_reply_for_another_request_cannot_supply_a_file_handle",
+                "malformed_nested_lengths_and_extra_reply_bytes_are_rejected"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "SFTP-SNAPSHOT",
+          "statement": "Memory caps apply to the window, not the remote file; early EOF and failed close can never present a partial snapshot as complete.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/transport/wire_tests.rs",
+              "gate": "test",
+              "tests": [
+                "memory_cap_applies_to_the_window_not_the_remote_file",
+                "a_server_cannot_append_beyond_the_captured_snapshot_length",
+                "early_eof_never_becomes_a_successful_partial_snapshot",
+                "failed_close_cannot_complete_a_snapshot"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "REM-READ-WORKSPACE",
+          "statement": "Remote read/workspace lifecycles: stale publish, PID reuse, duplicate terminal and cleanup races are rejected in the model; epoch and stale-service mutants violate the workspace invariants.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/RemoteRead.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-read.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteRead.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-read-stale-publish.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteRead.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-read-pid-reuse.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteWorkspace.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-workspace.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteWorkspace.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-workspace-epoch.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteWorkspace.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-workspace-stale-service.cfg"
+            }
+          ]
+        },
+        {
+          "id": "SSH-NATIVE",
+          "statement": "Real OpenSSH fixtures read native (non-UTF-8) names without local fallback, replay needs no SSH, and failures keep the current buffer while explaining the cause; required mode is on in the test image (STROP_REQUIRE_SSH_TESTS=1).",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/remote_ssh.rs",
+              "gate": "test",
+              "tests": [
+                "openssh_reads_native_names_and_replay_needs_no_ssh",
+                "openssh_failures_keep_the_current_buffer_and_explain_the_cause"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "model",
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-remote/src/client.rs": "4d521295b01cb19066aafae73068af990d8e32cc7b08db4999a77a527a8505e1",
+          "crates/strop-remote/src/hosts/mod.rs": "25bc681a4f64a6ebc48df059d14fbc53e4ece3a3f88edbd22bf93cc7435e3012",
+          "crates/strop-remote/src/pool.rs": "a978895c007bd1817a2eb46d5c10fd9449332404f87bcce07435508ba06cc49e",
+          "crates/strop-remote/src/pool/lifecycle.rs": "6714269fad561564c36b08a3338ab31401b22ac5ae673b3df9d2d6ba46fea9e9",
+          "crates/strop-remote/src/ssh.rs": "dc20ca35675e48c2c1d32a5783263159925e264d15f1037d68a2e6491513facf",
+          "crates/strop-remote/src/transport/error.rs": "b8e19d073ff64839e108b95e8d56bd40ba6b197898450cc830749032c2b630d1",
+          "crates/strop-remote/src/transport/process.rs": "043181f1b69e72e4eeb9c537ba2b14bee7c8ae306e8357257a9c3374296fa2ec",
+          "crates/strop-remote/src/transport/session.rs": "02d094d99624aba647f9c34b1041240697651194a0939c2867b85a4cebdd7d04",
+          "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
+          "crates/strop-remote/src/transport/wire.rs": "14acb21b175a13ac1d3aba2c38e2fed0300924a6f169d6447476230a8924abfb"
+        },
+        "evidence": "f92b9c8446e3c30a573ba1282435233195595ebc26c5935fd2796a5b3aab09c2"
+      }
+    },
+    {
+      "id": "remote-save",
+      "kind": "io",
+      "title": "Remote save and filesystem helper effects (VF09)",
+      "promise": "Remote saves go through the shipped Python helper bundle over the authenticated transport: symlinks/hardlinks and the protocol namespace cannot gain write authority, a competing lock refuses without touching the original, same-size changes preserve permissions/time, a crash after metadata restoration keeps the draft behind the private directory, and a lost post-rename receipt requires explicit durable verification.",
+      "exclusions": "CPython and the remote filesystem are trusted executors; the helper's abstract transitions are modelled, its interpreter is not proved. Non-cooperating writers are outside the cooperative lock guarantee.",
+      "authoritative_state": "the remote baseline/lock/stage state observed by the shipped helpers, reconciled by the editor's save protocol",
+      "trusted": [
+        "CPython 3.8+ on the remote host executing the shipped bundle",
+        "the remote filesystem's rename/sync semantics",
+        "OpenSSH transport (see ssh-sftp)"
+      ],
+      "files": [
+        "crates/strop-remote/src/filesystem/cleanup.py",
+        "crates/strop-remote/src/filesystem/main.py",
+        "crates/strop-remote/src/filesystem/mod.rs",
+        "crates/strop-remote/src/filesystem/mutate.py",
+        "crates/strop-remote/src/filesystem/observe.py",
+        "crates/strop-remote/src/protected.py",
+        "crates/strop-remote/src/save/helper.py",
+        "crates/strop-remote/src/save/mod.rs",
+        "crates/strop-remote/src/save/protocol.rs"
+      ],
+      "claims": [
+        {
+          "id": "RSAVE-MODEL",
+          "statement": "The save lifecycle model: concurrency, lock namespace and non-participant mutants violate the named invariants; progress instances terminate.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/RemoteSave.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-save.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteSave.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-save-concurrency.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteSave.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-save-lock-namespace.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteSave.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-save-nonparticipant.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteSave.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-save-progress.cfg"
+            }
+          ]
+        },
+        {
+          "id": "RSAVE-AUTHORITY",
+          "statement": "Namespace/symlink authority and lock behavior over the actual helper invocations: no write authority through links or the protocol namespace; competing lock refuses without touching the original; metadata preserved on same-size changes.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/save/tests.rs",
+              "gate": "test",
+              "tests": [
+                "symlinks_hardlinks_and_protocol_namespace_cannot_gain_write_authority",
+                "symlinked_ancestor_directories_resolve_but_the_target_stays_strict",
+                "competing_lock_refuses_save_without_touching_the_original",
+                "save_preserves_permissions_time_and_conflicts_on_same_size_changes"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "RSAVE-CRASH",
+          "statement": "Faults at semantic boundaries: crash after metadata restoration keeps the draft behind its private directory; observed termination during stage write preserves the original and cleans the stage; a lost post-rename receipt requires explicit durable verification, never a blind retry.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/save/tests.rs",
+              "gate": "test",
+              "tests": [
+                "crash_after_metadata_restoration_keeps_draft_behind_private_directory",
+                "observed_termination_during_stage_write_preserves_original_and_cleans_stage",
+                "postrename_lost_receipt_requires_explicit_durable_verification"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "RFS-EFFECTS",
+          "statement": "The filesystem helper bundle's effects: occupied/changed sources are never overwritten or removed; rename verification requires the owned after-version; post-publication failure retains verifiable object evidence; native names copy under explicit content versions; directory removal respects cooperative locks.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/filesystem/tests.rs",
+              "gate": "test",
+              "tests": [
+                "occupied_and_changed_sources_never_overwrite_or_remove",
+                "rename_verification_requires_the_owned_after_version",
+                "post_publication_failure_retains_verifiable_object_evidence",
+                "native_name_copy_uses_the_explicit_content_version",
+                "directory_removal_preserves_an_active_cooperative_lock",
+                "lock_only_directory_removal_closes_unlinked_locks_before_rmdir"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "model",
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-remote/src/filesystem/cleanup.py": "0f1cce62ca3816cfbe54d612d706c6a17ff4b6e9b4b21536b5c9937f3fa414be",
+          "crates/strop-remote/src/filesystem/main.py": "d5e57d023e43337afe562b82f6754bb6e5944eb078691238565fc3acfac2e7f6",
+          "crates/strop-remote/src/filesystem/mod.rs": "e4a5e38a4bc54f5c3450a53d6a1643be788bd1c02aaf28aab398da10ff1d5c7b",
+          "crates/strop-remote/src/filesystem/mutate.py": "61b88ec4ece017a6e90898db070267f1755c675d9f2368bbc82186235a3662f2",
+          "crates/strop-remote/src/filesystem/observe.py": "81de0d2469b9ec215777ebcdc4d96803492aec28c12ae23a6f7cb2c582baeac6",
+          "crates/strop-remote/src/protected.py": "981432f2439bb6ec68d0ba1f3b76a19aedab7d8e99f8dcbc61b024ad80c01bd5",
+          "crates/strop-remote/src/save/helper.py": "22bde5f8f63cfe737a0c2edfc845e2087aba81fe0490fc94e2036014d18b1efd",
+          "crates/strop-remote/src/save/mod.rs": "493bbaa40e3c1a5320f6537b4dd65c1c8d7fcb3aca7ca0f5b3a5bc3a8c255d49",
+          "crates/strop-remote/src/save/protocol.rs": "33f73b1a9b6cc02ae385b3655522ed5704e82cb28cb67e6622d2d3e5d2ed0378"
+        },
+        "evidence": "6d2c38dfbdf3cf5faea67bcdd890078024301f64cf9f3c36da78ce9e4e2b0c6e"
+      }
+    },
+    {
+      "id": "exec-supervision",
+      "kind": "lifecycle",
+      "title": "Worker/exec supervision and the embedded Python supervisor (VF08/VF11)",
+      "promise": "Exec specs are validated before any launch (no NUL, no relative paths); argv/cwd bytes survive Rust encode → shell transport → Python decode → exec unchanged with metacharacters inert; exit codes/signals are relayed as data; descendants are killed after normal exit; a lease close while running cancels the worker; status records survive a stderr flood; cancellation waits for the actual committed-effect receipt.",
+      "exclusions": "Correlation markers are not cryptographic authentication; a worker deliberately echoing a public nonce is a documented limitation. CPython is the trusted effect driver.",
+      "authoritative_state": "the selected interpreter/endpoint/cwd plus the session nonce, owned by the exec session; worker effect receipts in strop-core",
+      "trusted": [
+        "CPython interpreter executing the embedded supervisor source",
+        "the remote shell transporting (not interpreting) the encoded spec"
+      ],
+      "files": [
+        "crates/strop-core/src/process.rs",
+        "crates/strop-core/src/process/capture.rs",
+        "crates/strop-core/src/worker.rs",
+        "crates/strop-core/src/worker/effect.rs",
+        "crates/strop-remote/src/exec.rs",
+        "crates/strop-remote/src/exec/python.rs",
+        "crates/strop-remote/src/exec/run.rs",
+        "crates/strop-remote/src/exec/spec.rs",
+        "crates/strop-remote/src/exec/stream.rs",
+        "crates/strop-remote/src/exec/supervisor.rs"
+      ],
+      "claims": [
+        {
+          "id": "EXEC-LEASE",
+          "statement": "Lifecycle truth at the real supervisor: exit codes relayed as data, stdout/stderr separated, descendants killed after normal exit, lease close cancels, signals reported as signals, status records survive a stderr flood.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/exec/tests.rs",
+              "gate": "test",
+              "tests": [
+                "exit_codes_are_relayed_as_data",
+                "stdout_and_stderr_arrive_separately",
+                "descendants_are_killed_after_a_normal_exit",
+                "lease_close_while_running_cancels_the_worker",
+                "signal_deaths_are_reported_as_signals",
+                "status_records_survive_a_stderr_flood"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "EXEC-ENCODING",
+          "statement": "Native argv/cwd bytes are data end to end: metacharacters are inert, NUL/relative paths are refused at validation, missing programs and unusable working directories are actionable launch failures.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/exec/tests.rs",
+              "gate": "test",
+              "tests": [
+                "argv_metacharacters_are_inert_data",
+                "the_remote_working_directory_is_native_bytes",
+                "validation_refuses_nul_and_relative_paths",
+                "a_missing_program_is_an_actionable_launch_failure",
+                "an_unusable_working_directory_is_an_actionable_launch_failure"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "EXEC-MODEL",
+          "statement": "The remote process lifecycle model rejects premature success, early reap and ungated launch mutants; liveness and backpressure instances terminate honestly.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/RemoteProcess.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-process.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteProcess.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-process-premature-success.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteProcess.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-process-early-reap.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteProcess.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-process-ungated-launch.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteProcess.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-process-liveness.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteProcess.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-process-backpressure.cfg"
+            }
+          ]
+        },
+        {
+          "id": "WORKER-EFFECT",
+          "statement": "Cancellation of a worker effect waits for the actual committed-effect receipt; a cleanup failure preserves the observed value instead of fabricating success.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-core/src/worker/effect/tests.rs",
+              "gate": "test",
+              "tests": [
+                "cancellation_waits_for_the_actual_committed_effect_receipt",
+                "cancellation_cleanup_failure_preserves_the_observed_value"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "model",
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/process.rs": "6d9b582293aed6eada398a496cdd35b42e7d082adc874c2f934093b4e9ac2c58",
+          "crates/strop-core/src/process/capture.rs": "385125270cd5394e8d461c24b1207fd65ca9dab7e1f1c516c83175b1eada822b",
+          "crates/strop-core/src/worker.rs": "d91189061ccee349a9141b1234e9cf646acded3c56c97d613a76a5f6e3148dfc",
+          "crates/strop-core/src/worker/effect.rs": "5010887149a92f1e58b1fa3c49b67066ec28d6242b774daaa4d23c329fb7d4f1",
+          "crates/strop-remote/src/exec.rs": "86edf18e7e8ae78353a7abd04165a948640177f5803a769341dfb0d87d14213e",
+          "crates/strop-remote/src/exec/python.rs": "312f537769cfb2cfe2a0108d08ac407b370f6e8ca7ae107436b13c1bbe9826ee",
+          "crates/strop-remote/src/exec/run.rs": "1b3690aad48179c3703fda33226dd3a49aebb5f3249a206c22457fc1aabbe4c7",
+          "crates/strop-remote/src/exec/spec.rs": "df0a5874c935cfd844d0e153da5ad710a432e926b684182a0b6fdf30385d4cd8",
+          "crates/strop-remote/src/exec/stream.rs": "88053c35e471615cd3c7c31dd20294d74028176ba238a56e2747a23ad59db12c",
+          "crates/strop-remote/src/exec/supervisor.rs": "04ab7157b7102d2574da5a7581801fa0b4d4482c40d336181df24899053283e2"
+        },
+        "evidence": "04d0dc4bc4c89015c3224163afacb48806dd1e6dd43aa752061e3bed3dd00ed2"
+      }
+    },
+    {
+      "id": "local-fs-authority",
+      "kind": "io",
+      "title": "Local filesystem operation authority (strop-fs)",
+      "promise": "Create/copy/rename/move/remove/trash keep their no-clobber guarantees: rename conflicts use no-replace semantics, exclusive creation and destination races preserve other files, rename graphs order vacancies and refuse cycles before any mutation, permanent remove refuses nonempty directories and changed sources, and move verification requires an owned after-version — not just inode occupancy.",
+      "exclusions": "Cooperative locking is not universal CAS against non-participants. Native-byte name handling on platforms without OsStr bytes is out of scope. A plain rename/exists check is not claimed as a no-replace proof.",
+      "authoritative_state": "the guard/observation/stage record per operation, executed by strop-fs local executor",
+      "trusted": [
+        "the local filesystem's metadata/rename semantics",
+        "the platform trash facility for Trash operations"
+      ],
+      "files": [
+        "crates/strop-fs/src/attributes.rs",
+        "crates/strop-fs/src/batch.rs",
+        "crates/strop-fs/src/environment.rs",
+        "crates/strop-fs/src/guard.rs",
+        "crates/strop-fs/src/guard/cleanup.rs",
+        "crates/strop-fs/src/listing.rs",
+        "crates/strop-fs/src/local/copy.rs",
+        "crates/strop-fs/src/local/execute.rs",
+        "crates/strop-fs/src/local/mod.rs",
+        "crates/strop-fs/src/local/outcome.rs",
+        "crates/strop-fs/src/local/prepare.rs",
+        "crates/strop-fs/src/local/verify.rs",
+        "crates/strop-fs/src/observation.rs",
+        "crates/strop-fs/src/stage.rs",
+        "crates/strop-fs/src/trash.rs",
+        "crates/strop-fs/src/trash/restore.rs",
+        "crates/strop-fs/src/unsupported.rs"
+      ],
+      "claims": [
+        {
+          "id": "FS-NOCLOBBER",
+          "statement": "No-clobber and ordering: no-replace rename semantics, race-safe exclusive creation, cycle-refusing rename graphs, changed-source removal refusal, owned-after-version move verification, exact-byte copy publication.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-fs/src/tests.rs",
+              "gate": "test",
+              "tests": [
+                "rename_directory_and_conflicts_use_no_replace_semantics",
+                "exclusive_creation_and_destination_races_preserve_other_files",
+                "rename_graph_orders_vacancies_and_refuses_cycles_before_mutation",
+                "permanent_remove_refuses_nonempty_directories_and_changed_sources",
+                "move_verification_requires_an_owned_after_version_not_just_inode_occupancy",
+                "stored_and_buffer_copies_publish_exact_bytes_without_changing_source"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "FS-LIFECYCLE",
+          "statement": "Missing parents are visible steps created only on apply; an emptied directory can be removed; trash is recoverable and restore refuses occupied names.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-fs/src/tests.rs",
+              "gate": "test",
+              "tests": [
+                "missing_parents_are_visible_steps_and_only_created_on_apply",
+                "a_directory_emptied_through_checked_operations_can_be_removed",
+                "trash_is_recoverable_and_restore_refuses_occupied_names"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-fs/src/attributes.rs": "75e37297fc92f6a6b1c7657119f2cf9d9971cdd7bbcb95b1ce806f90a25c68f6",
+          "crates/strop-fs/src/batch.rs": "f79aa2686bf991fdee6f7756e475e3118ba4b866e5b85a963616084e6939df91",
+          "crates/strop-fs/src/environment.rs": "b49942627b75237025e080d25e2666c8dc40e1d96103da7f4a314b9411301d96",
+          "crates/strop-fs/src/guard.rs": "c7753cc707fd4405ac56794120f7405d728d9ce3d686f9b693a687148d8cb46a",
+          "crates/strop-fs/src/guard/cleanup.rs": "42f2ece0bebd385ef4dd37ad5a826b2d11a7e2a4bedf64d086b603f4eeba9c2e",
+          "crates/strop-fs/src/listing.rs": "69eccc95e4230a3f53c15dc35b7b260ed4f3745f7a7fcfa6c3abf57bf8421c78",
+          "crates/strop-fs/src/local/copy.rs": "f9ba25817bbc79ae78221e02b04cb53778f6e87323445a1345aaee03bcb23bc0",
+          "crates/strop-fs/src/local/execute.rs": "f8dd250f1501bf95ede08b3992099327c89e80a5bccab55457e8f32ba7f9b39a",
+          "crates/strop-fs/src/local/mod.rs": "fb5e2d727ec035306f5ba91eda86aee89c4d436238dc9a33ea80b98c12c88ca9",
+          "crates/strop-fs/src/local/outcome.rs": "bae2b1101dbae5a466cc9bf36bf08a1084e22263c33889d9f1e7d3b41a693a28",
+          "crates/strop-fs/src/local/prepare.rs": "ba908df44344f5ff55dd43e00ddb0f6bcaaeba8ac18bf05a44b4633f7568f14b",
+          "crates/strop-fs/src/local/verify.rs": "1a76bdf4c03394befa2bc5dba43bf1c3927640243025fe4501fced905bcc6077",
+          "crates/strop-fs/src/observation.rs": "39fc274ea5cc302dcb9e4ce388bcb5f45496d77a54f4f48439e926faf5bd4e60",
+          "crates/strop-fs/src/stage.rs": "762ae935cd33eac77deb8d4b030c3c3293320d62b611e1d327812ba26fa3f5a6",
+          "crates/strop-fs/src/trash.rs": "b2f8c09c857c4d9eb66a751316a5deffbdd3185e91cfbbaad08ed4233ba71be8",
+          "crates/strop-fs/src/trash/restore.rs": "310585f58292dc95c3b8c8a87a3755c906f6524cfc87d37aff53a04c50158d4f",
+          "crates/strop-fs/src/unsupported.rs": "d230b62d99ff6d5445532fbe2b1682d171221c4ee9e93804743d81b9260959b7"
+        },
+        "evidence": "4fe01ab391438e4fb5acc31a0621d786191e8bcc505417472e17ce759e5958ce"
+      }
+    },
+    {
+      "id": "session-persistence",
+      "kind": "persistence",
+      "title": "Session persistence and trust store",
+      "promise": "Sessions roundtrip buffers and positions; undo history crosses a restart only when the disk content matches; a failed restore leaves live state untouched; empty or readonly buffers never persist; legacy paths migrate while ambiguous paths fail; native paths roundtrip without loss; the trust store remembers projects.",
+      "exclusions": "Session persistence is not draft recovery (that is recovery-store); it does not back up dirty/remote content.",
+      "authoritative_state": "the per-workspace session file and trust store under the user data directory",
+      "trusted": [
+        "the user's data directory is not concurrently written by another editor instance"
+      ],
+      "files": [
+        "crates/strop-engine/src/session.rs",
+        "crates/strop-engine/src/session/persistence.rs",
+        "crates/strop-engine/src/session/remotes.rs",
+        "crates/strop-engine/src/session/trust.rs"
+      ],
+      "claims": [
+        {
+          "id": "SES-ROUNDTRIP",
+          "statement": "Restore is conditional on observed disk state and fails closed: disk-matched history crosses, mismatched/failed restores change nothing live, readonly/empty buffers never persist, legacy migration is unambiguous.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/session/tests.rs",
+              "gate": "test",
+              "tests": [
+                "roundtrip_restores_buffers_and_position",
+                "undo_history_crosses_when_disk_matches",
+                "failed_restore_leaves_live_state_untouched",
+                "empty_or_readonly_never_persist",
+                "legacy_paths_migrate_and_ambiguous_paths_fail",
+                "native_paths_roundtrip_without_loss"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "SES-TRUST",
+          "statement": "Trust decisions persist per project and survive restart; a project configuration cannot approve itself.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/session/tests.rs",
+              "gate": "test",
+              "tests": [
+                "trust_store_remembers_projects"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-engine/src/session.rs": "d346e5f22babe5fc098a4a2b35263b7f49c74890f238e725ca76fd950ca80657",
+          "crates/strop-engine/src/session/persistence.rs": "5e93b3dd79829ed84ebd8b9eac8f9ecd0270ea84d4b05b9c5be26568f4b0d857",
+          "crates/strop-engine/src/session/remotes.rs": "d21162356825dea2f2753210f5625c9e3d166590ed150c2fb863b92304b261f8",
+          "crates/strop-engine/src/session/trust.rs": "051476e07e8fd93083344569f988cfa5e93c044229da7d1a75f5197c0597be23"
+        },
+        "evidence": "e8a626b5daaa713428d2e82a776a6406769dbdc1d91780fc0ca084d0ec05bdfa"
+      }
+    },
+    {
+      "id": "install-update",
+      "kind": "authority",
+      "title": "Install/update transaction and release catalog (AR11/AR12)",
+      "promise": "Installation is a staged, verified transaction: bytes are digest-verified before activation, failure or interruption preserves the previous install and leaves no partial state, a receipt records channel identity and previous_version, a catalog without this target refuses, and the release catalog is the single source of version/artifact/digest facts.",
+      "exclusions": "Windows installer packaging is 0062 future work. Checksums, TLS and publisher signatures keep their distinct trust meanings; this boundary does not claim signature verification of the catalog itself.",
+      "authoritative_state": "the install receipt beside the binary plus the immutable release catalog generated at tag time",
+      "trusted": [
+        "TLS to the release host for download integrity in transit",
+        "GitHub release storage for artifact availability",
+        "curl/sha256sum on the install host"
+      ],
+      "files": [
+        ".github/scripts/release-catalog.py",
+        "crates/strop/src/update.rs",
+        "install.sh"
+      ],
+      "claims": [
+        {
+          "id": "INS-IDENTITY",
+          "statement": "Channel identity comes from the receipt, never path substrings; version ordering is total; a missing receipt is unknown; the catalog resolves artifacts by target and malformed catalogs are rejected; the target triple set covers the release matrix.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/src/update.rs",
+              "gate": "test",
+              "tests": [
+                "version_ordering",
+                "triples_cover_the_matrix",
+                "receipt_roundtrip",
+                "missing_receipt_is_unknown",
+                "channel_identity_comes_from_the_receipt",
+                "catalog_resolves_artifacts_by_target",
+                "malformed_catalog_is_rejected"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "INS-TRANSACTION",
+          "statement": "Shell-level hermetic fixtures: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "script",
+              "path": "tests/install.sh",
+              "gate": "install-fixture"
+            },
+            {
+              "kind": "script",
+              "path": "tests/release-catalog.sh",
+              "gate": "install-fixture"
+            }
+          ]
+        },
+        {
+          "id": "REL-CATALOG",
+          "statement": "The release workflow generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties and a headless parse smoke per artifact, and attests build provenance for every tarball.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "script",
+              "path": ".github/workflows/release.yml",
+              "gate": "release"
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "install-fixture",
+        "release",
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          ".github/scripts/release-catalog.py": "41792de4abdb8f9b97b87d2c3dda35a0c74dc13cc3de4395d36f7d298a538fb8",
+          "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
+          "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
+        },
+        "evidence": "7140ae0a41c8d05d9bb14b2da4c095cb6dc512d2eff110ebcfb9b0f1fcd6c184"
+      }
+    },
+    {
+      "id": "terminal-lifecycle",
+      "kind": "lifecycle",
+      "title": "Embedded terminal session/PTY/effect lifecycle (VF12)",
+      "promise": "The terminal service owns one PTY geometry owner, ordered key/paste/VT data and bounded mailboxes: partial writes keep capacity charged until the packet is released, saturated output preserves room for final control records, a truncated record is not an orderly close. Editor-versus-child input ownership is exclusive: window-prefix chords never reach the child, focus loss cancels a pending escape prefix.",
+      "exclusions": "The third-party VT emulator core, fonts and the host terminal are trusted within the documented flags; no theorem is claimed over the vendor VT implementation.",
+      "authoritative_state": "per-session service actor state (client protocol, mailbox, helper process) keyed by SessionId",
+      "trusted": [
+        "the OS PTY and job-control primitives",
+        "the vendored VT parser for display semantics (input/escape admission is ours)"
+      ],
+      "files": [
+        "crates/strop-engine/src/editor/terminal/input.rs",
+        "crates/strop-engine/src/editor/terminal/mod.rs",
+        "crates/strop-terminal/src/client.rs",
+        "crates/strop-terminal/src/helper/input.rs",
+        "crates/strop-terminal/src/helper/mod.rs",
+        "crates/strop-terminal/src/model/mod.rs",
+        "crates/strop-terminal/src/model/validation.rs",
+        "crates/strop-terminal/src/model/wire.rs",
+        "crates/strop-terminal/src/protocol.rs",
+        "crates/strop-terminal/src/service/mailbox.rs",
+        "crates/strop-terminal/src/service/mod.rs",
+        "crates/strop-terminal/src/service/worker.rs",
+        "crates/strop-terminal/src/vt/input.rs",
+        "crates/strop-terminal/src/vt/mod.rs"
+      ],
+      "claims": [
+        {
+          "id": "TERM-PROTOCOL",
+          "statement": "The client protocol's accounting: capacity stays charged on partial writes, final control records always fit, truncation is never an orderly close.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-terminal/src/protocol/tests.rs",
+              "gate": "test",
+              "tests": [
+                "partial_write_keeps_capacity_charged_until_packet_is_released",
+                "saturated_output_preserves_room_for_final_control_records",
+                "truncated_or_oversized_record_is_not_an_orderly_channel_close"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "TERM-WIRE",
+          "statement": "Frame wire encoding is bounded and shape-consistent: run expansion bounded, repeated row references checked, projection/offsets derived, styled and wide cells survive.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-terminal/src/model/tests.rs",
+              "gate": "test",
+              "tests": [
+                "run_expansion_is_bounded_and_shape_consistent",
+                "repeated_row_references_are_bounded_and_checked",
+                "frame_wire_derives_projection_and_offsets",
+                "styled_and_wide_cells_survive_the_run_wire"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "TERM-OWNERSHIP",
+          "statement": "Editor-owned chords never leak to the child: window-prefix moves panes without reaching the child, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/tests.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_window_prefix_moves_panes_without_reaching_the_child",
+                "focus_loss_cancels_a_pending_terminal_escape_prefix",
+                "modal_terminal_baseline_journey"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-engine/src/editor/terminal/input.rs": "5b0bf2e34f15d8c3839edbc3da0296ff5fc2c43a0401f876b1c6fbba0e166720",
+          "crates/strop-engine/src/editor/terminal/mod.rs": "52c9660f0628c075c83c01afbe630ad16bd82e9144d55d49575be6e32e974698",
+          "crates/strop-terminal/src/client.rs": "c7cda574f818a512e412c50d29834a82a65b1273fface5a0c37aaf0b7e041f9d",
+          "crates/strop-terminal/src/helper/input.rs": "8b37a9778406f2d892b656937514e2f0f62e7a71ec1e12a5feb0b87c87acbbdb",
+          "crates/strop-terminal/src/helper/mod.rs": "b9668ff596f9d7113e83b0674fddff7302116e7f1487d8ba7bfb6238d9ce5ba0",
+          "crates/strop-terminal/src/model/mod.rs": "e46bd12d980563a3f0aea50ef8881b6f4dd07c90c2e7612ab415751fbf380df6",
+          "crates/strop-terminal/src/model/validation.rs": "77cc2c061d25e54973b7e6591c48eefba9d054bb9a07dbb91efb33f5b68174da",
+          "crates/strop-terminal/src/model/wire.rs": "288cc2dc1e6146612d81e45894a3d0da62159e46e9eb3449959bcabad27a177c",
+          "crates/strop-terminal/src/protocol.rs": "9e32c501485e5456d5b195a60ee853ad25c10207c309a2aba5a638960f617cef",
+          "crates/strop-terminal/src/service/mailbox.rs": "1a19cb788b08d33270fb5ce55b23c68b11b466c11406d6422cb26c19928d25cb",
+          "crates/strop-terminal/src/service/mod.rs": "0822d059690c4c446553d7229ba47278d966dc7ff6e8eb4d43379cc36a8f0156",
+          "crates/strop-terminal/src/service/worker.rs": "52e92bd43ec80b0c28ee7e3b8c49eabec7c110da5d4e75dcda5a826e975422bc",
+          "crates/strop-terminal/src/vt/input.rs": "15bdef918d1fd1ac162d9be4b1b527f9bc33d45be241a88a54c99f35f7612bb2",
+          "crates/strop-terminal/src/vt/mod.rs": "fe40a77f280f36c96769f9195d2c752151ad3e25871ba3947e7367dfd84a79d8"
+        },
+        "evidence": "ca60e07204716c23d3c86c093ef8e94e755c0140f68a19dd309c85e6559686d7"
+      }
+    },
+    {
+      "id": "search-lifecycle",
+      "kind": "lifecycle",
+      "title": "Search/picker stream lifecycle and guard (VF17 landed slice)",
+      "promise": "Search rows are current with their source revision and in scope; stale accepts never publish; completion is honest; the warm queue holds its bound and dies with its surface. Inductive safety is proved over arbitrary finite generation/revision/warm bounds; the kept mutant fails proof on exactly its own steps.",
+      "exclusions": "Constants are never instantiated in the proof, but the binary scope domain, warm capacity and counter cap keep the spec's shape. Ranking quality is not a safety property.",
+      "authoritative_state": "per-picker stream generations and the searchguard's live/current/honest decisions",
+      "trusted": [
+        "TLC/TLAPS tooling pins (candidate.json); the model-to-code mapping is reviewed, not mechanized"
+      ],
+      "files": [
+        "crates/strop-core/src/searchguard.rs",
+        "crates/strop-engine/src/editor/normal/search.rs",
+        "crates/strop-engine/src/editor/picker/drain.rs"
+      ],
+      "claims": [
+        {
+          "id": "SRCH-INDUCTIVE-SAFETY",
+          "statement": "Init⇒Inv, Inv∧[Next]⇒Inv′ over all 12 actions plus stuttering, and Inv⇒ each named safety property, for arbitrary finite GENS/REV_MAX/WARM_MAX; the mutant is rejected on its own steps only.",
+          "status": "proved-theorem",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "specs/SearchLifecycleProofs.tla",
+              "gate": "tlaps"
+            },
+            {
+              "kind": "proof",
+              "path": "specs/SearchLifecycle_MutantProofs.tla",
+              "gate": "tlaps"
+            }
+          ]
+        },
+        {
+          "id": "SRCH-MODEL",
+          "statement": "The finite TLC instances of the same module pass all configured properties; the kept freshness mutant violates exactly the expected invariants.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/SearchLifecycle.tla",
+              "gate": "model",
+              "config": "specs/cfg/search-lifecycle.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/SearchLifecycle_Mutant.tla",
+              "gate": "model",
+              "config": "specs/cfg/search-lifecycle-mutant.cfg"
+            }
+          ]
+        },
+        {
+          "id": "SRCH-GUARD",
+          "statement": "Production correspondence: retired generations never publish or merge, truncated completion stays visibly incomplete, warm drain holds the bound and dies with the surface.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/picker/lifecycle_traces.rs",
+              "gate": "test",
+              "tests": [
+                "retired_stream_generation_never_publishes",
+                "retired_wsymbols_generation_never_merges",
+                "truncated_completion_stays_visibly_incomplete",
+                "warm_drain_holds_the_bound_and_dies_with_the_surface"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "model",
+        "test",
+        "tlaps"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/searchguard.rs": "3ce08ff2edafdd5fe24d058d5647f64696986272a0de1c9eff20539aacf7e7bc",
+          "crates/strop-engine/src/editor/normal/search.rs": "b34a841566e54e2e83241f2df095a8788e2173192058b5abde4751e28144ba43",
+          "crates/strop-engine/src/editor/picker/drain.rs": "b3089b572feb171301d4609f4d2ae087f8bf8b29f9dcbf0d03ff1de574bb1668"
+        },
+        "evidence": "a43768291696f98d9ec58b2bf9e1dedb729a536b0507f8a1d8511a664b8a8b5e"
+      }
+    },
+    {
+      "id": "ui-protocol",
+      "kind": "admission",
+      "title": "UI input protocol, event routing and replay",
+      "promise": "Input delivery is fresh and correctly addressed: the protocol model's NoMisapply and NoWrongDocument invariants hold, and the kept freshness mutant violates exactly those two. Real input replays through the headless driver apply once: a duplicated pipe completion is applied once and replay-undo restores the original.",
+      "exclusions": "The AR09/AR10 UI-stdio server is still landing under 0056 closure; its rows (session incarnation, sequence/one-shot apply, delta base) join this boundary when the server lands. Native GUI rendering/IME is future work.",
+      "authoritative_state": "the frontend Input stream routed through AppEvent to the one valid input owner",
+      "trusted": [
+        "crossterm's decode of the host terminal (keys are re-checked at the editor boundary)"
+      ],
+      "files": [
+        "crates/strop-core/src/frontend_input.rs",
+        "crates/strop-engine/src/editor/events.rs",
+        "crates/strop-engine/src/editor/input/frontend.rs",
+        "crates/strop/src/headless/directives.rs",
+        "crates/strop/src/headless/driver.rs",
+        "crates/strop/src/replay.rs"
+      ],
+      "claims": [
+        {
+          "id": "UI-FRESHNESS",
+          "statement": "No misapplied or wrong-document delivery: the bounded model passes both freshness invariants, and the mutant without delivery freshness violates exactly NoMisapply and NoWrongDocument — no structural accounting invariant.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/EditorProtocol.tla",
+              "gate": "model",
+              "config": "specs/cfg/editor-protocol.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/EditorProtocol_Mutant.tla",
+              "gate": "model",
+              "config": "specs/cfg/editor-protocol-mutant.cfg"
+            }
+          ]
+        },
+        {
+          "id": "UI-REPLAY",
+          "statement": "Recorded journeys replay deterministically: duplicated completions apply once, reordered shell outputs keep both with newest focus, and replay undo restores the original bytes.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/trace/tests.rs",
+              "gate": "test",
+              "tests": [
+                "duplicate_pipe_completion_is_applied_once_and_replay_undo_restores_original",
+                "recorded_reordered_shell_outputs_keep_both_but_only_newest_focus"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "model",
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/frontend_input.rs": "2902349ea09990f0a4f85e0c6106e16e7ab29d7e2af59a4c4ee23bd21871ca27",
+          "crates/strop-engine/src/editor/events.rs": "d5f76136c55d9f2dcae3cc817d6c3ed3a581c4ec9fd70da4478c90284459f2b7",
+          "crates/strop-engine/src/editor/input/frontend.rs": "12037bcb1c08fec236591d6bf36aa9ae449d3e6cf9465884deac106bef46c8fa",
+          "crates/strop/src/headless/directives.rs": "818a64a5998954089141b9829753b959d1b0cbd3ac4f647ed05259387f7720b5",
+          "crates/strop/src/headless/driver.rs": "d2b5325460e49cd09e0ba97aea99cc585c9ded171e0a1ff0226188e1026f955b",
+          "crates/strop/src/replay.rs": "87b0acfb0525b1827389f80b31fa1979c7c6a08d89b6c35b62250659bec9c5e9"
+        },
+        "evidence": "211dde64b68ed7c27ab717cf131b82510f65dddb4782ae2300ada6948b7bf096"
+      }
+    },
+    {
+      "id": "identity-exhaustion",
+      "kind": "authority",
+      "title": "Arena identity generation and exhaustion (AR13)",
+      "promise": "Identity spaces fail closed under exhaustion: try_insert is checked end to end, a stale generation never resolves, wrapping a generation retires the slot instead of aliasing, and seeds roundtrip ids/free slots/generations while corrupt seeds are rejected, not repaired.",
+      "exclusions": "u32 capacity per arena kind is a documented bound, not a limit the editor expects to reach; callers surface exhaustion as a message, never a panic or wrap.",
+      "authoritative_state": "per-arena slot/generation table in strop-core, seeded across sessions",
+      "trusted": [
+        "checked arithmetic (the property under test)"
+      ],
+      "files": [
+        "crates/strop-core/src/id.rs",
+        "crates/strop-core/src/id/seed.rs"
+      ],
+      "claims": [
+        {
+          "id": "ID-EXHAUSTION",
+          "statement": "Stale ids fail lookup; generation wrap retires the slot (a wrapped generation would alias and is therefore refused); retired slots stay dead across seeds.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-core/src/id.rs",
+              "gate": "test",
+              "tests": [
+                "stale_ids_fail_lookup",
+                "generation_wrap_retires_the_slot",
+                "retired_slots_stay_dead_across_seeds"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ID-SEED",
+          "statement": "Seeds roundtrip ids, free slots and generations exactly; corrupt seeds (free entries naming occupied slots, bad generations) are rejected, never repaired into a live alias.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-core/src/id/seed.rs",
+              "gate": "test",
+              "tests": [
+                "seed_round_trips_ids_free_slots_and_generations",
+                "corrupt_seeds_are_rejected_not_repaired"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ID-KERNEL",
+          "statement": "Generation advance and slot indexing are proved same-source: generation_advances is the spec, reused_slot_never_aliases proves a reused slot can never alias a live id, and try_insert is rewired through next_generation/index_for_len (VF18).",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/id.rs",
+              "gate": "verify",
+              "symbols": [
+                "next_generation",
+                "index_for_len",
+                "generation_advances",
+                "reused_slot_never_aliases"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test",
+        "verify"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/id.rs": "ad64e8d5c0a405ed26756a7716e08303433c1b6bbbdf48b8bc7b095abdf605b1",
+          "crates/strop-core/src/id/seed.rs": "1989aff9c7d91a31993bcf8e2d9fcffcd744c03c057b2135d9aedcf968c5aae1"
+        },
+        "evidence": "702bd2132f3941a8db0178529d3b6caf735c09e53f728be42d3b90b0f4475871"
+      }
+    }
+  ]
+}

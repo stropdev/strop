@@ -116,7 +116,7 @@ impl Editor {
             PendingEffect::Edited => self.incsearch_jump(),
             PendingEffect::CompleteEx => self.ex_tab_complete(),
             PendingEffect::Repaint => self.needs_repaint = true,
-            PendingEffect::Rejected(error) => self.message = error.into(),
+            PendingEffect::Rejected(error) => self.message = error,
             PendingEffect::Aborted(prompt) => {
                 self.restore_prompt_origin(prompt.origin());
             }

@@ -439,7 +439,9 @@ impl Editor {
                         let (text, rows) = render::proposal(ticket.request, &batch);
                         let mut buffer = strop_core::Buffer::from_text(&text);
                         buffer.name = Some("filesystem change review".into());
-                        let report = self.open_temporary_output(buffer);
+                        let Some(report) = self.open_temporary_output(buffer) else {
+                            return; // message set; the batch stays unapplied
+                        };
                         self.set_filesystem_review_rows(report, rows);
                         let copies = batch
                             .steps

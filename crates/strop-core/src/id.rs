@@ -9,6 +9,62 @@
 
 mod seed;
 pub use seed::{ArenaSeed, ArenaSeedError};
+use vstd::prelude::*;
+
+verus! {
+
+/// The slot-reuse decision, mathematically: a reused slot's occupant
+/// generation strictly advances — a generation that would wrap retires
+/// the slot for good, so a stale key can never alias a new occupant
+/// (0056 AR13).
+pub open spec fn generation_advances(current: int, next: int) -> bool {
+    next == current + 1
+}
+
+/// The next occupant generation for a reused slot, or retirement.
+/// `Arena::try_insert` consults this exact decision; a retired slot is
+/// dropped from the free list and never hands out an id again.
+pub fn next_generation(current: u32) -> (next: Option<u32>)
+    ensures
+        next.is_some() == (current < u32::MAX),
+        next.is_some() ==> generation_advances(current as int, next.unwrap() as int),
+        next.is_some() ==> next.unwrap() != current,
+{
+    if current == u32::MAX {
+        None
+    } else {
+        Some(current + 1)
+    }
+}
+
+/// The index-space decision: a fresh slot exists only while the slot
+/// count fits the u32 index space — a full index space refuses instead
+/// of truncating `slots.len()` onto a live slot (0056 AR13).
+/// `Arena::try_insert` consults this exact decision.
+pub fn index_for_len(len: usize) -> (index: Option<u32>)
+    ensures
+        index.is_some() == (len <= u32::MAX as usize),
+        index.is_some() ==> index.unwrap() as usize == len,
+{
+    if len > u32::MAX as usize {
+        None
+    } else {
+        Some(len as u32)
+    }
+}
+
+/// Reuse never aliases: the generation a slot hands out next differs
+/// from every generation it handed out before.
+proof fn reused_slot_never_aliases(current: int, next: int)
+    requires
+        generation_advances(current, next),
+    ensures
+        next != current,
+        next > current,
+{
+}
+
+}
 
 /// A generational-arena key: the index names the slot, the generation
 /// names the occupant. Stale keys fail lookup.
@@ -52,6 +108,10 @@ pub type WorkspaceId = Id<WorkspaceKind>;
 
 /// A minimal generational arena (house rule: 40 boring lines beat a
 /// dependency). Slots are reused; each reuse bumps the generation.
+/// Insertion is checked (0056 AR13): a slot whose generation would wrap
+/// is retired — never reused — so a stale key can never alias a new
+/// occupant, and a full index space refuses instead of truncating
+/// `slots.len()` onto a live slot.
 pub struct Arena<K, T> {
     slots: Vec<Slot<T>>,
     free: Vec<u32>,
@@ -64,6 +124,13 @@ struct Slot<T> {
     value: Option<T>,
 }
 
+/// Identity allocation failed (0056 AR13): every slot is live or
+/// retired and the `u32` index space is full. Nothing was inserted and
+/// every existing id still resolves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("arena identity space exhausted")]
+pub struct ArenaExhausted;
+
 impl<K, T> Default for Arena<K, T> {
     fn default() -> Self {
         Self {
@@ -75,27 +142,54 @@ impl<K, T> Default for Arena<K, T> {
 }
 
 impl<K, T> Arena<K, T> {
-    pub fn insert(&mut self, value: T) -> Id<K> {
-        if let Some(index) = self.free.pop() {
+    /// Checked insertion: reuses a free slot only when its generation
+    /// can advance without wrapping; retired (wrap-risk) slots are
+    /// dropped from the free list for good. Fails only when no slot is
+    /// reusable and the index space itself is full — the arena is left
+    /// unchanged, so an in-flight operation keeps every existing
+    /// document/edit.
+    pub fn try_insert(&mut self, value: T) -> Result<Id<K>, ArenaExhausted> {
+        while let Some(index) = self.free.pop() {
             let slot = &mut self.slots[index as usize];
-            slot.generation += 1;
-            slot.value = Some(value);
-            return Id {
-                index,
-                generation: slot.generation,
-                _kind: std::marker::PhantomData,
+            // The verified retirement rule (0057 VF18): a generation that
+            // cannot advance without wrapping retires the slot for good.
+            let Some(generation) = next_generation(slot.generation) else {
+                continue; // retire: this slot never hands out an id again
             };
+            slot.generation = generation;
+            slot.value = Some(value);
+            return Ok(Id {
+                index,
+                generation,
+                _kind: std::marker::PhantomData,
+            });
         }
-        let index = self.slots.len() as u32;
+        // The verified index-space rule (0057 VF18): full space refuses
+        // instead of truncating `slots.len()` onto a live slot.
+        let Some(index) = index_for_len(self.slots.len()) else {
+            return Err(ArenaExhausted);
+        };
         self.slots.push(Slot {
             generation: 0,
             value: Some(value),
         });
-        Id {
+        Ok(Id {
             index,
             generation: 0,
             _kind: std::marker::PhantomData,
-        }
+        })
+    }
+
+    /// How many more inserts this arena can serve: reusable free slots
+    /// plus the remaining index space. Multi-document operations
+    /// preflight against this instead of failing halfway through.
+    pub fn insert_capacity(&self) -> u64 {
+        let reusable = self
+            .free
+            .iter()
+            .filter(|&&index| self.slots[index as usize].generation < u32::MAX)
+            .count() as u64;
+        reusable + (u64::from(u32::MAX) - self.slots.len() as u64)
     }
 
     /// None for a stale id — never the wrong document.
@@ -333,15 +427,60 @@ mod tests {
     #[test]
     fn stale_ids_fail_lookup() {
         let mut a: Arena<DocumentKind, String> = Arena::default();
-        let one = a.insert("one".into());
-        let two = a.insert("two".into());
+        let one = a.try_insert("one".into()).unwrap();
+        let two = a.try_insert("two".into()).unwrap();
         assert_eq!(a.get(one).map(String::as_str), Some("one"));
         a.remove(one);
         assert_eq!(a.get(one), None, "removed");
-        let three = a.insert("three".into()); // reuses the slot
+        let three = a.try_insert("three".into()).unwrap(); // reuses the slot
         assert_eq!(a.get(one), None, "stale generation must not resolve");
         assert_eq!(a.get(three).map(String::as_str), Some("three"));
         assert_eq!(a.get(two).map(String::as_str), Some("two"));
         assert_eq!(a.len(), 2);
+    }
+
+    /// Seeded at the generation boundary (0056 AR13): a slot at
+    /// u32::MAX-1 hands out one last id, then retires — the generation
+    /// never wraps onto a stale key.
+    #[test]
+    fn generation_wrap_retires_the_slot() {
+        let mut a: Arena<DocumentKind, String> = Arena::from_seed(ArenaSeed {
+            slots: vec![(u32::MAX - 1, None)],
+            free: vec![0],
+        })
+        .unwrap();
+        assert_eq!(a.insert_capacity(), u64::from(u32::MAX));
+        let last = a.try_insert("last".into()).unwrap();
+        assert_eq!((last.index(), last.generation()), (0, u32::MAX));
+        a.remove(last);
+        // The slot is now at u32::MAX: reuse would wrap onto `last`.
+        let fresh = a.try_insert("fresh".into()).unwrap();
+        assert_eq!((fresh.index(), fresh.generation()), (1, 0));
+        assert_eq!(a.get(last), None, "a wrapped generation would alias");
+        assert_eq!(a.get(fresh).map(String::as_str), Some("fresh"));
+        // Retirement is permanent: the freed fresh slot is reused, the
+        // retired slot stays dead, and capacity reflects both facts.
+        a.remove(fresh);
+        let again = a.try_insert("again".into()).unwrap();
+        assert_eq!((again.index(), again.generation()), (1, 1));
+        assert_eq!(a.insert_capacity(), u64::from(u32::MAX) - 2);
+    }
+
+    /// Retirement survives a seed round-trip: the rebuilt arena never
+    /// revives the dead slot (0056 AR13/R11).
+    #[test]
+    fn retired_slots_stay_dead_across_seeds() {
+        let mut a: Arena<DocumentKind, String> = Arena::from_seed(ArenaSeed {
+            slots: vec![(u32::MAX, None)],
+            free: vec![0],
+        })
+        .unwrap();
+        let live = a.try_insert("live".into()).unwrap();
+        assert_eq!(live.index(), 1, "the maxed slot was retired on reuse");
+        let seed = a.seed_with(|value| value.clone());
+        let mut rebuilt = Arena::from_seed(seed).unwrap();
+        let after = rebuilt.try_insert("after".into()).unwrap();
+        assert_eq!(after.index(), 2, "retirement is part of the seed");
+        assert_eq!(rebuilt.get(live).map(String::as_str), Some("live"));
     }
 }

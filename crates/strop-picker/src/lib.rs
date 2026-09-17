@@ -280,7 +280,7 @@ impl Picker {
     /// when the search field changed, so the glue refreshes results.
     pub fn paste(&mut self, text: &str) -> bool {
         let search = self.field == Field::Search;
-        self.active().insert_str(text);
+        self.active_field().insert_str(text);
         search
     }
 
@@ -288,8 +288,9 @@ impl Picker {
         self.replace_input.backspace();
     }
 
-    /// The focused field's edit state.
-    fn active(&mut self) -> &mut LineEdit {
+    /// The focused field's edit state — the engine's field machine
+    /// drives normal-mode grammar through this handle.
+    pub fn active_field(&mut self) -> &mut LineEdit {
         match self.field {
             Field::Search => &mut self.input,
             Field::Replace => &mut self.replace_input,
@@ -299,7 +300,7 @@ impl Picker {
     /// Esc in a picker field enters normal mode (rootle's input boxes);
     /// Esc again closes — the editor calls picker_normal() to decide.
     pub fn enter_normal(&mut self) {
-        self.active().normal = true;
+        self.active_field().normal = true;
     }
 
     pub fn input_normal(&self) -> bool {
@@ -310,20 +311,13 @@ impl Picker {
         .normal
     }
 
-    /// One normal-mode key on the focused field; true when the text
-    /// changed (x/X) — the glue respawns rg on that.
-    pub fn normal_key(&mut self, c: char) -> bool {
-        let changed = matches!(c, 'x' | 'X');
-        self.active().normal_key(c) && changed
-    }
-
     /// Arrow-key caret moves work in both modes, on the focused field.
     pub fn caret_left(&mut self) {
-        self.active().move_left();
+        self.active_field().move_left();
     }
 
     pub fn caret_right(&mut self) {
-        self.active().move_right();
+        self.active_field().move_right();
     }
 
     /// Field movement never moves either editor's parked caret.
@@ -367,7 +361,7 @@ impl Picker {
             query: self
                 .rank_query
                 .clone()
-                .unwrap_or_else(|| self.input.text.clone()),
+                .unwrap_or_else(|| self.input.text().to_string()),
             upstream_filtered: self.kind == Kind::Search,
             pinned_tail: self.pinned_tail,
             mode: self.rank_mode.clone(),
@@ -606,7 +600,7 @@ mod tests {
             .map(|i| Item {
                 badge: None,
                 text: format!("f{i}"),
-                payload: Payload::Buffer(arena.insert(())),
+                payload: Payload::Buffer(arena.try_insert(()).unwrap()),
             })
             .collect();
         let mut p = Picker::new(Kind::Buffers, items, false);

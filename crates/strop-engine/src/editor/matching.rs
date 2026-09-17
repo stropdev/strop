@@ -291,6 +291,7 @@ impl Editor {
             request,
             key: key.clone(),
         };
+        self.admissions.pairs += 1;
         let cancel = Arc::new(AtomicBool::new(false));
         self.analysis.register(key.target.clone());
         self.analysis.pair.pending.insert(

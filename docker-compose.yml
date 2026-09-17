@@ -38,6 +38,17 @@ services:
       dockerfile: Dockerfile
       target: verify
     command: 'echo "gate passed: edit-geometry kernel verified (Verus)"'
+
+  # The TLAPS proof gate (0057 VF17, discharging 0063 §6.6): inductive
+  # safety of the search lifecycle model + kept-mutant negative control,
+  # in its own pinned toolchain image. Kept out of specs/gate.sh: the
+  # model stage has no tlapm, so chaining would break that gate.
+  tlaps:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tlaps
+    command: 'echo "gate passed: search lifecycle safety proved (TLAPS)"'
   build:
     build:
       context: .

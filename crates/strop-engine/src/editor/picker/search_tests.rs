@@ -27,9 +27,9 @@ fn toggling_a_live_query_keeps_its_producer_and_parked_editors() {
         Some(&owner),
         "presentation never restarts a producer"
     );
-    assert_eq!(glue.picker.input.text, "needle");
-    assert_eq!(glue.picker.replace_input.text, "literal $1");
-    assert_eq!(glue.picker.replace_input.cursor, 9);
+    assert_eq!(glue.picker.input.text(), "needle");
+    assert_eq!(glue.picker.replace_input.text(), "literal $1");
+    assert_eq!(glue.picker.replace_input.cursor(), 9);
     assert!(glue.picker.replace_input.normal);
     editor.wait_picker();
     assert_eq!(editor.picker.as_ref().unwrap().picker.accepted().count(), 4);
@@ -76,7 +76,7 @@ fn find_enter_opens_sources_in_both_presentations_and_resume_keeps_scope() {
         editor.wait_picker();
         assert_eq!(editor.search_scope().unwrap().root.path, root.path());
         let picker = &editor.picker.as_ref().unwrap().picker;
-        assert_eq!(picker.input.text, "needle");
+        assert_eq!(picker.input.text(), "needle");
         let Payload::Grep {
             location: current_path,
             line: current_line,

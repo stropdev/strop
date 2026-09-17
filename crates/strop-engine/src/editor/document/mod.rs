@@ -93,7 +93,7 @@ impl Document {
     /// A git-memory surface: job-owned content, readonly derived from
     /// the source — not set by hand (0021 §4).
     pub fn surface(mut buf: Buffer, surface: Surface, context: strop_git::GitContext) -> Self {
-        buf.readonly = true;
+        buf.set_readonly(strop_core::ReadonlyReason::GitSurface);
         Self {
             buf,
             syntax_hint: None,
@@ -112,7 +112,7 @@ impl Document {
     /// through [`Editor::open_temporary_output`] also carry the return
     /// point `:q` restores (0051 §7 R07).
     pub fn output(mut buf: Buffer) -> Self {
-        buf.readonly = true;
+        buf.set_readonly(strop_core::ReadonlyReason::Output);
         Self {
             buf,
             syntax_hint: None,
@@ -130,7 +130,7 @@ impl Document {
         container: strop_workspace::ContainerId,
         path: std::path::PathBuf,
     ) -> Self {
-        buf.readonly = true;
+        buf.set_readonly(strop_core::ReadonlyReason::Container);
         let detection = Some(detect_indent(buf.text()));
         Self {
             buf,
@@ -230,8 +230,9 @@ impl Document {
 }
 
 impl Editor {
-    /// Mark a document most-recently-used.
-    pub fn touch_mru(&mut self, i: strop_core::id::DocumentId) {
+    /// Mark a document most-recently-used. Engine-internal (0056 AR02):
+    /// MRU order follows admitted navigation, never a frontend write.
+    pub(crate) fn touch_mru(&mut self, i: strop_core::id::DocumentId) {
         self.mru.retain(|&x| x != i);
         self.mru.insert(0, i);
     }
@@ -252,15 +253,51 @@ impl Editor {
         &self.cur().buf
     }
 
-    pub fn buf_mut(&mut self) -> super::transact::BufferEdit<'_> {
+    /// The transaction gateway for the current document (0056 AR02):
+    /// engine-internal — the frontend never mutates documents directly;
+    /// tests use [`Editor::fixture_buf_mut`].
+    pub(crate) fn buf_mut(&mut self) -> super::transact::BufferEdit<'_> {
         super::transact::BufferEdit::new(self.cur_mut())
     }
 
-    /// One document by id — stale ids panic: an id outliving its
-    /// document is a bug, and the generation check is what keeps it
-    /// from silently resolving to the wrong one (0014 wave 2).
+    /// Fixture hook (tests only): the same transaction gateway the
+    /// engine uses, so fixture edits keep the sync-on-drop semantics.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_buf_mut(&mut self) -> super::transact::BufferEdit<'_> {
+        self.buf_mut()
+    }
+
+    /// One document by id, for ids the engine itself hands out and keeps
+    /// live: pane/window bindings ([`Editor::view`], [`Editor::panes`],
+    /// prepared-view windows) are rebound before their document closes,
+    /// so a stale id here is an engine bug, not user input — that
+    /// invariant is what the panic reports (0014 wave 2). Ids the
+    /// frontend holds across turns (a remembered row, a cached source)
+    /// can legitimately outlive their document: look those up through
+    /// [`Editor::document`] and handle `None`.
     pub fn doc(&self, id: strop_core::id::DocumentId) -> &Document {
         self.docs.get(id).expect("stale document id")
+    }
+
+    /// Readonly document lookup (0056 AR02): None for a stale id —
+    /// the frontend's tolerated form of a closed document.
+    pub fn document(&self, id: strop_core::id::DocumentId) -> Option<&Document> {
+        self.docs.get(id)
+    }
+
+    /// Any live documents at all (quit-loop condition).
+    pub fn has_documents(&self) -> bool {
+        !self.docs.is_empty()
+    }
+
+    /// Admit an already-constructed document (0056 AR02/AR13): checked
+    /// identity allocation is the whole operation — failure changes
+    /// nothing, so the caller decides how to surface it.
+    pub fn admit_document(
+        &mut self,
+        document: Document,
+    ) -> Result<strop_core::id::DocumentId, strop_core::id::ArenaExhausted> {
+        self.docs.try_insert(document)
     }
 
     pub(crate) fn doc_mut(
@@ -353,19 +390,23 @@ impl Editor {
     /// its navigation record, so ctrl-o AND `:q` hand back the caret,
     /// viewport and horizontal origin the user came from. A stale
     /// scratch origin dies with its buffer; close_buffer skips dead
-    /// return points on its own.
+    /// return points on its own. None on identity exhaustion (0056
+    /// AR13): no jump recorded, no view switched, message set.
     pub(crate) fn open_temporary_output(
         &mut self,
         buf: strop_core::Buffer,
-    ) -> strop_core::id::DocumentId {
-        self.push_jump();
+    ) -> Option<strop_core::id::DocumentId> {
         let mut document = Document::output(buf);
         document.set_return_point(self.jump_record());
-        let id = self.docs.insert(document);
+        let Ok(id) = self.docs.try_insert(document) else {
+            self.message = "document identity space exhausted".into();
+            return None;
+        };
+        self.push_jump();
         self.drop_stale_scratch(id);
         self.switch_to(id);
         self.set_head(0);
-        id
+        Some(id)
     }
 
     /// The active view's selections.
@@ -374,13 +415,20 @@ impl Editor {
         &self.view().sels
     }
 
+    /// Selection mutation is grammar-owned (0056 AR02): multicursor
+    /// commands go through the engine, never a frontend write.
     #[inline]
-    pub fn sels_mut(&mut self) -> &mut strop_core::selection::SelectionSet {
+    pub(crate) fn sels_mut(&mut self) -> &mut strop_core::selection::SelectionSet {
         &mut self.view_mut().sels
     }
 
-    /// The active view's scroll offset.
-    #[inline]
+    /// Fixture hook (tests only): plant extra carets without driving
+    /// the multicursor grammar.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_sels_mut(&mut self) -> &mut strop_core::selection::SelectionSet {
+        self.sels_mut()
+    }
+
     /// The active pane's text-area height in rows (render-loop fed).
     pub fn view_rows(&self) -> usize {
         self.view_rows

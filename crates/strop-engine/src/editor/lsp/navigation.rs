@@ -92,7 +92,8 @@ impl Editor {
         self.lsp_state.navigation = None;
         self.switch_to(target);
         if outside && !self.buf().readonly {
-            self.buf_mut().readonly = true;
+            self.buf_mut()
+                .set_readonly(strop_core::ReadonlyReason::OutsideWorkspace);
             self.message = "readonly — outside workspace (:set noro to edit)".into();
         }
         self.set_head(head);

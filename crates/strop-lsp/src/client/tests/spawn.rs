@@ -79,14 +79,30 @@ fn initialize_carries_workspace_folders_and_config_answers_pulls() {
         project_executable: false,
     };
     let (tx, rx) = channel();
-    let client = Client::spawn(
-        &spec,
-        crate::target::Workspace::Local {
-            root: dir.path().to_path_buf(),
-        },
-        tx,
-    )
-    .expect("spawn");
+    // spawn() takes the caller's cancellation token; issue one from a
+    // scoped worker (the CancelToken test seam).
+    let client = std::thread::scope(|scope| {
+        let (tokens, issued) = channel();
+        let _handle = strop_core::worker::spawn_scoped(
+            scope,
+            "spawn-test-token",
+            |_| {},
+            move |token| {
+                let _ = tokens.send(token);
+                strop_core::worker::Outcome::Success(())
+            },
+        );
+        let token = issued.recv().expect("worker issued token");
+        Client::spawn(
+            &spec,
+            crate::target::Workspace::Local {
+                root: dir.path().to_path_buf(),
+            },
+            tx,
+            &token,
+        )
+    });
+    let client = client.expect("spawn");
     // Ready after initialize; the fake server then pulls configuration
     // and exits — the client reports the exit (not a quit we asked for).
     let mut ready = false;

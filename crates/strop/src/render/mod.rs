@@ -29,50 +29,59 @@ mod terminal_tests;
 mod text;
 mod which_key;
 
-// strop default palette (plan 0004 site, --accent amber)
-pub const BASE: Color = Color::Rgb(0x16, 0x16, 0x1e);
-pub const TEXT: Color = Color::Rgb(0xe8, 0xe4, 0xda);
-pub const MUTED: Color = Color::Rgb(0x6b, 0x6f, 0x7e);
-pub const ACCENT: Color = Color::Rgb(0xf0, 0xa3, 0x5e);
-pub const PREVIEW_BG: Color = Color::Rgb(0x4a, 0x33, 0x1c); // accent, dimmed
-pub const FLASH_BG: Color = Color::Rgb(0x6b, 0x47, 0x22); // accent, stronger
-pub const SELECT_BG: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
+// strop default palette (plan 0004 site, --accent amber): every value
+// derives from the strop-core theme seed (0065 D3) — never restated here.
+const fn seed(value: strop_core::theme::Rgb) -> Color {
+    Color::Rgb(value.r, value.g, value.b)
+}
+pub const BASE: Color = seed(strop_core::theme::BASE);
+pub const TEXT: Color = seed(strop_core::theme::TEXT);
+pub const MUTED: Color = seed(strop_core::theme::MUTED);
+pub const ACCENT: Color = seed(strop_core::theme::ACCENT);
+pub const PREVIEW_BG: Color = seed(strop_core::theme::PREVIEW_BG);
+pub const FLASH_BG: Color = seed(strop_core::theme::FLASH_BG);
+pub const SELECT_BG: Color = seed(strop_core::theme::SELECT_BG);
 /// Matching-delimiter overlay (0051 §7 R09): quiet — a slate wash one
 /// step above the selection, never the accent's urgency.
-pub const PAIR_BG: Color = Color::Rgb(0x3a, 0x3d, 0x4d);
+pub const PAIR_BG: Color = seed(strop_core::theme::PAIR_BG);
 /// Useful secondary context (0050 §4): between TEXT and MUTED.
-pub const SECONDARY: Color = Color::Rgb(0x9b, 0xa0, 0xb1);
+pub const SECONDARY: Color = seed(strop_core::theme::SECONDARY);
+/// Terminal-input chip (0065 S1): the child's type teal — glanceably not
+/// Normal's amber, Insert's green or Visual's violet, because the keys go
+/// to the child, not the grammar.
+pub const TERMINAL_CHIP: Color = seed(strop_core::theme::CLASS_TYPE);
 
 /// Diagnostic severity → color (LSP typed severity; one source for
 /// the gutter sign and the cursor-line end-of-line note).
 pub(crate) fn severity_color(sev: strop_lsp::Severity) -> Color {
     use strop_lsp::Severity;
     match sev {
-        Severity::Error => Color::Rgb(0xe8, 0x67, 0x7a), // error red
-        Severity::Warning => ACCENT,                     // warning amber
-        Severity::Information => Color::Rgb(0x7f, 0xb4, 0xca), // info blue
-        Severity::Hint => MUTED,                         // hint
+        Severity::Error => seed(strop_core::theme::DIAG_ERROR),
+        Severity::Warning => ACCENT, // warning amber
+        Severity::Information => seed(strop_core::theme::DIAG_INFO),
+        Severity::Hint => MUTED, // hint
     }
 }
 
 /// Syntax class → color (strop palette; theme engine swaps these later).
 pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
+    use strop_core::theme;
     use strop_syntax::Class as C;
     match class {
-        C::Keyword => Color::Rgb(0xc5, 0x8a, 0xe8),
-        C::Function => Color::Rgb(0x7f, 0xb4, 0xca),
-        C::Type => Color::Rgb(0x94, 0xd2, 0xbd),
-        C::String => Color::Rgb(0xa9, 0xc4, 0x7c),
+        C::Keyword => seed(theme::CLASS_KEYWORD),
+        C::Function => seed(theme::CLASS_FUNCTION),
+        C::Type => seed(theme::CLASS_TYPE),
+        C::String => seed(theme::CLASS_STRING),
         C::Comment => MUTED,
-        C::Number => Color::Rgb(0xe8, 0x97, 0x7a),
-        C::Operator => Color::Rgb(0x9a, 0xa0, 0xae),
-        C::Punctuation => Color::Rgb(0x56, 0x5b, 0x6e),
+        C::Number => seed(theme::CLASS_NUMBER),
+        C::Operator => seed(theme::CLASS_OPERATOR),
+        C::Punctuation => seed(theme::CLASS_PUNCTUATION),
         C::Constant => ACCENT,
-        C::Attribute => Color::Rgb(0xd0, 0xa4, 0x5e),
+        C::Attribute => seed(theme::CLASS_ATTRIBUTE),
         C::Variable => TEXT,
         C::Heading | C::List => ACCENT,
-        C::Link | C::Tag => Color::Rgb(0x7f, 0xb4, 0xca),
-        C::Code => Color::Rgb(0xa9, 0xc4, 0x7c),
+        C::Link | C::Tag => seed(theme::DIAG_INFO),
+        C::Code => seed(theme::CLASS_STRING),
         C::Quote => MUTED,
     }
 }
@@ -96,17 +105,49 @@ pub(crate) fn syntax_style(span: &strop_syntax::Span) -> Style {
 }
 
 mod field;
-mod prepare;
 
-pub fn render(editor: &mut Editor, frame: &mut Frame) {
+/// Toolkit rect → engine cell geometry (AR01: geometry enters the engine
+/// only through this conversion; cells, never pixels).
+pub(crate) fn to_cells(rect: Rect) -> strop_engine::editor::prepare::CellRect {
+    strop_engine::editor::prepare::CellRect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+    }
+}
+
+/// Engine cell geometry → toolkit rect.
+pub(crate) fn from_cells(cells: strop_engine::editor::prepare::CellRect) -> Rect {
+    Rect {
+        x: cells.x,
+        y: cells.y,
+        width: cells.width,
+        height: cells.height,
+    }
+}
+
+/// AR01: paint is a readonly presentation query. The admitted engine
+/// update (`Editor::prepare_view`, engine-side) owns hunk refresh,
+/// visible-analysis/preview admission and viewport adjustment; the frame
+/// boundary (`frame_capture::draw`, or the test `paint` helper) runs it
+/// before this function. Paint may update its own frontend caches (the
+/// ratatui cell buffer), never engine authority.
+pub fn render(editor: &Editor, frame: &mut Frame) {
     let area = frame.area();
-    if editor.panes.is_empty() {
+    if editor.panes().is_empty() {
         return;
     }
-    // AR01: preparation owns every paint-path admission and viewport
-    // adjustment, idempotently; painting below is a readonly query.
-    prepare::prepare_frame(editor, area);
-    let editor = &*editor;
+    // A frontend that skipped preparation paints a stale-revision view:
+    // loud in tests, and never an engine mutation in any build.
+    debug_assert_eq!(
+        editor.view_epoch().geometry,
+        strop_engine::editor::prepare::ViewGeometry {
+            columns: area.width,
+            rows: area.height,
+        },
+        "paint without prepare_view for this geometry"
+    );
 
     // pane geometry (heights feed the vertical viewport, widths the
     // horizontal origin) is decided per pane inside render_panes —
@@ -129,6 +170,19 @@ pub fn render(editor: &mut Editor, frame: &mut Frame) {
             cell.set_symbol("\u{fffd}");
         }
     }
+}
+
+/// Test-frontend frame boundary: the admitted preparation for this
+/// frame's geometry, then the readonly paint — the same two phases the
+/// real frontends run through `frame_capture::draw`.
+#[cfg(test)]
+pub(crate) fn paint(editor: &mut Editor, frame: &mut Frame) {
+    let area = frame.area();
+    editor.prepare_view(strop_engine::editor::prepare::ViewGeometry {
+        columns: area.width,
+        rows: area.height,
+    });
+    render(editor, frame);
 }
 
 /// Mode chip colors (0001 §4: mode = accent color change, not bars).
@@ -171,7 +225,7 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
     // software-painted toward its final appearance and the native
     // cursor stays hidden; when the window closes the final frame is
     // exactly the unfaded cursor below. Presentation only.
-    if matches!(editor.mode, Mode::Normal)
+    if matches!(editor.mode(), Mode::Normal)
         && !editor.picker_open()
         && editor.pending_sigil().is_none()
     {

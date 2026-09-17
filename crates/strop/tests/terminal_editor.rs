@@ -113,6 +113,52 @@ impl Tui {
             self.screen.screen().contents()
         );
     }
+    /// Soft poll: false on deadline instead of asserting (retry loops).
+    fn poll_soft(&self, events: libc::c_short, deadline: Instant) -> bool {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        let mut descriptor = libc::pollfd {
+            fd: self.master.as_raw_fd(),
+            events,
+            revents: 0,
+        };
+        // SAFETY: owned descriptor and initialized writable pollfd storage.
+        let ready = unsafe {
+            libc::poll(
+                &mut descriptor,
+                1,
+                left.as_millis().min(i32::MAX as u128) as i32,
+            )
+        };
+        ready > 0
+    }
+    /// Soft wait: None on budget expiry instead of asserting (retry loops).
+    fn until_soft(&mut self, budget: Duration, predicate: impl Fn(&str) -> bool) -> Option<String> {
+        let deadline = Instant::now() + budget;
+        loop {
+            let screen = self.screen.screen().contents();
+            if predicate(&screen) {
+                return Some(screen);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            let mut bytes = [0; 8192];
+            match self.master.read(&mut bytes) {
+                Ok(0) => return None,
+                Ok(count) => self.screen.process(&bytes[..count]),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    if !self.poll_soft(libc::POLLIN, deadline) {
+                        return None;
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => panic!("terminal read: {error}"),
+            }
+        }
+    }
     fn send(&mut self, mut bytes: &[u8]) {
         let deadline = Instant::now() + Duration::from_secs(15);
         while !bytes.is_empty() {
@@ -160,6 +206,19 @@ impl Tui {
             }
         }
     }
+}
+
+/// Inspection-mode rows carry the numbered gutter (0065): match the
+/// post-number text, the same shape the split-geometry checks use.
+fn numbered_line(screen: &str, expected: &str) -> bool {
+    screen.lines().any(|row| {
+        strip_track(row)
+            .trim_start()
+            .split_once(' ')
+            .is_some_and(|(number, text)| {
+                number.bytes().all(|byte| byte.is_ascii_digit()) && text.trim() == expected
+            })
+    })
 }
 impl Drop for Tui {
     fn drop(&mut self) {
@@ -333,21 +392,38 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         .unwrap();
     let frozen = tui.until(|screen| screen.contains("new output"));
     assert!(!line(&frozen, "ASYNC-INSPECTION-OUTPUT"));
+    // The pinned view never drags to new output (0065): refresh installs
+    // the latest published frame, and a search inside the pinned buffer
+    // is the honest probe that the deferred line landed — the caret
+    // follows the match, revealing it. Frames may still be arriving at
+    // the first refresh, so iterate the documented signal→refresh loop
+    // like a user, bounded.
+    let mut installed = false;
+    for _ in 0..5 {
+        tui.send(b":terminal-refresh\r");
+        tui.until(|s| s.contains("refreshed") || s.contains("already shows"));
+        tui.send(b"/ASYNC-INSPECTION-OUTPUT\r");
+        if tui
+            .until_soft(Duration::from_secs(5), |s| {
+                numbered_line(s, "ASYNC-INSPECTION-OUTPUT")
+            })
+            .is_some()
+        {
+            installed = true;
+            break;
+        }
+        // The refreshed frame predated the deferred line; let the
+        // remaining frames settle, then refresh again.
+        let _ = tui.until_soft(Duration::from_secs(2), |_| false);
+    }
+    assert!(
+        installed,
+        "terminal-refresh installs the deferred output into the pinned view"
+    );
     tui.send(b"gg/^INSPECTION-READY\ryy:e yank-target.txt\r");
     tui.until(|screen| screen.contains("yank-target.txt") && !screen.contains("terminal #"));
     tui.send(b"p");
-    tui.until(|screen| {
-        !screen.contains("terminal #")
-            && screen.lines().any(|row| {
-                strip_track(row)
-                    .trim_start()
-                    .split_once(' ')
-                    .is_some_and(|(number, text)| {
-                        number.bytes().all(|byte| byte.is_ascii_digit())
-                            && text.trim() == "INSPECTION-READY"
-                    })
-            })
-    });
+    tui.until(|screen| !screen.contains("terminal #") && numbered_line(screen, "INSPECTION-READY"));
     tui.send(b":q!\r");
     tui.until(|screen| screen.contains("NORMAL") && screen.contains("terminal #"));
     tui.send(b":vs\ri");

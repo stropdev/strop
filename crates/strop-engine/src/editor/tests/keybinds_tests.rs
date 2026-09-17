@@ -399,8 +399,8 @@ fn grep_respawns_reach_the_production_event_source() {
                         .any(|row| glue.picker.items[row.item].text.contains("hit.txt"));
                 done = !glue.picker.streaming && glue.rank_pending.is_none();
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(crate::editor::events::RecvTimeoutError::Timeout) => {}
+            Err(crate::editor::events::RecvTimeoutError::Disconnected) => break,
         }
     }
     assert!(saw_hit, "grep results arrived through AppEvent");

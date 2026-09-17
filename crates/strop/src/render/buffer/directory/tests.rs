@@ -31,7 +31,7 @@ fn folder(entries: Vec<DirectoryEntry>, state: ListingState) -> Editor {
     });
     let mut editor = strop_engine::editor::test_support::remote::snapshot_editor("");
     let document = Document::directory(Buffer::from_text(&directory.text()), directory);
-    let id = editor.docs.insert(document);
+    let id = editor.admit_document(document).unwrap();
     editor.switch_to(id);
     editor.set_head(
         editor

@@ -46,9 +46,11 @@ impl Editor {
             row_rev.push(Some(r.index));
         }
         let mut buf = Buffer::from_text(&text);
-        buf.readonly = true;
+        // Document::output imposes the typed readonly policy.
         buf.name = Some("undo tree".into());
-        self.open_temporary_output(buf);
+        if self.open_temporary_output(buf).is_none() {
+            return; // message set; the browser must not bind another document
+        }
         // land on the current revision's row
         if let Some(line) = rows.iter().position(|r| r.is_current) {
             self.set_head(self.buf().line_start(line + 1));

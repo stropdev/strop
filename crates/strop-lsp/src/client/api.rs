@@ -51,11 +51,28 @@ impl Client {
     }
 
     /// Launch an admitted request: onto the ordered wire when ready,
-    /// else the pre-init queue flushed by `finish_initialize`.
+    /// else the pre-init queue flushed by `finish_initialize`. A launch
+    /// that cannot be admitted still ends in exactly one terminal event
+    /// (R9): an explicit cancellation note.
     pub fn launch_request(&self, request: PendingRequest) {
+        let context = ReplyContext {
+            stamp: request.stamp,
+            encoding: self.caps.encoding(),
+            kind: request.input.kind,
+        };
         let mut state = self.sync.lock();
         if state.ready {
-            self.queue.send(WireJob::Request(request));
+            if self.queue.send(WireJob::Request(request)) == super::queue::Admission::Refused {
+                let _ = self.tx.send(LspEvent::Note {
+                    context,
+                    text: "cancelled — the server's wire queue is full".into(),
+                });
+            }
+        } else if state.pending_requests.len() >= super::sync::MAX_PENDING_REQUESTS {
+            let _ = self.tx.send(LspEvent::Note {
+                context,
+                text: "cancelled — too many requests pending server startup".into(),
+            });
         } else {
             state.pending_requests.push(request);
         }
@@ -76,10 +93,15 @@ impl Client {
         if !self.caps.supports(RequestKind::WorkspaceSymbols) {
             return Err(RequestRefusal::Unsupported);
         }
-        self.queue.send(WireJob::WorkspaceSymbols {
+        if self.queue.send(WireJob::WorkspaceSymbols {
             generation,
             query: query.to_string(),
-        });
+        }) == super::queue::Admission::Refused
+        {
+            // Refusal before admission is visible (AR06): the caller
+            // gets a typed refusal, the query was never on the wire.
+            return Err(RequestRefusal::Overloaded);
+        }
         Ok(())
     }
 

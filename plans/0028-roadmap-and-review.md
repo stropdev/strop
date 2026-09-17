@@ -269,6 +269,18 @@ worker) remains the programme after that release; 0063's residual
 obligations (index invalidation, remote catalog/kind evidence, TLAPS
 lane) are owned by 0058 and 0057 respectively.
 
+Amendment (2026-09-16, second): the user widened the landing scope to
+everything except the big features (0059 completion, 0060 debugger,
+0061 GUI, 0062 distribution): the 0056 architecture prerequisites, the
+0057 whole-core verification, the 0058 unified native worker (including
+the filesystem-notification service), the 0065 modal terminal (user
+authorization supersedes its handoff-only status), unified vim grammar
+in every input field (fulfilling 0003 §2's prompt-buffer intent and
+doctrine #4 — the bespoke LineEdit key table is deleted), and renewed
+file-size discipline (AGENTS.md now counts test modules toward the
+ceiling). All of it ships as one release after the full gate set
+(test/model/verify/tlaps) passes on one candidate.
+
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,
 platform or evidence ledger is silently removed by inserting the worker.

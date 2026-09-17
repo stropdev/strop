@@ -9,9 +9,9 @@ fn pair_cells(
     width: u16,
     height: u16,
 ) -> Vec<(u16, u16)> {
-    terminal.draw(|f| crate::render::render(e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(e, f)).unwrap();
     e.wait_analysis();
-    terminal.draw(|f| crate::render::render(e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(e, f)).unwrap();
     let grid = terminal.backend().buffer();
     let mut cells = Vec::new();
     for y in 0..height {
@@ -44,7 +44,7 @@ fn cell_of(e: &Editor, area: ratatui::layout::Rect, byte: usize) -> (u16, u16) {
 #[test]
 fn matching_pair_paints_both_delimiter_cells() {
     let mut e = Editor::new(Buffer::from_text("fn main() {}\n"));
-    e.buf_mut().path = Some("x.rs".into());
+    e.fixture_buf_mut().path = Some("x.rs".into());
     e.set_head(10); // the '{'
     let mut terminal = viewport_terminal(40, 6);
     let cells = pair_cells(&mut e, &mut terminal, 40, 6);
@@ -66,7 +66,7 @@ fn offscreen_partner_paints_nothing_and_scrolls_nothing() {
     }
     text.push_str("}\n");
     let mut e = Editor::new(Buffer::from_text(&text));
-    e.buf_mut().path = Some("x.rs".into());
+    e.fixture_buf_mut().path = Some("x.rs".into());
     e.set_head(10); // the '{', mate 42 lines down
     let mut terminal = viewport_terminal(40, 8);
     let cells = pair_cells(&mut e, &mut terminal, 40, 8);
@@ -76,13 +76,17 @@ fn offscreen_partner_paints_nothing_and_scrolls_nothing() {
         vec![cell_of(&e, area, 10)],
         "only the visible endpoint paints"
     );
-    assert_eq!(e.panes[0].view_top, 0, "an offscreen partner never scrolls");
+    assert_eq!(
+        e.panes()[0].view_top,
+        0,
+        "an offscreen partner never scrolls"
+    );
 }
 
 #[test]
 fn unmatched_delimiter_paints_nothing() {
     let mut e = Editor::new(Buffer::from_text("fn main() {\n"));
-    e.buf_mut().path = Some("x.rs".into());
+    e.fixture_buf_mut().path = Some("x.rs".into());
     e.set_head(10); // the '{', no mate (incomplete code)
     let mut terminal = viewport_terminal(40, 6);
     let cells = pair_cells(&mut e, &mut terminal, 40, 6);
@@ -92,13 +96,13 @@ fn unmatched_delimiter_paints_nothing() {
 #[test]
 fn moving_the_caret_off_leaves_no_stale_highlight() {
     let mut e = Editor::new(Buffer::from_text("fn main() {}\n"));
-    e.buf_mut().path = Some("x.rs".into());
+    e.fixture_buf_mut().path = Some("x.rs".into());
     e.set_head(10);
     let mut terminal = viewport_terminal(40, 6);
     assert_eq!(pair_cells(&mut e, &mut terminal, 40, 6).len(), 2);
     // caret onto a plain identifier: the very next frame paints nothing
     e.set_head(0);
-    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let grid = terminal.backend().buffer();
     let stale = (0..6)
         .flat_map(|y| (0..40).map(move |x| (x, y)))
@@ -111,7 +115,7 @@ fn moving_the_caret_off_leaves_no_stale_highlight() {
 fn insert_mode_highlights_the_just_typed_delimiter() {
     let mut e = Editor::new(Buffer::from_text("x)\n"));
     e.feed_text("i("); // "(x)", caret past the '('
-    assert_eq!(e.mode, crate::editor::Mode::Insert);
+    assert_eq!(e.mode(), crate::editor::Mode::Insert);
     let mut terminal = viewport_terminal(40, 6);
     let cells = pair_cells(&mut e, &mut terminal, 40, 6);
     let area = pane_area(40, 6);
@@ -126,7 +130,7 @@ fn insert_mode_highlights_the_just_typed_delimiter() {
 #[test]
 fn cpp_angle_brackets_never_paint() {
     let mut e = Editor::new(Buffer::from_text("std::vector<int> v;\n"));
-    e.buf_mut().path = Some("x.cpp".into());
+    e.fixture_buf_mut().path = Some("x.cpp".into());
     e.set_head(12); // the '<'
     let mut terminal = viewport_terminal(40, 6);
     let cells = pair_cells(&mut e, &mut terminal, 40, 6);
@@ -185,9 +189,9 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
     // '}' is a's — painting it would pair across sources
     let b_probe = e.buf().line_start(7) + 7;
     e.set_head(b_probe);
-    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     e.wait_analysis();
-    terminal.draw(|f| crate::render::render(&mut e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let grid = terminal.backend().buffer();
     let cells: Vec<(u16, u16)> = (0..10)
         .flat_map(|y| (0..50).map(move |x| (x, y)))

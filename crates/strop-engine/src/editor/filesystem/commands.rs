@@ -205,7 +205,9 @@ impl Editor {
                 }
                 let mut buffer = strop_core::Buffer::from_text(&text);
                 buffer.name = Some("filesystem operations".into());
-                let document = self.open_temporary_output(buffer);
+                let Some(document) = self.open_temporary_output(buffer) else {
+                    return Ok(()); // message set
+                };
                 self.set_filesystem_review_rows(document, rows);
                 return Ok(());
             }

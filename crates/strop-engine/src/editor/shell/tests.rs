@@ -318,7 +318,8 @@ fn closed_document_invalidation_kills_pipe_owner() {
     let main = e.current();
     let other = e
         .docs
-        .insert(Document::scratch(strop_core::Buffer::from_text("piped\n")));
+        .try_insert(Document::scratch(strop_core::Buffer::from_text("piped\n")))
+        .unwrap();
     e.switch_to(other);
     let stale = register_whole_pipe(&mut e);
     e.switch_to(main);

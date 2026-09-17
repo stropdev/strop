@@ -29,11 +29,9 @@ fn row(editor: &Editor, columns: u16, rows: u16) -> String {
 }
 
 fn editor(text: &str, path: Option<&str>) -> Editor {
-    let mut editor = Editor::new_in(Buffer::from_text(text), "/w".into());
-    if let Some(path) = path {
-        editor.buf_mut().path = Some(std::path::PathBuf::from(path));
-    }
-    editor
+    let mut buffer = Buffer::from_text(text);
+    buffer.path = path.map(std::path::PathBuf::from);
+    Editor::new_in(buffer, "/w".into())
 }
 
 #[test]
@@ -42,7 +40,7 @@ fn a_long_path_cannot_crowd_out_status_or_position() {
         "alpha\nbeta\n",
         Some("/w/crates/a/very/deeply/nested/directory/tree/mod.rs"),
     );
-    editor.message = "saved the file".into();
+    editor.set_message("saved the file");
     let row = row(&editor, 48, 4);
     assert!(row.contains("mod.rs"), "the filename survives: {row:?}");
     assert!(
@@ -64,7 +62,9 @@ fn modeline_shows_the_effective_indent() {
     let out = row(&e, 60, 4);
     assert!(out.contains("Spaces:4"), "the default: {out:?}");
     let mut e = editor("x\n", None);
-    e.config.indent_style = strop_engine::config::IndentStyle::Tabs;
+    let mut config = e.config().clone();
+    config.indent_style = strop_engine::config::IndentStyle::Tabs;
+    e.set_config(config);
     e.reresolve_indents();
     let out = row(&e, 60, 4);
     assert!(out.contains("Tabs:4"), "the configured style: {out:?}");
@@ -73,7 +73,7 @@ fn modeline_shows_the_effective_indent() {
 #[test]
 fn wide_and_control_labels_stay_printable_whole_graphemes() {
     let mut editor = editor("a\n", None);
-    editor.buf_mut().name = Some("界界\x1b㌔z\r".into());
+    editor.fixture_buf_mut().name = Some("界界\x1b㌔z\r".into());
     let wide = row(&editor, 30, 4);
     assert!(
         wide.contains("界界"),
@@ -99,15 +99,15 @@ fn wide_and_control_labels_stay_printable_whole_graphemes() {
 #[test]
 fn narrow_rows_keep_the_mode_accent_and_position() {
     let mut editor = editor("hello\n", Some("/w/longfilename.rs"));
-    editor.git = Some(GitContext {
+    editor.fixture_set_git(Some(GitContext {
         repo: strop_git::RepoTarget::Local {
             workdir: "/w".into(),
         },
         head_sha: None,
         head_branch: Some("main".into()),
         remotes: Vec::new(),
-    });
-    editor.hunks_untracked = true;
+    }));
+    editor.fixture_set_hunks_untracked(true);
     let row = row(&editor, 16, 4);
     assert!(row.contains("NORMAL"), "the mode stays legible: {row:?}");
     assert!(row.contains("1:1"), "the position stays legible: {row:?}");
@@ -136,18 +136,18 @@ fn percent_counts_content_lines_not_the_phantom_row() {
 #[test]
 fn git_marks_and_flags_render_quietly_beside_the_message() {
     let mut editor = editor("a\n", Some("/w/f.rs"));
-    editor.buf_mut().dirty = true;
-    editor.buf_mut().readonly = true;
-    editor.git = Some(GitContext {
+    editor.fixture_buf_mut().dirty = true;
+    editor.fixture_buf_mut().readonly = true;
+    editor.fixture_set_git(Some(GitContext {
         repo: strop_git::RepoTarget::Local {
             workdir: "/w".into(),
         },
         head_sha: Some("abc123".into()),
         head_branch: Some("main".into()),
         remotes: Vec::new(),
-    });
-    editor.hunks_untracked = true;
-    editor.message = "wrote f.rs".into();
+    }));
+    editor.fixture_set_hunks_untracked(true);
+    editor.set_message("wrote f.rs");
     // 72 cells: the 0051 R08 indent segment joined the required set
     let row = row(&editor, 72, 4);
     assert!(
@@ -168,14 +168,14 @@ fn git_marks_and_flags_render_quietly_beside_the_message() {
 #[test]
 fn historical_delta_names_its_revision_and_file_not_the_worktree() {
     let mut editor = editor("a\n", Some("/w/live.rs"));
-    editor.git = Some(GitContext {
+    editor.fixture_set_git(Some(GitContext {
         repo: strop_git::RepoTarget::Local {
             workdir: "/w".into(),
         },
         head_sha: None,
         head_branch: Some("main".into()),
         remotes: Vec::new(),
-    });
+    }));
     editor.open_delta(
         "delta",
         crate::editor::PreparedDiff::new("src/reader.rs".into(), Vec::new()),
