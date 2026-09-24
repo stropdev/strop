@@ -95,6 +95,10 @@ REQUIRED_BOUNDARIES = {
     "terminal-lifecycle",
     "search-lifecycle",
     "ui-protocol",
+    # 0058 native worker wave.
+    "worker-protocol",
+    "worker-serve",
+    "fs-notify",
 }
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")

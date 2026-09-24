@@ -8,7 +8,7 @@
       "kind": "mutation",
       "title": "Buffer mutation gateway and edit geometry",
       "promise": "Every text mutation passes the validated-batch gateway: ranges are well-formed, UTF-8-boundary-admitted, in-bounds and non-overlapping; a rejected whole batch changes no text, dirty state, revision, history, selection or mark; prepared payloads stay bound to their buffer incarnation and base revision through sorting and apply.",
-      "exclusions": "Crash/power-loss durability is the recovery-store boundary, not this one; undo grouping promises no durability. Ropey storage internals are trusted. Batch anchor-mapping composition across the full validated order remains an open VF02 proof obligation (bounded to the landed single-edit kernel).",
+      "exclusions": "Crash/power-loss durability is the recovery-store boundary, not this one; undo grouping promises no durability. Ropey storage internals are trusted.",
       "authoritative_state": "the live Buffer/rope plus its revision and history, owned by the Editor; admission via editor/transact capabilities on the correct incarnation",
       "trusted": [
         "Ropey rope storage and its UTF-8 slicing",
@@ -128,6 +128,24 @@
               ]
             }
           ]
+        },
+        {
+          "id": "MUT-BATCH-COMPOSITION",
+          "statement": "Batch anchor mapping composition is proved against the validated-batch application order (the 0045 obligation, landed): check_batch validates the batch shape, and mapping through the whole batch is monotone, in-bounds and composes per-edit.",
+          "status": "proved-kernel",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "crates/strop-core/src/editmap.rs",
+              "gate": "verify",
+              "symbols": [
+                "check_batch",
+                "batch_map_monotone",
+                "batch_map_in_bounds",
+                "batch_map_composition"
+              ]
+            }
+          ]
         }
       ],
       "gates": [
@@ -138,13 +156,13 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/buffer/mutation.rs": "6de53bcbedcd92b4ca40d4a4d29c307ac4620cc399b8f9ed1b094873a9691a40",
-          "crates/strop-core/src/editmap.rs": "c8a55eb201150511bc3a0f92b0f5b09581df9747e8266e23ffbada3b7a2ff9c0",
+          "crates/strop-core/src/editmap.rs": "4b7dced547104d75b9e92a81737b34fc1308369d9dc6d12372198816cccd7c79",
           "crates/strop-core/src/history.rs": "818cbe77ad7ec8e2765a0ba955f4a53fb893f58fee9c2593801b8d813777a353",
           "crates/strop-core/src/history/validate.rs": "a50952412b43d1fa9edf7fabe656a9a14118f232a61aa1b83815690639ec1c2a",
           "crates/strop-core/src/mutguard.rs": "81cd772ea21b5ca5e7e9e7755d0216b5313f900f0f85aa5279426bafcbea589c",
           "crates/strop-engine/src/editor/transact/capability.rs": "a3aba86cdd865382b14a55f9e2ad6d675fd7f2c20a5a529fecea581efeec3772"
         },
-        "evidence": "eeb2ccce7e2d4f9cfd7301eb75c1a1c7469c4d52652f77198a6a7339e42ee44e"
+        "evidence": "8d2a77b4a8c1550cb01f07ff34884becdcf46200781cae7d6e3b0074d1a07cf6"
       }
     },
     {
@@ -224,9 +242,9 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-core/src/buffer.rs": "5afcec273eda38bd32bf818551455daccaffc46a4ffa15ffbca6fbd5b1438f38",
+          "crates/strop-core/src/buffer.rs": "46edff1303b16fdb723935dd1d34a500592f7bd80e566e19334bac7ca75b4c92",
           "crates/strop-core/src/viewguard.rs": "b63dab8d76faf464ad78c2663fe3a317d60a24cf9c7a42e8217eb3887fdbb746",
-          "crates/strop-engine/src/editor/document/mod.rs": "c70c86f980cd59f1a5bb5a576ed7ad450880c095b3f2a796e44dcb55d7b8d7cb",
+          "crates/strop-engine/src/editor/document/mod.rs": "aa8edd7d8ae23b4d74d15a806dc17b9ab07855955f79ea533e5bd632e7df2238",
           "crates/strop-engine/src/editor/prepare.rs": "87ca38d5fc0d461a20cca74081841080d1c2fa7c56a93bd12aa52af8ab883de4",
           "crates/strop-engine/src/editor/prepare/geometry.rs": "f50dd9e147dbc419422e786f6a655fbe8d4f4618703e50ce98dc6b534880db9a"
         },
@@ -423,7 +441,7 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/cohortguard.rs": "9e4b3e012b4fe6ee22ee33acce039433bc48882389f1d62466e499e40e9c1d39",
-          "crates/strop-engine/src/editor/recovery/mod.rs": "c0c6bdba12a03ac90403da6cc8888c181d6e9e3abf34270a09cd8c2939978bad",
+          "crates/strop-engine/src/editor/recovery/mod.rs": "97f9baa770f6df3db0aec9fa183acf66d01110ed586acf0dc502f3f7be289e2a",
           "crates/strop-engine/src/editor/recovery/record.rs": "64a88efe6afc3be8e33e4c2445d789e6cdba6cb5d3856a832c3877f0c3737a71",
           "crates/strop-engine/src/editor/recovery/store.rs": "96487f2746f21479240073bfe05a33faa2cdd360ed7f8750774a1a2288f5a096",
           "crates/strop-engine/src/editor/recovery/surface.rs": "cbd41816eeae1e5eef84248e4051c114492a65c95d8003a5906def9b3d87d2fd"
@@ -485,7 +503,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/privacy.rs": "ed525b81edf8c19d259aaa8e469e706850dfb89494bc26c7d06be4f93df70e8a",
+          "crates/strop-engine/src/editor/privacy.rs": "601116063568064d3b57c5723e6e2128f990e2acc38c2956150eb2f0bd8b368e",
           "crates/strop-trace/src/privacy.rs": "59a3e9e3117548870dae0c1889440f2b90468650363bfd351cc4c285850d6b0f"
         },
         "evidence": "900afc1602a963faa91ae4571858c46f1f546700cee186c8dc0194271ee29c5a"
@@ -559,8 +577,8 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/events.rs": "d5f76136c55d9f2dcae3cc817d6c3ed3a581c4ec9fd70da4478c90284459f2b7",
-          "crates/strop-engine/src/editor/events/channel.rs": "2b62f18fb3eb541b5d3ec058a2d3412a51eb2844a0bdbfa4bf7ac82e2833f642",
+          "crates/strop-engine/src/editor/events.rs": "65ac4670b8dbff7c4ed437032365374339e5569bab66320822560ec2cb1ba696",
+          "crates/strop-engine/src/editor/events/channel.rs": "8ad35ebb6c94893868b9ca7582ae8e105fcc84828c77aa302577416e912f82a3",
           "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
           "crates/strop-trace/src/event.rs": "8863ed01aa88c21609f137fd201a22e7db1be8b76adf6111f600f24399d9e963",
@@ -615,7 +633,7 @@
         },
         {
           "id": "LSP-BOUNDED",
-          "statement": "Unsent change retention is bounded (AR06: MAX_QUEUED_JOBS count, bounded snapshot bytes); superseded unsent changes coalesce only without an intervening barrier and reach the wire as the final version.",
+          "statement": "Unsent change retention is bounded (AR06: MAX_QUEUED_JOBS count, bounded snapshot bytes); superseded unsent changes coalesce only without an intervening barrier (an admitted request or a document close bars coalescing) and reach the wire as the final version; a stopped queue reports closed and drops retained snapshots.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -623,7 +641,13 @@
               "path": "crates/strop-lsp/src/client/queue.rs",
               "gate": "test",
               "tests": [
-                "superseded_unsent_changes_coalesce_without_a_barrier"
+                "superseded_unsent_changes_coalesce_without_a_barrier",
+                "an_admitted_request_bars_coalescing_the_version_it_observes",
+                "a_close_for_the_document_bars_coalescing_across_it",
+                "the_job_count_bound_refuses_visibly",
+                "the_snapshot_byte_bound_refuses_changes_but_not_lifecycle",
+                "coalescing_tracks_bytes_so_the_bound_reflects_what_is_retained",
+                "a_stopped_queue_reports_closed_and_drops_retained_snapshots"
               ]
             },
             {
@@ -663,14 +687,14 @@
           "crates/strop-engine/src/editor/lsp/state.rs": "9de05c89014dd92277cb80ba1a6760dda0efd49af1f6e4586a133082ed564e46",
           "crates/strop-lsp/src/client/api.rs": "c55a3d01288fedc49de12e72f3d131bd5fda290e2f2bd17832905a4e745563a1",
           "crates/strop-lsp/src/client/process.rs": "c64293470c612bfeab8495348a2b3bd552608fd77c539f2a53dfd61163c33ecc",
-          "crates/strop-lsp/src/client/queue.rs": "8a768420402aaa884ac1b9e4950d43e7abc2c0ceb104bdaeed780f21f1452e06",
+          "crates/strop-lsp/src/client/queue.rs": "1526382ad7d1a8a0c09a875f05fd41270c34436ff38eebed5692341600665ea9",
           "crates/strop-lsp/src/client/spawn.rs": "3ed4d28947ddd997552b1184a60a90218995449c0abfd52a58d59a8afb28e4f7",
           "crates/strop-lsp/src/client/sync.rs": "31942e4ef8a5a3cf1866e5644b3756a48c2e383eb8b785fc13375fae5d77ffc9",
           "crates/strop-lsp/src/client/wire.rs": "f64dd60975d074cd52587e888d99a5bcf4300d89772453aac3102382eb36520f",
           "crates/strop-lsp/src/convert.rs": "2cce26f33656dc5b2a1c0b0f499c2b68ba3bfc72e7fd72d1c04675a96b26d541",
           "crates/strop-lsp/src/protocol.rs": "a70836bb3894b7bd6e7d7b7bf523d5114a0052b1cbffd1e8dc23c6e32e677a92"
         },
-        "evidence": "8a35ae72e553ea7a6331285f90843250bee0699704a1b83d14f56d10003514a5"
+        "evidence": "7d79532d4d70b6482298f6b919e5bce4eacc988bf1484a66b193e02f973f086c"
       }
     },
     {
@@ -1049,7 +1073,7 @@
       "kind": "lifecycle",
       "title": "Worker/exec supervision and the embedded Python supervisor (VF08/VF11)",
       "promise": "Exec specs are validated before any launch (no NUL, no relative paths); argv/cwd bytes survive Rust encode → shell transport → Python decode → exec unchanged with metacharacters inert; exit codes/signals are relayed as data; descendants are killed after normal exit; a lease close while running cancels the worker; status records survive a stderr flood; cancellation waits for the actual committed-effect receipt.",
-      "exclusions": "Correlation markers are not cryptographic authentication; a worker deliberately echoing a public nonce is a documented limitation. CPython is the trusted effect driver.",
+      "exclusions": "Correlation markers are not cryptographic authentication; a worker deliberately echoing a public nonce is a documented limitation. CPython is the trusted effect driver. The 0058 native worker exec (strop-worker/src/exec) is the WK16 successor; the Python supervisor rows above describe the pre-worker implementation and stay until its retirement.",
       "authoritative_state": "the selected interpreter/endpoint/cwd plus the session nonce, owned by the exec session; worker effect receipts in strop-core",
       "trusted": [
         "CPython interpreter executing the embedded supervisor source",
@@ -1065,7 +1089,10 @@
         "crates/strop-remote/src/exec/run.rs",
         "crates/strop-remote/src/exec/spec.rs",
         "crates/strop-remote/src/exec/stream.rs",
-        "crates/strop-remote/src/exec/supervisor.rs"
+        "crates/strop-remote/src/exec/supervisor.rs",
+        "crates/strop-worker/src/exec/mod.rs",
+        "crates/strop-worker/src/exec/record.rs",
+        "crates/strop-worker/src/exec/supervisor.rs"
       ],
       "claims": [
         {
@@ -1165,6 +1192,29 @@
               ]
             }
           ]
+        },
+        {
+          "id": "WORKER-EXEC-NATIVE",
+          "statement": "The native worker exec keeps the same supervision contract in Rust: unrepresentable spec values are refused at admission, argv/cwd bytes survive exec exactly, launch failures are classified not disguised as exits, exits/signals are recorded data, a recorded exit beats a racing cancel, revocation escalates TERM-grace-KILL and reaps last, and half-close is not revocation.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker/src/exec/tests.rs",
+              "gate": "test",
+              "tests": [
+                "spec_admission_refuses_unrepresentable_values",
+                "byte_exact_argv_and_cwd_survive_exec",
+                "launch_failures_are_classified_not_disguised_as_exits",
+                "exit_codes_and_signals_are_recorded_data",
+                "normal_exit_kills_leftover_descendants_before_reaping",
+                "a_recorded_exit_beats_the_cancel_that_raced_it",
+                "revoke_escalates_term_grace_kill_and_reaps_last",
+                "a_term_cooperative_exit_is_still_revoked_not_recorded",
+                "half_close_is_not_revocation"
+              ]
+            }
+          ]
         }
       ],
       "gates": [
@@ -1175,16 +1225,19 @@
         "sources": {
           "crates/strop-core/src/process.rs": "6d9b582293aed6eada398a496cdd35b42e7d082adc874c2f934093b4e9ac2c58",
           "crates/strop-core/src/process/capture.rs": "385125270cd5394e8d461c24b1207fd65ca9dab7e1f1c516c83175b1eada822b",
-          "crates/strop-core/src/worker.rs": "d91189061ccee349a9141b1234e9cf646acded3c56c97d613a76a5f6e3148dfc",
+          "crates/strop-core/src/worker.rs": "dd41ae1928d59ddf2ff2699c0b8ffbce57fe27d50eec300c874ff56f69f01625",
           "crates/strop-core/src/worker/effect.rs": "5010887149a92f1e58b1fa3c49b67066ec28d6242b774daaa4d23c329fb7d4f1",
           "crates/strop-remote/src/exec.rs": "86edf18e7e8ae78353a7abd04165a948640177f5803a769341dfb0d87d14213e",
           "crates/strop-remote/src/exec/python.rs": "312f537769cfb2cfe2a0108d08ac407b370f6e8ca7ae107436b13c1bbe9826ee",
           "crates/strop-remote/src/exec/run.rs": "1b3690aad48179c3703fda33226dd3a49aebb5f3249a206c22457fc1aabbe4c7",
           "crates/strop-remote/src/exec/spec.rs": "df0a5874c935cfd844d0e153da5ad710a432e926b684182a0b6fdf30385d4cd8",
           "crates/strop-remote/src/exec/stream.rs": "88053c35e471615cd3c7c31dd20294d74028176ba238a56e2747a23ad59db12c",
-          "crates/strop-remote/src/exec/supervisor.rs": "04ab7157b7102d2574da5a7581801fa0b4d4482c40d336181df24899053283e2"
+          "crates/strop-remote/src/exec/supervisor.rs": "04ab7157b7102d2574da5a7581801fa0b4d4482c40d336181df24899053283e2",
+          "crates/strop-worker/src/exec/mod.rs": "60a9fb3975391082f0ae10e90164007e515a54bb79db55f1335d4ca389e104b6",
+          "crates/strop-worker/src/exec/record.rs": "273048b4e7d8c24d0490e24fdffa157d3a5ec15d1fbe6013245ee0cbe94e5373",
+          "crates/strop-worker/src/exec/supervisor.rs": "0fc0e6c3e6c6c3f77a102b3881a00730ec902d9a8484598d965354bbecff53c4"
         },
-        "evidence": "04d0dc4bc4c89015c3224163afacb48806dd1e6dd43aa752061e3bed3dd00ed2"
+        "evidence": "6ba3c10e457d6ea07c3c2c8dc4765809b1b623e0f940fc4feac813b32058c5d1"
       }
     },
     {
@@ -1262,24 +1315,24 @@
       "pins": {
         "sources": {
           "crates/strop-fs/src/attributes.rs": "75e37297fc92f6a6b1c7657119f2cf9d9971cdd7bbcb95b1ce806f90a25c68f6",
-          "crates/strop-fs/src/batch.rs": "f79aa2686bf991fdee6f7756e475e3118ba4b866e5b85a963616084e6939df91",
+          "crates/strop-fs/src/batch.rs": "3f38b5b0eafae4d532962c0d9d224e9ddd96f5eff0731fefcbf5f1c1fdf3325f",
           "crates/strop-fs/src/environment.rs": "b49942627b75237025e080d25e2666c8dc40e1d96103da7f4a314b9411301d96",
           "crates/strop-fs/src/guard.rs": "c7753cc707fd4405ac56794120f7405d728d9ce3d686f9b693a687148d8cb46a",
           "crates/strop-fs/src/guard/cleanup.rs": "42f2ece0bebd385ef4dd37ad5a826b2d11a7e2a4bedf64d086b603f4eeba9c2e",
-          "crates/strop-fs/src/listing.rs": "69eccc95e4230a3f53c15dc35b7b260ed4f3745f7a7fcfa6c3abf57bf8421c78",
+          "crates/strop-fs/src/listing.rs": "be0a862a1c39098a87f5084f1e665e58f34c4d3716ccea558f8c4f05775ed213",
           "crates/strop-fs/src/local/copy.rs": "f9ba25817bbc79ae78221e02b04cb53778f6e87323445a1345aaee03bcb23bc0",
-          "crates/strop-fs/src/local/execute.rs": "f8dd250f1501bf95ede08b3992099327c89e80a5bccab55457e8f32ba7f9b39a",
-          "crates/strop-fs/src/local/mod.rs": "fb5e2d727ec035306f5ba91eda86aee89c4d436238dc9a33ea80b98c12c88ca9",
+          "crates/strop-fs/src/local/execute.rs": "53985471b4997ab3119e677dc808e419318f68650a749773021570bf40cb1809",
+          "crates/strop-fs/src/local/mod.rs": "625456e9b96e899d7e27987ce4e321c0229308234a87c94dc2a72d41c1989bd8",
           "crates/strop-fs/src/local/outcome.rs": "bae2b1101dbae5a466cc9bf36bf08a1084e22263c33889d9f1e7d3b41a693a28",
-          "crates/strop-fs/src/local/prepare.rs": "ba908df44344f5ff55dd43e00ddb0f6bcaaeba8ac18bf05a44b4633f7568f14b",
-          "crates/strop-fs/src/local/verify.rs": "1a76bdf4c03394befa2bc5dba43bf1c3927640243025fe4501fced905bcc6077",
+          "crates/strop-fs/src/local/prepare.rs": "202b4b8b9a4939cb8b695494051ad512f4f9e965849426f0b253806812fc2726",
+          "crates/strop-fs/src/local/verify.rs": "f9b7a8bcf72ad8558530ea2a85feb5a6b6c217181755a6b3d71106abf17dd01a",
           "crates/strop-fs/src/observation.rs": "39fc274ea5cc302dcb9e4ce388bcb5f45496d77a54f4f48439e926faf5bd4e60",
-          "crates/strop-fs/src/stage.rs": "762ae935cd33eac77deb8d4b030c3c3293320d62b611e1d327812ba26fa3f5a6",
-          "crates/strop-fs/src/trash.rs": "b2f8c09c857c4d9eb66a751316a5deffbdd3185e91cfbbaad08ed4233ba71be8",
+          "crates/strop-fs/src/stage.rs": "f85b9b6bc4eba64e4d48837a77d18665ad995b20ace217915a5624ec0408c75d",
+          "crates/strop-fs/src/trash.rs": "5dd9191290bbe5a681114b24efc94c3b21c394c8812efb0da28368b40d3b7ea4",
           "crates/strop-fs/src/trash/restore.rs": "310585f58292dc95c3b8c8a87a3755c906f6524cfc87d37aff53a04c50158d4f",
-          "crates/strop-fs/src/unsupported.rs": "d230b62d99ff6d5445532fbe2b1682d171221c4ee9e93804743d81b9260959b7"
+          "crates/strop-fs/src/unsupported.rs": "c64aa3b6a10d85bdaf98745f1ea9b42e3fbc8297b192244cfabcd28f6f9d6b78"
         },
-        "evidence": "4fe01ab391438e4fb5acc31a0621d786191e8bcc505417472e17ce759e5958ce"
+        "evidence": "d375d5e12fd47c5acf2698aa8699837321205510a86bcd757fdcb8b7b1f5b1e3"
       }
     },
     {
@@ -1682,7 +1735,7 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/frontend_input.rs": "2902349ea09990f0a4f85e0c6106e16e7ab29d7e2af59a4c4ee23bd21871ca27",
-          "crates/strop-engine/src/editor/events.rs": "d5f76136c55d9f2dcae3cc817d6c3ed3a581c4ec9fd70da4478c90284459f2b7",
+          "crates/strop-engine/src/editor/events.rs": "65ac4670b8dbff7c4ed437032365374339e5569bab66320822560ec2cb1ba696",
           "crates/strop-engine/src/editor/input/frontend.rs": "12037bcb1c08fec236591d6bf36aa9ae449d3e6cf9465884deac106bef46c8fa",
           "crates/strop/src/headless/directives.rs": "818a64a5998954089141b9829753b959d1b0cbd3ac4f647ed05259387f7720b5",
           "crates/strop/src/headless/driver.rs": "d2b5325460e49cd09e0ba97aea99cc585c9ded171e0a1ff0226188e1026f955b",
@@ -1764,10 +1817,350 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-core/src/id.rs": "ad64e8d5c0a405ed26756a7716e08303433c1b6bbbdf48b8bc7b095abdf605b1",
+          "crates/strop-core/src/id.rs": "ae23c4ddaddb897ed2a465c4bf20b5b2536cc8464e36da3b6497f8ac6eefa34b",
           "crates/strop-core/src/id/seed.rs": "1989aff9c7d91a31993bcf8e2d9fcffcd744c03c057b2135d9aedcf968c5aae1"
         },
         "evidence": "702bd2132f3941a8db0178529d3b6caf735c09e53f728be42d3b90b0f4475871"
+      }
+    },
+    {
+      "id": "worker-protocol",
+      "kind": "transport",
+      "title": "Worker service protocol: framing, codec and session admission guard (0058)",
+      "promise": "The worker wire is a checked codec: chunk binary shape and bounds/flags are pinned and typed, envelopes roundtrip at the byte bound, and fragmented streams survive arbitrary splits. Session admission is a pure guard: a live session is admitted; a stale incarnation, stale subscription generation or foreign lease is rejected; close refuses everything; quiesce refuses mutations but admits drain.",
+      "exclusions": "The codec checks shape and admission, not peer intent; the pipe underneath is OS-trusted. Handshake transport setup is the worker-serve boundary.",
+      "authoritative_state": "per-connection session/incarnation/lease state in the protocol guard",
+      "trusted": [
+        "the OS pipe carrying the framed bytes"
+      ],
+      "files": [
+        "crates/strop-worker-protocol/src/codec.rs",
+        "crates/strop-worker-protocol/src/frame.rs",
+        "crates/strop-worker-protocol/src/guard.rs",
+        "crates/strop-worker-protocol/src/id.rs",
+        "crates/strop-worker-protocol/src/lib.rs",
+        "crates/strop-worker-protocol/src/message.rs",
+        "crates/strop-worker-protocol/src/request.rs"
+      ],
+      "claims": [
+        {
+          "id": "WP-CODEC",
+          "statement": "Framing is pinned and total: chunk shape/bounds/flags are typed, envelopes roundtrip with bytes at the bound, and arbitrarily fragmented streams decode exactly.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-protocol/src/codec.rs",
+              "gate": "test",
+              "tests": [
+                "chunk_binary_shape_is_pinned",
+                "chunk_bounds_and_flags_are_typed",
+                "envelope_round_trip_with_bytes_at_bound"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-protocol/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "fragmented_stream_survives_arbitrary_splits",
+                "handshake_and_request_round_trip_over_loopback"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "WP-GUARD",
+          "statement": "Session admission fails closed: stale incarnations, stale subscription generations and foreign leases are rejected; close refuses everything; quiesce admits drain only.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-protocol/src/guard.rs",
+              "gate": "test",
+              "tests": [
+                "live_session_is_admitted",
+                "stale_incarnation_is_rejected",
+                "stale_subscription_generation_is_rejected",
+                "foreign_lease_is_rejected",
+                "close_refuses_everything",
+                "quiesce_refuses_mutations_but_admits_drain"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-worker-protocol/src/codec.rs": "f3ae2c9ff2c1798b48f605eefef59ef9f511a13f0148175cc581819dd7b5758b",
+          "crates/strop-worker-protocol/src/frame.rs": "598028765874870bc09893e3ac88014b75785e1961b9b7b68d8acefd2de56181",
+          "crates/strop-worker-protocol/src/guard.rs": "b8c1827823f59c5d4d0570fb5b7b10b8c48fd23cd71547ff2cf9f0bbfa4b188e",
+          "crates/strop-worker-protocol/src/id.rs": "d12b1043a61ada6f9f7d90b1ad4613648a3162d4948ec6396ef381e8d12488c2",
+          "crates/strop-worker-protocol/src/lib.rs": "ab8a10ad37fed7e3d9ab9d69a29751d451e995f2bbc75e455408f165f1e24c46",
+          "crates/strop-worker-protocol/src/message.rs": "630d2bbdebfc5bd18da7d7a16c030dd5bf3bad39d81d30eb8f3aac5782b0c067",
+          "crates/strop-worker-protocol/src/request.rs": "f239a8788ee0776e14c59e7b6bc3139616ada16449bbb155c8aba9b9db95e797"
+        },
+        "evidence": "e4a7ab46e9a0e02852a4730351c1dcf1c05e82262b3c93c6836329282ab64bfd"
+      }
+    },
+    {
+      "id": "worker-serve",
+      "kind": "lifecycle",
+      "title": "Worker serve loop and client connection lifecycle (0058)",
+      "promise": "The serve loop admits exactly one hello per incarnation: noise before hello is a typed error, a second hello is refused and closes, EOF before hello exits cleanly. The client handshake grants a session and capabilities; cancellation is typed before send; a shutdown followed by a request spawns a fresh incarnation rather than resurrecting stale state.",
+      "exclusions": "No liveness guarantee against a malicious or hung client beyond typed refusal and lease teardown; the spawned worker binary identity is bound by the candidate freeze, not the handshake.",
+      "authoritative_state": "the per-incarnation serve session in strop-worker and the client's connection/request registry",
+      "trusted": [
+        "the OS process/pipe primitives the worker is spawned on"
+      ],
+      "files": [
+        "crates/strop-worker-client/src/connection.rs",
+        "crates/strop-worker-client/src/error.rs",
+        "crates/strop-worker-client/src/lib.rs",
+        "crates/strop-worker-client/src/payload.rs",
+        "crates/strop-worker/src/lib.rs",
+        "crates/strop-worker/src/serve.rs",
+        "crates/strop-worker/src/serve/fs.rs",
+        "crates/strop-worker/src/serve/process.rs"
+      ],
+      "claims": [
+        {
+          "id": "WS-SERVE",
+          "statement": "Handshake discipline at the real serve loop: clean EOF before hello, typed error on noise, refusal on a second hello (the handshake-race fix).",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker/tests/serve.rs",
+              "gate": "test",
+              "tests": [
+                "eof_before_hello_exits_cleanly",
+                "noise_before_hello_is_a_typed_error",
+                "a_second_hello_is_refused_and_closes"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "WS-CLIENT",
+          "statement": "Client lifecycle over the loopback: handshake grants session/capabilities, requests cancel typed before send, fs prepare/apply/verify and observe/list/read roundtrip, finite exec streams and exits, and shutdown-then-request spawns a fresh incarnation.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-client/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "handshake_grants_a_session_and_capabilities",
+                "cancellation_is_typed_before_send",
+                "shutdown_then_next_request_spawns_a_fresh_incarnation",
+                "prepare_apply_and_verify_a_create",
+                "observe_list_and_read_round_trip",
+                "finite_exec_streams_output_and_exits"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-worker-client/src/connection.rs": "68912ae3c79a0a817502fb7ac3b7d1e7a9470562fbf08d29a0a282885ea57ef9",
+          "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
+          "crates/strop-worker-client/src/lib.rs": "4c82635b615b11a8b993b25a56a74225b3211fe2b9ba7627f10f01df7142c140",
+          "crates/strop-worker-client/src/payload.rs": "fbc585fcb5c64260ecd43ba58ae8fa4dfc8f472388b37e728862ba0328227cb1",
+          "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
+          "crates/strop-worker/src/serve.rs": "71f8785497bc792a4aa3c888535c6964064e30cfed5c76a9647efcf76bdd043d",
+          "crates/strop-worker/src/serve/fs.rs": "2e6c30d53669203e7b7488ba7cb723fdddc1171e8c13593439116db0e97d2287",
+          "crates/strop-worker/src/serve/process.rs": "5a0310cba81f3d1c48d6888be235ddba06c4b8251f3020ae8a9609740361b45b"
+        },
+        "evidence": "1ef5117173b06e619ea613d11da1538334b1f7394f9150ad827ea99521bad039"
+      }
+    },
+    {
+      "id": "fs-notify",
+      "kind": "lifecycle",
+      "title": "Filesystem notification service: subscriptions, hints, engine reload and picker invalidation (0058 S7)",
+      "promise": "Hints are wake hints, never authority; stale generations never act; out-of-scope relocations are ambiguous, never guessed; a full pending queue latches overflow and rescans conservatively — never a silent drop; a hint reloads a clean buffer and preserves a dirty one with external-change state; worker loss reestablishes with a fresh generation; picker caches invalidate conservatively (rescan latch coalesces storms, losing coverage invalidates the baseline).",
+      "exclusions": "Remote and container scopes are typed refusals today. OS watcher facilities can lose hints; the overflow/rescan contract covers loss, it does not eliminate it. Hint ordering across independent roots is not promised.",
+      "authoritative_state": "per-subscription generation/baseline in the notify manager; the engine's external_change state; picker cache baselines keyed by root",
+      "trusted": [
+        "OS watcher facilities (inotify/FSEvents) deliver hints; loss is handled by overflow/rescan",
+        "the worker connection delivering records (worker-protocol/worker-serve)"
+      ],
+      "files": [
+        "crates/strop-engine/src/editor/notify.rs",
+        "crates/strop-picker/src/source/cache.rs",
+        "crates/strop-picker/src/source/worker.rs",
+        "crates/strop-worker/src/notify/manager.rs",
+        "crates/strop-worker/src/notify/mod.rs",
+        "crates/strop-worker/src/notify/sys.rs"
+      ],
+      "claims": [
+        {
+          "id": "NOTIFY-MODEL",
+          "statement": "The lifecycle model's safety invariants hold on the clean instance, and each kept mutant violates exactly its named invariant: hint-as-authority, stale identity, guessed relocation, premature freshness, silent drop, boundary erasure, dirty clobber, stale reload, invisible crawl.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-hint-authority.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-stale-identity.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-guessed-relocation.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-premature-fresh.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-silent-drop.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-boundary-erasure.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-dirty-clobber.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-stale-reload.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/Notify.tla",
+              "gate": "model",
+              "config": "specs/cfg/notify-invisible-crawl.cfg"
+            }
+          ]
+        },
+        {
+          "id": "NOTIFY-KERNEL",
+          "statement": "Real-kernel subscription behavior: create/modify/rename/replace/delete classify; out-of-scope rename is ambiguous; move-in is created; recursion covers new trees; in-scope directory rename rekeys the subtree; excluded subtrees invalidate the baseline at subscribe; overflow latches; staleness is refused; unsubscribe stops promptly; root removal/rename are explicit; reconcile boundary precedes hints with monotone sequences; churn bounds hold; remote/container scopes and the subscription limit are typed refusals.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker/src/notify/tests.rs",
+              "gate": "test",
+              "tests": [
+                "create_modify_rename_replace_delete_classify",
+                "rename_out_of_scope_is_ambiguous_never_guessed",
+                "move_in_from_outside_is_created",
+                "recursive_covers_new_directory_trees",
+                "in_scope_directory_rename_rekeys_subtree",
+                "excluded_subtree_invalidates_baseline_at_subscribe",
+                "full_pending_queue_latches_overflow_never_silent_loss",
+                "generation_staleness_is_refused",
+                "unsubscribe_stops_events_promptly",
+                "root_removal_and_rename_are_explicit",
+                "reconcile_boundary_precedes_hints_and_sequences_are_monotone",
+                "churn_storm_bounds_hold",
+                "remote_and_container_scopes_are_typed_refusals",
+                "subscription_limit_is_typed"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "NOTIFY-ENGINE",
+          "statement": "Engine reconciliation: a hint reloads a clean buffer, preserves a dirty buffer with external-change state, reobserves an open directory, preserves a removed file's buffer; overflow rescans conservatively; a dead generation never acts; close retires the subscription; worker loss reestablishes with a fresh generation; the client subscription delivers hints and retires.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/notify/tests.rs",
+              "gate": "test",
+              "tests": [
+                "a_hint_reloads_a_clean_buffer",
+                "a_hint_preserves_a_dirty_buffer_with_external_change_state",
+                "overflow_rescans_conservatively",
+                "a_dead_generation_never_acts",
+                "a_hint_reobserves_an_open_directory",
+                "a_removed_file_preserves_the_buffer",
+                "close_retires_the_subscription",
+                "worker_loss_reestablishes_with_a_fresh_generation"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-client/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "notify_subscription_delivers_hints_and_retires"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "NOTIFY-PICKER",
+          "statement": "Picker cache invalidation is conservative: an invalidation snapshot survives mid-scan arrivals, abandon restores it, the rescan latch coalesces storms and a full build clears it, losing coverage invalidates the baseline, and hints translate into deeper scopes only.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/cache.rs",
+              "gate": "test",
+              "tests": [
+                "invalidation_snapshot_survives_mid_scan_arrivals",
+                "abandon_restores_the_snapshot",
+                "rescan_latch_coalesces_storms_and_full_build_clears_it",
+                "losing_coverage_invalidates_the_baseline",
+                "hints_translate_into_deeper_scopes_only"
+              ]
+            }
+          ]
+        }
+      ],
+      "gates": [
+        "model",
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-engine/src/editor/notify.rs": "85557e89bea22c540fbabc40a720852e42cef4403caea23cb8cba21b089bd88b",
+          "crates/strop-picker/src/source/cache.rs": "a977b8438318c99a462f5dab90be94312f7a1bd6c61792d63d889a37b4e45156",
+          "crates/strop-picker/src/source/worker.rs": "ae98d001be7c1ef2d0413de025e1c809462765a14b70088e1e8d39703fd808af",
+          "crates/strop-worker/src/notify/manager.rs": "e1cdaf0b57101dfb89e17504f06c18f03aee1093aa7d76b2ef06bca57f7ff041",
+          "crates/strop-worker/src/notify/mod.rs": "cac01cbcc38194729293866ba678d3634c90c025f8e1141f6f01fae57b643838",
+          "crates/strop-worker/src/notify/sys.rs": "14f5461b93eb5754aad6faabdaac646baff2b6b99e1cf3edf99520ef901fa98d"
+        },
+        "evidence": "2a1c895b408de249de79e875b842543d0b007ce5514c0b2da39000de18b198c6"
       }
     }
   ]
