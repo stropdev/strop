@@ -592,7 +592,6 @@ fn collection_open_source_maps_positions_and_returns() {
     e.feed(crate::editor::Key::CtrlO);
     assert_eq!(e.current(), collection, "Ctrl-O returns to the collection");
     // header row: line 1 is a.txt's header
-    e.set_head(e.buf().line_start(1));
     e.collection_open_source();
     assert_eq!(e.current(), a_id);
     assert_eq!(e.buf().line_of(e.head()), 0, "header opens at the excerpt");

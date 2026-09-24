@@ -423,6 +423,15 @@ impl Editor {
                             || self.focus_epoch != ticket.key.focus
                             || self.buf().revision() != ticket.key.revision
                         {
+                            // A dropped review must never be silent: the
+                            // user asked for this operation and gets no
+                            // other signal.
+                            self.message = format!(
+                                "filesystem review dropped as stale (origin moved: {}, focus moved: {}, revision moved: {})",
+                                self.current() != ticket.key.origin,
+                                self.focus_epoch != ticket.key.focus,
+                                self.buf().revision() != ticket.key.revision,
+                            );
                             return;
                         }
                         if let Some(stamp) = &ticket.key.draft {

@@ -244,6 +244,11 @@ impl Conn {
             child: Mutex::new(child),
             stderr,
         });
+        // The reply channel is installed before the reader thread exists
+        // and before `hello` is sent: a welcome routed before the sender
+        // is registered would be dropped and misread as a timeout.
+        let (tx, rx) = channel();
+        *handshake.sender.lock() = Some(tx);
         let reading = Arc::clone(&conn);
         thread::spawn(move || read_loop(reading, &mut reader));
         codec::write_envelope(
@@ -259,8 +264,6 @@ impl Conn {
             },
         )
         .map_err(|error| ClientError::Handshake(format!("cannot send hello: {error}")))?;
-        let (tx, rx) = channel();
-        *handshake.sender.lock() = Some(tx);
         match rx.recv_timeout(HANDSHAKE_TIMEOUT) {
             Ok(Ok(WorkerMessage::Welcome {
                 protocol,

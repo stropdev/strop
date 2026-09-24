@@ -147,7 +147,13 @@ fn filesystem_destinations_use_source_parent_without_changing_ex_open_scope() {
     command(&mut editor, ":fs copy stored sibling.txt<cr>");
     command(&mut editor, ":apply-change<cr>");
     assert_eq!(
-        std::fs::read(nested.join("sibling.txt")).unwrap(),
+        std::fs::read(nested.join("sibling.txt")).unwrap_or_else(|error| {
+            panic!(
+                "{error}; message: {:?}; history: {:?}",
+                editor.message,
+                editor.filesystem.history.len()
+            )
+        }),
         b"source\n"
     );
     assert!(!root.path().join("sibling.txt").exists());
@@ -244,7 +250,11 @@ fn committed_rename_retires_completion_candidates_for_the_old_name() {
     std::fs::write(&original, "source\n").unwrap();
     let document = editor.open_fixture(&original).unwrap();
     command(&mut editor, ":fs rename renamed.txt<cr>");
-    assert!(editor.apply_filesystem_review());
+    assert!(
+        editor.apply_filesystem_review(),
+        "message: {:?}",
+        editor.message
+    );
     editor.switch_to(document);
     editor.feed_text(":e orig");
     let prompt = editor.pending.text().to_string();
@@ -320,7 +330,12 @@ fn dirty_file_rename_preserves_document_undo_and_writes_the_new_name() {
     editor.feed_text("q");
     assert_eq!(editor.current(), document);
     assert!(editor.buf().dirty);
-    assert_eq!(editor.buf().file_identity(), Some(new.as_path()));
+    assert_eq!(
+        editor.buf().file_identity(),
+        Some(new.as_path()),
+        "message: {:?}",
+        editor.message
+    );
     command(&mut editor, ":w<cr>");
     assert!(!old.exists());
     assert_eq!(std::fs::read_to_string(&new).unwrap(), "unsaved base\n");
@@ -484,7 +499,18 @@ fn copy_recovery_cannot_remove_contents_changed_after_publication() {
     editor.open_fixture(&source).unwrap();
     command(&mut editor, ":fs copy copy.txt<cr>");
     command(&mut editor, ":apply-change<cr>");
-    let operation = editor.filesystem.history.back().unwrap().ticket.request;
+    let operation = editor
+        .filesystem
+        .history
+        .back()
+        .unwrap_or_else(|| {
+            panic!(
+                "no history after :apply-change; message: {:?}",
+                editor.message
+            )
+        })
+        .ticket
+        .request;
     std::fs::write(&copy, "after!\n").unwrap();
     editor.recover_filesystem_step(operation, 0).unwrap();
     editor.wait_io().unwrap();
