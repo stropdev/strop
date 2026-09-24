@@ -83,6 +83,7 @@ const DRAIN_WAIT: Duration = Duration::from_secs(2);
 /// Notify pump cadence: subscription commands and hint batches are both
 /// advisory, so a short poll tick bounds their latency without a
 /// self-pipe. Requests never wait on it (they ride the blocking reader).
+#[cfg(target_os = "linux")]
 const NOTIFY_TICK: Duration = Duration::from_millis(25);
 
 /// One uploaded content stream still accumulating (client → worker), or a

@@ -58,13 +58,34 @@ pub fn launch(spec: &ExecSpec, token: &CancelToken) -> Result<Running, ExecError
     }
     // The chdir handshake: the child reports a chdir failure as `C` + errno
     // before exiting, so the parent distinguishes it from an exec failure.
-    let (handshake_read, handshake_write) =
-        rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).map_err(|error| {
-            ExecError::Supervisor {
+    // libc pipe + FD_CLOEXEC: rustix's pipe_with is Linux/FreeBSD-only
+    // (pipe2); macOS has fcntl only.
+    let (handshake_read, handshake_write) = {
+        let mut fds = [0 as libc::c_int; 2];
+        // SAFETY: `fds` is valid writable storage for two descriptors.
+        if unsafe { libc::pipe(fds.as_mut_ptr()) } == -1 {
+            let error = std::io::Error::last_os_error();
+            return Err(ExecError::Supervisor {
                 stage: "pipe".into(),
                 diagnostics: error.to_string(),
-            }
-        })?;
+            });
+        }
+        // SAFETY: both descriptors are live from the successful pipe call;
+        // FD_CLOEXEC on a live descriptor cannot fail.
+        unsafe {
+            libc::fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC);
+            libc::fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC);
+        }
+        use std::os::fd::FromRawFd;
+        // SAFETY: the descriptors are owned by this scope from the
+        // successful pipe call and are transferred exactly once.
+        unsafe {
+            (
+                std::os::fd::OwnedFd::from_raw_fd(fds[0]),
+                std::os::fd::OwnedFd::from_raw_fd(fds[1]),
+            )
+        }
+    };
     // Admission already refused NUL bytes; the conversion cannot fail.
     let Some(cwd) = CString::new(spec.cwd()).ok() else {
         return Err(ExecError::Invalid {

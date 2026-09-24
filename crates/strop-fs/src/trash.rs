@@ -233,26 +233,32 @@ fn execute_with(
         .source
         .as_ref()
         .ok_or_else(|| failure(FsFailureKind::InvalidPath, "Trash has no source"))?;
-    let mut root = operation
+    let root = operation
         .capability
         .trash_root
         .clone()
         .ok_or_else(|| failure(FsFailureKind::Unsupported, "native Trash is unavailable"))?;
-    let mut warnings = Vec::new();
     #[cfg(target_os = "linux")]
-    if let Some(shared) = root
-        .path
-        .parent()
-        .filter(|parent| parent.file_name().is_some_and(|name| name == ".Trash"))
-    {
-        if !valid_shared(shared)? || private_directory(&root.path).is_err() {
-            let mount = shared.parent().ok_or_else(|| {
-                failure(FsFailureKind::InvalidPath, "shared Trash has no mount root")
-            })?;
-            root.path = mount.join(format!(".Trash-{}", rustix::process::geteuid().as_raw()));
-            warnings.push("shared Trash unavailable; used the private per-volume Trash".into());
+    let (root, warnings) = {
+        let mut root = root;
+        let mut warnings = Vec::new();
+        if let Some(shared) = root
+            .path
+            .parent()
+            .filter(|parent| parent.file_name().is_some_and(|name| name == ".Trash"))
+        {
+            if !valid_shared(shared)? || private_directory(&root.path).is_err() {
+                let mount = shared.parent().ok_or_else(|| {
+                    failure(FsFailureKind::InvalidPath, "shared Trash has no mount root")
+                })?;
+                root.path = mount.join(format!(".Trash-{}", rustix::process::geteuid().as_raw()));
+                warnings.push("shared Trash unavailable; used the private per-volume Trash".into());
+            }
         }
-    }
+        (root, warnings)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let warnings: Vec<String> = Vec::new();
     private_directory(&root.path)?;
     #[cfg(target_os = "macos")]
     let files = root.path.clone();
