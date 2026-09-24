@@ -281,6 +281,15 @@ file-size discipline (AGENTS.md now counts test modules toward the
 ceiling). All of it ships as one release after the full gate set
 (test/model/verify/tlaps) passes on one candidate.
 
+Amendment (2026-09-17): the user prioritized the filesystem-notification
+service and the incremental search freshness it feeds as the next
+release (0.35.0), pulling 0058's S7 and WK01–WK04 forward ahead of the
+remaining 0057 verification slices and the rest of the worker cutover
+(WK05–WK20: deployment, remote/container transports, consumer
+migration, Python-helper removal, assurance migration). 0058's full
+ledger and 0057's remainder continue after 0.35.0; nothing already
+gated is weakened.
+
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,
 platform or evidence ledger is silently removed by inserting the worker.
