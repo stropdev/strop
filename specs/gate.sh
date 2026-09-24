@@ -39,12 +39,10 @@ sh specs/remote-gate.sh
 sh specs/save-gate.sh
 sh specs/change-gate.sh
 sh specs/search-gate.sh
-# 0057 VF13/VF05 follow-up (0.35.0): recovery-gate.sh and lsp-gate.sh
-# are NOT chained yet — Recovery.tla's main instance does not settle in
-# bounded time (state-space calibration) and LspWire.tla's first
-# calibration run never completed before the slice paused. Re-entry:
-# both gates green in bounded time, then re-chain here. Terminal and
-# install gates stay chained (both green with mutants + witnesses).
+sh specs/recovery-gate.sh
+sh specs/lsp-gate.sh
 sh specs/terminal-gate.sh
 sh specs/install-gate.sh
 sh specs/notify-gate.sh
+# 0057 VF14: the UI-stdio session model (UiSession.tla).
+sh specs/ui-gate.sh

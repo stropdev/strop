@@ -830,3 +830,28 @@ action); chained into specs/gate.sh via notify-gate.sh. Evidence:
 strop-worker notify 15 real-kernel integration tests, engine
 subscription/reload/dirty/overflow/staleness tests, picker incremental
 e2e through the real pipeline.
+
+### WK05/WK06 artifacts and deployment: landed (2026-09-24)
+
+The release catalog carries the worker compatibility manifest (protocol
+version, minimum editor version, per-target artifact facts), generated
+from pinned source constants in the release workflow — `verify` rejects
+worker-fact drift. `strop-worker-deploy` owns the deploy/cache state
+machine: Decide (compatibility → Compatible/Fallback) → StageLocal
+(hash-verified, 256 MiB bound) → ResolveCacheRoot (private 0700,
+symlink-free, foreign entries refused — never chmod-into-compliance) →
+CheckCache (verified-hit reuse without fresh consent; first upload to
+an endpoint requires explicit consent) → Upload (uniquely-owned staging
+via authenticated providers) → VerifyTransfer (read-back hash+size) →
+Publish (atomic, content-addressed objects/<sha256>) → VerifyObject
+(re-hash at the final path + owner-exec mode — verification binds to
+the executed object) → receipt → Activate (real handshake; identity
+mismatch refuses, never downgrades) → lease registration. Interruption
+removes only positively-owned staging and reports honestly
+(PublishedNotReady ≠ Ready); offline with no local supply is a typed
+refusal with zero endpoint contact. The provider trait admits only
+put/get/rename/chmod/stat/readdir — no PATH/rc/image/glob-delete
+operation is representable. GC keeps the current object and every
+live-lease reference, retires only proven owned content-addressed
+objects. Evidence: hermetic deploy/interrupt/GC fixtures + catalog
+wire-shape pins in tests/release-catalog.sh + tests/install.sh.

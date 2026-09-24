@@ -10,6 +10,16 @@ always serves the catalog of the latest release — that URL is the documented
 handoff to the website repo (stropdev/stropdev.github.io), which fetches it
 on rebuild.
 
+WK05 (0058): the catalog also carries the worker compatibility manifest —
+the wire protocol version, the minimum editor version that can drive a
+worker at all, and the target triples whose artifacts embed worker mode —
+plus per-artifact byte sizes, so an editor makes its deploy-vs-fallback
+decision from catalog facts alone and verifies uploaded bytes against
+recorded digest+size. The worker is the same static binary (`strop
+--worker-stdio`), so the manifest's target list is exactly the artifact
+target list; the release workflow extracts protocol/min-editor from the
+pinned source constants (never hand-edited here).
+
 The promotion ledger records what was promoted when — crates.io, homebrew
 tap, GitHub release, site redeploy, public download facts — so a partially
 promoted release is observable and resumable instead of hiding behind a
@@ -46,7 +56,34 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def build_catalog(tag: str, dist: Path, base_url: str, published_at: str) -> dict:
+def parse_version(tag: str) -> tuple[int, int, int]:
+    parts = tag.removeprefix("v").split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError(f"not a semver triple: {tag}")
+    return int(parts[0]), int(parts[1]), int(parts[2])
+
+
+def worker_manifest(version: str, targets: list[str], protocol: int,
+                    min_editor: str) -> dict:
+    """The WK05 compatibility manifest, validated against the release facts.
+
+    min_editor must not postdate the release itself: a catalog claiming its
+    worker needs a newer editor than the release it ships with is a lie.
+    """
+    if protocol < 1:
+        raise ValueError(f"worker protocol must be >= 1, got {protocol}")
+    if parse_version(min_editor) > parse_version(version):
+        raise ValueError(
+            f"worker min_editor {min_editor} postdates release {version}")
+    return {
+        "protocol": protocol,
+        "min_editor": min_editor,
+        "targets": sorted(targets),
+    }
+
+
+def build_catalog(tag: str, dist: Path, base_url: str, published_at: str,
+                  worker_protocol: int, worker_min_editor: str) -> dict:
     version = tag.removeprefix("v")
     artifacts = []
     for tarball in sorted(dist.glob("strop-*.tar.gz")):
@@ -66,6 +103,7 @@ def build_catalog(tag: str, dist: Path, base_url: str, published_at: str) -> dic
             "target": match.group("target"),
             "name": tarball.name,
             "sha256": computed,
+            "bytes": tarball.stat().st_size,
             "url": f"{base_url}/{tag}/{tarball.name}",
         })
     if not artifacts:
@@ -77,18 +115,24 @@ def build_catalog(tag: str, dist: Path, base_url: str, published_at: str) -> dic
         "tag": tag,
         "published_at": published_at,
         "artifacts": artifacts,
+        "worker": worker_manifest(
+            version, [a["target"] for a in artifacts],
+            worker_protocol, worker_min_editor),
     }
 
 
 def facts(catalog: dict) -> dict:
-    """The promotion-relevant facts: version, tag and artifact identities."""
+    """The promotion-relevant facts: version, tag, artifact identities and
+    the worker compatibility manifest."""
     return {
         "version": catalog["version"],
         "tag": catalog["tag"],
         "artifacts": [
-            {"target": a["target"], "name": a["name"], "sha256": a["sha256"], "url": a["url"]}
+            {"target": a["target"], "name": a["name"], "sha256": a["sha256"],
+             "bytes": a["bytes"], "url": a["url"]}
             for a in catalog["artifacts"]
         ],
+        "worker": catalog["worker"],
     }
 
 
@@ -110,10 +154,12 @@ def record_step(path: Path, tag: str, step: str, status: str, detail: str | None
 
 def cmd_catalog(args: argparse.Namespace) -> None:
     catalog = build_catalog(args.tag, args.dist, args.base_url,
-                            args.published_at or utcnow())
+                            args.published_at or utcnow(),
+                            args.worker_protocol, args.worker_min_editor)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")
-    print(f"catalog: {len(catalog['artifacts'])} artifacts for {catalog['tag']}")
+    print(f"catalog: {len(catalog['artifacts'])} artifacts for {catalog['tag']} "
+          f"(worker protocol {catalog['worker']['protocol']})")
 
 
 def cmd_verify(args: argparse.Namespace) -> None:
@@ -144,6 +190,14 @@ def main() -> None:
                          default=f"https://github.com/{DEFAULT_REPO}/releases/download",
                          help="download base URL recorded in artifact urls")
     catalog.add_argument("--published-at", help="ISO timestamp; default: now (UTC)")
+    catalog.add_argument("--worker-protocol", type=int, required=True,
+                         help="wire protocol version the embedded worker speaks "
+                         "(extracted from strop-worker-protocol source by the "
+                         "release workflow)")
+    catalog.add_argument("--worker-min-editor", required=True,
+                         help="oldest editor version that can drive a worker "
+                         "(extracted from strop-worker-deploy source by the "
+                         "release workflow)")
     catalog.set_defaults(run=cmd_catalog)
 
     verify = commands.add_parser("verify", help="compare local and publicly served catalogs")

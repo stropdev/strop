@@ -1682,6 +1682,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strop-worker-deploy"
+version = "0.35.0"
+dependencies = [
+ "getrandom",
+ "serde",
+ "serde_json",
+ "sha2",
+ "strop-worker-protocol",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "strop-worker-protocol"
 version = "0.35.0"
 dependencies = [

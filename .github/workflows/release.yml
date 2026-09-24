@@ -93,6 +93,10 @@ jobs:
           printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"
           printf 'frame\n' > "$tmp/smoke.txt"
           "$bin" --headless "$tmp/smoke.txt" "$tmp/smoke.rs" | grep -q "fn main"
+          # WK05: worker mode is the same static binary; EOF on stdin is a
+          # clean shutdown, so this proves headless worker init with no
+          # GUI/TUI/runtime dependency.
+          timeout 15 "$bin" --worker-stdio </dev/null
 
       - name: "Verify (macOS: system libs only + headless parse)"
         if: "!matrix.docker"
@@ -112,6 +116,9 @@ jobs:
           printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"
           printf 'frame\n' > "$tmp/smoke.txt"
           "$bin" --headless "$tmp/smoke.txt" "$tmp/smoke.rs" | grep -q "fn main"
+          # WK05 worker smoke (no timeout on macOS runners; EOF is a
+          # deterministic clean shutdown, so this returns immediately).
+          "$bin" --worker-stdio </dev/null
 
       - uses: actions/upload-artifact@v7
         with:
@@ -146,10 +153,21 @@ jobs:
       # update` and the site all resolve "latest" through it. It ships as
       # a release asset, so releases/latest/download/catalog.json always
       # tracks the newest tag (that URL is the site repo's handoff).
+      # 0058 WK05: the catalog also carries the worker compatibility
+      # manifest (protocol, min editor, targets, byte sizes). The facts
+      # are extracted from the pinned source constants — never hand-edited
+      # here — so a protocol bump without a catalog bump fails the tag.
       - name: Generate the release catalog
         run: |
+          protocol=$(sed -n 's/^pub const PROTOCOL_VERSION: u32 = \([0-9][0-9]*\);$/\1/p' \
+            crates/strop-worker-protocol/src/message.rs)
+          min_editor=$(sed -n 's/^pub const MIN_EDITOR_VERSION: &str = "\([^"]*\)";$/\1/p' \
+            crates/strop-worker-deploy/src/lib.rs)
+          [ -n "$protocol" ] && [ -n "$min_editor" ] || {
+            echo "::error::worker compatibility constants not found in source"; exit 1; }
           python3 .github/scripts/release-catalog.py catalog \
-            --tag "$GITHUB_REF_NAME" --dist dist --out dist/catalog.json
+            --tag "$GITHUB_REF_NAME" --dist dist --out dist/catalog.json \
+            --worker-protocol "$protocol" --worker-min-editor "$min_editor"
 
       # signed build provenance for every tarball (the gripsack lesson,
       # plan/0020 §5.8 there): verify with

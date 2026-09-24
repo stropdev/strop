@@ -90,7 +90,9 @@
 (***************************************************************************)
 EXTENDS Integers, FiniteSets, Sequences, TLC
 
-CONSTANTS DOCS,        \* documents; both live on the one modeled path
+CONSTANTS DOCS,        \* documents on the one modeled path (calibrated
+                       \*   to one: no invariant quantifies over DOCS, and
+                       \*   incarnation identity rides on rev/conn/ver)
           VER_MAX,     \* version-allocation budget per connection
           REQ_MAX,     \* request budget
           QMAX,        \* unsent wire-job bound (production: 256)
@@ -147,7 +149,8 @@ LastAdmBefore(s, cn) ==
                   /\ admLog[i].conn = cn
                   /\ admLog[i].seq < s}
     IN IF idx = {} THEN NONE
-       ELSE (CHOOSE i \in idx : \A j \in idx : admLog[j].seq <= admLog[i].seq)
+       ELSE admLog[CHOOSE i \in idx :
+                   \A j \in idx : admLog[j].seq <= admLog[i].seq].seq
 
 \* The wire frame carrying admission sequence number a on connection cn
 \* appears strictly before position k.
@@ -231,10 +234,10 @@ EditorOpen(d) ==
     /\ alive
     /\ ~docOpen[d]
     /\ docOpen' = [docOpen EXCEPT ![d] = TRUE]
-    /\ UNCHANGED <<conn, ready, docRev, binding, nextVer, queue, wire,
-                   admLog, admSeq, reqState, reqStamp, reqNotes, coalesced,
-                   refusals, cancelNotes, lateRejected, repliesApplied,
-                   restarts, flushes, reopens, staleApplies>>
+    /\ UNCHANGED <<alive, conn, ready, docRev, binding, nextVer, queue,
+                   wire, admLog, admSeq, reqState, reqStamp, reqNotes,
+                   coalesced, refusals, cancelNotes, lateRejected,
+                   repliesApplied, restarts, flushes, reopens, staleApplies>>
 
 EditorEdit(d) ==
     /\ alive
@@ -253,7 +256,10 @@ DidOpen(d) ==
     /\ alive
     /\ docOpen[d]
     /\ binding.doc = NONE
-    /\ reopens' = IF binding.ver > 0 /\ reopens < 2 THEN reopens + 1
+    \* A reopen is a DidOpen after an admitted open on this connection:
+    \* the allocator's monotone nextVer remembers it (binding.ver cannot —
+    \* DidClose/Restart reset the binding to NoBinding before any reopen).
+    /\ reopens' = IF nextVer > 0 /\ reopens < 2 THEN reopens + 1
                   ELSE reopens
     /\ IF ready
        THEN IF nextVer >= VER_MAX \/ (Len(queue) >= QMAX /\ MUTATION # 5)
@@ -325,9 +331,15 @@ DidChange(d) ==
                      s == admSeq + 1
                  IN IF mergeIdx # NONE
                        /\ (~barrierAfter(mergeIdx) \/ MUTATION = 1)
-                    THEN \* Coalesced: replace the slot in place.
+                    THEN \* Coalesced: replace the slot in place. The slot
+                         \* now REPRESENTS the newest admission: the frame
+                         \* carries its version AND its admission identity
+                         \* (production has no seq on the wire; it is the
+                         \* model's instrumentation for CoalesceLegal, and
+                         \* the superseded admission is never framed).
                          /\ queue' = [queue EXCEPT ![mergeIdx] =
-                                      [queue[mergeIdx] EXCEPT !.ver = v]]
+                                      [queue[mergeIdx] EXCEPT !.ver = v,
+                                                              !.seq = s]]
                          /\ admLog' = Append(admLog, [kind |-> "change",
                                                       path |-> PATH,
                                                       ver |-> v, seq |-> s,
@@ -439,7 +451,10 @@ DispatchPending(r) ==
     /\ alive
     /\ ready
     /\ reqState[r] = "pending"
-    /\ IF reqStamp[r].doc = binding.doc /\ reqStamp[r].rev = binding.rev
+    \* MUTATION 3's other half: a pending request whose cancellation the
+    \* faulty didClose skipped is dispatched anyway, past the Close frame.
+    /\ IF (reqStamp[r].doc = binding.doc /\ reqStamp[r].rev = binding.rev)
+          \/ MUTATION = 3
        THEN IF Len(queue) >= QMAX /\ MUTATION # 5
             THEN /\ reqState' = [reqState EXCEPT ![r] = "terminal"]
                  /\ reqNotes' = [reqNotes EXCEPT ![r] = 1]

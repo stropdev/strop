@@ -816,3 +816,60 @@ calibration run never completed; their re-entry condition is recorded
 in specs/gate.sh. Loom campaigns (VF11) landed for the LSP queue
 (fifo/barrier/drain-disconnect); the event-channel campaigns and the
 remaining VF13/VF05/VF14/VF15 work continue in the next release.
+
+### VF13 Recovery + VF05 LSP wire models calibrated and chained (2026-09-24)
+
+Both models now settle bounded and are chained into specs/gate.sh
+(replacing the unchain note). Recovery.tla: REV_MAX 2→1 — the seven
+revision-valued clocks each shrank 3²→2² (~300× on the cross product);
+5.86M distinct states in 1m53s. REV_MAX=1 is the honest minimum: every
+invariant keys on revision EQUALITY, never magnitude. Calibration
+repaired two latent defects: the half-cohort-merge mutant was documented
+but never implemented (now dies by exactly CohortCoherent +
+DurableMatchesLastComplete), and WitnessNoMemoryOnly was violated by
+the initial state (reformulated honestly). LspWire.tla: DOCS→{d1} +
+VER_MAX 5→3 (the original config could never hold TypeOK — admSeq would
+have overflowed); 5.09M distinct in 72s. Four latent spec bugs repaired
+(unassigned alive, admLog index vs wire seq divergence in
+LastAdmBefore, coalesce keeping the superseded seq, mutant 3's second
+half unimplemented, unreachable reopen witness). Evidence: full
+gate.sh green end to end via the docker harness (958s, 12 domains).
+
+### VF14 UiSession model + parity journeys: landed (2026-09-24)
+
+specs/UiSession.tla models the AR09/AR10 semantics: server-side
+admission (incarnation → future ceiling → client_known floor), ordered
+bounded publication, client drop/poison/snapshot-recovery, staged→
+emitted effect authority, final-ack→bye shutdown. Thirteen invariants
+(StaleNeverActs, FutureNeverActs, ForeignNeverActs, PoisonedNeverActs,
+PoisonedUntilSnapshot, NoEmptyPublication, EffectExactlyOnce,
+ByeAfterFinalAck, NoPostByePublication, CliNeverAhead,
+PublishedNeverAhead, ByeNeverStrandsEffects, TypeOK), nine kept mutants
+killed by exactly their named invariant, ten witnesses; main instance
+197k states in ~1s; chained into gate.sh. The closure harness gained
+four VF14 journeys (drop→poison→resync recovery, clipboard effects
+exactly once, wrong-version hello typed+terminal, shutdown drains
+in-flight work); ui_stdio.rs moved to a directory target under the
+file ceiling. Surfaced for VF11 follow-up (not a VF14 blocker): picker
+teardown during finish() can exceed its budget under an extreme
+parallel storm — serial repros settle in <0.2s, no deadlock evidence.
+
+### VF06–VF10 domain assurance campaigns: landed (2026-09-24)
+
+VF06: strop-fs adversarial campaigns (10 in the test lane): symlinked
+ancestors resolve but the final entry is never followed; source
+rewrite/parent swap/symlink retarget between prepare and apply are
+typed Conflicts with zero effect; permission transitions fail closed;
+lock domains reject hardlinked/permissive/symlinked stand-ins; reserved
+namespaces refuse case- and NFKC-folded aliases; cross-mount rename is
+typed Unsupported. Honest limits documented (root lanes can't observe
+EACCES). VF07: the SSH/SFTP model fleet re-verified against the current
+code — no semantic drift; verification/check_model_anchors.py now pins
+the five model digests + 42 production anchors (a silent model edit or
+anchor removal fails typed). VF08: the Python helper bundle is
+digest-pinned (assembled bytes reproducible from the tree, recorded in
+verification/) plus supervisor/exec seam campaigns (spec decode,
+tampered control blob). VF09: five semantic-boundary fault-injection
+tests on the remote save path (pre/post commit). VF10: container
+incarnation/StartedAt assurance extended per plan. All registered in
+the VF01 inventory (21 boundaries, 73 claims, all evidence live).

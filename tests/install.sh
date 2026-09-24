@@ -69,6 +69,7 @@ python3 "$ROOT/.github/scripts/release-catalog.py" catalog \
     --tag "v$NEW_VERSION" --dist "$WORK/catalog-dist" \
     --base-url "file://$LATEST" \
     --published-at "2026-01-01T00:00:00Z" \
+    --worker-protocol 1 --worker-min-editor "$NEW_VERSION" \
     --out "$LATEST/catalog.json" >/dev/null
 
 run_install() { # installdir logfile [extra env as NAME=VALUE ...]
@@ -174,6 +175,7 @@ python3 "$ROOT/.github/scripts/release-catalog.py" catalog \
     --tag "v$NEW_VERSION" --dist "$WORK/foreign-dist" \
     --base-url "file://$LATEST" \
     --published-at "2026-01-01T00:00:00Z" \
+    --worker-protocol 1 --worker-min-editor "$NEW_VERSION" \
     --out "$WORK/foreign-catalog.json" >/dev/null
 if run_install "$WORK/bin6" "$WORK/out6.log" \
     STROP_CATALOG_URL="file://$WORK/foreign-catalog.json"; then

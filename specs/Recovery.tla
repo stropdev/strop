@@ -428,10 +428,22 @@ Capture ==
 PublishOk ==
     /\ inFlight # 0
     /\ LET c == inFlight IN
-       /\ durableSet' = snapSet[c]
-       /\ durableRev' = [d \in DOCS |-> snapRev[c][d]]
-       /\ durableIncOf' = [d \in DOCS |-> snapInc[c][d]]
-       /\ durableCohortOf' = [d \in DOCS |-> c]
+       \* MUTATION 1: the new cohort MERGES into the old store instead of
+       \* replacing it — records the cohort no longer covers keep their
+       \* old cohort identity (half-cohort mixing). The last-complete
+       \* bookkeeping still records the honest image, so the store stops
+       \* matching it.
+       /\ durableSet' = IF MUTATION = 1 THEN durableSet \cup snapSet[c]
+                        ELSE snapSet[c]
+       /\ durableRev' = [d \in DOCS |->
+                         IF MUTATION = 1 /\ d \notin snapSet[c]
+                         THEN durableRev[d] ELSE snapRev[c][d]]
+       /\ durableIncOf' = [d \in DOCS |->
+                           IF MUTATION = 1 /\ d \notin snapSet[c]
+                           THEN durableIncOf[d] ELSE snapInc[c][d]]
+       /\ durableCohortOf' = [d \in DOCS |->
+                              IF MUTATION = 1 /\ d \notin snapSet[c]
+                              THEN durableCohortOf[d] ELSE c]
        /\ durableCohort' = c
        /\ durableObs' = [d \in DOCS |-> [rev |-> diskRev[d],
                                          exists |-> diskExists[d],
@@ -648,6 +660,12 @@ WitnessNoCrashRestore == ~everCrashRestore
 \* Consent is granted and revoked again.
 WitnessNoConsentCycle == ~everConsentRevoke
 
+\* The memory-only product is exercised: a session with persistence off
+\* carries a dirty draft (the property holds in the initial state of the
+\* persistent product only — an init-state violation cannot count as
+\* reached, so the witness requires a real memory-only edit).
+WitnessNoMemoryOnly == persistent \/ ~(\E d \in DOCS : dirty[d])
+
 \* A queued publication is replaced unwritten by a newer capture.
 WitnessNoQueueReplace == ~everQueueReplace
 
@@ -658,8 +676,6 @@ WitnessNoRetirement == ~everRetired
 \* A deliberate discard republishes without a record.
 WitnessNoDiscard == ~everDiscard
 
-\* The memory-only product is exercised.
-WitnessNoMemoryOnly == persistent
 
 \* State constraint (used by every config): the cohort/revision budgets
 \* are model artifacts, not protocol states. Production's u64 cohort
