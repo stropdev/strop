@@ -18,8 +18,8 @@
       "url": "https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip"
     }
   },
-  "commit": "9fd4ab43da03c319c8c757fddbd06cfc839a527a",
-  "commit_date": "2026-09-24T20:08:26+01:00",
+  "commit": "e588f4d75d8b913cb9a35223229400130038c92d",
+  "commit_date": "2026-09-24T20:09:07+01:00",
   "dirty": [
     ".github/workflows/release.yml",
     "Cargo.lock",
@@ -90,7 +90,7 @@
   "plan": "plans/0057-core-verification-and-assurance.md",
   "release": "0057",
   "schema": 1,
-  "tree": "a28da93781edebe67a0fb39b6acfca178bdf5587",
+  "tree": "8ab5c500086200e3d3449ea3c1c40ca67896035c",
   "verus_crate_pins": {
     "verus_builtin": "=0.0.0-2026-09-06-0133",
     "verus_builtin_macros": "=0.0.0-2026-09-06-0133"
