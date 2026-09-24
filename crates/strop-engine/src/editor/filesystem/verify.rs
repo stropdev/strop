@@ -35,6 +35,7 @@ impl Editor {
             }
         }
         let tx = self.io.tx.clone();
+        let worker = self.filesystem.worker().clone();
         let handle = worker::spawn(
             "strop-fs-verify",
             move |outcome| {
@@ -42,7 +43,7 @@ impl Editor {
                     Completion { ticket, outcome },
                 )))));
             },
-            move |token| match strop_fs::batch::verify(&receipt, &token) {
+            move |token| match crate::editor::namespace::verify(&worker, &receipt, &token) {
                 Ok(result) => Outcome::Success(result),
                 Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
             },

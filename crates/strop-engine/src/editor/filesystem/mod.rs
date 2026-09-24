@@ -63,6 +63,9 @@ pub(crate) struct Attempt {
     warning: Option<String>,
 }
 pub(crate) struct FsState {
+    /// The session's local worker lease (0058 WK04): local user-resource
+    /// I/O rides it; remote endpoints keep their owned SSH helper.
+    worker: strop_worker_client::Worker,
     environment: strop_fs::Environment,
     preparing: Option<Ticket<FsKey>>,
     preparing_copies: HashMap<ResourceLocation, ropey::Rope>,
@@ -76,6 +79,7 @@ pub(crate) struct FsState {
 impl Default for FsState {
     fn default() -> Self {
         Self {
+            worker: super::namespace::local_worker(),
             environment: strop_fs::Environment::capture(),
             preparing: None,
             preparing_copies: HashMap::new(),
@@ -89,6 +93,11 @@ impl Default for FsState {
     }
 }
 impl FsState {
+    /// The session's local worker lease; prepared authority is bound to
+    /// the worker incarnation that minted it.
+    pub(crate) fn worker(&self) -> &strop_worker_client::Worker {
+        &self.worker
+    }
     pub(crate) fn pending(&self) -> bool {
         self.preparing.is_some() || self.running.is_some() || self.verifying.is_some()
     }
@@ -316,6 +325,7 @@ impl Editor {
             }
         }
         let tx = self.io.tx.clone();
+        let worker = self.filesystem.worker().clone();
         let handle = worker::spawn_effect(
             "strop-fs-apply",
             move |outcome| {
@@ -324,7 +334,8 @@ impl Editor {
                 )))));
             },
             move |token| {
-                Outcome::Success(strop_fs::batch::execute(
+                Outcome::Success(crate::editor::namespace::execute(
+                    &worker,
                     &proposal.batch,
                     &proposal.copies,
                     &token,

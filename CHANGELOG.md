@@ -1,6 +1,45 @@
 # Changelog
 
 
+## 0.35.0 — 2026-09-17
+
+Filesystem notifications: the editor watches the workspace natively and
+search stays fresh without rescanning everything.
+
+### Added
+
+- **Filesystem notifications reach the editor** (0058 S7): strop
+  subscribes to the opened workspace through the local worker — a thin
+  direct inotify binding with generation-stamped subscriptions,
+  parent/name guard watches, honest overflow/loss reporting, and bounded
+  coalescing that never silently drops staleness. External changes to
+  clean buffers reload guarded (binding and revision re-checked at
+  publication, your own saves never echo); dirty buffers keep your edits
+  and show "changed on disk; the buffer keeps your edits (:w! forces)";
+  ambiguous renames never relocate a document; directories re-list and
+  Git signs refresh lazily. Unsupported filesystems degrade visibly,
+  never to an invisible crawl.
+- **Incremental search and symbol freshness** (0063 residual):
+  unchanged files and unhinted catalog subtrees are reused
+  (stat-validated, so a missed hint self-heals) while hinted ones
+  rescan — edits on disk show up in the next search without a full
+  walk.
+- **The native worker foundation** (0058 WK01–WK04): one bounded,
+  versioned worker protocol (incarnation-keyed handshake, typed
+  refusals, first-class notify family), a real `strop --worker-stdio`
+  local mode serving filesystem and exec requests through the shared
+  strop-fs kernel, and a Rust process supervisor with leased
+  TERM/grace/KILL group cleanup. Local file operations ride the worker;
+  a killed worker is a typed failure, never a silent fallback.
+
+### Verification
+
+- The notification lifecycle is modeled in TLA+ (specs/Notify.tla):
+  eleven safety invariants — events are hints, stale identities never
+  act, dirty buffers are never clobbered, scan completion never erases
+  newer invalidations — with nine kept mutants each killed by exactly
+  its named property, gated in the model lane.
+
 ## 0.34.0 — 2026-09-17
 
 The architecture release: readonly rendering behind a narrow admitted

@@ -8,20 +8,25 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-test-support = ["strop-trace/test-support"]
+# test-support also enables the in-process worker transport seam (WK04):
+# dependents' tests cross the real codec against the in-process serve loop.
+test-support = ["strop-trace/test-support", "dep:strop-worker"]
 [dependencies]
-strop-trace = { path = "../strop-trace", version = "0.34.0" }
-strop-core = { path = "../strop-core", version = "0.34.0" }
-strop-terminal = { path = "../strop-terminal", version = "0.34.0" }
-strop-grammar = { path = "../strop-grammar", version = "0.34.0" }
-strop-picker = { path = "../strop-picker", version = "0.34.0" }
-strop-git = { path = "../strop-git", version = "0.34.0" }
-strop-syntax = { path = "../strop-syntax", version = "0.34.0" }
-strop-lsp = { path = "../strop-lsp", version = "0.34.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.34.0" }
-strop-containers = { path = "../strop-containers", version = "0.34.0" }
-strop-remote = { path = "../strop-remote", version = "0.34.0" }
-strop-fs = { path = "../strop-fs", version = "0.34.0" }
+strop-trace = { path = "../strop-trace", version = "0.35.0" }
+strop-core = { path = "../strop-core", version = "0.35.0" }
+strop-terminal = { path = "../strop-terminal", version = "0.35.0" }
+strop-grammar = { path = "../strop-grammar", version = "0.35.0" }
+strop-picker = { path = "../strop-picker", version = "0.35.0" }
+strop-git = { path = "../strop-git", version = "0.35.0" }
+strop-syntax = { path = "../strop-syntax", version = "0.35.0" }
+strop-lsp = { path = "../strop-lsp", version = "0.35.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.35.0" }
+strop-containers = { path = "../strop-containers", version = "0.35.0" }
+strop-remote = { path = "../strop-remote", version = "0.35.0" }
+strop-fs = { path = "../strop-fs", version = "0.35.0" }
+strop-worker-client = { path = "../strop-worker-client", version = "0.35.0" }
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.35.0" }
+strop-worker = { path = "../strop-worker", version = "0.35.0", optional = true }
 imbl = { version = "7", features = ["serde"] }
 unicode-segmentation = "1"
 unicode-width = "0.2"
@@ -34,7 +39,10 @@ tempfile = "3"
 thiserror = "2"
 
 [dev-dependencies]
-strop-trace = { path = "../strop-trace", version = "0.34.0", features = ["test-support"] }
+strop-trace = { path = "../strop-trace", version = "0.35.0", features = ["test-support"] }
+# WK04: the engine's own tests cross the real worker codec against the
+# in-process serve loop (transport seam, not a policy twin).
+strop-worker = { path = "../strop-worker", version = "0.35.0" }
 ratatui = "0.29"
 
 # 0057 VF11: Loom-instrumented coordination campaigns over the REAL

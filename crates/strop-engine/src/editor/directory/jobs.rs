@@ -46,6 +46,7 @@ impl Editor {
             }
         }
         let client = self.remote_client();
+        let worker = self.filesystem.worker().clone();
         let container = match &source.location.filesystem {
             Filesystem::Container(id) => self.containers.attached.get(id.as_str()).cloned(),
             _ => None,
@@ -69,7 +70,8 @@ impl Editor {
                         rope
                     } else {
                         if task == DirectoryTask::Reload {
-                            let listed = strop_fs::list(
+                            let listed = crate::editor::namespace::list(
+                                &worker,
                                 &source.location,
                                 &client,
                                 container.as_ref(),
@@ -77,7 +79,7 @@ impl Editor {
                             )
                             .map_err(|error| error.to_string())?;
                             let filter = std::mem::take(&mut source.filter);
-                            source = Directory::from_listing(listed);
+                            source = Directory::from_listing(listed.directory, listed.connection);
                             source.filter = filter;
                         }
                         apply_filter(&mut source, &token)?;

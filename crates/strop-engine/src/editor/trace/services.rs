@@ -56,6 +56,7 @@ pub fn io(event: &crate::editor::io::IoEvent) {
     record_with(EventKind::JobFinished, || match event {
         IoEvent::Open(value) => completion("io", "open", value),
         IoEvent::Save(value) => completion("io", "save", value),
+        IoEvent::NotifyReload(value) => completion("io", "notify-reload", value),
         IoEvent::Native(value) => completion("io", "native", value),
         IoEvent::Review(value) => completion("search", "review", value),
         IoEvent::DirectoryFilter(value) => completion("directory", "filter", value),

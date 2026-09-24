@@ -7,9 +7,17 @@ impl Editor {
     fn source_worker(
         &mut self,
     ) -> Result<&strop_picker::SourceWorker, strop_core::worker::Failure> {
+        let watching = self.notify.push_coverage();
+        let cwd = self.cwd.clone();
         match &mut self.picker_source {
             Some(worker) => Ok(worker),
-            slot @ None => Ok(slot.insert(strop_picker::SourceWorker::new()?)),
+            slot @ None => {
+                let worker = slot.insert(strop_picker::SourceWorker::new()?);
+                // 0058 S7: a worker created after the subscription still
+                // inherits the current push-coverage state.
+                worker.set_watching(&cwd, watching);
+                Ok(worker)
+            }
         }
     }
 

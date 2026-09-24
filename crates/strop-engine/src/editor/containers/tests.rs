@@ -60,7 +60,12 @@ fn listing(editor: &mut Editor, path: &str, children: &[(&str, strop_containers:
             size: None,
         })
         .collect();
-    let source = Directory::from_listing(strop_fs::from_container(location, entries).unwrap());
+    let source = Directory::from_listing(
+        crate::editor::namespace::from_container(location, entries)
+            .unwrap()
+            .directory,
+        None,
+    );
     let document = Document::directory(Buffer::from_text(&source.text()), source);
     deliver_open(
         editor,

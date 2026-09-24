@@ -748,6 +748,16 @@ fn driver_resync_reestablishes_the_base() {
     let fixture = fixture();
     let mut driver = spawn(fixture.dir.path());
     driver.act_keys(":e notes.txt<cr>").unwrap();
+    // The open lands asynchronously (WK04: the local worker serves it);
+    // barrier on its content before acting on the buffer, the same
+    // convention the parity journey above uses.
+    driver
+        .wait_view("file loaded", |view| {
+            view.panes
+                .iter()
+                .any(|pane| pane.lines.first().map(String::as_str) == Some("alpha"))
+        })
+        .unwrap();
     let generation = driver.resync().unwrap();
     assert_eq!(generation, driver.client().generation());
     assert!(driver.client().poisoned().is_none());

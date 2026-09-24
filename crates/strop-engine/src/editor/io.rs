@@ -3,11 +3,13 @@ mod codec;
 mod indent;
 pub(super) mod native;
 mod navigation;
-mod open;
+pub(crate) mod open;
 #[cfg(test)]
 mod remote_tests;
 mod save;
 mod session;
+#[cfg(test)]
+mod worker_tests;
 use super::{Document, Editor};
 use crate::files::FileTarget;
 use std::collections::HashMap;
@@ -114,6 +116,10 @@ pub enum IoEvent {
         request: WorkerId,
         outcome: Outcome<()>,
     },
+    /// A guarded clean-buffer reload triggered by a filesystem
+    /// notification hint (0058 S7): observation rides the worker lease;
+    /// publication re-checks document/binding/revision at completion.
+    NotifyReload(Box<Completion<super::notify::ReloadKey, Option<Opened>>>),
     /// Draft checkpoint/recovery publications and store reads (0056 AR04).
     Recovery {
         request: WorkerId,
@@ -281,6 +287,7 @@ impl Editor {
             }
         }
         let work = open::OpenRead {
+            worker: self.filesystem.worker().clone(),
             container: match &path {
                 FileTarget::Container { container, .. } => {
                     self.containers.attached.get(container.as_str()).cloned()
@@ -444,6 +451,7 @@ impl Editor {
             IoEvent::Review(completion) => self.handle_review_prepared(*completion),
             IoEvent::DirectoryFilter(completion) => self.directory_filter_done(*completion),
             IoEvent::Filesystem(event) => self.handle_filesystem(*event),
+            IoEvent::NotifyReload(completion) => self.notify_reload_done(*completion),
             IoEvent::Open(completion) => {
                 let request = completion.ticket.request;
                 if self.io.open.get(&request) != Some(&completion.ticket.key) {
@@ -583,6 +591,12 @@ impl Editor {
                         };
                         let previous_path = document.buf.path.clone();
                         let saved = document.buf.accept_save(receipt);
+                        if saved {
+                            // A confirmed save IS the fresh observation:
+                            // external-change state clears only here or on
+                            // a guarded reload, never on a stale one.
+                            document.external_change = false;
+                        }
                         let renamed = previous_path != document.buf.path;
                         if renamed {
                             self.lsp_close_document(key.document);
@@ -635,6 +649,7 @@ impl Editor {
             || self.io.session.is_some()
             || !self.io.native.is_empty()
             || self.remote_work_pending()
+            || self.notify.pending()
             || self.recovery.pending()
     }
 }

@@ -3,6 +3,7 @@ pub fn prepare(
     intent: &OperationIntent,
     allow_occupied: bool,
     environment: &crate::Environment,
+    context: &crate::ExecutionContext,
     token: &CancelToken,
 ) -> Result<PreparedOperation, FsFailure> {
     let buffer_copy =
@@ -197,7 +198,7 @@ pub fn prepare(
             });
         }
     }
-    let mut capability = capability()?;
+    let mut capability = context.capability()?;
     capability.trash_root = if intent.kind == OperationKind::Trash {
         Some(crate::trash::root_for(
             &source

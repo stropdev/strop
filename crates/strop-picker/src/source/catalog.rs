@@ -59,6 +59,20 @@ pub struct ProjectCatalog {
     /// True when the bounds stopped the scan early: coverage claims must
     /// say so instead of pretending completeness (0063 §2).
     pub truncated: bool,
+    /// Mtime evidence of every visited directory, keyed by its
+    /// workspace-relative path (0063 residual, 0058 §2): refresh prunes a
+    /// subtree only while the directory's own fresh stat still matches —
+    /// the observation self-heals a missed hint for direct children.
+    stamps: std::collections::HashMap<PathBuf, Option<std::time::SystemTime>>,
+}
+
+/// Scan accounting for one catalog refresh (0058 S7 evidence).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CatalogStats {
+    /// Directories the walk actually descended into and reclassified.
+    pub visited: usize,
+    /// Subtrees reused unchanged (no invalidation, matching mtime).
+    pub reused: usize,
 }
 
 impl ProjectCatalog {
@@ -72,24 +86,9 @@ impl ProjectCatalog {
     /// fewer boundaries, and undecidable atoms admit.
     pub fn discover(scope: &Path, cancelled: &impl Fn() -> bool) -> Self {
         let mut catalog = ProjectCatalog::default();
-        let scope_name = scope.file_name().map_or_else(
-            || scope.to_string_lossy().into_owned(),
-            |name| name.to_string_lossy().into_owned(),
-        );
-        catalog.projects.push(Project {
-            root: PathBuf::new(),
-            name: scope_name,
-            kind: ProjectKind::Scope,
-        });
-        let mut builder = ignore::WalkBuilder::new(scope);
-        builder
-            .filter_entry(|entry| entry.file_name() != ".git")
-            .hidden(false)
-            .ignore(true)
-            .git_ignore(true)
-            .git_exclude(true)
-            .git_global(true)
-            .parents(true);
+        catalog.projects.push(scope_project(scope));
+        let mut builder = discovery_walk(scope);
+        builder.filter_entry(|entry| entry.file_name() != ".git");
         let mut visited = 0usize;
         for result in builder.build() {
             if cancelled() {
@@ -112,16 +111,129 @@ impl ProjectCatalog {
             let Ok(relative) = entry.path().strip_prefix(scope) else {
                 continue;
             };
+            catalog.record_stamp(relative, &entry);
             if let Some(project) = inspect(entry.path(), relative) {
                 catalog.projects.push(project);
             }
         }
+        catalog.finish();
+        catalog
+    }
+
+    /// Refresh against the current tree (0063 residual, 0058 §2): a
+    /// subtree is reused only while no hint invalidates it AND the
+    /// directory's fresh mtime still matches the recorded stamp; the
+    /// rest is re-walked. Hint paths and directory prefixes intersect
+    /// conservatively in both directions, so an ambiguous hint never
+    /// strands a stale boundary.
+    pub fn refresh(
+        prior: &ProjectCatalog,
+        scope: &Path,
+        invalidated: &[PathBuf],
+        cancelled: &impl Fn() -> bool,
+    ) -> (Self, CatalogStats) {
+        let mut catalog = ProjectCatalog::default();
+        catalog.projects.push(scope_project(scope));
+        let mut stats = CatalogStats::default();
+        let pruned = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let mut builder = discovery_walk(scope);
+        let scope_owned = scope.to_path_buf();
+        let invalidated = invalidated.to_vec();
+        let prior_stamps = std::sync::Arc::new(prior.stamps.clone());
+        let pruned_sink = std::sync::Arc::clone(&pruned);
+        builder.filter_entry(move |entry| {
+            if entry.file_name() == ".git" {
+                return false;
+            }
+            let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+            if !is_dir || entry.depth() == 0 {
+                return true;
+            }
+            let Ok(relative) = entry.path().strip_prefix(&scope_owned) else {
+                return true;
+            };
+            let hinted = invalidated
+                .iter()
+                .any(|prefix| relative.starts_with(prefix) || prefix.starts_with(relative));
+            if hinted {
+                return true;
+            }
+            let mtime = entry
+                .metadata()
+                .ok()
+                .and_then(|metadata| metadata.modified().ok());
+            match prior_stamps.get(relative) {
+                Some(stamp) if *stamp == mtime => {
+                    pruned_sink.lock().push(relative.to_path_buf());
+                    false
+                }
+                _ => true,
+            }
+        });
+        let mut visited = 0usize;
+        for result in builder.build() {
+            if cancelled() {
+                catalog.finish();
+                return (catalog, stats);
+            }
+            visited += 1;
+            if visited > DISCOVERY_PATH_LIMIT {
+                catalog.truncated = true;
+                break;
+            }
+            let Ok(entry) = result else {
+                continue;
+            };
+            let Some(kind) = entry.file_type() else {
+                continue;
+            };
+            if !kind.is_dir() || entry.depth() == 0 {
+                continue;
+            }
+            let Ok(relative) = entry.path().strip_prefix(scope) else {
+                continue;
+            };
+            stats.visited += 1;
+            catalog.record_stamp(relative, &entry);
+            if let Some(project) = inspect(entry.path(), relative) {
+                catalog.projects.push(project);
+            }
+        }
+        // Reused subtrees contribute their prior boundaries verbatim.
+        for subtree in std::mem::take(&mut *pruned.lock()) {
+            stats.reused += 1;
+            catalog.stamps.extend(
+                prior
+                    .stamps
+                    .iter()
+                    .filter(|(dir, _)| dir.starts_with(&subtree))
+                    .map(|(dir, stamp)| (dir.clone(), *stamp)),
+            );
+            let reused = prior
+                .projects
+                .iter()
+                .filter(|project| project.root.starts_with(&subtree))
+                .cloned();
+            catalog.projects.extend(reused);
+        }
+        catalog.truncated = catalog.truncated || prior.truncated;
+        catalog.finish();
+        (catalog, stats)
+    }
+
+    fn record_stamp(&mut self, relative: &Path, entry: &ignore::DirEntry) {
+        let stamp = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok());
+        self.stamps.insert(relative.to_path_buf(), stamp);
+    }
+
+    fn finish(&mut self) {
         // Deepest-first ordering makes `project_for` a linear scan for
         // the longest enclosing root.
-        catalog
-            .projects
+        self.projects
             .sort_by_key(|project| std::cmp::Reverse(project.root.as_os_str().len()));
-        catalog
     }
 
     /// The deepest project whose root encloses `path` (workspace-relative).
@@ -140,6 +252,33 @@ impl ProjectCatalog {
             .is_some_and(|project| project.name == name);
         matched != negated
     }
+}
+
+/// The scope's own catalog entry (`""` root): always present.
+fn scope_project(scope: &Path) -> Project {
+    let scope_name = scope.file_name().map_or_else(
+        || scope.to_string_lossy().into_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    Project {
+        root: PathBuf::new(),
+        name: scope_name,
+        kind: ProjectKind::Scope,
+    }
+}
+
+/// The one discovery walk policy: ignore rules on, `.git` internals
+/// never entered (refresh layers its prune predicate on top).
+fn discovery_walk(scope: &Path) -> ignore::WalkBuilder {
+    let mut builder = ignore::WalkBuilder::new(scope);
+    builder
+        .hidden(false)
+        .ignore(true)
+        .git_ignore(true)
+        .git_exclude(true)
+        .git_global(true)
+        .parents(true);
+    builder
 }
 
 /// Classify one directory from its on-disk boundaries.

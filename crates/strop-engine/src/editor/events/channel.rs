@@ -119,6 +119,7 @@ fn classify(event: &AppEvent) -> (Class, &'static str, usize) {
         AppEvent::EditorKey(_) => semantic("editor key"),
         AppEvent::QuitIntent => semantic("quit intent"),
         AppEvent::Lsp(_) => semantic("lsp"),
+        AppEvent::Notify => (Class::Hint, "notify wake", 0),
         AppEvent::LspAttach(_) => semantic("lsp attach"),
         AppEvent::Shell(_) => semantic("shell"),
         AppEvent::Io(_) => semantic("io"),
@@ -143,6 +144,7 @@ struct State {
     resize: Option<(u16, u16)>,
     focus: Option<bool>,
     resume_input: bool,
+    notify: bool,
     /// Lane alternation: under sustained load of both classes, pops
     /// alternate so neither input nor terminal output starves.
     semantic_turn: bool,
@@ -157,6 +159,7 @@ impl State {
             || self.resize.is_some()
             || self.focus.is_some()
             || self.resume_input
+            || self.notify
     }
 
     fn pop_hint(&mut self) -> Option<AppEvent> {
@@ -173,6 +176,10 @@ impl State {
         if self.resume_input {
             self.resume_input = false;
             return Some(AppEvent::ResumeInput);
+        }
+        if self.notify {
+            self.notify = false;
+            return Some(AppEvent::Notify);
         }
         None
     }
@@ -248,6 +255,7 @@ fn insert(state: &mut State, event: AppEvent) {
         AppEvent::Resize { columns, rows } => state.resize = Some((columns, rows)),
         AppEvent::Focus(focused) => state.focus = Some(focused),
         AppEvent::ResumeInput => state.resume_input = true,
+        AppEvent::Notify => state.notify = true,
         event => {
             if let AppEvent::Paste(text) = &event {
                 state.paste_bytes = state.paste_bytes.saturating_add(text.len());

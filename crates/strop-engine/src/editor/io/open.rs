@@ -11,6 +11,9 @@ pub(super) struct OpenRead {
     pub selection: strop_remote::ReadSelection,
     pub client: strop_remote::RemoteClient,
     pub container: Option<strop_containers::ContainerIdentity>,
+    /// The session's local worker lease (0058 WK04): local reads,
+    /// observations and listings ride it — no in-process twin.
+    pub worker: strop_worker_client::Worker,
     pub previous_directories: Vec<super::super::Directory>,
     pub reveal: Option<ResourceLocation>,
 }
@@ -21,53 +24,100 @@ impl OpenRead {
         }
         match &self.target {
             FileTarget::Local(path) => {
-                let metadata = match std::fs::metadata(path) {
-                    Ok(metadata) => Some(metadata),
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        if std::fs::symlink_metadata(path)
-                            .is_ok_and(|metadata| metadata.file_type().is_symlink())
-                        {
-                            return Outcome::failed(
-                                FailureKind::InvalidInput,
-                                "symlink target is unavailable; no new-file fallback",
-                            );
-                        }
-                        None
+                // WK04: observation, listing and content all ride the
+                // local worker lease; the editor keeps no in-process
+                // filesystem path for user resources.
+                let location = ResourceLocation::local(path.clone());
+                let observed = match self
+                    .worker
+                    .observe(cancel, vec![location.clone()])
+                    .map(|mut observations| observations.pop())
+                {
+                    Ok(Some(observation)) => observation,
+                    Ok(None) => {
+                        return Outcome::failed(
+                            FailureKind::Protocol,
+                            "worker answered an empty observation batch",
+                        )
+                    }
+                    Err(error) if error.is_cancellation() => {
+                        return Outcome::Cancelled(CancelReason::OwnerClosed)
                     }
                     Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
                 };
-                if metadata.as_ref().is_some_and(|metadata| metadata.is_dir()) {
-                    if self.requires_file {
-                        return file_required();
+                let Some(observation) = observed.value else {
+                    // Missing file: a new empty buffer with that path (vim
+                    // semantics — `:w` creates it), matching Buffer::open.
+                    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+                    return Outcome::Success(Opened {
+                        document: Document::new(Buffer::from_read(
+                            path.clone(),
+                            ropey::Rope::new(),
+                            None,
+                            canonical.clone(),
+                            true,
+                        )),
+                        canonical: FileTarget::Local(canonical),
+                    });
+                };
+                match observation.kind {
+                    strop_workspace::EntryKind::Directory => {
+                        if self.requires_file {
+                            return file_required();
+                        }
+                        self.list(location, cancel)
                     }
-                    return self.list(ResourceLocation::local(path.clone()), cancel);
-                }
-                if self.browse {
-                    return Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "browse requires a directory",
-                    );
-                }
-                if metadata
-                    .as_ref()
-                    .is_some_and(|metadata| !metadata.is_file())
-                {
-                    return Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "only regular files and directories can be opened",
-                    );
-                }
-                match Buffer::open(path) {
-                    Ok(buffer) => {
-                        let canonical = buffer
-                            .file_identity()
-                            .map_or_else(|| path.clone(), ToOwned::to_owned);
+                    strop_workspace::EntryKind::File => {
+                        if self.browse {
+                            return Outcome::failed(
+                                FailureKind::InvalidInput,
+                                "browse requires a directory",
+                            );
+                        }
+                        let payload = match self.worker.read(cancel, location, 0, None) {
+                            Ok(payload) => payload,
+                            Err(error) if error.is_cancellation() => {
+                                return Outcome::Cancelled(CancelReason::OwnerClosed)
+                            }
+                            Err(error) => {
+                                return Outcome::failed(FailureKind::Io, error.to_string())
+                            }
+                        };
+                        let rope = match ropey::Rope::from_reader(payload) {
+                            Ok(rope) => rope,
+                            Err(error) => {
+                                return Outcome::failed(FailureKind::Io, error.to_string())
+                            }
+                        };
+                        // Writability is the observation's evidence,
+                        // never guessed (readonly = no write bit, the
+                        // exact Buffer::open rule). The identity path is
+                        // this namespace's own canonicalization.
+                        let writable = observation
+                            .permissions
+                            .is_none_or(|permissions| permissions.bits() & 0o222 != 0);
+                        let stamp = observation.modified.map(filetime_to_systemtime);
+                        let canonical =
+                            std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
                         Outcome::Success(Opened {
-                            document: Document::new(buffer),
+                            document: Document::new(Buffer::from_read(
+                                path.clone(),
+                                rope,
+                                stamp,
+                                canonical.clone(),
+                                writable,
+                            )),
                             canonical: FileTarget::Local(canonical),
                         })
                     }
-                    Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
+                    strop_workspace::EntryKind::SymbolicLink => Outcome::failed(
+                        FailureKind::InvalidInput,
+                        "symlink target is unavailable; no new-file fallback",
+                    ),
+                    _ => Outcome::failed(
+                        FailureKind::InvalidInput,
+                        "only regular files and directories can be opened",
+                    ),
                 }
             }
             FileTarget::Remote(location) => {
@@ -90,7 +140,7 @@ impl OpenRead {
                         if self.requires_file {
                             return file_required();
                         }
-                        match strop_fs::from_remote(snapshot) {
+                        match super::super::namespace::from_remote(snapshot) {
                             Ok(listed) => directory_opened(
                                 listed,
                                 &self.previous_directories,
@@ -142,7 +192,7 @@ impl OpenRead {
                             filesystem: Filesystem::Container(container.clone()),
                             path: path.clone(),
                         };
-                        match strop_fs::from_container(location, entries) {
+                        match super::super::namespace::from_container(location, entries) {
                             Ok(listed) => directory_opened(
                                 listed,
                                 &self.previous_directories,
@@ -190,7 +240,13 @@ impl OpenRead {
         }
     }
     fn list(&self, location: ResourceLocation, cancel: &CancelToken) -> Outcome<Opened> {
-        match strop_fs::list(&location, &self.client, self.container.as_ref(), cancel) {
+        match super::super::namespace::list(
+            &self.worker,
+            &location,
+            &self.client,
+            self.container.as_ref(),
+            cancel,
+        ) {
             Ok(listed) => directory_opened(
                 listed,
                 &self.previous_directories,
@@ -208,16 +264,16 @@ fn file_required() -> Outcome<Opened> {
     )
 }
 fn directory_opened(
-    listed: strop_fs::ListedDirectory,
+    listed: super::super::namespace::Listed,
     previous: &[super::super::Directory],
     reveal: Option<&ResourceLocation>,
     cancel: &CancelToken,
 ) -> Outcome<Opened> {
-    let canonical = match FileTarget::from_location(&listed.snapshot.location) {
+    let canonical = match FileTarget::from_location(&listed.directory.snapshot.location) {
         Ok(canonical) => canonical,
         Err(error) => return Outcome::failed(FailureKind::Protocol, error.to_string()),
     };
-    let mut source = super::super::Directory::from_listing(listed);
+    let mut source = super::super::Directory::from_listing(listed.directory, listed.connection);
     let all_rows = source.visible.clone();
     if let Some(old) = previous.iter().find(|old| old.location == source.location) {
         source.filter = old.filter.clone();
@@ -266,4 +322,18 @@ fn directory_opened(
         document: Document::directory(buffer, source),
         canonical,
     })
+}
+
+/// Exact mtime evidence conversion: the kernel's FileTime and std's
+/// SystemTime must compare equal for the same instant, since the
+/// save-time "changed on disk" check compares against
+/// `fs::metadata().modified()`.
+pub(crate) fn filetime_to_systemtime(stamp: strop_workspace::FileTime) -> std::time::SystemTime {
+    let epoch = std::time::UNIX_EPOCH;
+    if stamp.seconds >= 0 {
+        epoch + std::time::Duration::new(stamp.seconds as u64, stamp.nanos)
+    } else {
+        (epoch - std::time::Duration::new(stamp.seconds.unsigned_abs(), 0))
+            + std::time::Duration::new(0, stamp.nanos)
+    }
 }

@@ -1430,6 +1430,8 @@ dependencies = [
  "strop-terminal",
  "strop-trace",
  "strop-ui-protocol",
+ "strop-worker",
+ "strop-worker-client",
  "strop-workspace",
  "tempfile",
  "unicode-segmentation",
@@ -1458,6 +1460,9 @@ dependencies = [
  "strop-syntax",
  "strop-terminal",
  "strop-trace",
+ "strop-worker",
+ "strop-worker-client",
+ "strop-worker-protocol",
  "strop-workspace",
  "tempfile",
  "thiserror",
@@ -1477,9 +1482,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "strop-containers",
  "strop-core",
- "strop-remote",
  "strop-workspace",
  "tempfile",
  "thiserror",
@@ -1643,6 +1646,49 @@ dependencies = [
  "serde_json",
  "strop-core",
  "strop-engine",
+ "thiserror",
+]
+
+[[package]]
+name = "strop-worker"
+version = "0.34.0"
+dependencies = [
+ "getrandom",
+ "libc",
+ "parking_lot",
+ "ropey",
+ "rustix 1.1.4",
+ "sha2",
+ "strop-core",
+ "strop-fs",
+ "strop-worker-protocol",
+ "strop-workspace",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "strop-worker-client"
+version = "0.34.0"
+dependencies = [
+ "parking_lot",
+ "sha2",
+ "strop-core",
+ "strop-worker",
+ "strop-worker-protocol",
+ "strop-workspace",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "strop-worker-protocol"
+version = "0.34.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strop-core",
+ "strop-workspace",
  "thiserror",
 ]
 

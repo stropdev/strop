@@ -553,9 +553,12 @@ catalog/kind evidence stays 0058-deferred per `remote.rs`). Evidence:
 repeated 10× with zero flakes.
 
 Remaining obligations, by owner: incremental cross-search index
-reuse/invalidation and remote marker/catalog evidence →
-[0058](0058-unified-native-worker.md). The TLAPS lane landed in 0057 on
-2026-09-16 and this plan's SearchLifecycle proof obligations are
-DISCHARGED there (specs/SearchLifecycleProofs.tla — Init⇒Inv,
-inductiveness, Inv⇒the five named invariants, with the kept mutant as
-negative control; see 0057's landed slices).
+reuse/invalidation is DISCHARGED (2026-09-17, 0058's notification
+service: retained SymbolIndex/catalog entries stat-validate on reuse,
+hinted subtrees rescan, cancellation restores the snapshot — see
+0058's landed S7 slice); remote marker/catalog evidence stays with
+[0058](0058-unified-native-worker.md)'s remote relay slice. The TLAPS
+lane landed in 0057 on 2026-09-16 and this plan's SearchLifecycle proof
+obligations are DISCHARGED there (specs/SearchLifecycleProofs.tla —
+Init⇒Inv, inductiveness, Inv⇒the five named invariants, with the kept
+mutant as negative control; see 0057's landed slices).

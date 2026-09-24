@@ -32,9 +32,12 @@ pub struct Directory {
 }
 
 impl Directory {
-    pub fn from_listing(listed: strop_fs::ListedDirectory) -> Self {
+    pub fn from_listing(
+        listed: strop_fs::ListedDirectory,
+        connection: Option<strop_remote::ConnectionLease>,
+    ) -> Self {
         let mut source = Self::new(listed.snapshot);
-        source.connection = listed.connection;
+        source.connection = connection;
         source
     }
     pub fn new(snapshot: strop_workspace::DirectorySnapshot) -> Self {
@@ -292,6 +295,7 @@ impl Document {
             indent_override: super::IndentOverride::default(),
             detection: None,
             source: DocumentSource::Directory(Box::new(source)),
+            external_change: false,
         }
     }
     pub fn directory_metadata_ref(&self) -> Option<&Directory> {

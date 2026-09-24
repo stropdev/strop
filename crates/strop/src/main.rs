@@ -45,6 +45,24 @@ fn launch() -> Result<(), Box<dyn Error>> {
         unsafe { strop_terminal::helper::run_inherited(fd)? };
         return Ok(());
     }
+    // `strop --worker-stdio` (0058 WK04): the unified native worker. Like
+    // the terminal helper this entry precedes CLI parsing, TUI setup,
+    // session restoration, tracing and config: stdout is protocol frames
+    // from the first byte, diagnostics stay on bounded private stderr.
+    #[cfg(unix)]
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "--worker-stdio")
+    {
+        if arguments.len() != 1 {
+            return Err("worker mode takes no arguments".into());
+        }
+        // StdoutLock is !Send (worker request threads write too); the
+        // shared `Stdout` handle locks per write and serve's own writer
+        // mutex holds frame atomicity across the header/body/flush calls.
+        strop_worker::serve::run(io::stdin().lock(), io::stdout())?;
+        return Ok(());
+    }
     let options = cli::parse(arguments.clone())?;
     match &options.command {
         cli::Command::ReplayFull { trace } => {

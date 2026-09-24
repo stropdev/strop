@@ -36,7 +36,7 @@ fn completed_lock_ownership_does_not_survive_an_inherited_descriptor() {
 fn an_active_lock_is_never_unlinked() {
     let (_root, parent, directory, name) = fixture();
     let held = NameLock::acquire(&directory, OsStr::new("old-child")).unwrap();
-    with_token(|token| {
+    with_token(|_context, token| {
         let approved = observation::stat(&directory.path).unwrap().unwrap();
         let captured =
             DirectoryLocks::capture(&parent, OsStr::new("directory"), &approved, &token).unwrap();
@@ -53,7 +53,7 @@ fn an_active_lock_is_never_unlinked() {
 #[test]
 fn replacement_of_a_captured_lock_is_not_adopted_for_cleanup() {
     let (root, parent, directory, name) = fixture();
-    with_token(|token| {
+    with_token(|_context, token| {
         let approved = observation::stat(&directory.path).unwrap().unwrap();
         let captured =
             DirectoryLocks::capture(&parent, OsStr::new("directory"), &approved, &token).unwrap();
@@ -72,7 +72,7 @@ fn replacement_of_a_captured_lock_is_not_adopted_for_cleanup() {
 #[test]
 fn lock_shaped_user_data_and_unknown_nfs_entries_are_preserved() {
     let (_root, parent, directory, name) = fixture();
-    with_token(|token| {
+    with_token(|_context, token| {
         std::fs::write(directory.path.join(&name), "must remain").unwrap();
         let approved = observation::stat(&directory.path).unwrap().unwrap();
         assert!(
@@ -99,7 +99,7 @@ fn lock_shaped_user_data_and_unknown_nfs_entries_are_preserved() {
 #[test]
 fn new_arrivals_are_not_rescanned_or_deleted() {
     let (_root, parent, directory, name) = fixture();
-    with_token(|token| {
+    with_token(|_context, token| {
         let approved = observation::stat(&directory.path).unwrap().unwrap();
         let captured =
             DirectoryLocks::capture(&parent, OsStr::new("directory"), &approved, &token).unwrap();

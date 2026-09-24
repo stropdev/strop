@@ -37,6 +37,11 @@ pub struct Document {
     /// What backs this document (0021 §4): the surface payload lives in
     /// the source variant; readonly derives from it at construction.
     pub source: DocumentSource,
+    /// A notification hint observed the file change underneath a dirty
+    /// (or vanished-from-under) buffer (0058 §2): the buffer is preserved
+    /// untouched, the save path's disk-baseline check keeps its refusal,
+    /// and only a fresh observation (guarded reload, save) clears this.
+    pub external_change: bool,
 }
 
 impl Document {
@@ -74,6 +79,7 @@ impl Document {
             indent_override: IndentOverride::default(),
             detection,
             source: DocumentSource::File,
+            external_change: false,
         }
     }
 
@@ -87,6 +93,7 @@ impl Document {
             indent_override: IndentOverride::default(),
             detection,
             source: DocumentSource::Scratch,
+            external_change: false,
         }
     }
 
@@ -102,6 +109,7 @@ impl Document {
                 context,
                 content: surface,
             })),
+            external_change: false,
             indent_override: IndentOverride::default(),
             detection: None,
         }
@@ -120,6 +128,7 @@ impl Document {
             indent_override: IndentOverride::default(),
             detection: None,
             source: DocumentSource::Output { return_to: None },
+            external_change: false,
         }
     }
 
@@ -139,6 +148,7 @@ impl Document {
             indent_override: IndentOverride::default(),
             detection,
             source: DocumentSource::Container { container, path },
+            external_change: false,
         }
     }
 

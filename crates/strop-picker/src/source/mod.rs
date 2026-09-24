@@ -4,6 +4,7 @@
 //! (0001 §5.6: input never waits on a source; R9: no silent empty
 //! successes, no stream that never ends).
 
+mod cache;
 mod grep;
 #[cfg(test)]
 mod lifecycle_traces;
@@ -124,6 +125,7 @@ fn run_workspace_symbols(
     cwd: PathBuf,
     query: std::sync::Arc<crate::query::SearchQuery>,
     policy: selection::SelectionPolicy,
+    cache: std::sync::Arc<parking_lot::Mutex<cache::Caches>>,
     tx: StreamSender,
     cancel: CancelToken,
 ) -> Outcome<()> {
@@ -181,14 +183,46 @@ fn run_workspace_symbols(
     if cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
-    let index = symbols::SymbolIndex::build(&cwd, &paths, &cancelled);
+    // Retained baseline (0063 residual, 0058 S7): with push coverage,
+    // reuse the unchanged subtrees of the last scan and rescan only
+    // what hints invalidated; without it, scan per search exactly as
+    // before. The lock never spans filesystem I/O.
+    let baseline = cache.lock().begin(&cwd);
+    let invalidated = cache::Caches::invalidated(&baseline).to_vec();
+    let full = baseline.symbols.is_none() || baseline.catalog.is_none();
+    let (index, symbol_stats) = symbols::SymbolIndex::refresh(
+        baseline.symbols.as_deref(),
+        &cwd,
+        &paths,
+        &invalidated,
+        &cancelled,
+    );
     if cancelled() {
+        cache.lock().abandon(&cwd, baseline);
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
     // The same walk feeds LSP warm-up (0063 §2): marker subprojects
     // are the eligible unopened projects. Git-only repositories carry
     // no language evidence and stay cold until a document opens.
-    let catalog = catalog::ProjectCatalog::discover(&cwd, &cancelled);
+    let (catalog, catalog_stats) = match baseline.catalog.as_deref() {
+        Some(prior) => catalog::ProjectCatalog::refresh(prior, &cwd, &invalidated, &cancelled),
+        None => (
+            catalog::ProjectCatalog::discover(&cwd, &cancelled),
+            catalog::CatalogStats::default(),
+        ),
+    };
+    if cancelled() {
+        cache.lock().abandon(&cwd, baseline);
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
+    let index = std::sync::Arc::new(index);
+    let catalog = std::sync::Arc::new(catalog);
+    cache.lock().settle(
+        &cwd,
+        Some((std::sync::Arc::clone(&index), symbol_stats)),
+        Some((std::sync::Arc::clone(&catalog), catalog_stats)),
+        full,
+    );
     let mut warm: Vec<(PathBuf, String)> = catalog
         .projects()
         .filter_map(|project| match project.kind {

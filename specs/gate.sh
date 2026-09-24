@@ -47,3 +47,4 @@ sh specs/search-gate.sh
 # install gates stay chained (both green with mutants + witnesses).
 sh specs/terminal-gate.sh
 sh specs/install-gate.sh
+sh specs/notify-gate.sh

@@ -419,6 +419,7 @@ impl Editor {
         let sources = completion_host_sources();
         let history = self.remote_history();
         let client = self.remote_client();
+        let worker = self.filesystem.worker().clone();
         let tx = self.remote_completion.tx.clone();
         let handle = worker::spawn(
             "strop-remote-complete",
@@ -426,7 +427,16 @@ impl Editor {
                 let _ = tx.send(Completion { ticket, outcome });
             },
             move |cancel| {
-                run_completion(query, dir_file, fallback, sources, history, client, cancel)
+                let job = CompletionJob {
+                    query,
+                    directory: dir_file,
+                    fallback,
+                    sources,
+                    history,
+                    client,
+                    worker,
+                };
+                run_completion(job, cancel)
             },
         );
         self.worker_handles.insert(request, handle);
@@ -627,15 +637,31 @@ fn completion_host_sources() -> HostSources {
 /// local data; path completion uses `list_connected` — never a new
 /// connection — and falls back to the caller's cached listing when the
 /// endpoint is not connected.
-fn run_completion(
+/// One completion request's worker-side inputs (bundled: the engine's
+/// remote/session state snapshot for exactly one prompt moment).
+struct CompletionJob {
     query: RemoteCompletionQuery,
     directory: Option<RemoteFile>,
     fallback: Option<Vec<RemoteCandidate>>,
     sources: HostSources,
     history: Vec<HostCandidate>,
     client: RemoteClient,
+    worker: strop_worker_client::Worker,
+}
+
+fn run_completion(
+    job: CompletionJob,
     cancel: worker::CancelToken,
 ) -> Outcome<RemoteCompletionResult> {
+    let CompletionJob {
+        query,
+        directory,
+        fallback,
+        sources,
+        history,
+        client,
+        worker,
+    } = job;
     if cancel.is_cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
@@ -644,7 +670,14 @@ fn run_completion(
             location,
             segment,
             container,
-        } => directory::run(location, &segment, container.as_ref(), &client, &cancel),
+        } => directory::run(
+            location,
+            &segment,
+            container.as_ref(),
+            &client,
+            &worker,
+            &cancel,
+        ),
         RemoteCompletionQuery::Hosts { partial } => {
             let enumeration = strop_remote::enumerate_hosts(&sources, &history);
             let items = enumeration

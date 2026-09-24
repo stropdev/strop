@@ -30,16 +30,18 @@ pub fn execute(
     operation: &PreparedOperation,
     contents: Option<&ropey::Rope>,
     receipts: &[StepReceipt],
+    context: &crate::ExecutionContext,
     token: &CancelToken,
 ) -> StepOutcome {
     let mut locks = Vec::new();
-    let mut outcome = match execute_checked(operation, contents, receipts, token, &mut locks) {
-        Ok(outcome) => outcome,
-        Err(error) if error.kind == FsFailureKind::Cancelled => StepOutcome::Cancelled {
-            detail: error.detail,
-        },
-        Err(error) => StepOutcome::Refused(error),
-    };
+    let mut outcome =
+        match execute_checked(operation, contents, receipts, context, token, &mut locks) {
+            Ok(outcome) => outcome,
+            Err(error) if error.kind == FsFailureKind::Cancelled => StepOutcome::Cancelled {
+                detail: error.detail,
+            },
+            Err(error) => StepOutcome::Refused(error),
+        };
     for lock in locks {
         if let Err(error) = lock.release() {
             let warning = format!("operation lock release failed: {error}");
@@ -58,6 +60,7 @@ fn execute_checked(
     operation: &PreparedOperation,
     contents: Option<&ropey::Rope>,
     receipts: &[StepReceipt],
+    context: &crate::ExecutionContext,
     token: &CancelToken,
     locks: &mut Vec<NameLock>,
 ) -> Result<StepOutcome, FsFailure> {
@@ -75,7 +78,7 @@ fn execute_checked(
             "copy snapshot does not match the approved content version",
         ));
     }
-    let current = capability()?;
+    let current = context.capability()?;
     if operation.capability.principal != current.principal
         || operation.capability.incarnation != current.incarnation
     {

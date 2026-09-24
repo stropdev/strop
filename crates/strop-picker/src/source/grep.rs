@@ -93,6 +93,7 @@ pub(super) fn run(
     policy: super::selection::SelectionPolicy,
     cwd: std::path::PathBuf,
     snapshots: Vec<SourceSnapshot>,
+    cache: std::sync::Arc<parking_lot::Mutex<super::cache::Caches>>,
     tx: super::flow::StreamSender,
     cancel: strop_core::worker::CancelToken,
 ) -> Outcome<()> {
@@ -140,9 +141,30 @@ pub(super) fn run(
         return Outcome::Success(());
     }
     let cancelled = || cancel.is_cancelled();
+    // Retained baseline (0063 residual, 0058 S7): with push coverage the
+    // catalog/symbol scan reuses unchanged subtrees and rescans only
+    // hinted paths; without it, scan per search exactly as before. The
+    // lock never spans filesystem I/O; a cancelled scan abandons (its
+    // invalidation snapshot is restored, never consumed).
+    let baseline = cache.lock().begin(&cwd);
+    let invalidated = super::cache::Caches::invalidated(&baseline).to_vec();
+    let full =
+        baseline.catalog.is_none() || (content.needs_symbols() && baseline.symbols.is_none());
     // One bounded discovery scan per search (0063 §2): the catalog
     // decides `repo:` atoms exactly; a missed project only overfetches.
-    let catalog = crate::source::catalog::ProjectCatalog::discover(&cwd, &cancelled);
+    let (catalog, catalog_stats) = match baseline.catalog.as_deref() {
+        Some(prior) => {
+            crate::source::catalog::ProjectCatalog::refresh(prior, &cwd, &invalidated, &cancelled)
+        }
+        None => (
+            crate::source::catalog::ProjectCatalog::discover(&cwd, &cancelled),
+            crate::source::catalog::CatalogStats::default(),
+        ),
+    };
+    if cancelled() {
+        cache.lock().abandon(&cwd, baseline);
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
     // The reader thread admits every hit line through the exact plan:
     // the provider pattern only prefilters (0063 §4). One owning
     // closure per rg batch — `content`/`catalog`/`symbols` outlive the
@@ -162,27 +184,50 @@ pub(super) fn run(
         true
     });
     if path_limit {
+        cache.lock().abandon(&cwd, baseline);
         return Outcome::failed(
             FailureKind::Unavailable,
             "search selection exceeds 100000 paths or 16 MiB; narrow the scope",
         );
     }
     if let Err(error) = walk {
+        cache.lock().abandon(&cwd, baseline);
         return Outcome::failed(FailureKind::Io, error);
     }
     if cancelled() {
+        cache.lock().abandon(&cwd, baseline);
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
     // Syntax-fallback symbol index (0063 §2): built only when the
     // query carries a `kind:` atom, from the selection's own eligible
     // files. Absent or incomplete entries stay Unknown and admit.
-    let mut symbols = if content.needs_symbols() {
-        Some(std::sync::Arc::new(
-            crate::source::symbols::SymbolIndex::build(&cwd, &paths, &cancelled),
-        ))
+    let disk_symbols = if content.needs_symbols() {
+        let (index, stats) = crate::source::symbols::SymbolIndex::refresh(
+            baseline.symbols.as_deref(),
+            &cwd,
+            &paths,
+            &invalidated,
+            &cancelled,
+        );
+        Some((index, stats))
     } else {
         None
     };
+    if cancelled() {
+        cache.lock().abandon(&cwd, baseline);
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
+    // Settle the disk-pure baseline BEFORE the dirty overlay touches
+    // the working copy — the retained index never absorbs unsaved text.
+    cache.lock().settle(
+        &cwd,
+        disk_symbols
+            .as_ref()
+            .map(|(index, stats)| (std::sync::Arc::new(index.clone()), *stats)),
+        Some((std::sync::Arc::new(catalog.clone()), catalog_stats)),
+        full,
+    );
+    let mut symbols = disk_symbols.map(|(index, _)| index);
     // Dirty open source text is authoritative, never a hidden disk
     // save. Matching happens on this worker, under the same plan.
     if let Err(error) = super::snapshots::emit_snapshots(
@@ -194,7 +239,7 @@ pub(super) fn run(
         &cancel,
         super::snapshots::Sources {
             catalog: Some(&catalog),
-            symbols: symbols.as_mut().and_then(std::sync::Arc::get_mut),
+            symbols: symbols.as_mut(),
         },
     ) {
         return if cancel.is_cancelled() {
@@ -203,6 +248,7 @@ pub(super) fn run(
             Outcome::failed(FailureKind::Protocol, error)
         };
     }
+    let symbols = symbols.map(std::sync::Arc::new);
     let mut argv: Vec<String> = vec!["--no-config".into(), "--json".into(), "-e".into(), pattern];
     match content.case {
         crate::query::CaseMode::Smart => argv.push("--smart-case".into()),

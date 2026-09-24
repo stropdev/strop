@@ -6,6 +6,21 @@ use strop_core::worker::{FailureKind, Outcome};
 use strop_picker::PickerMsg;
 
 impl Editor {
+    /// Pump raw worker events into the notify queue and apply them
+    /// (headless path; the TUI's forwarder thread does the same move).
+    pub fn drain_notify(&mut self) {
+        let mut events = Vec::new();
+        if let Some(rx) = &self.notify.rx {
+            while let Ok(event) = rx.try_recv() {
+                events.push(event);
+            }
+        }
+        for event in events {
+            self.notify.queue.push_event(event);
+        }
+        self.handle_notify();
+    }
+
     /// A named local repository for pure surface fixtures; no discovery or I/O.
     pub fn fixture_git_context(&mut self) {
         self.git = Some(strop_git::GitContext {

@@ -1,9 +1,13 @@
 use super::*;
 /// Reconcile observed names against before-state and owned publication evidence.
 /// Occupancy, matching bytes or an untrusted post-error stat alone grant no ownership.
-pub fn verify(receipt: &StepReceipt, token: &CancelToken) -> Result<VerifiedOutcome, FsFailure> {
+pub fn verify(
+    receipt: &StepReceipt,
+    context: &crate::ExecutionContext,
+    token: &CancelToken,
+) -> Result<VerifiedOutcome, FsFailure> {
     let operation = &receipt.operation;
-    let current = capability()?;
+    let current = context.capability()?;
     if operation.capability.principal != current.principal
         || operation.capability.incarnation != current.incarnation
     {

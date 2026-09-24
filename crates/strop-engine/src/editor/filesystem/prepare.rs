@@ -54,26 +54,25 @@ impl Editor {
             draft: None,
         };
         let environment = self.filesystem.environment.clone();
-        self.start_filesystem_preparation(key, copies, move |token| match strop_fs::batch::prepare(
-            &intents,
-            &environment,
-            &token,
-        ) {
-            Ok(batch)
-                if recovery
-                    .as_ref()
-                    .is_some_and(|guard| batch.refused.is_empty() && !guard.accepts(&batch)) =>
-            {
-                Outcome::failed(
-                    FailureKind::InvalidInput,
-                    "recovery object changed since its receipt; no mutation admitted",
-                )
+        let worker = self.filesystem.worker().clone();
+        self.start_filesystem_preparation(key, copies, move |token| {
+            match crate::editor::namespace::prepare(&worker, &intents, &environment, &token) {
+                Ok(batch)
+                    if recovery.as_ref().is_some_and(|guard| {
+                        batch.refused.is_empty() && !guard.accepts(&batch)
+                    }) =>
+                {
+                    Outcome::failed(
+                        FailureKind::InvalidInput,
+                        "recovery object changed since its receipt; no mutation admitted",
+                    )
+                }
+                Ok(batch) => Outcome::Success(PreparedFilesystem {
+                    batch,
+                    draft_targets: Vec::new(),
+                }),
+                Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
             }
-            Ok(batch) => Outcome::Success(PreparedFilesystem {
-                batch,
-                draft_targets: Vec::new(),
-            }),
-            Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
         })
     }
 

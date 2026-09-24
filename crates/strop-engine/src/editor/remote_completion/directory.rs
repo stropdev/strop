@@ -58,9 +58,11 @@ pub(super) fn run(
     segment: &[u8],
     container: Option<&strop_containers::ContainerIdentity>,
     client: &RemoteClient,
+    worker: &strop_worker_client::Worker,
     cancel: &worker::CancelToken,
 ) -> Outcome<RemoteCompletionResult> {
-    let listed = match strop_fs::list(&location, client, container, cancel) {
+    let listed = match crate::editor::namespace::list(worker, &location, client, container, cancel)
+    {
         Ok(listed) => listed,
         Err(error) if error.kind == strop_workspace::operation::FsFailureKind::Cancelled => {
             return Outcome::Cancelled(CancelReason::OwnerClosed)
@@ -68,8 +70,8 @@ pub(super) fn run(
         Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
     };
     let mut items = Vec::new();
-    let mut limited = !listed.snapshot.state.is_complete();
-    for entry in listed.snapshot.entries.iter() {
+    let mut limited = !listed.directory.snapshot.state.is_complete();
+    for entry in listed.directory.snapshot.entries.iter() {
         if cancel.is_cancelled() {
             return Outcome::Cancelled(CancelReason::OwnerClosed);
         }
@@ -81,7 +83,7 @@ pub(super) fn run(
             break;
         }
         let directory = entry.observation.kind == strop_workspace::EntryKind::Directory;
-        let mut uri = match listed.snapshot.location_of(entry).uri() {
+        let mut uri = match listed.directory.snapshot.location_of(entry).uri() {
             Ok(uri) => uri,
             Err(error) => return Outcome::failed(FailureKind::Protocol, error.to_string()),
         };

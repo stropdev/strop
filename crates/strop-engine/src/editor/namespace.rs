@@ -1,0 +1,444 @@
+//! Client-side namespace dispatch above the worker protocol (0058
+//! WK03/WK04). Local operations ride the worker client — the same
+//! handlers a remote worker will serve — so the default local path
+//! exercises the shipped worker and no in-process filesystem twin exists
+//! in the engine. Remote namespaces still run through the owned SSH
+//! helper and containers stay read-only by policy until the protocol
+//! carries them (WK07/WK08). Transport selection lives here — never
+//! inside the kernel, which sees namespace identity and capabilities only
+//! as data.
+//!
+//! The in-process strop-fs kernel remains directly usable by lower-level
+//! tests (strop-fs's own suite); engine tests cross the real codec
+//! through an in-process transport ([`local_worker`]).
+
+use strop_core::worker::CancelToken;
+use strop_fs::batch::{PreparedBatch, StepKernel};
+use strop_fs::Environment;
+use strop_worker_client::{ClientError, Worker};
+use strop_workspace::operation::{
+    FsFailure, FsFailureKind, OperationIntent, PreparedOperation, StepOutcome, StepReceipt,
+    VerifiedOutcome,
+};
+use strop_workspace::{EntryKind, Filesystem, RemoteEndpoint, ResourceLocation};
+
+fn failure(kind: FsFailureKind, detail: impl Into<String>) -> FsFailure {
+    FsFailure::new(kind, detail)
+}
+
+/// This editor session's local worker lease (0058 WK04): one worker per
+/// compatible context, shared by every local filesystem owner in the
+/// session, retired when the session drops it.
+///
+/// Production spawns the matching installed executable
+/// (`current_exe --worker-stdio`, never PATH). Engine tests cross the
+/// same codec over pipes to the real in-process serve loop — readiness
+/// is still the handshake, and no filesystem policy runs in the editor
+/// process either way.
+pub(crate) fn local_worker() -> Worker {
+    #[cfg(not(any(test, feature = "test-support")))]
+    {
+        Worker::local()
+    }
+    // Engine tests and dependents' test-support builds cross the same
+    // codec against the real in-process serve loop.
+    #[cfg(any(test, feature = "test-support"))]
+    {
+        Worker::connect_with(|| {
+            let (client_read, worker_write) = std::io::pipe()?;
+            let (worker_read, client_write) = std::io::pipe()?;
+            std::thread::spawn(move || {
+                if let Err(error) = strop_worker::serve::run(worker_read, worker_write) {
+                    eprintln!("strop-worker test serve failed: {error}");
+                }
+            });
+            Ok(strop_worker_client::Transport {
+                reader: Box::new(client_read),
+                writer: Box::new(client_write),
+                child: None,
+                stderr: None,
+            })
+        })
+    }
+}
+
+/// Client failures become domain failures at this boundary: cancellation
+/// and the worker's own typed `FsFailure` pass through unchanged;
+/// transport/admission failures map onto the closest honest kind. The
+/// message keeps the exact cause — failures are visible in the status
+/// line, never silent.
+fn map_client(error: ClientError) -> FsFailure {
+    let kind = match &error {
+        ClientError::Cancelled => FsFailureKind::Cancelled,
+        ClientError::Domain(failure) => return failure.clone(),
+        ClientError::Refused(refusal) => match refusal {
+            strop_worker_client::Refusal::Capability { .. } => FsFailureKind::Unsupported,
+            strop_worker_client::Refusal::Limit { .. } => FsFailureKind::Incomplete,
+            strop_worker_client::Refusal::Busy { .. } => FsFailureKind::Busy,
+            strop_worker_client::Refusal::WrongIncarnation { .. }
+            | strop_worker_client::Refusal::WrongLease
+            | strop_worker_client::Refusal::UnknownHandle { .. }
+            | strop_worker_client::Refusal::StaleSubscription { .. }
+            | strop_worker_client::Refusal::NamespaceChanged { .. } => FsFailureKind::Conflict,
+            strop_worker_client::Refusal::Retiring | strop_worker_client::Refusal::Closed => {
+                FsFailureKind::Io
+            }
+        },
+        ClientError::Protocol(_) => FsFailureKind::Protocol,
+        ClientError::Spawn(_)
+        | ClientError::Handshake(_)
+        | ClientError::Mismatch { .. }
+        | ClientError::WorkerLost(_)
+        | ClientError::Closed => FsFailureKind::Io,
+    };
+    failure(kind, error.to_string())
+}
+
+/// A listed directory plus the connection lease that produced it, when the
+/// listing rode an owned remote connection. The lease is client state; the
+/// kernel never holds transport handles.
+pub(crate) struct Listed {
+    pub directory: strop_fs::ListedDirectory,
+    pub connection: Option<strop_remote::ConnectionLease>,
+}
+
+/// List one directory in whichever namespace owns it.
+pub(crate) fn list(
+    worker: &Worker,
+    location: &ResourceLocation,
+    client: &strop_remote::RemoteClient,
+    container: Option<&strop_containers::ContainerIdentity>,
+    token: &CancelToken,
+) -> Result<Listed, FsFailure> {
+    if !location.path.is_absolute() {
+        return Err(failure(
+            FsFailureKind::InvalidPath,
+            "directory scope must be absolute",
+        ));
+    }
+    match &location.filesystem {
+        Filesystem::Local => {
+            let snapshot = worker.list(token, location.clone()).map_err(map_client)?;
+            Ok(Listed {
+                directory: strop_fs::ListedDirectory { snapshot },
+                connection: None,
+            })
+        }
+        Filesystem::Remote(endpoint) => {
+            let file =
+                strop_workspace::RemoteFile::from_path(endpoint.clone(), location.path.clone())
+                    .map_err(|error| failure(FsFailureKind::InvalidPath, error.to_string()))?;
+            let listed = client.list(&file.into(), token).map_err(|error| {
+                failure(
+                    if error.is_cancellation() {
+                        FsFailureKind::Cancelled
+                    } else {
+                        FsFailureKind::Io
+                    },
+                    error.to_string(),
+                )
+            })?;
+            from_remote(listed)
+        }
+        Filesystem::Container(id) => {
+            let identity = container
+                .filter(|identity| identity.id == id.as_str())
+                .ok_or_else(|| {
+                    failure(
+                        FsFailureKind::Unsupported,
+                        "attach the container before browsing its filesystem",
+                    )
+                })?;
+            let path = location.path.to_str().ok_or_else(|| {
+                failure(
+                    FsFailureKind::Unsupported,
+                    "container backend requires a UTF-8 path",
+                )
+            })?;
+            let engine = strop_containers::engine(token)
+                .map_err(|error| failure(FsFailureKind::Io, error.to_string()))?;
+            let reference = strop_containers::ContainerRef::of(identity)
+                .map_err(|error| failure(FsFailureKind::Protocol, error.to_string()))?;
+            let entries = strop_containers::list_dir(&engine, &reference, path, token)
+                .map_err(|error| failure(FsFailureKind::Io, error.to_string()))?;
+            from_container(location.clone(), entries)
+        }
+    }
+}
+
+/// Decode one owned remote listing into kernel-validated data. Children that
+/// escaped their captured parent are a protocol failure, not a listing.
+pub(crate) fn from_remote(
+    listed: strop_remote::RemoteDirectorySnapshot,
+) -> Result<Listed, FsFailure> {
+    let location = ResourceLocation::remote(
+        listed.directory.endpoint().clone(),
+        listed.directory.path().to_path_buf(),
+    );
+    let mut entries = Vec::with_capacity(listed.entries.len());
+    for entry in &listed.entries {
+        if entry.file.endpoint() != listed.directory.endpoint()
+            || entry.file.path().parent() != Some(listed.directory.path())
+        {
+            return Err(failure(
+                FsFailureKind::Protocol,
+                "remote directory child escaped its captured parent",
+            ));
+        }
+        let name =
+            entry.file.path().file_name().ok_or_else(|| {
+                failure(FsFailureKind::Protocol, "remote child has no native name")
+            })?;
+        let kind = match entry.kind {
+            strop_remote::RemoteEntryKind::File => EntryKind::File,
+            strop_remote::RemoteEntryKind::Directory => EntryKind::Directory,
+            strop_remote::RemoteEntryKind::SymbolicLink => EntryKind::SymbolicLink,
+            strop_remote::RemoteEntryKind::Fifo => EntryKind::Fifo,
+            strop_remote::RemoteEntryKind::Socket => EntryKind::Socket,
+            strop_remote::RemoteEntryKind::BlockDevice => EntryKind::BlockDevice,
+            strop_remote::RemoteEntryKind::CharacterDevice => EntryKind::CharacterDevice,
+            strop_remote::RemoteEntryKind::Unknown => EntryKind::Unknown,
+        };
+        entries.push(strop_fs::ObservedEntry {
+            name: name.to_owned(),
+            kind,
+            size: entry.size.map(|size| size.get()),
+            permissions: entry.permissions.map(|permissions| {
+                strop_workspace::Permissions::from_mode(u32::from(permissions.bits()))
+            }),
+        });
+    }
+    Ok(Listed {
+        directory: strop_fs::assemble(location, entries)?,
+        connection: Some(listed.connection),
+    })
+}
+
+/// Decode one container engine listing into kernel-validated data.
+pub(crate) fn from_container(
+    location: ResourceLocation,
+    source: Vec<strop_containers::DirEntry>,
+) -> Result<Listed, FsFailure> {
+    if !matches!(location.filesystem, Filesystem::Container(_)) {
+        return Err(failure(
+            FsFailureKind::Protocol,
+            "container listing has a different filesystem namespace",
+        ));
+    }
+    let entries = source
+        .into_iter()
+        .map(|entry| strop_fs::ObservedEntry {
+            name: entry.name.into(),
+            kind: match entry.kind {
+                strop_containers::DirEntryKind::File => EntryKind::File,
+                strop_containers::DirEntryKind::Dir => EntryKind::Directory,
+                strop_containers::DirEntryKind::Symlink => EntryKind::SymbolicLink,
+                strop_containers::DirEntryKind::Other => EntryKind::Unknown,
+            },
+            size: entry.size,
+            permissions: None,
+        })
+        .collect();
+    Ok(Listed {
+        directory: strop_fs::assemble(location, entries)?,
+        connection: None,
+    })
+}
+
+/// The legacy SSH helper admitted as one endpoint's step kernel. The Python
+/// cutover slice deletes it; the shared orchestration above never learns its
+/// policy, so no second batch implementation exists to drift.
+struct RemoteKernel(RemoteEndpoint);
+
+impl StepKernel for RemoteKernel {
+    fn namespace(&self) -> Filesystem {
+        Filesystem::Remote(self.0.clone())
+    }
+    fn prepare_one(
+        &self,
+        intent: &OperationIntent,
+        allow_occupied: bool,
+        _environment: &Environment,
+        token: &CancelToken,
+    ) -> Result<PreparedOperation, FsFailure> {
+        strop_remote::filesystem::prepare(intent, allow_occupied, token)
+    }
+    fn execute_one(
+        &self,
+        operation: &PreparedOperation,
+        contents: Option<&ropey::Rope>,
+        receipts: &[StepReceipt],
+        token: &CancelToken,
+    ) -> StepOutcome {
+        strop_remote::filesystem::execute(operation, contents, receipts, token)
+    }
+    fn verify_one(
+        &self,
+        receipt: &StepReceipt,
+        token: &CancelToken,
+    ) -> Result<VerifiedOutcome, FsFailure> {
+        strop_remote::filesystem::verify(receipt, token)
+    }
+}
+
+/// The admitted executor for one namespace: the local worker lease, or the
+/// owned remote helper for its endpoint.
+enum Dispatch<'a> {
+    Worker(&'a Worker),
+    Remote(RemoteKernel),
+}
+
+fn kernel<'a>(namespace: &Filesystem, worker: &'a Worker) -> Result<Dispatch<'a>, FsFailure> {
+    match namespace {
+        Filesystem::Local => Ok(Dispatch::Worker(worker)),
+        Filesystem::Remote(endpoint) => Ok(Dispatch::Remote(RemoteKernel(endpoint.clone()))),
+        Filesystem::Container(_) => Err(failure(
+            FsFailureKind::Unsupported,
+            "container filesystem operations are read-only by policy",
+        )),
+    }
+}
+
+/// The one namespace a batch covers, or a refusal: one review never mixes
+/// namespaces (cross-namespace moves are a separate transfer contract).
+fn batch_namespace(locations: impl Iterator<Item = Filesystem>) -> Result<Filesystem, FsFailure> {
+    let mut namespaces = locations;
+    let Some(first) = namespaces.next() else {
+        return Ok(Filesystem::Local);
+    };
+    if namespaces.any(|namespace| namespace != first) {
+        return Err(failure(
+            FsFailureKind::Unsupported,
+            "one review covers one namespace; split cross-namespace operations",
+        ));
+    }
+    Ok(first)
+}
+
+/// Prepare one reviewed batch in its owning namespace.
+pub(crate) fn prepare(
+    worker: &Worker,
+    intents: &[OperationIntent],
+    environment: &Environment,
+    token: &CancelToken,
+) -> Result<PreparedBatch, FsFailure> {
+    let namespace = batch_namespace(intents.iter().filter_map(|intent| {
+        intent
+            .location()
+            .map(|location| location.filesystem.clone())
+    }))?;
+    match kernel(&namespace, worker)? {
+        Dispatch::Worker(worker) => {
+            // The whole batch — dependency ordering, parent synthesis,
+            // per-intent refusals — runs worker-side through the same
+            // strop-fs orchestration; the engine keeps no local twin. The
+            // session's environment (trash roots) crosses with it.
+            let environment = strop_worker_client::EnvironmentOverride {
+                home: environment.home.clone(),
+                data_home: environment.data_home.clone(),
+            };
+            let (steps, refused) = worker
+                .prepare(token, intents.to_vec(), Some(environment))
+                .map_err(map_client)?;
+            Ok(PreparedBatch { steps, refused })
+        }
+        Dispatch::Remote(kernel) => strop_fs::batch::prepare(&kernel, intents, environment, token),
+    }
+}
+
+/// Execute one approved batch in its owning namespace.
+pub(crate) fn execute(
+    worker: &Worker,
+    plan: &PreparedBatch,
+    contents: &std::collections::HashMap<usize, ropey::Rope>,
+    token: &CancelToken,
+) -> Vec<StepReceipt> {
+    let namespace = batch_namespace(plan.steps.iter().filter_map(|step| {
+        step.intent
+            .location()
+            .map(|location| location.filesystem.clone())
+    }));
+    let dispatch = namespace.and_then(|namespace| kernel(&namespace, worker));
+    match dispatch {
+        Ok(Dispatch::Worker(worker)) => {
+            // The wire carries one frozen content stream per apply; the
+            // common case (one buffer pasted to any number of
+            // destinations) shares those bytes. Distinct contents in one
+            // batch are refused typed, never silently truncated.
+            let mut distinct: Vec<Vec<u8>> = Vec::new();
+            for rope in contents.values() {
+                let bytes: Vec<u8> = rope
+                    .chunks()
+                    .flat_map(|chunk| chunk.as_bytes())
+                    .copied()
+                    .collect();
+                if !distinct.contains(&bytes) {
+                    distinct.push(bytes);
+                }
+            }
+            if distinct.len() > 1 {
+                return plan
+                    .steps
+                    .iter()
+                    .enumerate()
+                    .map(|(step, operation)| StepReceipt {
+                        step,
+                        operation: operation.clone(),
+                        outcome: StepOutcome::Refused(failure(
+                            FsFailureKind::Unsupported,
+                            "one frozen content stream per apply; split the review",
+                        )),
+                    })
+                    .collect();
+            }
+            match worker.apply(
+                token,
+                plan.steps.clone(),
+                distinct.first().map(Vec::as_slice),
+            ) {
+                Ok(receipts) => receipts,
+                Err(error) => {
+                    let failure = map_client(error);
+                    plan.steps
+                        .iter()
+                        .enumerate()
+                        .map(|(step, operation)| StepReceipt {
+                            step,
+                            operation: operation.clone(),
+                            outcome: StepOutcome::Refused(failure.clone()),
+                        })
+                        .collect()
+                }
+            }
+        }
+        Ok(Dispatch::Remote(kernel)) => strop_fs::batch::execute(&kernel, plan, contents, token),
+        Err(error) => plan
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(step, operation)| StepReceipt {
+                step,
+                operation: operation.clone(),
+                outcome: StepOutcome::Refused(error.clone()),
+            })
+            .collect(),
+    }
+}
+
+/// Verify one uncertain step in its owning namespace.
+pub(crate) fn verify(
+    worker: &Worker,
+    receipt: &StepReceipt,
+    token: &CancelToken,
+) -> Result<VerifiedOutcome, FsFailure> {
+    let namespace = receipt
+        .operation
+        .intent
+        .location()
+        .map(|location| location.filesystem.clone())
+        .ok_or_else(|| failure(FsFailureKind::InvalidPath, "operation has no resource"))?;
+    match kernel(&namespace, worker)? {
+        Dispatch::Worker(worker) => worker.verify(token, receipt.clone()).map_err(map_client),
+        Dispatch::Remote(kernel) => strop_fs::batch::verify(&kernel, receipt, token),
+    }
+}

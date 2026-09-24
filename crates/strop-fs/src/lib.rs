@@ -2,9 +2,11 @@
 //! All functions performing native work are worker-only. No frontend types or
 //! background task is created merely by constructing a plan or inspecting data.
 pub mod batch;
+mod context;
 mod environment;
 mod listing;
 mod observation;
+pub use context::{ExecutionContext, NamespaceView};
 pub use environment::Environment;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod attributes;
@@ -22,7 +24,7 @@ mod tests;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod trash;
 
-pub use listing::{from_container, from_remote, list, parent, ListedDirectory};
+pub use listing::{assemble, list, parent, ListedDirectory, ObservedEntry};
 pub use observation::observe;
 use strop_workspace::operation::{FsFailure, FsFailureKind};
 

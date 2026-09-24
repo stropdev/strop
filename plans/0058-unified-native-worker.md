@@ -737,3 +737,96 @@ missing WK behavior or proof obligations.
 No worker implementation, performance comparison or new formal proof was performed
 for this handoff. The preceding bounded Python probe and source/primary-document
 research are evidence for the decision only; WK01–WK20 require the real implementation.
+
+## Landed slices
+
+### WK01/WK02 contracts and wire: landed (2026-09-17)
+
+`docs/worker-protocol.md` records the accepted AR/VF baseline identity,
+the full strop-remote/strop-fs caller inventory, the protocol type
+families, capability vocabulary, deployment consent/policy contract and
+the edge-owner no-recursion list. `crates/strop-worker-protocol` is the
+one bounded versioned wire: Content-Length framing (8 KiB header /
+1 MiB body), class-tagged bodies (JSON control; binary 256 KiB stream
+chunks), incarnation-keyed handshake (Session{incarnation,lease},
+NamespaceIdentity, limits, capabilities incl. NotifyCoverage), typed
+families (observe/list/read, prepare/apply/verify, exec, subscribe —
+notify is first-class with overflow/reconcile-boundary events), the
+workspace outcome taxonomy reused without duplication, and
+guard::Authority enforcing prepared-authority semantics (restarted
+workers reject old sessions/handles/subscriptions; no mutation replays
+after connection loss). Evidence: 31 codec tests incl. loopback
+round-trips, stale-incarnation rejection, wire-shape pins, bound
+refusals.
+
+### WK03 kernel extraction: landed (2026-09-17)
+
+strop-fs is now the shared production kernel: pure handlers driven
+in-process under one admitted `ExecutionContext` whose NamespaceView is
+data (Native/Remote/Container), never adapter imports — the
+strop-fs → strop-remote/strop-containers edge is gone (cargo tree
+evidence). Receipts bind principal+incarnation to the calling context,
+so a restarted worker/editor cannot apply an old session's prepared
+operation. The exec supervisor is ported to Rust in strop-worker
+(setsid launch with pgid reservation, typed launch classification —
+chdir/not-found/not-executable never disguised as exits, half-close vs
+revoke, TERM/grace/KILL, group reaping, byte-compatible STROP-SUP-v1
+records). Porting found and fixed two real deadlocks (handshake fd
+retention, grandchild pipe inheritance). Evidence: strop-fs 15,
+strop-worker 14 tests green.
+
+### WK04 local worker mode: landed (2026-09-17)
+
+`strop --worker-stdio` serves the protocol (early entry before CLI/TUI,
+protocol-only stdout, bounded private stderr); `strop-worker-client`'s
+Worker lease spawns the matching executable (current_exe, never PATH),
+readiness is the handshake (version/target identity check, typed
+mismatch), retirement at last-owner close, cancellation through the
+lease, kill = typed failure with bounded captured stderr — never a
+silent fallback. The engine's local list/prepare/execute/verify/observe
+flow through the client (editor/namespace.rs), with Buffer::from_read
+taking observation evidence explicitly. Wire amendments ratified:
+ResultOutcome::Failed{FsFailure} (domain failures never blur with
+protocol refusals), Prepared{steps,refused} (review-UI parity), and an
+additive Prepare environment override (the per-session trash root must
+cross). Deferred per plan: `:w` save parity (WK09 Store intent), wire
+exec env/PTY requests (WK10/WK12). Evidence: engine open/edit/save/undo/
+Directory parity through the real codec, worker-kill smoke
+(stale incarnation fails closed, no file created), worker stdio
+integration tests.
+
+### S7 filesystem notifications: landed (2026-09-17)
+
+The full stack: strop-worker's NotifyManager is a thin direct
+inotify(2) binding (zero new dependencies; the `notify` crate was
+rejected on evidence: it degrades IN_Q_OVERFLOW to a pathless Rescan
+flag and queues through an unbounded internal channel) — one fd per
+subscription, generation-stamped identity, parent/name guard watches,
+cookie-paired rename classification with an explicit Ambiguous class
+(never a guessed relocation), and every loss/partial-coverage outcome
+latching a conservative rescan obligation over bounded queues. The
+editor subscribes the scope root at service start (never at
+construction, never under replay): hints land in a bounded NotifyQueue
+as AR06-legal coalescing wake hints; clean documents reload through a
+guarded path (binding + revision + disk-stamp re-checked at
+publication, own-save echoes dropped, mid-flight hints re-observed
+once); dirty documents gain external-change state ("changed on disk;
+the buffer keeps your edits (:w! forces)") that only a confirmed save or
+guarded reload clears; directory buffers reobserve; Git signs revoke
+and recompute lazily; overflow/lease loss triggers the conservative
+rescan; dead incarnations refuse stale-generation events and resubscribe
+fresh. Picker freshness (0063's residual): SourceWorker caches per scope
+— retained SymbolIndex/catalog entries stat-validate on reuse, hinted
+subtrees rescan, cancellation restores the snapshot; no subscription
+means byte-identical pre-0058 full scans (honest degradation, no
+invisible crawl). Model: specs/Notify.tla — eleven invariants
+(HintsNeverAuthority, StaleIdentityNeverActs, AmbiguousNeverRelocates,
+FreshRequiresCoverage, CoalesceNeverLosesStaleness, ScanNeverErasesNewer,
+DirtyNeverClobbered, StaleReloadNeverClears, CoverageHonest,
+BoundedQueue, TypeOK), nine kept mutants each killed by exactly its
+named property, fifteen witnesses, exhaustive main check in ~5s
+(two-client calibration documented; the model has no cross-client
+action); chained into specs/gate.sh via notify-gate.sh. Evidence:
+strop-worker notify 15 real-kernel integration tests, engine
+subscription/reload/dirty/overflow/staleness tests, picker incremental
+e2e through the real pipeline.

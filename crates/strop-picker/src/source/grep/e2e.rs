@@ -447,3 +447,197 @@ fn remote_hits_carry_the_remote_namespace_and_never_escape_the_scope() {
     }));
     assert!(super::super::query::parse_json_match_with(&nul, &root, None).is_err());
 }
+
+/// Run workspace symbols to completion on a RETAINED worker, returning
+/// the published rows.
+fn workspace_symbol_texts(
+    worker: &SourceWorker,
+    root: &std::path::Path,
+    query: &str,
+) -> Vec<String> {
+    let (tx, rx) = channel();
+    let _request = worker.workspace_symbols(
+        root.to_path_buf(),
+        std::sync::Arc::new(crate::query::SearchQuery::parse(query)),
+        SelectionPolicy {
+            hidden: true,
+            respect_ignore: true,
+        },
+        tx,
+    );
+    let mut texts: Vec<String> = collect_items(&rx, query)
+        .iter()
+        .map(|item| item.text.clone())
+        .collect();
+    texts.sort();
+    texts
+}
+
+/// 0063 residual (0058 S7): with push coverage, an idle second search
+/// reuses every unchanged file and every unchanged catalog subtree —
+/// no full rescan — and publishes the identical rows.
+#[test]
+fn unchanged_scope_is_reused_not_rescanned() {
+    let fixture = mixed_fixture();
+    let root = fixture.path();
+    let worker = SourceWorker::new().unwrap();
+    worker.set_watching(root, true);
+    let first = workspace_symbol_texts(&worker, root, "parser");
+    let stats = worker.scan_stats(root).expect("a settled scan");
+    assert!(stats.full, "the first scan builds the baseline");
+    assert!(stats.symbols.parsed > 0, "the fixture has eligible files");
+    assert_eq!(stats.symbols.reused, 0);
+
+    let second = workspace_symbol_texts(&worker, root, "parser");
+    assert_eq!(first, second, "reuse never changes the rows");
+    let stats = worker.scan_stats(root).unwrap();
+    assert!(!stats.full, "the second scan refreshes incrementally");
+    assert_eq!(
+        stats.symbols.parsed, 0,
+        "no file changed: nothing re-parses ({} reused)",
+        stats.symbols.reused
+    );
+    assert!(stats.symbols.reused > 0);
+    assert!(
+        stats.catalog.reused > 0,
+        "unchanged catalog subtrees are reused: {stats:?}"
+    );
+}
+
+/// 0063 residual (0058 S7): a write during an idle period plus its
+/// notification hint makes the next search reflect the change WITHOUT
+/// a full rescan — only the invalidated file re-parses.
+#[test]
+fn a_hinted_write_rescans_only_the_invalidated_file() {
+    let fixture = mixed_fixture();
+    let root = fixture.path();
+    let worker = SourceWorker::new().unwrap();
+    worker.set_watching(root, true);
+    let named = |rows: &[String]| {
+        rows.iter()
+            .filter(|row| row.contains("fresh_symbol_after_write"))
+            .count()
+    };
+    let before = workspace_symbol_texts(&worker, root, "parser");
+    assert_eq!(named(&before), 0, "the symbol does not exist yet");
+
+    // The external write lands between searches (idle period), then its
+    // hint arrives, exactly as the editor applies it.
+    std::fs::write(
+        root.join("engine/src/lib.rs"),
+        "fn parser() {\n    let retry = request;\n}\nfn fresh_symbol_after_write() {}\nlet bare_parser = 1;\n",
+    )
+    .unwrap();
+    worker.invalidate(
+        root,
+        &[std::path::PathBuf::from("engine/src/lib.rs")],
+        false,
+    );
+
+    let after = workspace_symbol_texts(&worker, root, "parser");
+    assert_eq!(named(&after), 1, "the next search sees the new declaration");
+    assert!(after
+        .iter()
+        .any(|row| row.contains("fresh_symbol_after_write") && row.contains("engine/src/lib.rs")));
+    let stats = worker.scan_stats(root).unwrap();
+    assert!(!stats.full);
+    assert_eq!(
+        stats.symbols.parsed, 1,
+        "only the hinted file re-parses: {stats:?}"
+    );
+    assert!(stats.symbols.reused > 0, "the rest is reused: {stats:?}");
+    assert!(
+        stats.catalog.reused > 0 && stats.catalog.visited < 5,
+        "the catalog prunes untouched subtrees: {stats:?}"
+    );
+}
+
+/// 0063 residual: a missed hint self-heals — the refresh's stat
+/// observation notices the write even without invalidation, and only
+/// that file re-parses. Watching is never the only cache-validity
+/// mechanism.
+#[test]
+fn a_missed_hint_self_heals_by_observation() {
+    let fixture = mixed_fixture();
+    let root = fixture.path();
+    let worker = SourceWorker::new().unwrap();
+    worker.set_watching(root, true);
+    let named = |rows: &[String]| {
+        rows.iter()
+            .filter(|row| row.contains("observed_without_hint"))
+            .count()
+    };
+    let before = workspace_symbol_texts(&worker, root, "parser");
+    assert_eq!(named(&before), 0);
+
+    std::fs::write(
+        root.join("tools/mod.py"),
+        "class Cfg:\n    def parser(self):\n        pass\n\ndef observed_without_hint():\n    pass\n",
+    )
+    .unwrap();
+    // No invalidate() call: the hint was lost.
+
+    let after = workspace_symbol_texts(&worker, root, "parser");
+    assert_eq!(named(&after), 1, "observation, not the hint, heals it");
+    let stats = worker.scan_stats(root).unwrap();
+    assert_eq!(
+        stats.symbols.parsed, 1,
+        "only the stat-mismatched file re-parses: {stats:?}"
+    );
+}
+
+/// 0063 residual (0058 S7): overflow/loss is a conservative rescan
+/// obligation — the next search rebuilds the whole baseline instead of
+/// trusting retained state.
+#[test]
+fn overflow_forces_a_full_rescan() {
+    let fixture = mixed_fixture();
+    let root = fixture.path();
+    let worker = SourceWorker::new().unwrap();
+    worker.set_watching(root, true);
+    workspace_symbol_texts(&worker, root, "parser");
+    worker.invalidate(root, &[], true);
+
+    std::fs::write(
+        root.join("loose/overflow_marker.rs"),
+        "fn landed_during_overflow() {}\n",
+    )
+    .unwrap();
+    let rows = workspace_symbol_texts(&worker, root, "parser");
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("landed_during_overflow")),
+        "the rescan observes the overflow window"
+    );
+    let stats = worker.scan_stats(root).unwrap();
+    assert!(stats.full, "the rescan obligation rebuilt: {stats:?}");
+    assert_eq!(stats.symbols.reused, 0);
+}
+
+/// 0063 residual (0058 S7 honest degradation): without a subscription
+/// every search scans fresh — the pre-notification behavior — and a
+/// write is still reflected without any invalidation call.
+#[test]
+fn without_coverage_every_search_scans_fresh() {
+    let fixture = mixed_fixture();
+    let root = fixture.path();
+    let worker = SourceWorker::new().unwrap();
+    workspace_symbol_texts(&worker, root, "parser");
+    let stats = worker.scan_stats(root).unwrap();
+    assert!(stats.full);
+    assert_eq!(stats.symbols.reused, 0, "no coverage, no reuse");
+
+    std::fs::write(
+        root.join("loose/game.lua"),
+        "function mod:parser() end\nfunction unwatched_write_visible() end\n",
+    )
+    .unwrap();
+    let rows = workspace_symbol_texts(&worker, root, "parser");
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("unwatched_write_visible")),
+        "the per-search scan sees it"
+    );
+    let stats = worker.scan_stats(root).unwrap();
+    assert_eq!(stats.symbols.reused, 0, "still no reuse: {stats:?}");
+}

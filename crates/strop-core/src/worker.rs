@@ -144,6 +144,23 @@ impl CancelToken {
         self.0.cancelled.load(Ordering::Acquire)
     }
 
+    /// A token plus the handle that cancels it, for owners running their
+    /// own scheduling loop rather than the engine's worker pool (0058
+    /// WK04: the worker session cancels admitted requests by protocol
+    /// `cancel` and lease teardown, not pool bookkeeping). Dropping the
+    /// handle without cancelling still cancels (OwnerClosed), matching
+    /// the pool's abandon semantics.
+    pub fn standalone() -> (Self, CancelHandle) {
+        let token = Self(Arc::new(Cancellation::default()));
+        let inner = token.clone();
+        let handle = CancelHandle {
+            cancel: Some(Box::new(move |_reason| {
+                let _ = inner.cancel_resource();
+            })),
+        };
+        (token, handle)
+    }
+
     /// Install the single optional resource hook before acquiring native resources.
     /// A late installation executes immediately and returns its failure to the
     /// installer. Hooks must be prompt: they must not join or wait for workers.

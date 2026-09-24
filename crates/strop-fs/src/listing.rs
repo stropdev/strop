@@ -1,5 +1,7 @@
-//! Worker-only listing adapters. Only native entry names become child locations.
-use crate::{failure, io_failure};
+//! Worker-only listing. The native kernel lists its admitted namespace;
+//! detached namespaces arrive as decoded entry data for validation and
+//! normalization. Only native entry names become child locations.
+use crate::{failure, io_failure, ExecutionContext, NamespaceView};
 use std::path::Path;
 use strop_core::worker::CancelToken;
 use strop_workspace::operation::{FsFailure, FsFailureKind};
@@ -14,158 +16,71 @@ const NAME_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ListedDirectory {
     pub snapshot: DirectorySnapshot,
-    #[serde(skip)]
-    pub connection: Option<strop_remote::ConnectionLease>,
 }
 
+/// List the admitted native namespace. Detached namespaces are identity-only
+/// data to this kernel: their listings arrive through the client's transport
+/// and are validated by [`assemble`].
 pub fn list(
+    context: &ExecutionContext,
     location: &ResourceLocation,
-    remote: &strop_remote::RemoteClient,
-    container: Option<&strop_containers::ContainerIdentity>,
     token: &CancelToken,
 ) -> Result<ListedDirectory, FsFailure> {
+    context.admit(location)?;
     if !location.path.is_absolute() {
         return Err(failure(
             FsFailureKind::InvalidPath,
             "directory scope must be absolute",
         ));
     }
-    match &location.filesystem {
-        Filesystem::Local => list_local(location, token),
-        Filesystem::Remote(endpoint) => {
-            let file =
-                strop_workspace::RemoteFile::from_path(endpoint.clone(), location.path.clone())
-                    .map_err(|error| failure(FsFailureKind::InvalidPath, error.to_string()))?;
-            let listed = remote.list(&file.into(), token).map_err(|error| {
-                failure(
-                    if error.is_cancellation() {
-                        FsFailureKind::Cancelled
-                    } else {
-                        FsFailureKind::Io
-                    },
-                    error.to_string(),
-                )
-            })?;
-            from_remote(listed)
-        }
-        Filesystem::Container(id) => {
-            let identity = container
-                .filter(|identity| identity.id == id.as_str())
-                .ok_or_else(|| {
-                    failure(
-                        FsFailureKind::Unsupported,
-                        "attach the container before browsing its filesystem",
-                    )
-                })?;
-            let path = location.path.to_str().ok_or_else(|| {
-                failure(
-                    FsFailureKind::Unsupported,
-                    "container backend requires a UTF-8 path",
-                )
-            })?;
-            let engine = strop_containers::engine(token)
-                .map_err(|error| failure(FsFailureKind::Io, error.to_string()))?;
-            let reference = strop_containers::ContainerRef::of(identity)
-                .map_err(|error| failure(FsFailureKind::Protocol, error.to_string()))?;
-            let entries = strop_containers::list_dir(&engine, &reference, path, token)
-                .map_err(|error| failure(FsFailureKind::Io, error.to_string()))?;
-            from_container(location.clone(), entries)
-        }
+    match context.namespace() {
+        NamespaceView::Native => list_local(location, token),
+        namespace => Err(failure(
+            FsFailureKind::Unsupported,
+            format!(
+                "namespace {} is detached from this kernel; list it through its admitted transport",
+                namespace.filesystem().label()
+            ),
+        )),
     }
 }
 
-pub fn from_remote(
-    listed: strop_remote::RemoteDirectorySnapshot,
-) -> Result<ListedDirectory, FsFailure> {
-    let location = ResourceLocation::remote(
-        listed.directory.endpoint().clone(),
-        listed.directory.path().to_path_buf(),
-    );
-    let mut entries = Vec::with_capacity(listed.entries.len().min(ENTRY_LIMIT));
-    let mut state = ListingState::Complete;
-    let mut bytes = 0;
-    for entry in listed.entries {
-        if entry.file.endpoint() != listed.directory.endpoint()
-            || entry.file.path().parent() != Some(listed.directory.path())
-        {
-            return Err(failure(
-                FsFailureKind::Protocol,
-                "remote directory child escaped its captured parent",
-            ));
-        }
-        let name =
-            entry.file.path().file_name().ok_or_else(|| {
-                failure(FsFailureKind::Protocol, "remote child has no native name")
-            })?;
-        bytes += name.as_encoded_bytes().len();
-        if entries.len() == ENTRY_LIMIT || bytes > NAME_BYTES_LIMIT {
-            state = ListingState::Limited {
-                limit: entries.len(),
-            };
-            break;
-        }
-        let kind = match entry.kind {
-            strop_remote::RemoteEntryKind::File => EntryKind::File,
-            strop_remote::RemoteEntryKind::Directory => EntryKind::Directory,
-            strop_remote::RemoteEntryKind::SymbolicLink => EntryKind::SymbolicLink,
-            strop_remote::RemoteEntryKind::Fifo => EntryKind::Fifo,
-            strop_remote::RemoteEntryKind::Socket => EntryKind::Socket,
-            strop_remote::RemoteEntryKind::BlockDevice => EntryKind::BlockDevice,
-            strop_remote::RemoteEntryKind::CharacterDevice => EntryKind::CharacterDevice,
-            strop_remote::RemoteEntryKind::Unknown => EntryKind::Unknown,
-        };
-        let mut observation = Observation::unknown(kind);
-        observation.permissions = entry
-            .permissions
-            .map(|permissions| Permissions::from_mode(u32::from(permissions.bits())));
-        observation.size = entry.size.map(|size| size.get());
-        entries.push(DirectoryEntry {
-            name: EntryName::new(name.into())
-                .map_err(|error| failure(FsFailureKind::Protocol, error.to_string()))?,
-            observation,
-            error: None,
-        });
-    }
-    sort_entries(&mut entries)?;
-    Ok(ListedDirectory {
-        snapshot: DirectorySnapshot {
-            location,
-            entries: entries.into(),
-            state,
-        },
-        connection: Some(listed.connection),
-    })
+/// One directory child as decoded transport data — never a transport type.
+/// The client decodes its wire format; the kernel validates and normalizes.
+pub struct ObservedEntry {
+    pub name: std::ffi::OsString,
+    pub kind: EntryKind,
+    pub size: Option<u64>,
+    pub permissions: Option<Permissions>,
 }
 
-pub fn from_container(
+/// Validate, bound and normalize a detached namespace's decoded listing.
+/// The native namespace lists itself through [`list`]; assembling one from
+/// decoded data would bypass native observation and is refused.
+pub fn assemble(
     location: ResourceLocation,
-    source: Vec<strop_containers::DirEntry>,
+    source: Vec<ObservedEntry>,
 ) -> Result<ListedDirectory, FsFailure> {
-    if !matches!(location.filesystem, Filesystem::Container(_)) {
+    if matches!(location.filesystem, Filesystem::Local) {
         return Err(failure(
             FsFailureKind::Protocol,
-            "container listing has a different filesystem namespace",
+            "the native namespace lists through the kernel, not decoded data",
         ));
     }
     let mut entries = Vec::with_capacity(source.len().min(ENTRY_LIMIT));
     let mut state = ListingState::Complete;
     let mut bytes = 0;
     for entry in source {
-        bytes += entry.name.len();
+        bytes += entry.name.as_encoded_bytes().len();
         if entries.len() == ENTRY_LIMIT || bytes > NAME_BYTES_LIMIT {
             state = ListingState::Limited {
                 limit: entries.len(),
             };
             break;
         }
-        let kind = match entry.kind {
-            strop_containers::DirEntryKind::File => EntryKind::File,
-            strop_containers::DirEntryKind::Dir => EntryKind::Directory,
-            strop_containers::DirEntryKind::Symlink => EntryKind::SymbolicLink,
-            strop_containers::DirEntryKind::Other => EntryKind::Unknown,
-        };
-        let mut observation = Observation::unknown(kind);
+        let mut observation = Observation::unknown(entry.kind);
         observation.size = entry.size;
+        observation.permissions = entry.permissions;
         entries.push(DirectoryEntry {
             name: EntryName::new(entry.name.into())
                 .map_err(|error| failure(FsFailureKind::Protocol, error.to_string()))?,
@@ -180,7 +95,6 @@ pub fn from_container(
             entries: entries.into(),
             state,
         },
-        connection: None,
     })
 }
 
@@ -238,7 +152,6 @@ fn list_local(
             entries: entries.into(),
             state,
         },
-        connection: None,
     })
 }
 

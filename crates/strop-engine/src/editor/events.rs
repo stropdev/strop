@@ -53,6 +53,10 @@ pub enum AppEvent {
     Resolution(super::resolution::ResolutionEvent),
     ResumeInput,
     Preview(super::picker::PreviewResult),
+    /// Filesystem notifications landed on the bounded notify queue
+    /// (0058 S7): a pure wake hint — the records ARE the state, so
+    /// coalescing is legal (AR06).
+    Notify,
     Clipboard(super::ClipboardResult),
 }
 
@@ -111,6 +115,13 @@ impl Editor {
         if let Some(rx) = self.resolution.rx.take() {
             forward(rx, tx.clone(), AppEvent::Resolution);
         }
+        if let Some(rx) = self.notify.take_rx() {
+            let queue = std::sync::Arc::clone(&self.notify.queue);
+            forward(rx, tx.clone(), move |event| {
+                queue.push_event(event);
+                AppEvent::Notify
+            });
+        }
         self.connect_picker_stream(&tx);
         for srv in &mut self.lsp_servers {
             let rx = std::mem::replace(&mut srv.rx, std::sync::mpsc::channel().1);
@@ -119,6 +130,10 @@ impl Editor {
         let rx = self.lsp_state.attach.take_rx();
         forward(rx, tx.clone(), AppEvent::LspAttach);
         self.app_tx = Some(tx);
+        // 0058 S7: the local scope subscription starts with the event
+        // loop, never at construction (pure seeding) — readiness is the
+        // subscribe settle on the notify queue.
+        self.start_notifications();
     }
 
     /// Route one event to its handler (the per-event halves of the old
@@ -151,6 +166,7 @@ impl Editor {
                 }
                 self.paste_bracketed(&text);
             }
+            AppEvent::Notify => self.handle_notify(),
             AppEvent::QuitIntent => {
                 strop_trace::record_with(
                     strop_trace::EventKind::Input,
@@ -177,6 +193,9 @@ impl Editor {
             AppEvent::Preview(result) => self.handle_preview(result),
             AppEvent::Clipboard(content) => self.handle_clipboard(content),
         }
+        // 0058 S7: a worker restart kills the subscription with its
+        // session; observe the lease (cheap, no I/O) before staleness.
+        self.notify_observe_lease();
         // Coalesced draft checkpointing (0056 AR04): cheap staleness check
         // after every event; captures only what actually moved.
         self.recovery_after_event();
@@ -205,7 +224,6 @@ impl Editor {
         self.message = format!("event queue full — refused: {summary}");
     }
 }
-
 impl Editor {
     /// Outstanding finite work, independent of whether channels are
     /// forwarded (0056 AR06): start/handshake, mutation, checkpoint and
@@ -264,6 +282,15 @@ impl Editor {
         self.stop_all_terminals();
         self.stop_remote_work();
         self.close_picker();
+        // 0058 S7: the subscription dies with the session — typed
+        // retirement on the lease, then the lease drop reaps the worker.
+        if let Some(subscription) = self.notify.subscription.take() {
+            let worker = self.filesystem.worker().clone();
+            std::thread::spawn(move || {
+                let (token, _handle) = strop_core::worker::CancelToken::standalone();
+                let _ = worker.unsubscribe(&token, subscription);
+            });
+        }
         if let Some(source) = self.picker_source.as_ref() {
             source.close();
         }

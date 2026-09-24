@@ -257,7 +257,7 @@ impl Editor {
     /// Revoke the running hunk owner (if any) and return to Idle. The
     /// worker's late result — success, failure or the synthetic
     /// `Cancelled` — is rejected: it no longer owns the view.
-    fn cancel_hunk_owner(&mut self) {
+    pub(crate) fn cancel_hunk_owner(&mut self) {
         let running = match &self.hunk_load {
             Load::Running(ticket) => Some(ticket.request),
             _ => None,

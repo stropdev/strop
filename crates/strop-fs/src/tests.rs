@@ -4,7 +4,9 @@ use std::path::Path;
 use strop_workspace::operation::*;
 use strop_workspace::ResourceLocation;
 
-pub(super) fn with_token<T>(work: impl FnOnce(strop_core::worker::CancelToken) -> T) -> T {
+pub(super) fn with_token<T>(
+    work: impl FnOnce(&ExecutionContext, strop_core::worker::CancelToken) -> T,
+) -> T {
     let (send, receive) = std::sync::mpsc::channel();
     let (release, wait) = std::sync::mpsc::channel::<()>();
     let owner = strop_core::worker::spawn(
@@ -16,7 +18,8 @@ pub(super) fn with_token<T>(work: impl FnOnce(strop_core::worker::CancelToken) -
             strop_core::worker::Outcome::Success(())
         },
     );
-    let result = work(receive.recv().unwrap());
+    let context = ExecutionContext::native();
+    let result = work(&context, receive.recv().unwrap());
     drop(release);
     drop(owner);
     result
@@ -41,11 +44,12 @@ pub(super) fn intent(
     }
 }
 fn prepare(
+    context: &ExecutionContext,
     root: &Path,
     intent: &OperationIntent,
     token: &strop_core::worker::CancelToken,
 ) -> PreparedOperation {
-    local::prepare(intent, false, &environment(root), token).unwrap()
+    local::prepare(intent, false, &environment(root), context, token).unwrap()
 }
 
 #[test]
@@ -54,13 +58,14 @@ fn move_verification_requires_an_owned_after_version_not_just_inode_occupancy() 
     let source = root.path().join("source");
     let target = root.path().join("target");
     std::fs::write(&source, "owned\n").unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let operation = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Rename, Some(&source), Some(&target)),
             &token,
         );
-        let outcome = local::execute(&operation, None, &[], &token);
+        let outcome = local::execute(&operation, None, &[], context, &token);
         let StepOutcome::Committed {
             destination_after,
             publication,
@@ -80,7 +85,7 @@ fn move_verification_requires_an_owned_after_version_not_just_inode_occupancy() 
             },
         };
         assert!(matches!(
-            local::verify(&receipt, &token).unwrap(),
+            local::verify(&receipt, context, &token).unwrap(),
             VerifiedOutcome::Unknown { .. }
         ));
         if let StepOutcome::Unconfirmed {
@@ -90,7 +95,7 @@ fn move_verification_requires_an_owned_after_version_not_just_inode_occupancy() 
             *owned = publication;
         }
         assert!(matches!(
-            local::verify(&receipt, &token).unwrap(),
+            local::verify(&receipt, context, &token).unwrap(),
             VerifiedOutcome::Committed(_)
         ));
     });
@@ -99,7 +104,7 @@ fn move_verification_requires_an_owned_after_version_not_just_inode_occupancy() 
 #[test]
 fn a_directory_emptied_through_checked_operations_can_be_removed() {
     let root = tempfile::tempdir().unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let directory = root.path().join("directory");
         std::fs::create_dir(&directory).unwrap();
         let child = directory.join("child");
@@ -108,8 +113,8 @@ fn a_directory_emptied_through_checked_operations_can_be_removed() {
             intent(OperationKind::Remove, Some(&child), None),
             intent(OperationKind::Remove, Some(&directory), None),
         ] {
-            let operation = prepare(root.path(), &request, &token);
-            let outcome = local::execute(&operation, None, &[], &token);
+            let operation = prepare(context, root.path(), &request, &token);
+            let outcome = local::execute(&operation, None, &[], context, &token);
             assert!(outcome.is_committed(), "{outcome:?}");
         }
         assert!(!directory.exists());
@@ -119,9 +124,10 @@ fn a_directory_emptied_through_checked_operations_can_be_removed() {
 #[test]
 fn missing_parents_are_visible_steps_and_only_created_on_apply() {
     let root = tempfile::tempdir().unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let target = root.path().join("one/two/new");
         let plan = batch::prepare(
+            context,
             &[intent(OperationKind::CreateFile, None, Some(&target))],
             &environment(root.path()),
             &token,
@@ -140,7 +146,7 @@ fn missing_parents_are_visible_steps_and_only_created_on_apply() {
             ]
         );
         assert!(!root.path().join("one").exists());
-        let receipts = batch::execute(&plan, &Default::default(), &token);
+        let receipts = batch::execute(context, &plan, &Default::default(), &token);
         assert!(
             receipts
                 .iter()
@@ -154,13 +160,14 @@ fn missing_parents_are_visible_steps_and_only_created_on_apply() {
 #[test]
 fn rename_graph_orders_vacancies_and_refuses_cycles_before_mutation() {
     let root = tempfile::tempdir().unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let a = root.path().join("a");
         let b = root.path().join("b");
         let c = root.path().join("c");
         std::fs::write(&a, "A").unwrap();
         std::fs::write(&b, "B").unwrap();
         let cycle = batch::prepare(
+            context,
             &[
                 intent(OperationKind::Rename, Some(&a), Some(&b)),
                 intent(OperationKind::Rename, Some(&b), Some(&a)),
@@ -174,6 +181,7 @@ fn rename_graph_orders_vacancies_and_refuses_cycles_before_mutation() {
         assert_eq!(std::fs::read(&a).unwrap(), b"A");
         assert_eq!(std::fs::read(&b).unwrap(), b"B");
         let chain = batch::prepare(
+            context,
             &[
                 intent(OperationKind::Rename, Some(&a), Some(&b)),
                 intent(OperationKind::Rename, Some(&b), Some(&c)),
@@ -183,7 +191,7 @@ fn rename_graph_orders_vacancies_and_refuses_cycles_before_mutation() {
         )
         .unwrap();
         assert!(chain.refused.is_empty(), "{:?}", chain.refused);
-        let receipts = batch::execute(&chain, &Default::default(), &token);
+        let receipts = batch::execute(context, &chain, &Default::default(), &token);
         assert!(
             receipts
                 .iter()
@@ -199,26 +207,28 @@ fn rename_graph_orders_vacancies_and_refuses_cycles_before_mutation() {
 #[test]
 fn exclusive_creation_and_destination_races_preserve_other_files() {
     let root = tempfile::tempdir().unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let file = root.path().join("new.txt");
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::CreateFile, None, Some(&file)),
             &token,
         );
         std::fs::write(&file, "other actor\n").unwrap();
         assert!(matches!(
-            local::execute(&plan, None, &[], &token),
+            local::execute(&plan, None, &[], context, &token),
             StepOutcome::Refused(_)
         ));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "other actor\n");
         let another = root.path().join("empty.txt");
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::CreateFile, None, Some(&another)),
             &token,
         );
-        assert!(local::execute(&plan, None, &[], &token).is_committed());
+        assert!(local::execute(&plan, None, &[], context, &token).is_committed());
         assert_eq!(std::fs::read(another).unwrap(), b"");
     });
 }
@@ -226,17 +236,18 @@ fn exclusive_creation_and_destination_races_preserve_other_files() {
 #[test]
 fn rename_directory_and_conflicts_use_no_replace_semantics() {
     let root = tempfile::tempdir().unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let source = root.path().join("a");
         let target = root.path().join("b");
         std::fs::create_dir(&source).unwrap();
         std::fs::write(source.join("child"), "kept\n").unwrap();
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Rename, Some(&source), Some(&target)),
             &token,
         );
-        assert!(local::execute(&plan, None, &[], &token).is_committed());
+        assert!(local::execute(&plan, None, &[], context, &token).is_committed());
         assert!(!source.exists());
         assert_eq!(
             std::fs::read_to_string(target.join("child")).unwrap(),
@@ -244,13 +255,14 @@ fn rename_directory_and_conflicts_use_no_replace_semantics() {
         );
         let occupied = root.path().join("occupied");
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Rename, Some(&target), Some(&occupied)),
             &token,
         );
         std::fs::create_dir(&occupied).unwrap();
         assert!(matches!(
-            local::execute(&plan, None, &[], &token),
+            local::execute(&plan, None, &[], context, &token),
             StepOutcome::Refused(_)
         ));
         assert_eq!(
@@ -263,25 +275,28 @@ fn rename_directory_and_conflicts_use_no_replace_semantics() {
 #[test]
 fn stored_and_buffer_copies_publish_exact_bytes_without_changing_source() {
     let root = tempfile::tempdir().unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let source = root.path().join("source");
         let stored = root.path().join("stored");
         let live = root.path().join("live");
         std::fs::write(&source, "disk\n").unwrap();
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Copy, Some(&source), Some(&stored)),
             &token,
         );
-        let outcome = local::execute(&plan, None, &[], &token);
+        let outcome = local::execute(&plan, None, &[], context, &token);
         assert!(outcome.is_committed(), "{outcome:?}");
         let mut request = intent(OperationKind::Copy, Some(&source), Some(&live));
         request.copy_version = CopyVersion::Buffer;
-        let plan = local::prepare(&request, false, &environment(root.path()), &token).unwrap();
+        let plan =
+            local::prepare(&request, false, &environment(root.path()), context, &token).unwrap();
         let outcome = local::execute(
             &plan,
             Some(&ropey::Rope::from_str("unsaved\n")),
             &[],
+            context,
             &token,
         );
         assert!(outcome.is_committed(), "{outcome:?}");
@@ -299,17 +314,18 @@ fn stored_and_buffer_copies_publish_exact_bytes_without_changing_source() {
 #[test]
 fn permanent_remove_refuses_nonempty_directories_and_changed_sources() {
     let root = tempfile::tempdir().unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let directory = root.path().join("dir");
         std::fs::create_dir(&directory).unwrap();
         std::fs::write(directory.join("child"), "safe\n").unwrap();
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Remove, Some(&directory), None),
             &token,
         );
         assert!(matches!(
-            local::execute(&plan, None, &[], &token),
+            local::execute(&plan, None, &[], context, &token),
             StepOutcome::Refused(_)
         ));
         assert_eq!(
@@ -319,13 +335,14 @@ fn permanent_remove_refuses_nonempty_directories_and_changed_sources() {
         let file = root.path().join("file");
         std::fs::write(&file, "before").unwrap();
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Remove, Some(&file), None),
             &token,
         );
         std::fs::write(&file, "after changed").unwrap();
         assert!(matches!(
-            local::execute(&plan, None, &[], &token),
+            local::execute(&plan, None, &[], context, &token),
             StepOutcome::Refused(_)
         ));
         assert_eq!(std::fs::read_to_string(file).unwrap(), "after changed");
@@ -336,15 +353,16 @@ fn permanent_remove_refuses_nonempty_directories_and_changed_sources() {
 fn trash_is_recoverable_and_restore_refuses_occupied_names() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("home")).unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let source = root.path().join("a name.txt");
         std::fs::write(&source, "recover me\n").unwrap();
         let plan = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Trash, Some(&source), None),
             &token,
         );
-        let outcome = local::execute(&plan, None, &[], &token);
+        let outcome = local::execute(&plan, None, &[], context, &token);
         let StepOutcome::Committed {
             recovery: Some(recovery),
             ..
@@ -358,18 +376,19 @@ fn trash_is_recoverable_and_restore_refuses_occupied_names() {
             "recover me\n"
         );
         let restore = prepare(
+            context,
             root.path(),
             &intent(OperationKind::Restore, Some(&recovery.path), Some(&source)),
             &token,
         );
         std::fs::write(&source, "new occupant\n").unwrap();
         assert!(matches!(
-            local::execute(&restore, None, &[], &token),
+            local::execute(&restore, None, &[], context, &token),
             StepOutcome::Refused(_)
         ));
         assert_eq!(std::fs::read_to_string(&source).unwrap(), "new occupant\n");
         std::fs::remove_file(&source).unwrap();
-        assert!(local::execute(&restore, None, &[], &token).is_committed());
+        assert!(local::execute(&restore, None, &[], context, &token).is_committed());
         assert_eq!(std::fs::read_to_string(source).unwrap(), "recover me\n");
     });
 }

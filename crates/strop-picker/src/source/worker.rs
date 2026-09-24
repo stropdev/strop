@@ -36,6 +36,10 @@ struct Shared {
     busy: AtomicBool,
     closing: AtomicBool,
     backlog: Arc<Flow>,
+    /// Retained per-scope baselines (0063 residual): hint invalidation
+    /// from the editor lands here; the source thread refreshes against
+    /// it. Never locked across filesystem I/O.
+    cache: Arc<Mutex<super::cache::Caches>>,
 }
 
 pub struct SourceWorker {
@@ -87,6 +91,27 @@ impl SourceWorker {
         })
     }
 
+    /// Push coverage for one scope changed (0058 S7): the editor's
+    /// subscription was established (`true`) or lost/refused (`false`).
+    /// Losing coverage conservatively invalidates the retained baseline.
+    pub fn set_watching(&self, root: &std::path::Path, watching: bool) {
+        self.shared.cache.lock().set_watching(root, watching);
+    }
+
+    /// Notification hints for one covered scope (0058 S7): paths are
+    /// relative to `root`; `rescan` is the conservative overflow/loss
+    /// obligation. The next search over each covered scope rescans the
+    /// invalidated subtrees and reuses the rest.
+    pub fn invalidate(&self, root: &std::path::Path, paths: &[PathBuf], rescan: bool) {
+        self.shared.cache.lock().invalidate(root, paths, rescan);
+    }
+
+    /// Last refresh accounting for a scope (0058 S7 test evidence).
+    #[cfg(test)]
+    pub(crate) fn scan_stats(&self, root: &std::path::Path) -> Option<super::cache::BaselineStats> {
+        self.shared.cache.lock().stats(root)
+    }
+
     fn submit(
         &self,
         sender: impl Into<SourceSink>,
@@ -102,6 +127,7 @@ impl SourceWorker {
         let pending = Pending {
             prepared,
             cancel,
+
             work: Box::new(move |token| work(tx, token)),
         };
         let (retired, running) = {
@@ -147,10 +173,12 @@ impl SourceWorker {
         policy: SelectionPolicy,
         sender: impl Into<SourceSink>,
     ) -> CancelHandle {
+        let cache = Arc::clone(&self.shared.cache);
         self.submit(sender, move |tx, token| {
-            super::run_workspace_symbols(root, query, policy, tx, token)
+            super::run_workspace_symbols(root, query, policy, cache, tx, token)
         })
     }
+
     pub fn search(
         &self,
         query: Arc<SearchQuery>,
@@ -159,8 +187,11 @@ impl SourceWorker {
         snapshots: Vec<SourceSnapshot>,
         sender: impl Into<SourceSink>,
     ) -> CancelHandle {
+        let cache = Arc::clone(&self.shared.cache);
         self.submit(sender, move |tx, token| match &root.filesystem {
-            Filesystem::Local => super::grep::run(query, policy, root.path, snapshots, tx, token),
+            Filesystem::Local => {
+                super::grep::run(query, policy, root.path, snapshots, cache, tx, token)
+            }
             Filesystem::Remote(_) => {
                 super::remote::run_search(query, policy, root, snapshots, tx, token)
             }

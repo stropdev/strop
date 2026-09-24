@@ -129,6 +129,11 @@ impl Buffer {
         self.file_identity.as_deref()
     }
 
+    /// The observed on-disk mtime baseline (0021 §3): reload guards and
+    /// the save-time external-change check compare against it.
+    pub fn disk_stamp(&self) -> Option<std::time::SystemTime> {
+        self.disk_stamp
+    }
     pub fn restore_history(
         &mut self,
         history: History,
@@ -200,6 +205,43 @@ impl Buffer {
             buffer.set_readonly(ReadonlyReason::Filesystem);
         }
         Ok(buffer)
+    }
+
+    /// Adopt content an admitted reader (0058 WK04: the local worker)
+    /// returned for `path`, together with the observation evidence it
+    /// reported. Every field here is evidence from that read: the rope is
+    /// the payload, `disk_stamp` the observed mtime, `canonical` the
+    /// namespace's identity path and `writable` the observed permission
+    /// fact — nothing is probed or guessed in-process. Missing files use
+    /// `disk_stamp: None` with an empty rope (vim new-file semantics,
+    /// matching [`Buffer::open`]); their callers pass `writable: true`
+    /// since the absent file carries no permissions.
+    pub fn from_read(
+        path: std::path::PathBuf,
+        rope: Rope,
+        disk_stamp: Option<std::time::SystemTime>,
+        canonical: std::path::PathBuf,
+        writable: bool,
+    ) -> Self {
+        let mut buffer = Self {
+            trace_identity: BufferTraceId::next(),
+            rope,
+            path: Some(path),
+            dirty: false,
+            epoch: 0,
+            readonly: false,
+            readonly_reason: None,
+            name: None,
+            history: History::default(),
+            changes: Vec::new(),
+            disk_stamp,
+            file_identity: Some(canonical),
+            line_layouts: layout_cache::LineLayouts::default(),
+        };
+        if !writable {
+            buffer.set_readonly(ReadonlyReason::Filesystem);
+        }
+        buffer
     }
 
     /// Display CELL of an offset within its line (0017/R6): cursor placement

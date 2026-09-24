@@ -44,7 +44,9 @@ pub mod macros;
 pub(crate) mod matching;
 #[cfg(test)]
 mod multicursor_tests;
+pub(crate) mod namespace;
 pub(crate) mod normal;
+pub(crate) mod notify;
 mod occurrence;
 #[cfg(test)]
 mod occurrence_tests;
@@ -171,6 +173,9 @@ pub struct Editor {
     pub(crate) remote: remote::RemoteState,
     pub(crate) directories: directory::DirectoryState,
     pub(crate) filesystem: filesystem::FsState,
+    /// Filesystem notifications (0058 S7): the scope subscription, its
+    /// bounded landing queue and the guarded-reload state.
+    pub(crate) notify: notify::NotifyState,
     pub(crate) io: io::IoState,
     pub(crate) remote_completion: remote_completion::RemoteCompletionState,
     pub(crate) worker_ids: strop_core::worker::WorkerIds,
@@ -421,6 +426,7 @@ impl Editor {
             directories: directory::DirectoryState::default(),
             filesystem: filesystem::FsState::default(),
             remote_completion: remote_completion::RemoteCompletionState::default(),
+            notify: notify::NotifyState::default(),
             picker_ranking: picker::ranking::State::default(),
             analysis: analysis::AnalysisState::default(),
             terminals: terminal::State::default(),

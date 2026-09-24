@@ -1,9 +1,95 @@
 //! Owned namespace dispatch and dependency ordering. Every generated parent is a
 //! visible prepared step; nothing executes until its complete plan is approved.
-use crate::Environment;
+//! Orchestration (bounds, dependency ordering, cancellation and the
+//! unconfirmed-outcome cascade) lives here exactly once; the admitted
+//! [`StepKernel`] below supplies only per-step effects for its single
+//! namespace, so no local/remote policy twin can drift (0058 WK03).
+use crate::{Environment, ExecutionContext, NamespaceView};
 use strop_core::worker::CancelToken;
 use strop_workspace::operation::*;
 use strop_workspace::{Filesystem, ResourceLocation};
+
+/// One admitted namespace's step executor. Constructing one admits a context;
+/// the orchestration re-checks that every step stays inside it.
+pub trait StepKernel {
+    /// The single namespace this kernel may touch.
+    fn namespace(&self) -> Filesystem;
+    fn prepare_one(
+        &self,
+        intent: &OperationIntent,
+        allow_occupied: bool,
+        environment: &Environment,
+        token: &CancelToken,
+    ) -> Result<PreparedOperation, FsFailure>;
+    fn execute_one(
+        &self,
+        operation: &PreparedOperation,
+        contents: Option<&ropey::Rope>,
+        receipts: &[StepReceipt],
+        token: &CancelToken,
+    ) -> StepOutcome;
+    fn verify_one(
+        &self,
+        receipt: &StepReceipt,
+        token: &CancelToken,
+    ) -> Result<VerifiedOutcome, FsFailure>;
+}
+
+/// The native executor: one admitted [`ExecutionContext`] running in-process.
+/// Detached namespaces are refused here; their clients dispatch through their
+/// own transports and never share this kernel's prepared authority.
+impl StepKernel for ExecutionContext {
+    fn namespace(&self) -> Filesystem {
+        self.namespace().filesystem()
+    }
+    fn prepare_one(
+        &self,
+        intent: &OperationIntent,
+        allow_occupied: bool,
+        environment: &Environment,
+        token: &CancelToken,
+    ) -> Result<PreparedOperation, FsFailure> {
+        match self.namespace() {
+            NamespaceView::Native => {
+                crate::local::prepare(intent, allow_occupied, environment, self, token)
+            }
+            _ => Err(FsFailure::new(
+                FsFailureKind::Unsupported,
+                "detached namespaces execute through their admitted transport; this kernel is native",
+            )),
+        }
+    }
+    fn execute_one(
+        &self,
+        operation: &PreparedOperation,
+        contents: Option<&ropey::Rope>,
+        receipts: &[StepReceipt],
+        token: &CancelToken,
+    ) -> StepOutcome {
+        match self.namespace() {
+            NamespaceView::Native => {
+                crate::local::execute(operation, contents, receipts, self, token)
+            }
+            _ => StepOutcome::Refused(FsFailure::new(
+                FsFailureKind::Unsupported,
+                "namespace has no mutation capability in this kernel",
+            )),
+        }
+    }
+    fn verify_one(
+        &self,
+        receipt: &StepReceipt,
+        token: &CancelToken,
+    ) -> Result<VerifiedOutcome, FsFailure> {
+        match self.namespace() {
+            NamespaceView::Native => crate::local::verify(receipt, self, token),
+            _ => Err(FsFailure::new(
+                FsFailureKind::Unsupported,
+                "namespace has no mutation verification capability in this kernel",
+            )),
+        }
+    }
+}
 
 pub const STEP_LIMIT: usize = 512;
 const PARENT_LIMIT: usize = 128;
@@ -15,6 +101,7 @@ pub struct PreparedBatch {
 }
 
 pub fn prepare_one(
+    kernel: &dyn StepKernel,
     intent: &OperationIntent,
     allow_occupied: bool,
     environment: &Environment,
@@ -34,17 +121,17 @@ pub fn prepare_one(
             "cross-namespace transfers require a separate transfer contract",
         ));
     }
-    match location.filesystem {
-        Filesystem::Local => crate::local::prepare(intent, allow_occupied, environment, token),
-        Filesystem::Remote(_) => strop_remote::filesystem::prepare(intent, allow_occupied, token),
-        Filesystem::Container(_) => Err(FsFailure::new(
+    if location.filesystem != kernel.namespace() {
+        return Err(FsFailure::new(
             FsFailureKind::Unsupported,
-            "container filesystem operations are read-only by policy",
-        )),
+            "step's namespace is not this kernel's admitted namespace",
+        ));
     }
+    kernel.prepare_one(intent, allow_occupied, environment, token)
 }
 
 pub fn prepare(
+    kernel: &dyn StepKernel,
     intents: &[OperationIntent],
     environment: &Environment,
     token: &CancelToken,
@@ -60,7 +147,7 @@ pub fn prepare(
         ));
     }
     for intent in intents {
-        match prepare_one(intent, true, environment, token) {
+        match prepare_one(kernel, intent, true, environment, token) {
             Ok(operation) => result.steps.push(operation),
             Err(failure) => result.refused.push(OperationRefusal {
                 intent: intent.clone(),
@@ -103,7 +190,7 @@ pub fn prepare(
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
             };
-            match prepare_one(&intent, false, environment, token) {
+            match prepare_one(kernel, &intent, false, environment, token) {
                 Ok(parent) => result.steps.push(parent),
                 Err(failure) => {
                     refuse_all(&mut result, failure);
@@ -249,6 +336,7 @@ fn dependencies(steps: &mut Vec<PreparedOperation>) -> Result<(), FsFailure> {
 }
 
 pub fn execute(
+    kernel: &dyn StepKernel,
     plan: &PreparedBatch,
     contents: &std::collections::HashMap<usize, ropey::Rope>,
     token: &CancelToken,
@@ -266,23 +354,13 @@ pub fn execute(
         }) {
             StepOutcome::Refused(conflict("a required earlier step did not commit"))
         } else {
-            match operation
-                .intent
-                .location()
-                .map(|location| &location.filesystem)
-            {
-                Some(Filesystem::Local) => {
-                    crate::local::execute(operation, contents.get(&step), &receipts, token)
+            match operation.intent.location() {
+                Some(location) if location.filesystem == kernel.namespace() => {
+                    kernel.execute_one(operation, contents.get(&step), &receipts, token)
                 }
-                Some(Filesystem::Remote(_)) => strop_remote::filesystem::execute(
-                    operation,
-                    contents.get(&step),
-                    &receipts,
-                    token,
-                ),
                 _ => StepOutcome::Refused(FsFailure::new(
                     FsFailureKind::Unsupported,
-                    "namespace has no mutation capability",
+                    "step's namespace is not this kernel's admitted namespace",
                 )),
             }
         };
@@ -308,18 +386,18 @@ pub fn execute(
     receipts
 }
 
-pub fn verify(receipt: &StepReceipt, token: &CancelToken) -> Result<VerifiedOutcome, FsFailure> {
-    match receipt
-        .operation
-        .intent
-        .location()
-        .map(|location| &location.filesystem)
-    {
-        Some(Filesystem::Local) => crate::local::verify(receipt, token),
-        Some(Filesystem::Remote(_)) => strop_remote::filesystem::verify(receipt, token),
+pub fn verify(
+    kernel: &dyn StepKernel,
+    receipt: &StepReceipt,
+    token: &CancelToken,
+) -> Result<VerifiedOutcome, FsFailure> {
+    match receipt.operation.intent.location() {
+        Some(location) if location.filesystem == kernel.namespace() => {
+            kernel.verify_one(receipt, token)
+        }
         _ => Err(FsFailure::new(
             FsFailureKind::Unsupported,
-            "namespace has no mutation verification capability",
+            "step's namespace is not this kernel's admitted namespace",
         )),
     }
 }

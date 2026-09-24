@@ -6,11 +6,12 @@ fn committed_rename_with_io_error_retains_trash_metadata_and_verifiable_recovery
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("original.txt");
     std::fs::write(&source, "original bytes").unwrap();
-    with_token(|token| {
+    with_token(|context, token| {
         let operation = crate::local::prepare(
             &intent(OperationKind::Trash, Some(&source), None),
             false,
             &environment(root.path()),
+            context,
             &token,
         )
         .unwrap();
@@ -62,7 +63,7 @@ fn committed_rename_with_io_error_retains_trash_metadata_and_verifiable_recovery
             outcome,
         };
         assert!(matches!(
-            crate::local::verify(&receipt, &token).unwrap(),
+            crate::local::verify(&receipt, context, &token).unwrap(),
             strop_workspace::operation::VerifiedOutcome::Committed(_)
         ));
     });

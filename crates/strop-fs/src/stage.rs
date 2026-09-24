@@ -6,17 +6,7 @@ use std::fs::File;
 use strop_workspace::operation::{FsFailure, FsFailureKind};
 use strop_workspace::ObjectId;
 
-pub(crate) fn nonce() -> Result<String, FsFailure> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| failure(FsFailureKind::Io, error.to_string()))?;
-    use std::fmt::Write as _;
-    let mut text = String::with_capacity(32);
-    for byte in bytes {
-        let _ = write!(text, "{byte:02x}");
-    }
-    Ok(text)
-}
-
+pub(crate) use crate::context::nonce;
 pub(crate) struct Stage<'a> {
     pub parent: &'a Parent,
     pub directory: File,

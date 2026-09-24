@@ -42,6 +42,7 @@ impl Document {
             indent_override: super::IndentOverride::default(),
             detection,
             source: DocumentSource::Remote(Box::new(source)),
+            external_change: false,
         }
     }
     pub(crate) fn remote_snapshot(snapshot: RemoteSnapshot, selection: ReadSelection) -> Self {
