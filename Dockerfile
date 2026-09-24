@@ -27,6 +27,8 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY docs ./docs
+# The VF08 helper digest pins are read by strop-remote's test lane.
+COPY verification ./verification
 
 FROM builder AS test
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
