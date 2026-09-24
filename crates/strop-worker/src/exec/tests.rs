@@ -58,8 +58,11 @@ fn sh(script: &str) -> ExecSpec {
     .unwrap()
 }
 
-/// A PID is gone: kill(pid, 0) reports ESRCH. Polls briefly so an in-flight
-/// teardown can land without a race.
+/// A PID is gone: kill(pid, 0) reports ESRCH, or the process is a zombie
+/// (state Z in /proc) — killed by the group teardown but awaiting reaping
+/// by the namespace init, which is not ours to force (in a container,
+/// PID 1 is the shell, which does not reap). Polls briefly so an
+/// in-flight teardown can land without a race.
 fn pid_gone(pid: u32) -> bool {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -67,6 +70,15 @@ fn pid_gone(pid: u32) -> bool {
         let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
         if result == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
             return true;
+        }
+        if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            // The state field follows the (possibly space-containing)
+            // comm: it is the first token after the final ')'.
+            if let Some((_, after)) = stat.rsplit_once(')') {
+                if after.split_whitespace().next() == Some("Z") {
+                    return true;
+                }
+            }
         }
         if Instant::now() >= deadline {
             return false;
