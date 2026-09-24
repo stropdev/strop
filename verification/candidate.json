@@ -18,12 +18,9 @@
       "url": "https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip"
     }
   },
-  "commit": "cacf6d42de730dc3f7dac194992de8b77cf511cf",
-  "commit_date": "2026-09-24T14:05:01+01:00",
-  "dirty": [
-    "erification/check.py",
-    "verification/inventory.json"
-  ],
+  "commit": "49d99c9716a0d5759579937ebf6bdb8506f6135f",
+  "commit_date": "2026-09-24T14:41:36+01:00",
+  "dirty": [],
   "dockerfile_sha256": "63d52eb2d0eac04bb550292605172b3ba254e83d8304b0dc28b6d88a9ec1ed2e",
   "dockerfile_stages": {
     "builder": "rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d",
@@ -50,7 +47,7 @@
   "plan": "plans/0057-core-verification-and-assurance.md",
   "release": "0057",
   "schema": 1,
-  "tree": "9e512ee50ad26e1cc8f387799a65b93e9c652eda",
+  "tree": "ee47a3406e5fd4913aaf9b81ee8c9ff4ec9bddbe",
   "verus_crate_pins": {
     "verus_builtin": "=0.0.0-2026-09-06-0133",
     "verus_builtin_macros": "=0.0.0-2026-09-06-0133"
