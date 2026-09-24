@@ -71,7 +71,7 @@
 use crate::exec::SupervisionOutcome;
 
 /// The fixed supervisor program. ASCII only, Python 3 stdlib only.
-const SOURCE: &str = r#"
+pub(crate) const SOURCE: &str = r#"
 import os, sys, time, base64, errno, select, signal, struct
 
 MARK = b'STROP-SUP-v1'

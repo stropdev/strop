@@ -17,7 +17,7 @@
 use crate::exec::{RemoteCommandError, RemoteProgram, StdinMode};
 use std::path::Path;
 
-pub(super) const VERSION: u8 = 2;
+pub(crate) const VERSION: u8 = 2;
 
 /// Linux caps a single argv element at 128 KiB (`MAX_ARG_STRLEN`); the
 /// base64 wrapper plus quoting headroom keeps us comfortably below.

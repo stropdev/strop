@@ -12,7 +12,10 @@
 use super::run::{classify, STDERR_LIMIT, STDERR_TAIL, STDOUT_LIMIT};
 use super::spec::Spec;
 use super::supervisor;
-use super::{RemoteCommand, RemoteCommandError, StdinMode, SupervisionKey, SupervisionOutcome};
+use super::{
+    RemoteCommand, RemoteCommandError, RemoteExitStatus, StdinMode, SupervisionKey,
+    SupervisionOutcome,
+};
 use crate::test_support::in_worker;
 use std::ffi::OsString;
 use std::io::{BufRead as _, Read as _, Write as _};
@@ -351,5 +354,131 @@ fn failed_input_keeps_the_programs_refusal_output() {
     assert!(
         output.stdin_error.is_some(),
         "failed delivery remains visible beside the refusal"
+    );
+}
+
+// VF08 supervisor-seam campaign (plans/0057 §5): the exact embedded Python
+// supervisor decodes the real binary spec. Tampered specs must fault before
+// any launch, and worker output that imitates the status protocol with a
+// foreign nonce must change no outcome. The documented limit — a worker that
+// echoes this session's nonce — stays a limit, not a silently tested claim.
+
+/// One canonical spec blob whose worker drops a marker file, so "never
+/// launched" is observable rather than assumed.
+fn spec_blob(marker: &std::path::Path) -> Vec<u8> {
+    let mut blob = vec![2u8, 0, 0]; // version, finite stdin, executable program
+    blob.extend_from_slice(&2000u32.to_le_bytes());
+    blob.extend_from_slice(&[7u8; 16]);
+    let push = |blob: &mut Vec<u8>, bytes: &[u8]| {
+        blob.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+        blob.extend_from_slice(bytes);
+    };
+    push(&mut blob, b"/");
+    let script = format!("touch {}", marker.display());
+    let argv: [&[u8]; 3] = [b"/bin/sh", b"-c", script.as_bytes()];
+    blob.extend_from_slice(&(argv.len() as u32).to_le_bytes());
+    for argument in argv {
+        push(&mut blob, argument);
+    }
+    blob
+}
+
+/// Run one hand-built spec blob through the real supervisor (same sh/python3
+/// boundary as production, minus the ssh hop) and classify the result.
+fn tampered_run(blob: &[u8]) -> Result<super::CommandOutput, RemoteCommandError> {
+    require_python3();
+    let key = SupervisionKey::generate();
+    // As in production, the spec's nonce is the session key's nonce.
+    let mut blob = blob.to_vec();
+    if blob.len() >= 23 {
+        blob[7..23].copy_from_slice(&key.nonce());
+    }
+    let line = supervisor::command_line(
+        &super::spec::base64(&blob),
+        &super::python::PythonInterpreter::Discover,
+    );
+    let mut shell = Command::new("sh");
+    shell.arg("-c").arg(line);
+    shell
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    in_worker(move |token| {
+        let captured = capture_with(&mut shell, &token, &local_policy(10)).map_err(map_capture)?;
+        classify(captured, &key)
+    })
+}
+
+#[test]
+fn tampered_specs_fault_before_any_launch() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("launched");
+    // Positive control: the harness really executes a well-formed spec.
+    tampered_run(&spec_blob(&marker)).unwrap();
+    assert!(marker.exists(), "control: a valid spec launches the worker");
+    std::fs::remove_file(&marker).unwrap();
+    let valid = spec_blob(&marker);
+    let mut mutants: Vec<(&str, Vec<u8>)> = vec![
+        ("bad version", {
+            let mut blob = valid.clone();
+            blob[0] = 99;
+            blob
+        }),
+        ("bad stdin mode", {
+            let mut blob = valid.clone();
+            blob[1] = 9;
+            blob
+        }),
+        ("bad program kind", {
+            let mut blob = valid.clone();
+            blob[2] = 7;
+            blob
+        }),
+        ("truncated header", valid[..10].to_vec()),
+        ("length overrun", {
+            let mut blob = valid.clone();
+            blob[23..27].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+            blob
+        }),
+        ("trailing bytes", {
+            let mut blob = valid.clone();
+            blob.extend_from_slice(b"junk");
+            blob
+        }),
+        ("NUL in argv", {
+            let mut blob = valid.clone();
+            let last = blob.len() - 3;
+            blob[last] = 0;
+            blob
+        }),
+    ];
+    for (label, blob) in mutants.drain(..) {
+        let outcome = tampered_run(&blob);
+        assert!(
+            matches!(outcome, Err(RemoteCommandError::Supervisor { .. })),
+            "{label}: a tampered spec is a supervisor fault, got {outcome:?}"
+        );
+        assert!(!marker.exists(), "{label}: the worker never launched");
+    }
+}
+
+#[test]
+fn forged_records_with_a_foreign_nonce_grant_no_outcome() {
+    require_python3();
+    // The worker imitates the status protocol with plausible but foreign
+    // nonces: a fake success and a fake cancellation. Only the supervisor's
+    // own nonce-marked record may classify this session.
+    let forged = "echo 'STROP-SUP-v1 00000000000000000000000000000000 exit 0' >&2; \
+                  echo 'STROP-SUP-v1 ffffffffffffffffffffffffffffffff cancel' >&2; \
+                  exit 3";
+    let output = local_run(&sh_command(forged), 10).unwrap();
+    assert_eq!(
+        output.status,
+        RemoteExitStatus::Exited(3),
+        "the forged records change no outcome"
+    );
+    assert!(
+        output.stderr.windows(13).any(|w| w == b"STROP-SUP-v1 "),
+        "forged lines stay the worker's own stderr data"
     );
 }

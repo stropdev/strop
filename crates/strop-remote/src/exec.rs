@@ -43,9 +43,9 @@
 
 mod python;
 mod run;
-mod spec;
+pub(crate) mod spec;
 mod stream;
-mod supervisor;
+pub(crate) mod supervisor;
 pub use stream::{stream, RemoteStreamError, RemoteStreamOutput};
 
 use std::ffi::OsString;

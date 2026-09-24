@@ -9,7 +9,7 @@ use strop_workspace::RemoteFile;
 const VERSION: u8 = 1;
 const HEADER_LIMIT: usize = 16 * 1024;
 const REPLY_LIMIT: usize = 64 * 1024;
-pub(super) const HELPER: &str = concat!(
+pub(crate) const HELPER: &str = concat!(
     include_str!("../protected.py"),
     "\n",
     include_str!("helper.py")
@@ -119,6 +119,16 @@ pub(super) fn invoke(
     }
     let output = crate::exec::run_with_input(file.endpoint(), &command, token, &chunks)
         .map_err(|error| operation.error(RefusalKind::Io, error.to_string()))?;
+    classify(&operation, output)
+}
+
+/// The pure reply boundary: bound checks, decoding, version and exit-status
+/// classification over one completed helper exchange. No I/O lives here, so
+/// the malformed/ambiguous-reply campaigns exercise exactly this function.
+fn classify(
+    operation: &Operation<'_>,
+    output: crate::exec::CommandOutput,
+) -> Result<Reply, RemoteSaveError> {
     if output.stdout_dropped != 0 || output.stdout.len() > REPLY_LIMIT {
         return Err(operation.error(RefusalKind::Protocol, "save response exceeded its bound"));
     }
@@ -156,4 +166,231 @@ pub(super) fn invoke(
         return Err(operation.error(RefusalKind::Io, format!("input delivery failed: {error}")));
     }
     Ok(response.result)
+}
+
+/// VF08 reply-boundary campaign: the pure classifier is exercised with
+/// malformed, ambiguous and dishonest helper outputs. A bad reply must
+/// never decode into a permit, a clean stamp or another binding's outcome.
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+
+    fn output(code: u32, stdout: String) -> crate::exec::CommandOutput {
+        crate::exec::CommandOutput {
+            status: crate::exec::RemoteExitStatus::Exited(code),
+            stdout: stdout.into_bytes(),
+            stderr: Vec::new(),
+            stdout_dropped: 0,
+            stderr_dropped: 0,
+            stdin_error: None,
+        }
+    }
+    fn stamp() -> Stamp {
+        Stamp {
+            device: 1,
+            inode: 2,
+            size: 3,
+            mtime_ns: 4,
+            ctime_ns: 5,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+            content: ContentDigest([7u8; 32]),
+            attributes: ContentDigest([8u8; 32]),
+        }
+    }
+
+    fn stamp_json() -> String {
+        serde_json::to_string(&stamp()).unwrap()
+    }
+
+    /// Run a check against both operation shapes: an Edit (whose protocol
+    /// failures are clean refusals) and a Verify (whose failures must be
+    /// Unconfirmed, never a clean "nothing happened").
+    fn with_operations(body: impl Fn(&Operation, &Operation)) {
+        let digest = ContentDigest([7u8; 32]);
+        let before = stamp();
+        body(
+            &Operation::Edit {
+                length: 3,
+                digest: &digest,
+            },
+            &Operation::Verify {
+                before: &before,
+                length: 3,
+                digest: &digest,
+            },
+        );
+    }
+
+    /// A reply the helper would emit for a successful write.
+    fn written() -> String {
+        format!(
+            "{{\"version\":1,\"result\":{{\"status\":\"written\",\"stamp\":{}}}}}\n",
+            stamp_json()
+        )
+    }
+
+    #[test]
+    fn malformed_and_trailing_replies_are_protocol_failures() {
+        for body in [
+            "not json at all".to_string(),
+            written().replace('\n', "junk"),
+            format!("{}}}", written().trim_end()),
+        ] {
+            with_operations(|edit, save| {
+                // For a save/verify the safe direction is Unconfirmed, never
+                // a clean refusal that could read as "nothing happened".
+                assert!(
+                    matches!(
+                        classify(save, output(0, body.clone())),
+                        Err(RemoteSaveError::Unconfirmed { .. })
+                    ),
+                    "save: {body}"
+                );
+                assert!(
+                    matches!(
+                        classify(edit, output(0, body.clone())),
+                        Err(RemoteSaveError::Refused {
+                            kind: RefusalKind::Protocol,
+                            ..
+                        })
+                    ),
+                    "edit: {body}"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn unknown_status_and_unknown_fields_are_rejected() {
+        let stamp = stamp_json();
+        for body in [
+            format!("{{\"version\":1,\"result\":{{\"status\":\"done\",\"stamp\":{stamp}}}}}\n"),
+            format!(
+                "{{\"version\":1,\"result\":{{\"status\":\"written\",\"stamp\":{stamp},\"extra\":true}}}}\n"
+            ),
+            format!(
+                "{{\"version\":1,\"result\":{{\"status\":\"written\",\"stamp\":{stamp}}},\"trace\":[]}}\n"
+            ),
+        ] {
+            with_operations(|_, save| {
+                assert!(
+                    matches!(
+                        classify(save, output(0, body.clone())),
+                        Err(RemoteSaveError::Unconfirmed { .. })
+                    ),
+                    "{body}"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn absent_null_and_duplicate_fields_are_not_defaults() {
+        for body in [
+            "{\"version\":1,\"result\":{\"status\":\"refused\",\"kind\":\"busy\",\"detail\":\"held\"}}\n",
+            "{\"version\":1,\"result\":{\"status\":\"refused\",\"kind\":\"busy\",\"detail\":\"held\",\"unconfirmed\":null}}\n",
+            "{\"version\":1,\"version\":1,\"result\":{\"status\":\"unchanged\",\"stamp\":null}}\n",
+        ] {
+            with_operations(|_, save| {
+                assert!(
+                    classify(save, output(0, body.to_string())).is_err(),
+                    "{body}"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn a_version_mismatch_is_a_protocol_failure() {
+        for version in [0u8, 2, 255] {
+            let body = format!(
+                "{{\"version\":{version},\"result\":{{\"status\":\"written\",\"stamp\":{}}}}}\n",
+                stamp_json()
+            );
+            with_operations(|_, save| {
+                assert!(matches!(
+                    classify(save, output(0, body.clone())),
+                    Err(RemoteSaveError::Unconfirmed { .. })
+                ));
+            });
+        }
+    }
+
+    #[test]
+    fn a_failed_exit_cannot_report_written() {
+        // A syntactically perfect "written" reply from a helper that exited
+        // nonzero is a protocol failure, never a clean stamp.
+        with_operations(|edit, save| {
+            assert!(matches!(
+                classify(save, output(1, written())),
+                Err(RemoteSaveError::Unconfirmed { .. })
+            ));
+            assert!(matches!(
+                classify(edit, output(1, written())),
+                Err(RemoteSaveError::Refused {
+                    kind: RefusalKind::Protocol,
+                    ..
+                })
+            ));
+        });
+    }
+
+    #[test]
+    fn dropped_or_oversize_replies_are_bounded_failures() {
+        with_operations(|_, save| {
+            let mut truncated = output(0, written());
+            truncated.stdout_dropped = 7;
+            assert!(matches!(
+                classify(save, truncated),
+                Err(RemoteSaveError::Unconfirmed { .. })
+            ));
+            let oversized = output(0, "x".repeat(REPLY_LIMIT + 1));
+            assert!(matches!(
+                classify(save, oversized),
+                Err(RemoteSaveError::Unconfirmed { .. })
+            ));
+        });
+    }
+
+    #[test]
+    fn refusals_carry_kind_and_the_unconfirmed_flag() {
+        with_operations(|_, save| {
+            let refused = "{\"version\":1,\"result\":{\"status\":\"refused\",\"kind\":\"conflict\",\"detail\":\"changed\",\"unconfirmed\":false}}\n";
+            assert!(matches!(
+                classify(save, output(1, refused.to_string())),
+                Err(RemoteSaveError::Refused {
+                    kind: RefusalKind::Conflict,
+                    ..
+                })
+            ));
+            let uncertain = "{\"version\":1,\"result\":{\"status\":\"refused\",\"kind\":\"cancelled\",\"detail\":\"commit raced\",\"unconfirmed\":true}}\n";
+            assert!(matches!(
+                classify(save, output(1, uncertain.to_string())),
+                Err(RemoteSaveError::Unconfirmed { .. })
+            ));
+            // An unknown refusal kind cannot be invented either.
+            let invented = "{\"version\":1,\"result\":{\"status\":\"refused\",\"kind\":\"success\",\"detail\":\"x\",\"unconfirmed\":false}}\n";
+            assert!(classify(save, output(1, invented.to_string())).is_err());
+        });
+    }
+
+    #[test]
+    fn written_and_unchanged_decode_with_their_stamps() {
+        with_operations(|_, save| {
+            match classify(save, output(0, written())) {
+                Ok(Reply::Written { stamp: replied }) => assert_eq!(replied, stamp()),
+                _ => panic!("a valid written reply decodes"),
+            }
+            let unchanged = format!(
+                "{{\"version\":1,\"result\":{{\"status\":\"unchanged\",\"stamp\":{}}}}}\n",
+                stamp_json()
+            );
+            match classify(save, output(0, unchanged)) {
+                Ok(Reply::Unchanged { .. }) => {}
+                _ => panic!("a valid unchanged reply decodes"),
+            }
+        });
+    }
 }

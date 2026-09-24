@@ -10,7 +10,7 @@ use strop_core::worker::CancelToken;
 use strop_workspace::operation::*;
 use strop_workspace::{Filesystem, Observation, RemoteEndpoint, ResourceLocation};
 
-const HELPER: &str = concat!(
+pub(crate) const HELPER: &str = concat!(
     include_str!("../protected.py"),
     "\n",
     include_str!("observe.py"),

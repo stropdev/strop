@@ -4,6 +4,8 @@
 //! OpenSSH; no editor, CLI, view or rendering state lives here. Identity types
 //! (endpoint, file, location, address errors) live in `strop-workspace` (0042);
 //! this crate is the transport and behavior over them.
+#[cfg(all(test, unix))]
+mod bundle_digests;
 mod client;
 mod exec;
 pub mod filesystem;

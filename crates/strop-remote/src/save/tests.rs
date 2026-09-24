@@ -351,3 +351,146 @@ fn competing_lock_refuses_save_without_touching_the_original() {
         assert!(holder.wait().unwrap().success());
     });
 }
+
+// VF09 fault-injection campaign (plans/0057 §5 "Remote saving and filesystem
+// effects"): faults land at the actual semantic boundaries of the shipped
+// helper — the rename syscall, the post-commit directory sync, cleanup, the
+// metadata restoration and the pre-commit revalidation window. Outcomes are
+// asserted typed and honest: a pre-commit failure is uncertain rather than
+// "clean", a committed effect can never be reported as failed or unchanged,
+// and every uncertain outcome settles only through explicit verification.
+
+#[test]
+fn failed_rename_is_uncertain_and_verifies_unchanged() {
+    // The commit syscall itself fails: commit_started was already set, so the
+    // honest answer is unconfirmed — never "refused, nothing happened".
+    let directory = fixture_directory();
+    let path = directory.path().join("file");
+    std::fs::write(&path, "before").unwrap();
+    let before = baseline(&path, "before");
+    let fault = "import os\ndef deny_replace(*args, **kwargs):\n    raise PermissionError(13, 'simulated replace denial')\nos.replace = deny_replace\n";
+    let refused = helper(
+        &path,
+        request("save", "after", Some(before.clone())),
+        b"after",
+        fault,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(result(&refused)["kind"], "permission");
+    assert_eq!(result(&refused)["unconfirmed"], true);
+    assert_eq!(std::fs::read(&path).unwrap(), b"before");
+    assert!(private_stages(directory.path()).is_empty());
+    let verified = helper(&path, request("verify", "after", Some(before)), b"", "");
+    assert_eq!(result(&verified)["status"], "unchanged");
+}
+
+#[test]
+fn post_commit_sync_failure_is_uncertain_and_verifies_written() {
+    // The rename committed; the directory sync after it failed. The reply
+    // must be uncertain (the effect is real but unacknowledged), and the
+    // explicit verification settles it as written — never a blind retry.
+    let directory = fixture_directory();
+    let path = directory.path().join("file");
+    std::fs::write(&path, "before").unwrap();
+    let before = baseline(&path, "before");
+    let fault = "import os\n_replace = os.replace\n_fsync = os.fsync\n_state = {'committed': False}\ndef replace_then_flag(*args, **kwargs):\n    _replace(*args, **kwargs)\n    _state['committed'] = True\ndef fsync_after_commit(fd):\n    if _state['committed']:\n        raise OSError(5, 'simulated post-commit sync failure')\n    return _fsync(fd)\nos.replace = replace_then_flag\nos.fsync = fsync_after_commit\n";
+    let uncertain = helper(
+        &path,
+        request("save", "after", Some(before.clone())),
+        b"after",
+        fault,
+    );
+    assert!(!uncertain.status.success());
+    assert_eq!(result(&uncertain)["kind"], "io");
+    assert_eq!(result(&uncertain)["unconfirmed"], true);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        b"after",
+        "the committed effect is on disk despite the failed sync"
+    );
+    let verified = helper(&path, request("verify", "after", Some(before)), b"", "");
+    assert_eq!(result(&verified)["status"], "written");
+}
+
+#[test]
+fn cleanup_failure_after_commit_cannot_report_a_clean_failure() {
+    // Stage-directory removal fails after the commit: the committed save is
+    // reported uncertain with the cleanup detail, the private stage remains
+    // (empty, mode 0700) as evidence, and verification settles the outcome.
+    let directory = fixture_directory();
+    let path = directory.path().join("file");
+    std::fs::write(&path, "before").unwrap();
+    let before = baseline(&path, "before");
+    let fault = "import os\ndef deny_rmdir(*args, **kwargs):\n    raise PermissionError(13, 'simulated cleanup denial')\nos.rmdir = deny_rmdir\n";
+    let uncertain = helper(
+        &path,
+        request("save", "after", Some(before.clone())),
+        b"after",
+        fault,
+    );
+    assert!(!uncertain.status.success());
+    let reply = result(&uncertain);
+    assert_eq!(reply["kind"], "io");
+    assert_eq!(reply["unconfirmed"], true);
+    assert!(
+        reply["detail"].as_str().unwrap().contains("cleanup"),
+        "the cleanup failure is named: {reply}"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"after");
+    let stages = private_stages(directory.path());
+    assert_eq!(stages.len(), 1, "the orphaned stage stays as evidence");
+    assert_eq!(
+        std::fs::metadata(&stages[0]).unwrap().permissions().mode() & 0o7777,
+        0o700
+    );
+    assert!(std::fs::read_dir(&stages[0]).unwrap().next().is_none());
+    let verified = helper(&path, request("verify", "after", Some(before)), b"", "");
+    assert_eq!(result(&verified)["status"], "written");
+}
+
+#[test]
+fn external_drift_during_stage_preparation_refuses_and_preserves_the_drift() {
+    // A nonparticipant rewrites the target inside the stage-preparation
+    // window: the pre-commit revalidation refuses as a conflict, the stage
+    // is cleaned, and the third party's bytes — not ours — remain.
+    let directory = fixture_directory();
+    let path = directory.path().join("file");
+    std::fs::write(&path, "before").unwrap();
+    let before = baseline(&path, "before");
+    let fault = "import os, sys\n_fsync = os.fsync\n_drifted = [False]\ndef drift_once(fd):\n    if not _drifted[0]:\n        _drifted[0] = True\n        with open(os.fsdecode(sys.argv[1]), 'ab') as target:\n            target.write(b'drift')\n    return _fsync(fd)\nos.fsync = drift_once\n";
+    let refused = helper(
+        &path,
+        request("save", "after", Some(before.clone())),
+        b"after",
+        fault,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(result(&refused)["kind"], "conflict");
+    assert_eq!(result(&refused)["unconfirmed"], false);
+    assert_eq!(std::fs::read(&path).unwrap(), b"beforedrift");
+    assert!(private_stages(directory.path()).is_empty());
+}
+
+#[test]
+fn metadata_restoration_failure_refuses_before_commit_and_cleans_the_stage() {
+    // A metadata-restoration failure is pre-commit: a typed clean refusal,
+    // the original byte-identical, and no private stage left behind.
+    let directory = fixture_directory();
+    let path = directory.path().join("file");
+    std::fs::write(&path, "before").unwrap();
+    let before = baseline(&path, "before");
+    let fault = "import os\ndef deny_fchmod(*args, **kwargs):\n    raise PermissionError(13, 'simulated metadata denial')\nos.fchmod = deny_fchmod\n";
+    let refused = helper(
+        &path,
+        request("save", "after", Some(before.clone())),
+        b"after",
+        fault,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(result(&refused)["kind"], "permission");
+    assert_eq!(result(&refused)["unconfirmed"], false);
+    assert_eq!(std::fs::read(&path).unwrap(), b"before");
+    assert!(private_stages(directory.path()).is_empty());
+    let verified = helper(&path, request("verify", "after", Some(before)), b"", "");
+    assert_eq!(result(&verified)["status"], "unchanged");
+}

@@ -1,0 +1,45 @@
+{
+  "bundles": {
+    "filesystem": {
+      "bundle_sha256": "10a2085ed995166278cf07ec5f3ba1c1110c454c979f28eea0b2b9caf6c244d3",
+      "part_sha256": {
+        "crates/strop-remote/src/filesystem/cleanup.py": "0f1cce62ca3816cfbe54d612d706c6a17ff4b6e9b4b21536b5c9937f3fa414be",
+        "crates/strop-remote/src/filesystem/main.py": "d5e57d023e43337afe562b82f6754bb6e5944eb078691238565fc3acfac2e7f6",
+        "crates/strop-remote/src/filesystem/mutate.py": "61b88ec4ece017a6e90898db070267f1755c675d9f2368bbc82186235a3662f2",
+        "crates/strop-remote/src/filesystem/observe.py": "81de0d2469b9ec215777ebcdc4d96803492aec28c12ae23a6f7cb2c582baeac6",
+        "crates/strop-remote/src/protected.py": "981432f2439bb6ec68d0ba1f3b76a19aedab7d8e99f8dcbc61b024ad80c01bd5"
+      },
+      "parts": [
+        "crates/strop-remote/src/protected.py",
+        "crates/strop-remote/src/filesystem/observe.py",
+        "crates/strop-remote/src/filesystem/cleanup.py",
+        "crates/strop-remote/src/filesystem/mutate.py",
+        "crates/strop-remote/src/filesystem/main.py"
+      ],
+      "separator": "\n"
+    },
+    "save": {
+      "bundle_sha256": "a06dea8dacc174962c7b2563a773ba68bb515fdc8049c2ad4e8d9c3d06a72b92",
+      "part_sha256": {
+        "crates/strop-remote/src/protected.py": "981432f2439bb6ec68d0ba1f3b76a19aedab7d8e99f8dcbc61b024ad80c01bd5",
+        "crates/strop-remote/src/save/helper.py": "22bde5f8f63cfe737a0c2edfc845e2087aba81fe0490fc94e2036014d18b1efd"
+      },
+      "parts": [
+        "crates/strop-remote/src/protected.py",
+        "crates/strop-remote/src/save/helper.py"
+      ],
+      "separator": "\n"
+    },
+    "supervisor": {
+      "bundle_sha256": "20196612ec1b4d9f1c82b0cdd5c1f338a2500f967bc0e1dfd8cd121424c3b6c0",
+      "embedded_in": "crates/strop-remote/src/exec/supervisor.rs",
+      "spec_version": 2
+    }
+  },
+  "protocol_versions": {
+    "exec_spec": 2,
+    "save": 1
+  },
+  "purpose": "VF08 digest pins: the shipped Python helper bundle bytes, reproducible from the tree parts and bound to the recorded sha256. Verified by strop-remote's bundle_digests tests (test lane).",
+  "schema": 1
+}

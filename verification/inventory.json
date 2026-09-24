@@ -751,6 +751,24 @@
               ]
             }
           ]
+        },
+        {
+          "id": "CON-INCARNATION",
+          "statement": "VF10 real-engine campaigns extending AR07: a changed CLI default context cannot retarget a probe-pinned engine (inspect/read/exec admission keep working; a fresh probe of the dead selection is a typed EngineUnavailable); a stopped container is typed NotRunning for reads and exec admission while its identity still revalidates; the frozen principal/workdir bind the exec's namespace (id -u/pwd observed) and option-shaped principals are refused before the engine; the supervisor's launched record carries the container-local PID (equal to the worker's own $$) while docker top's host PID is a different namespace.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-containers/tests/incarnation.rs",
+              "gate": "container-test",
+              "tests": [
+                "a_changed_default_context_cannot_retarget_a_pinned_engine",
+                "a_stopped_container_is_a_typed_refusal_not_stale_bytes",
+                "exec_user_and_workdir_bind_the_selected_namespace",
+                "the_launched_record_pid_is_namespace_local"
+              ]
+            }
+          ]
         }
       ],
       "gates": [
@@ -766,7 +784,7 @@
           "crates/strop-containers/src/read.rs": "775e58c3761c495349a2d8ab3bbd77f39fdb12fc73c009bb71acbacc46fbe5cd",
           "crates/strop-containers/src/tar.rs": "d177ed42f2f0ff4f8c1f895f1a2111e428831ea6ca1855be24575b09cfe71a38"
         },
-        "evidence": "1d611e2adcd7fb32f79382c3d8d8c65f4a82132e7467e07ed3394488d39a3349"
+        "evidence": "c478383bce05bbce14be344a9256eebcd093c1fef96056cf97eb68fdc58f35af"
       }
     },
     {
@@ -910,6 +928,18 @@
               ]
             }
           ]
+        },
+        {
+          "id": "SSH-MODEL-FLEET",
+          "statement": "VF07 fleet correspondence: the five calibrated remote models (SftpWire, RemoteRead, RemoteProcess, RemoteWorkspace, RemoteSave) still describe the current tree — 2026-09-24 review at 703257e found only import-only address moves, the editor's strop-engine relocation (one rename: finish_remote_refresh -> finish_refresh) and the save helper's PathScope refactor; no semantic drift. The anchor script pins the reviewed model digests and 42 production anchors; any silent model edit or anchor removal fails it. The gates ssh-gate/remote-gate/save-gate were re-run green (mutants killed, witnesses reached) on the current tree.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "script",
+              "path": "verification/check_model_anchors.py",
+              "gate": "model"
+            }
+          ]
         }
       ],
       "gates": [
@@ -929,7 +959,7 @@
           "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
           "crates/strop-remote/src/transport/wire.rs": "14acb21b175a13ac1d3aba2c38e2fed0300924a6f169d6447476230a8924abfb"
         },
-        "evidence": "f92b9c8446e3c30a573ba1282435233195595ebc26c5935fd2796a5b3aab09c2"
+        "evidence": "015687ed4c5427a48d8ac0f21efcfe476f079ff1f1ab2b80a04d97775e59afac"
       }
     },
     {
@@ -1047,6 +1077,63 @@
               ]
             }
           ]
+        },
+        {
+          "id": "RSAVE-REPLY",
+          "statement": "VF08 reply boundary over the helper status protocol (the pure classify() extracted from invoke()): malformed, trailing-garbage, unknown-status, unknown-field, absent/null, duplicate-key, version-mismatched, oversize or dropped replies and nonzero exits never decode into a permit, a clean stamp or another operation's outcome; for a save/verify the safe direction is Unconfirmed, never a clean refusal.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/save/protocol.rs",
+              "gate": "test",
+              "tests": [
+                "malformed_and_trailing_replies_are_protocol_failures",
+                "unknown_status_and_unknown_fields_are_rejected",
+                "absent_null_and_duplicate_fields_are_not_defaults",
+                "a_version_mismatch_is_a_protocol_failure",
+                "a_failed_exit_cannot_report_written",
+                "dropped_or_oversize_replies_are_bounded_failures",
+                "refusals_carry_kind_and_the_unconfirmed_flag",
+                "written_and_unchanged_decode_with_their_stamps"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "RSAVE-DIGEST",
+          "statement": "VF08 digest pinning: the shipped save and filesystem helper bundle bytes reproduce exactly from the recorded tree parts (protected.py plus the operation modules, in order) and match the sha256 pins in verification/helper-digests.json; a helper edit without a re-reviewed pin fails.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/bundle_digests.rs",
+              "gate": "test",
+              "tests": [
+                "save_bundle_bytes_reproduce_from_the_tree_and_match_their_pin",
+                "filesystem_bundle_bytes_reproduce_from_the_tree_and_match_their_pin"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "RSAVE-FAULTS",
+          "statement": "VF09 fault injection at the shipped helper's semantic boundaries: a failed rename syscall is unconfirmed (never clean) and verifies unchanged; a post-commit directory-sync failure is unconfirmed with the committed bytes on disk and settles only through explicit verification; a cleanup failure after commit cannot report a clean failure and the private stage remains as evidence; external drift during stage preparation refuses as a conflict preserving the third party's bytes; a metadata-restoration failure refuses before commit and cleans the stage.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/save/tests.rs",
+              "gate": "test",
+              "tests": [
+                "failed_rename_is_uncertain_and_verifies_unchanged",
+                "post_commit_sync_failure_is_uncertain_and_verifies_written",
+                "cleanup_failure_after_commit_cannot_report_a_clean_failure",
+                "external_drift_during_stage_preparation_refuses_and_preserves_the_drift",
+                "metadata_restoration_failure_refuses_before_commit_and_cleans_the_stage"
+              ]
+            }
+          ]
         }
       ],
       "gates": [
@@ -1057,15 +1144,15 @@
         "sources": {
           "crates/strop-remote/src/filesystem/cleanup.py": "0f1cce62ca3816cfbe54d612d706c6a17ff4b6e9b4b21536b5c9937f3fa414be",
           "crates/strop-remote/src/filesystem/main.py": "d5e57d023e43337afe562b82f6754bb6e5944eb078691238565fc3acfac2e7f6",
-          "crates/strop-remote/src/filesystem/mod.rs": "e4a5e38a4bc54f5c3450a53d6a1643be788bd1c02aaf28aab398da10ff1d5c7b",
+          "crates/strop-remote/src/filesystem/mod.rs": "73270c8bb45003d14f66f88dd1001659963ee5845564894393c1aef78d74d32f",
           "crates/strop-remote/src/filesystem/mutate.py": "61b88ec4ece017a6e90898db070267f1755c675d9f2368bbc82186235a3662f2",
           "crates/strop-remote/src/filesystem/observe.py": "81de0d2469b9ec215777ebcdc4d96803492aec28c12ae23a6f7cb2c582baeac6",
           "crates/strop-remote/src/protected.py": "981432f2439bb6ec68d0ba1f3b76a19aedab7d8e99f8dcbc61b024ad80c01bd5",
           "crates/strop-remote/src/save/helper.py": "22bde5f8f63cfe737a0c2edfc845e2087aba81fe0490fc94e2036014d18b1efd",
-          "crates/strop-remote/src/save/mod.rs": "493bbaa40e3c1a5320f6537b4dd65c1c8d7fcb3aca7ca0f5b3a5bc3a8c255d49",
-          "crates/strop-remote/src/save/protocol.rs": "33f73b1a9b6cc02ae385b3655522ed5704e82cb28cb67e6622d2d3e5d2ed0378"
+          "crates/strop-remote/src/save/mod.rs": "003cb10dcc1b2d5d74c4d64c32f90b4360ff55b8fd8a34047522eea84a8d419b",
+          "crates/strop-remote/src/save/protocol.rs": "27b0ab024c98e2a66930351684c157254f31bb7d78c260b0f2cea83dab3fc71e"
         },
-        "evidence": "6d2c38dfbdf3cf5faea67bcdd890078024301f64cf9f3c36da78ce9e4e2b0c6e"
+        "evidence": "e2e7598bb2686ee18f0c9d2ad4815e3c2776e195219664f377584487e50eb4b6"
       }
     },
     {
@@ -1215,6 +1302,37 @@
               ]
             }
           ]
+        },
+        {
+          "id": "EXEC-SPEC-DECODE",
+          "statement": "VF08 supervisor decode seam over the exact embedded Python: tampered spec blobs (bad version/mode/program kind, truncated header, length overrun, trailing bytes, NUL in argv) fault before any launch — proven by an observable marker the worker would have created — and worker output imitating the status protocol with a foreign nonce grants no outcome and stays stderr data.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/exec/tests.rs",
+              "gate": "test",
+              "tests": [
+                "tampered_specs_fault_before_any_launch",
+                "forged_records_with_a_foreign_nonce_grant_no_outcome"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "EXEC-SUPERVISOR-DIGEST",
+          "statement": "VF08 digest pinning: the embedded supervisor program is verbatim text in exec/supervisor.rs and matches the recorded sha256 pin in verification/helper-digests.json; the exec spec version is pinned to the shipped decoder.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/bundle_digests.rs",
+              "gate": "test",
+              "tests": [
+                "supervisor_source_matches_its_pin_and_embedded_block"
+              ]
+            }
+          ]
         }
       ],
       "gates": [
@@ -1227,17 +1345,17 @@
           "crates/strop-core/src/process/capture.rs": "385125270cd5394e8d461c24b1207fd65ca9dab7e1f1c516c83175b1eada822b",
           "crates/strop-core/src/worker.rs": "dd41ae1928d59ddf2ff2699c0b8ffbce57fe27d50eec300c874ff56f69f01625",
           "crates/strop-core/src/worker/effect.rs": "5010887149a92f1e58b1fa3c49b67066ec28d6242b774daaa4d23c329fb7d4f1",
-          "crates/strop-remote/src/exec.rs": "86edf18e7e8ae78353a7abd04165a948640177f5803a769341dfb0d87d14213e",
+          "crates/strop-remote/src/exec.rs": "eb1181f72c255f4e060de2108c87b81f5b25ad93750873f1ffaa693794f0c778",
           "crates/strop-remote/src/exec/python.rs": "312f537769cfb2cfe2a0108d08ac407b370f6e8ca7ae107436b13c1bbe9826ee",
           "crates/strop-remote/src/exec/run.rs": "1b3690aad48179c3703fda33226dd3a49aebb5f3249a206c22457fc1aabbe4c7",
-          "crates/strop-remote/src/exec/spec.rs": "df0a5874c935cfd844d0e153da5ad710a432e926b684182a0b6fdf30385d4cd8",
+          "crates/strop-remote/src/exec/spec.rs": "f8eb82d04d8ad200bef1bd66a563fdcf5846abbd53a9417fd44372acae9f221f",
           "crates/strop-remote/src/exec/stream.rs": "88053c35e471615cd3c7c31dd20294d74028176ba238a56e2747a23ad59db12c",
-          "crates/strop-remote/src/exec/supervisor.rs": "04ab7157b7102d2574da5a7581801fa0b4d4482c40d336181df24899053283e2",
+          "crates/strop-remote/src/exec/supervisor.rs": "8466a2415bfb227316c36502fb4b67347dede088344b43b04e08fd017e254d9d",
           "crates/strop-worker/src/exec/mod.rs": "60a9fb3975391082f0ae10e90164007e515a54bb79db55f1335d4ca389e104b6",
           "crates/strop-worker/src/exec/record.rs": "273048b4e7d8c24d0490e24fdffa157d3a5ec15d1fbe6013245ee0cbe94e5373",
           "crates/strop-worker/src/exec/supervisor.rs": "0fc0e6c3e6c6c3f77a102b3881a00730ec902d9a8484598d965354bbecff53c4"
         },
-        "evidence": "6ba3c10e457d6ea07c3c2c8dc4765809b1b623e0f940fc4feac813b32058c5d1"
+        "evidence": "920e8efd498951270e7d06ea5cae7fd9908d3666b5757e4c10fb1fad422ff33c"
       }
     },
     {
@@ -1307,6 +1425,30 @@
               ]
             }
           ]
+        },
+        {
+          "id": "FS-ADVERSARIAL",
+          "statement": "VF06 adversarial campaigns over the current kernel: symlinked ancestors resolve but the final entry is never followed (link mutations are a typed Unsupported); source, parent or symlink-alias changes between prepare and apply are typed Conflicts with no effect; a mode permission-transition fails closed; cooperative lock domains are per-name with checked identity (hardlinked/permissive/symlinked stand-ins refused, competing holder Busy); reserved namespaces refuse case and NFKC aliases; native-byte/control names roundtrip exactly; cancellation before publication leaves no effect; a cross-mount rename is a typed Unsupported, not a copy.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-fs/src/adversarial.rs",
+              "gate": "test",
+              "tests": [
+                "symlinked_ancestors_resolve_but_the_final_entry_is_never_followed",
+                "source_changed_between_prepare_and_apply_is_a_typed_conflict",
+                "parent_swapped_between_prepare_and_apply_is_a_typed_conflict",
+                "symlink_ancestor_retarget_between_prepare_and_apply_is_refused",
+                "permission_transition_between_prepare_and_apply_fails_closed",
+                "operation_locks_are_per_name_domains_with_checked_identity",
+                "reserved_namespaces_refuse_case_and_normalization_aliases",
+                "native_byte_and_control_names_roundtrip_exactly",
+                "cancellation_before_publication_leaves_no_effect",
+                "cross_mount_rename_is_a_typed_unsupported_refusal"
+              ]
+            }
+          ]
         }
       ],
       "gates": [
@@ -1332,7 +1474,7 @@
           "crates/strop-fs/src/trash/restore.rs": "310585f58292dc95c3b8c8a87a3755c906f6524cfc87d37aff53a04c50158d4f",
           "crates/strop-fs/src/unsupported.rs": "c64aa3b6a10d85bdaf98745f1ea9b42e3fbc8297b192244cfabcd28f6f9d6b78"
         },
-        "evidence": "d375d5e12fd47c5acf2698aa8699837321205510a86bcd757fdcb8b7b1f5b1e3"
+        "evidence": "4106395a9027ef39de2fe498f4b5d413c05ce96fe67d3abc9a08ade7096c8277"
       }
     },
     {
@@ -1442,7 +1584,7 @@
         },
         {
           "id": "INS-TRANSACTION",
-          "statement": "Shell-level hermetic fixtures: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture.",
+          "statement": "Shell-level hermetic fixtures: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture including the WK05 worker-manifest wire shape (protocol, min_editor, targets, byte sizes), invalid worker-facts rejection and worker-divergence detection in public verification.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1459,7 +1601,7 @@
         },
         {
           "id": "REL-CATALOG",
-          "statement": "The release workflow generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties and a headless parse smoke per artifact, and attests build provenance for every tarball.",
+          "statement": "The release workflow generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties plus a headless parse and worker-mode (`strop --worker-stdio`) smoke per artifact, attests build provenance for every tarball, and records the WK05 worker compatibility manifest extracted from the pinned source constants so editors make deploy-vs-fallback decisions from catalog facts alone.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1477,11 +1619,11 @@
       ],
       "pins": {
         "sources": {
-          ".github/scripts/release-catalog.py": "41792de4abdb8f9b97b87d2c3dda35a0c74dc13cc3de4395d36f7d298a538fb8",
+          ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "7140ae0a41c8d05d9bb14b2da4c095cb6dc512d2eff110ebcfb9b0f1fcd6c184"
+        "evidence": "d2f6e3daaf2e6f2e823c69848396f50093ef5bb50fd083c5fe0e73b8ccb4c494"
       }
     },
     {

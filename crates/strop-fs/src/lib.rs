@@ -8,6 +8,8 @@ mod listing;
 mod observation;
 pub use context::{ExecutionContext, NamespaceView};
 pub use environment::Environment;
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod adversarial;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod attributes;
 #[cfg(any(target_os = "linux", target_os = "macos"))]

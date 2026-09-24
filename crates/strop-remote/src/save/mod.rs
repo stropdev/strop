@@ -1,6 +1,6 @@
 //! Explicit remote editing. Atomic replacement and cooperative locking are owned
 //! by the shipped helper; nonparticipating writers are not excluded by flock.
-mod protocol;
+pub(crate) mod protocol;
 #[cfg(all(test, unix))]
 mod tests;
 
