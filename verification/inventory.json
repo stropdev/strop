@@ -587,7 +587,7 @@
       "pins": {
         "sources": {
           "crates/strop-engine/src/editor/events.rs": "31fd8bc58bbde00036f9ccd4224cf74ef01cc34b813af8e393e604f45c55ed28",
-          "crates/strop-engine/src/editor/events/channel.rs": "8ad35ebb6c94893868b9ca7582ae8e105fcc84828c77aa302577416e912f82a3",
+          "crates/strop-engine/src/editor/events/channel.rs": "ce65976c13db7525ec93b5899cb7815d83977e1664d1fbaa2376df8d50764d53",
           "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
           "crates/strop-trace/src/event.rs": "8863ed01aa88c21609f137fd201a22e7db1be8b76adf6111f600f24399d9e963",
@@ -696,7 +696,7 @@
           "crates/strop-engine/src/editor/lsp/state.rs": "9de05c89014dd92277cb80ba1a6760dda0efd49af1f6e4586a133082ed564e46",
           "crates/strop-lsp/src/client/api.rs": "c55a3d01288fedc49de12e72f3d131bd5fda290e2f2bd17832905a4e745563a1",
           "crates/strop-lsp/src/client/process.rs": "c64293470c612bfeab8495348a2b3bd552608fd77c539f2a53dfd61163c33ecc",
-          "crates/strop-lsp/src/client/queue.rs": "1526382ad7d1a8a0c09a875f05fd41270c34436ff38eebed5692341600665ea9",
+          "crates/strop-lsp/src/client/queue.rs": "061150903bcd991d31dd7f20e13500605dd50e9752d9a9928c1ed762174140a2",
           "crates/strop-lsp/src/client/spawn.rs": "3ed4d28947ddd997552b1184a60a90218995449c0abfd52a58d59a8afb28e4f7",
           "crates/strop-lsp/src/client/sync.rs": "31942e4ef8a5a3cf1866e5644b3756a48c2e383eb8b785fc13375fae5d77ffc9",
           "crates/strop-lsp/src/client/wire.rs": "f64dd60975d074cd52587e888d99a5bcf4300d89772453aac3102382eb36520f",
