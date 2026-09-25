@@ -16,7 +16,9 @@
 //! Shutdown quiesces: a closed mainloop stops framing, the worker drops
 //! retained snapshots off the input thread, and the queue refuses new
 //! work instead of growing without a reader.
-use parking_lot::{Condvar, Mutex, MutexGuard};
+use parking_lot::Mutex;
+#[cfg(not(strop_loom))]
+use parking_lot::{Condvar, MutexGuard};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -691,15 +693,6 @@ mod loom_tests {
 
     fn uri(name: &str) -> lt::Url {
         lt::Url::parse(&format!("file:///workspace/{name}")).unwrap()
-    }
-
-    fn open(name: &str, version: i32, text: &str) -> WireJob {
-        WireJob::Open {
-            uri: uri(name),
-            language_id: "rust".to_owned(),
-            version: WireVersion::new(version),
-            text: Rope::from_str(text),
-        }
     }
 
     fn change(name: &str, version: i32, text: &str) -> WireJob {

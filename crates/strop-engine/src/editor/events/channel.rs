@@ -459,104 +459,116 @@ mod loom_tests {
 
     #[test]
     fn loom_semantic_never_lost_hints_coalesce() {
-        loom::model::Builder::new().preemption_bound(3).check(|| {
-            let (tx, rx) = channel();
-            let tx2 = tx.clone();
-            let writer = loom::thread::spawn(move || {
-                tx.send(AppEvent::QuitIntent).expect("lane has room");
-                tx.send(AppEvent::Resize {
-                    columns: 3,
-                    rows: 3,
-                })
-                .expect("hint");
-                tx.send(AppEvent::TerminalUpdate(SessionId::from_request(
-                    strop_core::worker::WorkerId::new(1),
-                )))
-                .expect("hint");
-                tx.send(AppEvent::Resize {
-                    columns: 5,
-                    rows: 5,
-                })
-                .expect("hint");
-                1usize // one semantic event admitted
-            });
-            let paster = loom::thread::spawn(move || {
-                tx2.send(AppEvent::Paste("abc".into()))
-                    .expect("lane has room");
-                1usize
-            });
-            let mut semantic = 0usize;
-            let mut resizes = 0usize;
-            let mut wakes = 0usize;
-            loop {
-                match rx.try_recv() {
-                    Ok(AppEvent::Resize { .. }) => resizes += 1,
-                    Ok(AppEvent::TerminalUpdate(_)) => wakes += 1,
-                    Ok(_) => semantic += 1,
-                    Err(TryRecvError::Empty) => loom::thread::yield_now(),
-                    Err(TryRecvError::Disconnected) => break,
+        {
+            let mut builder = loom::model::Builder::new();
+            builder.preemption_bound = Some(3);
+            builder.check(|| {
+                let (tx, rx) = channel();
+                let tx2 = tx.clone();
+                let writer = loom::thread::spawn(move || {
+                    tx.send(AppEvent::QuitIntent).expect("lane has room");
+                    tx.send(AppEvent::Resize {
+                        columns: 3,
+                        rows: 3,
+                    })
+                    .expect("hint");
+                    tx.send(AppEvent::TerminalUpdate(SessionId::from_request(
+                        strop_core::worker::WorkerId::new(1),
+                    )))
+                    .expect("hint");
+                    tx.send(AppEvent::Resize {
+                        columns: 5,
+                        rows: 5,
+                    })
+                    .expect("hint");
+                    1usize // one semantic event admitted
+                });
+                let paster = loom::thread::spawn(move || {
+                    tx2.send(AppEvent::Paste("abc".into()))
+                        .expect("lane has room");
+                    1usize
+                });
+                let mut semantic = 0usize;
+                let mut resizes = 0usize;
+                let mut wakes = 0usize;
+                loop {
+                    match rx.try_recv() {
+                        Ok(AppEvent::Resize { .. }) => resizes += 1,
+                        Ok(AppEvent::TerminalUpdate(_)) => wakes += 1,
+                        Ok(_) => semantic += 1,
+                        Err(TryRecvError::Empty) => loom::thread::yield_now(),
+                        Err(TryRecvError::Disconnected) => break,
+                    }
                 }
-            }
-            let admitted = writer.join().unwrap() + paster.join().unwrap();
-            assert_eq!(
-                semantic, admitted,
-                "every admitted semantic event delivered exactly once"
-            );
-            assert!(
-                (1..=2).contains(&resizes),
-                "latest-wins coalescing: {resizes}"
-            );
-            assert_eq!(wakes, 1, "per-session wake dedup");
-        });
+                let admitted = writer.join().unwrap() + paster.join().unwrap();
+                assert_eq!(
+                    semantic, admitted,
+                    "every admitted semantic event delivered exactly once"
+                );
+                assert!(
+                    (1..=2).contains(&resizes),
+                    "latest-wins coalescing: {resizes}"
+                );
+                assert_eq!(wakes, 1, "per-session wake dedup");
+            });
+        }
     }
 
     #[test]
     fn loom_receiver_close_wakes_blocking_sender() {
-        loom::model::Builder::new().preemption_bound(3).check(|| {
-            let (tx, rx) = channel();
-            for _ in 0..MAX_SEMANTIC_EVENTS {
-                tx.send(AppEvent::QuitIntent).expect("filling the lane");
-            }
-            let blocker = loom::thread::spawn(move || {
-                // The lane is full: this parks until a pop or the close.
-                tx.send_blocking(AppEvent::Paste("xy".into()))
+        {
+            let mut builder = loom::model::Builder::new();
+            builder.preemption_bound = Some(3);
+            builder.check(|| {
+                let (tx, rx) = channel();
+                for _ in 0..MAX_SEMANTIC_EVENTS {
+                    tx.send(AppEvent::QuitIntent).expect("filling the lane");
+                }
+                let blocker = loom::thread::spawn(move || {
+                    // The lane is full: this parks until a pop or the close.
+                    tx.send_blocking(AppEvent::Paste("xy".into()))
+                });
+                drop(rx);
+                let result = blocker.join().unwrap();
+                assert!(result.is_err(), "the close hands the event back");
+                assert!(matches!(result.err().unwrap().0, AppEvent::Paste(_)));
             });
-            drop(rx);
-            let result = blocker.join().unwrap();
-            assert!(result.is_err(), "the close hands the event back");
-            assert!(matches!(result.err().unwrap().0, AppEvent::Paste(_)));
-        });
+        }
     }
 
     #[test]
     fn loom_pop_wakes_blocking_sender() {
-        loom::model::Builder::new().preemption_bound(3).check(|| {
-            let (tx, rx) = channel();
-            for _ in 0..MAX_SEMANTIC_EVENTS {
-                tx.send(AppEvent::QuitIntent).expect("prefill");
-            }
-            let blocker = loom::thread::spawn(move || {
-                tx.send_blocking(AppEvent::Paste("xy".into()))
-                    .expect("a pop frees room");
-                // The sender drops HERE, inside its loom thread — loom
-                // objects must not outlive their execution context.
-            });
-            let mut seen = 0usize;
-            let mut paste_seen = false;
-            loop {
-                match rx.try_recv() {
-                    Ok(AppEvent::Paste(_)) => {
-                        paste_seen = true;
-                        seen += 1;
-                    }
-                    Ok(_) => seen += 1,
-                    Err(TryRecvError::Empty) => loom::thread::yield_now(),
-                    Err(TryRecvError::Disconnected) => break,
+        {
+            let mut builder = loom::model::Builder::new();
+            builder.preemption_bound = Some(3);
+            builder.check(|| {
+                let (tx, rx) = channel();
+                for _ in 0..MAX_SEMANTIC_EVENTS {
+                    tx.send(AppEvent::QuitIntent).expect("prefill");
                 }
-            }
-            blocker.join().unwrap();
-            assert!(paste_seen, "the blocked admission landed after a pop");
-            assert_eq!(seen, MAX_SEMANTIC_EVENTS + 1, "nothing lost");
-        });
+                let blocker = loom::thread::spawn(move || {
+                    tx.send_blocking(AppEvent::Paste("xy".into()))
+                        .expect("a pop frees room");
+                    // The sender drops HERE, inside its loom thread — loom
+                    // objects must not outlive their execution context.
+                });
+                let mut seen = 0usize;
+                let mut paste_seen = false;
+                loop {
+                    match rx.try_recv() {
+                        Ok(AppEvent::Paste(_)) => {
+                            paste_seen = true;
+                            seen += 1;
+                        }
+                        Ok(_) => seen += 1,
+                        Err(TryRecvError::Empty) => loom::thread::yield_now(),
+                        Err(TryRecvError::Disconnected) => break,
+                    }
+                }
+                blocker.join().unwrap();
+                assert!(paste_seen, "the blocked admission landed after a pop");
+                assert_eq!(seen, MAX_SEMANTIC_EVENTS + 1, "nothing lost");
+            });
+        }
     }
 }
