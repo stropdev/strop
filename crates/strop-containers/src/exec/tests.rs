@@ -13,6 +13,7 @@ fn reference() -> ContainerRef {
         started_at: "2026-09-10T08:00:00Z".into(),
         user: String::new(),
         workdir: String::new(),
+        env: Vec::new(),
     };
     ContainerRef::of(&identity).unwrap()
 }
@@ -103,6 +104,45 @@ fn command_is_pinned_argv_only_supervised_stdio() {
     assert!(
         !tail[2].contains("pyright"),
         "program never enters the source"
+    );
+}
+
+/// The shellless worker channel (0058 WK08): the pinned engine,
+/// principal and workdir are identical to the supervised command, but
+/// the payload is the worker binary directly — no `sh`, no supervisor
+/// source, no relay plumbing. Only the verified worker takes this
+/// path; ordinary programs keep the typed distroless refusal.
+#[test]
+fn worker_command_runs_the_worker_directly_without_a_shell() {
+    let admitted = AdmittedExec {
+        spec: ExecSpec::new(
+            &test_support::engine_fixture(),
+            &reference(),
+            "/opt/strop/worker",
+            &["--worker-stdio".into()],
+            Path::new("/"),
+        )
+        .unwrap()
+        .with_user("1000:1000")
+        .unwrap(),
+        key: SessionKey::fixed([11u8; 16]),
+    };
+    let command = admitted.worker_command();
+    assert_eq!(command.get_program(), "docker");
+    let args = args_of(&command);
+    assert_eq!(args[..3], ["--context", "test-context", "exec"]);
+    assert!(args.contains(&"-i".to_string()));
+    let id_at = args.iter().position(|arg| arg == &"a".repeat(64)).unwrap();
+    let window = &args[..id_at];
+    assert!(window.windows(2).any(|pair| pair == ["--workdir", "/"]));
+    assert!(window
+        .windows(2)
+        .any(|pair| pair == ["--user", "1000:1000"]));
+    let tail = &args[id_at + 1..];
+    assert_eq!(tail, ["/opt/strop/worker", "--worker-stdio"]);
+    assert!(
+        !args.iter().any(|arg| arg == "sh" || arg == "-c"),
+        "no shell anywhere in the worker channel"
     );
 }
 

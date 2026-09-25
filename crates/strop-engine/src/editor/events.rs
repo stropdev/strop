@@ -61,6 +61,13 @@ pub enum AppEvent {
 }
 
 /// A forwarder: move every item of a job channel onto the app channel.
+/// Job-channel events are one-shot facts (completions, terminal stops),
+/// never coalescible UI hints: a full semantic lane must backpressure the
+/// forwarder, never drop the event. A refused-then-dropped terminal event
+/// strands the editor's pending state (0057 VF19, the UiSessionModel
+/// storm finding: a storm-full lane refused the forwarded picker-ranking
+/// `Stopped`, the forwarder died, `picker_ranking.retiring` never emptied
+/// and shutdown burned its whole jobs budget).
 fn forward<T: Send + 'static>(
     rx: Receiver<T>,
     tx: EventSender,
@@ -68,7 +75,19 @@ fn forward<T: Send + 'static>(
 ) {
     std::thread::spawn(move || {
         while let Ok(item) = rx.recv() {
-            if tx.send(wrap(item)).is_err() {
+            let event = wrap(item);
+            // VF19 calibration seam (verification/mutants.json, mutant
+            // `forward-drop-refused`): the mutant build treats a full-lane
+            // refusal as terminal — the pre-fix defect the registered kill
+            // test must catch. Never compiled outside `--cfg strop_mutant`.
+            #[cfg(strop_mutant)]
+            if crate::mutant::active(crate::mutant::FORWARD_DROP_REFUSED) {
+                if tx.send(event).is_err() {
+                    break;
+                }
+                continue;
+            }
+            if tx.send_blocking(event).is_err() {
                 break;
             }
         }

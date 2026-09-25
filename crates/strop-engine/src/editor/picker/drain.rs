@@ -14,7 +14,10 @@ use super::{PickerEvent, PickerKey, PreviewEntry, PreviewResult};
 /// Bridge one request's raw stream onto the app event channel, stamping
 /// every message with the ticket that produced it. A disconnect before
 /// the terminal event synthesizes one — streaming can never hang; after
-/// the terminal event nothing else is forwarded.
+/// the terminal event nothing else is forwarded. Delivery backpressures
+/// on a full semantic lane (the Flow bound already caps the producer):
+/// the terminal `Finished` is a one-shot fact that a refusal must never
+/// strand (0057 VF19 — the same storm finding as `events::forward`).
 pub(crate) fn forward_picker_stream(
     rx: Receiver<PickerMsg>,
     ticket: Ticket<PickerKey>,
@@ -27,7 +30,7 @@ pub(crate) fn forward_picker_stream(
                 Ok(msg) => {
                     let terminal = matches!(msg, PickerMsg::Finished(_));
                     if tx
-                        .send(AppEvent::Picker(PickerEvent {
+                        .send_blocking(AppEvent::Picker(PickerEvent {
                             ticket: ticket.clone(),
                             msg,
                         }))
@@ -44,7 +47,7 @@ pub(crate) fn forward_picker_stream(
                     // event: synthesize one with the same ticket
                     let outcome =
                         Outcome::failed(FailureKind::Disconnected, "picker worker channel closed");
-                    let _ = tx.send(AppEvent::Picker(PickerEvent {
+                    let _ = tx.send_blocking(AppEvent::Picker(PickerEvent {
                         ticket: ticket.clone(),
                         msg: PickerMsg::Finished(outcome),
                     }));

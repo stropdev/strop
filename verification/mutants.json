@@ -1,0 +1,772 @@
+{
+  "version": 1,
+  "seams": [
+    {
+      "id": "change-plan-composition",
+      "boundary": "mutation-gateway",
+      "lane": "model",
+      "gate": "specs/change-gate.sh",
+      "mutants": [
+        {
+          "name": "change-cross-source-effect",
+          "kind": "tla-fault",
+          "config": "specs/cfg/change-plan.cfg",
+          "killed_by": [
+            "MemberSourceBound"
+          ]
+        },
+        {
+          "name": "change-dropped-refusal",
+          "kind": "tla-fault",
+          "config": "specs/cfg/change-plan.cfg",
+          "killed_by": [
+            "HonestReceipt"
+          ]
+        },
+        {
+          "name": "change-overlapping-applied",
+          "kind": "tla-fault",
+          "config": "specs/cfg/change-plan.cfg",
+          "killed_by": [
+            "NoDuplicateMutation"
+          ]
+        },
+        {
+          "name": "change-partial-group",
+          "kind": "tla-fault",
+          "config": "specs/cfg/change-plan.cfg",
+          "killed_by": [
+            "GroupUniformOutcome"
+          ]
+        },
+        {
+          "name": "change-phantom-applied",
+          "kind": "tla-fault",
+          "config": "specs/cfg/change-plan.cfg",
+          "killed_by": [
+            "PartialProgressHonest"
+          ]
+        },
+        {
+          "name": "change-protected-applied",
+          "kind": "tla-fault",
+          "config": "specs/cfg/change-plan.cfg",
+          "killed_by": [
+            "ProtectedNeverApplied"
+          ]
+        },
+        {
+          "name": "change-unchecked-apply",
+          "kind": "tla-fault",
+          "config": "specs/cfg/change-plan.cfg",
+          "killed_by": [
+            "NoStaleApplication"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "install-publication",
+      "boundary": "install-update",
+      "lane": "model",
+      "gate": "specs/install-gate.sh",
+      "mutants": [
+        {
+          "name": "install-inplace-clobber",
+          "kind": "tla-fault",
+          "config": "specs/cfg/install-inplace-publish.cfg",
+          "killed_by": [
+            "NoClobberOnFailure"
+          ]
+        },
+        {
+          "name": "install-inplace-partial",
+          "kind": "tla-fault",
+          "config": "specs/cfg/install-inplace-publish.cfg",
+          "killed_by": [
+            "InstalledComplete"
+          ]
+        },
+        {
+          "name": "install-path-channel",
+          "kind": "tla-fault",
+          "config": "specs/cfg/install-path-channel.cfg",
+          "killed_by": [
+            "ChannelGate"
+          ]
+        },
+        {
+          "name": "install-receipt-ahead",
+          "kind": "tla-fault",
+          "config": "specs/cfg/install-receipt-ahead.cfg",
+          "killed_by": [
+            "ReceiptNeverAhead"
+          ]
+        },
+        {
+          "name": "install-stale-catalog",
+          "kind": "tla-fault",
+          "config": "specs/cfg/install-stale-catalog.cfg",
+          "killed_by": [
+            "StaleNeverPublishes"
+          ]
+        },
+        {
+          "name": "install-unverified-publish",
+          "kind": "tla-fault",
+          "config": "specs/cfg/install-unverified-publish.cfg",
+          "killed_by": [
+            "VerifiedBeforeActivation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lsp-wire-queue",
+      "boundary": "lsp-wire",
+      "lane": "model",
+      "gate": "specs/lsp-gate.sh",
+      "mutants": [
+        {
+          "name": "lsp-wire-barrier-coalesce",
+          "kind": "tla-fault",
+          "config": "specs/cfg/lsp-wire-barrier-coalesce.cfg",
+          "killed_by": [
+            "CoalesceLegal"
+          ]
+        },
+        {
+          "name": "lsp-wire-close-skips-cancel",
+          "kind": "tla-fault",
+          "config": "specs/cfg/lsp-wire-close-skips-cancel.cfg",
+          "killed_by": [
+            "WireOrdered"
+          ]
+        },
+        {
+          "name": "lsp-wire-double-terminal",
+          "kind": "tla-fault",
+          "config": "specs/cfg/lsp-wire-double-terminal.cfg",
+          "killed_by": [
+            "TerminalOnce"
+          ]
+        },
+        {
+          "name": "lsp-wire-refused-binding",
+          "kind": "tla-fault",
+          "config": "specs/cfg/lsp-wire-refused-binding.cfg",
+          "killed_by": [
+            "BindingOnlyIfAdmitted"
+          ]
+        },
+        {
+          "name": "lsp-wire-stale-reply",
+          "kind": "tla-fault",
+          "config": "specs/cfg/lsp-wire-stale-reply.cfg",
+          "killed_by": [
+            "LateNeverApplies"
+          ]
+        },
+        {
+          "name": "lsp-wire-unbounded",
+          "kind": "tla-fault",
+          "config": "specs/cfg/lsp-wire-unbounded.cfg",
+          "killed_by": [
+            "Bounded"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "notify-pipeline",
+      "boundary": "fs-notify",
+      "lane": "model",
+      "gate": "specs/notify-gate.sh",
+      "mutants": [
+        {
+          "name": "notify-boundary-erasure",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-boundary-erasure.cfg",
+          "killed_by": [
+            "ScanNeverErasesNewer"
+          ]
+        },
+        {
+          "name": "notify-dirty-clobber",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-dirty-clobber.cfg",
+          "killed_by": [
+            "DirtyNeverClobbered"
+          ]
+        },
+        {
+          "name": "notify-guessed-relocation",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-guessed-relocation.cfg",
+          "killed_by": [
+            "AmbiguousNeverRelocates"
+          ]
+        },
+        {
+          "name": "notify-hint-authority",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-hint-authority.cfg",
+          "killed_by": [
+            "HintsNeverAuthority"
+          ]
+        },
+        {
+          "name": "notify-invisible-crawl",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-invisible-crawl.cfg",
+          "killed_by": [
+            "CoverageHonest"
+          ]
+        },
+        {
+          "name": "notify-premature-fresh",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-premature-fresh.cfg",
+          "killed_by": [
+            "FreshRequiresCoverage"
+          ]
+        },
+        {
+          "name": "notify-silent-drop",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-silent-drop.cfg",
+          "killed_by": [
+            "CoalesceNeverLosesStaleness"
+          ]
+        },
+        {
+          "name": "notify-stale-identity",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-stale-identity.cfg",
+          "killed_by": [
+            "StaleIdentityNeverActs"
+          ]
+        },
+        {
+          "name": "notify-stale-reload",
+          "kind": "tla-fault",
+          "config": "specs/cfg/notify-stale-reload.cfg",
+          "killed_by": [
+            "StaleReloadNeverClears"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recovery-cohort",
+      "boundary": "recovery-store",
+      "lane": "model",
+      "gate": "specs/recovery-gate.sh",
+      "mutants": [
+        {
+          "name": "recovery-checkpoint-as-save",
+          "kind": "tla-fault",
+          "config": "specs/cfg/recovery-checkpoint-as-save.cfg",
+          "killed_by": [
+            "SaveRetiresOnlySuperseded"
+          ]
+        },
+        {
+          "name": "recovery-checkpoint-cleans",
+          "kind": "tla-fault",
+          "config": "specs/cfg/recovery-checkpoint-cleans.cfg",
+          "killed_by": [
+            "CheckpointNeverCleans"
+          ]
+        },
+        {
+          "name": "recovery-consent-ignored",
+          "kind": "tla-fault",
+          "config": "specs/cfg/recovery-consent-ignored.cfg",
+          "killed_by": [
+            "RemoteConsentGated"
+          ]
+        },
+        {
+          "name": "recovery-half-cohort",
+          "kind": "tla-fault",
+          "config": "specs/cfg/recovery-half-cohort.cfg",
+          "killed_by": [
+            "CohortCoherent"
+          ]
+        },
+        {
+          "name": "recovery-half-cohort-image",
+          "kind": "tla-fault",
+          "config": "specs/cfg/recovery-half-cohort.cfg",
+          "killed_by": [
+            "DurableMatchesLastComplete"
+          ]
+        },
+        {
+          "name": "recovery-premature-cleanup",
+          "kind": "tla-fault",
+          "config": "specs/cfg/recovery-premature-cleanup.cfg",
+          "killed_by": [
+            "DurableMatchesLastComplete"
+          ]
+        },
+        {
+          "name": "recovery-restore-clobbers",
+          "kind": "tla-fault",
+          "config": "specs/cfg/recovery-restore-clobbers.cfg",
+          "killed_by": [
+            "RestoreNeverWritesDisk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote-process-supervision",
+      "boundary": "exec-supervision",
+      "lane": "model",
+      "gate": "specs/remote-gate.sh",
+      "mutants": [
+        {
+          "name": "process-early-reap",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-early-reap.cfg",
+          "killed_by": [
+            "ReapAfterFinalKill"
+          ]
+        },
+        {
+          "name": "process-eof-progress",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-backpressure-live.cfg",
+          "killed_by": [
+            "EventuallyEofObserved"
+          ],
+          "temporal": true
+        },
+        {
+          "name": "process-orphan-progress",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-early-reap-live.cfg",
+          "killed_by": [
+            "EventuallyRemoteSettled"
+          ],
+          "temporal": true
+        },
+        {
+          "name": "process-post-eof",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-backpressure.cfg",
+          "killed_by": [
+            "NoPostEofDelivery"
+          ]
+        },
+        {
+          "name": "process-premature-success",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-premature-success.cfg",
+          "killed_by": [
+            "OutcomeClean"
+          ]
+        },
+        {
+          "name": "process-reused-pid",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-early-reap.cfg",
+          "killed_by": [
+            "SignalOwnedTarget"
+          ]
+        },
+        {
+          "name": "process-ungated",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-ungated-launch.cfg",
+          "killed_by": [
+            "LaunchGated"
+          ]
+        },
+        {
+          "name": "process-unreaped-ssh",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-process-premature-success.cfg",
+          "killed_by": [
+            "NoUnownedSsh"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote-read-lifecycle",
+      "boundary": "ssh-sftp",
+      "lane": "model",
+      "gate": "specs/ssh-gate.sh",
+      "mutants": [
+        {
+          "name": "remote-read-cleanup",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-read-cleanup.cfg",
+          "killed_by": [
+            "NoUnownedChild"
+          ]
+        },
+        {
+          "name": "remote-read-cleanup-live",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-read-cleanup-live.cfg",
+          "killed_by": [
+            "EventuallyReaped"
+          ],
+          "temporal": true
+        },
+        {
+          "name": "remote-read-duplicate-terminal",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-read-duplicate-terminal.cfg",
+          "killed_by": [
+            "TerminalOnce"
+          ]
+        },
+        {
+          "name": "remote-read-pid-reuse",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-read-pid-reuse.cfg",
+          "killed_by": [
+            "SignalOwnedPid"
+          ]
+        },
+        {
+          "name": "remote-read-stale-publish",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-read-stale-publish.cfg",
+          "killed_by": [
+            "FreshPublication"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote-save-protocol",
+      "boundary": "remote-save",
+      "lane": "model",
+      "gate": "specs/save-gate.sh",
+      "mutants": [
+        {
+          "name": "save-lock-replacement",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-save-lock-namespace.cfg",
+          "killed_by": [
+            "SingleLockDomain"
+          ]
+        },
+        {
+          "name": "save-nonparticipant-limit",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-save-nonparticipant.cfg",
+          "killed_by": [
+            "NoBlindOverwrite"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote-workspace-pool",
+      "boundary": "ssh-sftp",
+      "lane": "model",
+      "gate": "specs/remote-gate.sh",
+      "mutants": [
+        {
+          "name": "workspace-epoch",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-workspace-epoch.cfg",
+          "killed_by": [
+            "ReplyOwnsDispatch"
+          ]
+        },
+        {
+          "name": "workspace-lease-release",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-workspace-lease-release.cfg",
+          "killed_by": [
+            "LastLeaseSignalsStop"
+          ]
+        },
+        {
+          "name": "workspace-queued-cancel",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-workspace-queued-cancel.cfg",
+          "killed_by": [
+            "NoQueuedSkipTeardown"
+          ]
+        },
+        {
+          "name": "workspace-stale-service",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-workspace-stale-service.cfg",
+          "killed_by": [
+            "ServiceOwnership"
+          ]
+        },
+        {
+          "name": "workspace-stat-identity",
+          "kind": "tla-fault",
+          "config": "specs/cfg/remote-workspace-follow-stat-identity.cfg",
+          "killed_by": [
+            "FollowWindowHonest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sftp-wire-codec",
+      "boundary": "ssh-sftp",
+      "lane": "model",
+      "gate": "specs/ssh-gate.sh",
+      "mutants": [
+        {
+          "name": "sftp-wire-over-read",
+          "kind": "tla-fault",
+          "config": "specs/cfg/sftp-wire-over-read.cfg",
+          "killed_by": [
+            "SnapshotBounded"
+          ]
+        },
+        {
+          "name": "sftp-wire-unbounded-alloc",
+          "kind": "tla-fault",
+          "config": "specs/cfg/sftp-wire-unbounded-alloc.cfg",
+          "killed_by": [
+            "PacketBounded"
+          ]
+        },
+        {
+          "name": "sftp-wire-wrong-id",
+          "kind": "tla-fault",
+          "config": "specs/cfg/sftp-wire-wrong-id.cfg",
+          "killed_by": [
+            "ReplyIdentity"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "terminal-lifecycle",
+      "boundary": "terminal-lifecycle",
+      "lane": "model",
+      "gate": "specs/terminal-gate.sh",
+      "mutants": [
+        {
+          "name": "terminal-child-resize",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-child-resize.cfg",
+          "killed_by": [
+            "GeometryOwned"
+          ]
+        },
+        {
+          "name": "terminal-dead-input",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-dead-input.cfg",
+          "killed_by": [
+            "InputNeverToDead"
+          ]
+        },
+        {
+          "name": "terminal-dead-input-boundary",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-dead-input.cfg",
+          "killed_by": [
+            "ExitBoundary"
+          ]
+        },
+        {
+          "name": "terminal-dragged-pin",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-dragged-pin.cfg",
+          "killed_by": [
+            "PinnedNeverDragged"
+          ]
+        },
+        {
+          "name": "terminal-host-effect",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-host-effect.cfg",
+          "killed_by": [
+            "OutputNeverMutates"
+          ]
+        },
+        {
+          "name": "terminal-resurrect",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-resurrect.cfg",
+          "killed_by": [
+            "TerminalAbsorbing"
+          ]
+        },
+        {
+          "name": "terminal-resurrect-twice",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-resurrect.cfg",
+          "killed_by": [
+            "ExitAnnouncedOnce"
+          ]
+        },
+        {
+          "name": "terminal-stale-frame",
+          "kind": "tla-fault",
+          "config": "specs/cfg/terminal-stale-frame.cfg",
+          "killed_by": [
+            "FrameFresh"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ui-session-lifecycle",
+      "boundary": "ui-protocol",
+      "lane": "model",
+      "gate": "specs/ui-gate.sh",
+      "mutants": [
+        {
+          "name": "ui-delta-unpoison",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-delta-unpoison.cfg",
+          "killed_by": [
+            "PoisonedUntilSnapshot"
+          ]
+        },
+        {
+          "name": "ui-double-effect",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-double-effect.cfg",
+          "killed_by": [
+            "EffectExactlyOnce"
+          ]
+        },
+        {
+          "name": "ui-early-bye",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-early-bye.cfg",
+          "killed_by": [
+            "ByeAfterFinalAck"
+          ]
+        },
+        {
+          "name": "ui-empty-publish",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-empty-publish.cfg",
+          "killed_by": [
+            "NoEmptyPublication"
+          ]
+        },
+        {
+          "name": "ui-foreign-base",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-foreign-base.cfg",
+          "killed_by": [
+            "ForeignNeverActs"
+          ]
+        },
+        {
+          "name": "ui-future-base",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-future-base.cfg",
+          "killed_by": [
+            "FutureNeverActs"
+          ]
+        },
+        {
+          "name": "ui-poisoned-act",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-poisoned-act.cfg",
+          "killed_by": [
+            "PoisonedNeverActs"
+          ]
+        },
+        {
+          "name": "ui-post-bye-publish",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-post-bye-publish.cfg",
+          "killed_by": [
+            "NoPostByePublication"
+          ]
+        },
+        {
+          "name": "ui-stale-base",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-stale-base.cfg",
+          "killed_by": [
+            "StaleNeverActs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editor-protocol-delivery",
+      "boundary": "ui-protocol",
+      "lane": "model",
+      "gate": "specs/gate.sh",
+      "mutants": [
+        {
+          "name": "EditorProtocol_Mutant",
+          "kind": "tla-mutant-module",
+          "file": "specs/EditorProtocol_Mutant.tla",
+          "killed_by": [
+            "NoMisapply",
+            "NoWrongDocument"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "search-lifecycle-publication",
+      "boundary": "search-lifecycle",
+      "lane": "model",
+      "gate": "specs/search-gate.sh",
+      "mutants": [
+        {
+          "name": "SearchLifecycle_Mutant",
+          "kind": "tla-mutant-module",
+          "file": "specs/SearchLifecycle_Mutant.tla",
+          "killed_by": [
+            "RowsCurrent",
+            "StaleAcceptsNever"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "search-lifecycle-safety-proof",
+      "boundary": "search-lifecycle",
+      "lane": "tlaps",
+      "gate": "specs/tlaps-gate.sh",
+      "mutants": [
+        {
+          "name": "SearchLifecycle_MutantProofs",
+          "kind": "tlaps-negative-control",
+          "file": "specs/SearchLifecycle_MutantProofs.tla",
+          "killed_by": [
+            "InductiveStep"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editor-event-forward",
+      "boundary": "event-transport",
+      "lane": "core-assurance",
+      "mutants": [
+        {
+          "name": "forward-drop-refused",
+          "kind": "rust-native",
+          "file": "crates/strop-engine/src/editor/events.rs",
+          "killed_by": [
+            {
+              "crate": "strop-engine",
+              "test": "forwarded_semantic_event_survives_a_full_lane"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

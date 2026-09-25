@@ -48,3 +48,28 @@ pub use request::{
     ClientMessage, Event, ExecSpec, ExitStatus, NotifyHint, NotifyKind, PtyGeometry, Request,
     ResultOutcome, StreamRef, WorkerMessage,
 };
+
+/// The exact compile-time target triple of this build (0058 WK05): what
+/// the handshake's `EndpointInfo.target` reports and what deployment
+/// binds against the release catalog's artifact targets. Never derived
+/// at runtime — the build script captures cargo's `TARGET`.
+pub const TARGET_TRIPLE: &str = env!("STROP_TARGET_TRIPLE");
+
+#[cfg(test)]
+mod tests {
+    /// The reported identity is a real triple naming this build's
+    /// arch/OS — never the `{arch}-{os}` shorthand (which cannot tell
+    /// musl from gnu and is not a release-catalog key).
+    #[test]
+    fn target_triple_is_the_exact_compile_time_target() {
+        let parts: Vec<&str> = super::TARGET_TRIPLE.split('-').collect();
+        assert!(parts.len() >= 3, "a full triple: {}", super::TARGET_TRIPLE);
+        assert_eq!(parts[0], std::env::consts::ARCH);
+        let os = std::env::consts::OS;
+        assert!(
+            super::TARGET_TRIPLE.contains(os),
+            "triple {} names the build OS {os}",
+            super::TARGET_TRIPLE
+        );
+    }
+}

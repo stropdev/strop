@@ -288,6 +288,7 @@ impl Editor {
         }
         let work = open::OpenRead {
             worker: self.filesystem.worker().clone(),
+            remote: self.remote.workers.clone(),
             container: match &path {
                 FileTarget::Container { container, .. } => {
                     self.containers.attached.get(container.as_str()).cloned()
@@ -556,6 +557,10 @@ impl Editor {
                         };
                         self.message.clear();
                         self.finish_open(id, key.intent);
+                        // WK07: an opened remote workspace on an admitted
+                        // endpoint gains a notify subscription through its
+                        // worker lease; unadmitted hosts never deploy.
+                        self.start_remote_notifications();
                     }
                     Outcome::Failed { failure, .. } => {
                         if let OpenIntent::CollectionSource { owner } = key.intent {

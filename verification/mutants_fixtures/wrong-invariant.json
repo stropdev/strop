@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "seams": [
+    {
+      "id": "ui-session-lifecycle",
+      "boundary": "ui-protocol",
+      "lane": "model",
+      "gate": "specs/ui-gate.sh",
+      "mutants": [
+        {
+          "name": "ui-stale-base",
+          "kind": "tla-fault",
+          "config": "specs/cfg/ui-stale-base.cfg",
+          "killed_by": ["TypeOK"]
+        }
+      ]
+    }
+  ]
+}

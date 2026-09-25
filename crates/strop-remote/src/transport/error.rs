@@ -218,6 +218,11 @@ impl Fault {
         (self.kind, self.poison)
     }
 
+    /// The bounded detail text (diagnostic data, never authority).
+    pub(crate) fn detail(&self) -> &str {
+        &self.detail
+    }
+
     fn into_parts(self) -> (ReadStage, ReadFailureKind, String) {
         (self.stage, self.kind, self.detail)
     }

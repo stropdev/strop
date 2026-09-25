@@ -19,4 +19,4 @@ pub(crate) mod session;
 #[cfg(unix)]
 mod stderr;
 #[cfg(unix)]
-mod wire;
+pub(crate) mod wire;

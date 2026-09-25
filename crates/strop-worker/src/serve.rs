@@ -352,7 +352,7 @@ fn handshake(
                 name: "strop".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
                 build: None,
-                target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+                target: strop_worker_protocol::TARGET_TRIPLE.into(),
             },
             session,
             namespace: namespace_identity(),

@@ -206,3 +206,282 @@ fn home_expansion_refuses_ambiguous_name_counts() {
         assert_eq!(kind(result), ReadFailureKind::Protocol);
     }
 }
+
+// ---------------------------------------------------------------- DeploySftp
+// The deploy write session crosses the same codec: a scripted in-memory
+// server answers request-for-request and captures exactly what the
+// client sent, so request shapes are evidence, not source pins.
+
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+
+/// One scripted exchange: the server replies to the client's packets in
+/// order and records every request payload it received.
+struct Scripted {
+    runtime: tokio::runtime::Runtime,
+    requests: Arc<Mutex<Vec<Vec<u8>>>>,
+    session: DeploySftp<tokio::io::WriteHalf<DuplexStream>, tokio::io::ReadHalf<DuplexStream>>,
+    server: tokio::task::JoinHandle<()>,
+}
+
+fn attrs_reply(size: u64, uid: u32, gid: u32, mode: u32) -> Vec<u8> {
+    let mut attrs = 7_u32.to_be_bytes().to_vec(); // size + uid/gid + permissions
+    attrs.extend(size.to_be_bytes());
+    attrs.extend(uid.to_be_bytes());
+    attrs.extend(gid.to_be_bytes());
+    attrs.extend(mode.to_be_bytes());
+    attrs
+}
+
+fn status_message(id: u32, code: u32, message: &[u8]) -> Vec<u8> {
+    let mut payload = code.to_be_bytes().to_vec();
+    payload.extend(string(message));
+    payload.extend(string(b""));
+    response(PacketKind::Status, id, &payload)
+}
+
+fn scripted(replies: Vec<Vec<u8>>, extensions: &[&[u8]]) -> Scripted {
+    let mut version = vec![PacketKind::Version as u8, 0, 0, 0, 3];
+    for name in extensions {
+        version.extend(string(name));
+        version.extend(string(b""));
+    }
+    let mut replies: VecDeque<Vec<u8>> = replies.into();
+    replies.push_front(frame(&version));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let recording = Arc::clone(&requests);
+    let runtime = runtime();
+    let _context = runtime.enter();
+    let (server, client) = tokio::io::duplex(64 * 1024);
+    let server = tokio::spawn(async move {
+        let mut server = server;
+        let mut length = [0_u8; 4];
+        loop {
+            if server.read_exact(&mut length).await.is_err() {
+                return;
+            }
+            let length = u32::from_be_bytes(length) as usize;
+            assert!(length > 0 && length <= 256 * 1024, "request packet bound");
+            let mut payload = vec![0_u8; length];
+            if server.read_exact(&mut payload).await.is_err() {
+                return;
+            }
+            recording.lock().unwrap().push(payload);
+            let Some(reply) = replies.pop_front() else {
+                return;
+            };
+            if server.write_all(&reply).await.is_err() {
+                return;
+            }
+        }
+    });
+    let (read, write) = tokio::io::split(client);
+    let session = runtime.block_on(DeploySftp::connect(write, read)).unwrap();
+    Scripted {
+        runtime,
+        requests,
+        session,
+        server,
+    }
+}
+
+impl Scripted {
+    fn request(&self, index: usize) -> Vec<u8> {
+        self.requests.lock().unwrap()[index].clone()
+    }
+    fn finish(self) {
+        drop(self.session);
+        self.runtime.block_on(self.server).unwrap();
+    }
+}
+
+#[test]
+fn deploy_lstat_decodes_owner_mode_and_size_from_real_attrs() {
+    let mut session = scripted(
+        vec![response(
+            PacketKind::Attrs,
+            1,
+            &attrs_reply(4096, 1000, 100, 0o100700),
+        )],
+        &[],
+    );
+    let attrs = session
+        .runtime
+        .block_on(session.session.lstat(Path::new("/cache/objects/ab")))
+        .unwrap();
+    assert_eq!(attrs.size, Some(4096));
+    assert_eq!(attrs.uid, Some(1000));
+    assert_eq!(attrs.permissions, Some(0o100700));
+    // Request one is INIT; request two is LSTAT of the exact path bytes.
+    let lstat = session.request(1);
+    assert_eq!(lstat[0], PacketKind::Lstat as u8);
+    assert!(lstat
+        .windows(b"/cache/objects/ab".len())
+        .any(|w| w == b"/cache/objects/ab"));
+    session.finish();
+}
+
+#[test]
+fn deploy_write_sequence_sends_exact_flags_offsets_and_modes() {
+    let mut session = scripted(
+        vec![
+            status(1, 0),
+            response(PacketKind::Handle, 2, &string(b"h")),
+            status(3, 0),
+            status(4, 0),
+        ],
+        &[],
+    );
+    let bytes = b"worker bytes".as_slice();
+    session.runtime.block_on(async {
+        session
+            .session
+            .mkdir(Path::new("/cache/strop-worker"), 0o700)
+            .await
+            .unwrap();
+        let handle = session
+            .session
+            .open_write(Path::new("/cache/staging/aa"))
+            .await
+            .unwrap();
+        session.session.write_at(&handle, 0, bytes).await.unwrap();
+        session.session.close(handle).await.unwrap();
+    });
+    let mkdir = session.request(1);
+    assert_eq!(mkdir[0], PacketKind::Mkdir as u8);
+    assert!(mkdir.ends_with(&0o700_u32.to_be_bytes()));
+    let open = session.request(2);
+    assert_eq!(open[0], PacketKind::Open as u8);
+    // SSH_FXF_WRITE|CREAT|TRUNC then private create mode.
+    assert!(open.windows(4).any(|w| w == 0x1a_u32.to_be_bytes()));
+    assert!(open.ends_with(&0o600_u32.to_be_bytes()));
+    let write = session.request(3);
+    assert_eq!(write[0], PacketKind::Write as u8);
+    assert!(write.ends_with(bytes));
+    session.finish();
+}
+
+#[test]
+fn deploy_rename_prefers_posix_rename_only_when_advertised() {
+    // With the extension advertised: an Extended request, never v3 rename.
+    let mut session = scripted(vec![status(1, 0)], &[b"posix-rename@openssh.com"]);
+    session
+        .runtime
+        .block_on(session.session.rename(
+            Path::new("/cache/staging/aa"),
+            Path::new("/cache/objects/bb"),
+        ))
+        .unwrap();
+    let extended = session.request(1);
+    assert_eq!(extended[0], PacketKind::Extended as u8);
+    assert!(extended
+        .windows(b"posix-rename@openssh.com".len())
+        .any(|w| w == b"posix-rename@openssh.com"));
+    session.finish();
+
+    // Without it: the plain v3 rename.
+    let mut session = scripted(vec![status(1, 0)], &[]);
+    session
+        .runtime
+        .block_on(session.session.rename(
+            Path::new("/cache/staging/aa"),
+            Path::new("/cache/objects/bb"),
+        ))
+        .unwrap();
+    assert_eq!(session.request(1)[0], PacketKind::Rename as u8);
+    session.finish();
+}
+
+#[test]
+fn deploy_failures_are_typed_and_a_failed_close_poisons() {
+    // Permission on mkdir is a typed refusal, never a silent success.
+    let mut session = scripted(vec![status_message(1, 3, b"Permission denied")], &[]);
+    let result = session
+        .runtime
+        .block_on(session.session.mkdir(Path::new("/root/nope"), 0o700));
+    assert_eq!(kind(result), ReadFailureKind::Permission);
+    session.finish();
+
+    // A failed close after a good write poisons the connection.
+    let mut session = scripted(
+        vec![
+            response(PacketKind::Handle, 1, &string(b"h")),
+            status_message(2, 4, b"no space left on device"),
+            status_message(3, 4, b"disk quota exceeded"),
+        ],
+        &[],
+    );
+    let fault = session
+        .runtime
+        .block_on(async {
+            let handle = session
+                .session
+                .open_write(Path::new("/cache/staging/aa"))
+                .await
+                .unwrap();
+            let outcome = session.session.write_at(&handle, 0, b"x").await.map(|_| ());
+            match outcome {
+                Ok(()) => session.session.close(handle).await,
+                Err(primary) => match session.session.close(handle).await {
+                    Ok(()) => Err(primary),
+                    Err(cleanup) => Err(primary.with_cleanup(cleanup)),
+                },
+            }
+        })
+        .unwrap_err();
+    let (_, poisoned) = fault.disposition();
+    assert!(poisoned, "a failed close poisons the connection");
+    session.finish();
+}
+
+#[test]
+fn deploy_read_back_enforces_the_length_bound_and_still_closes() {
+    let mut session = scripted(
+        vec![
+            response(PacketKind::Handle, 1, &string(b"h")),
+            response(
+                PacketKind::Attrs,
+                2,
+                &attrs_reply(4096, 1000, 1000, 0o100500),
+            ),
+            status(3, 0),
+        ],
+        &[],
+    );
+    let result = session.runtime.block_on(
+        session
+            .session
+            .read_file(Path::new("/cache/objects/ab"), 1024),
+    );
+    assert_eq!(kind(result), ReadFailureKind::TooLarge);
+    // The close ran even on the bound failure (request four is Close).
+    assert_eq!(session.request(3)[0], PacketKind::Close as u8);
+    session.finish();
+}
+
+#[test]
+fn deploy_listing_skips_dot_entries_and_bounds_names() {
+    // One NAME page carrying ".", ".." and a real entry, then EOF.
+    let mut name = 3_u32.to_be_bytes().to_vec();
+    for entry in [".", "..", "0123abcd.json"] {
+        name.extend(string(entry.as_bytes()));
+        name.extend(string(b"human longname"));
+        name.extend(0_u32.to_be_bytes()); // no attrs
+    }
+    let mut session = scripted(
+        vec![
+            response(PacketKind::Handle, 1, &string(b"d")),
+            response(PacketKind::Name, 2, &name),
+            status(3, 1), // SSH_FX_EOF ends the listing
+            status(4, 0), // close
+        ],
+        &[],
+    );
+    let names = session
+        .runtime
+        .block_on(session.session.list_names(Path::new("/cache/receipts")))
+        .unwrap();
+    assert_eq!(names, vec!["0123abcd.json".to_string()]);
+    session.finish();
+}

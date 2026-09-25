@@ -116,14 +116,19 @@ pub(crate) fn parse(bytes: &[u8], complete: bool) -> Result<Vec<TarEntry>, Strin
     Ok(entries)
 }
 
-/// One archive entry's header, as streamed: name, kind, declared size
-/// and (for symlinks) the link target. Content is consumed, never
-/// retained — unlike [`TarEntry`] there is no offset range to borrow.
+/// One archive entry's header, as streamed: name, kind, declared size,
+/// permission bits and numeric ownership, and (for symlinks) the link
+/// target. Content is consumed, never retained — unlike [`TarEntry`]
+/// there is no offset range to borrow. The mode/uid/gid facts back the
+/// deployment provider's symlink-conscious `lstat` (0058 WK08).
 #[derive(Debug)]
 pub(crate) struct StreamEntry {
     pub name: String,
     pub kind: TarKind,
     pub size: u64,
+    pub mode: u32,
+    pub uid: u64,
+    pub gid: u64,
     pub link_target: Option<String>,
 }
 
@@ -270,10 +275,15 @@ impl StreamParser {
                 let link_target = (kind == TarKind::Symlink)
                     .then(|| nul_terminated(&header[157..257]))
                     .transpose()?;
+                let mode = u32::try_from(octal(&header[100..108])?)
+                    .map_err(|_| "mode field overflows u32".to_string())?;
                 on_entry(StreamEntry {
                     name,
                     kind,
                     size,
+                    mode,
+                    uid: octal(&header[108..116])?,
+                    gid: octal(&header[116..124])?,
                     link_target,
                 });
             }

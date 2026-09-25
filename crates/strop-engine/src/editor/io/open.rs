@@ -14,6 +14,10 @@ pub(super) struct OpenRead {
     /// The session's local worker lease (0058 WK04): local reads,
     /// observations and listings ride it — no in-process twin.
     pub worker: strop_worker_client::Worker,
+    /// The session's remote worker leases (0058 WK07): SSH workspaces
+    /// whose host admitted a worker read/list/observe through it; every
+    /// other host keeps the read-only SFTP path byte-identically.
+    pub remote: crate::editor::remote::workers::RemoteWorkers,
     pub previous_directories: Vec<super::super::Directory>,
     pub reveal: Option<ResourceLocation>,
 }
@@ -121,6 +125,30 @@ impl OpenRead {
                 }
             }
             FileTarget::Remote(location) => {
+                if self.browse {
+                    // Absolute directories route worker-or-SFTP inside
+                    // namespace::list; home-relative locations resolve
+                    // through the SFTP path as before.
+                    if let Some(file) = location.absolute_file() {
+                        let resource = ResourceLocation::remote(
+                            location.endpoint().clone(),
+                            file.path().to_path_buf(),
+                        );
+                        return self.list(resource, cancel);
+                    }
+                }
+                // WK07: an admitted endpoint with a live lease reads
+                // through its worker; anything else keeps the SFTP path
+                // (home-relative locations resolve only there).
+                if let Some(file) = location.absolute_file() {
+                    if let Some(worker) = self
+                        .remote
+                        .get(location.endpoint())
+                        .filter(|worker| worker.worker().session().is_some())
+                    {
+                        return self.open_remote_worker(&worker, file, cancel);
+                    }
+                }
                 let result = if self.browse {
                     self.client
                         .list(location, cancel)
@@ -239,9 +267,51 @@ impl OpenRead {
             }
         }
     }
+    /// Open one absolute remote file through the endpoint's admitted
+    /// worker: observe, read the selection window and build the same
+    /// remote document shape the SFTP path builds (read-only buffer;
+    /// editability stays with the permit flow).
+    fn open_remote_worker(
+        &self,
+        worker: &strop_remote::worker_transport::RemoteWorker,
+        file: &strop_workspace::RemoteFile,
+        cancel: &CancelToken,
+    ) -> Outcome<Opened> {
+        use strop_remote::worker_transport::RemoteReadFailure;
+        let location = ResourceLocation::remote(file.endpoint().clone(), file.path().to_path_buf());
+        let result = worker.read_selection(cancel, location, &self.selection);
+        let (text, window) = match result {
+            Ok(loaded) => loaded,
+            Err(RemoteReadFailure::Client(error)) if error.is_cancellation() => {
+                return Outcome::Cancelled(CancelReason::OwnerClosed)
+            }
+            Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+        };
+        let mut buffer = Buffer::from_text(&text);
+        // A remote snapshot is never writable; provenance beyond this
+        // flag is the caller's document identity.
+        buffer.readonly = true;
+        let canonical = FileTarget::Remote(file.clone().into());
+        Outcome::Success(Opened {
+            document: Document::remote(
+                buffer,
+                super::super::document::RemoteDocument {
+                    file: file.clone(),
+                    window,
+                    selection: self.selection,
+                    connection: None,
+                    return_to: None,
+                    write: None,
+                },
+            ),
+            canonical,
+        })
+    }
+
     fn list(&self, location: ResourceLocation, cancel: &CancelToken) -> Outcome<Opened> {
         match super::super::namespace::list(
             &self.worker,
+            &self.remote,
             &location,
             &self.client,
             self.container.as_ref(),

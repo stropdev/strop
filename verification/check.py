@@ -61,6 +61,7 @@ GATES = {
     "verify",          # docker compose run --build --rm verify (Verus)
     "tlaps",           # docker compose run --build --rm tlaps
     "container-test",  # docker compose run --build --rm container-test
+    "core-assurance",  # docker compose run --build --rm core-assurance (VF19)
     "install-fixture", # sh tests/install.sh + sh tests/release-catalog.sh
     "release",         # .github/workflows/release.yml
 }

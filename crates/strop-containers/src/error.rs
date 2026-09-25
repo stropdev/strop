@@ -69,9 +69,16 @@ pub enum ContainerError {
     /// The caller's cancellation token fired.
     #[error("operation cancelled")]
     Cancelled,
-
     /// Anything else the supervised subprocess reported: non-zero exit,
     /// deadline, pipe failure. The detail carries a bounded stderr tail.
     #[error("engine I/O: {detail}")]
     Io { detail: String },
+
+    /// Internal early-stop sentinel: a streaming consumer that already
+    /// has its answer (the first tar header) aborts the transfer with
+    /// this; it is caught at the same boundary and never escapes the
+    /// crate.
+    #[doc(hidden)]
+    #[error("internal stream stop")]
+    StreamStop,
 }

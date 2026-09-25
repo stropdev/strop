@@ -302,6 +302,27 @@ impl AdmittedExec {
         self.build(Mode::Relay)
     }
 
+    /// The strop worker's own exec channel for images without a POSIX
+    /// sh (0058 WK08, the shellless preinstalled case): the verified
+    /// worker binary IS the supervisor — it serves the protocol on
+    /// stdin/stdout and its own session teardown reaps what it
+    /// launches, so the fixed sh supervisor adds nothing it needs.
+    /// All three pipes are piped; stdin is the lifetime lease exactly
+    /// as in [`Self::command`]. Only the worker takes this path:
+    /// ordinary programs keep the typed distroless [`ContainerError::ExecLaunch`]
+    /// refusal, never an unsupervised fallback.
+    pub fn worker_command(&self) -> Command {
+        let mut command = self.exec_prefix();
+        command
+            .arg(self.spec.container.id().as_str())
+            .arg(&self.spec.program)
+            .args(&self.spec.args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    }
+
     /// One bounded in-container command run to completion (Git and
     /// friends): deadline-bounded, caller-cancelled, stdout retained up
     /// to `stdout_limit`. Launch classification is typed: a program that
@@ -323,21 +344,35 @@ impl AdmittedExec {
         if let Some(detail) = refused {
             return Err(ContainerError::ExecLaunch { detail });
         }
-        if records.is_empty() && output.code != Some(0) && supervisor_refused(&output.stderr) {
+        // The daemon reports a missing `sh` with a non-zero exit and no
+        // records; under `-i` the message lands on stdout (the exec
+        // stream), on older daemons on stderr — both are the daemon's
+        // own words, and a real program's lookalike output is excluded
+        // by the empty-records guard (a started supervisor always
+        // records `launched`).
+        if records.is_empty()
+            && output.code != Some(0)
+            && (supervisor_refused(&output.stderr) || supervisor_refused(&output.stdout))
+        {
+            let detail = if output.stderr.is_empty() {
+                stderr_tail(&output.stdout)
+            } else {
+                stderr_tail(&output.stderr)
+            };
             return Err(ContainerError::ExecLaunch {
                 detail: format!(
-                    "the supervisor itself could not start (the image carries no POSIX sh): {}",
-                    stderr_tail(&output.stderr)
+                    "the supervisor itself could not start (the image carries no POSIX sh): {detail}"
                 ),
             });
         }
         Ok(output)
     }
 
-    /// The pinned `docker exec` invocation: argv-only, fixed supervisor
-    /// source, all three stdio pipes. Positional parameters after the
-    /// container id are inert data to the CLI.
-    fn build(&self, mode: Mode) -> Command {
+    /// The pinned `docker exec` invocation prefix: probe-pinned engine,
+    /// argv-only, the selected workdir/principal/environment. Everything
+    /// after the container id is the payload argv — inert data to the
+    /// CLI, never shell-interpreted.
+    fn exec_prefix(&self) -> Command {
         let spec = &self.spec;
         let mut command = Command::new("docker");
         for arg in spec.engine.context_args() {
@@ -355,7 +390,15 @@ impl AdmittedExec {
             command.arg("--env").arg(format!("{name}={value}"));
         }
         command
-            .arg(spec.container.id().as_str())
+    }
+
+    /// The pinned `docker exec` invocation: argv-only, fixed supervisor
+    /// source, all three stdio pipes. Positional parameters after the
+    /// container id are inert data to the CLI.
+    fn build(&self, mode: Mode) -> Command {
+        let mut command = self.exec_prefix();
+        command
+            .arg(self.spec.container.id().as_str())
             .arg("sh")
             .arg("-c")
             .arg(SUPERVISOR_SOURCE)
@@ -363,8 +406,8 @@ impl AdmittedExec {
             .arg(self.key.nonce_hex())
             .arg(GRACE_SECONDS.to_string())
             .arg(mode.as_str())
-            .arg(&spec.program)
-            .args(&spec.args)
+            .arg(&self.spec.program)
+            .args(&self.spec.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

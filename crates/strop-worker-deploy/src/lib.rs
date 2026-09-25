@@ -30,11 +30,13 @@
 //! positively identified content-addressed entries.
 
 pub mod cache;
+pub mod container;
 pub mod deploy;
 pub mod gc;
 pub mod manifest;
 pub mod provider;
 
+pub use container::{ContainerProvider, ShellPolicy};
 pub use deploy::{
     deploy, ArtifactSupply, Consent, DeployOrigin, DeployOutcome, DeployRefusal, DeployReport,
     DeployRequest, State, VerifiedObject,

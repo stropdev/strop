@@ -532,7 +532,7 @@
       "claims": [
         {
           "id": "EVT-BOUNDED",
-          "statement": "Bounded lanes with legal coalescing only: terminal wakes coalesce per session without losing sessions, resize/focus are latest-wins, paste bytes are bounded but a lone oversize paste is never stranded.",
+          "statement": "Bounded lanes with legal coalescing only: terminal wakes coalesce per session without losing sessions, resize/focus are latest-wins, paste bytes are bounded but a lone oversize paste is never stranded, and forwarded job-channel events (one-shot facts such as completions and terminal stops) backpressure a full semantic lane instead of being dropped — a refused forwarder delivery must never strand editor pending state (0057 VF19 storm finding).",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -546,7 +546,16 @@
                 "lanes_alternate_so_neither_class_starves",
                 "paste_bytes_are_bounded_but_a_lone_oversize_paste_is_never_stranded",
                 "terminal_wakes_coalesce_per_session_without_losing_sessions",
-                "resize_and_focus_are_latest_wins"
+                "resize_and_focus_are_latest_wins",
+                "forwarded_semantic_event_survives_a_full_lane"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/ui_stdio/storm.rs",
+              "gate": "test",
+              "tests": [
+                "streaming_search_shutdown_storm_settles"
               ]
             }
           ]
@@ -577,7 +586,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/events.rs": "65ac4670b8dbff7c4ed437032365374339e5569bab66320822560ec2cb1ba696",
+          "crates/strop-engine/src/editor/events.rs": "31fd8bc58bbde00036f9ccd4224cf74ef01cc34b813af8e393e604f45c55ed28",
           "crates/strop-engine/src/editor/events/channel.rs": "8ad35ebb6c94893868b9ca7582ae8e105fcc84828c77aa302577416e912f82a3",
           "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
@@ -586,7 +595,7 @@
           "crates/strop-trace/src/replay.rs": "e2e3578f5c7f23964609778eb4f77d7d572c55572c5affed67c88fdfde91b2c8",
           "crates/strop-trace/src/writer.rs": "20ea24a24dcf8f88321e8d4cb2ef9fb40c6fb7ede89ed9ec69c0fdbab2923591"
         },
-        "evidence": "17002d7c1144d6fcf6bc49f8dc0700293b2c1e373dc518f2b058420854f4fd34"
+        "evidence": "adb94955dbbd6035d0059bdc4655ccda4ee238fb96e64823a652d9eb0e644335"
       }
     },
     {
@@ -729,7 +738,16 @@
               "tests": [
                 "spec_validation_refuses_unsafe_shape_before_any_engine",
                 "command_is_pinned_argv_only_supervised_stdio",
-                "capture_mode_selects_the_null_lease"
+                "capture_mode_selects_the_null_lease",
+                "worker_command_runs_the_worker_directly_without_a_shell"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-deploy/tests/container.rs",
+              "gate": "container-test",
+              "tests": [
+                "shellless_deploy_is_a_typed_refusal"
               ]
             }
           ]
@@ -777,14 +795,14 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-containers/src/engine.rs": "be84fc92a3ad3f340e65f8b958b9d1516111bcb503b5c8be1ec1ba1947777859",
-          "crates/strop-containers/src/error.rs": "a1ac25bec5034769c5a866d0971b454b2e851bfec1ff43b7b5ce00f79925a697",
-          "crates/strop-containers/src/exec.rs": "2995bdecfcc696ae51b340258a10d5a734767543f9d02386abb73a64fe2d47f5",
-          "crates/strop-containers/src/identity.rs": "7e2529505f5ca06dd02c3dbed9aefa6254ebf81be6a019876d2e835461f6fd46",
-          "crates/strop-containers/src/read.rs": "775e58c3761c495349a2d8ab3bbd77f39fdb12fc73c009bb71acbacc46fbe5cd",
-          "crates/strop-containers/src/tar.rs": "d177ed42f2f0ff4f8c1f895f1a2111e428831ea6ca1855be24575b09cfe71a38"
+          "crates/strop-containers/src/engine.rs": "cf611a802ad476c1c41429586b40c7f8977dcb1455ff6e0aaeb93174d9d686ee",
+          "crates/strop-containers/src/error.rs": "d9948fe37feacb71dab44886f84339623ca1f3dad5734c9d93a459e61db424dd",
+          "crates/strop-containers/src/exec.rs": "e659aef175d0b0df6fce47b671cbd56cb8997b013ae100ab0a97135f392327b8",
+          "crates/strop-containers/src/identity.rs": "74728fd8011a582416038907544d80e900edd98edc8ba597f5bfc2bbd236a826",
+          "crates/strop-containers/src/read.rs": "0a3d7c1a0c482c4ed0d0c640edf14867438a167fe63abe0fb54b7156ea9ecf65",
+          "crates/strop-containers/src/tar.rs": "f3893f14678db94d531c06ba92075bcf4dba12e6cdbc5d8667d989c4d371bad1"
         },
-        "evidence": "c478383bce05bbce14be344a9256eebcd093c1fef96056cf97eb68fdc58f35af"
+        "evidence": "fb517bd4670c8be1064a4dca063fd07f9f35eb2ee1f473d25d48c435fdfa7480"
       }
     },
     {
@@ -940,6 +958,46 @@
               "gate": "model"
             }
           ]
+        },
+        {
+          "id": "SSH-WORKER-DEPLOY",
+          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP deployment provider classifies status codes into the state machine's explicit outcomes. Real-OpenSSH deploy/handshake/read/write/notify parity, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against a live sshd in the compose gate (STROP_REQUIRE_SSH_TESTS=1).",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/transport/wire_tests.rs",
+              "gate": "test",
+              "tests": [
+                "deploy_lstat_decodes_owner_mode_and_size_from_real_attrs",
+                "deploy_write_sequence_sends_exact_flags_offsets_and_modes",
+                "deploy_rename_prefers_posix_rename_only_when_advertised",
+                "deploy_failures_are_typed_and_a_failed_close_poisons",
+                "deploy_read_back_enforces_the_length_bound_and_still_closes",
+                "deploy_listing_skips_dot_entries_and_bounds_names"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/deploy_provider.rs",
+              "gate": "test",
+              "tests": [
+                "provider_classification_keeps_status_codes_authoritative",
+                "lstat_decoding_maps_kinds_mode_owner_and_length"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/worker_ssh.rs",
+              "gate": "test",
+              "tests": [
+                "deploy_handshake_read_write_notify_parity_over_real_sshd",
+                "first_deploy_is_consent_gated_then_quietly_reused",
+                "interrupted_deploy_leaves_no_partial_activation",
+                "sftp_only_host_keeps_read_only_with_a_typed_refusal"
+              ]
+            }
+          ]
         }
       ],
       "gates": [
@@ -953,13 +1011,13 @@
           "crates/strop-remote/src/pool.rs": "a978895c007bd1817a2eb46d5c10fd9449332404f87bcce07435508ba06cc49e",
           "crates/strop-remote/src/pool/lifecycle.rs": "6714269fad561564c36b08a3338ab31401b22ac5ae673b3df9d2d6ba46fea9e9",
           "crates/strop-remote/src/ssh.rs": "dc20ca35675e48c2c1d32a5783263159925e264d15f1037d68a2e6491513facf",
-          "crates/strop-remote/src/transport/error.rs": "b8e19d073ff64839e108b95e8d56bd40ba6b197898450cc830749032c2b630d1",
+          "crates/strop-remote/src/transport/error.rs": "073f7bf98f2742fc70dba03a687c933f1e84dcd6a705f3b9fab0f14c0ebae77a",
           "crates/strop-remote/src/transport/process.rs": "043181f1b69e72e4eeb9c537ba2b14bee7c8ae306e8357257a9c3374296fa2ec",
           "crates/strop-remote/src/transport/session.rs": "02d094d99624aba647f9c34b1041240697651194a0939c2867b85a4cebdd7d04",
           "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
-          "crates/strop-remote/src/transport/wire.rs": "14acb21b175a13ac1d3aba2c38e2fed0300924a6f169d6447476230a8924abfb"
+          "crates/strop-remote/src/transport/wire.rs": "3fd192fbaca09ebca5c4f5f2ecd6f99ba8c7642713451bcbae67abef3b1dc54c"
         },
-        "evidence": "015687ed4c5427a48d8ac0f21efcfe476f079ff1f1ab2b80a04d97775e59afac"
+        "evidence": "dd603d61d1a7ec6cd95669388ca54a1bfa812b484c45c36b6c5ce1a9cc2b8514"
       }
     },
     {
@@ -1784,7 +1842,7 @@
         },
         {
           "id": "SRCH-GUARD",
-          "statement": "Production correspondence: retired generations never publish or merge, truncated completion stays visibly incomplete, warm drain holds the bound and dies with the surface.",
+          "statement": "Production correspondence: retired generations never publish or merge, truncated completion stays visibly incomplete, warm drain holds the bound and dies with the surface, and picker teardown during shutdown settles inside the jobs budget even with a search stream in flight — the streamed bridge backpressures a full event lane instead of stranding the terminal publication (0057 VF19 storm finding).",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -1796,6 +1854,14 @@
                 "retired_wsymbols_generation_never_merges",
                 "truncated_completion_stays_visibly_incomplete",
                 "warm_drain_holds_the_bound_and_dies_with_the_surface"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/ui_stdio/storm.rs",
+              "gate": "test",
+              "tests": [
+                "streaming_search_shutdown_storm_settles"
               ]
             }
           ]
@@ -1810,9 +1876,9 @@
         "sources": {
           "crates/strop-core/src/searchguard.rs": "3ce08ff2edafdd5fe24d058d5647f64696986272a0de1c9eff20539aacf7e7bc",
           "crates/strop-engine/src/editor/normal/search.rs": "b34a841566e54e2e83241f2df095a8788e2173192058b5abde4751e28144ba43",
-          "crates/strop-engine/src/editor/picker/drain.rs": "b3089b572feb171301d4609f4d2ae087f8bf8b29f9dcbf0d03ff1de574bb1668"
+          "crates/strop-engine/src/editor/picker/drain.rs": "a32550297969731b2d6411ce51365be62b947d2c653657fa816a02f885d3f11f"
         },
-        "evidence": "a43768291696f98d9ec58b2bf9e1dedb729a536b0507f8a1d8511a664b8a8b5e"
+        "evidence": "bb29589a5665034af037178896af3b5c433b63b50627e05373dbb662b16634f1"
       }
     },
     {
@@ -1877,7 +1943,7 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/frontend_input.rs": "2902349ea09990f0a4f85e0c6106e16e7ab29d7e2af59a4c4ee23bd21871ca27",
-          "crates/strop-engine/src/editor/events.rs": "65ac4670b8dbff7c4ed437032365374339e5569bab66320822560ec2cb1ba696",
+          "crates/strop-engine/src/editor/events.rs": "31fd8bc58bbde00036f9ccd4224cf74ef01cc34b813af8e393e604f45c55ed28",
           "crates/strop-engine/src/editor/input/frontend.rs": "12037bcb1c08fec236591d6bf36aa9ae449d3e6cf9465884deac106bef46c8fa",
           "crates/strop/src/headless/directives.rs": "818a64a5998954089141b9829753b959d1b0cbd3ac4f647ed05259387f7720b5",
           "crates/strop/src/headless/driver.rs": "d2b5325460e49cd09e0ba97aea99cc585c9ded171e0a1ff0226188e1026f955b",
@@ -1982,7 +2048,8 @@
         "crates/strop-worker-protocol/src/id.rs",
         "crates/strop-worker-protocol/src/lib.rs",
         "crates/strop-worker-protocol/src/message.rs",
-        "crates/strop-worker-protocol/src/request.rs"
+        "crates/strop-worker-protocol/src/request.rs",
+        "crates/strop-worker-protocol/build.rs"
       ],
       "claims": [
         {
@@ -2007,6 +2074,14 @@
               "tests": [
                 "fragmented_stream_survives_arbitrary_splits",
                 "handshake_and_request_round_trip_over_loopback"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-protocol/src/lib.rs",
+              "gate": "test",
+              "tests": [
+                "target_triple_is_the_exact_compile_time_target"
               ]
             }
           ]
@@ -2037,15 +2112,16 @@
       ],
       "pins": {
         "sources": {
+          "crates/strop-worker-protocol/build.rs": "e842b0f158b129292664c704021b6018dad2cc98e56630a3451848a287670ecc",
           "crates/strop-worker-protocol/src/codec.rs": "f3ae2c9ff2c1798b48f605eefef59ef9f511a13f0148175cc581819dd7b5758b",
           "crates/strop-worker-protocol/src/frame.rs": "598028765874870bc09893e3ac88014b75785e1961b9b7b68d8acefd2de56181",
           "crates/strop-worker-protocol/src/guard.rs": "b8c1827823f59c5d4d0570fb5b7b10b8c48fd23cd71547ff2cf9f0bbfa4b188e",
           "crates/strop-worker-protocol/src/id.rs": "d12b1043a61ada6f9f7d90b1ad4613648a3162d4948ec6396ef381e8d12488c2",
-          "crates/strop-worker-protocol/src/lib.rs": "ab8a10ad37fed7e3d9ab9d69a29751d451e995f2bbc75e455408f165f1e24c46",
+          "crates/strop-worker-protocol/src/lib.rs": "5079051aaa7999099546c0c8d4bc31ea1467f89fda3ba11aabf4ac17e5ca87f9",
           "crates/strop-worker-protocol/src/message.rs": "630d2bbdebfc5bd18da7d7a16c030dd5bf3bad39d81d30eb8f3aac5782b0c067",
           "crates/strop-worker-protocol/src/request.rs": "f239a8788ee0776e14c59e7b6bc3139616ada16449bbb155c8aba9b9db95e797"
         },
-        "evidence": "e4a7ab46e9a0e02852a4730351c1dcf1c05e82262b3c93c6836329282ab64bfd"
+        "evidence": "9716eb72d42b894ebcd1f5a075df137a85239ca2444558766bbebaa4f44e6c6b"
       }
     },
     {
@@ -2081,7 +2157,8 @@
               "tests": [
                 "eof_before_hello_exits_cleanly",
                 "noise_before_hello_is_a_typed_error",
-                "a_second_hello_is_refused_and_closes"
+                "a_second_hello_is_refused_and_closes",
+                "welcome_reports_the_exact_build_target"
               ]
             }
           ]
@@ -2101,7 +2178,8 @@
                 "shutdown_then_next_request_spawns_a_fresh_incarnation",
                 "prepare_apply_and_verify_a_create",
                 "observe_list_and_read_round_trip",
-                "finite_exec_streams_output_and_exits"
+                "finite_exec_streams_output_and_exits",
+                "deployed_worker_binds_the_endpoint_target"
               ]
             }
           ]
@@ -2112,16 +2190,16 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-worker-client/src/connection.rs": "68912ae3c79a0a817502fb7ac3b7d1e7a9470562fbf08d29a0a282885ea57ef9",
+          "crates/strop-worker-client/src/connection.rs": "c1f363c1447e8b7f1e4c459434d224d3213ec1eca92a4f6786494afd8b988fbc",
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
-          "crates/strop-worker-client/src/lib.rs": "4c82635b615b11a8b993b25a56a74225b3211fe2b9ba7627f10f01df7142c140",
+          "crates/strop-worker-client/src/lib.rs": "b39b1f33be8fd780c7db0f20a8cd8ab783eb7d374c794757ef883139d141961b",
           "crates/strop-worker-client/src/payload.rs": "fbc585fcb5c64260ecd43ba58ae8fa4dfc8f472388b37e728862ba0328227cb1",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
-          "crates/strop-worker/src/serve.rs": "71f8785497bc792a4aa3c888535c6964064e30cfed5c76a9647efcf76bdd043d",
-          "crates/strop-worker/src/serve/fs.rs": "2e6c30d53669203e7b7488ba7cb723fdddc1171e8c13593439116db0e97d2287",
+          "crates/strop-worker/src/serve.rs": "f2e5b7adc09962c665caf4bf5c0ec04a2582366741ef2cb038ad547d28572288",
+          "crates/strop-worker/src/serve/fs.rs": "5f9fda526ed9e1362c06d108a4cd7b2165fab750bacf1d4f038fc7a41fe1c017",
           "crates/strop-worker/src/serve/process.rs": "5a0310cba81f3d1c48d6888be235ddba06c4b8251f3020ae8a9609740361b45b"
         },
-        "evidence": "1ef5117173b06e619ea613d11da1538334b1f7394f9150ad827ea99521bad039"
+        "evidence": "d89e756988a48e3e3d8fb39b62d27126503afd27b4c2b8bca7c329eccf53ce72"
       }
     },
     {
@@ -2241,7 +2319,7 @@
         },
         {
           "id": "NOTIFY-ENGINE",
-          "statement": "Engine reconciliation: a hint reloads a clean buffer, preserves a dirty buffer with external-change state, reobserves an open directory, preserves a removed file's buffer; overflow rescans conservatively; a dead generation never acts; close retires the subscription; worker loss reestablishes with a fresh generation; the client subscription delivers hints and retires.",
+          "statement": "Engine reconciliation: a hint reloads a clean buffer, preserves a dirty buffer with external-change state, reobserves an open directory, preserves a removed file's buffer; overflow rescans conservatively; a dead generation never acts; close retires the subscription; worker loss reestablishes with a fresh generation; the client subscription delivers hints and retires; WK07 remote scopes: SSH workspaces on worker-admitted endpoints subscribe through the endpoint lease, settle/identity/loss rules are identical (subscription identity decides placement), remote hints apply conservatively (Directory buffers reobserve, dirty remote documents gain external-change state and are never clobbered, unknown identities never act), and lease loss invalidates + rescans + reestablishes. Because hint timing is inherently racy and hint effects are advisory and untraced, remote subscriptions do not install while the bit-exact full-content tape lane observes (recording or replay): remote freshness there is on demand, exactly as replay runs no worker.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2256,7 +2334,10 @@
                 "a_hint_reobserves_an_open_directory",
                 "a_removed_file_preserves_the_buffer",
                 "close_retires_the_subscription",
-                "worker_loss_reestablishes_with_a_fresh_generation"
+                "worker_loss_reestablishes_with_a_fresh_generation",
+                "remote_hints_mark_dirty_remote_documents_and_never_clobber",
+                "a_dead_remote_generation_never_acts",
+                "remote_subscription_identity_comes_from_the_settle_record"
               ]
             },
             {
@@ -2295,14 +2376,14 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/notify.rs": "85557e89bea22c540fbabc40a720852e42cef4403caea23cb8cba21b089bd88b",
+          "crates/strop-engine/src/editor/notify.rs": "c321732c57a49a1533485820d98de45cb1062dc037725639f9f02fdc4e2fd644",
           "crates/strop-picker/src/source/cache.rs": "a977b8438318c99a462f5dab90be94312f7a1bd6c61792d63d889a37b4e45156",
           "crates/strop-picker/src/source/worker.rs": "ae98d001be7c1ef2d0413de025e1c809462765a14b70088e1e8d39703fd808af",
           "crates/strop-worker/src/notify/manager.rs": "e1cdaf0b57101dfb89e17504f06c18f03aee1093aa7d76b2ef06bca57f7ff041",
           "crates/strop-worker/src/notify/mod.rs": "cac01cbcc38194729293866ba678d3634c90c025f8e1141f6f01fae57b643838",
           "crates/strop-worker/src/notify/sys.rs": "14f5461b93eb5754aad6faabdaac646baff2b6b99e1cf3edf99520ef901fa98d"
         },
-        "evidence": "2a1c895b408de249de79e875b842543d0b007ce5514c0b2da39000de18b198c6"
+        "evidence": "a3e104a114b75445319788373b94eadfc44fde04c8add49dc490a645c6e2ae94"
       }
     }
   ]

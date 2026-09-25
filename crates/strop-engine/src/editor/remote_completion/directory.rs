@@ -59,10 +59,14 @@ pub(super) fn run(
     container: Option<&strop_containers::ContainerIdentity>,
     client: &RemoteClient,
     worker: &strop_worker_client::Worker,
+    remote: &crate::editor::remote::workers::RemoteWorkers,
     cancel: &worker::CancelToken,
 ) -> Outcome<RemoteCompletionResult> {
-    let listed = match crate::editor::namespace::list(worker, &location, client, container, cancel)
-    {
+    // Completion never authenticates: namespace::list only rides an
+    // already-live admitted lease, and otherwise the SFTP path serves.
+    let listed = match crate::editor::namespace::list(
+        worker, remote, &location, client, container, cancel,
+    ) {
         Ok(listed) => listed,
         Err(error) if error.kind == strop_workspace::operation::FsFailureKind::Cancelled => {
             return Outcome::Cancelled(CancelReason::OwnerClosed)

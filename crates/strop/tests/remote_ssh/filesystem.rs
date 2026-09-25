@@ -25,7 +25,7 @@ fn remote_rename_preserves_dirty_text_and_requires_fresh_write_authority() {
     ]);
     let observed = states(&output);
     assert_eq!(observed[0]["register"], "DIRTY\n", "{output}");
-    assert_eq!(observed[0]["dirty"], true);
+    assert_eq!(observed[0]["dirty"], true, "{output}");
     assert_eq!(observed[1]["dirty"], true);
     assert!(
         observed[1]["message"]

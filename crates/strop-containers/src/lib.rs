@@ -6,10 +6,14 @@
 //!
 //! The engine conversations are: probe (`docker info`), discovery
 //! (`docker ps` + `docker inspect`), filesystem reads (`docker cp … -`
-//! tar streams) and supervised exec. There is deliberately **no** write,
-//! delete, create, stop/restart, provisioning or install surface:
-//! unsupported operations are refused with typed errors
-//! ([`ContainerError::CapabilityRefused`]), never silently approximated.
+//! tar streams), supervised exec, and — for worker deployment only
+//! (0058 WK08) — scoped single-file tar transfers *into* the container
+//! and `lstat`-class metadata, both still through the engine's own file
+//! facility. There is deliberately **no** recursive delete, no glob, no
+//! create/stop/restart/remove, no provisioning or install surface and
+//! no image mutation: unsupported operations are refused with typed
+//! errors ([`ContainerError::CapabilityRefused`]), never silently
+//! approximated.
 //!
 //! # Ownership and identity
 //!
@@ -53,11 +57,17 @@ mod engine;
 mod error;
 mod exec;
 mod identity;
+mod platform;
 mod read;
+mod stat;
 mod tar;
+mod write;
 
 pub use engine::{engine, inspect, list_running, revalidate, Captured, EngineRef};
 pub use error::ContainerError;
 pub use exec::{AdmittedExec, ExecRecord, ExecSpec, LaunchCause, SessionKey};
 pub use identity::{ContainerIdentity, ContainerRef};
+pub use platform::{image_platform, ImagePlatform};
 pub use read::{list_dir, read_file, DirEntry, DirEntryKind};
+pub use stat::{lstat, PathStat};
+pub use write::{write_file, TransferMeta};

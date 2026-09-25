@@ -202,7 +202,7 @@ fn target(id: &ContainerRef, path: &str) -> String {
 
 /// Classify a failed `docker cp`: a missing path is typed, a container
 /// that stopped mid-read is typed, anything else is bounded diagnostics.
-fn classify_cp(id: &ContainerRef, path: &str, stderr: &[u8]) -> ContainerError {
+pub(crate) fn classify_cp(id: &ContainerRef, path: &str, stderr: &[u8]) -> ContainerError {
     let tail = stderr_tail(stderr);
     if tail.contains("Could not find the file") {
         ContainerError::NoSuchPath {
@@ -397,7 +397,7 @@ fn components(name: &str) -> Vec<&str> {
         .collect()
 }
 
-fn kind(tar_kind: TarKind) -> DirEntryKind {
+pub(crate) fn kind(tar_kind: TarKind) -> DirEntryKind {
     match tar_kind {
         TarKind::File => DirEntryKind::File,
         TarKind::Dir => DirEntryKind::Dir,
@@ -629,6 +629,9 @@ mod tests {
             name,
             kind,
             size: 0,
+            mode: 0o755,
+            uid: 0,
+            gid: 0,
             link_target: None,
         };
         consumer

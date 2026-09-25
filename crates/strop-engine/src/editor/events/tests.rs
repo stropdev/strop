@@ -305,3 +305,52 @@ fn shutdown_settles_owned_work_without_waiting_for_service_liveness() {
     );
     assert!(e.take_shutdown_error().is_none());
 }
+
+/// 0057 VF19, the UiSessionModel storm finding: a forwarded job-channel
+/// event is a one-shot fact — a full semantic lane must backpressure the
+/// forwarder, never strand the event. Pre-fix, a storm-full lane refused
+/// the forwarded picker-ranking `Stopped`, the forwarder died and
+/// `picker_ranking.retiring` wedged shutdown past its jobs budget. This
+/// is the registered kill test for the `forward-drop-refused` mutant
+/// (verification/mutants.json): armed, the forwarder drops on refusal
+/// and the marker below never arrives.
+#[test]
+fn forwarded_semantic_event_survives_a_full_lane() {
+    let (tx, rx) = channel();
+    for _ in 0..MAX_SEMANTIC_EVENTS {
+        tx.send(AppEvent::QuitIntent).unwrap();
+    }
+    assert!(
+        tx.send(AppEvent::QuitIntent).is_err(),
+        "the semantic lane is full: admission is refused"
+    );
+    let (job_tx, job_rx) = std::sync::mpsc::channel::<&'static str>();
+    forward(job_rx, tx.clone(), |marker| AppEvent::Paste(marker.into()));
+    job_tx.send("marker").unwrap();
+    // Let the forwarder attempt its delivery while the lane is still
+    // full: armed, that attempt is the refusal that kills it. A parked
+    // (honest) forwarder is unobservable from here, so the attempt
+    // window is a generous scheduling margin, never a success barrier —
+    // the honest build delivers whenever it runs.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let mut events = Vec::new();
+    loop {
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(event) => {
+                let marker = matches!(&event, AppEvent::Paste(text) if text == "marker");
+                events.push(event);
+                if marker {
+                    break;
+                }
+            }
+            Err(error) => panic!("the forwarded event was stranded: {error}"),
+        }
+    }
+    assert_eq!(events.len(), MAX_SEMANTIC_EVENTS + 1);
+    assert!(
+        events[..MAX_SEMANTIC_EVENTS]
+            .iter()
+            .all(|event| matches!(event, AppEvent::QuitIntent)),
+        "the forwarded marker lands after every admitted event, in order"
+    );
+}

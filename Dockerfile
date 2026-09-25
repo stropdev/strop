@@ -115,3 +115,25 @@ ENV PATH=/opt/tlaps/bin:$PATH
 WORKDIR /work
 COPY specs ./specs
 RUN sh specs/tlaps-gate.sh
+
+# The core-assurance lane (0057 VF19/VF20): the non-TLC assurance
+# campaigns that fit neither the model nor the verify lane — the VF07
+# model-fleet anchor/drift pins, the VF08 helper digest pins, the VF09
+# semantic fault-injection harnesses, the instrumented Loom campaigns
+# over the REAL synchronization seams (never a copied algorithm), the
+# VF19 mutant-calibration registry (structural attribution plus the
+# native kill executions; TLA mutant kills stay calibrated in the
+# model/tlaps lanes) and the picker-teardown storm campaign. Builds
+# FROM test so the plain cargo fingerprints are warm; the cfg-
+# instrumented runs (strop_loom, strop_mutant) rebuild what their cfg
+# touches and ship nothing — the cfgs exist only in this image.
+FROM test AS core-assurance
+COPY specs ./specs
+RUN python3 verification/check_model_anchors.py \
+    && python3 verification/check_mutants.py \
+    && python3 verification/check_mutants.py --self-test \
+    && cargo test --locked -p strop-remote bundle_digests \
+    && cargo test --locked -p strop-remote --lib save::tests:: \
+    && RUSTFLAGS="--cfg strop_loom" cargo test --locked -p strop-engine -p strop-lsp loom \
+    && python3 verification/check_mutants.py --execute \
+    && cargo test --locked -p strop-editor --test ui_stdio storm

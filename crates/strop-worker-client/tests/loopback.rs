@@ -80,6 +80,16 @@ fn observe_list_and_read_round_trip() {
         .iter()
         .any(|entry| entry.name.as_path() == std::path::Path::new("note.txt")));
 
+    // A ranged read announces and delivers exactly the range — a
+    // short-stream error there would mean a torn read, never a range
+    // smaller than the file.
+    let mut ranged = worker
+        .read(&token, ResourceLocation::local(file.clone()), 6, Some(6))
+        .unwrap();
+    let mut range_bytes = Vec::new();
+    ranged.read_to_end(&mut range_bytes).unwrap();
+    assert_eq!(range_bytes, b"worker");
+
     let mut payload = worker
         .read(&token, ResourceLocation::local(file), 0, None)
         .unwrap();
@@ -205,4 +215,126 @@ fn shutdown_then_next_request_spawns_a_fresh_incarnation() {
     let second = worker.session().unwrap();
     assert_ne!(first, second, "a retired lease never resurrects");
     worker.shutdown().unwrap();
+}
+
+/// A deployed worker's handshake binds to the *endpoint's* target, not
+/// the client's platform (0058 WK08): a lease admitted for a foreign
+/// triple accepts exactly that triple and refuses any other — the same
+/// check deployment's activation relies on, at the lease boundary.
+#[test]
+fn deployed_worker_binds_the_endpoint_target() {
+    use strop_worker_protocol::codec::{self, Incoming};
+    use strop_worker_protocol::frame::{self, FrameDecoder};
+    use strop_worker_protocol::{
+        Capabilities, ClientMessage, EndpointInfo, LeaseId, Limits, NamespaceIdentity,
+        NotifyCoverage, Session, WorkerMessage, PROTOCOL_VERSION,
+    };
+
+    /// A foreign worker: speaks the real codec, reports a target triple
+    /// this client was never built for.
+    fn foreign_serve(mut reader: impl std::io::Read, mut writer: impl std::io::Write) {
+        let mut decoder = FrameDecoder::default();
+        let body = frame::read_frame(&mut reader, &mut decoder)
+            .unwrap()
+            .unwrap();
+        let Incoming::Envelope(ClientMessage::Hello { .. }) = codec::decode_body(&body).unwrap()
+        else {
+            panic!("a foreign worker still expects hello first");
+        };
+        codec::write_envelope(
+            &mut writer,
+            &WorkerMessage::Welcome {
+                protocol: PROTOCOL_VERSION,
+                worker: EndpointInfo {
+                    name: "strop".into(),
+                    version: env!("CARGO_PKG_VERSION").into(),
+                    build: None,
+                    target: "riscv64-unknown-linux-musl".into(),
+                },
+                session: Session {
+                    incarnation: 7,
+                    lease: LeaseId(11),
+                },
+                namespace: NamespaceIdentity {
+                    identity: "test".into(),
+                    principal: None,
+                },
+                limits: Limits {
+                    max_frame_bytes: 1 << 20,
+                    max_chunk_bytes: 1 << 16,
+                    max_pending_requests: 8,
+                    max_batch_steps: 8,
+                    max_listing_entries: 1024,
+                    max_subscriptions: 4,
+                    max_streams: 8,
+                    max_exec_processes: 4,
+                },
+                capabilities: Capabilities {
+                    observe: true,
+                    list: true,
+                    read: true,
+                    write: true,
+                    trash: false,
+                    notify: NotifyCoverage::OnDemand,
+                    exec_finite: true,
+                    exec_service: true,
+                    pty: false,
+                },
+            },
+        )
+        .unwrap();
+        // Stay alive: answer requests with Healthy, so the admitted
+        // lease can make a real round trip after the handshake.
+        while let Ok(Some(body)) = frame::read_frame(&mut reader, &mut decoder) {
+            let Incoming::Envelope(ClientMessage::Request { id, .. }) =
+                codec::decode_body(&body).unwrap()
+            else {
+                continue;
+            };
+            codec::write_envelope(
+                &mut writer,
+                &WorkerMessage::Result {
+                    id,
+                    outcome: strop_worker_protocol::ResultOutcome::Healthy,
+                },
+            )
+            .unwrap();
+        }
+    }
+    fn foreign_transport() -> std::io::Result<Transport> {
+        let (client_read, worker_write) = std::io::pipe()?;
+        let (worker_read, client_write) = std::io::pipe()?;
+        std::thread::spawn(move || foreign_serve(worker_read, worker_write));
+        Ok(Transport {
+            reader: Box::new(client_read),
+            writer: Box::new(client_write),
+            child: None,
+            stderr: None,
+        })
+    }
+
+    // Admitted for the endpoint's own triple: the lease answers.
+    let deployed = Worker::connect_deployed("riscv64-unknown-linux-musl", foreign_transport);
+    let session = deployed.session();
+    assert!(session.is_none(), "lazy until the first request");
+    let (token, _handle) = token();
+    // Health needs no filesystem; the handshake alone exercises the
+    // binding, and the foreign worker answers health checks.
+    let error = deployed.health(&token);
+    assert!(error.is_ok(), "endpoint-target lease admitted: {error:?}");
+
+    // The default (this build's own target) refuses the same worker: a
+    // typed mismatch, never a downgrade.
+    let local = Worker::connect_with(foreign_transport);
+    let error = local.health(&token).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ClientError::Mismatch {
+                field: "target",
+                ..
+            }
+        ),
+        "foreign target refused: {error:?}"
+    );
 }

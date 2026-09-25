@@ -9,6 +9,7 @@ pub(crate) mod save;
 #[cfg(test)]
 mod tests;
 pub mod view;
+pub(crate) mod workers;
 
 use super::document::DocumentSource;
 use super::io::Opened;
@@ -22,6 +23,7 @@ pub use view::RemoteView;
 
 pub(crate) struct RemoteState {
     client: RemoteClient,
+    pub(crate) workers: workers::RemoteWorkers,
     following: HashMap<DocumentId, FollowOwner>,
     controls: HashMap<WorkerId, ControlKey>,
     pins: HashMap<RemoteEndpoint, ConnectionLease>,
@@ -34,6 +36,7 @@ impl Default for RemoteState {
     fn default() -> Self {
         Self {
             client: RemoteClient::new(),
+            workers: workers::RemoteWorkers::default(),
             following: HashMap::new(),
             controls: HashMap::new(),
             pins: HashMap::new(),

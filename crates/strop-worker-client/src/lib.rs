@@ -52,7 +52,7 @@ use strop_workspace::operation::{
 };
 use strop_workspace::{DirectorySnapshot, ResourceLocation};
 
-pub use connection::Transport;
+pub use connection::{StderrCapture, Transport};
 pub use error::ClientError;
 pub use payload::ReadPayload;
 pub use strop_worker_protocol::request::EnvironmentOverride;
@@ -61,20 +61,35 @@ pub use strop_worker_protocol::Refusal;
 use connection::{Attachments, Conn, Reply};
 
 /// How a connection is (re)created. Process transports carry a child to
-/// reap; factory transports (the in-process test seam) cross the same
-/// codec over caller-provided pipes.
+/// reap; factory transports (the in-process test seam and deployed
+/// remote/container workers) cross the same codec over caller-provided
+/// pipes. Each connector also pins the target triple the worker's
+/// handshake must report: this build's own, or the admitted endpoint's
+/// for a deployed worker (WK07/WK08).
 enum Connector {
     /// `current_exe --worker-stdio`: the matching installed executable.
     Installed,
     /// An explicit artifact path (administrator-provisioned or test);
     /// the handshake validates its identity exactly as for `Installed`.
     Program(PathBuf),
-    /// Caller-provided duplex (engine tests run the real serve loop
-    /// in-process; the bytes still cross the actual codec).
-    Factory(Box<dyn Fn() -> std::io::Result<Transport> + Send + Sync>),
+    /// Caller-provided duplex plus the endpoint target the handshake
+    /// must report (this build's triple for the in-process test seam).
+    Deployed {
+        expected_target: String,
+        factory: Box<dyn Fn() -> std::io::Result<Transport> + Send + Sync>,
+    },
 }
 
 impl Connector {
+    fn expected_target(&self) -> String {
+        match self {
+            Self::Installed | Self::Program(_) => strop_worker_protocol::TARGET_TRIPLE.to_string(),
+            Self::Deployed {
+                expected_target, ..
+            } => expected_target.clone(),
+        }
+    }
+
     fn connect(&self) -> Result<Transport, ClientError> {
         match self {
             Self::Installed => {
@@ -83,7 +98,7 @@ impl Connector {
                 connection::spawn_worker(&program)
             }
             Self::Program(path) => connection::spawn_worker(path),
-            Self::Factory(factory) => factory()
+            Self::Deployed { factory, .. } => factory()
                 .map_err(|error| ClientError::Spawn(format!("in-process transport: {error}"))),
         }
     }
@@ -127,13 +142,31 @@ impl Worker {
         Self::new(Connector::Program(program.into()))
     }
 
-    /// A lease over a caller-provided duplex. Engine tests pass a
-    /// socketpair whose far end runs the real `strop_worker::serve` loop
-    /// in-process: same handlers, same codec, no child process.
+    /// A lease over a caller-provided duplex whose worker runs this
+    /// build's own target. Engine tests pass a socketpair whose far end
+    /// runs the real `strop_worker::serve` loop in-process: same
+    /// handlers, same codec, no child process.
     pub fn connect_with(
         factory: impl Fn() -> std::io::Result<Transport> + Send + Sync + 'static,
     ) -> Self {
-        Self::new(Connector::Factory(Box::new(factory)))
+        Self::connect_deployed(strop_worker_protocol::TARGET_TRIPLE, factory)
+    }
+
+    /// A lease over a caller-provided duplex to a *deployed* worker
+    /// (0058 WK07/WK08): the far end was provisioned and verified by the
+    /// deployment flow for its endpoint, so the handshake binds the
+    /// worker's reported target to the admitted endpoint's triple —
+    /// which may differ from this client's platform (a macOS editor
+    /// driving a Linux container worker), never to a guessed local one.
+    /// Version and protocol still bind to this exact release.
+    pub fn connect_deployed(
+        expected_target: impl Into<String>,
+        factory: impl Fn() -> std::io::Result<Transport> + Send + Sync + 'static,
+    ) -> Self {
+        Self::new(Connector::Deployed {
+            expected_target: expected_target.into(),
+            factory: Box::new(factory),
+        })
     }
 
     fn new(connector: Connector) -> Self {
@@ -162,7 +195,10 @@ impl Worker {
                 return Ok(Arc::clone(conn));
             }
         }
-        let conn = Conn::connect(self.shared.connector.connect()?)?;
+        let conn = Conn::connect(
+            self.shared.connector.connect()?,
+            &self.shared.connector.expected_target(),
+        )?;
         if let Some(events) = self.shared.events.lock().as_ref() {
             conn.set_events(Some(events.clone()));
         }

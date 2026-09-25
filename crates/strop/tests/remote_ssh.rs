@@ -16,6 +16,7 @@ mod writes;
 struct Fixture {
     directory: tempfile::TempDir,
     path: OsString,
+    artifact: Option<PathBuf>,
 }
 fn quoted(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
@@ -72,17 +73,36 @@ impl Fixture {
         )
         .unwrap();
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // The deployable worker artifact (WK07): debug binaries exceed
+        // the deployment stage's byte bound, so the fixture deploys a
+        // stripped copy of this exact build, advertised through the
+        // administrator-provisioned supply override.
+        let artifact = root.join("strop-worker");
+        std::fs::copy(env!("CARGO_BIN_EXE_strop"), &artifact).unwrap();
+        let stripped = Command::new("strip").arg(&artifact).status();
+        let artifact = match stripped {
+            Ok(status) if status.success() => Some(artifact),
+            _ => None,
+        };
         let mut paths = vec![root.join("bin")];
         paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
         let path = std::env::join_paths(paths).unwrap();
-        Self { directory, path }
+        Self {
+            directory,
+            path,
+            artifact,
+        }
     }
     fn root(&self) -> &Path {
         self.directory.path()
     }
     fn run(&self, args: &[OsString]) -> String {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_strop"));
+        if let Some(artifact) = &self.artifact {
+            command.env("STROP_WORKER_BINARY", artifact);
+        }
         let output = successful(
-            Command::new(env!("CARGO_BIN_EXE_strop"))
+            command
                 .current_dir(self.root())
                 .env("PATH", &self.path)
                 .env("HOME", self.root().join("home"))

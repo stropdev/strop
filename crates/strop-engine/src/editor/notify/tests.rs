@@ -254,3 +254,120 @@ fn worker_loss_reestablishes_with_a_fresh_generation() {
         "reinstallation enters with a bumped identity"
     );
 }
+
+/// WK07: hints on an admitted remote scope apply conservatively — a
+/// dirty remote document gains external-change state and is never
+/// clobbered, and a clean one is left to its follow polling.
+#[test]
+fn remote_hints_mark_dirty_remote_documents_and_never_clobber() {
+    let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
+    let document = editor.current();
+    editor.doc_mut(document).buf.dirty = true;
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap();
+    let root = ResourceLocation::remote(endpoint.clone(), "/repo".into());
+    let identity = Subscription {
+        id: 41,
+        generation: 7,
+    };
+    editor.notify.remote.insert(
+        root,
+        RemoteScope {
+            endpoint,
+            subscription: Some(identity),
+            session: None,
+            subscribing: false,
+            subscribe_handle: None,
+        },
+    );
+    editor.notify.queue.push_hints(
+        identity,
+        vec![NotifyHint {
+            path: b"app.log".to_vec(),
+            kind: NotifyKind::Modified,
+        }],
+    );
+    editor.drain_notify();
+    assert!(
+        editor.cur().external_change,
+        "the dirty remote document gains external-change state"
+    );
+    assert_eq!(editor.buf().text(), "remote bytes\n", "never clobbered");
+    assert!(editor.buf().dirty, "edits are preserved");
+}
+
+/// WK07: events stamped by an unknown or superseded remote identity
+/// never act.
+#[test]
+fn a_dead_remote_generation_never_acts() {
+    let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
+    let document = editor.current();
+    editor.doc_mut(document).buf.dirty = true;
+    editor.notify.queue.push_hints(
+        Subscription {
+            id: 999,
+            generation: 1,
+        },
+        vec![NotifyHint {
+            path: b"app.log".to_vec(),
+            kind: NotifyKind::Modified,
+        }],
+    );
+    editor.drain_notify();
+    assert!(!editor.cur().external_change, "no identity, no effect");
+}
+
+/// WK07: a remote scope adopts its identity only from the settle record
+/// — hints arriving under the settled identity then apply in order.
+#[test]
+fn remote_subscription_identity_comes_from_the_settle_record() {
+    let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
+    let document = editor.current();
+    editor.doc_mut(document).buf.dirty = true;
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap();
+    let root = ResourceLocation::remote(endpoint.clone(), "/repo".into());
+    editor.notify.remote.insert(
+        root.clone(),
+        RemoteScope {
+            endpoint,
+            subscription: None,
+            session: None,
+            subscribing: true,
+            subscribe_handle: None,
+        },
+    );
+    // Before the settle: hints with any identity are inert.
+    editor.notify.queue.push_hints(
+        Subscription {
+            id: 1,
+            generation: 1,
+        },
+        vec![NotifyHint {
+            path: b"app.log".to_vec(),
+            kind: NotifyKind::Modified,
+        }],
+    );
+    editor.drain_notify();
+    assert!(!editor.cur().external_change);
+    // The settle lands on the same queue and adopts the identity.
+    let identity = Subscription {
+        id: 5,
+        generation: 1,
+    };
+    editor.notify.queue.push_record(Record::RemoteSettled {
+        root,
+        outcome: Outcome::Success(SubscribedScope {
+            subscription: identity,
+            coverage: strop_worker_protocol::NotifyCoverage::Native,
+        }),
+    });
+    editor.drain_notify();
+    editor.notify.queue.push_hints(
+        identity,
+        vec![NotifyHint {
+            path: b"app.log".to_vec(),
+            kind: NotifyKind::Modified,
+        }],
+    );
+    editor.drain_notify();
+    assert!(editor.cur().external_change, "the settled identity acts");
+}

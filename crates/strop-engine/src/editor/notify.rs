@@ -61,6 +61,13 @@ pub(crate) enum Record {
     /// The initial scan completed (the boundary is positional: FIFO
     /// order against the subscription's own hints).
     Boundary { subscription: Subscription },
+    /// A remote scope's subscribe job settled (WK07): the root it
+    /// belongs to travels with the outcome — subscription identity
+    /// alone never decides placement.
+    RemoteSettled {
+        root: ResourceLocation,
+        outcome: Outcome<SubscribedScope>,
+    },
 }
 
 /// The settled subscription outcome (in-memory; never traced).
@@ -197,6 +204,21 @@ pub(crate) struct NotifyState {
     /// Hints arrived while a reload was in flight: one re-observation
     /// owed at completion so a raced write is never stranded.
     reload_again: HashSet<DocumentId>,
+    /// Remote workspace scopes (WK07): one subscription per opened
+    /// remote directory root on a worker-admitted endpoint.
+    remote: HashMap<ResourceLocation, RemoteScope>,
+}
+
+/// One remote workspace scope's subscription state. The subscription's
+/// authority is its (session, scope, generation) identity exactly as
+/// for the local scope; a dead worker incarnation's events are dropped.
+pub(crate) struct RemoteScope {
+    endpoint: strop_workspace::RemoteEndpoint,
+    subscription: Option<Subscription>,
+    session: Option<Session>,
+    subscribing: bool,
+    /// The subscribe job's cancel handle, retained until settle.
+    subscribe_handle: Option<worker::CancelHandle>,
 }
 
 impl Default for NotifyState {
@@ -216,6 +238,7 @@ impl Default for NotifyState {
             reloads: HashMap::new(),
             reloading: HashMap::new(),
             reload_again: HashSet::new(),
+            remote: HashMap::new(),
         }
     }
 }
@@ -354,46 +377,75 @@ impl Editor {
         let mut hints: Vec<NotifyHint> = Vec::new();
         // Lifecycle applies first: a subscribe settle may race hints
         // across the job/forwarder threads, and the last settle wins.
-        let (settles, rest): (Vec<_>, Vec<_>) = records
-            .into_iter()
-            .partition(|record| matches!(record, Record::Settled(_)));
+        let (settles, rest): (Vec<_>, Vec<_>) = records.into_iter().partition(|record| {
+            matches!(record, Record::Settled(_) | Record::RemoteSettled { .. })
+        });
         for record in settles {
-            let Record::Settled(outcome) = record else {
-                continue;
-            };
-            self.notify_settled(outcome);
+            match record {
+                Record::Settled(outcome) => self.notify_settled(outcome),
+                Record::RemoteSettled { root, outcome } => {
+                    self.remote_notify_settled(root, outcome)
+                }
+                _ => {}
+            }
         }
-        // Pass 2: identity-checked application.
+        // Pass 2: identity-checked application. A record's subscription
+        // names its owning scope — the local one or one remote root —
+        // and events stamped by a superseded identity never act.
+        let mut remote_hints: Vec<(ResourceLocation, Vec<NotifyHint>)> = Vec::new();
+        let mut remote_rescans: Vec<ResourceLocation> = Vec::new();
         for record in rest {
             let record_subscription = match &record {
                 Record::Hints { subscription, .. } | Record::Overflow { subscription } => {
                     *subscription
                 }
                 Record::Boundary { subscription, .. } => *subscription,
-                Record::Settled(_) => continue,
+                Record::Settled(_) | Record::RemoteSettled { .. } => continue,
             };
-            if let Some(current) = self.notify.subscription {
-                if current != record_subscription {
-                    continue; // a dead generation's late events never act
+            if Some(record_subscription) == self.notify.subscription {
+                match record {
+                    Record::Hints { hints: batch, .. } => hints.extend(batch),
+                    Record::Overflow { .. } => rescan = true,
+                    // The reconcile boundary's ordering guarantee lives in
+                    // the consumers' snapshot semantics (picker cache) and
+                    // the reload observation guards; the mark itself needs
+                    // no editor-side state.
+                    Record::Boundary { .. } => {}
+                    Record::Settled(_) | Record::RemoteSettled { .. } => {}
                 }
-            } else if self.notify.subscribing {
-                // The subscribe settle has not landed yet; defer so the
-                // raced hints apply in order once identity exists.
-                deferred.push(record);
                 continue;
-            } else {
-                continue; // no coverage: nothing to apply hints to
             }
-            match record {
-                Record::Hints { hints: batch, .. } => hints.extend(batch),
-                Record::Overflow { .. } => rescan = true,
-                // The reconcile boundary's ordering guarantee lives in
-                // the consumers' snapshot semantics (picker cache) and
-                // the reload observation guards; the mark itself needs
-                // no editor-side state.
-                Record::Boundary { .. } => {}
-                Record::Settled(_) => {}
+            let remote_root = self.notify.remote.iter().find_map(|(root, scope)| {
+                (scope.subscription == Some(record_subscription)).then(|| root.clone())
+            });
+            if let Some(root) = remote_root {
+                match record {
+                    Record::Hints { hints: batch, .. } => {
+                        match remote_hints.iter_mut().find(|(known, _)| *known == root) {
+                            Some((_, batch_hints)) => batch_hints.extend(batch),
+                            None => remote_hints.push((root, batch)),
+                        }
+                    }
+                    Record::Overflow { .. } if !remote_rescans.contains(&root) => {
+                        remote_rescans.push(root);
+                    }
+                    Record::Overflow { .. } => {}
+                    _ => {}
+                }
+                continue;
             }
+            if self.notify.subscription.is_none() && self.notify.subscribing {
+                // The local subscribe settle has not landed yet; defer so
+                // the raced hints apply in order once identity exists.
+                deferred.push(record);
+            }
+            // Otherwise: a dead generation's late events never act.
+        }
+        for root in remote_rescans {
+            self.remote_notify_rescan(&root.path.clone());
+        }
+        for (root, batch) in remote_hints {
+            self.apply_remote_hints(&root.path.clone(), batch);
         }
         if !deferred.is_empty() {
             self.notify.queue.requeue_front(deferred);
@@ -439,11 +491,264 @@ impl Editor {
         }
     }
 
+    /// The remote subscribe job settled: adopt the scope's identity,
+    /// surface coverage honestly, never guess state.
+    fn remote_notify_settled(&mut self, root: ResourceLocation, outcome: Outcome<SubscribedScope>) {
+        let endpoint = self
+            .notify
+            .remote
+            .get(&root)
+            .map(|scope| scope.endpoint.clone());
+        let Some(endpoint) = endpoint else {
+            return;
+        };
+        match outcome {
+            Outcome::Success(settled) => {
+                let session = self
+                    .remote
+                    .workers
+                    .get(&endpoint)
+                    .and_then(|worker| worker.worker().session());
+                if let Some(scope) = self.notify.remote.get_mut(&root) {
+                    scope.subscribing = false;
+                    scope.subscribe_handle = None;
+                    scope.subscription = Some(settled.subscription);
+                    scope.session = session;
+                }
+                if matches!(
+                    settled.coverage,
+                    NotifyCoverage::OnDemand | NotifyCoverage::Unsupported
+                ) {
+                    self.message = format!(
+                        "filesystem notifications for {} are on demand in this namespace",
+                        root.label()
+                    );
+                }
+            }
+            Outcome::Failed { failure, .. } => {
+                self.notify.remote.remove(&root);
+                self.message = format!(
+                    "filesystem notifications refused for {}: {}; freshness is on demand",
+                    root.label(),
+                    failure.message
+                );
+            }
+            Outcome::Cancelled(_) => {
+                if let Some(scope) = self.notify.remote.get_mut(&root) {
+                    scope.subscribing = false;
+                    scope.subscribe_handle = None;
+                }
+            }
+        }
+    }
+
+    /// Subscribe every opened remote workspace root whose endpoint
+    /// admits a worker (WK07). Browsing never deploys: only an existing
+    /// admitted lease subscribes, and the round trip rides a job — the
+    /// settle lands on the notify queue like the local scope's.
+    pub(crate) fn start_remote_notifications(&mut self) {
+        // Hint timing is inherently racy, so the bit-exact full-content
+        // tape lane (recording or replay) keeps remote freshness on
+        // demand — hints are advisory and the feature is untraced by
+        // design. Default sessions (no content capture) subscribe.
+        if self.finishing || self.tape.observes() {
+            return;
+        }
+        let roots: Vec<(ResourceLocation, strop_workspace::RemoteEndpoint)> = self
+            .docs
+            .iter()
+            .filter_map(|(_, document)| {
+                let directory = document.directory_metadata_ref()?;
+                match &directory.location.filesystem {
+                    Filesystem::Remote(endpoint) => {
+                        Some((directory.location.clone(), endpoint.clone()))
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+        for (root, endpoint) in roots {
+            if self
+                .notify
+                .remote
+                .get(&root)
+                .is_some_and(|scope| scope.subscribing || scope.subscription.is_some())
+            {
+                continue;
+            }
+            let Some(worker) = self.remote.workers.get(&endpoint) else {
+                continue;
+            };
+            let tx = self.notify.tx.clone();
+            let queue = Arc::clone(&self.notify.queue);
+            let wake = self.app_tx.clone();
+            let scope = self
+                .notify
+                .remote
+                .entry(root.clone())
+                .or_insert_with(|| RemoteScope {
+                    endpoint,
+                    subscription: None,
+                    session: None,
+                    subscribing: false,
+                    subscribe_handle: None,
+                });
+            scope.subscribing = true;
+            worker.worker().set_event_sink(tx);
+            let scope_root = root.clone();
+            let work_root = root.clone();
+            let handle = worker::spawn(
+                "remote-fs-notify-subscribe",
+                move |outcome| {
+                    queue.push_record(Record::RemoteSettled {
+                        root: scope_root,
+                        outcome,
+                    });
+                    if let Some(wake) = &wake {
+                        let _ = wake.send(super::events::AppEvent::Notify);
+                    }
+                },
+                move |cancel| match worker.subscribe(&cancel, work_root, true) {
+                    Ok((subscription, coverage)) => Outcome::Success(SubscribedScope {
+                        subscription,
+                        coverage,
+                    }),
+                    Err(error) if error.is_cancellation() => {
+                        Outcome::Cancelled(CancelReason::OwnerClosed)
+                    }
+                    Err(error) => Outcome::failed(FailureKind::Unavailable, error.to_string()),
+                },
+            );
+            if let Some(scope) = self.notify.remote.get_mut(&root) {
+                scope.subscribe_handle = Some(handle);
+            }
+        }
+    }
+
+    /// Hints against one remote scope (WK07): remote Directory buffers
+    /// reobserve through the same checked listing path (which routes
+    /// through the endpoint's worker lease); a dirty remote document
+    /// gains external-change state and is never clobbered; clean remote
+    /// documents keep their follow-poll freshness until WK09's guarded
+    /// remote reload.
+    fn apply_remote_hints(&mut self, root: &std::path::Path, hints: Vec<NotifyHint>) {
+        use std::os::unix::ffi::OsStrExt;
+        let mut directories = Vec::new();
+        let mut dirty = Vec::new();
+        for hint in hints {
+            let relative = PathBuf::from(std::ffi::OsStr::from_bytes(&hint.path));
+            if relative.as_os_str().is_empty() {
+                // The scope root itself moved/was replaced: the whole
+                // remote baseline is suspect.
+                self.remote_notify_rescan(root);
+                return;
+            }
+            let absolute = root.join(&relative);
+            for (id, document) in self.docs.iter() {
+                match &document.source {
+                    DocumentSource::Directory(directory) => {
+                        if !matches!(directory.location.filesystem, Filesystem::Remote(_)) {
+                            continue;
+                        }
+                        let affects_listing = absolute == directory.location.path
+                            || absolute.parent() == Some(directory.location.path.as_path());
+                        if affects_listing && !directories.contains(&id) {
+                            directories.push(id);
+                        }
+                    }
+                    DocumentSource::Remote(source)
+                        if source.file.path() == absolute
+                            && document.buf.dirty
+                            && !dirty.contains(&id) =>
+                    {
+                        dirty.push(id);
+                    }
+                    DocumentSource::Remote(_) => {}
+                    _ => {}
+                }
+            }
+        }
+        for id in dirty {
+            self.notify_mark_external(id);
+        }
+        for id in directories {
+            let _ = self.start_directory_task(id, DirectoryTask::Reload, None);
+        }
+    }
+
+    /// A conservative remote rescan obligation (overflow, queue bound,
+    /// root replacement, lease loss): invalidate the remote baseline
+    /// and reobserve before freshness is claimed again.
+    fn remote_notify_rescan(&mut self, root: &std::path::Path) {
+        let mut directories = Vec::new();
+        let mut dirty = Vec::new();
+        for (id, document) in self.docs.iter() {
+            match &document.source {
+                DocumentSource::Directory(directory)
+                    if matches!(directory.location.filesystem, Filesystem::Remote(_))
+                        && directory.location.path.starts_with(root) =>
+                {
+                    directories.push(id);
+                }
+                DocumentSource::Remote(source)
+                    if source.file.path().starts_with(root) && document.buf.dirty =>
+                {
+                    dirty.push(id);
+                }
+                DocumentSource::Remote(_) => {}
+                _ => {}
+            }
+        }
+        for id in dirty {
+            self.notify_mark_external(id);
+        }
+        for id in directories {
+            let _ = self.start_directory_task(id, DirectoryTask::Reload, None);
+        }
+    }
+
     /// Lease observation, per app event (cheap mutex reads, no I/O): a
     /// changed/absent session incarnation means the subscriptions died
     /// with it. Invalidate conservatively, surface, and reestablish
     /// coverage before freshness is claimed again (LOSS).
+    /// Remote lease observation (WK07): a changed or dead incarnation
+    /// kills its scopes' subscriptions; the scope baseline is
+    /// invalidated, rescanned and reestablished before freshness is
+    /// claimed again — identical to the local LOSS rule.
+    fn observe_remote_leases(&mut self) {
+        let lost: Vec<ResourceLocation> = self
+            .notify
+            .remote
+            .iter()
+            .filter_map(|(root, scope)| {
+                let session = scope.session?;
+                let alive = self
+                    .remote
+                    .workers
+                    .get(&scope.endpoint)
+                    .and_then(|worker| worker.worker().session());
+                (alive != Some(session)).then(|| root.clone())
+            })
+            .collect();
+        let reestablish = !lost.is_empty();
+        for root in lost {
+            let path = root.path.clone();
+            if let Some(scope) = self.notify.remote.get_mut(&root) {
+                scope.subscription = None;
+                scope.session = None;
+            }
+            self.remote_notify_rescan(&path);
+            self.message =
+                "remote filesystem notifications lost with the worker; reestablishing coverage"
+                    .into();
+        }
+        if reestablish {
+            self.start_remote_notifications();
+        }
+    }
+
     pub(crate) fn notify_observe_lease(&mut self) {
+        self.observe_remote_leases();
         let Some(session) = self.notify.session else {
             return;
         };

@@ -22,6 +22,12 @@ pub struct ContainerIdentity {
     pub user: String,
     /// `Config.WorkingDir`; empty means the image default ("/").
     pub workdir: String,
+    /// The image's environment entries (`KEY=value`), captured from
+    /// `Config.Env`: the selected context's HOME/XDG_CACHE_HOME facts
+    /// for deployment (0058 WK08). Absent on records pinned before
+    /// WK08 — an empty list, never a guessed home.
+    #[serde(default)]
+    pub env: Vec<String>,
 }
 
 /// A canonical, incarnation-pinned reference to one running container.
@@ -111,6 +117,7 @@ mod tests {
             started_at: "2026-09-10T08:00:00Z".into(),
             user: String::new(),
             workdir: String::new(),
+            env: Vec::new(),
         }
     }
 

@@ -34,6 +34,9 @@ path = "src/main.rs"
 [dev-dependencies]
 libc = "0.2"
 strop-worker-client = { path = "../strop-worker-client", version = "0.35.0" }
+strop-worker-deploy = { path = "../strop-worker-deploy", version = "0.35.0" }
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.35.0" }
+sha2 = "0.10"
 tempfile = "3"
 vt100 = "0.15"
 strop-engine = { path = "../strop-engine", features = ["test-support"] }

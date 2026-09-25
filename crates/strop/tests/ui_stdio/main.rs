@@ -6,10 +6,12 @@
 //! block on protocol messages and fail on budget expiry.
 //!
 //! `harness` holds the shared fixture/driver/raw-client plumbing;
-//! `parity` holds the 0057 VF14 parity journeys.
+//! `parity` holds the 0057 VF14 parity journeys; `storm` holds the
+//! 0057 VF19 picker-teardown storm campaign.
 
 mod harness;
 mod parity;
+mod storm;
 
 use std::process::Command;
 

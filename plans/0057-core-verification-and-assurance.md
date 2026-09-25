@@ -873,3 +873,20 @@ tampered control blob). VF09: five semantic-boundary fault-injection
 tests on the remote save path (pre/post commit). VF10: container
 incarnation/StartedAt assurance extended per plan. All registered in
 the VF01 inventory (21 boundaries, 73 claims, all evidence live).
+
+### VF19 core-assurance lane + mutant calibration: landed (2026-09-24)
+
+The `core-assurance` compose lane exists (Dockerfile stage FROM test,
+CI step): model-anchor pins, the mutant registry (structural +
+self-test + native kill execution), VF08 digest pins, VF09 fault
+harnesses, loom campaigns over the instrumented channel/queue seams,
+and the UI-stdio storm campaign. `verification/mutants.json` maps each
+seam → named mutant → exact killer → lane; check_mutants.py fails on a
+seam without a mutant and on a mutant killing the wrong invariant
+(both failure modes demonstrated), and distinguishes BROKEN GATE from
+KILL (proven live during a sibling's compile breakage). The picker
+teardown finding resolved as a REAL bug and is fixed: a forwarder
+could strand a refused semantic event under a full lane (UiSession's
+storm caught a variant of it); the fix ships with a cfg(strop_mutant)
+harness proving the armed mutant dies by exactly the registered test
+(reproduce-before FAILED, confirm-after green).

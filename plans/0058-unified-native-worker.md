@@ -855,3 +855,57 @@ operation is representable. GC keeps the current object and every
 live-lease reference, retires only proven owned content-addressed
 objects. Evidence: hermetic deploy/interrupt/GC fixtures + catalog
 wire-shape pins in tests/release-catalog.sh + tests/install.sh.
+
+### WK07 SSH worker transport: landed (2026-09-24)
+
+OpenSSH bootstrap and worker transport are in strop-remote: ONE fixed
+audited POSIX discovery line (uid/uname/cache root — no Python, no
+PATH/rc/image mutation) with a single tested quoting boundary; the
+transport spawns `ssh … --worker-stdio` and readiness is the framed
+handshake (shell text can never impersonate a Welcome), every reconnect
+a fresh exec + fresh incarnation. Deploy rides WK06's state machine
+through SftpDeployProvider — a dedicated SFTP connection over the
+existing v3 codec (extended for lstat/mkdir/write/setstat/rename with
+posix-rename@openssh.com when advertised, bounded read-back, poisoned
+closes). Handshake identity binds the exact build target
+(TARGET_TRIPLE captured at build time; `connect_deployed` admits
+cross-platform workers while version+protocol bind to the release).
+Consent flow: browsing never deploys — read-only arms ride the SFTP
+path byte-identically until the first reviewed filesystem mutation,
+which IS the authorized worker-using action (recorded on the receipt);
+restricted/SFTP-only hosts get a typed refusal, never an alternate
+write path. The engine's SSH workspace I/O routes through RemoteWorker
+where admitted (the namespace-translation boundary is typed and single).
+Evidence: worker_ssh 4/4 over real sshd (deploy→handshake→
+read/write/notify parity, consent gating + quiet reuse,
+interrupted-deploy cleanliness, SFTP-only refusal), remote_ssh suite,
+110 strop-remote lib tests. Found and handled: a trace file inside a
+watched directory self-hints every record — subscriptions suppress
+under tape record/replay (the product-level fix belongs to the
+trace/notify owners).
+
+### WK08 container worker deploy: landed (2026-09-24)
+
+Container worker deployment/exec/cleanup rides the captured AR07
+context end to end. strop-containers gained scoped transfer/exec
+primitives: shell-free lstat off the tar stream's first header
+(symlinks reported, never followed), tar-in writes stamped with the
+selected principal's numeric uid/gid (the daemon's root extraction
+never manufactures root-owned caches), image-platform inspection, and
+an admitted shell-free worker channel for the preinstalled case.
+strop-worker-deploy's ContainerProvider implements the DeployProvider
+over those primitives — consent-gated deploy, verified-object
+activation handshake, lease-aware cleanup — and hands the engine a
+Worker lease that re-admits the incarnation on every connect. Gated
+live-engine evidence (STROP_CONTAINER_TESTS=1):
+deploy+handshake+read/write/notify inside a real container with the
+cache object proven principal-owned 0500; lease close reaps the
+in-container worker; a restarted container is a typed stale-incarnation
+refusal at provider and lease; a FROM-scratch preinstalled worker
+serves byte-identical reads with zero deploy writes; shell-less deploy
+and read-only rootfs are truthful classified refusals. The lane caught
+and pinned two real bugs: the daemon reports a missing sh on stdout
+under -i (AR07 consulted only stderr), and ranged worker reads
+announced the full file size while streaming the range. The full
+namespace-dispatch migration of editor consumers stays with WK09 per
+plan sequencing.

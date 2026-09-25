@@ -14,6 +14,7 @@ fn identity(id: char) -> strop_containers::ContainerIdentity {
         started_at: "2026-09-09T00:00:00Z".into(),
         user: String::new(),
         workdir: String::new(),
+        env: Vec::new(),
     }
 }
 fn editor() -> Editor {

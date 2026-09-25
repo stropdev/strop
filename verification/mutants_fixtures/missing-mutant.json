@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seams": [
+    {
+      "id": "editor-event-forward",
+      "boundary": "event-transport",
+      "lane": "core-assurance",
+      "mutants": []
+    }
+  ]
+}

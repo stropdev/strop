@@ -127,19 +127,26 @@ pub(super) fn read_streaming<W: Write + Send + 'static>(
         Ok(file) => file,
         Err(failure) => return reply(ResultOutcome::Failed { failure }),
     };
-    let size = file.metadata().ok().map(|metadata| metadata.len());
-    let stream = shared.mint_stream();
-    reply(ResultOutcome::ReadOpened { stream, size });
+    // Seek before announcing: the announced size is exactly what the
+    // stream will deliver — a ranged read announces the range (clamped
+    // to what remains), never the whole file, so the payload's
+    // short-stream detection means "torn read", never "range shorter
+    // than the file".
     if let Err(error) = file.seek(std::io::SeekFrom::Start(offset)) {
-        shared.note(format_args!("read seek: {error}"));
-        shared.send_chunk(&StreamChunk {
-            stream,
-            sequence: 0,
-            last: true,
-            bytes: Vec::new(),
+        return reply(ResultOutcome::Failed {
+            failure: io_failure(error),
         });
-        return;
     }
+    let size = file.metadata().ok().map(|metadata| metadata.len());
+    let announced = size.map(|total| {
+        let available = total.saturating_sub(offset);
+        length.map_or(available, |left| left.min(available))
+    });
+    let stream = shared.mint_stream();
+    reply(ResultOutcome::ReadOpened {
+        stream,
+        size: announced,
+    });
     let mut buffer = vec![0_u8; READ_CHUNK];
     let mut sequence = 0_u64;
     let mut remaining = length;

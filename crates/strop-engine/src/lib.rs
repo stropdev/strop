@@ -6,4 +6,8 @@ pub mod config;
 pub mod editor;
 pub mod files;
 pub mod keymap;
+// VF19 native mutant seams (verification/mutants.json): calibration only,
+// compiled under `--cfg strop_mutant`, never in release artifacts.
+#[cfg(strop_mutant)]
+pub mod mutant;
 pub mod session;

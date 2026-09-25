@@ -420,6 +420,7 @@ impl Editor {
         let history = self.remote_history();
         let client = self.remote_client();
         let worker = self.filesystem.worker().clone();
+        let remote = self.remote.workers.clone();
         let tx = self.remote_completion.tx.clone();
         let handle = worker::spawn(
             "strop-remote-complete",
@@ -435,6 +436,7 @@ impl Editor {
                     history,
                     client,
                     worker,
+                    remote,
                 };
                 run_completion(job, cancel)
             },
@@ -647,6 +649,7 @@ struct CompletionJob {
     history: Vec<HostCandidate>,
     client: RemoteClient,
     worker: strop_worker_client::Worker,
+    remote: crate::editor::remote::workers::RemoteWorkers,
 }
 
 fn run_completion(
@@ -661,6 +664,7 @@ fn run_completion(
         history,
         client,
         worker,
+        remote,
     } = job;
     if cancel.is_cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
@@ -676,6 +680,7 @@ fn run_completion(
             container.as_ref(),
             &client,
             &worker,
+            &remote,
             &cancel,
         ),
         RemoteCompletionQuery::Hosts { partial } => {

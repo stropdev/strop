@@ -51,7 +51,11 @@ pub struct StderrCapture {
 }
 
 impl StderrCapture {
-    fn spawn(mut source: impl Read + Send + 'static) -> Self {
+    /// Drain a worker's stderr into the bounded capture, off the
+    /// caller's thread. Public for deployed transports (WK07/WK08):
+    /// their child pipes are taken by the caller, and the worker's
+    /// private stderr still lands in the same bounded diagnostics.
+    pub fn spawn(mut source: impl Read + Send + 'static) -> Self {
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&buffer);
         thread::spawn(move || {
@@ -217,8 +221,15 @@ pub(crate) struct ExitEvent(pub strop_worker_protocol::ExitStatus);
 impl Conn {
     /// Establish one connection: handshake on the fresh transport, then
     /// spawn the routing reader thread. Readiness IS the handshake — a
-    /// successful spawn alone never satisfies this.
-    pub(crate) fn connect(transport: Transport) -> Result<Arc<Self>, ClientError> {
+    /// successful spawn alone never satisfies this. `expected_target` is
+    /// the target triple the worker must report: this build's own for
+    /// local transports, the admitted endpoint's for deployed workers
+    /// (WK08 — a container/SSH worker is bound to *its* target, which
+    /// the deploy flow verified, never to the client's platform).
+    pub(crate) fn connect(
+        transport: Transport,
+        expected_target: &str,
+    ) -> Result<Arc<Self>, ClientError> {
         let Transport {
             mut reader,
             writer,
@@ -259,7 +270,7 @@ impl Conn {
                     name: "strop".into(),
                     version: env!("CARGO_PKG_VERSION").into(),
                     build: None,
-                    target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+                    target: strop_worker_protocol::TARGET_TRIPLE.into(),
                 },
             },
         )
@@ -275,7 +286,7 @@ impl Conn {
             })) => {
                 // Identity is checked before any admitted request; on
                 // mismatch the conn drops here, terminating the child.
-                Self::check_identity(&worker)?;
+                Self::check_identity(&worker, expected_target)?;
                 if protocol != PROTOCOL_VERSION {
                     return Err(ClientError::Mismatch {
                         field: "protocol",
@@ -304,15 +315,18 @@ impl Conn {
             ))),
         }
     }
-    fn check_identity(worker: &EndpointInfo) -> Result<(), ClientError> {
-        let target = format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS);
+    /// The worker's reported identity binds to this client's exact
+    /// release version and to the *expected* target triple — this
+    /// build's own for a local worker, the admitted endpoint's for a
+    /// deployed one. A mismatch is a typed refusal, never a downgrade.
+    fn check_identity(worker: &EndpointInfo, expected_target: &str) -> Result<(), ClientError> {
         let expected: [(&'static str, &str, &str); 2] = [
             (
                 "version",
                 env!("CARGO_PKG_VERSION"),
                 worker.version.as_str(),
             ),
-            ("target", target.as_str(), worker.target.as_str()),
+            ("target", expected_target, worker.target.as_str()),
         ];
         for (field, expected, actual) in expected {
             if expected != actual {

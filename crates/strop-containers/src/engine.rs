@@ -416,6 +416,11 @@ struct InspectConfig {
     /// the image default ("/").
     #[serde(rename = "WorkingDir", default)]
     workdir: String,
+    /// The image's environment entries (`KEY=value`); deployment reads
+    /// HOME/XDG_CACHE_HOME from the selected context, never guesses
+    /// them (0058 WK08).
+    #[serde(rename = "Env", default)]
+    env: Vec<String>,
 }
 
 #[derive(Default, serde::Deserialize)]
@@ -479,6 +484,7 @@ fn identity(record: InspectRecord) -> Result<ContainerIdentity, ContainerError> 
         started_at: record.state.started_at,
         user: record.config.user,
         workdir: record.config.workdir,
+        env: record.config.env,
     })
 }
 

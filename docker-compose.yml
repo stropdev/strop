@@ -16,9 +16,12 @@ services:
     command: 'echo "gate passed: fmt + clippy -D warnings + cargo test"'
 
 
-  # Container integration tests (0037 DC1a): run on the HOST engine via
-  # the socket; fixtures are uniquely labelled and self-cleaning, and
-  # only the strop-containers gated tests run here.
+  # Container integration tests (0037 DC1a + 0058 WK08): run on the
+  # HOST engine via the socket; fixtures are uniquely labelled and
+  # self-cleaning, and only the container-gated tests run here. In this
+  # stage target/debug/strop IS the static musl worker the WK08
+  # deployment tests upload and exec (STROP_WORKER_BINARY unset → the
+  # tests discover it).
   container-test:
     build:
       context: .
@@ -28,7 +31,7 @@ services:
       - STROP_CONTAINER_TESTS=1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: cargo test --locked -p strop-containers
+    command: cargo test --locked -p strop-containers -p strop-worker-deploy
 
   # The Verus pilot gate (0045): its own pinned toolchain image,
   # never in the shipping build graph.
@@ -49,6 +52,18 @@ services:
       dockerfile: Dockerfile
       target: tlaps
     command: 'echo "gate passed: search lifecycle safety proved (TLAPS)"'
+
+  # The core-assurance lane (0057 VF19/VF20): model-anchor/digest pins,
+  # VF09 fault-injection harnesses, the instrumented Loom campaigns and
+  # the mutant-calibration registry with its native kill executions —
+  # the non-TLC campaigns that fit neither the model nor the verify
+  # lane. All RUN steps gate at image-build time like the test lane.
+  core-assurance:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: core-assurance
+    command: 'echo "gate passed: core assurance campaigns (anchors, digests, faults, loom, mutants)"'
   build:
     build:
       context: .

@@ -1,6 +1,55 @@
 # Changelog
 
 
+## Unreleased
+
+### Added
+
+- **SSH worker transport and consent-gated deployment** (0058 WK07):
+  an SSH workspace whose host admits a worker now deploys the matching
+  release binary through the verified-cache state machine (SFTP upload
+  provider over the same OpenSSH policy and SFTP v3 codec, activated
+  only after the real protocol handshake binds the endpoint's exact
+  release/target/incarnation) and then serves open/list/read, reviewed
+  filesystem mutations and filesystem-notification subscriptions through
+  `strop --worker-stdio` over the ssh exec channel — the same protocol
+  as local, with no Python prerequisite and one audited POSIX discovery
+  line (no PATH/rc/image mutation). The first deployment to an endpoint
+  requires an explicit worker-using action and names the selected
+  target, version and destination on refusal; a previously authorized
+  endpoint quietly reuses its verified cache. Restricted or SFTP-only
+  hosts keep the exact read-only SFTP behavior, with mutations answered
+  by the typed refusal — never an alternate write path.
+
+### Fixed
+
+- **Shutdown no longer wedges behind a full event lane** (0057 VF19, the
+  UiSessionModel storm finding): under a parallel storm of
+  streaming-search-then-shutdown sessions, a backend could burn its
+  whole jobs budget in `finish()` instead of settling. A storm-full
+  semantic event lane refused the forwarded picker-ranking `Stopped`
+  event; the forwarder treated the refusal as terminal, died, and
+  `picker_ranking.retiring` never emptied. Forwarded job-channel events
+  (one-shot facts: completions, terminal stops) now backpressure a full
+  lane instead of being dropped — the picker stream bridge included.
+
+### Verification
+
+- **The core-assurance lane** (0057 VF19/VF20):
+  `docker compose run --build --rm core-assurance` runs the non-TLC
+  assurance campaigns — model-fleet anchor/drift pins, helper digest
+  pins, the remote-save fault-injection harnesses, the instrumented
+  Loom campaigns over the real synchronization seams, and the picker
+  teardown storm campaign.
+- **Mutant calibration registry** (0057 VF19): verification/mutants.json
+  maps every calibrated seam to its named mutants, the exact
+  invariant/test that must kill each and the lane demonstrating the
+  kill (16 seams, 79 attributed kill obligations);
+  verification/check_mutants.py fails on a seam without mutants, on
+  wrong/killed-by-nothing attribution (broken gate vs kill) and runs
+  the native kill executions (`--cfg strop_mutant`, never in release
+  artifacts).
+
 ## 0.35.0 — 2026-09-17
 
 Filesystem notifications: the editor watches the workspace natively and

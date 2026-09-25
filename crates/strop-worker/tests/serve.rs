@@ -15,7 +15,7 @@ fn endpoint() -> EndpointInfo {
         name: "test".into(),
         version: env!("CARGO_PKG_VERSION").into(),
         build: None,
-        target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+        target: strop_worker_protocol::TARGET_TRIPLE.into(),
     }
 }
 
@@ -87,6 +87,42 @@ fn eof_before_hello_exits_cleanly() {
     drop(client_write);
     server.join().unwrap().unwrap();
     drop(client_read);
+}
+
+/// The welcome's worker identity reports the exact compile-time target
+/// triple (0058 WK05/WK08): deployment binds this to the endpoint's
+/// catalog target, so the `{arch}-{os}` shorthand — which cannot tell
+/// musl from gnu — must never cross the wire.
+#[test]
+fn welcome_reports_the_exact_build_target() {
+    let (client_read, worker_write) = std::io::pipe().unwrap();
+    let (worker_read, client_write) = std::io::pipe().unwrap();
+    let server = std::thread::spawn(move || {
+        strop_worker::serve::run(worker_read, worker_write).unwrap();
+    });
+    let mut writer = client_write;
+    codec::write_envelope(
+        &mut writer,
+        &ClientMessage::Hello {
+            protocol: PROTOCOL_VERSION,
+            client: endpoint(),
+        },
+    )
+    .unwrap();
+    let mut reader = client_read;
+    let mut decoder = FrameDecoder::default();
+    let body = frame::read_frame(&mut reader, &mut decoder)
+        .unwrap()
+        .unwrap();
+    match codec::decode_body(&body).unwrap() {
+        Incoming::Envelope(WorkerMessage::Welcome { worker, .. }) => {
+            assert_eq!(worker.target, strop_worker_protocol::TARGET_TRIPLE);
+            assert_eq!(worker.version, env!("CARGO_PKG_VERSION"));
+        }
+        other => panic!("expected welcome, got {other:?}"),
+    }
+    drop(writer);
+    server.join().unwrap();
 }
 
 #[test]

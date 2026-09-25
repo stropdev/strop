@@ -47,6 +47,7 @@ impl Editor {
         }
         let client = self.remote_client();
         let worker = self.filesystem.worker().clone();
+        let remote = self.remote.workers.clone();
         let container = match &source.location.filesystem {
             Filesystem::Container(id) => self.containers.attached.get(id.as_str()).cloned(),
             _ => None,
@@ -72,6 +73,7 @@ impl Editor {
                         if task == DirectoryTask::Reload {
                             let listed = crate::editor::namespace::list(
                                 &worker,
+                                &remote,
                                 &source.location,
                                 &client,
                                 container.as_ref(),

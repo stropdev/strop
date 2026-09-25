@@ -27,6 +27,7 @@ strop-fs = { path = "../strop-fs", version = "0.35.0" }
 strop-worker-client = { path = "../strop-worker-client", version = "0.35.0" }
 strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.35.0" }
 strop-worker = { path = "../strop-worker", version = "0.35.0", optional = true }
+strop-worker-deploy = { path = "../strop-worker-deploy", version = "0.35.0" }
 imbl = { version = "7", features = ["serde"] }
 unicode-segmentation = "1"
 unicode-width = "0.2"
@@ -37,6 +38,7 @@ serde_json = "1"
 toml = "0.8"
 tempfile = "3"
 thiserror = "2"
+sha2 = "0.10"
 
 [dev-dependencies]
 strop-trace = { path = "../strop-trace", version = "0.35.0", features = ["test-support"] }
@@ -54,4 +56,4 @@ ratatui = "0.29"
 loom = "0.7"
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(strop_loom)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(strop_loom)", "cfg(strop_mutant)"] }
