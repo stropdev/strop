@@ -103,6 +103,12 @@ jobs:
           python3 -B verification/bench_lsp_ui.py \
             --binary target/release/strop --profile release-gnu-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-lsp.json"
+          python3 -B verification/bench_transfer_ui.py \
+            --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --profile release-gnu-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-transfer.json"
+          python3 -B verification/bench_transfer_ui.py \
+            --binary target/release/strop --profile release-gnu-native \
+            --out "$RUNNER_TEMP/strop-native-measurements/candidate-transfer.json"
       - uses: actions/upload-artifact@v7
         with:
           name: native-product-${{ matrix.target }}
@@ -137,6 +143,7 @@ jobs:
           cargo test --locked -p strop-terminal vt::tests::
           cargo test --locked -p strop-worker-client --test loopback
           STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor --test worker_ssh deploy_handshake_read_write_notify_parity_over_real_sshd
+          cargo test --locked -p strop-editor --test worker_stdio
           cargo test --locked -p strop-editor --test terminal_editor
       - name: Benchmark matched native product artifacts
         run: |
@@ -155,6 +162,12 @@ jobs:
           python3 -B verification/bench_lsp_ui.py \
             --binary target/release/strop --profile release-macos-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-lsp.json"
+          python3 -B verification/bench_transfer_ui.py \
+            --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --profile release-macos-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-transfer.json"
+          python3 -B verification/bench_transfer_ui.py \
+            --binary target/release/strop --profile release-macos-native \
+            --out "$RUNNER_TEMP/strop-native-measurements/candidate-transfer.json"
       - uses: actions/upload-artifact@v7
         with:
           name: native-product-${{ matrix.target }}

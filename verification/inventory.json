@@ -1181,7 +1181,7 @@
         },
         {
           "id": "SSH-WORKER-DEPLOY",
-          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write/notify parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated network peers. Each fixture stops and reaps both exact children. The release catalog names the authenticated endpoint's target; the live worker probe attests supplied bytes instead of trusting the test runner's GNU compile triple.",
+          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated peers; each fixture stops and reaps both children. The catalog names the authenticated endpoint target, whose supplied release bytes the live probe attests. Linux Native Notify requires a relayed hint; a worker advertising Unsupported must answer the exact typed Notify refusal (as arm64 macOS did on PR run 36262445129). This does not claim macOS native push coverage or complete platform qualification.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1257,7 +1257,7 @@
           "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
           "crates/strop-remote/src/transport/wire.rs": "3fd192fbaca09ebca5c4f5f2ecd6f99ba8c7642713451bcbae67abef3b1dc54c"
         },
-        "evidence": "f196349e09a4209a85c8e2ddb83ae0ed3f0d745033f8b699fec3f98384cf8166"
+        "evidence": "7400a670e31d82279e1c40f79acee13e61fe8d0857c305489d0ea6bc459eb38b"
       }
     },
     {
@@ -2199,7 +2199,7 @@
         },
         {
           "id": "REL-ASSURANCE-GATES",
-          "statement": "PR and tag run locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native correspondence, container editor and x86_64/aarch64 GNU worker/Store/terminal scenarios. GNU runners build the same-source static musl worker before actual OpenSSH parity (a host GNU test binary cannot satisfy the release catalog); Intel/arm macOS use their actual native binary. All native runners exercise Store, supervisor exit/PTY, VT Alt encoding, client and nested editor with Neovim. Each PR native job builds clean a05d84f pre-worker and current release binaries on the same target, runs nine local worker/UI/TUI/terminal-load paths plus installed rust-analyzer LSP request and edit→sync→request paths with raw p50/p95/p99/max, and uploads the observations; scheduling is not execution proof. The tag builds native Mac artifacts, restricts system dylibs (including worker libproc enumeration), rechecks the frozen four-platform source candidate and gates publication on the proof ledger. Full remote/high-water performance and complete Mac results remain blocked.",
+          "statement": "PR and tag run locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native correspondence, container editor and x86_64/aarch64 GNU worker/Store/terminal scenarios. GNU runners build a same-source static musl worker before authenticated OpenSSH parity; Intel/arm macOS use their actual native binary. All native runners exercise Store, killed-worker/stale-preparation regression, supervisor exit/PTY, VT Alt encoding, client and nested editor with Neovim. Each PR native job builds clean a05d84f pre-worker and current release binaries on the same target, runs nine local worker/UI/TUI/terminal-load paths plus installed rust-analyzer LSP request/edit-sync paths and a 17.28 MiB real-worker UI transfer/retirement high-water probe with raw p50/p95/p99/max; upload wiring is not execution proof. The tag builds native Mac artifacts, restricts system dylibs (including worker libproc enumeration), rechecks the frozen four-platform source candidate and gates publication on the proof ledger. Full remote/high-water performance and complete Mac results remain blocked.",
           "status": "specified",
           "evidence": [
             {
@@ -2257,12 +2257,12 @@
       "pins": {
         "sources": {
           ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
-          ".github/workflows/ci.yml": "e590005a83f16d96c46967d3328a53cad7d778bcfe35d6771fc4a8beb78256b7",
-          ".github/workflows/release.yml": "df1d58a20a6dec4d813fedf84e29e7c22c813a2a6e6b62abffc6cd15eba3a032",
+          ".github/workflows/ci.yml": "dc26dd65bbc7b868cb4a67749b00fd8b4f3379c5c985e5df345006f1be26bf3c",
+          ".github/workflows/release.yml": "a5a2a5403ef17f30e646c96c08a25913c166ca17aba0bd0318feec02367395f1",
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "407311a943d97907b3457f5fd2acdd8a2cf53f5f5cc65caf17af3960587a93b6"
+        "evidence": "c74591b85fa7b217b53da721ec68f0820db52c64fc46454567d10d4ad6e7719c"
       }
     },
     {
@@ -2949,6 +2949,7 @@
         "verification/bench_worker.py",
         "verification/bench_worker_roundtrip.py",
         "verification/bench_ui_input_frame.py",
+        "verification/bench_transfer_ui.py",
         "verification/bench_native_product.py"
       ],
       "claims": [
@@ -3198,6 +3199,11 @@
           "status": "blocked",
           "evidence": [
             {
+              "kind": "script",
+              "path": "verification/bench_transfer_ui.py",
+              "gate": "benchmark"
+            },
+            {
               "kind": "measurement",
               "path": "verification/measurements/0058-linux-x86-comparison.json",
               "gate": "benchmark"
@@ -3328,7 +3334,7 @@
         "sources": {
           "crates/strop-core/src/worker/cache_record.rs": "3030cb87bc678044938ad67758f10d8d0ab06c7b59f0b05c329cf25cebc77292",
           "crates/strop-engine/src/editor/filesystem/mod.rs": "b9df6a96a00edd766c2ea653ab6b3a96e36aad19a10abf0436281ec39aeaec1a",
-          "crates/strop-engine/src/editor/namespace.rs": "004057bea68a4e81007afc1ba788e79577e8047717947dc45983cada0a28cdc0",
+          "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/Cargo.toml": "c9cc98721eb0d11a8254063a63d0b0b77f6870a4be653f0e7b8d66c90cbce31e",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
@@ -3347,11 +3353,12 @@
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
           "crates/strop/tests/terminal_editor.rs": "1d4acc7748a26e9e4e26efa55c80079372a7680bbc16988c4d1e6b6330fd287e",
           "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
+          "verification/bench_transfer_ui.py": "d1f5b711804e3f9d581c4f906051581834422a00c8349f4533b4696a21e4bd73",
           "verification/bench_ui_input_frame.py": "689ce08d3468b85d8f05cddc38f2971f9d5450233da5142fb0d899ced2339903",
           "verification/bench_worker.py": "cbb606889fbde28c53ddba5bcf171fe19fff196989b9bc39c92f077a63ce83a1",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "dadb9e0a3c8cb55024047cccc60d0e4d47150ab92f8d7ba188dc4448786cad57"
+        "evidence": "f8aefc98045e3e229bdca8118250df99eb1751f7c39e9d64e05df1d703d55d35"
       }
     },
     {
@@ -4008,7 +4015,7 @@
           "crates/strop-core/src/worker/deploy_policy.rs": "b07466797094af38dd676c242b4cd93754c2b4be64cead12190f6d666d5eaf63",
           "crates/strop-engine/src/editor/containers/container_worker.rs": "55d45fbddca46caefa1c5121403f66f592c4676fc9d9db13b2711fa7d0cddce9",
           "crates/strop-engine/src/editor/explain.rs": "06d50bc1af2abffb46dbde57aca49cbcb3dc80078b14b6f0369cbc13a6cd6644",
-          "crates/strop-engine/src/editor/namespace.rs": "004057bea68a4e81007afc1ba788e79577e8047717947dc45983cada0a28cdc0",
+          "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/workers.rs": "edc263c327e47fcf856c71df16095909c779d5c308ef2bd5c03df16fee652464",
           "crates/strop-remote/src/deploy_provider.rs": "8f47f3e3b11e3bb2aed7fe5c0a095c20e270fb461cf1d9a0d731cdb3d59a52a3",
           "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
@@ -4024,7 +4031,7 @@
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop/Cargo.toml": "40267880d30b5233ea3e8b595a6cc05402f230aae78cd2567fbeb4dafb6ebd04"
         },
-        "evidence": "552a640901921d433fe1ea3d6f32370980c70f12c0ac8a241909d130190f7495"
+        "evidence": "4ec1ba757e68455770e2d938272804c684a6621f651bddf1ec6b19ca77e4ed78"
       }
     },
     {

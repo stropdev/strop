@@ -155,8 +155,10 @@
   macOS BSM auditing rejected `sshd -i` launched on a pipe with an
   `UNKNOWN` peer. Each SSH test now owns and reaps two authenticated
   loopback OpenSSH listeners (ordinary and SFTP-only), retaining
-  Python-free parity. Linux's real OpenSSH journey passes; native
-  macOS requalification remains required.
+  Python-free parity. Linux relays native Notify hints; macOS
+  advertises Unsupported and must refuse subscription typed.
+  Apple Silicon exercised real SSH deploy/read/write before that
+  refusal; complete native editor journeys remain a release gate.
 - **Container workers no longer carry an extra sh/cat supervisor**
   (0058 WK08/WK20): verified-worker probes and live leases now use
   the same direct native `docker exec` on provisioned and shellless

@@ -140,48 +140,71 @@ fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
         .iter()
         .any(|entry| entry.name.as_path() == Path::new("worker-written.txt")));
 
-    // Notify parity: a subscription through the ssh worker reports the
-    // remote-side change as a hint on the client's sink.
-    let (events, hints) = std::sync::mpsc::channel();
-    worker.set_event_sink(events);
-    let (subscription, coverage) = worker
-        .subscribe(
-            &token,
-            ResourceLocation::local(scope.path().to_path_buf()),
-            true,
-        )
-        .unwrap();
-    assert_eq!(coverage, strop_worker_protocol::NotifyCoverage::Native);
-    std::fs::write(scope.path().join("hinted.txt"), "watch me\n").unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    let hinted = loop {
-        match hints.recv_timeout(std::time::Duration::from_millis(250)) {
-            Ok(strop_worker_protocol::Event::Notify {
-                subscription: seen,
-                hints: batch,
-                ..
-            }) if seen == subscription
-                && batch.iter().any(|hint| {
-                    hint.path == b"hinted.txt"
-                        || hint.path == b".".as_slice()
-                        || hint.path.is_empty()
-                }) =>
-            {
-                break true
-            }
-            Ok(_) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break false,
+    // Hints are available only when the worker advertises native
+    // coverage. macOS currently advertises Unsupported and must refuse
+    // subscription explicitly; no fake polling/notify success.
+    match worker.capabilities().unwrap().notify {
+        strop_worker_protocol::NotifyCoverage::Native => {
+            let (events, hints) = std::sync::mpsc::channel();
+            worker.set_event_sink(events);
+            let (subscription, coverage) = worker
+                .subscribe(
+                    &token,
+                    ResourceLocation::local(scope.path().to_path_buf()),
+                    true,
+                )
+                .unwrap();
+            assert_eq!(coverage, strop_worker_protocol::NotifyCoverage::Native);
+            std::fs::write(scope.path().join("hinted.txt"), "watch me\n").unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            let hinted = loop {
+                match hints.recv_timeout(std::time::Duration::from_millis(250)) {
+                    Ok(strop_worker_protocol::Event::Notify {
+                        subscription: seen,
+                        hints: batch,
+                        ..
+                    }) if seen == subscription
+                        && batch.iter().any(|hint| {
+                            hint.path == b"hinted.txt"
+                                || hint.path == b".".as_slice()
+                                || hint.path.is_empty()
+                        }) =>
+                    {
+                        break true;
+                    }
+                    Ok(_) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break false,
+                }
+                if std::time::Instant::now() > deadline {
+                    break false;
+                }
+            };
+            assert!(
+                hinted,
+                "the ssh worker relayed a notify hint for hinted.txt"
+            );
+            worker.unsubscribe(&token, subscription).unwrap();
         }
-        if std::time::Instant::now() > deadline {
-            break false;
+        strop_worker_protocol::NotifyCoverage::Unsupported => {
+            let refused = worker
+                .subscribe(
+                    &token,
+                    ResourceLocation::local(scope.path().to_path_buf()),
+                    true,
+                )
+                .unwrap_err();
+            assert!(matches!(
+                refused,
+                strop_worker_client::ClientError::Refused(
+                    strop_worker_protocol::Refusal::Capability {
+                        capability: strop_worker_protocol::Capability::Notify
+                    }
+                )
+            ));
         }
-    };
-    assert!(
-        hinted,
-        "the ssh worker relayed a notify hint for hinted.txt"
-    );
-    worker.unsubscribe(&token, subscription).unwrap();
+        other => panic!("fixture requires native hints or typed refusal, got {other:?}"),
+    }
 
     // Reconnect re-handshakes fresh: kill the worker, then the next
     // request spawns a new incarnation (old handles die with the old).

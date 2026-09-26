@@ -594,19 +594,19 @@ impl StoreDispatch {
             }
         };
         match applied {
-            Ok(receipts) if receipts.len() == 1 => {
-                StoreOutcome::Receipt(Box::new(receipts.into_iter().next().unwrap()))
-            }
-            Ok(_) => StoreOutcome::Receipt(Box::new(StepReceipt {
-                step: 0,
-                operation,
-                outcome: StepOutcome::Unconfirmed {
-                    detail: "the worker answered a store with the wrong receipt count".into(),
-                    observed_destination: None,
-                    recovery: None,
-                    publication: None,
-                },
-            })),
+            Ok(receipts) => match <[StepReceipt; 1]>::try_from(receipts) {
+                Ok([receipt]) => StoreOutcome::Receipt(Box::new(receipt)),
+                Err(_) => StoreOutcome::Receipt(Box::new(StepReceipt {
+                    step: 0,
+                    operation,
+                    outcome: StepOutcome::Unconfirmed {
+                        detail: "the worker answered a store with the wrong receipt count".into(),
+                        observed_destination: None,
+                        recovery: None,
+                        publication: None,
+                    },
+                })),
+            },
             // Admission refusal and the worker's apply-domain error are
             // pre-effect. Client-side cancellation can race after the
             // request crossed the publication boundary and belongs to

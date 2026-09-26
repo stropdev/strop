@@ -1036,6 +1036,16 @@ strop-worker notify 15 real-kernel integration tests, engine
 subscription/reload/dirty/overflow/staleness tests, picker incremental
 e2e through the real pipeline.
 
+Native macOS SSH qualification on
+[`36262445129`](https://github.com/stropdev/strop/actions/runs/36262445129)
+crossed the real TCP OpenSSH deploy/probe/read/write path, then
+correctly reported `Refused(Capability::Notify)`: S7's direct
+inotify backend advertises `NotifyCoverage::Unsupported` outside
+Linux. A cross-target parity fixture must assert the *advertised*
+coverage: `Native` requires a real relayed hint, and `Unsupported`
+requires that exact typed refusal, never a fake watcher or silent
+success. macOS notification parity is not being claimed.
+
 ### WK05/WK06 artifacts and deployment: deployed; worker-owned GC native-tested on Linux
 
 The release catalog carries the worker compatibility manifest (protocol
@@ -1323,6 +1333,20 @@ samples, server version and source/artifact bindings live in
 `verification/measurements/0058-linux-x86-lsp-ui.json`. Native
 PR runners must execute the same path on GNU and macOS hosts;
 this Linux-only result does not close WPERF-FULL.
+
+A distinct cold-transfer probe opens a 17,280,000-byte/10,000-line
+plain-text file through each real `strop --ui-stdio` backend and its
+one worker, checks both first and final source lines, samples Linux
+kernel `VmHWM` (macOS: only observed current RSS), then records the
+worker's state **immediately after editor exit**. A WSL2 one-run
+smoke observed the original pre-worker process still sleeping after
+the editor exited; the fixture kills only its pinned worker **after**
+recording that state. Neither this pilot nor the per-test cleanup
+claims later reaping, retained-memory bounds or remote transfer
+qualification. PR runners now schedule eight warmups and 64 real
+journeys per matched artifact on each native CPU; archive their raw
+count/byte/RSS/latency records and re-run on the final source before
+closing WK20.
 
 The schema-9 diagnostic freeze checks scoped artifact, fixture, method,
 LSP server identity and raw-percentile bindings. A dirty tree fails
