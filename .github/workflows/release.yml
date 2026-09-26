@@ -62,10 +62,13 @@ jobs:
         run: |
           sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
           echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
+      - name: Install nested-editor test dependency
+        run: sudo apt-get update && sudo apt-get install -y neovim
       - name: Execute native worker/store/terminal on the selected CPU
         run: |
           test "$(uname -m)" = "${{ matrix.machine }}"
           cargo test --locked -p strop-fs tests::store::
+          cargo test --locked -p strop-worker exec::tests::
           cargo test --locked -p strop-worker-client --test loopback
           cargo test --locked -p strop-editor --test worker_stdio
           cargo test --locked -p strop-editor --test terminal_editor
@@ -99,10 +102,15 @@ jobs:
           sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
           echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
 
+      - name: Install nested-editor test dependency
+        if: "!matrix.docker"
+        run: brew install neovim
+
       - name: Verify native macOS Store worker and terminal
         if: "!matrix.docker"
         run: |
           cargo test --locked -p strop-fs tests::store::
+          cargo test --locked -p strop-worker exec::tests::
           cargo test --locked -p strop-worker-client --test loopback
           cargo test --locked -p strop-editor --test terminal_editor
 
