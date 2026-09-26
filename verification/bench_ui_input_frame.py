@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure one-key input to the real framed UI view on Linux.
+"""Measure one-key input to the real framed UI view on Linux or macOS.
 
 The matching release binary serves --ui-stdio; an admitted action opens a
 10k-line file through the local worker, then individual committed text inputs
@@ -20,7 +20,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from bench_worker import percentiles, process_state
+from bench_worker import cpu_model, native_profile, percentiles, process_state, worker_processes
 
 MAX_HEADER = 8192
 MAX_BODY = 32 * 1024 * 1024
@@ -162,17 +162,17 @@ class Peer:
         raise RuntimeError("worker-opened file did not reach the UI view")
 
 
-def worker_processes(pid: int) -> list[int]:
-    children = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
-    return [int(child) for child in children if b"--worker-stdio" in
-            Path(f"/proc/{child}/cmdline").read_bytes()]
-
-
-def measure(binary: Path, warmup: int, iterations: int) -> dict:
-    if platform.system() != "Linux":
-        raise ValueError("this worker/process evidence requires Linux /proc")
+def measure(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
+    if platform.system() not in ("Linux", "Darwin"):
+        raise ValueError("worker process evidence requires Linux /proc or macOS ps")
+    if (platform.system() == "Darwin") != (profile == "release-macos-native"):
+        raise ValueError("benchmark profile does not match the native operating system")
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("--binary must be the executable release artifact")
+    identity = subprocess.check_output([str(binary), "--version"], text=True).strip().split()
+    if len(identity) != 2 or identity[0] != "strop":
+        raise ValueError("the benchmark artifact did not report a Strop version")
+    binary_version = identity[1]
     with tempfile.TemporaryDirectory(prefix="strop-ui-frame-") as name:
         root = Path(name)
         for folder in ("home", "config", "state"):
@@ -189,7 +189,7 @@ def measure(binary: Path, warmup: int, iterations: int) -> dict:
             try:
                 peer = Peer(child)
                 peer.send({"type": "hello", "protocol": 1,
-                           "client": {"name": "ui-frame-benchmark", "version": "0.35.0"},
+                           "client": {"name": "ui-frame-benchmark", "version": binary_version},
                            "capabilities": {"clipboard_write": False}})
                 welcome, _, _ = peer.receive()
                 if welcome["type"] != "welcome" or welcome["protocol"] != 1:
@@ -265,12 +265,11 @@ def measure(binary: Path, warmup: int, iterations: int) -> dict:
                     digest = hashlib.file_digest(artifact, "sha256").hexdigest()
                 return {
                     "binary_sha256": digest, "binary_bytes": binary.stat().st_size,
+                    "binary_version": binary_version,
                     "platform": {"machine": platform.machine(),
                                  "kernel": platform.release(),
-                                 "cpu": next((line.split(":", 1)[1].strip()
-                                           for line in Path("/proc/cpuinfo").read_text().splitlines()
-                                           if line.startswith("model name")), "unreported"),
-                                 "profile": "release-musl-stripped"},
+                                 "cpu": cpu_model(),
+                                 "profile": profile},
                     "fixture": {"lines": 10_000, "geometry": [120, 40],
                                 "input": "one committed text character",
                                 "worker_count_after_open": len(workers),
@@ -302,11 +301,14 @@ def main() -> None:
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--warmup", type=int, default=8)
     parser.add_argument("--iterations", type=int, default=64)
+    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native",
+                                             "release-macos-native"))
     args = parser.parse_args()
     if args.warmup < 0 or args.iterations < 1:
         parser.error("warmup must be nonnegative and iterations positive")
     try:
-        result = measure(args.binary, args.warmup, args.iterations)
+        result = measure(args.binary, args.warmup, args.iterations,
+                         args.profile or native_profile())
     except (OSError, KeyError, ValueError, RuntimeError, TimeoutError,
             subprocess.TimeoutExpired) as error:
         parser.exit(1, f"UI frame measurement failed: {error}\n")

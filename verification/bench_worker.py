@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Measure the same stripped release binary's real worker handshake on Linux.
+"""Measure native release binaries through the real framed worker handshake.
 
-Run this script inside each release image on the same idle Docker host:
-  python3 verification/bench_worker.py --binary target/release/strop \
+Run this script on each release target with its own native executable:
+  python3 -B verification/bench_worker.py --binary target/release/strop \
       --protocol 2 --version 0.35.0 --target x86_64-unknown-linux-musl
 
 Reports raw samples and nearest-rank p50/p95/p99/max, not a speedup claim.
@@ -47,9 +47,54 @@ def frame(reader) -> dict:
 
 
 def process_state(pid: int) -> tuple[int, int]:
-    status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
-    fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
-    return int(fields["VmRSS"].split()[0]), int(fields["Threads"].strip())
+    if platform.system() == "Linux":
+        status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+        fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+        return int(fields["VmRSS"].split()[0]), int(fields["Threads"].strip())
+    if platform.system() == "Darwin":
+        observed = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "rss=", "-o", "thcount="], text=True
+        ).split()
+        if len(observed) == 2:
+            return int(observed[0]), int(observed[1])
+    raise RuntimeError("worker RSS/thread sampling needs Linux /proc or macOS ps")
+
+
+def worker_processes(pid: int) -> list[int]:
+    if platform.system() == "Linux":
+        children = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
+        return [int(child) for child in children if b"--worker-stdio" in
+                Path(f"/proc/{child}/cmdline").read_bytes()]
+    if platform.system() == "Darwin":
+        processes = subprocess.check_output(
+            ["ps", "-axo", "pid=", "-o", "ppid=", "-o", "command="], text=True
+        )
+        return [int(parts[0]) for line in processes.splitlines()
+                if len(parts := line.split(maxsplit=2)) == 3
+                and parts[1] == str(pid) and "--worker-stdio" in parts[2]]
+    raise RuntimeError("worker process sampling needs Linux /proc or macOS ps")
+
+
+def cpu_model() -> str:
+    if platform.system() == "Linux":
+        return next(
+            (line.split(":", 1)[1].strip()
+             for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines()
+             if line.startswith("model name")), "unreported"
+        )
+    if platform.system() == "Darwin":
+        return subprocess.check_output(
+            ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
+        ).strip()
+    raise RuntimeError("benchmark supports only Linux and macOS native targets")
+
+
+def native_profile(target: str | None = None) -> str:
+    if platform.system() == "Linux":
+        return "release-gnu-native" if target and target.endswith("-gnu") else "release-musl-stripped"
+    if platform.system() == "Darwin":
+        return "release-macos-native"
+    raise RuntimeError("benchmark supports only Linux and macOS native targets")
 
 
 def sample(args: argparse.Namespace) -> dict:
@@ -117,12 +162,7 @@ def main() -> None:
     samples = [sample(args) for _ in range(args.iterations)]
     with binary.open("rb") as artifact:
         digest = hashlib.file_digest(artifact, "sha256").hexdigest()
-    cpu = next(
-        (line.split(":", 1)[1].strip()
-         for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines()
-         if line.startswith("model name")),
-        "unreported",
-    )
+    cpu = cpu_model()
     print(json.dumps({
         "binary_sha256": digest,
         "bytes": binary.stat().st_size,
@@ -130,7 +170,7 @@ def main() -> None:
         "first_observed": first, "warmup_runs": args.warmup,
         "platform": {
             "machine": platform.machine(), "kernel": platform.release(),
-            "cpu": cpu, "profile": "release-musl-stripped",
+            "cpu": cpu, "profile": native_profile(args.target),
         },
         "warm_runs": samples,
         "ready_ms": percentiles([item["ready_ms"] for item in samples]),

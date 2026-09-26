@@ -5,18 +5,18 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-ui-frame.json",
-    "sha256": "3e3bed9c235c40fd0dd90530d43de8110d414d8ff3fd3eb38f17257a4f4addc0"
+    "sha256": "ea95b4d5f185a527a26c70d9a2f119c8c601245d85d6230396ea73c364a70782"
   },
   "candidate": {
     "commit": null,
     "state": "working tree dirty; no release-qualified source commit",
     "artifact_sha256": "67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130",
     "measurement": "verification/measurements/0058-linux-x86-worker-ui-frame.json",
-    "sha256": "87e80129ae37f8f285fe34ab69fe52e1efdc530996f009a7027fdd97f8c39d2e"
+    "sha256": "06d7f35ed87adeab4ea4a5d9fe62458b943a13ff8fd8bc52b5b73124a8f50976"
   },
   "method": {
     "harness": "verification/bench_ui_input_frame.py",
-    "sha256": "f884f375802ff243938a7535974564513a55beb31c454150aa9897e5e795ad23",
+    "sha256": "3daf76eabf9a1298386888df528af3f301725b0320fb1b68854f316b644fb8f9",
     "warmup": 8,
     "samples_per_artifact": 64,
     "fixture_lines": 10000,
@@ -28,21 +28,21 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 0.502,
+      "max": 0.427,
       "p50": 0.226,
-      "p95": 0.301,
-      "p99": 0.502
+      "p95": 0.297,
+      "p99": 0.427
     },
     "candidate_ms": {
-      "max": 0.502,
-      "p50": 0.233,
-      "p95": 0.388,
-      "p99": 0.502
+      "max": 0.352,
+      "p50": 0.235,
+      "p95": 0.33,
+      "p99": 0.352
     },
-    "baseline_editor_rss_kib_after_open": 12716,
-    "candidate_editor_rss_kib_after_open": 12684,
-    "baseline_worker_rss_kib_after_open": 5024,
-    "candidate_worker_rss_kib_after_open": 5272,
+    "baseline_editor_rss_kib_after_open": 16788,
+    "candidate_editor_rss_kib_after_open": 12668,
+    "baseline_worker_rss_kib_after_open": 7724,
+    "candidate_worker_rss_kib_after_open": 5248,
     "baseline_worker_count_after_open": 1,
     "candidate_worker_count_after_open": 1,
     "baseline_request_bytes": 9984,

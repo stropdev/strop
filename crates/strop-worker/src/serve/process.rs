@@ -294,7 +294,11 @@ fn settle(
             }
             // Revoked carries no attested exit; launch failures never
             // enter wait. Neither is silently mapped to success.
-            Ok(crate::exec::Settlement::Revoked) | Err(_) => ExitStatus::Lost,
+            Ok(crate::exec::Settlement::Revoked) => ExitStatus::Lost,
+            Err(error) => {
+                worker.note(format_args!("exec supervisor: {error}"));
+                ExitStatus::Lost
+            }
         };
         let mut outputs_ok = true;
         for pump in pumps.into_iter().flatten() {

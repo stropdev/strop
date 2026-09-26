@@ -137,16 +137,16 @@
   `a05d84f` Linux x86_64 pre-worker snapshot retains six raw passing
   gates beside the untouched dirty historical archive. On the same
   WSL2 host, 64 real static-worker handshakes per build measured
-  baseline/current p50 0.933/0.730 ms, p95 1.241/0.852 ms and
-  p99/max 1.493/0.908 ms, with RSS, threads, raw samples and
+  baseline/current p50 0.731/0.808 ms, p95 0.866/0.954 ms and
+  p99/max 1.115/1.459 ms (pre-worker protocol 1; worker protocol 2),
   46,226,704/47,373,648-byte artifacts pinned in
   `verification/measurements/`. This is local launch, not cold SSH
   deployment, TUI cell-grid paint or native macOS/aarch64 evidence.
 - **Scoped worker control-frame latency** (0058 WK20, not full
   performance qualification): the stripped static worker on WSL2
   completed eight warmups and 64 serial Health requests through the
-  real framed IPC; write+flush-to-result p50 0.201 ms, p95 0.247 ms,
-  p99/max 0.292 ms for the 47,373,648-byte artifact (sha256
+  real framed IPC; write+flush-to-result p50 0.203 ms, p95 0.275 ms,
+  p99/max 0.320 ms for the 47,373,648-byte artifact (sha256
   67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130)
   with raw samples and request bytes pinned in
   `verification/measurements/`. TUI cell-grid paint,
@@ -156,12 +156,21 @@
   each performed eight warmups plus 64 `--ui-stdio` text edits on the
   same WSL2 host after the editor opened a 10,000-line file through
   one real worker. Every returned frame visibly contains the next
-  edit. Baseline/current write+flush-to-view p50 was 0.226/0.233 ms,
-  p95 0.301/0.388 ms, p99/max 0.502/0.502 ms; raw samples,
+  edit. Baseline/current write+flush-to-view p50 was 0.226/0.235 ms,
+  p95 0.297/0.330 ms, p99/max 0.427/0.352 ms; raw samples,
   artifact hashes, framed bytes and RSS/threads are archived under
   `verification/measurements/`. Candidate p95 is higher; no
-  no-regression claim. Actual TUI paint, SSH/container deployment,
-  LSP and terminal load still need release evidence.
+  no-regression claim. TUI paint on other native targets,
+  SSH/container deployment, LSP and terminal load still need evidence.
+- **Scoped real TUI cell-grid paint latency** (0058 WK20): the same
+  two static artifacts each completed eight warmups and 64 real
+  worker-backed TUI insertions in a 10,000-line file at 120×30.
+  Each sample ends only after the PTY's VT100-decoded grid shows
+  the next exact edit. Baseline/current p50 1.065/1.047 ms, p95
+  1.865/1.626 ms, p99/max 1.913/2.850 ms on Linux Docker-on-WSL2.
+  Raw samples and method digest are archived; candidate p99 is
+  higher. SSH/container deployment, LSP, terminal output load and
+  other native targets remain release gates.
 - **Python-free SSH deployment evidence** (0058 WK07): a separate
   OpenSSH image without a Python interpreter deploys and launches the
   actual native worker, then exercises read/write/notification parity.

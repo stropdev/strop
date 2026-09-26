@@ -138,7 +138,13 @@ UI_FRAME_MEASUREMENTS = (
     "verification/measurements/0058-linux-x86-ui-frame-comparison.json",
 )
 
-SCHEMA = 4
+TUI_FRAME_MEASUREMENTS = (
+    "verification/measurements/0058-linux-x86-preworker-tui-frame.json",
+    "verification/measurements/0058-linux-x86-worker-tui-frame.json",
+    "verification/measurements/0058-linux-x86-tui-frame-comparison.json",
+)
+
+SCHEMA = 5
 
 
 def sha256_file(rel: str) -> str:
@@ -279,14 +285,15 @@ def ui_frame_evidence() -> dict:
         or summary["method"]["geometry"] != [120, 40]
     ):
         raise SystemExit("Linux UI action-to-frame evidence does not bind one native fixture")
-    warm_binary = [
-        json.loads((ROOT / rel).read_text(encoding="utf-8"))["binary_sha256"]
+    warm_artifacts = [
+        json.loads((ROOT / rel).read_text(encoding="utf-8"))
         for rel in LINUX_MEASUREMENTS[:2]
     ]
-    for role, rel, measured, binary_sha256 in zip(
+    for role, rel, measured, artifact in zip(
         ("baseline", "candidate"), UI_FRAME_MEASUREMENTS[:2], (baseline, worker),
-        warm_binary, strict=True
+        warm_artifacts, strict=True
     ):
+        binary_sha256 = artifact["binary_sha256"]
         raw = measured.get("raw_ms")
         fixture = measured.get("fixture", {})
         if (
@@ -297,6 +304,7 @@ def ui_frame_evidence() -> dict:
             or measured.get("measured_requests") != 64
             or measured.get("warmup_requests") != 8
             or measured.get("binary_sha256") != binary_sha256
+            or measured.get("binary_version") != artifact["version"]
             or measured.get("method") != summary["method"]["timing"]
             or fixture.get("worker_count_after_open") != 1
             or fixture.get("lines") != 10_000
@@ -326,6 +334,65 @@ def ui_frame_evidence() -> dict:
     return {
         "samples": hashes,
         "method_sha256": sha256_file("verification/bench_ui_input_frame.py"),
+        "binary_sha256": {"baseline": baseline["binary_sha256"],
+                          "candidate": worker["binary_sha256"]},
+    }
+
+
+def tui_frame_evidence() -> dict:
+    hashes = {rel: sha256_file(rel) for rel in TUI_FRAME_MEASUREMENTS}
+    baseline, worker, summary = [
+        json.loads((ROOT / rel).read_text(encoding="utf-8"))
+        for rel in TUI_FRAME_MEASUREMENTS
+    ]
+    if (
+        baseline.get("platform") != worker.get("platform")
+        or baseline.get("platform") != {"os": "linux", "arch": "x86_64"}
+        or summary.get("schema") != 1
+        or summary.get("method", {}).get("harness") != "crates/strop/tests/terminal_editor.rs"
+        or summary["method"]["test"] != "native_terminal_input_to_painted_frame_samples"
+        or summary["method"]["sha256"] != sha256_file("crates/strop/tests/terminal_editor.rs")
+        or summary["method"]["warmup"] != 8
+        or summary["method"]["samples_per_artifact"] != 64
+        or summary["method"]["fixture_lines"] != 10_000
+        or summary["method"]["geometry"] != [120, 30]
+    ):
+        raise SystemExit("Linux TUI paint evidence does not bind the native test and fixture")
+    for role, rel, measured, warm_rel in zip(
+        ("baseline", "candidate"), TUI_FRAME_MEASUREMENTS[:2], (baseline, worker),
+        LINUX_MEASUREMENTS[:2], strict=True
+    ):
+        artifact = json.loads((ROOT / warm_rel).read_text(encoding="utf-8"))
+        raw = measured.get("raw_ms")
+        fixture = measured.get("fixture", {})
+        if (
+            not isinstance(raw, list)
+            or len(raw) != 64
+            or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                       and value >= 0 for value in raw)
+            or measured.get("warmup_requests") != 8
+            or measured.get("measured_requests") != 64
+            or measured.get("binary_sha256") != artifact["binary_sha256"]
+            or measured.get("binary_bytes") != artifact["bytes"]
+            or measured.get("method") != summary["method"]["timing"]
+            or fixture.get("capture") is not False
+            or fixture.get("lines") != 10_000
+            or fixture.get("geometry") != [120, 30]
+            or fixture.get("input") != "one committed character at line 5000"
+            or summary[role]["artifact_sha256"] != artifact["binary_sha256"]
+            or summary[role]["measurement"] != rel
+            or summary[role]["sha256"] != hashes[rel]
+        ):
+            raise SystemExit(f"Linux {role} TUI paint does not match the measured artifact")
+        ordered = sorted(raw)
+        percentiles = {f"p{n}": ordered[math.ceil(n * len(raw) / 100) - 1]
+                       for n in (50, 95, 99)} | {"max": ordered[-1]}
+        if (measured.get("input_to_grid_ms") != percentiles
+                or summary["observed"][f"{role}_ms"] != percentiles):
+            raise SystemExit(f"Linux {role} TUI summary disagrees with its painted frames")
+    return {
+        "samples": hashes,
+        "method_sha256": sha256_file("crates/strop/tests/terminal_editor.rs"),
         "binary_sha256": {"baseline": baseline["binary_sha256"],
                           "candidate": worker["binary_sha256"]},
     }
@@ -362,6 +429,7 @@ def freeze(allow_dirty: bool) -> dict:
         "linux_warm_handshake_evidence": linux_measurements(),
         "linux_warm_roundtrip_evidence": warm_roundtrip_evidence(),
         "linux_ui_input_frame_evidence": ui_frame_evidence(),
+        "linux_tui_input_frame_evidence": tui_frame_evidence(),
         "baseline": baseline_hashes(),
         "install_transaction": {
             "install.sh": sha256_file("install.sh"),
@@ -419,6 +487,7 @@ def check(path: Path) -> int:
         "linux_warm_handshake_evidence",
         "linux_warm_roundtrip_evidence",
         "linux_ui_input_frame_evidence",
+        "linux_tui_input_frame_evidence",
         "benchmark_sha256",
         "warm_roundtrip_benchmark_sha256",
         "verus_crate_pins",

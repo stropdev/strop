@@ -19,6 +19,20 @@ struct Tui {
 }
 impl Tui {
     fn start(directory: &std::path::Path, trace: &std::path::Path) -> Self {
+        Self::spawn(
+            directory,
+            trace,
+            std::path::Path::new(env!("CARGO_BIN_EXE_strop")),
+            true,
+        )
+    }
+
+    fn spawn(
+        directory: &std::path::Path,
+        trace: &std::path::Path,
+        binary: &std::path::Path,
+        capture: bool,
+    ) -> Self {
         let (mut master, mut slave) = (-1, -1);
         let size = libc::winsize {
             ws_row: 30,
@@ -56,7 +70,7 @@ impl Tui {
             unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
             -1
         );
-        let mut command = Command::new(env!("CARGO_BIN_EXE_strop"));
+        let mut command = Command::new(binary);
         command
             .env_clear()
             .env(
@@ -70,12 +84,15 @@ impl Tui {
             .env("SHELL", "/bin/sh")
             .env("TERM", "xterm-256color")
             .env_remove("STROP_LOG")
-            .args(["--log-file"])
-            .arg(trace)
-            .arg("--log-terminal-content")
             .stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave));
+        if capture {
+            command
+                .args(["--log-file"])
+                .arg(trace)
+                .arg("--log-terminal-content");
+        }
         // SAFETY: pre_exec performs only async-signal-safe session/tty syscalls;
         // stdin is the child-owned duplicate of this test's PTY slave.
         unsafe {
@@ -523,4 +540,100 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         std::fs::read(directory.path().join("run-count")).unwrap(),
         before
     );
+}
+
+/// Opt-in native performance observation. Each sample waits until a real PTY's
+/// decoded cell grid shows the edit, rather than stopping at an input ACK or
+/// an internal semantic view. The same harness can drive a clean baseline
+/// artifact through STROP_BENCH_BINARY without changing the shipped editor.
+#[test]
+#[ignore = "native TUI performance measurement; run explicitly with --ignored --nocapture"]
+fn native_terminal_input_to_painted_frame_samples() {
+    use sha2::{Digest, Sha256};
+
+    let binary = std::env::var_os("STROP_BENCH_BINARY")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_BIN_EXE_strop")));
+    let mut artifact = File::open(&binary).unwrap();
+    let mut hasher = Sha256::new();
+    let mut bytes = [0; 65_536];
+    loop {
+        let count = artifact.read(&mut bytes).unwrap();
+        if count == 0 {
+            break;
+        }
+        hasher.update(&bytes[..count]);
+    }
+    let binary_sha256 = format!("{:x}", hasher.finalize());
+    let binary_bytes = artifact.metadata().unwrap().len();
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut notes = io::BufWriter::new(File::create(directory.path().join("notes.txt")).unwrap());
+    for line in 0..10_000 {
+        if line != 0 {
+            notes.write_all(b"\n").unwrap();
+        }
+        write!(notes, "line {line:05} worker frame fixture").unwrap();
+    }
+    notes.flush().unwrap();
+    drop(notes);
+    let trace = directory.path().join("no-capture.jsonl");
+    let mut tui = Tui::spawn(directory.path(), &trace, &binary, false);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b":e notes.txt\r");
+    tui.until(|screen| screen.contains("line 00000 worker frame fixture"));
+    tui.send(b":5000\rA");
+    tui.until(|screen| {
+        screen.contains("INSERT") && screen.contains("line 04999 worker frame fixture")
+    });
+
+    let warmup = 8;
+    let iterations = 64;
+    let mut raw_ms = Vec::with_capacity(iterations);
+    let mut expected = String::from("line 04999 worker frame fixture");
+    for index in 0..(warmup + iterations) {
+        expected.push('x');
+        let started = Instant::now();
+        tui.send(b"x");
+        tui.until_within(Duration::from_secs(15), |screen| {
+            numbered_line(screen, &expected)
+        });
+        if index >= warmup {
+            raw_ms.push((started.elapsed().as_secs_f64() * 1_000_000.0).round() / 1_000.0);
+        }
+    }
+    tui.send(b"\x1b:qa!\r");
+    assert!(
+        tui.child.wait().unwrap().success(),
+        "TUI did not exit cleanly"
+    );
+
+    let mut ordered = raw_ms.clone();
+    ordered.sort_by(f64::total_cmp);
+    let percentile = |n: usize| ordered[(n * ordered.len()).div_ceil(100) - 1];
+    let report = serde_json::json!({
+        "binary_sha256": binary_sha256,
+        "binary_bytes": binary_bytes,
+        "platform": {
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+        },
+        "fixture": {
+            "lines": 10_000,
+            "geometry": [120, 30],
+            "input": "one committed character at line 5000",
+            "capture": false,
+        },
+        "method": "PTY key write through VT100 decoded and verified TUI cell-grid paint",
+        "warmup_requests": warmup,
+        "measured_requests": iterations,
+        "raw_ms": raw_ms,
+        "input_to_grid_ms": {
+            "p50": percentile(50),
+            "p95": percentile(95),
+            "p99": percentile(99),
+            "max": ordered[ordered.len() - 1],
+        },
+    });
+    println!("STROP_TUI_BENCH={report}");
 }

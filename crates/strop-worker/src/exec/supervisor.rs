@@ -14,6 +14,16 @@ const DRAIN: Duration = Duration::from_millis(300);
 /// Wait-loop poll cadence.
 const POLL: Duration = Duration::from_millis(20);
 
+#[cfg(target_os = "macos")]
+#[link(name = "proc")]
+unsafe extern "C" {
+    fn proc_listpgrppids(
+        pgrpid: libc::pid_t,
+        buffer: *mut libc::c_void,
+        buffersize: libc::c_int,
+    ) -> libc::c_int;
+}
+
 /// The supervised session's settled outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Settlement {
@@ -343,15 +353,27 @@ impl Running {
         }
         // SAFETY: this positive PID belongs to our unreaped child, launched as
         // a session leader; negation targets only that private group. ESRCH
-        // means the group is already empty, which is the goal.
+        // means the group is already empty.
+        debug_assert_ne!(shared.pid, 0);
         if unsafe { libc::kill(-(shared.pid as libc::pid_t), signal) } == -1 {
             let error = std::io::Error::last_os_error();
-            if error.raw_os_error() != Some(libc::ESRCH) {
-                return Err(ExecError::Supervisor {
-                    stage: "kill-group".into(),
-                    diagnostics: error.to_string(),
-                });
+            if error.raw_os_error() == Some(libc::ESRCH) {
+                return Ok(());
             }
+            // XNU skips zombies in a group signal and returns EPERM when
+            // only the unreaped leader remains. Do not forgive EPERM for a
+            // live leader or any descendant we failed to kill.
+            #[cfg(target_os = "macos")]
+            if error.raw_os_error() == Some(libc::EPERM)
+                && self.poll_record()?.is_some()
+                && sole_zombie_leader(shared.pid as libc::pid_t)
+            {
+                return Ok(());
+            }
+            return Err(ExecError::Supervisor {
+                stage: "kill-group".into(),
+                diagnostics: error.to_string(),
+            });
         }
         Ok(())
     }
@@ -376,6 +398,26 @@ impl Running {
             }
         }
     }
+}
+
+/// The zombie remains unreaped, so its PID/PGID cannot be reused. An
+/// authoritative group list containing only that PID proves there is no
+/// live member left to signal or spawn another descendant. A refused or
+/// truncated listing, including a full fixed buffer, never proves absence.
+#[cfg(target_os = "macos")]
+fn sole_zombie_leader(pid: libc::pid_t) -> bool {
+    let mut members = [0 as libc::pid_t; 64];
+    // SAFETY: libproc writes at most the supplied 256-byte stack buffer.
+    // XNU's PROC_PGRP_ONLY list traverses both allproc and zombproc;
+    // proc_listpgrppids reports the number of written PID entries.
+    let count = unsafe {
+        proc_listpgrppids(
+            pid,
+            members.as_mut_ptr().cast(),
+            std::mem::size_of_val(&members) as libc::c_int,
+        )
+    };
+    count == 1 && members[0] == pid
 }
 
 impl Drop for Running {

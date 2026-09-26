@@ -545,6 +545,24 @@ stdin differs from revoking its lease; killing local ssh/docker alone is not evi
 of remote descendant cleanup. Borrowed targets are not killed as owned launches.
 Remote partition/escaped-session/supervisor-death limitations remain explicit.
 
+Native macOS qualification found a real supervisor fault: after a recorded
+exit, XNU can return `EPERM` for `kill(-pgid, SIGKILL)` when only the
+unreaped group leader remains. [XNU `killpg1`][xnu-killpg] filters
+zombies, then returns `EPERM` with no signalable member; `EPERM` can
+also mean a *live* inaccessible descendant. Never broadly forgive
+the errno or reap first (that drops the PGID reservation). On macOS
+only, while the leader remains unreaped, accept `EPERM` **solely** if
+the bounded group-member enumeration contains exactly that known
+zombie leader; fail closed on any other member, refusal, or truncation.
+The host's system `libproc` is an explicit new macOS runtime trust
+dependency; the native artifact gate must permit only that system
+library and exercise direct supervisor plus framed exec/PTY exits on
+both Intel and Apple Silicon. Linux retains its existing `ESRCH` rule.
+[XNU's group-list API][xnu-proc-list] includes live and zombie lists.
+
+[xnu-killpg]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
+[xnu-proc-list]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c
+
 ### Bounds, scheduling and terminal
 
 Bound frames, admitted requests, input/output chunks, retained snapshots, service
@@ -1177,37 +1195,57 @@ and three additional conditional retirement theorems; the matched
 foreign-context negative proof fails as required. Those model proofs
 do not establish OS lock behavior or native macOS/arm execution.
 
-### WK20 scoped static worker and UI measurements: local Linux only
+### WK20 scoped static worker, UI and TUI measurements: local Linux only
 
 On the WSL2 Ryzen 9950X3D, clean pre-worker `a05d84f` and the
-current stripped 47,373,648-byte x86_64 musl worker (`sha256
+sampled pre-macOS-fix stripped 47,373,648-byte x86_64 musl worker (`sha256
 67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130`)
-each ran eight warmups and 64 real Hello/Welcome launches. Baseline
-versus current readiness p50 was 0.933/0.730 ms, p95 1.241/0.852 ms,
-p99/max 1.493/0.908 ms; the binaries were 46,226,704/47,373,648
-bytes. The same current worker also completed eight warmups and 64
-serial Health requests through its real framed IPC: write+flush to
-complete result p50 0.201 ms, p95 0.247 ms, p99/max 0.292 ms.
+each ran eight warmups and 64 real Hello/Welcome launches (pre-worker
+protocol 1; native worker protocol 2). Baseline/current readiness p50
+was 0.731/0.808 ms, p95 0.866/0.954 ms, p99/max 1.115/1.459 ms;
+the binaries were 46,226,704/47,373,648 bytes. The sampled worker
+completed eight warmups and 64 serial Health requests through
+real framed IPC: write+flush to result p50 0.203 ms, p95 0.275 ms,
+p99/max 0.320 ms. Neither protocol-different warm launches nor these
+samples establish a speedup.
 `verification/bench_worker.py` and
 `verification/bench_worker_roundtrip.py` pin raw samples, artifact
 digests, RSS/threads and request bytes in `verification/measurements/`.
 
-The same clean pre-worker and dirty worker artifacts each ran eight
+The same clean pre-worker and sampled worker artifacts each ran eight
 warmups and 64 real `--ui-stdio` committed-text actions after the
 editor opened a 10,000-line file through one live worker at 120×40.
 `verification/bench_ui_input_frame.py` checks that each complete
 semantic-view frame visibly contains the next edit on line 5000.
-Baseline/current write+flush→view p50 was 0.226/0.233 ms, p95
-0.301/0.388 ms, p99/max 0.502/0.502 ms. The higher current p95
+Baseline/current write+flush→view p50 was 0.226/0.235 ms, p95
+0.297/0.330 ms, p99/max 0.427/0.352 ms. The higher current p95
 is recorded, not called a no-regression result. Raw samples, framed
 bytes and observed worker/editor RSS and thread counts are archived.
 
-The schema-4 diagnostic freeze checks these artifact, fixture, method
-and raw-percentile bindings, but records a dirty worktree; `--check`
-refuses release qualification. The UI-stdio semantic view is not
-the actual TUI cell-grid paint. LSP sync, terminal load, cold/warm
-SSH/container deployment and native macOS/arm remain unmeasured;
-`WPERF-FULL` remains blocked.
+On the same two static artifacts, the real 120×30 TUI opened the
+10,000-line worker-backed file and completed eight warmups plus 64
+single-character edits. The opt-in
+`terminal_editor::native_terminal_input_to_painted_frame_samples`
+waits until the VT100-decoded **cell grid** displays each exact edit:
+baseline/current key-write→paint p50 1.065/1.047 ms, p95
+1.865/1.626 ms, p99/max 1.913/2.850 ms. These Linux Docker-on-WSL2
+samples do not establish no regression at the higher current p99.
+
+The schema-5 diagnostic freeze checks artifact, fixture, method and
+raw-percentile bindings, but records a dirty worktree; `--check`
+refuses release qualification. LSP sync/request, terminal output under
+load, cold/warm SSH/container deployment and transfer/retirement
+high-water marks remain unmeasured. PR native CI run
+[`36243016093`](https://github.com/stropdev/strop/actions/runs/36243016093)
+found macOS exec/PTY `Lost` exits and missing nested `nvim` on both GNU
+runners. After provisioning that test fixture, run
+[`36244126275`](https://github.com/stropdev/strop/actions/runs/36244126275)
+passed native x86_64 and aarch64 GNU Store, worker client and editor
+journeys. Both macOS runners still failed the direct supervisor test:
+their zombie-only `kill(-PGID)` returned `EPERM`. The guarded `libproc`
+repair above has not yet passed native Mac CI, and the passing GNU run
+predates this source change. Mac/arm final-candidate qualification
+and full performance remain blocked.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Measure warm real-worker control envelope write → complete response frame.
 
-This is a scoped Linux local IPC measurement, not editor input→render,
+This is a scoped local IPC measurement, not editor input→render,
 an LSP request, SSH/container deployment, or terminal throughput. The
 worker is one real process; no Python code is on its serving path. Run
-with the named binary/profile on the same native host as the other
-measurements; the method requires /proc for process samples.
+with the named release binary/profile on each native Linux/macOS host.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from bench_worker import frame, percentiles, process_state
+from bench_worker import cpu_model, frame, percentiles, process_state
 
 
 def encoded(message: dict) -> bytes:
@@ -46,8 +45,8 @@ def roundtrip(child: subprocess.Popen, session: dict, request_id: int) -> tuple[
 
 
 def measure(args: argparse.Namespace) -> dict:
-    if platform.system() != "Linux":
-        raise ValueError("warm worker process measurements require Linux /proc")
+    if platform.system() not in ("Linux", "Darwin"):
+        raise ValueError("warm worker process measurements require Linux /proc or macOS ps")
     binary = Path(args.binary)
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("--binary must name an executable release artifact")
@@ -75,12 +74,7 @@ def measure(args: argparse.Namespace) -> dict:
             raise RuntimeError(f"worker rejected requested identity: {welcome}")
         session = welcome["session"]
         rss_kib, threads = process_state(child.pid)
-        cpu = next(
-            (line.split(":", 1)[1].strip()
-             for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines()
-             if line.startswith("model name")),
-            "unreported",
-        )
+        cpu = cpu_model()
         for request_id in range(1, args.warmup + 1):
             roundtrip(child, session, request_id)
         samples = [
