@@ -1,0 +1,80 @@
+{
+  "baseline": {
+    "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+    "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+    "measurement": "verification/measurements/0058-linux-x86-preworker.json",
+    "sha256": "7bd6d1f8c00c2e63615453524779bbee9fc04cf2748e526f7abe9e1383f24cc2"
+  },
+  "candidate": {
+    "artifact_sha256": "67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130",
+    "commit": null,
+    "measurement": "verification/measurements/0058-linux-x86-worker.json",
+    "sha256": "e697a522e359bc3b54a9a6fd38c3d002f1f75eec7693e2fcd193c2d0cddf430e",
+    "state": "working tree dirty; no release-qualified source commit"
+  },
+  "method": {
+    "excludes": [
+      "SSH/container cold deployment or cache reuse",
+      "input to frame",
+      "LSP request and sync under load",
+      "terminal sustained throughput",
+      "transport bytes and retirement high-water marks",
+      "macOS and aarch64 native targets"
+    ],
+    "harness": "verification/bench_worker.py",
+    "measures": "process spawn through decoded Welcome; /proc RSS and threads immediately at welcome",
+    "percentile": "nearest rank",
+    "samples_per_artifact": 64,
+    "sha256": "0edf795cceea3dae5fa3969328fac8be0659fd6aec352785931239bbd9445ed8",
+    "warmup": 8
+  },
+  "observed": {
+    "baseline_bytes": 46226704,
+    "baseline_ready_ms": {
+      "max": 1.493,
+      "p50": 0.933,
+      "p95": 1.241,
+      "p99": 1.493
+    },
+    "baseline_rss_kib": {
+      "max": 4452,
+      "p50": 4324,
+      "p95": 4408,
+      "p99": 4452
+    },
+    "baseline_threads": {
+      "max": 2,
+      "p50": 2,
+      "p95": 2,
+      "p99": 2
+    },
+    "bytes_delta": 1146944,
+    "candidate_bytes": 47373648,
+    "candidate_ready_ms": {
+      "max": 0.908,
+      "p50": 0.73,
+      "p95": 0.852,
+      "p99": 0.908
+    },
+    "candidate_rss_kib": {
+      "max": 4764,
+      "p50": 4628,
+      "p95": 4756,
+      "p99": 4764
+    },
+    "candidate_threads": {
+      "max": 3,
+      "p50": 2,
+      "p95": 2,
+      "p99": 3
+    }
+  },
+  "platform": {
+    "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "profile": "release-musl-stripped"
+  },
+  "schema": 1,
+  "scope": "local x86_64-unknown-linux-musl worker handshake only; not a full WK20 latency or deployment comparison"
+}

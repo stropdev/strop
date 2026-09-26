@@ -70,6 +70,7 @@ impl Draft {
                     destination: Some(destination),
                     copy_version: CopyVersion::Stored,
                     expected_content: None,
+                    store: None,
                 }),
                 Some(Origin::Original(index)) => {
                     let source = self
@@ -100,6 +101,7 @@ impl Draft {
                             destination: Some(destination),
                             copy_version: CopyVersion::Stored,
                             expected_content: None,
+                            store: None,
                         });
                         condition(&mut result.sources, source);
                     }
@@ -117,6 +119,7 @@ impl Draft {
                         destination: Some(destination),
                         copy_version: self.copy_version.unwrap_or(CopyVersion::Stored),
                         expected_content: None,
+                        store: None,
                     });
                     condition(&mut result.sources, source);
                 }
@@ -138,6 +141,7 @@ impl Draft {
                 destination: None,
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
+                store: None,
             });
             condition(&mut result.sources, source);
         }

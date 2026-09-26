@@ -10,15 +10,20 @@ git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 strop-core = { path = "../strop-core", version = "0.35.0" }
 strop-workspace = { path = "../strop-workspace", version = "0.35.0" }
-# path dependency, no new features: remote Git only needs the bounded
-# remote-execution boundary (0036 RW8); endpoint identity lives in
-# strop-workspace.
 strop-remote = { path = "../strop-remote", version = "0.35.0" }
-# path dependency, no new features: container Git only needs the bounded
-# engine-probe/exec-capture boundary (0037 DC1b); container identity lives
-# in strop-workspace.
-strop-containers = { path = "../strop-containers", version = "0.35.0" }
+# path dependencies, no new features: worker-routed Git (0058 WK10) runs
+# the same finite commands through an admitted worker lease's exec family;
+# the lease is client state handed in by the editor, never constructed here.
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.35.0" }
+strop-worker-client = { path = "../strop-worker-client", version = "0.35.0" }
 
 [dev-dependencies]
 tempfile = "3"
 serde_json = "1"
+sha2 = "0.10"
+strop-containers = { path = "../strop-containers", version = "0.35.0" }
+strop-worker-deploy = { path = "../strop-worker-deploy", version = "0.35.0" }
+# dev only: the loopback worker crosses the real codec in-process, the
+# same handlers the shipped worker serves.
+strop-worker = { path = "../strop-worker", version = "0.35.0" }
+strop-remote = { path = "../strop-remote", version = "0.35.0", features = ["test-support"] }

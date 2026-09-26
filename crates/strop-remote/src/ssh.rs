@@ -97,15 +97,10 @@ pub(crate) fn sftp_subsystem(endpoint: &RemoteEndpoint) -> Command {
     command
 }
 
-/// A dedicated, noninteractive connection whose remote command is the
-/// supervised lifecycle bootstrap (`remote_line`), with all three pipes
-/// piped for the caller to own.
-///
-/// `remote_line` is one argv element — the entire supervised command
-/// string the remote login shell will parse. OpenSSH remote command
-/// arguments are not a native argv transport, so `remote_line` must
-/// already be correctly POSIX single-quote escaped by its builder (see
-/// `exec::supervisor::command_line`).
+/// A dedicated noninteractive OpenSSH command channel. The bootstrap
+/// and deployed-worker owners build `remote_line` from fixed source
+/// with dynamic words quoted by [`crate::bootstrap::quote`]. It is one
+/// shell-parsed command string, never a native argv transport.
 pub(crate) fn exec_command(endpoint: &RemoteEndpoint, remote_line: &str) -> Command {
     let mut command = base_command(endpoint);
     command.arg("--").arg(endpoint.host()).arg(remote_line);

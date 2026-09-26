@@ -8,11 +8,13 @@ description = "strop lsp: async-lsp client, server registry, diagnostics store"
 [dependencies]
 strop-core = { path = "../strop-core", version = "0.35.0" }
 strop-workspace = { path = "../strop-workspace", version = "0.35.0" }
-strop-containers = { path = "../strop-containers", version = "0.35.0" }
-strop-remote = { path = "../strop-remote", version = "0.35.0" }
 strop-trace = { path = "../strop-trace", version = "0.35.0" }
+# Every LSP server process belongs to its namespace's worker.
+# No second local supervisor or remote interpreter transport survives.
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.35.0" }
+strop-worker-client = { path = "../strop-worker-client", version = "0.35.0" }
 async-lsp = "0.2"
-tokio = { version = "1", features = ["rt", "process", "io-util", "time", "sync"] }
+tokio = { version = "1", features = ["rt", "io-util", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -22,6 +24,9 @@ ropey = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# dev only: the loopback worker crosses the real codec in-process, the
+# same handlers the shipped worker serves.
+strop-worker = { path = "../strop-worker", version = "0.35.0" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

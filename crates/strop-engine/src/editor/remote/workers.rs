@@ -20,33 +20,40 @@
 //! receipt for this context+principal) is quietly reused.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, OnceLock};
 
-use sha2::Digest as _;
+use parking_lot::Mutex;
 
 use strop_core::worker::CancelToken;
 use strop_remote::worker_transport::RemoteWorker;
-use strop_worker_deploy::deploy::{
-    deploy, ArtifactSupply, Consent, DeployOutcome, DeployRefusal, DeployRequest,
-};
-use strop_worker_deploy::manifest::ReleaseCatalog;
+use strop_worker_deploy::deploy::{deploy, ArtifactSupply, Consent, DeployOutcome, DeployRequest};
+use strop_worker_deploy::provider::DeployProvider;
+use strop_worker_deploy::VerifiedObject;
 use strop_workspace::operation::{FsFailure, FsFailureKind};
 use strop_workspace::RemoteEndpoint;
 
-/// The session's remote worker leases, shared with the filesystem jobs
-/// that route through them. Cheap to clone; one deployment per
-/// endpoint per session.
-#[derive(Clone, Default)]
-pub(crate) struct RemoteWorkers {
-    inner: Arc<Mutex<HashMap<RemoteEndpoint, RemoteWorker>>>,
+use crate::editor::namespace::map_client;
+use crate::editor::worker_catalog::{catalog_for, map_refusal, select_binary};
+
+pub(crate) struct WorkerReady {
+    pub worker: RemoteWorker,
+    pub target: String,
+    pub artifact: VerifiedObject,
 }
 
-fn lock(
-    workers: &Mutex<HashMap<RemoteEndpoint, RemoteWorker>>,
-) -> std::sync::MutexGuard<'_, HashMap<RemoteEndpoint, RemoteWorker>> {
-    workers
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+/// Deployment serializes only callers for the same endpoint. A ready
+/// lease is readable without taking that deployment lock, so editor
+/// input never waits behind SSH/bootstrap/upload on another thread.
+#[derive(Default)]
+struct EndpointLease {
+    ready: OnceLock<Arc<WorkerReady>>,
+    deploying: Mutex<()>,
+}
+
+/// Per-endpoint worker leases shared with filesystem jobs.
+#[derive(Clone, Default)]
+pub(crate) struct RemoteWorkers {
+    inner: Arc<Mutex<HashMap<RemoteEndpoint, Arc<EndpointLease>>>>,
 }
 
 fn failure(kind: FsFailureKind, detail: impl Into<String>) -> FsFailure {
@@ -58,7 +65,24 @@ impl RemoteWorkers {
     /// worker. Read paths route through this; its absence means the
     /// read-only SFTP path serves exactly as before.
     pub(crate) fn get(&self, endpoint: &RemoteEndpoint) -> Option<RemoteWorker> {
-        lock(&self.inner).get(endpoint).cloned()
+        self.get_ready(endpoint).map(|ready| ready.worker.clone())
+    }
+
+    pub(crate) fn get_ready(&self, endpoint: &RemoteEndpoint) -> Option<Arc<WorkerReady>> {
+        self.inner
+            .lock()
+            .get(endpoint)
+            .and_then(|lease| lease.ready.get())
+            .cloned()
+    }
+
+    /// Input-side observation only: never wait on the endpoint's SSH
+    /// deployment lock while rendering an explain buffer.
+    pub(crate) fn admitting(&self, endpoint: &RemoteEndpoint) -> bool {
+        self.inner
+            .lock()
+            .get(endpoint)
+            .is_some_and(|lease| lease.deploying.try_lock().is_none())
     }
 
     /// Admit a worker for one endpoint, deploying consent-gated on
@@ -73,11 +97,22 @@ impl RemoteWorkers {
         action: &str,
         token: &CancelToken,
     ) -> Result<RemoteWorker, FsFailure> {
-        // One admission per endpoint at a time: concurrent mutations
-        // must not race two deployments of the same artifact.
-        let mut workers = lock(&self.inner);
-        if let Some(worker) = workers.get(endpoint) {
-            return Ok(worker.clone());
+        let lease = {
+            let mut endpoints = self.inner.lock();
+            Arc::clone(
+                endpoints
+                    .entry(endpoint.clone())
+                    .or_insert_with(|| Arc::new(EndpointLease::default())),
+            )
+        };
+        if let Some(ready) = lease.ready.get() {
+            return Ok(ready.worker.clone());
+        }
+        // The network/deployment work holds ONLY this endpoint's lock.
+        // Lookups and unrelated endpoints remain nonblocking.
+        let _deploying = lease.deploying.lock();
+        if let Some(ready) = lease.ready.get() {
+            return Ok(ready.worker.clone());
         }
         let facts = strop_remote::bootstrap::discover(endpoint, token).map_err(|error| {
             failure(
@@ -94,22 +129,10 @@ impl RemoteWorkers {
                 ),
             ));
         };
-        // Supply: this install's own binary for a same-target endpoint.
-        // STROP_WORKER_BINARY is the explicit administrator-provisioned
-        // override (0058 §5; the test lanes use it for the stripped or
-        // static worker build of this exact checkout): the override's
-        // bytes are hashed, bound by the catalog entry and proven by
-        // the remote handshake exactly like the default — an invalid
-        // override never chooses another file.
-        let binary = match std::env::var_os("STROP_WORKER_BINARY") {
-            Some(override_path) => std::path::PathBuf::from(override_path),
-            None => std::env::current_exe().map_err(|error| {
-                failure(
-                    FsFailureKind::Io,
-                    format!("this install's own binary is unavailable: {error}"),
-                )
-            })?,
-        };
+        // A same-target install supplies its own executable; a foreign
+        // endpoint needs the explicit administrator-provisioned artifact.
+        // Either path still binds exact bytes and target at activation.
+        let binary = select_binary(target)?;
         let catalog = catalog_for(target, &binary)?;
         let provider =
             strop_remote::deploy_provider::SftpDeployProvider::connect(endpoint, &facts, token)
@@ -135,9 +158,38 @@ impl RemoteWorkers {
             },
         );
         match report.outcome {
-            DeployOutcome::Ready(ready) => {
+            DeployOutcome::Probed(ready) => {
                 let worker = RemoteWorker::connect(endpoint, &ready.object.path, target);
-                workers.insert(endpoint.clone(), worker.clone());
+                // The deployment handshake was a stopped probe. Do not
+                // publish this endpoint as ready until the actual worker
+                // has handshaken and registered its own cache lease.
+                worker.worker().capabilities().map_err(|error| {
+                    failure(
+                        FsFailureKind::Io,
+                        format!("live worker at {endpoint} could not start: {error}"),
+                    )
+                })?;
+                let maintenance = worker
+                    .worker()
+                    .collect_cache(token, &provider.endpoint().context)
+                    .map_err(map_client)?;
+                if let Some(error) = maintenance.failure {
+                    return Err(failure(
+                        error.kind,
+                        format!(
+                            "cache maintenance after {} retirements: {}",
+                            maintenance.report.removed_objects.len(),
+                            error.detail
+                        ),
+                    ));
+                }
+                let info = Arc::new(WorkerReady {
+                    worker: worker.clone(),
+                    target: target.to_owned(),
+                    artifact: ready.object,
+                });
+                let published = lease.ready.set(info);
+                debug_assert!(published.is_ok(), "one deployment per endpoint lock");
                 Ok(worker)
             }
             DeployOutcome::Fallback(fallback) => {
@@ -150,67 +202,6 @@ impl RemoteWorkers {
             )),
         }
     }
-}
-
-/// The deploy refusal mapped onto the filesystem taxonomy, keeping the
-/// precise reason text (selected target, version, destination).
-fn map_refusal(refusal: DeployRefusal) -> FsFailure {
-    let kind = match &refusal {
-        DeployRefusal::ConsentRequired { .. } => FsFailureKind::Permission,
-        DeployRefusal::OfflineNoArtifact { .. }
-        | DeployRefusal::ArtifactNotStaged { .. }
-        | DeployRefusal::PreinstalledInvalid { .. } => FsFailureKind::Unsupported,
-        DeployRefusal::IdentityMismatch { .. } => FsFailureKind::Protocol,
-        _ => FsFailureKind::Io,
-    };
-    failure(kind, refusal.to_string())
-}
-
-/// The catalog of this build's own release for the same-binary supply:
-/// the artifact entry's digest and size are computed over the exact
-/// local bytes — the caller-side supply verification the deployment
-/// contract requires (0058 §5: this install's own binary for a
-/// same-target endpoint).
-fn catalog_for(target: &str, binary: &std::path::Path) -> Result<ReleaseCatalog, FsFailure> {
-    let unreadable = |error: std::io::Error| {
-        failure(
-            FsFailureKind::Io,
-            format!("cannot read this install's binary: {error}"),
-        )
-    };
-    let bytes = std::fs::read(binary).map_err(unreadable)?;
-    let version = env!("CARGO_PKG_VERSION");
-    let digest: [u8; 32] = sha2::Sha256::digest(&bytes).into();
-    let sha256 = digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let body = serde_json::json!({
-        "schema": 1,
-        "product": "strop",
-        "version": version,
-        "tag": format!("v{version}"),
-        "published_at": "1970-01-01T00:00:00Z",
-        "artifacts": [{
-            "target": target,
-            "name": format!("strop-{version}-{target}.tar.gz"),
-            "sha256": sha256,
-            "bytes": bytes.len(),
-            "url": "",
-        }],
-        "worker": {
-            "protocol": strop_worker_protocol::PROTOCOL_VERSION,
-            "min_editor": strop_worker_deploy::MIN_EDITOR_VERSION,
-            "targets": [target],
-        },
-    })
-    .to_string();
-    ReleaseCatalog::parse(body.as_bytes()).map_err(|error| {
-        failure(
-            FsFailureKind::Protocol,
-            format!("this build's worker catalog does not parse: {error}"),
-        )
-    })
 }
 
 #[cfg(test)]
@@ -248,5 +239,37 @@ mod tests {
             catalog.compatibility("0.0.0", strop_worker_protocol::PROTOCOL_VERSION, target),
             strop_worker_deploy::Compatibility::Fallback(_)
         ));
+    }
+
+    /// An editor event may check a lease while that endpoint is still
+    /// deploying. It must get "not admitted" immediately rather than
+    /// waiting behind the SSH/upload job on the input→render path.
+    #[test]
+    fn lookup_does_not_park_behind_an_endpoint_deployment() {
+        use super::*;
+        let workers = RemoteWorkers::default();
+        let endpoint = RemoteEndpoint::parse("ssh://test.example").unwrap();
+        let lease = Arc::new(EndpointLease::default());
+        workers
+            .inner
+            .lock()
+            .insert(endpoint.clone(), Arc::clone(&lease));
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let deployment = std::thread::spawn(move || {
+            let _guard = lease.deploying.lock();
+            held_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        held_rx.recv().unwrap();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        let lookup = std::thread::spawn(move || reply_tx.send(workers.get(&endpoint)).unwrap());
+        assert!(reply_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("lookup waited for the deployment")
+            .is_none());
+        release_tx.send(()).unwrap();
+        deployment.join().unwrap();
+        lookup.join().unwrap();
     }
 }

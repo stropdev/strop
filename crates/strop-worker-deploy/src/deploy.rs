@@ -19,19 +19,20 @@
 //!    final path, binding verification to the exact object that will be
 //!    executed (never stage-then-blind-exec).
 //! 5. [`State::WriteReceipt`] — provenance/binding facts only.
-//! 6. [`State::Activate`] — the real handshake; activation, execution and
-//!    readiness stay separate outcomes, and a lease is registered so GC
-//!    never retires a live lease's object.
+//! 6. [`State::Activate`] — a short-lived real handshake proves that the
+//!    object can serve this release/target. Its process is stopped;
+//!    the caller must connect the actual worker before publishing ready.
 
 use std::path::{Path, PathBuf};
 
 use sha2::Digest;
 use strop_worker_protocol::PROTOCOL_VERSION;
 
-use crate::cache::{self, CacheError, CacheLayout, CacheReceipt, LeaseRecord, RECEIPT_SCHEMA};
+use crate::cache::{self, CacheError, CacheLayout};
 use crate::manifest::{ArtifactManifest, Compatibility, ReleaseCatalog};
 use crate::provider::{DeployProvider, HandshakeReport, ProviderError, RemoteKind};
 use crate::MAX_WORKER_BYTES;
+use strop_core::worker::cache_record::{CacheReceipt, RECEIPT_SCHEMA};
 
 /// The recorded states of one deploy run (the trace travels with the
 /// outcome so an interrupted deploy is observable, never silent).
@@ -47,7 +48,6 @@ pub enum State {
     VerifyObject,
     WriteReceipt,
     Activate,
-    RegisterLease,
 }
 
 /// Endpoint/principal-bound consent for a first deployment (0058 §5: an
@@ -114,9 +114,10 @@ pub enum DeployOrigin {
     Preinstalled,
 }
 
-/// Deployed, verified, handshake-checked and leased: ready.
+/// Verified object and successful short-lived deployment probe. The
+/// caller connects its own worker before publishing a live lease.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReadyDeployment {
+pub struct ProbedDeployment {
     pub object: VerifiedObject,
     pub origin: DeployOrigin,
     pub handshake: HandshakeReport,
@@ -125,11 +126,11 @@ pub struct ReadyDeployment {
 /// The honest outcome of one deploy run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeployOutcome {
-    /// Object verified and handshake captured with a live lease.
-    Ready(ReadyDeployment),
-    /// The object is verified and published, but launch/handshake/lease
-    /// failed: installed ≠ ready, reported as such. The object stays
-    /// cached for a later activation attempt.
+    /// Object verified and the temporary probe's handshake accepted.
+    /// This is not the editor's live worker session.
+    Probed(ProbedDeployment),
+    /// The object was published, but the probe launch, handshake or
+    /// cleanup failed: installed ≠ usable. The object remains cached.
     PublishedNotReady {
         object: VerifiedObject,
         origin: DeployOrigin,
@@ -481,7 +482,8 @@ fn publish_receipt_and_activate(
     let write_receipt = || -> Result<(), DeployRefusal> {
         if cache::read_receipt(provider, layout, &object.sha256)
             .map_err(at(State::WriteReceipt))?
-            .is_none()
+            .as_ref()
+            != Some(&receipt)
         {
             let bytes = serde_json::to_vec(&receipt).map_err(|error| DeployRefusal::Transfer {
                 state: State::WriteReceipt,
@@ -496,15 +498,25 @@ fn publish_receipt_and_activate(
     if let Err(refusal) = write_receipt() {
         return DeployOutcome::Refused(refusal);
     }
+    // The staged-activation kernel: a published, digest-verified object
+    // with a matching receipt is the only launch permission. The
+    // VerifiedObject carries the first two premises; re-reading the
+    // receipt checks that the third is still present and matches this
+    // release/target/object, not just that some JSON record parses.
+    let receipted = match cache::read_receipt(provider, layout, &object.sha256) {
+        Ok(Some(stored)) => stored == receipt,
+        Ok(None) => false,
+        Err(error) => return DeployOutcome::Refused(at(State::WriteReceipt)(error)),
+    };
+    if !strop_core::worker::deploy_policy::activation_admitted(true, true, receipted) {
+        return DeployOutcome::Refused(DeployRefusal::Transfer {
+            state: State::WriteReceipt,
+            error: ProviderError::Transport("activation lost its matching receipt premise".into()),
+        });
+    }
     trace.push(State::Activate);
-    match activate(
-        provider,
-        Some(layout),
-        &object,
-        &request.editor_version,
-        trace,
-    ) {
-        Ok(handshake) => DeployOutcome::Ready(ReadyDeployment {
+    match activate(provider, Some(layout), &object, &request.editor_version) {
+        Ok(handshake) => DeployOutcome::Probed(ProbedDeployment {
             object,
             origin,
             handshake,
@@ -563,8 +575,8 @@ fn deploy_preinstalled(
         bytes: bytes.len() as u64,
     };
     trace.push(State::Activate);
-    match activate(provider, None, &object, &request.editor_version, trace) {
-        Ok(handshake) => DeployOutcome::Ready(ReadyDeployment {
+    match activate(provider, None, &object, &request.editor_version) {
+        Ok(handshake) => DeployOutcome::Probed(ProbedDeployment {
             object,
             origin: DeployOrigin::Preinstalled,
             handshake,
@@ -573,22 +585,35 @@ fn deploy_preinstalled(
     }
 }
 
-/// State 6: launch the verified object directly into worker mode, check
-/// the real handshake and bind the reported identity to this client's
-/// exact release/target and wire protocol (a mismatch is a truthful
-/// refusal, never a negotiated downgrade). On success the lease is
-/// registered so lease-aware GC never retires this object under a live
-/// worker.
+/// Probe the verified object with a real handshake, bind its reported
+/// identity to the exact release/target/protocol, then retire only that
+/// temporary session's lease. The caller creates a new worker process:
+/// its fresh session registers its own lease before it is exposed.
 pub fn activate(
     provider: &impl DeployProvider,
     layout: Option<&CacheLayout>,
     object: &VerifiedObject,
     editor_version: &str,
-    trace: &mut Vec<State>,
 ) -> Result<HandshakeReport, DeployRefusal> {
     let handshake = provider
         .handshake(&object.path)
         .map_err(at(State::Activate))?;
+    if let Some(layout) = layout {
+        // The probe has been stopped by the provider. It must not pin
+        // the object as though it were the editor's later live worker.
+        // Its own orderly teardown can race this removal (container rm
+        // does not classify ENOENT); re-observe only on failure.
+        let path = layout.lease(handshake.session.lease.0);
+        if let Err(error) = provider.remove(&path) {
+            if provider
+                .lstat(&path)
+                .map_err(at(State::Activate))?
+                .is_some()
+            {
+                return Err(at(State::Activate)(error));
+            }
+        }
+    }
     let endpoint = provider.endpoint();
     for (field, reported, expected) in [
         (
@@ -614,20 +639,6 @@ pub fn activate(
                 reported,
             });
         }
-    }
-    if let Some(layout) = layout {
-        trace.push(State::RegisterLease);
-        let record = LeaseRecord {
-            lease: handshake.session.lease.0,
-            object_sha256: object.sha256.clone(),
-        };
-        let bytes = serde_json::to_vec(&record).map_err(|error| DeployRefusal::Transfer {
-            state: State::RegisterLease,
-            error: ProviderError::Transport(format!("lease encoding: {error}")),
-        })?;
-        provider
-            .write(&layout.lease(record.lease), &bytes)
-            .map_err(at(State::RegisterLease))?;
     }
     Ok(handshake)
 }

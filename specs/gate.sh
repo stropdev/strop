@@ -46,3 +46,5 @@ sh specs/install-gate.sh
 sh specs/notify-gate.sh
 # 0057 VF14: the UI-stdio session model (UiSession.tla).
 sh specs/ui-gate.sh
+sh specs/worker-session-gate.sh
+sh specs/worker-deploy-gate.sh

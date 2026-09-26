@@ -159,6 +159,73 @@ fn receipt_failure_publishes_but_never_claims_ready() {
 }
 
 #[test]
+fn lost_receipt_after_successful_write_never_activates() {
+    let provider = FakeProvider::new(FakeProvider::handshake_ok(VERSION));
+    let layout = layout(&provider);
+    provider.failures.borrow_mut().lose_receipt_after_write = true;
+    let dir = tempfile::tempdir().unwrap();
+    let local = local_binary(&dir, VERSION);
+    let sha = sha256_hex(&std::fs::read(&local).unwrap());
+
+    let report = deploy(&provider, &request(local));
+    assert!(matches!(
+        report.outcome,
+        DeployOutcome::Refused(DeployRefusal::Transfer {
+            state: strop_worker_deploy::deploy::State::WriteReceipt,
+            ..
+        })
+    ));
+    assert_eq!(
+        report.trace.last(),
+        Some(&strop_worker_deploy::deploy::State::WriteReceipt)
+    );
+    assert!(provider.entry(&layout.object(&sha)).is_some());
+    assert!(provider.entry(&layout.receipt(&sha)).is_none());
+    assert_no_partial_activation(&provider, &layout);
+}
+
+#[test]
+fn reused_object_reissues_receipt_for_exact_version_and_target() {
+    let provider = FakeProvider::new(FakeProvider::handshake_ok(VERSION));
+    let layout = layout(&provider);
+    let dir = tempfile::tempdir().unwrap();
+    let local = local_binary(&dir, VERSION);
+    let binary = std::fs::read(&local).unwrap();
+    let sha = sha256_hex(&binary);
+    let object_bytes = binary.len() as u64;
+    let stale = strop_core::worker::cache_record::CacheReceipt {
+        schema: strop_core::worker::cache_record::RECEIPT_SCHEMA,
+        context: provider.endpoint.context.clone(),
+        principal: provider.endpoint.principal.clone(),
+        version: "old-release".into(),
+        target: provider.endpoint.target.clone(),
+        object_sha256: sha.clone(),
+        object_bytes: 0,
+        tarball_sha256: "wrong-provenance".into(),
+    };
+    provider
+        .write(&layout.receipt(&sha), &serde_json::to_vec(&stale).unwrap())
+        .unwrap();
+
+    let request = request(local);
+    let report = deploy(&provider, &request);
+    assert!(
+        matches!(report.outcome, DeployOutcome::Probed(_)),
+        "{report:?}"
+    );
+    let actual = strop_worker_deploy::cache::read_receipt(&provider, &layout, &sha)
+        .unwrap()
+        .unwrap();
+    assert_eq!(actual.version, VERSION);
+    assert_eq!(actual.context, provider.endpoint.context);
+    assert_eq!(actual.principal, provider.endpoint.principal);
+    assert_eq!(actual.target, provider.endpoint.target);
+    assert_eq!(actual.object_sha256, sha);
+    assert_eq!(actual.object_bytes, object_bytes);
+    assert_eq!(actual.tarball_sha256, request.catalog.artifacts[0].sha256);
+}
+
+#[test]
 fn handshake_failure_is_published_not_ready() {
     let provider = FakeProvider::new(FakeProvider::handshake_ok(VERSION));
     let layout = layout(&provider);
@@ -188,34 +255,25 @@ fn handshake_failure_is_published_not_ready() {
 }
 
 #[test]
-fn lease_registration_failure_is_published_not_ready() {
+fn probe_lease_cleanup_failure_never_claims_a_live_worker() {
     let provider = FakeProvider::new(FakeProvider::handshake_ok(VERSION));
     let layout = layout(&provider);
-    // Only lease/receipt writes fail after the handshake succeeds... the
-    // receipt write happens first, so fail selectively by path is more
-    // than the fake supports; instead fail the write op after priming a
-    // valid receipt via a completed first deploy.
+    provider.failures.borrow_mut().remove =
+        Some(ProviderError::Transport("cannot retire the probe".into()));
+
     let dir = tempfile::tempdir().unwrap();
     let local = local_binary(&dir, VERSION);
-    let first = deploy(&provider, &request(local.clone()));
-    assert!(matches!(first.outcome, DeployOutcome::Ready(_)));
-    // Remove the registered lease, fail writes, redeploy: the cache hit
-    // path finds the receipt, reuses the object, then the lease write
-    // fails.
-    let leases = provider.names(&layout.leases_dir());
-    for lease in leases {
-        provider
-            .remove(&format!("{}/{lease}", layout.leases_dir()))
-            .unwrap();
-    }
-    provider.failures.borrow_mut().write = Some(ProviderError::Transport("dropped".into()));
+    let sha = sha256_hex(&std::fs::read(&local).unwrap());
     let report = deploy(&provider, &request(local));
     assert!(matches!(
         report.outcome,
         DeployOutcome::PublishedNotReady {
-            origin: DeployOrigin::Reused,
+            origin: DeployOrigin::Uploaded,
             ..
         }
     ));
-    assert_no_partial_activation(&provider, &layout);
+    assert!(provider.entry(&layout.object(&sha)).is_some());
+    assert!(provider.entry(&layout.receipt(&sha)).is_some());
+    assert!(provider.entry(&layout.lease(7)).is_some());
+    assert!(provider.names(&layout.staging_dir()).is_empty());
 }

@@ -52,6 +52,9 @@ impl Editor {
             Filesystem::Container(id) => self.containers.attached.get(id.as_str()).cloned(),
             _ => None,
         };
+        let container_worker = container
+            .as_ref()
+            .and_then(|identity| self.containers.workers.get(identity));
         let tx = self.io.tx.clone();
         let handle = worker::spawn(
             "directory-update",
@@ -77,6 +80,7 @@ impl Editor {
                                 &source.location,
                                 &client,
                                 container.as_ref(),
+                                container_worker.as_deref(),
                                 &token,
                             )
                             .map_err(|error| error.to_string())?;

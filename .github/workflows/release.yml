@@ -24,9 +24,55 @@ jobs:
       - uses: actions/checkout@v7
       - name: Protocol release gate
         run: docker compose run --build --rm model
+      - name: Locked workspace, native Store and real SSH gate
+        run: docker compose run --build --rm test
+      - name: Python-free real SSH deployment and worker parity
+        run: docker compose run --build --rm ssh-pythonfree
+      - name: Same-source Verus gate
+        run: docker compose run --build --rm verify
+      - name: Search, session and deploy TLAPS safety gates
+        run: docker compose run --build --rm tlaps
+      - name: Native correspondence and calibrated mutants
+        run: docker compose run --build --rm core-assurance
+      - name: Selected-context container worker gate
+        run: docker compose run --build --rm container-test
+      - name: Freeze exact committed worker candidate
+        run: |
+          python3 verification/check.py --release
+          python3 verification/freeze.py
+          python3 verification/freeze.py --check
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-source
+          path: dist/worker-candidate.json
 
-  # Per plan 0002 §1: musl-static linux via docker (rust:alpine is
-  # multi-arch — no cross config), native macOS on the arm runner.
+  # Execute native GNU workers on both architectures; musl artifact
+  # jobs below separately qualify static release binaries.
+  native-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, machine: x86_64 }
+          - { runner: ubuntu-24.04-arm, machine: aarch64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned compiler for native Git/library paths
+        run: |
+          sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
+          echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
+      - name: Execute native worker/store/terminal on the selected CPU
+        run: |
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          cargo test --locked -p strop-fs tests::store::
+          cargo test --locked -p strop-worker-client --test loopback
+          cargo test --locked -p strop-editor --test worker_stdio
+          cargo test --locked -p strop-editor --test terminal_editor
+
+  # Musl-static Linux builds run natively in multi-arch Docker; both
+  # macOS artifacts build and exercise PTY ownership on matching native
+  # Intel and Apple Silicon runners (no cross-only platform badge).
   build:
     strategy:
       fail-fast: false
@@ -34,7 +80,7 @@ jobs:
         include:
           - { target: x86_64-unknown-linux-musl, runner: ubuntu-latest, docker: true }
           - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm, docker: true }
-          - { target: x86_64-apple-darwin, runner: macos-14, cross: true }
+          - { target: x86_64-apple-darwin, runner: macos-15-intel }
           - { target: aarch64-apple-darwin, runner: macos-14 }
     runs-on: ${{ matrix.runner }}
     steps:
@@ -53,9 +99,12 @@ jobs:
           sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
           echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
 
-      - name: Verify native macOS terminal ownership
+      - name: Verify native macOS Store worker and terminal
         if: "!matrix.docker"
-        run: cargo test --locked -p strop-editor --test terminal_helper
+        run: |
+          cargo test --locked -p strop-fs tests::store::
+          cargo test --locked -p strop-worker-client --test loopback
+          cargo test --locked -p strop-editor --test terminal_editor
 
       - name: Build (macOS, native)
         if: "!matrix.docker"
@@ -126,7 +175,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: [build, protocol]
+    needs: [build, protocol, native-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -140,6 +189,9 @@ jobs:
           pattern: dist-*
           path: dist
           merge-multiple: true
+
+      - name: Revalidate source candidate after artifact merge
+        run: python3 verification/freeze.py --check --out dist/worker-candidate.json
 
       - name: Verify all four platform tarballs are present
         run: |

@@ -1,6 +1,5 @@
-//! The in-process supervisor: one owned target's lifecycle from spawn to
-//! reap. See `exec/mod.rs` for the topology and the semantics contract this
-//! ports from the Python supervisor.
+//! Worker-owned process-group supervision: one admitted target from
+//! spawn to final group cleanup and reap.
 
 use super::{ExecError, ExecSpec, StatusRecord, StdinMode};
 use parking_lot::Mutex;
@@ -9,11 +8,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use strop_core::worker::CancelToken;
 
-/// The last-chance drain on revoke: an already-settled exit recorded within
-/// this window beats the cancellation that raced it (the Python supervisor's
-/// 300 ms drain, unchanged).
+/// A recorded exit within this last-chance drain beats a racing
+/// cancellation or lease close.
 const DRAIN: Duration = Duration::from_millis(300);
-/// Wait-loop poll cadence; the Python loop polled at 200 ms.
+/// Wait-loop poll cadence.
 const POLL: Duration = Duration::from_millis(20);
 
 /// The supervised session's settled outcome.
@@ -23,8 +21,8 @@ pub enum Settlement {
     /// recorded status beats a concurrent cancellation or lease close.
     Recorded(StatusRecord),
     /// The lease was revoked: SIGTERM, the bounded grace, SIGKILL, then reap.
-    /// A target that exited on the TERM is still revoked — the drain runs
-    /// before the TERM, matching the Python ordering exactly.
+    /// A target that exits on TERM is still revoked: the drain
+    /// precedes the first signal.
     Revoked,
 }
 
@@ -40,7 +38,6 @@ struct Shared {
 pub struct Running {
     child: Child,
     grace: Duration,
-    nonce: [u8; 16],
     shared: Arc<Mutex<Shared>>,
     token: CancelToken,
     reaped: bool,
@@ -96,6 +93,12 @@ pub fn launch(spec: &ExecSpec, token: &CancelToken) -> Result<Running, ExecError
     let mut command = Command::new(OsStr::from_bytes(program));
     use std::os::unix::process::CommandExt;
     command.args(spec.argv()[1..].iter().map(|arg| OsStr::from_bytes(arg)));
+    // The admitted overlay sets its variables on top of this worker
+    // process's inherited environment (Command's default); an empty
+    // overlay inherits unchanged.
+    for (name, value) in spec.env() {
+        command.env(OsStr::from_bytes(name), OsStr::from_bytes(value));
+    }
     command
         .stdin(match spec.stdin_mode() {
             StdinMode::Finite => Stdio::null(),
@@ -136,6 +139,21 @@ pub fn launch(spec: &ExecSpec, token: &CancelToken) -> Result<Running, ExecError
             });
         }
     }
+    spawn_with_handshake(command, spec, token, handshake_read, handshake_write)
+}
+
+/// The shared spawn tail of [`launch`] and the WK12 PTY launch: cancel
+/// latch, spawn, typed launch classification and [`Running`]
+/// construction. The caller built `command` (stdio, pre_exec session
+/// setup) and owns the handshake pipe ends; `program` for diagnostics
+/// is the spec's argv[0].
+pub(crate) fn spawn_with_handshake(
+    mut command: Command,
+    spec: &ExecSpec,
+    token: &CancelToken,
+    handshake_read: std::os::fd::OwnedFd,
+    handshake_write: std::os::fd::OwnedFd,
+) -> Result<Running, ExecError> {
     let shared = Arc::new(Mutex::new(Shared {
         pid: 0,
         cancelled: false,
@@ -163,7 +181,7 @@ pub fn launch(spec: &ExecSpec, token: &CancelToken) -> Result<Running, ExecError
             // closing it the classify read would block instead of seeing the
             // dead child's EOF.
             drop(handshake_write);
-            return Err(classify_launch(&handshake_read, error, program));
+            return Err(classify_launch(&handshake_read, error, &spec.argv()[0]));
         }
     };
     drop(handshake_read);
@@ -172,7 +190,6 @@ pub fn launch(spec: &ExecSpec, token: &CancelToken) -> Result<Running, ExecError
     let running = Running {
         child,
         grace: spec.grace(),
-        nonce: spec.nonce(),
         shared,
         token: token.clone(),
         reaped: false,
@@ -211,11 +228,6 @@ fn classify_launch(
 }
 
 impl Running {
-    /// The session nonce marking this target's status records. Not a secret.
-    pub fn nonce(&self) -> [u8; 16] {
-        self.nonce
-    }
-
     /// The target's PID, which is also its process-group identity.
     pub fn id(&self) -> u32 {
         self.child.id()
@@ -380,7 +392,7 @@ impl Drop for Running {
     }
 }
 
-/// The bounded TERM→KILL grace, slept in slices like the Python supervisor.
+/// Sleep the bounded TERM→KILL grace in interruptible slices.
 fn sleep_grace(grace: Duration) {
     let slice = Duration::from_millis(50);
     let mut remaining = grace;

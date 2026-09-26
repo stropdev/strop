@@ -32,84 +32,54 @@
 
 mod connection;
 mod error;
+mod exec;
+mod lifecycle;
 mod payload;
+mod session;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
 
-use parking_lot::Mutex;
 use strop_core::worker::CancelToken;
 use strop_worker_protocol::message::NotifyCoverage;
 use strop_worker_protocol::{
-    Capabilities, ClientMessage, Event, ExecId, ExitStatus, ProtocolError, Request, ResultOutcome,
-    StreamChunk, StreamRef, Subscription,
+    Capabilities, ClientMessage, Event, ProtocolError, Request, ResultOutcome, StreamChunk,
+    StreamId, StreamRef, Subscription,
 };
 use strop_workspace::operation::{
-    LocatedObservation, OperationIntent, OperationRefusal, PreparedOperation, StepReceipt,
-    VerifiedOutcome,
+    FsFailure, LocatedObservation, OperationIntent, OperationRefusal, PreparedOperation,
+    StepReceipt, VerifiedOutcome,
 };
 use strop_workspace::{DirectorySnapshot, ResourceLocation};
 
-pub use connection::{StderrCapture, Transport};
+pub use connection::{ExecEvent, StderrCapture, StreamEvent, Transport};
 pub use error::ClientError;
 pub use payload::ReadPayload;
+pub use session::{ExecControl, ExecExit, ExecHandle, ExecStdin, PtySession};
 pub use strop_worker_protocol::request::EnvironmentOverride;
 pub use strop_worker_protocol::Refusal;
 
 use connection::{Attachments, Conn, Reply};
+use lifecycle::{Connector, Shared};
+use payload::CancelGuard;
+/// One per-lease nudge on an arriving stream chunk, shared across reconnects.
+pub(crate) type StreamNotifier = Arc<dyn Fn(StreamId) + Send + Sync>;
 
-/// How a connection is (re)created. Process transports carry a child to
-/// reap; factory transports (the in-process test seam and deployed
-/// remote/container workers) cross the same codec over caller-provided
-/// pipes. Each connector also pins the target triple the worker's
-/// handshake must report: this build's own, or the admitted endpoint's
-/// for a deployed worker (WK07/WK08).
-enum Connector {
-    /// `current_exe --worker-stdio`: the matching installed executable.
-    Installed,
-    /// An explicit artifact path (administrator-provisioned or test);
-    /// the handshake validates its identity exactly as for `Installed`.
-    Program(PathBuf),
-    /// Caller-provided duplex plus the endpoint target the handshake
-    /// must report (this build's triple for the in-process test seam).
-    Deployed {
-        expected_target: String,
-        factory: Box<dyn Fn() -> std::io::Result<Transport> + Send + Sync>,
-    },
+/// Deletions that did occur, plus an optional typed partial-pass
+/// failure. A lost reply is not a successful cache retirement claim.
+pub struct CacheGcOutcome {
+    pub report: strop_core::worker::cache_record::CacheGcReport,
+    pub failure: Option<FsFailure>,
 }
 
-impl Connector {
-    fn expected_target(&self) -> String {
-        match self {
-            Self::Installed | Self::Program(_) => strop_worker_protocol::TARGET_TRIPLE.to_string(),
-            Self::Deployed {
-                expected_target, ..
-            } => expected_target.clone(),
-        }
-    }
-
-    fn connect(&self) -> Result<Transport, ClientError> {
-        match self {
-            Self::Installed => {
-                let program = std::env::current_exe()
-                    .map_err(|error| ClientError::Spawn(format!("locate current exe: {error}")))?;
-                connection::spawn_worker(&program)
-            }
-            Self::Program(path) => connection::spawn_worker(path),
-            Self::Deployed { factory, .. } => factory()
-                .map_err(|error| ClientError::Spawn(format!("in-process transport: {error}"))),
-        }
-    }
-}
-
-struct Shared {
-    connector: Connector,
-    slot: Mutex<Option<Arc<Conn>>>,
-    /// Serializes (re)connection so one death never spawns two workers.
-    connecting: Mutex<()>,
-    events: Mutex<Option<Sender<Event>>>,
+/// Outcome and its precise connection owner: streaming payload credits
+/// must go to the incarnation that minted the stream, not a reconnect.
+struct CallResult {
+    outcome: ResultOutcome,
+    attachments: Attachments,
+    conn: Arc<Conn>,
+    id: strop_worker_protocol::RequestId,
 }
 
 /// A lease on one worker incarnation. Cheap to clone; clones share the
@@ -171,12 +141,7 @@ impl Worker {
 
     fn new(connector: Connector) -> Self {
         Self {
-            shared: Arc::new(Shared {
-                connector,
-                slot: Mutex::new(None),
-                connecting: Mutex::new(()),
-                events: Mutex::new(None),
-            }),
+            shared: Arc::new(Shared::new(connector)),
         }
     }
 
@@ -201,6 +166,9 @@ impl Worker {
         )?;
         if let Some(events) = self.shared.events.lock().as_ref() {
             conn.set_events(Some(events.clone()));
+        }
+        if let Some(notifier) = self.shared.stream_notifier.lock().as_ref() {
+            conn.set_stream_notifier(Arc::clone(notifier));
         }
         *self.shared.slot.lock() = Some(Arc::clone(&conn));
         Ok(conn)
@@ -252,19 +220,34 @@ impl Worker {
         }
     }
 
+    /// Install the stream-arrival hook (0058 WK12): the reader thread
+    /// fires it after routing a chunk, so fd-polling consumers (the
+    /// terminal service) wake on output rather than their poll timeout.
+    /// One hook per lease — the terminal service owns it; a second
+    /// install replaces the first. Re-installed on (re)connection.
+    pub fn set_stream_notifier(&self, notifier: impl Fn(StreamId) + Send + Sync + 'static) {
+        let notifier: StreamNotifier = Arc::new(notifier);
+        *self.shared.stream_notifier.lock() = Some(Arc::clone(&notifier));
+        if let Some(conn) = self.shared.slot.lock().as_ref() {
+            if conn.alive() {
+                conn.set_stream_notifier(notifier);
+            }
+        }
+    }
+
     /// One admitted request/response round trip with cancellation
     /// propagation: a cancelled token sends the protocol `cancel` for
     /// exactly this request id. Streaming families register their payload
     /// sinks on the reader thread before the reply is delivered.
     fn call(&self, token: &CancelToken, body: Request) -> Result<ResultOutcome, ClientError> {
-        Ok(self.call_inner(token, body, false)?.0)
+        Ok(self.call_inner(token, body, false)?.outcome)
     }
 
     fn call_streaming(
         &self,
         token: &CancelToken,
         body: Request,
-    ) -> Result<(ResultOutcome, Attachments), ClientError> {
+    ) -> Result<CallResult, ClientError> {
         self.call_inner(token, body, true)
     }
 
@@ -273,18 +256,30 @@ impl Worker {
         token: &CancelToken,
         body: Request,
         streaming: bool,
-    ) -> Result<(ResultOutcome, Attachments), ClientError> {
+    ) -> Result<CallResult, ClientError> {
         if token.is_cancelled() {
             return Err(ClientError::Cancelled);
         }
         let conn = self.connection()?;
+        self.call_inner_on(token, body, streaming, conn)
+    }
+
+    fn call_inner_on(
+        &self,
+        token: &CancelToken,
+        body: Request,
+        streaming: bool,
+        conn: Arc<Conn>,
+    ) -> Result<CallResult, ClientError> {
+        if token.is_cancelled() {
+            return Err(ClientError::Cancelled);
+        }
         let id = conn.alloc_request();
         let (tx, rx) = channel();
-        if streaming {
-            conn.register_streaming(id, tx);
-        } else {
-            conn.register_plain(id, tx);
-        }
+        // The client's inbound budget mirrors the worker's admission
+        // (WK11): overload fails typed here instead of queueing behind
+        // bulk traffic on the wire.
+        conn.admit(id, connection::Pending::new(tx, streaming, body.class()))?;
         let registration = token.register_cancel_resource({
             let conn = Arc::clone(&conn);
             move || {
@@ -320,7 +315,12 @@ impl Worker {
                 if !streaming {
                     token.clear_cancel_resource();
                 }
-                Ok((outcome, attachments))
+                Ok(CallResult {
+                    outcome,
+                    attachments,
+                    conn,
+                    id,
+                })
             }
             Ok(Reply::Protocol(error)) => {
                 token.clear_cancel_resource();
@@ -378,7 +378,12 @@ impl Worker {
         offset: u64,
         length: Option<u64>,
     ) -> Result<ReadPayload, ClientError> {
-        let (outcome, attachments) = self.call_streaming(
+        let CallResult {
+            outcome,
+            attachments,
+            conn,
+            id,
+        } = self.call_streaming(
             token,
             Request::Read {
                 location,
@@ -386,15 +391,19 @@ impl Worker {
                 length,
             },
         )?;
+        let cancel = CancelGuard(token.clone());
         match outcome {
-            ResultOutcome::ReadOpened { size, .. } => {
-                let Some((_, receiver)) = attachments.streams.into_iter().next() else {
+            ResultOutcome::ReadOpened { stream, size } => {
+                let Some((_, receiver)) = attachments
+                    .streams
+                    .into_iter()
+                    .find(|(candidate, _)| *candidate == stream)
+                else {
                     return Err(missing_stream("read payload"));
                 };
-                // The cancel hook stays registered while the payload
-                // streams; the payload clears it at completion or drop,
-                // so a mid-stream cancel still propagates.
-                Ok(ReadPayload::streaming(receiver, size, token.clone()))
+                Ok(ReadPayload::streaming(
+                    receiver, size, cancel, conn, stream, id,
+                ))
             }
             other => Err(unexpected(other)),
         }
@@ -468,6 +477,49 @@ impl Worker {
         }
     }
 
+    /// Read-only reconciliation of an old worker's uncertain effect.
+    /// The worker compares the captured native namespace before calling
+    /// the recovery verifier; old prepared write authority never revives.
+    pub fn verify_recovered(
+        &self,
+        token: &CancelToken,
+        attempt: StepReceipt,
+        namespace: strop_worker_protocol::NamespaceIdentity,
+    ) -> Result<VerifiedOutcome, ClientError> {
+        match self.call(
+            token,
+            Request::VerifyRecovered {
+                attempt: Box::new(attempt),
+                namespace,
+                binding: None,
+            },
+        )? {
+            ResultOutcome::Verified { verified, .. } => Ok(verified),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Retire only this selected endpoint's unleased cache artifacts.
+    /// Runs on the caller's job thread; a failed pass is a typed
+    /// maintenance outcome, never authority to use SFTP for edits.
+    pub fn collect_cache(
+        &self,
+        token: &CancelToken,
+        context: &str,
+    ) -> Result<CacheGcOutcome, ClientError> {
+        match self.call(
+            token,
+            Request::CollectCache {
+                context: context.to_owned(),
+            },
+        )? {
+            ResultOutcome::CacheCollected { report, failure } => {
+                Ok(CacheGcOutcome { report, failure })
+            }
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// Lease health: liveness without side effects.
     pub fn health(&self, token: &CancelToken) -> Result<(), ClientError> {
         match self.call(token, Request::Health)? {
@@ -505,65 +557,6 @@ impl Worker {
         }
     }
 
-    /// Spawn one admitted finite command or leased service. The exit
-    /// arrives on the handle's receiver even if the process settles
-    /// before this call returns — the reader thread registers the waiter
-    /// before delivering `ExecStarted`.
-    pub fn exec(
-        &self,
-        token: &CancelToken,
-        spec: strop_worker_protocol::ExecSpec,
-    ) -> Result<ExecHandle, ClientError> {
-        let conn = self.connection()?;
-        let (outcome, attachments) = self.call_streaming(token, Request::Exec { spec })?;
-        let (exec, stdin, stdout, stderr) = match outcome {
-            ResultOutcome::ExecStarted {
-                exec,
-                stdin,
-                stdout,
-                stderr,
-            } => (exec, stdin, stdout, stderr),
-            other => return Err(unexpected(other)),
-        };
-        let mut streams: HashMap<_, _> = attachments.streams.into_iter().collect();
-        let stdout = streams
-            .remove(&stdout)
-            .ok_or_else(|| missing_stream("exec stdout"))?;
-        let stderr = streams
-            .remove(&stderr)
-            .ok_or_else(|| missing_stream("exec stderr"))?;
-        let Some((_, exit)) = attachments.exits.into_iter().next() else {
-            return Err(ClientError::Protocol(ProtocolError::Stream {
-                message: "exec exit waiter was not attached".into(),
-            }));
-        };
-        Ok(ExecHandle {
-            id: exec,
-            conn,
-            stdin,
-            stdin_sequence: 0,
-            stdout: ReadPayload::new(stdout, None),
-            stderr: ReadPayload::new(stderr, None),
-            exit,
-        })
-    }
-
-    /// Revoke one exec's lease (TERM/grace/KILL, then the exit event).
-    pub fn exec_cancel(&self, token: &CancelToken, exec: ExecId) -> Result<(), ClientError> {
-        match self.call(token, Request::ExecCancel { exec })? {
-            ResultOutcome::Done => Ok(()),
-            other => Err(unexpected(other)),
-        }
-    }
-
-    /// Half-close one exec's stdin: EOF, not revocation.
-    pub fn exec_half_close(&self, token: &CancelToken, exec: ExecId) -> Result<(), ClientError> {
-        match self.call(token, Request::ExecHalfClose { exec })? {
-            ResultOutcome::Done => Ok(()),
-            other => Err(unexpected(other)),
-        }
-    }
-
     /// Authorized orderly shutdown: quiesce, drain, `bye`. The lease is
     /// dead afterwards; the next request spawns a fresh incarnation.
     pub fn shutdown(&self) -> Result<(), ClientError> {
@@ -574,16 +567,6 @@ impl Worker {
         }
         *self.shared.slot.lock() = None;
         Ok(())
-    }
-}
-
-impl Drop for Shared {
-    /// The last owner closed: the worker is retired (shutdown handshake,
-    /// bounded wait, reap). Never a daemon left behind.
-    fn drop(&mut self) {
-        if let Some(conn) = self.slot.lock().take() {
-            conn.retire();
-        }
     }
 }
 
@@ -634,62 +617,4 @@ fn missing_stream(name: &'static str) -> ClientError {
     ClientError::Protocol(ProtocolError::Stream {
         message: format!("{name} stream was not attached"),
     })
-}
-
-/// One admitted exec's client-side handle. Dropping the handle never
-/// kills the process; cancellation is explicit through
-/// [`Worker::exec_cancel`], and the exit event arrives regardless.
-pub struct ExecHandle {
-    id: ExecId,
-    conn: Arc<Conn>,
-    stdin: Option<strop_worker_protocol::StreamId>,
-    stdin_sequence: u64,
-    stdout: ReadPayload,
-    stderr: ReadPayload,
-    exit: Receiver<connection::ExitEvent>,
-}
-
-impl ExecHandle {
-    pub fn id(&self) -> ExecId {
-        self.id
-    }
-
-    /// The child's stdout payload (ordered chunks, `last`-terminated).
-    pub fn stdout(&mut self) -> &mut ReadPayload {
-        &mut self.stdout
-    }
-
-    /// The child's stderr payload.
-    pub fn stderr(&mut self) -> &mut ReadPayload {
-        &mut self.stderr
-    }
-
-    /// Write to a relayed stdin stream; `last` delivers EOF (the same
-    /// half-close semantics as [`Worker::exec_half_close`]).
-    pub fn write_stdin(&mut self, bytes: &[u8], last: bool) -> Result<(), ClientError> {
-        let Some(stream) = self.stdin else {
-            return Err(ClientError::Refused(
-                strop_worker_protocol::Refusal::UnknownHandle {
-                    message: "exec has no relayed stdin".into(),
-                },
-            ));
-        };
-        let sequence = self.stdin_sequence;
-        self.stdin_sequence += 1;
-        self.conn.write_chunk(&StreamChunk {
-            stream,
-            sequence,
-            last,
-            bytes: bytes.to_vec(),
-        })
-    }
-
-    /// Wait for the terminal status. `Lost` means the supervisor could
-    /// not attest the exit — it is never silently mapped to a code.
-    pub fn wait_exit(self) -> ExitStatus {
-        match self.exit.recv() {
-            Ok(event) => event.0,
-            Err(_) => ExitStatus::Lost,
-        }
-    }
 }

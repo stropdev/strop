@@ -1,11 +1,27 @@
 # 0058 — Unified native worker: local first, the same protocol remotely
 
-Status: **authorized standalone implementation and verification handoff**, after
-[0056 architecture](0056-architecture-prerequisites.md) and
-[0057 core verification](0057-core-verification-and-assurance.md), before completion.
-Those two foundation releases have already been dispatched. **Do not stop, fold
-this work into, or silently change the candidate being verified by that agent.**
-This document records a future release contract, not a shipped worker or passed proof.
+Status: **implementation in progress; not release-qualified**. The
+local/SSH/container worker routes, protected Store, session credits and
+PTY cutover have native evidence; `docker compose run --build --rm model`
+exhausts the WorkerSession and WorkerDeploy bounds and semantic mutants.
+`verification/check.py --release` still refuses `WPERF-FULL`
+and `WPLAT-NATIVE`. Worker-native retirement serializes registration
+with collection and its generalized lock/snapshot induction now
+passes; full native-platform and product-performance gates do not.
+WorkerSession, WorkerDeploy and WorkerCacheGC have symbolic TLAPS
+inductions over their TLC models; none proves Rust refinement,
+filesystem effects or a live peer. The original 0057
+archive has 75 claims and dirty inputs; the separate clean `a05d84f`
+Linux x86_64 pre-worker snapshot has 74 claims and six raw passing
+gate logs under
+`verification/baseline/0057-linux-evidence.json`. The omitted FS-STORE
+claim belongs to this worker cutover, not that clean pre-worker binary.
+Neither archive qualifies macOS/aarch64 target execution; those hosts
+are unavailable on this workstation. Scoped local warm-handshake and
+worker Health control-frame observations are in
+`verification/measurements/`; §10 still needs remote deployment,
+editor input/render, LSP and terminal-load measurements on every native
+target profile.
 
 ```text
 0054 filesystem -> 0055 TUI terminal -> 0056 architecture -> 0057 core verification
@@ -313,6 +329,17 @@ Use the completed trust/admission and install/catalog contracts. First deploymen
 requires an explicit authorized worker-using action and endpoint/principal-bound
 consent/policy; simply browsing a read-only SFTP host does not upload or execute code.
 Previously authorized deployment may quietly reuse a compatible verified cache.
+
+For containers, `:containers` / selecting one remains read-only attach
+without provisioning (0037 DC2). `:container-worker` on an attached
+buffer is the explicit worker-using action: it records consent for that
+exact engine, canonical ID, StartedAt and principal. A matching local
+release artifact is uploaded only to the selected principal's private
+cache; `STROP_CONTAINER_WORKER_PATH` selects an explicitly preinstalled
+verified in-container object without a write, including shellless images.
+Absent/mistyped overrides refuse, never choose another path. Git/LSP
+use only the admitted lease; SFTP/tar read-only browsing remains available
+when deployment is refused.
 Show the selected target, artifact version, destination and precise refusal reason.
 
 A private per-user Strop cache holds immutable version/target/content-addressed worker
@@ -339,11 +366,82 @@ Required install state machine:
 6. Check the real handshake and capture the lease; activation, execution and readiness
    are separate outcomes. Never report installed/ready merely because upload finished.
 
+Correspondence correction: the deployment provider's handshake is a
+short-lived *probe* whose process is stopped before the editor's actual
+worker connection. Its `Session.lease` cannot be used as the active
+client's cache lease. The real connection must register its own
+handshake lease against the verified object before that worker becomes
+visible as ready, and every later reconnect must register its fresh
+session before admitting work. A failed registration closes/refuses the
+connection. An administrator-provisioned object outside Strop's cache
+needs no cache record. Old/stale records remain conservative keep
+evidence until ownership and cross-client retirement are proved;
+inventing liveness from the probe's receipt is forbidden.
+
+A cached worker also re-observes its final executable name before
+Welcome. Linux refuses an unlinked `current_exe` (`(deleted)`) or a
+final path naming another inode; an invalid/private-directory or
+owner-exec observation refuses rather than accepting an unleased
+session. On macOS, the same path/owner/mode checks apply, but this
+Linux `/proc/self/exe` inode correspondence is not a macOS theorem;
+native macOS execution remains a release gate.
+
 Cache garbage collection respects live executable/worker leases and concurrent client
 versions. Keep cleanup bounded and scoped by receipts, never glob-delete unrelated
 files. Disk full, read-only/noexec cache, wrong architecture, corrupt artifact, failed
 rename/sync, concurrent cache replacement and interrupted launch have explicit outcomes.
 No guarantee assumes a hostile same-principal process or compromised host reports truth.
+
+GC exclusion implementation: scanning `leases/` and later unlinking
+an object is not atomic with another client's handshake record.
+The old standalone deployment-side collector could list no lease for
+X, let another worker register X and send Welcome, then unlink X from
+its stale snapshot; a second scan does not close the race. That code
+and its policy-only tests were removed. The selected native worker now
+owns `CollectCache { context }` after its live SSH/container handshake,
+before editor readiness. It accepts only the context recorded in its
+own private executable receipt, holds an exclusive OS-backed lock on
+a persistent, owner-private per-cache lockfile from the complete
+bounded lease snapshot through every scoped object/receipt unlink,
+and keeps its own executable plus **every** recorded lease. An invalid
+lease refuses before deleting anything; partial unlink reports exact
+removed objects and an `Incomplete` outcome. Preinstalled objects
+outside the managed cache are never GC targets.
+
+Every cache-executed worker acquires the same lock before verifying
+the final path/inode and matching release receipt, registering its own
+session lease and sending Welcome. The lock releases after its record
+is synced. `File::lock` provides OS-backed cross-process exclusion on
+Unix and unlocks with the handle on crash; only cooperating Strop
+processes and the selected same-principal OS are trusted
+([Rust File locking contract](https://doc.rust-lang.org/std/fs/struct.File.html#method.lock)).
+The lockfile inode is never unlinked/recreated. A concurrent publisher
+is not *live* until its actual worker registers under this lock; if
+collection wins first, final-path admission refuses instead of
+publishing a removed object as ready. A killed worker's stale lease
+remains conservative keep evidence, never aged out.
+
+`WorkerDeploy.tla` proves the atomic scoped-`Collect` abstraction, not
+an implementation refinement. `WorkerCacheGC.tla` now expands native
+admission and collection into `LockWelcome`/`Welcome`,
+`Acquire`/`ObserveLeases`/`Retire`/`Release`, crash and concurrent
+publication transitions. TLC exhausts 35,897 two-client/two-context/
+two-build states; four named mutants break unlocked Welcome, ignored
+leases, foreign-context retirement and unchecked final-path admission,
+with concurrent-worker/blocked-Welcome/crash witnesses reached.
+TLAPS discharges 447 obligations for `Init => Inv`,
+`Inv /\ [Next]_vars => Inv'` and the derived snapshot-completeness,
+live-object, stale-record and selected-context safety properties.
+The proof quantifies over arbitrary nonempty client/context/digest
+sets **disjoint from the non-value sentinel**; real client IDs,
+endpoint contexts and content addresses satisfy that typed premise.
+Another 34 obligations prove conditional retirement properties, and
+a matched foreign-context mutation fails its own scoped theorem.
+This proves model safety, not OS lock behavior, Rust refinement,
+filesystem durability or native macOS/arm execution. WDEP-GC has
+Linux real-worker correspondence and is native-tested; the other
+platforms remain WPLAT-NATIVE. Shellless/preinstalled and
+changed-context refusals remain honest under the cutover.
 
 Offline remote hosts work via client upload. If both ends are offline, a matching
 locally cached or explicitly preinstalled verified artifact is required; absence is
@@ -593,6 +691,53 @@ for arbitrary finite admitted sets and repeated transitions/restarts; no two-wor
 two-crash cap advertised as generalized. State actual storage/host/process premises.
 Liveness/fairness and dead-peer assumptions remain separate from inductive safety.
 
+Proof-engineering amendment (2026-09-25): TLAPS 1.5 cannot translate
+`state' = [state EXCEPT !.field[key] = value]` when `state` is a nested
+record. Normalize the **same** WorkerSession/WorkerDeploy transition
+relation into explicit full-state record constructors with one-level
+function updates, not a separate easy-to-prove model. Before relying
+on any theorem, require the original bounded TLC state counts,
+attributed mutants and reachability witnesses to agree, then discharge
+init/induction/observable consequences with the pinned backend.
+Equal finite counts are correspondence evidence, never a proof of
+general equivalence or a substitute for the TLAPS gate.
+
+WorkerSession now uses that full-state normalization. A fresh stream
+registration initializes all per-stream status fields, matching the
+native `StreamRegistration::new`; TLC still reaches exactly 232,371
+joint, 92,621 two-client Store and 70,733 two-client stream states,
+with all seven semantic mutants and reachability witnesses intact.
+The pinned TLAPS gate proves 274 WorkerSession obligations, including
+initialization, 19-action-plus-stutter induction and the safety
+corollary for symbolic positive bounds and arbitrary nonempty sets.
+A matched clean Commit theorem proves two obligations; the stale-
+commit mutant fails its `NoStaleCommit` step (one of two obligations).
+This proof is model safety only; it does not verify OS effects or the
+caller facts supplied to the same-source Rust kernels below.
+
+WorkerDeploy uses the same normalization (18-field StateRecord with
+one-level function updates, the record-set spelling of Targets and an
+explicit published-object premise in VerifyObject matching the native
+final-path verifier). TLC reaches exactly the same 396,985-state
+two-client graph and 929-state two-target graph with all seven semantic
+mutants and witnesses intact. The pinned TLAPS gate proves 565
+WorkerDeploy obligations: initialization, 15-action-plus-stutter
+induction over arbitrary nonempty Clients/Contexts/Digests with
+MUTATION=0, and the consent/activation/context/cleanup/lease safety
+corollary. A matched scoped-Collect theorem proves ten obligations;
+the cross-context cleanup mutant fails its `OwnedCleanup` step. Like
+WorkerSession, this proves model safety, not host durability or refinement.
+
+The worker release's same-source Rust proof boundary now additionally
+covers framing header/body/slice admission, the observed Unconfirmed
+receipt and namespace gate for read-only recovery, terminal delivery
+after cancellation settles, 64-lowercase-hex content addresses,
+protocol/version/target admission, matching-receipt activation and
+live-lease keep decisions. Production codec, worker, deployment and GC
+call the verified functions directly. Decoder scanning, source
+attestation, receipt provenance, provider write/rename durability and
+global lease liveness are not established by those pure proofs.
+
 ### Same-source Verus
 
 Prove the shipped pure admission/transition code for framing bounds/length arithmetic,
@@ -770,10 +915,11 @@ so a restarted worker/editor cannot apply an old session's prepared
 operation. The exec supervisor is ported to Rust in strop-worker
 (setsid launch with pgid reservation, typed launch classification —
 chdir/not-found/not-executable never disguised as exits, half-close vs
-revoke, TERM/grace/KILL, group reaping, byte-compatible STROP-SUP-v1
-records). Porting found and fixed two real deadlocks (handshake fd
-retention, grandchild pipe inheritance). Evidence: strop-fs 15,
-strop-worker 14 tests green.
+revoke, TERM/grace/KILL, group reaping). WK14 later removed the
+test-only Python-compatible nonce record; typed `exec_exit` owns
+terminal status on the worker wire. Porting found and fixed two real
+deadlocks (handshake fd retention, grandchild pipe inheritance).
+Evidence at landing: strop-fs 15, strop-worker 14 tests green.
 
 ### WK04 local worker mode: landed (2026-09-17)
 
@@ -831,7 +977,7 @@ strop-worker notify 15 real-kernel integration tests, engine
 subscription/reload/dirty/overflow/staleness tests, picker incremental
 e2e through the real pipeline.
 
-### WK05/WK06 artifacts and deployment: landed (2026-09-24)
+### WK05/WK06 artifacts and deployment: deployed; worker-owned GC native-tested on Linux
 
 The release catalog carries the worker compatibility manifest (protocol
 version, minimum editor version, per-target artifact facts), generated
@@ -845,16 +991,29 @@ an endpoint requires explicit consent) → Upload (uniquely-owned staging
 via authenticated providers) → VerifyTransfer (read-back hash+size) →
 Publish (atomic, content-addressed objects/<sha256>) → VerifyObject
 (re-hash at the final path + owner-exec mode — verification binds to
-the executed object) → receipt → Activate (real handshake; identity
-mismatch refuses, never downgrades) → lease registration. Interruption
-removes only positively-owned staging and reports honestly
-(PublishedNotReady ≠ Ready); offline with no local supply is a typed
-refusal with zero endpoint contact. The provider trait admits only
+the executed object) → receipt → Probe (short-lived real handshake,
+identity mismatch refuses) → retire the probe → connect the actual
+worker, which writes its own session-specific cache lease before
+Welcome and before editor readiness is published. A verified probe
+is not itself a live editor worker. Interruption removes only
+positively-owned staging and reports honestly
+(PublishedNotReady ≠ Probed ≠ live ready); offline with no local
+supply is a typed refusal with zero endpoint contact. The provider
+trait admits only
 put/get/rename/chmod/stat/readdir — no PATH/rc/image/glob-delete
-operation is representable. GC keeps the current object and every
-live-lease reference, retires only proven owned content-addressed
-objects. Evidence: hermetic deploy/interrupt/GC fixtures + catalog
-wire-shape pins in tests/release-catalog.sh + tests/install.sh.
+operation is representable. The obsolete unlocked deployment-side GC
+and policy-only tests were deleted. The actual admitted worker now
+collects scoped old objects/receipts over the framed protocol, under
+the same OS lock that guards new worker lease registration. Its own
+private matching release receipt binds the selected context. Real
+two-worker processes, Python-free SSH and container provider/editor
+journeys verify the current object and every live lease survive while
+an old unleased object retires. The generalized lock/snapshot
+induction now passes; native macOS/arm execution remains a separate
+WPLAT-NATIVE release gate.
+Evidence: hermetic deployment/interruption and real worker cache
+fixtures, plus catalog wire-shape pins in tests/release-catalog.sh and
+tests/install.sh.
 
 ### WK07 SSH worker transport: landed (2026-09-24)
 
@@ -884,6 +1043,13 @@ watched directory self-hints every record — subscriptions suppress
 under tape record/replay (the product-level fix belongs to the
 trace/notify owners).
 
+The separate `ssh-pythonfree` image uses the pinned Alpine builder
+without installing Python, adds only OpenSSH, and runs the same
+deploy→handshake→read/write/notify parity fixture over a real local
+sshd. `! command -v python3` gates its build; `python`, `python2`
+and `python3` were also absent in the executed image. The CI gate
+repeats this distinct remote-host portability check.
+
 ### WK08 container worker deploy: landed (2026-09-24)
 
 Container worker deployment/exec/cleanup rides the captured AR07
@@ -909,3 +1075,144 @@ under -i (AR07 consulted only stderr), and ranged worker reads
 announced the full file size while streaming the range. The full
 namespace-dispatch migration of editor consumers stays with WK09 per
 plan sequencing.
+
+### WK17/WK18 proof and correspondence: partial
+
+The normalized WorkerSession and WorkerDeploy TLC graphs and matched
+negative controls remained intact while TLAPS discharged 274 and 565
+inductive obligations respectively. The shipped Verus kernels include
+framing, session admission, recovered-Store receipt/namespace admission,
+terminal delivery, deploy catalog/content-address/activation and
+lease-aware keep decisions. The recovered verifier takes its
+`Unconfirmed` premise from the actual `StepReceipt`, not the request
+name: a real worker regression first reproduced a committed receipt
+wrongly entering recovered verification, then confirmed refusal. The
+deploy receipt-to-activation path likewise reissues mismatched receipt
+facts and refuses on a post-write loss; hermetic provider failures and
+a real OpenSSH/Python-free lane exercise their separate I/O premises.
+
+The locked workspace gate exposed a native read-stream fault:
+an exact-length range enqueued `last=true` and looped once more to
+enqueue a second terminal marker. The client's first marker retired
+the stream; the second could poison its session as an unknown stream.
+`read_streaming` now returns after that final chunk, and the loopback
+journey checks a live health request before its next read. This is a
+real codec/worker/client correspondence fix, not a preview exception.
+
+The inventory checker re-pinned the real `worker-serve` evidence after
+this fix. `remote-save` and `worker-recovery` also own the shared
+`serve/fs.rs` file; their pins needed an explicit reviewed `--force`
+for this read-only-stream change, which did not alter either boundary's
+Store or recovery decision. `worker-protocol` needed two reviewed
+forces for unrelated core-module edits: rustfmt's declaration ordering
+and the shared cache-record module registration. Neither changes the
+protocol boundary; live-lease evidence is in `worker-serve` and
+`worker-deployment`.
+
+The cache cutover adds only `Worker::collect_cache` and
+`CacheGcOutcome` in `strop-worker-client/src/lib.rs`; existing Store
+and recovery client methods and receipts do not change. It also adds
+the distinct `CollectCache`/`CacheCollected` protocol variant with
+Standard scheduling class in `strop-worker-protocol/src/request.rs`,
+without changing the exec request/result or its supervision class.
+`remote-save`, `worker-recovery` and `exec-supervision` own those
+shared files but their named behavior/evidence did not change; the
+reviewed `check.py --stamp --force` for these three rows rebinds only
+this additive unrelated source drift. The new cache behavior has
+separate `worker-deployment`/`worker-protocol` evidence.
+
+File-size discipline: `strop-worker-client/src/lib.rs` had crossed the
+800-line ceiling, and `connection.rs` was at 822 lines. The unchanged
+exec/PTY client API and its incarnation-bound controls now live in
+`exec.rs`; inbound result/event/chunk routing and its 64-chunk budget
+live in `connection/reader.rs`. The root modules retain their API and
+connection state; LSP references identify every `exec`, `exec_pty`
+and control caller. Real loopback exec, saturated PTY and large read
+journeys passed after the move. `remote-save`, `worker-recovery` and
+`worker-deployment` only lose unrelated exec code from their shared
+`lib.rs`; `exec-supervision`, `worker-streams` and `worker-serve`
+have their new owning source files registered without changes to the
+named test bodies. Reviewed `--force` re-pins those six rows for a
+code-only extraction; no safety claim or kill was transferred solely
+by the new path.
+
+The real OpenSSH journey reproduced another correspondence defect:
+deployment had persisted the short-lived probe session's lease while
+the editor's subsequent live worker had no matching cache record.
+The cached worker now records its own lease before Welcome and removes
+it on orderly teardown; the editor's SSH/container admission waits
+for this actual connection before publishing ready. Reconnects mint
+new records, while an interrupted worker may leave a conservative
+stale record. Probe cleanup and real SSH/container lease assertions
+are new correspondence evidence; later worker-owned collection is
+separate from this live-lease admission repair.
+
+The real-binary test then exposed a related gap: an object unlinked
+after exec but before Hello could still send Welcome because the
+Linux `current_exe` basename gained `(deleted)` and bypassed the
+cache-lease branch. It now refuses the missing/wrong final inode
+before Welcome, and pre-handshake Error/Bye reaches the waiting
+client rather than timing out after the worker already refused.
+`exec-supervision` and `worker-streams` share the client connection
+source; their reviewed forced pins record only this pre-Welcome
+routing edit, not a change to post-Welcome exec/stream behavior.
+
+Native retirement now runs only after the selected worker's live
+handshake, before its SSH/container editor lease is published. The
+worker verifies its own context, executable receipt and final inode,
+locks the persistent private cache, observes all bounded lease records
+and unlinks only unpinned content addresses with same-context receipts.
+The actual two-worker/two-build test preserves the second live
+executable; other cases cover foreign context, corrupt records,
+cross-process lock exclusion and a deleted object before Welcome.
+The real SSH editor journey seeds a second, old object and its exact
+endpoint receipt between two separate `:remote worker` admissions,
+then checks retirement without granting a file-write permit. The
+container editor similarly seeds an old object before
+`:container-worker`; direct SFTP/ContainerProvider journeys cover
+their transports. TLC checks the refined two-client
+lock/snapshot/retire graph and four semantic negative controls. TLAPS
+proves the 447-obligation generalized induction, its derived safety
+and three additional conditional retirement theorems; the matched
+foreign-context negative proof fails as required. Those model proofs
+do not establish OS lock behavior or native macOS/arm execution.
+
+### WK20 scoped static worker and UI measurements: local Linux only
+
+On the WSL2 Ryzen 9950X3D, clean pre-worker `a05d84f` and the
+current stripped 47,373,648-byte x86_64 musl worker (`sha256
+67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130`)
+each ran eight warmups and 64 real Hello/Welcome launches. Baseline
+versus current readiness p50 was 0.933/0.730 ms, p95 1.241/0.852 ms,
+p99/max 1.493/0.908 ms; the binaries were 46,226,704/47,373,648
+bytes. The same current worker also completed eight warmups and 64
+serial Health requests through its real framed IPC: write+flush to
+complete result p50 0.201 ms, p95 0.247 ms, p99/max 0.292 ms.
+`verification/bench_worker.py` and
+`verification/bench_worker_roundtrip.py` pin raw samples, artifact
+digests, RSS/threads and request bytes in `verification/measurements/`.
+
+The same clean pre-worker and dirty worker artifacts each ran eight
+warmups and 64 real `--ui-stdio` committed-text actions after the
+editor opened a 10,000-line file through one live worker at 120×40.
+`verification/bench_ui_input_frame.py` checks that each complete
+semantic-view frame visibly contains the next edit on line 5000.
+Baseline/current write+flush→view p50 was 0.226/0.233 ms, p95
+0.301/0.388 ms, p99/max 0.502/0.502 ms. The higher current p95
+is recorded, not called a no-regression result. Raw samples, framed
+bytes and observed worker/editor RSS and thread counts are archived.
+
+The schema-4 diagnostic freeze checks these artifact, fixture, method
+and raw-percentile bindings, but records a dirty worktree; `--check`
+refuses release qualification. The UI-stdio semantic view is not
+the actual TUI cell-grid paint. LSP sync, terminal load, cold/warm
+SSH/container deployment and native macOS/arm remain unmeasured;
+`WPERF-FULL` remains blocked.
+
+The same-source proofs do not verify OS effects, exact receipt
+provenance, a global liveness oracle or platform performance.
+`WDEP-GC` now has a serialized native caller, two-worker/SSH/container
+OS correspondence, exhaustive bounded model and generalized TLAPS
+induction. `WPERF-FULL` and `WPLAT-NATIVE` still require product-path
+measurements and actual native target execution. WK16–WK20 and VF20
+remain open; 0059 must not start on partial evidence.

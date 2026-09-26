@@ -767,6 +767,203 @@
           ]
         }
       ]
+    },
+    {
+      "id": "worker-cache-retirement",
+      "boundary": "worker-deployment",
+      "lane": "core-assurance",
+      "mutants": [
+        {
+          "name": "cache-gc-unlocked-retirement",
+          "kind": "rust-native",
+          "file": "crates/strop-worker/src/serve/cache_gc.rs",
+          "killed_by": [
+            {
+              "crate": "strop-editor",
+              "test": "cache_gc_holds_the_worker_lease_lock_through_retirement"
+            }
+          ]
+        },
+        {
+          "name": "cache-gc-ignore-foreign-lease",
+          "kind": "rust-native",
+          "file": "crates/strop-worker/src/serve/cache_gc.rs",
+          "killed_by": [
+            {
+              "crate": "strop-editor",
+              "test": "cache_gc_preserves_another_actual_worker_process_and_build"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "worker-session-safety",
+      "boundary": "worker-streams",
+      "lane": "model",
+      "gate": "specs/worker-session-gate.sh",
+      "mutants": [
+        {
+          "name": "worker-stale-admission",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-session.cfg",
+          "killed_by": [
+            "NoStaleEffect"
+          ]
+        },
+        {
+          "name": "worker-lost-reply-ack",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-session.cfg",
+          "killed_by": [
+            "DirtyUntilProof"
+          ]
+        },
+        {
+          "name": "worker-free-credit",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-session.cfg",
+          "killed_by": [
+            "BoundedOutstanding"
+          ]
+        },
+        {
+          "name": "worker-early-exit",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-session.cfg",
+          "killed_by": [
+            "ExitAfterOutput"
+          ]
+        },
+        {
+          "name": "worker-foreign-stop",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-session-streams.cfg",
+          "killed_by": [
+            "ForeignStopRefused"
+          ]
+        },
+        {
+          "name": "worker-foreign-recovery",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-session.cfg",
+          "killed_by": [
+            "RecoveryInNamespace"
+          ]
+        },
+        {
+          "name": "worker-stale-commit",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-session.cfg",
+          "killed_by": [
+            "NoStaleCommit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "worker-deployment-safety",
+      "boundary": "worker-deployment",
+      "lane": "model",
+      "gate": "specs/worker-deploy-gate.sh",
+      "mutants": [
+        {
+          "name": "worker-upload-without-consent",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-deploy.cfg",
+          "killed_by": [
+            "ConsentBeforeUpload"
+          ]
+        },
+        {
+          "name": "worker-corrupt-activation",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-deploy.cfg",
+          "killed_by": [
+            "VerifiedActivation"
+          ]
+        },
+        {
+          "name": "worker-default-context-retarget",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-deploy.cfg",
+          "killed_by": [
+            "ChosenContext"
+          ]
+        },
+        {
+          "name": "worker-foreign-stage-cleanup",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-deploy.cfg",
+          "killed_by": [
+            "OwnedCleanup"
+          ]
+        },
+        {
+          "name": "worker-live-lease-retirement",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-deploy.cfg",
+          "killed_by": [
+            "NoRetireLive"
+          ]
+        },
+        {
+          "name": "worker-wrong-executed-object",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-deploy.cfg",
+          "killed_by": [
+            "VerifiedActivation"
+          ]
+        },
+        {
+          "name": "worker-cross-context-cache-cleanup",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-deploy.cfg",
+          "killed_by": [
+            "OwnedCleanup"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "worker-cache-exclusion",
+      "boundary": "worker-deployment",
+      "lane": "model",
+      "gate": "specs/worker-cache-gate.sh",
+      "mutants": [
+        {
+          "name": "worker-cache-unlocked-welcome",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-cache-gc.cfg",
+          "killed_by": [
+            "NoRetireLive"
+          ]
+        },
+        {
+          "name": "worker-cache-ignored-lease",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-cache-gc.cfg",
+          "killed_by": [
+            "NoRetireLive"
+          ]
+        },
+        {
+          "name": "worker-cache-foreign-context",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-cache-gc.cfg",
+          "killed_by": [
+            "ScopedRetirement"
+          ]
+        },
+        {
+          "name": "worker-cache-unchecked-executable",
+          "kind": "tla-fault",
+          "config": "specs/cfg/worker-cache-gc.cfg",
+          "killed_by": [
+            "LiveObject"
+          ]
+        }
+      ]
     }
   ]
 }

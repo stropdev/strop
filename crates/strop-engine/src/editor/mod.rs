@@ -67,6 +67,7 @@ pub mod transact;
 mod undo;
 pub mod view;
 mod visual;
+mod worker_catalog;
 mod workspaces;
 
 pub use collections::{CollectionRow, CollectionRowInfo};

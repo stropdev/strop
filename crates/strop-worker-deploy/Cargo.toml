@@ -1,6 +1,6 @@
 [package]
 name = "strop-worker-deploy"
-description = "Worker deployment/cache state machine (0058 WK06): consent-gated deploy, private verified cache, verified-object activation, lease-aware GC over an authenticated provider"
+description = "Worker artifact deployment and private-cache admission over authenticated providers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

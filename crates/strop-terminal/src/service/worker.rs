@@ -21,6 +21,7 @@ use strop_core::worker::CancelToken;
 
 pub(super) struct Start {
     pub session: SessionId,
+    pub worker: strop_worker_client::Worker,
     pub launch: Launch,
     pub geometry: Geometry,
     pub keyboard: u8,
@@ -29,6 +30,9 @@ pub(super) struct Start {
     pub palette: Option<crate::model::Palette>,
     pub receiver: Receiver<Request>,
     pub wake: UnixDatagram,
+    /// Send-side wake clone the PTY session registers for stream
+    /// arrivals (0058 WK12): worker output nudges this service's poll.
+    pub nudge: UnixDatagram,
     pub mailbox: Arc<Mailbox>,
     pub budget: Arc<Budget>,
 }
@@ -46,12 +50,28 @@ impl Start {
         }
         self.mailbox
             .publish(empty_update(self.session, Phase::Starting, None));
+        let nudge = match self.nudge.try_clone() {
+            Ok(nudge) => nudge,
+            Err(error) => {
+                return empty_update(
+                    self.session,
+                    Phase::Failed(
+                        super::io_error("retain terminal stream wake", error).to_string(),
+                    ),
+                    None,
+                )
+            }
+        };
         let client = match Client::spawn(
             self.session,
+            self.worker.clone(),
             &self.launch,
             self.geometry,
-            self.keyboard,
-            self.palette.as_ref(),
+            crate::client::EmulationSettings {
+                keyboard: self.keyboard,
+                palette: self.palette.as_ref(),
+            },
+            nudge,
             &token,
         ) {
             Ok(client) => client,

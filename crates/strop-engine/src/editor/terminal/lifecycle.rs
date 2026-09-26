@@ -21,10 +21,13 @@ impl Editor {
         location: strop_workspace::ResourceLocation,
         command: &str,
     ) {
-        if location.local_path().is_none() {
-            self.message = "interactive terminals are local only; use :terminal-local for an explicit local shell".into();
-            return;
-        }
+        let worker = match terminal_worker(self, &location) {
+            Ok(worker) => worker,
+            Err(message) => {
+                self.message = message;
+                return;
+            }
+        };
         if self.terminals.entries.len() >= MAX_SESSIONS {
             self.message = format!(
                 "terminal buffer limit reached ({MAX_SESSIONS}); close an exited terminal first"
@@ -90,12 +93,22 @@ impl Editor {
             "terminal.start",
             &(session, &directory, command, geometry, keyboard),
             || {
-                let launch = Launch::shell(
-                    directory.clone(),
-                    (!command.is_empty()).then(|| command.into()),
-                );
+                let launch = match &location.filesystem {
+                    strop_workspace::Filesystem::Local => Launch::shell(
+                        directory.clone(),
+                        (!command.is_empty()).then(|| command.into()),
+                    ),
+                    // A remote namespace never receives the editor's
+                    // environment (0058 WK12 privacy): minimal identity
+                    // only.
+                    _ => Launch::shell_remote(
+                        directory.clone(),
+                        (!command.is_empty()).then(|| command.into()),
+                    ),
+                };
                 Service::start(
                     session,
+                    worker,
                     launch,
                     geometry,
                     keyboard,
@@ -224,7 +237,10 @@ impl Editor {
                     Phase::Exited {
                         code: Some(code), ..
                     } => format!("terminal exited: {code}; output retained"),
-                    Phase::Exited { .. } => "terminal closed before program startup".into(),
+                    Phase::Exited { .. } if initial => {
+                        "terminal closed before program startup".into()
+                    }
+                    Phase::Exited { .. } => "terminal ended; output retained".into(),
                     Phase::Failed(message) => message,
                     _ => unreachable!("non-live terminal phase"),
                 };
@@ -417,5 +433,41 @@ impl Editor {
             let Some(session) = session else { break };
             self.handle_terminal_update(session);
         }
+    }
+}
+
+/// The worker owning one terminal's namespace (0058 WK12): the PTY
+/// spawns, feeds, resizes and settles through the same admitted worker
+/// as every other owned execution there — never a guessed local launch
+/// for a remote path, never a second transport. The local namespace
+/// rides the session's local worker lease; an SSH workspace rides its
+/// already-admitted endpoint lease (deploy is consent-gated and
+/// blocking, so a terminal never triggers it from the input path — an
+/// endpoint without a live lease is a typed refusal); container
+/// namespaces have no admitted worker-lease mechanism in the editor
+/// yet, so they refuse honestly rather than fall back to docker-exec.
+fn terminal_worker(
+    editor: &Editor,
+    location: &strop_workspace::ResourceLocation,
+) -> Result<strop_worker_client::Worker, String> {
+    match &location.filesystem {
+        strop_workspace::Filesystem::Local => Ok(editor.filesystem.worker().clone()),
+        strop_workspace::Filesystem::Remote(endpoint) => editor
+            .remote
+            .workers
+            .get(endpoint)
+            .map(|worker| worker.worker().clone())
+            .ok_or_else(|| {
+                format!(
+                    "no admitted worker on {endpoint}: interactive terminals there need one \
+                     (a worker-admitting remote action admits it); \
+                     use :terminal-local for an explicit local shell"
+                )
+            }),
+        strop_workspace::Filesystem::Container(id) => Err(format!(
+            "no admitted worker in container {}: interactive container terminals are not \
+             admitted yet; use :terminal-local for an explicit local shell",
+            &id.as_str()[..12]
+        )),
     }
 }

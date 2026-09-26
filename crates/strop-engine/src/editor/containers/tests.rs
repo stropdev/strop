@@ -186,6 +186,32 @@ fn recycled_container_cannot_replace_a_held_attachment() {
 }
 
 #[test]
+fn browsing_stays_readonly_until_explicit_container_worker_consent() {
+    let mut editor = editor();
+    let id = ContainerId::canonical("a".repeat(64)).unwrap();
+    editor.attach_container_target(id.clone(), "/".into(), OpenIntent::Browse);
+    deliver(&mut editor, ContainerResult::Attached(identity('a')));
+    listing(
+        &mut editor,
+        "/",
+        &[("note.txt", strop_containers::DirEntryKind::File)],
+    );
+    assert!(editor
+        .containers
+        .workers
+        .get(editor.containers.attached.get(id.as_str()).unwrap())
+        .is_none());
+    editor.feed_text(":container-worker<cr>");
+    assert!(matches!(
+        &editor.containers.pending.as_ref().unwrap().key.job,
+        ContainerJob::EnableWorker { id: requested } if requested == id.as_str()
+    ));
+    assert!(editor
+        .message
+        .contains("admitting verified container worker"));
+}
+
+#[test]
 fn container_files_refuse_writes_and_writable_flag_bypasses() {
     let mut editor = editor();
     editor.attach_container_target(

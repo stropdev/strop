@@ -1,0 +1,579 @@
+ Network strop-preworker-6c4491b_default Creating 
+ Network strop-preworker-6c4491b_default Creating 
+ Network strop-preworker-6c4491b_default Created 
+ Network strop-preworker-6c4491b_default Created 
+ Image strop-preworker-6c4491b-verify Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 566B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 7.67kB done
+#2 DONE 0.1s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.6s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 resolve docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
+#5 DONE 0.6s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 2B done
+#6 DONE 0.1s
+
+#7 [verify 1/9] FROM docker.io/library/rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
+#7 resolve docker.io/library/rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27 0.1s done
+#7 DONE 0.1s
+
+#8 [internal] load build context
+#8 transferring context: 10.40MB 0.1s done
+#8 DONE 0.2s
+
+#9 [verify 4/9] ADD --checksum=sha256:7288c49a5bd6dbafd7b0b0d1f65956b91672da24b08f09242919af159be3418e https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip /opt/z3.zip
+#9 ...
+
+#10 [verify 2/9] RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates     && rm -rf /var/lib/apt/lists/*
+#10 0.461 Get:1 http://deb.debian.org/debian trixie InRelease [140 kB]
+#10 0.506 Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]
+#10 0.533 Get:3 http://deb.debian.org/debian-security trixie-security InRelease [43.4 kB]
+#10 0.556 Get:4 http://deb.debian.org/debian trixie/main amd64 Packages [9678 kB]
+#10 1.863 Get:5 http://deb.debian.org/debian trixie-updates/main amd64 Packages [4412 B]
+#10 1.919 Get:6 http://deb.debian.org/debian-security trixie-security/main amd64 Packages [263 kB]
+#10 2.312 Fetched 10.2 MB in 2s (5296 kB/s)
+#10 2.312 Reading package lists...
+#10 2.667 Reading package lists...
+#10 3.012 Building dependency tree...
+#10 3.119 Reading state information...
+#10 3.222 ca-certificates is already the newest version (20250419).
+#10 3.222 The following additional packages will be installed:
+#10 3.222   libbrotli1 libcom-err2 libcurl4t64 libffi8 libgnutls30t64 libgssapi-krb5-2
+#10 3.222   libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0 libldap2 libnghttp2-14
+#10 3.222   libnghttp3-9 libp11-kit0 libpsl5t64 librtmp1 libsasl2-2 libsasl2-modules-db
+#10 3.223   libssh2-1t64 libtasn1-6
+#10 3.224 Suggested packages:
+#10 3.224   gnutls-bin krb5-doc krb5-user zip
+#10 3.224 Recommended packages:
+#10 3.224   bash-completion krb5-locales libldap-common publicsuffix libsasl2-modules
+#10 3.328 The following NEW packages will be installed:
+#10 3.328   curl libbrotli1 libcom-err2 libcurl4t64 libffi8 libgnutls30t64
+#10 3.328   libgssapi-krb5-2 libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0
+#10 3.328   libldap2 libnghttp2-14 libnghttp3-9 libp11-kit0 libpsl5t64 librtmp1
+#10 3.329   libsasl2-2 libsasl2-modules-db libssh2-1t64 libtasn1-6 unzip
+#10 3.444 0 upgraded, 22 newly installed, 0 to remove and 18 not upgraded.
+#10 3.444 Need to get 4499 kB of archives.
+#10 3.444 After this operation, 12.6 MB of additional disk space will be used.
+#10 3.444 Get:1 http://deb.debian.org/debian trixie/main amd64 libbrotli1 amd64 1.1.0-2+b7 [307 kB]
+#10 3.674 Get:2 http://deb.debian.org/debian trixie/main amd64 libkrb5support0 amd64 1.21.3-5+deb13u1 [33.1 kB]
+#10 3.686 Get:3 http://deb.debian.org/debian trixie/main amd64 libcom-err2 amd64 1.47.2-3+b12 [25.0 kB]
+#10 3.713 Get:4 http://deb.debian.org/debian trixie/main amd64 libk5crypto3 amd64 1.21.3-5+deb13u1 [81.2 kB]
+#10 3.750 Get:5 http://deb.debian.org/debian trixie/main amd64 libkeyutils1 amd64 1.6.3-6 [9456 B]
+#10 3.759 Get:6 http://deb.debian.org/debian trixie/main amd64 libkrb5-3 amd64 1.21.3-5+deb13u1 [326 kB]
+#10 3.918 Get:7 http://deb.debian.org/debian trixie/main amd64 libgssapi-krb5-2 amd64 1.21.3-5+deb13u1 [138 kB]
+#10 3.974 Get:8 http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9 [19.8 kB]
+#10 3.980 Get:9 http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9 [57.5 kB]
+#10 4.032 Get:10 http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1 [194 kB]
+#10 4.073 Get:11 http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1 [76.2 kB]
+#10 4.086 Get:12 http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1 [67.7 kB]
+#10 4.093 Get:13 http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1 [57.2 kB]
+#10 4.095 Get:14 http://deb.debian.org/debian trixie/main amd64 libffi8 amd64 3.4.8-2 [24.1 kB]
+#10 4.100 Get:15 http://deb.debian.org/debian trixie/main amd64 libp11-kit0 amd64 0.25.5-3 [425 kB]
+#10 4.131 Get:16 http://deb.debian.org/debian trixie/main amd64 libtasn1-6 amd64 4.20.0-2+deb13u1 [50.1 kB]
+#10 4.134 Get:17 http://deb.debian.org/debian trixie/main amd64 libgnutls30t64 amd64 3.8.9-3+deb13u4 [1469 kB]
+#10 4.340 Get:18 http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5 [58.8 kB]
+#10 4.343 Get:19 http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2 [245 kB]
+#10 4.360 Get:20 http://deb.debian.org/debian trixie/main amd64 libcurl4t64 amd64 8.14.1-2+deb13u5 [391 kB]
+#10 4.381 Get:21 http://deb.debian.org/debian trixie/main amd64 curl amd64 8.14.1-2+deb13u5 [270 kB]
+#10 4.415 Get:22 http://deb.debian.org/debian trixie/main amd64 unzip amd64 6.0-29+deb13u1 [173 kB]
+#10 4.606 debconf: unable to initialize frontend: Dialog
+#10 4.606 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#10 4.606 debconf: falling back to frontend: Readline
+#10 4.606 debconf: unable to initialize frontend: Readline
+#10 4.606 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8, <STDIN> line 22.)
+#10 4.606 debconf: falling back to frontend: Teletype
+#10 4.611 debconf: unable to initialize frontend: Teletype
+#10 4.611 debconf: (This frontend requires a controlling tty.)
+#10 4.611 debconf: falling back to frontend: Noninteractive
+#10 5.035 Fetched 4499 kB in 1s (3995 kB/s)
+#10 5.067 Selecting previously unselected package libbrotli1:amd64.
+#10 5.067 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 9602 files and directories currently installed.)
+#10 5.098 Preparing to unpack .../00-libbrotli1_1.1.0-2+b7_amd64.deb ...
+#10 5.108 Unpacking libbrotli1:amd64 (1.1.0-2+b7) ...
+#10 5.159 Selecting previously unselected package libkrb5support0:amd64.
+#10 5.160 Preparing to unpack .../01-libkrb5support0_1.21.3-5+deb13u1_amd64.deb ...
+#10 5.165 Unpacking libkrb5support0:amd64 (1.21.3-5+deb13u1) ...
+#10 5.208 Selecting previously unselected package libcom-err2:amd64.
+#10 5.209 Preparing to unpack .../02-libcom-err2_1.47.2-3+b12_amd64.deb ...
+#10 5.214 Unpacking libcom-err2:amd64 (1.47.2-3+b12) ...
+#10 5.259 Selecting previously unselected package libk5crypto3:amd64.
+#10 5.260 Preparing to unpack .../03-libk5crypto3_1.21.3-5+deb13u1_amd64.deb ...
+#10 5.265 Unpacking libk5crypto3:amd64 (1.21.3-5+deb13u1) ...
+#10 5.307 Selecting previously unselected package libkeyutils1:amd64.
+#10 5.308 Preparing to unpack .../04-libkeyutils1_1.6.3-6_amd64.deb ...
+#10 5.313 Unpacking libkeyutils1:amd64 (1.6.3-6) ...
+#10 5.354 Selecting previously unselected package libkrb5-3:amd64.
+#10 5.355 Preparing to unpack .../05-libkrb5-3_1.21.3-5+deb13u1_amd64.deb ...
+#10 5.360 Unpacking libkrb5-3:amd64 (1.21.3-5+deb13u1) ...
+#10 5.415 Selecting previously unselected package libgssapi-krb5-2:amd64.
+#10 5.416 Preparing to unpack .../06-libgssapi-krb5-2_1.21.3-5+deb13u1_amd64.deb ...
+#10 5.421 Unpacking libgssapi-krb5-2:amd64 (1.21.3-5+deb13u1) ...
+#10 5.458 Selecting previously unselected package libsasl2-modules-db:amd64.
+#10 5.459 Preparing to unpack .../07-libsasl2-modules-db_2.1.28+dfsg1-9_amd64.deb ...
+#10 5.464 Unpacking libsasl2-modules-db:amd64 (2.1.28+dfsg1-9) ...
+#10 5.503 Selecting previously unselected package libsasl2-2:amd64.
+#10 5.504 Preparing to unpack .../08-libsasl2-2_2.1.28+dfsg1-9_amd64.deb ...
+#10 5.509 Unpacking libsasl2-2:amd64 (2.1.28+dfsg1-9) ...
+#10 5.550 Selecting previously unselected package libldap2:amd64.
+#10 5.551 Preparing to unpack .../09-libldap2_2.6.10+dfsg-1_amd64.deb ...
+#10 5.556 Unpacking libldap2:amd64 (2.6.10+dfsg-1) ...
+#10 5.605 Selecting previously unselected package libnghttp2-14:amd64.
+#10 5.606 Preparing to unpack .../10-libnghttp2-14_1.64.0-1.1+deb13u1_amd64.deb ...
+#10 5.611 Unpacking libnghttp2-14:amd64 (1.64.0-1.1+deb13u1) ...
+#10 5.651 Selecting previously unselected package libnghttp3-9:amd64.
+#10 5.652 Preparing to unpack .../11-libnghttp3-9_1.8.0-1_amd64.deb ...
+#10 5.657 Unpacking libnghttp3-9:amd64 (1.8.0-1) ...
+#10 5.705 Selecting previously unselected package libpsl5t64:amd64.
+#10 5.706 Preparing to unpack .../12-libpsl5t64_0.21.2-1.1+b1_amd64.deb ...
+#10 5.711 Unpacking libpsl5t64:amd64 (0.21.2-1.1+b1) ...
+#10 5.754 Selecting previously unselected package libffi8:amd64.
+#10 5.755 Preparing to unpack .../13-libffi8_3.4.8-2_amd64.deb ...
+#10 5.761 Unpacking libffi8:amd64 (3.4.8-2) ...
+#10 5.802 Selecting previously unselected package libp11-kit0:amd64.
+#10 5.803 Preparing to unpack .../14-libp11-kit0_0.25.5-3_amd64.deb ...
+#10 5.809 Unpacking libp11-kit0:amd64 (0.25.5-3) ...
+#10 5.857 Selecting previously unselected package libtasn1-6:amd64.
+#10 5.859 Preparing to unpack .../15-libtasn1-6_4.20.0-2+deb13u1_amd64.deb ...
+#10 5.863 Unpacking libtasn1-6:amd64 (4.20.0-2+deb13u1) ...
+#10 5.906 Selecting previously unselected package libgnutls30t64:amd64.
+#10 5.907 Preparing to unpack .../16-libgnutls30t64_3.8.9-3+deb13u4_amd64.deb ...
+#10 5.913 Unpacking libgnutls30t64:amd64 (3.8.9-3+deb13u4) ...
+#10 5.981 Selecting previously unselected package librtmp1:amd64.
+#10 ...
+
+#9 [verify 4/9] ADD --checksum=sha256:7288c49a5bd6dbafd7b0b0d1f65956b91672da24b08f09242919af159be3418e https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip /opt/z3.zip
+#9 DONE 6.2s
+
+#10 [verify 2/9] RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates     && rm -rf /var/lib/apt/lists/*
+#10 5.982 Preparing to unpack .../17-librtmp1_2.4+20151223.gitfa8646d.1-2+b5_amd64.deb ...
+#10 5.987 Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b5) ...
+#10 6.029 Selecting previously unselected package libssh2-1t64:amd64.
+#10 6.030 Preparing to unpack .../18-libssh2-1t64_1.11.1-1+deb13u2_amd64.deb ...
+#10 6.035 Unpacking libssh2-1t64:amd64 (1.11.1-1+deb13u2) ...
+#10 ...
+
+#11 [verify 3/9] ADD --checksum=sha256:13d01e134c0620c3b29770874707d16c33b3d227c843a489c8ceb744d43c0a16 https://github.com/verus-lang/verus/releases/download/release/0.2026.09.06.8dea4a2/verus-0.2026.09.06.8dea4a2-x86-linux.zip /opt/verus.zip
+#11 ...
+
+#10 [verify 2/9] RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates     && rm -rf /var/lib/apt/lists/*
+#10 6.085 Selecting previously unselected package libcurl4t64:amd64.
+#10 6.086 Preparing to unpack .../19-libcurl4t64_8.14.1-2+deb13u5_amd64.deb ...
+#10 6.091 Unpacking libcurl4t64:amd64 (8.14.1-2+deb13u5) ...
+#10 6.135 Selecting previously unselected package curl.
+#10 6.136 Preparing to unpack .../20-curl_8.14.1-2+deb13u5_amd64.deb ...
+#10 6.141 Unpacking curl (8.14.1-2+deb13u5) ...
+#10 6.181 Selecting previously unselected package unzip.
+#10 6.182 Preparing to unpack .../21-unzip_6.0-29+deb13u1_amd64.deb ...
+#10 6.187 Unpacking unzip (6.0-29+deb13u1) ...
+#10 6.240 Setting up libkeyutils1:amd64 (1.6.3-6) ...
+#10 6.257 Setting up unzip (6.0-29+deb13u1) ...
+#10 6.273 Setting up libbrotli1:amd64 (1.1.0-2+b7) ...
+#10 6.288 Setting up libpsl5t64:amd64 (0.21.2-1.1+b1) ...
+#10 6.303 Setting up libnghttp2-14:amd64 (1.64.0-1.1+deb13u1) ...
+#10 6.324 Setting up libcom-err2:amd64 (1.47.2-3+b12) ...
+#10 6.339 Setting up libkrb5support0:amd64 (1.21.3-5+deb13u1) ...
+#10 6.354 Setting up libsasl2-modules-db:amd64 (2.1.28+dfsg1-9) ...
+#10 6.370 Setting up libk5crypto3:amd64 (1.21.3-5+deb13u1) ...
+#10 6.384 Setting up libsasl2-2:amd64 (2.1.28+dfsg1-9) ...
+#10 6.398 Setting up libnghttp3-9:amd64 (1.8.0-1) ...
+#10 6.413 Setting up libffi8:amd64 (3.4.8-2) ...
+#10 6.427 Setting up libtasn1-6:amd64 (4.20.0-2+deb13u1) ...
+#10 6.442 Setting up libkrb5-3:amd64 (1.21.3-5+deb13u1) ...
+#10 6.456 Setting up libssh2-1t64:amd64 (1.11.1-1+deb13u2) ...
+#10 6.471 Setting up libldap2:amd64 (2.6.10+dfsg-1) ...
+#10 6.485 Setting up libp11-kit0:amd64 (0.25.5-3) ...
+#10 6.500 Setting up libgssapi-krb5-2:amd64 (1.21.3-5+deb13u1) ...
+#10 6.516 Setting up libgnutls30t64:amd64 (3.8.9-3+deb13u4) ...
+#10 6.531 Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b5) ...
+#10 6.545 Setting up libcurl4t64:amd64 (8.14.1-2+deb13u5) ...
+#10 6.559 Setting up curl (8.14.1-2+deb13u5) ...
+#10 6.573 Processing triggers for libc-bin (2.41-12+deb13u3) ...
+#10 DONE 6.7s
+
+#11 [verify 3/9] ADD --checksum=sha256:13d01e134c0620c3b29770874707d16c33b3d227c843a489c8ceb744d43c0a16 https://github.com/verus-lang/verus/releases/download/release/0.2026.09.06.8dea4a2/verus-0.2026.09.06.8dea4a2-x86-linux.zip /opt/verus.zip
+#11 DONE 33.3s
+
+#12 [verify 3/9] ADD --checksum=sha256:13d01e134c0620c3b29770874707d16c33b3d227c843a489c8ceb744d43c0a16 https://github.com/verus-lang/verus/releases/download/release/0.2026.09.06.8dea4a2/verus-0.2026.09.06.8dea4a2-x86-linux.zip /opt/verus.zip
+#12 DONE 1.2s
+
+#13 [verify 4/9] ADD --checksum=sha256:7288c49a5bd6dbafd7b0b0d1f65956b91672da24b08f09242919af159be3418e https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip /opt/z3.zip
+#13 DONE 0.2s
+
+#14 [verify 5/9] RUN cd /opt && unzip -q verus.zip && unzip -q z3.zip -d z3
+#14 DONE 8.9s
+
+#15 [verify 6/9] WORKDIR /app
+#15 DONE 0.1s
+
+#16 [verify 7/9] COPY Cargo.toml Cargo.lock ./
+#16 DONE 0.1s
+
+#17 [verify 8/9] COPY crates ./crates
+#17 DONE 0.3s
+
+#18 [verify 9/9] RUN cargo verus verify -p strop-core
+#18 7.087    Compiling proc-macro2 v1.0.107
+#18 7.087    Compiling unicode-ident v1.0.24
+#18 7.087    Compiling quote v1.0.47
+#18 7.089    Compiling version_check v0.9.5
+#18 7.089    Compiling libc v0.2.189
+#18 7.091     Checking cfg-if v1.0.4
+#18 7.092     Checking typenum v1.20.1
+#18 7.093    Compiling serde_core v1.0.229
+#18 7.095    Compiling verus_prettyplease v0.0.0-2026-09-06-0133
+#18 7.096    Compiling parking_lot_core v0.9.12
+#18 7.098     Checking smallvec v1.16.0
+#18 7.099    Compiling zmij v1.0.23
+#18 7.101    Compiling thiserror v2.0.20
+#18 7.102     Checking scopeguard v1.2.0
+#18 7.105    Compiling getrandom v0.4.3
+#18 7.107    Compiling serde_json v1.0.151
+#18 7.109    Compiling hashbrown v0.17.1
+#18 7.109    Compiling serde v1.0.229
+#18 7.109    Compiling equivalent v1.0.2
+#18 7.112    Compiling rustix v1.1.4
+#18 7.114     Checking cpufeatures v0.2.17
+#18 7.114    Compiling vstd v0.0.0-2026-09-06-0133
+#18 7.118     Checking itoa v1.0.18
+#18 7.119    Compiling convert_case v0.4.0
+#18 7.119     Checking memchr v2.8.3
+#18 7.127     Checking bitflags v2.13.1
+#18 7.128     Checking linux-raw-sys v0.12.1
+#18 7.128     Checking once_cell v1.21.4
+#18 7.133     Checking str_indices v0.4.4
+#18 7.134     Checking verus_builtin v0.0.0-2026-09-06-0133
+#18 7.135     Checking fastrand v2.5.0
+#18 7.136     Checking unicode-width v0.2.0
+#18 7.176     Checking unicode-segmentation v1.13.3
+#18 7.205     Checking lock_api v0.4.14
+#18 7.374     Checking ropey v1.6.1
+#18 7.385    Compiling generic-array v0.14.7
+#18 7.614    Compiling indexmap v2.14.1
+#18 7.949    Compiling syn v3.0.4
+#18 7.949    Compiling verus_syn v0.0.0-2026-09-06-0133
+#18 7.949    Compiling syn v2.0.119
+#18 8.015     Checking block-buffer v0.10.4
+#18 8.015     Checking crypto-common v0.1.7
+#18 8.074     Checking digest v0.10.7
+#18 8.167     Checking sha2 v0.10.9
+#18 8.181     Checking parking_lot v0.12.5
+#18 8.483     Checking tempfile v3.27.0
+#18 9.009    Compiling thiserror-impl v2.0.20
+#18 9.009    Compiling serde_derive v1.0.229
+#18 9.908    Compiling synstructure v0.13.2
+#18 10.44     Checking strop-trace v0.35.0 (/app/crates/strop-trace)
+#18 10.98    Compiling verus_state_machines_macros v0.0.0-2026-09-06-0133
+#18 10.98    Compiling verus_builtin_macros v0.0.0-2026-09-06-0133
+#18 30.83 verification results:: 2047 verified, 0 errors
+#18 34.81     Checking strop-core v0.35.0 (/app/crates/strop-core)
+#18 37.23 verification results:: 50 verified, 0 errors
+#18 38.24     Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.45s
+#18 DONE 38.4s
+
+#19 exporting to image
+#19 exporting layers
+#19 exporting layers 40.2s done
+#19 exporting manifest sha256:f7a4e87309e6bf0e5d13665a220dfa49ab1ef8fd9c0640386ae9af724afbef34 0.0s done
+#19 exporting config sha256:4b91cea949c2ad1f3e1ea05a0de3684be2bd5b4e58465dc4b5f4377c12730ec0 0.0s done
+#19 exporting attestation manifest sha256:5817f6c64a69df6ba450b111f6351097fc958cfaf5e4fcf29b4257019dadc3c4 0.0s done
+#19 exporting manifest list sha256:a19d0b51f7805a421c870aa89c88bdce18c552e926aff0e705e2a600442ed7eb
+#19 exporting manifest list sha256:a19d0b51f7805a421c870aa89c88bdce18c552e926aff0e705e2a600442ed7eb 0.0s done
+#19 naming to docker.io/library/strop-preworker-6c4491b-verify:latest done
+#19 unpacking to docker.io/library/strop-preworker-6c4491b-verify:latest
+#19 unpacking to docker.io/library/strop-preworker-6c4491b-verify:latest 16.6s done
+#19 DONE 57.0s
+
+#20 resolving provenance for metadata file
+#20 DONE 0.0s
+ Image strop-preworker-6c4491b-verify Built 
+ Container strop-preworker-6c4491b-verify-run-a552ad4f9dca Creating 
+ Container strop-preworker-6c4491b-verify-run-a552ad4f9dca Created 
+gate passed: edit-geometry kernel verified (Verus)
+ Image strop-preworker-6c4491b-tlaps Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 561B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 7.67kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.4s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 resolve docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+#5 DONE 0.6s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 2B done
+#6 DONE 0.0s
+
+#7 [tlaps 1/6] FROM docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+#7 resolve docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 0.0s done
+#7 CACHED
+
+#8 [internal] load build context
+#8 transferring context: 603.62kB 0.0s done
+#8 DONE 0.0s
+
+#9 [tlaps 2/6] ADD --checksum=sha256:ebb7a3f271bdb564f74cb0a2767ef7b9ff7045621a9be7c50d363a03c2e6f08a https://github.com/tlaplus/tlapm/releases/download/202210041448/tlaps-1.5.0-x86_64-linux-gnu-inst.bin /tmp/tlaps-inst.bin
+#9 DONE 9.9s
+
+#10 [tlaps 2/6] ADD --checksum=sha256:ebb7a3f271bdb564f74cb0a2767ef7b9ff7045621a9be7c50d363a03c2e6f08a https://github.com/tlaplus/tlapm/releases/download/202210041448/tlaps-1.5.0-x86_64-linux-gnu-inst.bin /tmp/tlaps-inst.bin
+#10 DONE 0.2s
+
+#11 [tlaps 3/6] RUN apt-get update && apt-get install -y --no-install-recommends         libstdc++6 make gcc procps     && rm -rf /var/lib/apt/lists/*     && chmod +x /tmp/tlaps-inst.bin     && /tmp/tlaps-inst.bin -d /opt/tlaps     && rm /tmp/tlaps-inst.bin
+#11 0.331 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#11 0.352 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#11 0.362 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#11 0.409 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#11 0.765 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#11 0.766 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [341 kB]
+#11 1.301 Fetched 9379 kB in 1s (9361 kB/s)
+#11 1.301 Reading package lists...
+#11 1.595 Reading package lists...
+#11 1.901 Building dependency tree...
+#11 2.008 Reading state information...
+#11 2.096 libstdc++6 is already the newest version (12.2.0-14+deb12u1).
+#11 2.096 libstdc++6 set to manually installed.
+#11 2.096 The following additional packages will be installed:
+#11 2.096   binutils binutils-common binutils-x86-64-linux-gnu cpp cpp-12 gcc-12
+#11 2.097   libasan8 libatomic1 libbinutils libcc1-0 libctf-nobfd0 libctf0 libgcc-12-dev
+#11 2.097   libgomp1 libgprofng0 libisl23 libitm1 libjansson4 liblsan0 libmpc3 libmpfr6
+#11 2.097   libncursesw6 libproc2-0 libquadmath0 libtsan2 libubsan1
+#11 2.098 Suggested packages:
+#11 2.098   binutils-doc cpp-doc gcc-12-locales cpp-12-doc gcc-multilib manpages-dev
+#11 2.098   autoconf automake libtool flex bison gdb gcc-doc gcc-12-multilib gcc-12-doc
+#11 2.098   make-doc
+#11 2.098 Recommended packages:
+#11 2.098   libc6-dev | libc-dev libc6-dev libgpm2 psmisc
+#11 2.162 The following NEW packages will be installed:
+#11 2.162   binutils binutils-common binutils-x86-64-linux-gnu cpp cpp-12 gcc gcc-12
+#11 2.162   libasan8 libatomic1 libbinutils libcc1-0 libctf-nobfd0 libctf0 libgcc-12-dev
+#11 2.162   libgomp1 libgprofng0 libisl23 libitm1 libjansson4 liblsan0 libmpc3 libmpfr6
+#11 2.163   libncursesw6 libproc2-0 libquadmath0 libtsan2 libubsan1 make procps
+#11 2.458 0 upgraded, 29 newly installed, 0 to remove and 3 not upgraded.
+#11 2.458 Need to get 47.3 MB of archives.
+#11 2.458 After this operation, 185 MB of additional disk space will be used.
+#11 2.458 Get:1 http://deb.debian.org/debian bookworm/main amd64 libncursesw6 amd64 6.4-4 [134 kB]
+#11 2.483 Get:2 http://deb.debian.org/debian bookworm/main amd64 libproc2-0 amd64 2:4.0.2-3 [62.8 kB]
+#11 2.487 Get:3 http://deb.debian.org/debian bookworm/main amd64 procps amd64 2:4.0.2-3 [709 kB]
+#11 2.531 Get:4 http://deb.debian.org/debian bookworm/main amd64 binutils-common amd64 2.40-2 [2487 kB]
+#11 2.661 Get:5 http://deb.debian.org/debian bookworm/main amd64 libbinutils amd64 2.40-2 [572 kB]
+#11 2.672 Get:6 http://deb.debian.org/debian bookworm/main amd64 libctf-nobfd0 amd64 2.40-2 [153 kB]
+#11 2.675 Get:7 http://deb.debian.org/debian bookworm/main amd64 libctf0 amd64 2.40-2 [89.8 kB]
+#11 2.677 Get:8 http://deb.debian.org/debian bookworm/main amd64 libgprofng0 amd64 2.40-2 [812 kB]
+#11 2.691 Get:9 http://deb.debian.org/debian bookworm/main amd64 libjansson4 amd64 2.14-2 [40.8 kB]
+#11 2.692 Get:10 http://deb.debian.org/debian bookworm/main amd64 binutils-x86-64-linux-gnu amd64 2.40-2 [2246 kB]
+#11 2.772 Get:11 http://deb.debian.org/debian bookworm/main amd64 binutils amd64 2.40-2 [65.0 kB]
+#11 2.774 Get:12 http://deb.debian.org/debian bookworm/main amd64 libisl23 amd64 0.25-1.1 [683 kB]
+#11 2.801 Get:13 http://deb.debian.org/debian bookworm/main amd64 libmpfr6 amd64 4.2.0-1 [701 kB]
+#11 2.856 Get:14 http://deb.debian.org/debian bookworm/main amd64 libmpc3 amd64 1.3.1-1 [51.5 kB]
+#11 2.857 Get:15 http://deb.debian.org/debian bookworm/main amd64 cpp-12 amd64 12.2.0-14+deb12u1 [9768 kB]
+#11 3.300 Get:16 http://deb.debian.org/debian bookworm/main amd64 cpp amd64 4:12.2.0-3 [6836 B]
+#11 3.300 Get:17 http://deb.debian.org/debian bookworm/main amd64 libcc1-0 amd64 12.2.0-14+deb12u1 [41.7 kB]
+#11 3.302 Get:18 http://deb.debian.org/debian bookworm/main amd64 libgomp1 amd64 12.2.0-14+deb12u1 [116 kB]
+#11 3.309 Get:19 http://deb.debian.org/debian bookworm/main amd64 libitm1 amd64 12.2.0-14+deb12u1 [26.1 kB]
+#11 3.310 Get:20 http://deb.debian.org/debian bookworm/main amd64 libatomic1 amd64 12.2.0-14+deb12u1 [9376 B]
+#11 3.310 Get:21 http://deb.debian.org/debian bookworm/main amd64 libasan8 amd64 12.2.0-14+deb12u1 [2193 kB]
+#11 3.444 Get:22 http://deb.debian.org/debian bookworm/main amd64 liblsan0 amd64 12.2.0-14+deb12u1 [969 kB]
+#11 3.461 Get:23 http://deb.debian.org/debian bookworm/main amd64 libtsan2 amd64 12.2.0-14+deb12u1 [2197 kB]
+#11 3.530 Get:24 http://deb.debian.org/debian bookworm/main amd64 libubsan1 amd64 12.2.0-14+deb12u1 [883 kB]
+#11 3.554 Get:25 http://deb.debian.org/debian bookworm/main amd64 libquadmath0 amd64 12.2.0-14+deb12u1 [145 kB]
+#11 3.559 Get:26 http://deb.debian.org/debian bookworm/main amd64 libgcc-12-dev amd64 12.2.0-14+deb12u1 [2437 kB]
+#11 3.674 Get:27 http://deb.debian.org/debian bookworm/main amd64 gcc-12 amd64 12.2.0-14+deb12u1 [19.3 MB]
+#11 4.596 Get:28 http://deb.debian.org/debian bookworm/main amd64 gcc amd64 4:12.2.0-3 [5216 B]
+#11 4.596 Get:29 http://deb.debian.org/debian bookworm/main amd64 make amd64 4.3-4.1 [396 kB]
+#11 4.740 debconf: delaying package configuration, since apt-utils is not installed
+#11 4.763 Fetched 47.3 MB in 2s (19.2 MB/s)
+#11 4.794 Selecting previously unselected package libncursesw6:amd64.
+#11 4.794 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+#11 4.819 Preparing to unpack .../00-libncursesw6_6.4-4_amd64.deb ...
+#11 4.829 Unpacking libncursesw6:amd64 (6.4-4) ...
+#11 4.876 Selecting previously unselected package libproc2-0:amd64.
+#11 4.877 Preparing to unpack .../01-libproc2-0_2%3a4.0.2-3_amd64.deb ...
+#11 4.882 Unpacking libproc2-0:amd64 (2:4.0.2-3) ...
+#11 4.931 Selecting previously unselected package procps.
+#11 4.932 Preparing to unpack .../02-procps_2%3a4.0.2-3_amd64.deb ...
+#11 4.946 Unpacking procps (2:4.0.2-3) ...
+#11 5.015 Selecting previously unselected package binutils-common:amd64.
+#11 5.015 Preparing to unpack .../03-binutils-common_2.40-2_amd64.deb ...
+#11 5.020 Unpacking binutils-common:amd64 (2.40-2) ...
+#11 5.178 Selecting previously unselected package libbinutils:amd64.
+#11 5.178 Preparing to unpack .../04-libbinutils_2.40-2_amd64.deb ...
+#11 5.183 Unpacking libbinutils:amd64 (2.40-2) ...
+#11 5.250 Selecting previously unselected package libctf-nobfd0:amd64.
+#11 5.251 Preparing to unpack .../05-libctf-nobfd0_2.40-2_amd64.deb ...
+#11 5.256 Unpacking libctf-nobfd0:amd64 (2.40-2) ...
+#11 5.298 Selecting previously unselected package libctf0:amd64.
+#11 5.299 Preparing to unpack .../06-libctf0_2.40-2_amd64.deb ...
+#11 5.304 Unpacking libctf0:amd64 (2.40-2) ...
+#11 5.347 Selecting previously unselected package libgprofng0:amd64.
+#11 5.348 Preparing to unpack .../07-libgprofng0_2.40-2_amd64.deb ...
+#11 5.352 Unpacking libgprofng0:amd64 (2.40-2) ...
+#11 5.428 Selecting previously unselected package libjansson4:amd64.
+#11 5.428 Preparing to unpack .../08-libjansson4_2.14-2_amd64.deb ...
+#11 5.433 Unpacking libjansson4:amd64 (2.14-2) ...
+#11 5.466 Selecting previously unselected package binutils-x86-64-linux-gnu.
+#11 5.467 Preparing to unpack .../09-binutils-x86-64-linux-gnu_2.40-2_amd64.deb ...
+#11 5.472 Unpacking binutils-x86-64-linux-gnu (2.40-2) ...
+#11 5.509 Selecting previously unselected package binutils.
+#11 5.510 Preparing to unpack .../10-binutils_2.40-2_amd64.deb ...
+#11 5.515 Unpacking binutils (2.40-2) ...
+#11 5.559 Selecting previously unselected package libisl23:amd64.
+#11 5.560 Preparing to unpack .../11-libisl23_0.25-1.1_amd64.deb ...
+#11 5.564 Unpacking libisl23:amd64 (0.25-1.1) ...
+#11 5.638 Selecting previously unselected package libmpfr6:amd64.
+#11 5.639 Preparing to unpack .../12-libmpfr6_4.2.0-1_amd64.deb ...
+#11 5.644 Unpacking libmpfr6:amd64 (4.2.0-1) ...
+#11 5.699 Selecting previously unselected package libmpc3:amd64.
+#11 5.700 Preparing to unpack .../13-libmpc3_1.3.1-1_amd64.deb ...
+#11 5.704 Unpacking libmpc3:amd64 (1.3.1-1) ...
+#11 5.736 Selecting previously unselected package cpp-12.
+#11 5.737 Preparing to unpack .../14-cpp-12_12.2.0-14+deb12u1_amd64.deb ...
+#11 5.741 Unpacking cpp-12 (12.2.0-14+deb12u1) ...
+#11 6.133 Selecting previously unselected package cpp.
+#11 6.133 Preparing to unpack .../15-cpp_4%3a12.2.0-3_amd64.deb ...
+#11 6.138 Unpacking cpp (4:12.2.0-3) ...
+#11 6.174 Selecting previously unselected package libcc1-0:amd64.
+#11 6.175 Preparing to unpack .../16-libcc1-0_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.180 Unpacking libcc1-0:amd64 (12.2.0-14+deb12u1) ...
+#11 6.218 Selecting previously unselected package libgomp1:amd64.
+#11 6.219 Preparing to unpack .../17-libgomp1_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.224 Unpacking libgomp1:amd64 (12.2.0-14+deb12u1) ...
+#11 6.264 Selecting previously unselected package libitm1:amd64.
+#11 6.265 Preparing to unpack .../18-libitm1_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.270 Unpacking libitm1:amd64 (12.2.0-14+deb12u1) ...
+#11 6.309 Selecting previously unselected package libatomic1:amd64.
+#11 6.309 Preparing to unpack .../19-libatomic1_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.314 Unpacking libatomic1:amd64 (12.2.0-14+deb12u1) ...
+#11 6.350 Selecting previously unselected package libasan8:amd64.
+#11 6.351 Preparing to unpack .../20-libasan8_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.355 Unpacking libasan8:amd64 (12.2.0-14+deb12u1) ...
+#11 6.487 Selecting previously unselected package liblsan0:amd64.
+#11 6.488 Preparing to unpack .../21-liblsan0_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.493 Unpacking liblsan0:amd64 (12.2.0-14+deb12u1) ...
+#11 6.570 Selecting previously unselected package libtsan2:amd64.
+#11 6.571 Preparing to unpack .../22-libtsan2_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.576 Unpacking libtsan2:amd64 (12.2.0-14+deb12u1) ...
+#11 6.712 Selecting previously unselected package libubsan1:amd64.
+#11 6.713 Preparing to unpack .../23-libubsan1_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.718 Unpacking libubsan1:amd64 (12.2.0-14+deb12u1) ...
+#11 6.796 Selecting previously unselected package libquadmath0:amd64.
+#11 6.797 Preparing to unpack .../24-libquadmath0_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.802 Unpacking libquadmath0:amd64 (12.2.0-14+deb12u1) ...
+#11 6.841 Selecting previously unselected package libgcc-12-dev:amd64.
+#11 6.842 Preparing to unpack .../25-libgcc-12-dev_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.847 Unpacking libgcc-12-dev:amd64 (12.2.0-14+deb12u1) ...
+#11 6.979 Selecting previously unselected package gcc-12.
+#11 6.979 Preparing to unpack .../26-gcc-12_12.2.0-14+deb12u1_amd64.deb ...
+#11 6.985 Unpacking gcc-12 (12.2.0-14+deb12u1) ...
+#11 7.456 Selecting previously unselected package gcc.
+#11 7.457 Preparing to unpack .../27-gcc_4%3a12.2.0-3_amd64.deb ...
+#11 7.461 Unpacking gcc (4:12.2.0-3) ...
+#11 7.493 Selecting previously unselected package make.
+#11 7.493 Preparing to unpack .../28-make_4.3-4.1_amd64.deb ...
+#11 7.498 Unpacking make (4.3-4.1) ...
+#11 7.553 Setting up binutils-common:amd64 (2.40-2) ...
+#11 7.571 Setting up libctf-nobfd0:amd64 (2.40-2) ...
+#11 7.585 Setting up libgomp1:amd64 (12.2.0-14+deb12u1) ...
+#11 7.598 Setting up libjansson4:amd64 (2.14-2) ...
+#11 7.612 Setting up make (4.3-4.1) ...
+#11 7.625 Setting up libmpfr6:amd64 (4.2.0-1) ...
+#11 7.639 Setting up libquadmath0:amd64 (12.2.0-14+deb12u1) ...
+#11 7.653 Setting up libproc2-0:amd64 (2:4.0.2-3) ...
+#11 7.667 Setting up libmpc3:amd64 (1.3.1-1) ...
+#11 7.681 Setting up libatomic1:amd64 (12.2.0-14+deb12u1) ...
+#11 7.695 Setting up libncursesw6:amd64 (6.4-4) ...
+#11 7.709 Setting up libubsan1:amd64 (12.2.0-14+deb12u1) ...
+#11 7.725 Setting up libasan8:amd64 (12.2.0-14+deb12u1) ...
+#11 7.740 Setting up procps (2:4.0.2-3) ...
+#11 7.795 Setting up libtsan2:amd64 (12.2.0-14+deb12u1) ...
+#11 7.809 Setting up libbinutils:amd64 (2.40-2) ...
+#11 7.823 Setting up libisl23:amd64 (0.25-1.1) ...
+#11 7.838 Setting up libcc1-0:amd64 (12.2.0-14+deb12u1) ...
+#11 7.853 Setting up liblsan0:amd64 (12.2.0-14+deb12u1) ...
+#11 7.868 Setting up libitm1:amd64 (12.2.0-14+deb12u1) ...
+#11 7.882 Setting up libctf0:amd64 (2.40-2) ...
+#11 7.898 Setting up cpp-12 (12.2.0-14+deb12u1) ...
+#11 7.913 Setting up libgprofng0:amd64 (2.40-2) ...
+#11 7.928 Setting up libgcc-12-dev:amd64 (12.2.0-14+deb12u1) ...
+#11 7.944 Setting up cpp (4:12.2.0-3) ...
+#11 7.966 Setting up binutils-x86-64-linux-gnu (2.40-2) ...
+#11 7.980 Setting up binutils (2.40-2) ...
+#11 7.995 Setting up gcc-12 (12.2.0-14+deb12u1) ...
+#11 8.009 Setting up gcc (4:12.2.0-3) ...
+#11 8.035 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+#11 8.229 Installing the TLA+ Proof System
+#11 8.229 
+#11 8.229     Version: 1.5.0
+#11 8.229 Destination: /opt/tlaps
+#11 8.229 
+#11 8.233 Extracting ... done.
+#11 10.85 Compiling Isabelle theories.
+#11 10.92 Building Pure ...
+#11 15.42 Finished Pure (0:00:04 elapsed time, 0:00:04 cpu time)
+#11 15.46 Building TLA+ ...
+#11 21.94 Finished TLA+ (0:00:07 elapsed time, 0:00:09 cpu time, factor 1.28)
+#11 21.94 Finished compiling Isabelle theories.
+#11 21.94 Performing a self-test ... done.
+#11 27.20 
+#11 27.20 All done.
+#11 27.20 
+#11 27.20 REMEMBER to add /opt/tlaps/bin to your $PATH
+#11 27.20 You will also need to add
+#11 27.20    /opt/tlaps/lib/tlaps
+#11 27.20 to the toolbox's library path (File->Preferences->TLA+ Preferences->Add Directory)
+#11 27.20 
+#11 DONE 27.3s
+
+#12 [tlaps 4/6] WORKDIR /work
+#12 DONE 0.1s
+
+#13 [tlaps 5/6] COPY specs ./specs
+#13 DONE 0.1s
+
+#14 [tlaps 6/6] RUN sh specs/tlaps-gate.sh
+#14 0.240 [tlaps gate] SearchLifecycleProofs: expect every obligation proved
+#14 8.198 [INFO]: All 225 obligations proved.
+#14 8.198 [tlaps gate] SearchLifecycle_MutantProofs: expect rejection (negative control)
+#14 54.82 [ERROR]: 3/225 obligations failed.
+#14 54.82 tlaps gate: lifecycle safety proved inductively; kept mutant rejected
+#14 DONE 54.9s
+
+#15 exporting to image
+#15 exporting layers
+#15 exporting layers 15.7s done
+#15 exporting manifest sha256:82d0b06aebc01598fd5d0fa7b73694c3c434a46a1fb6fbd818a1b47c94450de9 0.0s done
+#15 exporting config sha256:ded1f84557527fefd65fd71e7fcceddb50a693046b058fd8c3edd65f4c154abb 0.0s done
+#15 exporting attestation manifest sha256:a1141ec841c2fc21faa1faac3df73970a79bf27a154dbaded0d7c7bd50f2c55a 0.0s done
+#15 exporting manifest list sha256:8f43ba6b4b81e6eca51f53391c3749f3d6322dac3fca4c433d82b3fd73a357ce 0.0s done
+#15 naming to docker.io/library/strop-preworker-6c4491b-tlaps:latest done
+#15 unpacking to docker.io/library/strop-preworker-6c4491b-tlaps:latest
+#15 unpacking to docker.io/library/strop-preworker-6c4491b-tlaps:latest 3.9s done
+#15 DONE 19.7s
+
+#16 resolving provenance for metadata file
+#16 DONE 0.0s
+ Image strop-preworker-6c4491b-tlaps Built 
+ Container strop-preworker-6c4491b-tlaps-run-7215a44e4e4e Creating 
+ Container strop-preworker-6c4491b-tlaps-run-7215a44e4e4e Created 
+gate passed: search lifecycle safety proved (TLAPS)
+
+[Showing lines 1-577 of 578. Use :578 to continue]

@@ -153,6 +153,9 @@ impl Editor {
         let repo = ticket.key.repo.clone();
         let target = ticket.key.target.clone();
         let captured_hunks = self.hunks.clone();
+        let workers = self.remote.workers.clone();
+        let containers = self.containers.workers.clone();
+        let container_started = self.git_container_started(&repo);
         self.launch_git_job(
             "git-dive",
             "git.dive",
@@ -176,7 +179,22 @@ impl Editor {
                     },
                     DiveTarget::CommitFiles { sha } => {
                         // numstat is one bounded run on either backend
-                        let exec = strop_git::GitExec::for_target(&repo);
+                        let lease = super::git_memory::repo_lease(
+                            &workers,
+                            &containers,
+                            container_started.as_deref(),
+                            &repo,
+                        );
+                        let exec =
+                            match strop_git::GitExec::for_target_routed(&repo, lease.as_ref()) {
+                                Ok(exec) => exec,
+                                Err(error) => {
+                                    return Outcome::failed(
+                                        strop_core::worker::FailureKind::Unavailable,
+                                        error.to_string(),
+                                    );
+                                }
+                            };
                         match strop_git::memory::show_stat(&exec, &cancel, sha) {
                             Ok(files) => Outcome::Success(DiveData::Files(PreparedFiles::new(
                                 sha.clone(),
@@ -211,8 +229,14 @@ impl Editor {
                             }
                         }
                         strop_git::RepoTarget::Remote { endpoint, workdir } => {
+                            let lease = workers.get(endpoint);
                             match strop_git::remote::commit_file_diff(
-                                endpoint, workdir, sha, path, &cancel,
+                                endpoint,
+                                workdir,
+                                sha,
+                                path,
+                                lease.as_ref(),
+                                &cancel,
                             ) {
                                 Ok(diff) => Outcome::Success(DiveData::Delta(PreparedDiff::new(
                                     strop_core::layout::printable_text(path.to_string_lossy())

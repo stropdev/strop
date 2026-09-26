@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""VF01 whole-core boundary/claim inventory checker (0057).
+"""0058 whole-core boundary and worker-claim inventory checker.
 
-Reads verification/inventory.json and enforces:
+The 0057 inventory is byte-pinned under verification/baseline. Every old
+claim must name its disposition and any retired implementation's successor;
+new claims must identify the boundary they add.
 
   * structure: every boundary row carries id/kind/promise/exclusions/
     authoritative state/trust assumptions/owning files/claims/gates, and
@@ -9,8 +11,8 @@ Reads verification/inventory.json and enforces:
   * liveness: every evidence pointer resolves — test and proof symbols
     must name functions that exist in the referenced file, models must
     exist together with their TLC configs, scripts must exist;
-  * completeness: the VF01-required boundary families are all present;
-    a boundary missing from the inventory is a gate failure;
+  * completeness: the original 0057 claim set and the 0058 worker families
+    are all present, with a classified migration for every claim;
   * hash binding: each row pins the sha256 of its owning source files
     and a digest over its claims+evidence content (named Rust test/proof
     function bodies, whole TLA+/cfg/script files — never mtimes). Check
@@ -19,6 +21,10 @@ Reads verification/inventory.json and enforces:
     unchanged (that is the "source changed without evidence changing"
     failure, enforced mechanically). --force <id> overrides per row for
     reviewed no-op extractions; the override is recorded in the output.
+  * release qualification: --release additionally refuses blocked
+    claims and missing generalized TLAPS/same-source Verus worker proof
+    pointers. The TLAPS/Verus lanes still have to run; a pointer alone
+    cannot establish a theorem.
 
 Boring tools only: python3 stdlib. Run from anywhere; the repo root is
 derived from this file's location.
@@ -27,6 +33,7 @@ Usage:
   python3 verification/check.py            # CI mode: validate + verify pins
   python3 verification/check.py --stamp    # re-pin after re-reviewing rows
   python3 verification/check.py --stamp --force mutation-gateway
+  python3 verification/check.py --release  # refuse incomplete proof ledger
 """
 
 from __future__ import annotations
@@ -37,10 +44,12 @@ import re
 import sys
 from pathlib import Path
 
+import freeze as candidate_freeze
+
 ROOT = Path(__file__).resolve().parent.parent
 INVENTORY = Path(__file__).resolve().parent / "inventory.json"
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Claim statuses, per plans/0057 §2. Not interchangeable.
 STATUSES = {
@@ -61,12 +70,16 @@ GATES = {
     "verify",          # docker compose run --build --rm verify (Verus)
     "tlaps",           # docker compose run --build --rm tlaps
     "container-test",  # docker compose run --build --rm container-test
+    "ssh-pythonfree",  # docker compose run --build --rm ssh-pythonfree
     "core-assurance",  # docker compose run --build --rm core-assurance (VF19)
     "install-fixture", # sh tests/install.sh + sh tests/release-catalog.sh
+    "benchmark",      # verification/bench_worker.py against real static binaries
+    "platform-test",  # real native GNU tests on WSL2 and CI x64/arm runners
+    "ci",             # .github/workflows/ci.yml
     "release",         # .github/workflows/release.yml
 }
 
-EVIDENCE_KINDS = {"test", "proof", "model", "script"}
+EVIDENCE_KINDS = {"test", "proof", "model", "script", "measurement"}
 
 BOUNDARY_KINDS = {
     "mutation",     # can mutate text/state
@@ -78,9 +91,8 @@ BOUNDARY_KINDS = {
     "lifecycle",    # owns spawn/supervision/shutdown of work
 }
 
-# The VF01 boundary families (plans/0057 §2 + the domain chapters). A
-# named family missing from the inventory fails the gate. Additional
-# rows beyond these are welcome; none of these may be dropped.
+# Original 0057 families and the native-worker deployment, stream and
+# recovery boundaries. No named family can silently disappear.
 REQUIRED_BOUNDARIES = {
     "mutation-gateway",
     "action-admission",
@@ -100,9 +112,22 @@ REQUIRED_BOUNDARIES = {
     "worker-protocol",
     "worker-serve",
     "fs-notify",
+    "worker-deployment",
+    "worker-streams",
+    "worker-recovery",
 }
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+BASELINE_INVENTORY = "verification/baseline/0057-inventory.json"
+BASELINE_SHA256 = "40c0b816e9b91cdc8f2357d88a7cdfab1c26982884088d2166e589711fc1b798"
+MIGRATIONS = {"unchanged", "strengthened", "transferred", "retired-implementation"}
+RELEASE_PROOFS = {
+    "WREC-TLAPS": ("proved-theorem", "tlaps"),
+    "WDEP-TLAPS": ("proved-theorem", "tlaps"),
+    "WREC-VERUS": ("proved-kernel", "verify"),
+    "WDEP-VERUS": ("proved-kernel", "verify"),
+}
+
 
 
 class Failure(Exception):
@@ -362,6 +387,72 @@ def validate_row(row: dict, errors: list) -> None:
                     errors.append(f"{cid}: {exc}")
 
 
+def validate_migration(inv: dict, errors: list) -> None:
+    if inv.get("release") != "0058":
+        errors.append("release must be 0058")
+    if inv.get("plan") != "plans/0058-unified-native-worker.md":
+        errors.append("release plan must be 0058-unified-native-worker")
+    if inv.get("baseline") != {
+        "inventory": BASELINE_INVENTORY, "sha256": BASELINE_SHA256
+    }:
+        errors.append("0057 baseline inventory must be pinned by its fixed digest")
+    try:
+        baseline_bytes = read_file(BASELINE_INVENTORY)
+        if sha256_bytes(baseline_bytes) != BASELINE_SHA256:
+            errors.append("archived 0057 inventory digest changed")
+        baseline = json.loads(baseline_bytes)
+    except (Failure, ValueError) as exc:
+        errors.append(f"cannot validate archived 0057 inventory: {exc}")
+        return
+    try:
+        candidate_freeze.baseline_hashes()
+        candidate_freeze.linux_measurements()
+        linux = json.loads(read_file("verification/baseline/0057-linux-inventory.json"))
+    except (Failure, OSError, ValueError, KeyError, IndexError, TypeError, SystemExit) as exc:
+        errors.append(f"cannot validate scoped baseline and worker measurements: {exc}")
+        return
+    qualified = {
+        (boundary["id"], claim["id"])
+        for boundary in linux["boundaries"]
+        for claim in boundary["claims"]
+    }
+
+    old = {
+        (boundary["id"], claim["id"])
+        for boundary in baseline["boundaries"]
+        for claim in boundary["claims"]
+    }
+    if qualified - old:
+        errors.append("clean Linux baseline contains claims absent from historical archive")
+    current = {
+        (boundary["id"], claim["id"])
+        for boundary in inv["boundaries"]
+        for claim in boundary.get("claims", [])
+    }
+    claim_ids = {claim for _, claim in current}
+    for boundary in inv["boundaries"]:
+        for claim in boundary.get("claims", []):
+            key = (boundary["id"], claim["id"])
+            migration = claim.get("migration")
+            if not isinstance(migration, dict):
+                errors.append(f"{key}: missing claim-by-claim migration")
+                continue
+            if not isinstance(migration.get("basis"), str) or not migration["basis"].strip():
+                errors.append(f"{key}: migration must explain the evidence transfer")
+            if key in old:
+                if migration.get("from") != f"0057/{claim['id']}":
+                    errors.append(f"{key}: old claim must point to its 0057 id")
+                if migration.get("classification") not in MIGRATIONS:
+                    errors.append(f"{key}: old claim needs an explicit classification")
+                if migration.get("classification") == "retired-implementation":
+                    if migration.get("successor") not in claim_ids - {claim["id"]}:
+                        errors.append(f"{key}: retired implementation has no live successor")
+            elif migration.get("classification") != "new" or migration.get("from") is not None:
+                errors.append(f"{key}: new claim must be classified new without a 0057 id")
+    for key in sorted(old - current):
+        errors.append(f"{key}: archived 0057 claim lacks an explicit disposition")
+
+
 def validate_inventory(inv: dict) -> list:
     errors = []
     if inv.get("schema") != SCHEMA_VERSION:
@@ -384,13 +475,14 @@ def validate_inventory(inv: dict) -> list:
             "required VF01 boundary families missing from the inventory: "
             + ", ".join(sorted(missing))
         )
+    validate_migration(inv, errors)
     return errors
 
 
 # ----------------------------------------------------------------- modes
 
 
-def check(inv: dict) -> int:
+def check(inv: dict, release: bool = False) -> int:
     errors = validate_inventory(inv)
     drift = []
     if not errors:
@@ -458,11 +550,40 @@ def check(inv: dict) -> int:
             f"{len(drift)} pin failure(s)"
         )
         return 1
+    if release:
+        by_id = {
+            claim["id"]: claim
+            for row in inv["boundaries"]
+            for claim in row["claims"]
+        }
+        blocked = [
+            claim["id"] for claim in by_id.values()
+            if claim["status"] == "blocked"
+        ]
+        for claim_id, (status, gate) in RELEASE_PROOFS.items():
+            claim = by_id.get(claim_id)
+            if claim is None or claim["status"] != status or not any(
+                entry["kind"] == "proof" and entry["gate"] == gate
+                for entry in claim["evidence"]
+            ):
+                print(f"FAIL: required {claim_id} lacks a {status} {gate} obligation")
+                blocked.append(claim_id)
+        if blocked:
+            print(
+                "worker release NOT qualified; unresolved claims: "
+                + ", ".join(sorted(set(blocked)))
+            )
+            return 1
     rows = inv["boundaries"]
     claims = sum(len(r["claims"]) for r in rows)
+    blocked = sum(
+        claim["status"] == "blocked"
+        for row in rows
+        for claim in row["claims"]
+    )
     print(
-        f"inventory check ok: {len(rows)} boundaries, {claims} claims, "
-        f"all evidence live, all pins current"
+        f"inventory structure ok: {len(rows)} boundaries, {claims} claims, "
+        f"all evidence live, all pins current; {blocked} claims blocked"
     )
     return 0
 
@@ -526,6 +647,8 @@ def main(argv) -> int:
         arg = argv[i]
         if arg == "--stamp":
             mode = "stamp"
+        elif arg == "--release":
+            mode = "release"
         elif arg == "--force":
             i += 1
             if i >= len(argv):
@@ -546,7 +669,7 @@ def main(argv) -> int:
     if force:
         print("--force only applies to --stamp", file=sys.stderr)
         return 2
-    return check(inv)
+    return check(inv, release=mode == "release")
 
 
 if __name__ == "__main__":

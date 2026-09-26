@@ -37,6 +37,14 @@ impl Editor {
                     ["home"] => return self.browse_remote_root(true),
                     ["edit"] => return self.enable_remote_edit(),
                     ["verify"] => return self.verify_remote_save(),
+                    ["worker"] => RemoteControl::AdmitWorker(
+                        self.remote_endpoint()
+                            .ok_or("no remote endpoint; use :remote worker ssh://HOST")?
+                            .clone(),
+                    ),
+                    ["worker", endpoint] => RemoteControl::AdmitWorker(
+                        RemoteEndpoint::parse(endpoint).map_err(|e| e.to_string())?,
+                    ),
                     ["connect", endpoint] => RemoteControl::Connect(
                         RemoteEndpoint::parse(endpoint).map_err(|e| e.to_string())?,
                     ),
@@ -51,7 +59,7 @@ impl Editor {
                     ["clear"] => RemoteControl::DisconnectAll,
                     ["list"] => RemoteControl::Connections,
                     _ => return Err(
-                        "usage: :remote [edit|verify|root|home|connect URI|disconnect [URI]|clear|list]"
+                        "usage: :remote [edit|verify|worker [URI]|root|home|connect URI|disconnect [URI]|clear|list]"
                             .into(),
                     ),
                 };

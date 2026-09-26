@@ -16,6 +16,16 @@ services:
     command: 'echo "gate passed: fmt + clippy -D warnings + cargo test"'
 
 
+  # The OpenSSH fixture deploys and launches the native worker inside a
+  # Python-free image; the full test image intentionally has python3 for
+  # other integration suites.
+  ssh-pythonfree:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ssh-pythonfree
+    command: 'echo "gate passed: real SSH native worker without Python"'
+
   # Container integration tests (0037 DC1a + 0058 WK08): run on the
   # HOST engine via the socket; fixtures are uniquely labelled and
   # self-cleaning, and only the container-gated tests run here. In this
@@ -31,39 +41,42 @@ services:
       - STROP_CONTAINER_TESTS=1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: cargo test --locked -p strop-containers -p strop-worker-deploy
+    command:
+      - sh
+      - -c
+      - cargo test --locked -p strop-containers -p strop-worker-deploy -p strop-git && cargo test --locked -p strop-editor --test container_editor
 
-  # The Verus pilot gate (0045): its own pinned toolchain image,
-  # never in the shipping build graph.
+  # Same-source Verus gate (0057 VF18 / 0058 WK18), pinned verifier
+  # toolchain outside the shipping build graph.
   verify:
     build:
       context: .
       dockerfile: Dockerfile
       target: verify
-    command: 'echo "gate passed: edit-geometry kernel verified (Verus)"'
+    command: 'echo "gate passed: edit geometry + worker admission verified (Verus)"'
 
-  # The TLAPS proof gate (0057 VF17, discharging 0063 §6.6): inductive
-  # safety of the search lifecycle model + kept-mutant negative control,
-  # in its own pinned toolchain image. Kept out of specs/gate.sh: the
-  # model stage has no tlapm, so chaining would break that gate.
+  # The TLAPS proof gate (0057 VF17 / 0058 WK17): generalized safety of
+  # SearchLifecycle, WorkerSession and WorkerDeploy with paired negative
+  # controls, in its own pinned toolchain image. Kept out of
+  # specs/gate.sh: the model stage has no tlapm, so chaining would
+  # break that gate.
   tlaps:
     build:
       context: .
       dockerfile: Dockerfile
       target: tlaps
-    command: 'echo "gate passed: search lifecycle safety proved (TLAPS)"'
+    command: 'echo "gate passed: search, worker-session and deploy safety proved (TLAPS)"'
 
-  # The core-assurance lane (0057 VF19/VF20): model-anchor/digest pins,
-  # VF09 fault-injection harnesses, the instrumented Loom campaigns and
-  # the mutant-calibration registry with its native kill executions —
-  # the non-TLC campaigns that fit neither the model nor the verify
-  # lane. All RUN steps gate at image-build time like the test lane.
+  # The core-assurance lane (0057 VF19/VF20 + 0058 WK16–WK20):
+  # claim/evidence digests, native Store/recovery/stream journeys,
+  # instrumented Loom campaigns and semantic mutant kills. All RUN
+  # steps gate at image-build time like the test lane.
   core-assurance:
     build:
       context: .
       dockerfile: Dockerfile
       target: core-assurance
-    command: 'echo "gate passed: core assurance campaigns (anchors, digests, faults, loom, mutants)"'
+    command: 'echo "gate passed: core assurance (inventory, native effects, loom, mutants)"'
   build:
     build:
       context: .

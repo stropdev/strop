@@ -31,6 +31,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = Path(__file__).resolve().parent / "mutants.json"
@@ -53,6 +54,11 @@ def gate_faults(text: str) -> list[dict]:
     """Every kill obligation a model-gate script runs (witnesses excluded):
     name, cfg, killing invariant/property, whether it is temporal."""
     faults = []
+    worker_wrapper = any(
+        f"MODEL=specs/{model}.tla" in text
+        for model in ("WorkerSession", "WorkerDeploy", "WorkerCacheGC")
+    )
+    base = re.search(r"^BASE=(specs/cfg/[\w-]+\.cfg)$", text, re.M)
     for line in text.splitlines():
         s = line.strip()
         m = re.match(r'check_fault\s+"?([^"\s]+)"?\s+(\S+)\s+(\S+)\s+(\S+)', s)
@@ -84,6 +90,15 @@ def gate_faults(text: str) -> list[dict]:
                 {"name": m.group(3), "config": "specs/cfg/change-plan.cfg",
                  "killed_by": m.group(2), "temporal": False}
             )
+        if worker_wrapper:
+            m = re.fullmatch(
+                r"fault\s+([1-9]\d*)\s+(\w+)\s+([\w-]+)(?:\s+(\S+))?", s
+            )
+            if m and base:
+                faults.append({
+                    "name": m.group(3), "config": m.group(4) or base.group(1),
+                    "killed_by": m.group(2), "temporal": False,
+                })
     return faults
 
 
@@ -110,6 +125,19 @@ def validate(registry_path: Path, live_tree: bool) -> list[str]:
     if live_tree:
         inventory = json.loads(INVENTORY.read_text(encoding="utf-8"))
         boundary_ids = {row["id"] for row in inventory["boundaries"]}
+    # `cargo -p` names packages, not source directories: strop-editor
+    # lives under crates/strop. Resolve the actual manifests once so a
+    # native kill can target the shipping binary's integration suite.
+    package_dirs = {}
+    for manifest in (ROOT / "crates").glob("*/Cargo.toml"):
+        try:
+            package = tomllib.loads(manifest.read_text(encoding="utf-8"))["package"]["name"]
+        except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
+            errors.append(f"cannot resolve crate package from {manifest}: {exc}")
+            continue
+        if package in package_dirs:
+            errors.append(f"duplicate crate package {package}")
+        package_dirs[package] = manifest.parent
 
     registered_faults = {}
     seen_seams = set()
@@ -204,8 +232,8 @@ def validate(registry_path: Path, live_tree: bool) -> list[str]:
                 for target in killed_by:
                     crate = target.get("crate")
                     test = target.get("test")
-                    crate_dir = ROOT / "crates" / str(crate)
-                    if not crate_dir.is_dir():
+                    crate_dir = package_dirs.get(str(crate))
+                    if crate_dir is None:
                         errors.append(f"{sid}/{name}: crate {crate} does not exist")
                         continue
                     found = any(

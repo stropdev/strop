@@ -1,7 +1,7 @@
-//! One captured local launch. Display names and remote-looking paths are not
-//! execution authority; the engine selects the namespace before constructing it.
+//! One captured launch intent. Display names and remote-looking paths are not
+//! execution authority; the engine selects the namespace's worker before
+//! constructing it, and the worker's exec admission owns the actual spawn.
 use crate::Error;
-use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -47,6 +47,29 @@ impl Launch {
         }
     }
 
+    /// A shell launch for a non-local namespace (0058 WK12): never the
+    /// editor's environment — a local capture forwarded to a remote host
+    /// would leak it. The remote gets the terminal identity variables and
+    /// nothing else; its own profile supplies the rest.
+    pub fn shell_remote(directory: PathBuf, command: Option<OsString>) -> Self {
+        let arguments = command.map_or_else(Vec::new, |command| vec!["-c".into(), command]);
+        let environment = vec![
+            ("TERM".into(), "xterm-256color".into()),
+            ("TERM_PROGRAM".into(), "strop".into()),
+            (
+                "TERM_PROGRAM_VERSION".into(),
+                env!("CARGO_PKG_VERSION").into(),
+            ),
+            ("COLORTERM".into(), "truecolor".into()),
+        ];
+        Self {
+            program: "/bin/sh".into(),
+            arguments,
+            directory,
+            environment,
+        }
+    }
+
     pub fn validate(&self) -> Result<(), Error> {
         if self.program.is_empty()
             || !self.directory.is_absolute()
@@ -83,77 +106,5 @@ impl Launch {
             return Err(Error::Protocol("invalid terminal environment key".into()));
         }
         Ok(())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub(crate) struct WireLaunch {
-    version: u32,
-    program: Vec<u8>,
-    arguments: Vec<Vec<u8>>,
-    directory: Vec<u8>,
-    environment: Vec<(Vec<u8>, Vec<u8>)>,
-    pub geometry: crate::model::Geometry,
-}
-
-#[cfg(unix)]
-impl WireLaunch {
-    pub fn encode(launch: &Launch, geometry: crate::model::Geometry) -> Result<Vec<u8>, Error> {
-        use std::os::unix::ffi::OsStrExt;
-        launch.validate()?;
-        if !geometry.valid() {
-            return Err(Error::Capacity("terminal geometry"));
-        }
-        let wire = Self {
-            version: crate::protocol::VERSION,
-            program: launch.program.as_bytes().to_vec(),
-            arguments: launch
-                .arguments
-                .iter()
-                .map(|value| value.as_bytes().to_vec())
-                .collect(),
-            directory: launch.directory.as_os_str().as_bytes().to_vec(),
-            environment: launch
-                .environment
-                .iter()
-                .map(|(key, value)| (key.as_bytes().to_vec(), value.as_bytes().to_vec()))
-                .collect(),
-            geometry,
-        };
-        let bytes =
-            serde_json::to_vec(&wire).map_err(|error| Error::Protocol(error.to_string()))?;
-        if bytes.len() > crate::protocol::MAX_PACKET {
-            return Err(Error::Capacity("encoded terminal launch"));
-        }
-        Ok(bytes)
-    }
-
-    pub fn decode(bytes: &[u8]) -> Result<(Launch, crate::model::Geometry), Error> {
-        use std::os::unix::ffi::OsStringExt;
-        if bytes.len() > crate::protocol::MAX_PACKET {
-            return Err(Error::Capacity("encoded terminal launch"));
-        }
-        let wire: Self =
-            serde_json::from_slice(bytes).map_err(|error| Error::Protocol(error.to_string()))?;
-        if wire.version != crate::protocol::VERSION {
-            return Err(Error::Protocol(
-                "terminal helper protocol version mismatch".into(),
-            ));
-        }
-        if !wire.geometry.valid() {
-            return Err(Error::Capacity("terminal geometry"));
-        }
-        let launch = Launch {
-            program: OsString::from_vec(wire.program),
-            arguments: wire.arguments.into_iter().map(OsString::from_vec).collect(),
-            directory: PathBuf::from(OsString::from_vec(wire.directory)),
-            environment: wire
-                .environment
-                .into_iter()
-                .map(|(key, value)| (OsString::from_vec(key), OsString::from_vec(value)))
-                .collect(),
-        };
-        launch.validate()?;
-        Ok((launch, wire.geometry))
     }
 }

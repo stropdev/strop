@@ -1,0 +1,2760 @@
+ Network strop-preworker-6c4491b_default Creating 
+ Network strop-preworker-6c4491b_default Creating 
+ Network strop-preworker-6c4491b_default Created 
+ Network strop-preworker-6c4491b_default Created 
+ Image strop-preworker-6c4491b-test Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 556B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 7.67kB done
+#2 DONE 0.1s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.6s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 resolve docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d
+#5 DONE 0.6s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 2B done
+#6 DONE 0.1s
+
+#7 [builder 1/9] FROM docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d
+#7 resolve docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d 0.1s done
+#7 DONE 0.1s
+
+#8 [internal] load build context
+#8 transferring context: 10.63MB 0.1s done
+#8 DONE 0.2s
+
+#9 [builder 2/9] RUN apk add --no-cache build-base git ripgrep neovim less curl ca-certificates xz     && rustup component add clippy rustfmt
+#9 CACHED
+
+#10 [builder 3/9] COPY .github/scripts/install-zig.sh /tmp/install-zig.sh
+#10 CACHED
+
+#11 [builder 4/9] RUN sh /tmp/install-zig.sh /opt/strop-zig && rm /tmp/install-zig.sh
+#11 CACHED
+
+#12 [builder 5/9] WORKDIR /app
+#12 CACHED
+
+#13 [builder 6/9] COPY Cargo.toml Cargo.lock ./
+#13 CACHED
+
+#14 [builder 7/9] COPY crates ./crates
+#14 DONE 0.2s
+
+#15 [builder 8/9] COPY docs ./docs
+#15 DONE 0.1s
+
+#16 [builder 9/9] COPY verification ./verification
+#16 DONE 0.1s
+
+#17 [test 1/2] RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
+#17 1.574 ( 1/18) Installing openssh-keygen (10.3_p1-r1)
+#17 1.623 ( 2/18) Installing libedit (20260508.3.1-r1)
+#17 1.646 ( 3/18) Installing openssh-client-common (10.3_p1-r1)
+#17 1.774 ( 4/18) Installing openssh-client-default (10.3_p1-r1)
+#17 1.809 ( 5/18) Installing openssh-server-common (10.3_p1-r1)
+#17 1.825 ( 6/18) Installing openssh-server (10.3_p1-r1)
+#17 1.974 ( 7/18) Installing openssh-sftp-server (10.3_p1-r1)
+#17 1.996 ( 8/18) Installing libbz2 (1.0.8-r6)
+#17 2.015 ( 9/18) Installing libffi (3.5.2-r1)
+#17 2.032 (10/18) Installing gdbm (1.26-r0)
+#17 2.050 (11/18) Installing mpdecimal (4.0.1-r0)
+#17 2.072 (12/18) Installing libpanelw (6.6_p20260516-r0)
+#17 2.097 (13/18) Installing readline (8.3.3-r1)
+#17 2.159 (14/18) Installing sqlite-libs (3.53.4-r0)
+#17 2.245 (15/18) Installing python3 (3.14.7-r1)
+#17 3.025 (16/18) Installing python3-pycache-pyc0 (3.14.7-r1)
+#17 3.648 (17/18) Installing pyc (3.14.7-r1)
+#17 3.648 (18/18) Installing python3-pyc (3.14.7-r1)
+#17 3.648 Executing busybox-1.37.0-r31.trigger
+#17 3.658 OK: 357.9 MiB in 92 packages
+#17 DONE 3.8s
+
+#18 [test 2/2] RUN cargo fmt --check     && cargo clippy --locked --workspace --all-targets -- -D warnings     && STROP_REQUIRE_SSH_TESTS=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked
+#18 3.746     Updating crates.io index
+#18 5.938  Downloading crates ...
+#18 6.012   Downloaded adler2 v2.0.1
+#18 6.017   Downloaded archery v1.2.3
+#18 6.031   Downloaded castaway v0.2.4
+#18 6.035   Downloaded block-buffer v0.10.4
+#18 6.038   Downloaded crypto-common v0.1.7
+#18 6.040   Downloaded errno v0.3.14
+#18 6.043   Downloaded futures-task v0.3.34
+#18 6.050   Downloaded potential_utf v0.1.6
+#18 6.052   Downloaded zerovec-derive v0.11.6
+#18 6.056   Downloaded yoke-derive v0.8.2
+#18 6.058   Downloaded convert_case v0.4.0
+#18 6.060   Downloaded equivalent v1.0.2
+#18 6.063   Downloaded xattr v1.6.1
+#18 6.068   Downloaded rand_xoshiro v0.7.0
+#18 6.071   Downloaded scopeguard v1.2.0
+#18 6.074   Downloaded form_urlencoded v1.2.2
+#18 6.082   Downloaded cassowary v0.3.0
+#18 6.086   Downloaded bitflags v1.3.2
+#18 6.096   Downloaded tinyvec_macros v0.1.1
+#18 6.098   Downloaded cfg-if v1.0.4
+#18 6.101   Downloaded ident_case v1.0.1
+#18 6.103   Downloaded generic-array v0.14.7
+#18 6.106   Downloaded idna_adapter v1.2.2
+#18 6.109   Downloaded futures-core v0.3.34
+#18 6.112   Downloaded darling_macro v0.24.1
+#18 6.113   Downloaded cpufeatures v0.2.17
+#18 6.116   Downloaded same-file v1.0.6
+#18 6.119   Downloaded futures-io v0.3.34
+#18 6.120   Downloaded itoa v1.0.18
+#18 6.125   Downloaded rustversion v1.0.23
+#18 6.131   Downloaded safe_arch v0.7.4
+#18 6.138   Downloaded lru v0.12.5
+#18 6.141   Downloaded signal-hook-mio v0.2.5
+#18 6.143   Downloaded zmij v1.0.23
+#18 6.149   Downloaded number_prefix v0.4.0
+#18 6.152   Downloaded rand_core v0.9.5
+#18 6.154   Downloaded percent-encoding v2.3.2
+#18 6.157   Downloaded bitmaps v3.2.1
+#18 6.160   Downloaded foldhash v0.1.5
+#18 6.163   Downloaded thiserror-impl v2.0.20
+#18 6.165   Downloaded yoke v0.8.3
+#18 6.168   Downloaded find-msvc-tools v0.1.11
+#18 6.172   Downloaded displaydoc v0.2.7
+#18 6.175   Downloaded rustix-openpty v0.2.0
+#18 6.178   Downloaded heck v0.5.0
+#18 6.181   Downloaded zerofrom v0.1.8
+#18 6.183   Downloaded strum v0.26.3
+#18 6.185   Downloaded futures-sink v0.3.34
+#18 6.187   Downloaded instability v0.3.13
+#18 6.191   Downloaded shlex v2.0.1
+#18 6.194   Downloaded filetime v0.2.29
+#18 6.198   Downloaded tinystr v0.8.4
+#18 6.203   Downloaded signal-hook-registry v1.4.8
+#18 6.205   Downloaded fastrand v2.5.0
+#18 6.209   Downloaded arrayvec v0.7.8
+#18 6.213   Downloaded digest v0.10.7
+#18 6.218   Downloaded either v1.18.0
+#18 6.221   Downloaded utf8_iter v1.0.4
+#18 6.223   Downloaded toml_datetime v0.6.11
+#18 6.225   Downloaded unicode-truncate v1.1.0
+#18 6.229   Downloaded indoc v2.0.7
+#18 6.235   Downloaded serde_spanned v0.6.9
+#18 6.237   Downloaded tree-sitter-json v0.24.8
+#18 6.241   Downloaded paste v1.0.15
+#18 6.248   Downloaded jobserver v0.1.35
+#18 6.252   Downloaded lock_api v0.4.14
+#18 6.254   Downloaded version_check v0.9.5
+#18 6.257   Downloaded utf8parse v0.2.2
+#18 6.259   Downloaded serde_repr v0.1.21
+#18 6.265   Downloaded zerofrom-derive v0.1.7
+#18 6.267   Downloaded crossbeam-utils v0.8.22
+#18 6.272   Downloaded futures-macro v0.3.34
+#18 6.274   Downloaded tower-layer v0.3.3
+#18 6.276   Downloaded tree-sitter-language v0.1.8
+#18 6.281   Downloaded pin-project-lite v0.2.17
+#18 6.297   Downloaded strsim v0.11.1
+#18 6.297   Downloaded crossbeam-epoch v0.9.20
+#18 6.302   Downloaded bytemuck v1.25.2
+#18 6.307   Downloaded toml_write v0.1.2
+#18 6.309   Downloaded crc32fast v1.5.2
+#18 6.314   Downloaded verus_builtin v0.0.0-2026-09-06-0133
+#18 6.315   Downloaded console v0.15.11
+#18 6.322   Downloaded writeable v0.6.4
+#18 6.326   Downloaded crossbeam-deque v0.8.7
+#18 6.329   Downloaded tower-service v0.3.3
+#18 6.331   Downloaded vte_generate_state_changes v0.1.2
+#18 6.333   Downloaded litemap v0.8.3
+#18 6.339   Downloaded simd-adler32 v0.3.10
+#18 6.343   Downloaded stable_deref_trait v1.2.1
+#18 6.345   Downloaded thiserror v2.0.20
+#18 6.357   Downloaded quote v1.0.47
+#18 6.362   Downloaded pkg-config v0.3.34
+#18 6.366   Downloaded parking_lot v0.12.5
+#18 6.370   Downloaded waitpid-any v0.3.0
+#18 6.373   Downloaded futures v0.3.34
+#18 6.382   Downloaded parking_lot_core v0.9.12
+#18 6.386   Downloaded darling v0.24.1
+#18 6.397   Downloaded vt100 v0.15.2
+#18 6.400   Downloaded tree-sitter-toml-ng v0.7.0
+#18 6.404   Downloaded imbl-sized-chunks v0.1.3
+#18 6.411   Downloaded once_cell v1.21.4
+#18 6.416   Downloaded static_assertions v1.1.0
+#18 6.420   Downloaded sha2 v0.10.9
+#18 6.426   Downloaded slab v0.4.12
+#18 6.429   Downloaded allocator-api2 v0.2.21
+#18 6.434   Downloaded str_indices v0.4.4
+#18 6.438   Downloaded streaming-iterator v0.1.9
+#18 6.441   Downloaded synstructure v0.13.2
+#18 6.444   Downloaded tree-sitter-html v0.23.2
+#18 6.449   Downloaded bytes v1.12.1
+#18 6.457   Downloaded ryu v1.0.23
+#18 6.464   Downloaded futures-channel v0.3.34
+#18 6.468   Downloaded log v0.4.34
+#18 6.473   Downloaded smallvec v1.16.0
+#18 6.476   Downloaded strum_macros v0.26.4
+#18 6.481   Downloaded icu_provider v2.3.1
+#18 6.486   Downloaded async-lsp v0.2.4
+#18 6.491   Downloaded base64 v0.22.1
+#18 6.500   Downloaded flate2 v1.1.10
+#18 6.510   Downloaded nucleo-matcher v0.3.1
+#18 6.515   Downloaded walkdir v2.5.0
+#18 6.520   Downloaded getrandom v0.4.3
+#18 6.528   Downloaded globset v0.4.20
+#18 6.531   Downloaded bitflags v2.13.1
+#18 6.538   Downloaded icu_locale_core v2.3.0
+#18 6.555   Downloaded indicatif v0.17.11
+#18 6.563   Downloaded ignore v0.4.33
+#18 6.569   Downloaded lsp-types v0.95.1
+#18 6.576   Downloaded darling_core v0.24.1
+#18 6.588   Downloaded icu_normalizer_data v2.3.0
+#18 6.592   Downloaded compact_str v0.8.2
+#18 6.598   Downloaded proc-macro2 v1.0.107
+#18 6.604   Downloaded cc v1.2.67
+#18 6.609   Downloaded tree-sitter-lua v0.5.0
+#18 6.614   Downloaded tracing-attributes v0.1.31
+#18 6.619   Downloaded verus_prettyplease v0.0.0-2026-09-06-0133
+#18 6.625   Downloaded memchr v2.8.3
+#18 6.640   Downloaded icu_collections v2.3.0
+#18 6.652   Downloaded icu_properties v2.3.0
+#18 6.658   Downloaded mio v1.2.2
+#18 6.671   Downloaded miniz_oxide v0.9.1
+#18 6.675   Downloaded indexmap v2.14.1
+#18 6.683   Downloaded crossterm v0.28.1
+#18 6.699   Downloaded wide v0.7.33
+#18 6.707   Downloaded vte v0.11.1
+#18 6.711   Downloaded serde_core v1.0.229
+#18 6.716   Downloaded verus_builtin_macros v0.0.0-2026-09-06-0133
+#18 6.721   Downloaded idna v1.1.0
+#18 6.725   Downloaded hashbrown v0.15.5
+#18 6.735   Downloaded imbl v7.0.1
+#18 6.748   Downloaded hashbrown v0.17.1
+#18 6.759   Downloaded tempfile v3.27.0
+#18 6.764   Downloaded toml v0.8.23
+#18 6.770   Downloaded tree-sitter-cmake v0.7.4
+#18 6.774   Downloaded socket2 v0.6.5
+#18 6.777   Downloaded aho-corasick v1.1.5
+#18 6.786   Downloaded serde_derive v1.0.229
+#18 6.790   Downloaded itertools v0.13.0
+#18 6.799   Downloaded futures-util v0.3.34
+#18 6.821   Downloaded tracing-core v0.1.36
+#18 6.826   Downloaded icu_properties_data v2.3.0
+#18 6.840   Downloaded unicode-ident v1.0.24
+#18 6.847   Downloaded portable-atomic v1.15.0
+#18 6.860   Downloaded tree-sitter-css v0.25.0
+#18 6.866   Downloaded winnow v0.7.15
+#18 6.886   Downloaded git2 v0.20.4
+#18 6.898   Downloaded signal-hook v0.3.18
+#18 6.907   Downloaded tinyvec v1.13.2
+#18 6.915   Downloaded zerotrie v0.2.5
+#18 6.925   Downloaded unicode-width v0.2.0
+#18 6.931   Downloaded unicode-width v0.1.14
+#18 6.946   Downloaded tree-sitter-fish v3.6.0
+#18 6.972   Downloaded tar v0.4.46
+#18 7.088   Downloaded bstr v1.13.1
+#18 7.137   Downloaded serde v1.0.229
+#18 7.159   Downloaded url v2.5.8
+#18 7.204   Downloaded verus_syn v0.0.0-2026-09-06-0133
+#18 7.293   Downloaded toml_edit v0.22.27
+#18 7.369   Downloaded verus_state_machines_macros v0.0.0-2026-09-06-0133
+#18 7.379   Downloaded tree-sitter-go v0.25.0
+#18 7.385   Downloaded ropey v1.6.1
+#18 7.393   Downloaded icu_normalizer v2.3.0
+#18 7.435   Downloaded typenum v1.20.1
+#18 7.471   Downloaded zerovec v0.11.8
+#18 7.507   Downloaded unicode-segmentation v1.13.3
+#18 7.511   Downloaded tree-sitter-yaml v0.7.2
+#18 7.571   Downloaded libc v0.2.189
+#18 7.690   Downloaded libz-sys v1.1.29
+#18 7.719   Downloaded tree-sitter-javascript v0.25.0
+#18 7.727   Downloaded regex v1.13.1
+#18 7.735   Downloaded tokio-util v0.7.19
+#18 7.748   Downloaded unicode-normalization v0.1.25
+#18 7.877   Downloaded tree-sitter-java v0.23.5
+#18 7.883   Downloaded tree-sitter-python v0.25.0
+#18 7.980   Downloaded tree-sitter v0.25.10
+#18 8.003   Downloaded serde_json v1.0.151
+#18 8.069   Downloaded libgit2-sys v0.18.8+1.9.7
+#18 8.150   Downloaded zlib-rs v0.6.7
+#18 8.159   Downloaded linux-raw-sys v0.4.15
+#18 8.218   Downloaded tree-sitter-c v0.24.2
+#18 8.228   Downloaded vcpkg v0.2.15
+#18 8.315   Downloaded linux-raw-sys v0.12.1
+#18 8.396   Downloaded syn v3.0.4
+#18 8.414   Downloaded regex-syntax v0.8.11
+#18 8.423   Downloaded tree-sitter-md v0.5.3
+#18 8.443   Downloaded vstd v0.0.0-2026-09-06-0133
+#18 8.465   Downloaded tree-sitter-rust v0.24.2
+#18 8.481   Downloaded syn v2.0.119
+#18 8.497   Downloaded rustix v0.38.44
+#18 8.556   Downloaded rustix v1.1.4
+#18 8.617   Downloaded tree-sitter-bash v0.25.1
+#18 8.632   Downloaded tracing v0.1.44
+#18 8.668   Downloaded ratatui v0.29.0
+#18 8.711   Downloaded tree-sitter-ruby v0.23.1
+#18 8.732   Downloaded regex-automata v0.4.18
+#18 8.802   Downloaded tree-sitter-php v0.24.2
+#18 8.903   Downloaded tree-sitter-typescript v0.23.2
+#18 8.929   Downloaded tokio v1.53.1
+#18 9.000   Downloaded tree-sitter-cpp v0.23.4
+#18 9.023   Downloaded tree-sitter-sequel v0.3.11
+#18 9.045   Downloaded tree-sitter-c-sharp v0.23.5
+#18 9.411    Compiling libc v0.2.189
+#18 9.411    Compiling proc-macro2 v1.0.107
+#18 9.411    Compiling unicode-ident v1.0.24
+#18 9.411    Compiling quote v1.0.47
+#18 9.415    Compiling shlex v2.0.1
+#18 9.416    Compiling find-msvc-tools v0.1.11
+#18 9.416     Checking memchr v2.8.3
+#18 9.416    Compiling serde_core v1.0.229
+#18 9.419     Checking smallvec v1.16.0
+#18 9.419    Compiling zmij v1.0.23
+#18 9.424    Compiling serde v1.0.229
+#18 9.436    Compiling tree-sitter-language v0.1.8
+#18 9.440     Checking cfg-if v1.0.4
+#18 9.447     Checking bitflags v2.13.1
+#18 9.451    Compiling hashbrown v0.17.1
+#18 9.452    Compiling equivalent v1.0.2
+#18 9.452    Compiling version_check v0.9.5
+#18 9.457     Checking itoa v1.0.18
+#18 9.461     Checking typenum v1.20.1
+#18 9.462    Compiling parking_lot_core v0.9.12
+#18 9.462     Checking once_cell v1.21.4
+#18 9.473    Compiling rustix v1.1.4
+#18 9.481     Checking linux-raw-sys v0.12.1
+#18 9.481     Checking scopeguard v1.2.0
+#18 9.481    Compiling serde_json v1.0.151
+#18 9.489    Compiling thiserror v2.0.20
+#18 9.489    Compiling getrandom v0.4.3
+#18 9.489    Compiling verus_prettyplease v0.0.0-2026-09-06-0133
+#18 9.490     Checking cpufeatures v0.2.17
+#18 9.490     Checking unicode-segmentation v1.13.3
+#18 9.490     Checking unicode-width v0.2.0
+#18 9.491     Checking fastrand v2.5.0
+#18 9.504    Compiling convert_case v0.4.0
+#18 9.526    Compiling vstd v0.0.0-2026-09-06-0133
+#18 9.529     Checking verus_builtin v0.0.0-2026-09-06-0133
+#18 9.659     Checking str_indices v0.4.4
+#18 9.686    Compiling strop-worker-protocol v0.35.0 (/app/crates/strop-worker-protocol)
+#18 9.691     Checking log v0.4.34
+#18 9.703     Checking stable_deref_trait v1.2.1
+#18 9.726     Checking lock_api v0.4.14
+#18 9.751     Checking pin-project-lite v0.2.17
+#18 9.769     Checking writeable v0.6.4
+#18 9.790     Checking litemap v0.8.3
+#18 9.802    Compiling icu_normalizer_data v2.3.0
+#18 9.832    Compiling icu_properties_data v2.3.0
+#18 9.881     Checking utf8_iter v1.0.4
+#18 9.910     Checking ropey v1.6.1
+#18 9.931     Checking bytes v1.12.1
+#18 9.976     Checking regex-syntax v0.8.11
+#18 10.05     Checking bytemuck v1.25.2
+#18 10.05    Compiling generic-array v0.14.7
+#18 10.06     Checking percent-encoding v2.3.2
+#18 10.07     Checking rand_core v0.9.5
+#18 10.07     Checking bitmaps v3.2.1
+#18 10.07    Compiling pkg-config v0.3.34
+#18 10.17     Checking archery v1.2.3
+#18 10.17    Compiling vcpkg v0.2.15
+#18 10.20     Checking tinyvec_macros v0.1.1
+#18 10.26     Checking form_urlencoded v1.2.2
+#18 10.29     Checking rand_xoshiro v0.7.0
+#18 10.30    Compiling crossbeam-utils v0.8.22
+#18 10.30     Checking aho-corasick v1.1.5
+#18 10.36     Checking streaming-iterator v0.1.9
+#18 10.36     Checking tinyvec v1.13.2
+#18 10.36    Compiling crossbeam-epoch v0.9.20
+#18 10.39     Checking futures-core v0.3.34
+#18 10.42     Checking futures-sink v0.3.34
+#18 10.45     Checking safe_arch v0.7.4
+#18 10.50     Checking futures-io v0.3.34
+#18 10.53    Compiling crossbeam-deque v0.8.7
+#18 10.54    Compiling crc32fast v1.5.2
+#18 10.56     Checking bstr v1.13.1
+#18 10.59    Compiling simd-adler32 v0.3.10
+#18 10.65     Checking futures-channel v0.3.34
+#18 10.70    Compiling indexmap v2.14.1
+#18 10.72     Checking slab v0.4.12
+#18 10.76     Checking futures-task v0.3.34
+#18 10.87     Checking same-file v1.0.6
+#18 10.91    Compiling adler2 v2.0.1
+#18 10.97     Checking tracing-core v0.1.36
+#18 11.00     Checking winnow v0.7.15
+#18 11.00     Checking walkdir v2.5.0
+#18 11.03    Compiling miniz_oxide v0.9.1
+#18 11.04     Checking imbl-sized-chunks v0.1.3
+#18 11.05     Checking toml_write v0.1.2
+#18 11.05     Checking bitflags v1.3.2
+#18 11.07     Checking nucleo-matcher v0.3.1
+#18 11.09     Checking tower-service v0.3.3
+#18 11.13     Checking base64 v0.22.1
+#18 11.15    Compiling rustversion v1.0.23
+#18 11.17     Checking wide v0.7.33
+#18 11.19     Checking tower-layer v0.3.3
+#18 11.21    Compiling strsim v0.11.1
+#18 11.27     Checking unicode-normalization v0.1.25
+#18 11.29    Compiling ident_case v1.0.1
+#18 11.35    Compiling signal-hook v0.3.18
+#18 11.42    Compiling rustix v0.38.44
+#18 11.44     Checking either v1.18.0
+#18 11.45    Compiling instability v0.3.13
+#18 11.46    Compiling paste v1.0.15
+#18 11.48     Checking foldhash v0.1.5
+#18 11.56    Compiling heck v0.5.0
+#18 11.59     Checking linux-raw-sys v0.4.15
+#18 11.60     Checking unicode-width v0.1.14
+#18 11.66     Checking allocator-api2 v0.2.21
+#18 11.70    Compiling indoc v2.0.7
+#18 11.78     Checking static_assertions v1.1.0
+#18 11.79     Checking ryu v1.0.23
+#18 11.81    Compiling syn v3.0.4
+#18 11.82    Compiling syn v2.0.119
+#18 11.82    Compiling verus_syn v0.0.0-2026-09-06-0133
+#18 11.84    Compiling flate2 v1.1.10
+#18 11.87     Checking itertools v0.13.0
+#18 11.93    Compiling portable-atomic v1.15.0
+#18 12.03     Checking cassowary v0.3.0
+#18 12.03     Checking utf8parse v0.2.2
+#18 12.10     Checking number_prefix v0.4.0
+#18 12.10    Compiling vte_generate_state_changes v0.1.2
+#18 12.10     Checking arrayvec v0.7.8
+#18 12.14     Checking crypto-common v0.1.7
+#18 12.17     Checking block-buffer v0.10.4
+#18 12.20     Checking errno v0.3.14
+#18 12.26     Checking mio v1.2.2
+#18 12.30     Checking hashbrown v0.15.5
+#18 12.35    Compiling jobserver v0.1.35
+#18 12.36     Checking digest v0.10.7
+#18 12.36     Checking signal-hook-registry v1.4.8
+#18 12.36    Compiling filetime v0.2.29
+#18 12.41     Checking console v0.15.11
+#18 12.49     Checking parking_lot v0.12.5
+#18 12.66     Checking vte v0.11.1
+#18 12.74    Compiling cc v1.2.67
+#18 12.75     Checking sha2 v0.10.9
+#18 12.79     Checking castaway v0.2.4
+#18 12.89     Checking tokio v1.53.1
+#18 12.92     Checking signal-hook-mio v0.2.5
+#18 12.93     Checking compact_str v0.8.2
+#18 13.36     Checking lru v0.12.5
+#18 13.37     Checking regex-automata v0.4.18
+#18 13.51     Checking crossterm v0.28.1
+#18 13.75     Checking vt100 v0.15.2
+#18 13.89     Checking indicatif v0.17.11
+#18 14.07     Checking imbl v7.0.1
+#18 14.36     Checking unicode-truncate v1.1.0
+#18 14.83    Compiling xattr v1.6.1
+#18 14.92    Compiling tree-sitter-json v0.24.8
+#18 14.92    Compiling tree-sitter-sequel v0.3.11
+#18 14.92    Compiling tree-sitter-ruby v0.23.1
+#18 14.92    Compiling tree-sitter-typescript v0.23.2
+#18 14.92    Compiling tree-sitter-bash v0.25.1
+#18 14.92    Compiling tree-sitter-fish v3.6.0
+#18 14.92    Compiling tree-sitter-html v0.23.2
+#18 14.93    Compiling tree-sitter-php v0.24.2
+#18 14.93    Compiling tree-sitter-c-sharp v0.23.5
+#18 14.93    Compiling tree-sitter-python v0.25.0
+#18 14.94    Compiling tree-sitter-javascript v0.25.0
+#18 14.94    Compiling tree-sitter-toml-ng v0.7.0
+#18 14.95    Compiling tree-sitter-lua v0.5.0
+#18 14.95    Compiling tree-sitter-java v0.23.5
+#18 14.95    Compiling tree-sitter-md v0.5.3
+#18 14.95    Compiling tree-sitter-go v0.25.0
+#18 14.97    Compiling tree-sitter-cmake v0.7.4
+#18 15.12    Compiling tree-sitter-c v0.24.2
+#18 15.20    Compiling tree-sitter-cpp v0.23.4
+#18 15.23    Compiling tree-sitter-css v0.25.0
+#18 15.28    Compiling tree-sitter-rust v0.24.2
+#18 15.31    Compiling tree-sitter-yaml v0.7.2
+#18 15.37    Compiling libz-sys v1.1.29
+#18 15.45    Compiling libgit2-sys v0.18.8+1.9.7
+#18 15.54    Compiling tar v0.4.46
+#18 16.53     Checking regex v1.13.1
+#18 16.53     Checking globset v0.4.20
+#18 17.07     Checking ignore v0.4.33
+#18 17.33    Compiling tree-sitter v0.25.10
+#18 17.36    Compiling strop-terminal v0.35.0 (/app/crates/strop-terminal)
+#18 17.91    Compiling darling_core v0.24.1
+#18 18.62     Checking tokio-util v0.7.19
+#18 19.19    Compiling synstructure v0.13.2
+#18 20.43    Compiling serde_derive v1.0.229
+#18 20.43    Compiling thiserror-impl v2.0.20
+#18 20.43    Compiling zerovec-derive v0.11.6
+#18 20.44    Compiling displaydoc v0.2.7
+#18 20.44    Compiling futures-macro v0.3.34
+#18 20.45    Compiling serde_repr v0.1.21
+#18 20.47     Checking tempfile v3.27.0
+#18 20.49     Checking waitpid-any v0.3.0
+#18 20.64     Checking rustix-openpty v0.2.0
+#18 21.93     Checking futures-util v0.3.34
+#18 21.95    Compiling zerofrom-derive v0.1.7
+#18 21.95    Compiling yoke-derive v0.8.2
+#18 21.95    Compiling tracing-attributes v0.1.31
+#18 21.98    Compiling strum_macros v0.26.4
+#18 23.56    Compiling darling_macro v0.24.1
+#18 24.13     Checking zerofrom v0.1.8
+#18 24.28     Checking yoke v0.8.3
+#18 24.40     Checking tracing v0.1.44
+#18 24.47    Compiling darling v0.24.1
+#18 24.56     Checking zerovec v0.11.8
+#18 24.56     Checking zerotrie v0.2.5
+#18 25.28     Checking strum v0.26.3
+#18 25.34    Compiling verus_state_machines_macros v0.0.0-2026-09-06-0133
+#18 25.34    Compiling verus_builtin_macros v0.0.0-2026-09-06-0133
+#18 25.49     Checking tinystr v0.8.4
+#18 25.49     Checking potential_utf v0.1.6
+#18 25.62     Checking icu_collections v2.3.0
+#18 25.67     Checking ratatui v0.29.0
+#18 25.71     Checking icu_locale_core v2.3.0
+#18 26.53     Checking futures v0.3.34
+#18 26.62     Checking strop-trace v0.35.0 (/app/crates/strop-trace)
+#18 26.62     Checking toml_datetime v0.6.11
+#18 26.62     Checking serde_spanned v0.6.9
+#18 26.77     Checking icu_provider v2.3.1
+#18 26.81     Checking toml_edit v0.22.27
+#18 27.07     Checking icu_properties v2.3.0
+#18 27.07     Checking icu_normalizer v2.3.0
+#18 28.56     Checking idna_adapter v1.2.2
+#18 28.64     Checking idna v1.1.0
+#18 28.72     Checking toml v0.8.23
+#18 28.95     Checking url v2.5.8
+#18 29.52     Checking lsp-types v0.95.1
+#18 29.52     Checking git2 v0.20.4
+#18 36.43     Checking strop-core v0.35.0 (/app/crates/strop-core)
+#18 38.14     Checking strop-workspace v0.35.0 (/app/crates/strop-workspace)
+#18 38.14     Checking strop-syntax v0.35.0 (/app/crates/strop-syntax)
+#18 38.14     Checking strop-grammar v0.35.0 (/app/crates/strop-grammar)
+#18 38.60     Checking async-lsp v0.2.4
+#18 39.10     Checking strop-containers v0.35.0 (/app/crates/strop-containers)
+#18 39.10     Checking strop-fs v0.35.0 (/app/crates/strop-fs)
+#18 40.62     Checking strop-worker-client v0.35.0 (/app/crates/strop-worker-client)
+#18 40.62     Checking strop-worker v0.35.0 (/app/crates/strop-worker)
+#18 40.90     Checking strop-worker-deploy v0.35.0 (/app/crates/strop-worker-deploy)
+#18 41.50     Checking strop-remote v0.35.0 (/app/crates/strop-remote)
+#18 43.47     Checking strop-picker v0.35.0 (/app/crates/strop-picker)
+#18 43.47     Checking strop-lsp v0.35.0 (/app/crates/strop-lsp)
+#18 43.47     Checking strop-git v0.35.0 (/app/crates/strop-git)
+#18 80.08     Checking strop-engine v0.35.0 (/app/crates/strop-engine)
+#18 88.48     Checking strop-ui-protocol v0.35.0 (/app/crates/strop-ui-protocol)
+#18 89.54     Checking strop-editor v0.35.0 (/app/crates/strop)
+#18 92.87     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 29s
+#18 93.36 warning: output filename collision at /app/target/debug/examples/probe
+#18 93.36   |
+#18 93.36   = note: the example target `probe` in package `strop-syntax v0.35.0 (/app/crates/strop-syntax)` has the same output filename as the example target `probe` in package `strop-lsp v0.35.0 (/app/crates/strop-lsp)`
+#18 93.36   = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+#18 93.36   = help: consider changing their names to be unique or compiling them separately
+#18 93.36 warning: output filename collision at /app/target/debug/examples/probe.dwp
+#18 93.36   |
+#18 93.36   = note: the example target `probe` in package `strop-syntax v0.35.0 (/app/crates/strop-syntax)` has the same output filename as the example target `probe` in package `strop-lsp v0.35.0 (/app/crates/strop-lsp)`
+#18 93.36   = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+#18 93.36   = help: consider changing their names to be unique or compiling them separately
+#18 93.60    Compiling memchr v2.8.3
+#18 93.60    Compiling cfg-if v1.0.4
+#18 93.60    Compiling bitflags v2.13.1
+#18 93.61    Compiling equivalent v1.0.2
+#18 93.61    Compiling smallvec v1.16.0
+#18 93.61    Compiling itoa v1.0.18
+#18 93.61    Compiling hashbrown v0.17.1
+#18 93.62    Compiling typenum v1.20.1
+#18 93.62    Compiling once_cell v1.21.4
+#18 93.62    Compiling scopeguard v1.2.0
+#18 93.62    Compiling linux-raw-sys v0.12.1
+#18 93.62    Compiling cpufeatures v0.2.17
+#18 93.63    Compiling unicode-segmentation v1.13.3
+#18 93.63    Compiling fastrand v2.5.0
+#18 93.63    Compiling unicode-width v0.2.0
+#18 93.63    Compiling libc v0.2.189
+#18 93.64    Compiling str_indices v0.4.4
+#18 93.64    Compiling verus_builtin v0.0.0-2026-09-06-0133
+#18 93.65    Compiling serde_core v1.0.229
+#18 93.65    Compiling zmij v1.0.23
+#18 93.65    Compiling strop-worker-protocol v0.35.0 (/app/crates/strop-worker-protocol)
+#18 93.65    Compiling log v0.4.34
+#18 93.65    Compiling stable_deref_trait v1.2.1
+#18 93.65    Compiling pin-project-lite v0.2.17
+#18 93.65    Compiling litemap v0.8.3
+#18 93.65    Compiling bytes v1.12.1
+#18 93.65    Compiling writeable v0.6.4
+#18 93.67    Compiling tree-sitter-language v0.1.8
+#18 93.67    Compiling utf8_iter v1.0.4
+#18 93.67    Compiling thiserror v2.0.20
+#18 93.67    Compiling zerofrom v0.1.8
+#18 93.72    Compiling lock_api v0.4.14
+#18 93.73    Compiling icu_normalizer_data v2.3.0
+#18 93.73    Compiling icu_properties_data v2.3.0
+#18 93.74    Compiling regex-syntax v0.8.11
+#18 93.74    Compiling bytemuck v1.25.2
+#18 93.76    Compiling bitmaps v3.2.1
+#18 93.77    Compiling rand_core v0.9.5
+#18 93.79    Compiling percent-encoding v2.3.2
+#18 93.83    Compiling archery v1.2.3
+#18 93.83    Compiling tinyvec_macros v0.1.1
+#18 93.87    Compiling ropey v1.6.1
+#18 93.87    Compiling yoke v0.8.3
+#18 93.87    Compiling streaming-iterator v0.1.9
+#18 93.89    Compiling futures-sink v0.3.34
+#18 93.89    Compiling futures-core v0.3.34
+#18 93.91    Compiling crossbeam-utils v0.8.22
+#18 93.94    Compiling tinyvec v1.13.2
+#18 93.94    Compiling futures-io v0.3.34
+#18 93.95    Compiling rustix v1.1.4
+#18 93.97    Compiling rand_xoshiro v0.7.0
+#18 93.99    Compiling same-file v1.0.6
+#18 94.00    Compiling futures-task v0.3.34
+#18 94.00    Compiling slab v0.4.12
+#18 94.00    Compiling crc32fast v1.5.2
+#18 94.02    Compiling form_urlencoded v1.2.2
+#18 94.04    Compiling futures-channel v0.3.34
+#18 94.06    Compiling tracing-core v0.1.36
+#18 94.13    Compiling safe_arch v0.7.4
+#18 94.14    Compiling walkdir v2.5.0
+#18 94.15    Compiling winnow v0.7.15
+#18 94.17    Compiling toml_write v0.1.2
+#18 94.18    Compiling zerovec v0.11.8
+#18 94.19    Compiling zerotrie v0.2.5
+#18 94.21    Compiling bitflags v1.3.2
+#18 94.21    Compiling flate2 v1.1.10
+#18 94.22    Compiling tower-layer v0.3.3
+#18 94.23    Compiling tower-service v0.3.3
+#18 94.28    Compiling base64 v0.22.1
+#18 94.28    Compiling unicode-width v0.1.14
+#18 94.28    Compiling allocator-api2 v0.2.21
+#18 94.29    Compiling linux-raw-sys v0.4.15
+#18 94.33    Compiling either v1.18.0
+#18 94.40    Compiling foldhash v0.1.5
+#18 94.41    Compiling castaway v0.2.4
+#18 94.46    Compiling ryu v1.0.23
+#18 94.46    Compiling static_assertions v1.1.0
+#18 94.39    Compiling strum v0.26.3
+#18 94.41    Compiling cassowary v0.3.0
+#18 94.41    Compiling portable-atomic v1.15.0
+#18 94.42    Compiling arrayvec v0.7.8
+#18 94.45    Compiling number_prefix v0.4.0
+#18 94.52    Compiling crossbeam-epoch v0.9.20
+#18 94.53    Compiling compact_str v0.8.2
+#18 94.57    Compiling imbl-sized-chunks v0.1.3
+#18 94.58    Compiling wide v0.7.33
+#18 94.61    Compiling indexmap v2.14.1
+#18 94.62    Compiling unicode-normalization v0.1.25
+#18 94.65    Compiling aho-corasick v1.1.5
+#18 94.65    Compiling bstr v1.13.1
+#18 94.70    Compiling futures-util v0.3.34
+#18 94.71    Compiling nucleo-matcher v0.3.1
+#18 94.73    Compiling tracing v0.1.44
+#18 94.77    Compiling rustix v0.38.44
+#18 94.78    Compiling itertools v0.13.0
+#18 94.80    Compiling hashbrown v0.15.5
+#18 94.84    Compiling utf8parse v0.2.2
+#18 94.93    Compiling generic-array v0.14.7
+#18 94.95    Compiling vte v0.11.1
+#18 95.00    Compiling crossbeam-deque v0.8.7
+#18 95.16    Compiling tinystr v0.8.4
+#18 95.16    Compiling potential_utf v0.1.6
+#18 95.23    Compiling jobserver v0.1.35
+#18 95.26    Compiling parking_lot_core v0.9.12
+#18 95.29    Compiling getrandom v0.4.3
+#18 95.30    Compiling errno v0.3.14
+#18 95.30    Compiling mio v1.2.2
+#18 95.32    Compiling icu_collections v2.3.0
+#18 95.37    Compiling filetime v0.2.29
+#18 95.40    Compiling console v0.15.11
+#18 95.43    Compiling icu_locale_core v2.3.0
+#18 95.46    Compiling signal-hook-registry v1.4.8
+#18 95.53    Compiling parking_lot v0.12.5
+#18 95.53    Compiling cc v1.2.67
+#18 95.71    Compiling signal-hook v0.3.18
+#18 95.91    Compiling lru v0.12.5
+#18 95.91    Compiling indicatif v0.17.11
+#18 95.93    Compiling tokio v1.53.1
+#18 95.97    Compiling vt100 v0.15.2
+#18 95.98    Compiling block-buffer v0.10.4
+#18 96.02    Compiling crypto-common v0.1.7
+#18 96.04    Compiling serde_json v1.0.151
+#18 96.09    Compiling signal-hook-mio v0.2.5
+#18 96.10    Compiling verus_state_machines_macros v0.0.0-2026-09-06-0133
+#18 96.18    Compiling crossterm v0.28.1
+#18 96.20    Compiling digest v0.10.7
+#18 96.47    Compiling sha2 v0.10.9
+#18 96.85    Compiling regex-automata v0.4.18
+#18 96.89    Compiling xattr v1.6.1
+#18 96.92    Compiling icu_provider v2.3.1
+#18 97.16    Compiling tar v0.4.46
+#18 97.37    Compiling icu_normalizer v2.3.0
+#18 97.42    Compiling icu_properties v2.3.0
+#18 97.50    Compiling unicode-truncate v1.1.0
+#18 97.58    Compiling serde v1.0.229
+#18 97.59    Compiling imbl v7.0.1
+#18 97.68    Compiling ratatui v0.29.0
+#18 97.85    Compiling tree-sitter-cpp v0.23.4
+#18 97.85    Compiling tree-sitter-rust v0.24.2
+#18 97.85    Compiling tree-sitter-javascript v0.25.0
+#18 97.85    Compiling tree-sitter-css v0.25.0
+#18 97.85    Compiling tree-sitter-sequel v0.3.11
+#18 97.85    Compiling tree-sitter-c v0.24.2
+#18 97.85    Compiling tree-sitter-ruby v0.23.1
+#18 97.88    Compiling tree-sitter-json v0.24.8
+#18 97.91    Compiling tree-sitter-php v0.24.2
+#18 97.94    Compiling tree-sitter-typescript v0.23.2
+#18 97.98    Compiling tree-sitter-yaml v0.7.2
+#18 98.00    Compiling tree-sitter-java v0.23.5
+#18 98.00    Compiling tree-sitter-bash v0.25.1
+#18 98.04    Compiling tree-sitter-toml-ng v0.7.0
+#18 98.10    Compiling tree-sitter v0.25.10
+#18 98.13    Compiling tree-sitter-python v0.25.0
+#18 98.16    Compiling tree-sitter-fish v3.6.0
+#18 98.27    Compiling tree-sitter-lua v0.5.0
+#18 98.37    Compiling tree-sitter-go v0.25.0
+#18 98.38    Compiling tree-sitter-md v0.5.3
+#18 98.39    Compiling tree-sitter-c-sharp v0.23.5
+#18 98.41    Compiling tree-sitter-cmake v0.7.4
+#18 98.42    Compiling tree-sitter-html v0.23.2
+#18 98.96    Compiling libz-sys v1.1.29
+#18 99.16    Compiling libgit2-sys v0.18.8+1.9.7
+#18 99.32    Compiling strop-trace v0.35.0 (/app/crates/strop-trace)
+#18 99.44    Compiling serde_spanned v0.6.9
+#18 99.53    Compiling toml_datetime v0.6.11
+#18 99.64    Compiling strop-terminal v0.35.0 (/app/crates/strop-terminal)
+#18 99.72    Compiling idna_adapter v1.2.2
+#18 99.89    Compiling idna v1.1.0
+#18 99.90    Compiling toml_edit v0.22.27
+#18 100.0    Compiling futures v0.3.34
+#18 100.5    Compiling url v2.5.8
+#18 101.1    Compiling regex v1.13.1
+#18 101.1    Compiling globset v0.4.20
+#18 101.6    Compiling lsp-types v0.95.1
+#18 101.9    Compiling ignore v0.4.33
+#18 102.5    Compiling tokio-util v0.7.19
+#18 103.3    Compiling toml v0.8.23
+#18 103.5    Compiling tempfile v3.27.0
+#18 103.5    Compiling waitpid-any v0.3.0
+#18 103.5    Compiling rustix-openpty v0.2.0
+#18 103.6    Compiling vstd v0.0.0-2026-09-06-0133
+#18 107.3    Compiling git2 v0.20.4
+#18 107.3    Compiling strop-core v0.35.0 (/app/crates/strop-core)
+#18 109.8    Compiling strop-workspace v0.35.0 (/app/crates/strop-workspace)
+#18 109.8    Compiling strop-grammar v0.35.0 (/app/crates/strop-grammar)
+#18 111.0    Compiling strop-containers v0.35.0 (/app/crates/strop-containers)
+#18 111.0    Compiling strop-fs v0.35.0 (/app/crates/strop-fs)
+#18 111.2    Compiling strop-syntax v0.35.0 (/app/crates/strop-syntax)
+#18 113.5    Compiling strop-worker-client v0.35.0 (/app/crates/strop-worker-client)
+#18 113.5    Compiling strop-worker v0.35.0 (/app/crates/strop-worker)
+#18 114.8    Compiling strop-worker-deploy v0.35.0 (/app/crates/strop-worker-deploy)
+#18 115.2    Compiling async-lsp v0.2.4
+#18 115.8    Compiling strop-remote v0.35.0 (/app/crates/strop-remote)
+#18 119.7    Compiling strop-picker v0.35.0 (/app/crates/strop-picker)
+#18 119.7    Compiling strop-git v0.35.0 (/app/crates/strop-git)
+#18 119.7    Compiling strop-lsp v0.35.0 (/app/crates/strop-lsp)
+#18 152.5    Compiling strop-engine v0.35.0 (/app/crates/strop-engine)
+#18 165.0    Compiling strop-ui-protocol v0.35.0 (/app/crates/strop-ui-protocol)
+#18 187.5    Compiling strop-editor v0.35.0 (/app/crates/strop)
+#18 209.2     Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 56s
+#18 209.2      Running unittests src/lib.rs (target/debug/deps/strop_containers-ef7c97e060dac3a6)
+#18 209.2 
+#18 209.2 running 38 tests
+#18 209.2 test engine::tests::inspect_json_decodes_to_identity ... ok
+#18 209.2 test engine::tests::missing_object_and_daemon_errors_classify ... ok
+#18 209.2 test engine::tests::non_canonical_ids_are_protocol_violations ... ok
+#18 209.2 test engine::tests::stderr_tail_is_bounded_and_single_line ... ok
+#18 209.2 test exec::tests::nonces_are_unique_per_session ... ok
+#18 209.2 test exec::tests::capture_mode_selects_the_null_lease ... ok
+#18 209.2 test exec::tests::command_is_pinned_argv_only_supervised_stdio ... ok
+#18 209.2 test exec::tests::records_parse_only_this_sessions_marked_lines ... ok
+#18 209.2 test exec::tests::spec_validation_refuses_unsafe_shape_before_any_engine ... ok
+#18 209.2 test exec::tests::retain_keeps_head_plus_tail_and_counts_the_middle ... ok
+#18 209.2 test exec::tests::worker_command_runs_the_worker_directly_without_a_shell ... ok
+#18 209.2 test identity::tests::names_are_validated_before_the_engine_sees_them ... ok
+#18 209.2 test identity::tests::references_carry_only_canonical_ids ... ok
+#18 209.2 test read::tests::a_symlink_archive_offers_its_target_once ... ok
+#18 209.2 test read::tests::a_streamed_symlink_answer_resolves_one_hop ... ok
+#18 209.2 test read::tests::a_file_answer_is_a_refusal_and_escapes_are_protocol_errors ... ok
+#18 209.2 test read::tests::direct_children_only_with_sizes_on_files ... ok
+#18 209.2 test read::tests::a_truncated_stream_is_a_protocol_error_at_finish ... ok
+#18 209.2 test read::tests::symlink_targets_resolve_posix_style ... ok
+#18 209.2 test read::tests::root_components_are_normalized ... ok
+#18 209.2 test stat::tests::a_symlink_is_reported_never_followed ... ok
+#18 209.2 test stat::tests::the_first_header_carries_lstat_facts ... ok
+#18 209.2 test stat::tests::the_abort_never_reads_past_the_first_header ... ok
+#18 209.2 test stat::tests::split_delivery_across_the_header_still_parses ... ok
+#18 209.2 test tar::tests::a_truncated_capture_keeps_the_final_entries_prefix_only ... ok
+#18 209.2 test tar::tests::parses_kinds_and_content_offsets ... ok
+#18 209.2 test tar::tests::gnu_longname_overrides_the_header_field ... ok
+#18 209.2 test tar::tests::pax_path_overrides_the_header_field ... ok
+#18 209.2 test tar::tests::stream_parser_rejects_structural_garbage ... ok
+#18 209.2 test tar::tests::stream_parser_reports_truncation ... ok
+#18 209.2 test tar::tests::structural_garbage_is_an_error ... ok
+#18 209.2 test write::tests::oversized_or_slash_carrying_names_are_refused ... ok
+#18 209.2 test write::tests::the_header_carries_principal_ownership_and_mode ... ok
+#18 209.2 test write::tests::the_header_round_trips_through_the_strict_reader ... ok
+#18 209.2 test tar::tests::streaming_parses_all_entry_shapes_across_chunkings ... ok
+#18 209.2 test tar::tests::subtree_content_streams_without_shaping_headers ... ok
+#18 209.3 test read::tests::subtree_bulk_streams_through_without_retention ... ok
+#18 209.3 test read::tests::retention_overflow_is_output_too_large ... ok
+#18 209.3 
+#18 209.3 test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+#18 209.3 
+#18 209.3      Running tests/docker.rs (target/debug/deps/docker-573aca1c7d56dd5a)
+#18 209.3 
+#18 209.3 running 8 tests
+#18 209.3 test admission_refuses_stale_and_unknown_incarnations ... ok
+#18 209.3 test inspect_resolves_names_prefixes_and_ids_to_canonical_identities ... ok
+#18 209.3 test lease_close_and_client_kill_reap_the_whole_group ... ok
+#18 209.3 test listing_streams_subtree_bulk_without_retaining_it ... ok
+#18 209.3 test listings_and_reads_roundtrip_through_the_engine ... ok
+#18 209.3 test missing_paths_and_capability_mismatches_are_typed ... ok
+#18 209.3 test restart_and_recreation_are_stale_identity_refusals ... ok
+#18 209.3 test supervised_capture_classifies_launch_and_exit_codes ... ok
+#18 209.3 
+#18 209.3 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 209.3 
+#18 209.3      Running tests/incarnation.rs (target/debug/deps/incarnation-0e4632b273b81c16)
+#18 209.3 
+#18 209.3 running 4 tests
+#18 209.3 test a_changed_default_context_cannot_retarget_a_pinned_engine ... ok
+#18 209.3 test a_stopped_container_is_a_typed_refusal_not_stale_bytes ... ok
+#18 209.3 test exec_user_and_workdir_bind_the_selected_namespace ... ok
+#18 209.3 test the_launched_record_pid_is_namespace_local ... ok
+#18 209.3 
+#18 209.3 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 209.3 
+#18 209.3      Running unittests src/lib.rs (target/debug/deps/strop_core-9f0cf062dadedd84)
+#18 209.3 
+#18 209.3 running 42 tests
+#18 209.3 test buffer::safety_tests::readonly_refuses_mutation_at_the_boundary ... ok
+#18 209.3 test buffer::seed::tests::history_that_disagrees_with_text_is_rejected ... ok
+#18 209.3 test history::tests::edit_after_undo_forks_a_branch ... ok
+#18 209.3 test history::tests::linear_undo_redo ... ok
+#18 209.3 test buffer::seed::tests::witness_digest_tracks_text_exactly ... ok
+#18 209.3 test buffer::seed::tests::seed_round_trips_content_history_and_disk_baseline ... ok
+#18 209.3 test id::seed::tests::corrupt_seeds_are_rejected_not_repaired ... ok
+#18 209.3 test id::seed::tests::seed_round_trips_ids_free_slots_and_generations ... ok
+#18 209.3 test id::tests::generation_wrap_retires_the_slot ... ok
+#18 209.3 test id::tests::retired_slots_stay_dead_across_seeds ... ok
+#18 209.3 test id::tests::stale_ids_fail_lookup ... ok
+#18 209.3 test languages::tests::ambiguous_headers_follow_one_policy ... ok
+#18 209.3 test languages::tests::cpp_membership_covers_the_documented_extensions ... ok
+#18 209.3 test languages::tests::lua_resolves_through_extension_name_and_alias ... ok
+#18 209.3 test layout::tests::absolute_tabs_and_unicode_cells ... ok
+#18 209.3 test layout::tests::clipping_preserves_cells_not_partial_glyphs ... ok
+#18 209.3 test layout::tests::rope_chunk_boundaries_preserve_extended_clusters ... ok
+#18 209.3 test selection::tests::invariants_hold ... ok
+#18 209.3 test process::capture::tests::null_stdin_delivers_eof_immediately ... ok
+#18 209.3 test selection::tests::remap_shifts_past_the_edit ... ok
+#18 209.3 test buffer::layout_cache::tests::edits_keep_only_proven_prefixes_and_reject_old_publications ... ok
+#18 209.3 test process::capture::tests::small_outputs_come_back_whole ... ok
+#18 209.3 test process::tests::leased_cancellation_allows_helper_cleanup_before_reaping ... ok
+#18 209.3 test process::capture::tests::stderr_tail_keeps_the_final_record ... ok
+#18 209.3 test theme::tests::ansi256_plants_the_seed_and_the_standard_ramps ... ok
+#18 209.3 test process::capture::tests::a_consumer_error_kills_the_child_promptly ... ok
+#18 209.3 test process::capture::tests::stdout_keeps_the_head_and_counts_the_drops ... ok
+#18 209.3 test worker::tests::queued_cancellation_prevents_work_from_starting ... ok
+#18 209.3 test worker::tests::late_registration_runs_immediately_and_success_wins_when_already_published ... ok
+#18 209.3 test worker::effect::tests::cancellation_cleanup_failure_preserves_the_observed_value ... ok
+#18 209.3 test worker::effect::tests::cancellation_waits_for_the_actual_committed_effect_receipt ... ok
+#18 209.3 test layout::tests::columns_do_not_alias_at_terminal_limit ... ok
+#18 209.3 test worker::tests::cancellation_reserves_terminal_before_callback_and_worker_success ... ok
+#18 209.3 test worker::tests::scoped_worker_cancellation_does_not_skip_physical_join ... ok
+#18 209.3 test buffer::layout_cache::tests::indexed_unicode_cells_and_byte_offsets_match_the_frozen_line ... ok
+#18 209.3 test process::capture::tests::streaming_delivers_every_byte_whole_and_unbounded ... ok
+#18 209.4 test buffer::safety_tests::non_utf8_filename_opens_and_roundtrips ... ok
+#18 209.4 test buffer::safety_tests::save_refuses_external_change_unless_forced ... ok
+#18 209.4 test buffer::safety_tests::save_is_atomic_and_keeps_permissions ... ok
+#18 209.4 test persistence_tests::predictable_staging_symlink_cannot_redirect_a_save ... ok
+#18 210.3 test process::capture::tests::a_silent_child_still_times_out ... ok
+#18 211.3 test process::capture::tests::held_stdin_is_open_rather_than_eof ... ok
+#18 211.3 
+#18 211.3 test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.03s
+#18 211.3 
+#18 211.3      Running unittests src/main.rs (target/debug/deps/strop-c5cb841ed13e253f)
+#18 211.3 
+#18 211.3 running 114 tests
+#18 211.3 test cli::location::tests::invalid_or_ambiguous_locations_fail_before_opening ... ok
+#18 211.3 test cli::location::tests::native_filename_bytes_survive_location_suffix_removal ... ok
+#18 211.3 test cli::location::tests::suffix_and_literal_operands_have_distinct_meanings ... ok
+#18 211.3 test cli::location::tests::ssh_urls_accept_a_line_suffix_like_local_files ... ok
+#18 211.3 test headless::directives::tests::literal_key_spaces_survive_directive_parsing ... ok
+#18 211.3 test headless::directives::tests::invalid_durations_are_not_silently_defaulted ... ok
+#18 211.3 test render::buffer::tests::diagnostics::unattached_combining_cluster_cannot_rewrite_the_gutter ... ok
+#18 211.3 test render::buffer::tests::viewport::clipped_graphemes_keep_overlay_ranges_and_precedence ... ok
+#18 211.3 test render::buffer::tests::diagnostics::last_text_row_and_four_digit_gutter_keep_caret_alignment ... ok
+#18 211.3 test render::buffer::tests::diagnostics::typed_diff_rows_keep_fixed_numbers_and_scrolled_content ... ok
+#18 211.3 test render::buffer::tests::diagnostics::cursor_line_shows_eol_diagnostic ... ok
+#18 211.3 test render::buffer::tests::viewport::extra_carets_and_vertical_bounds_do_not_alias ... ok
+#18 211.3 test render::buffer::tests::viewport::diff_background_and_annotation_use_absolute_cells ... ok
+#18 211.3 test render::diff::list::tests::file_row_padding_counts_display_cells ... ok
+#18 211.3 test render::diff::list::tests::file_row_mutes_directory_and_emphasizes_filename ... ok
+#18 211.3 test render::diff::list::tests::graph_art_and_plain_rows_stay_unmuted ... ok
+#18 211.3 test render::diff::list::tests::log_row_quiets_metadata_and_keeps_bytes ... ok
+#18 211.3 test render::buffer::tests::viewport::cursor_fade_paints_the_block_then_restores_the_unfaded_cursor ... ok
+#18 211.3 test render::diff::list::tests::log_subject_keeps_embedded_separators ... ok
+#18 211.3 test headless::diff_surface_tests::diff_surface_frame_shape ... ok
+#18 211.3 test render::buffer::tests::viewport::narrower_than_the_gutter_keeps_the_margin_fixed ... ok
+#18 211.3 test render::buffer::tests::zero_height_frames_do_not_panic ... ok
+#18 211.3 test render::diff::margins::tests::current_file_is_native_path_identity ... ok
+#18 211.3 test render::diff::margins::tests::every_row_fits_the_reserved_width_in_cells ... ok
+#18 211.3 test render::diff::margins::tests::non_utf8_paths_keep_distinct_identity ... ok
+#18 211.3 test render::diff::tests::hunk_header_spans_keep_the_buffer_rows_bytes ... ok
+#18 211.3 test render::buffer::tests::viewport::sidebar_emission_matches_the_inset_the_caret_uses ... ok
+#18 211.3 test render::buffer::tests::viewport::pane_scrollbar_carries_track_thumb_and_git_overview ... ok
+#18 211.3 test render::field::tests::caret_and_text_share_unicode_tab_and_resize_geometry ... ok
+#18 211.3 test render::buffer::tests::collection::collection_view_gutters_source_line_numbers ... ok
+#18 211.4 test render::buffer::tests::viewport::cursor_cell_tracks_wide_chars ... ok
+#18 211.4 test render::buffer::directory::tests::empty_folder_is_not_rendered_as_missing_file_rows ... ok
+#18 211.4 test headless::diff_surface_tests::surface_close_restores_cursor ... ok
+#18 211.4 test render::buffer::tests::viewport::split_resize_focus_preserves_independent_origins_and_static_caret ... ok
+#18 211.4 test render::buffer::tests::viewport::block_mode_highlights_the_rectangle ... ok
+#18 211.4 test render::frame_tests::review_tab_glyph_and_caret_use_same_layout ... ok
+#18 211.4 test render::buffer::tests::matching::insert_mode_highlights_the_just_typed_delimiter ... ok
+#18 211.4 test render::frame_tests::extra_cursors_render_without_panicking ... ok
+#18 211.4 test render::help::tests::sections_and_keys_get_section_hues ... ok
+#18 211.4 test render::frame_tests::backward_prompt_is_present_in_the_actual_headless_frame ... ok
+#18 211.4 test render::picker::preview::tests::gutters_remain_cell_bounded_and_do_not_number_a_phantom_eof ... ok
+#18 211.4 test render::frame_tests::last_search_highlights_persistently ... ok
+#18 211.4 test render::picker::rows::tests::replace_rows_exclusion_is_neutral_not_failure_red ... ok
+#18 211.4 test render::picker::rows::tests::replace_rows_empty_replacement_renders_the_deletion ... ok
+#18 211.4 test render::picker::rows::tests::replace_rows_selected_band_covers_the_logical_block ... ok
+#18 211.4 test headless::quit_tests::quit_then_frame_does_not_panic ... ok
+#18 211.4 test render::frame_tests::stale_prepared_window_reports_stale_and_paint_cannot_act ... ok
+#18 211.4 test render::frame_tests::pipe_prompt_owns_a_visible_input_card_on_normal_and_visual_surfaces ... ok
+#18 211.4 test render::picker::window::tests::whitespace_and_unicode_keep_exact_match_evidence ... ok
+#18 211.4 test render::picker::rows::tests::symbol_row_aligns_names_and_keeps_container_when_it_fits ... ok
+#18 211.4 test render::picker::window::tests::zero_width_and_end_of_line_matches_never_index_past_text ... ok
+#18 211.4 test render::picker::window::tests::long_replacements_keep_only_visible_context ... ok
+#18 211.4 test render::buffer::tests::switching_buffers_leaves_no_stale_cells ... ok
+#18 211.4 test render::picker::rows::tests::replace_rows_show_identity_window_and_delta ... ok
+#18 211.4 test render::frame_tests::rg_error_is_sticky_in_the_card ... ok
+#18 211.4 test render::buffer::tests::edit_that_shortens_a_line_leaves_no_stale_cells ... ok
+#18 211.4 test render::statusline::tests::a_long_path_cannot_crowd_out_status_or_position ... ok
+#18 211.4 test render::frame_tests::narrow_remote_modeline_retains_source_identity_during_status_messages ... ok
+#18 211.4 test render::frame_tests::directory_metadata_preserves_unknown_zero_and_native_row_identity ... ok
+#18 211.4 test render::statusline::tests::git_marks_and_flags_render_quietly_beside_the_message ... ok
+#18 211.4 test render::statusline::tests::modeline_respects_its_rectangle_and_empty_areas ... ok
+#18 211.4 test render::statusline::tests::historical_delta_names_its_revision_and_file_not_the_worktree ... ok
+#18 211.4 test render::statusline::tests::narrow_rows_keep_the_mode_accent_and_position ... ok
+#18 211.4 test render::buffer::tests::matching::collection_pairing_paints_the_same_sources_excerpts_only ... ok
+#18 211.4 test render::statusline::tests::wide_and_control_labels_stay_printable_whole_graphemes ... ok
+#18 211.4 test render::frame_tests::snapshot_search_yank_and_readonly_commands_use_the_real_buffer ... ok
+#18 211.4 test render::statusline::tests::percent_counts_content_lines_not_the_phantom_row ... ok
+#18 211.4 test render::terminal_tests::horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes ... ok
+#18 211.4 test render::statusline::tests::modeline_shows_the_effective_indent ... ok
+#18 211.4 test render::buffer::directory::tests::narrow_round_trip_keeps_native_names_and_cursor_mapping ... ok
+#18 211.4 test render::text::tests::clipping_keeps_whole_wide_and_combining_graphemes ... ok
+#18 211.4 test render::text::tests::controls_are_measured_and_emitted_as_printable_cells ... ok
+#18 211.4 test render::picker::workspace_tests::unopened_file_preview_loads_and_highlights_through_preparation ... ok
+#18 211.4 test render::terminal_tests::terminal_input_and_inspection_present_distinct_states ... ok
+#18 211.4 test render::frame_tests::respawn_never_renders_stale_rows ... ok
+#18 211.4 test render::which_key::tests::git_card_lists_verbs ... ok
+#18 211.4 test update::catalog_resolves_artifacts_by_target ... ok
+#18 211.4 test render::terminal_tests::search_and_hover_survive_tiny_resize_and_restore ... ok
+#18 211.4 test render::picker::preview::tests::symbols_preview_points_at_the_symbol_line_in_the_full_screen_workspace ... ok
+#18 211.4 test render::which_key::tests::mark_card_without_marks_says_so ... ok
+#18 211.4 test render::buffer::directory::tests::folder_rows_align_metadata_and_keep_selection_and_marks_visible ... ok
+#18 211.5 test render::terminal_tests::terminal_palette_reaches_the_physical_screen ... ok
+#18 211.5 test render::terminal_tests::terminal_content_uses_the_strop_palette_on_both_views ... ok
+#18 211.5 test render::picker::workspace_tests::floating_card_picker_uses_the_same_scrollbar_vocabulary ... ok
+#18 211.5 test update::malformed_catalog_is_rejected ... ok
+#18 211.5 test update::channel_identity_comes_from_the_receipt ... ok
+#18 211.5 test update::missing_receipt_is_unknown ... ok
+#18 211.5 test update::version_ordering ... ok
+#18 211.5 test render::picker::rows::tests::source_rows_are_total_and_cell_bounded_at_degenerate_widths ... ok
+#18 211.5 test update::triples_cover_the_matrix ... ok
+#18 211.5 test render::which_key::tests::visual_space_card_only_y ... ok
+#18 211.5 test update::receipt_roundtrip ... ok
+#18 211.5 test render::which_key::tests::mark_card_lists_live_marks ... ok
+#18 211.5 test render::terminal_tests::text_and_metadata_cannot_inject_terminal_escape_sequences ... ok
+#18 211.5 test render::frame_tests::same_line_replacements_share_one_exact_styled_review ... ok
+#18 211.5 test render::terminal_tests::crlf_shrinking_and_deleted_rows_clear_the_physical_terminal ... ok
+#18 211.5 test render::picker::preview::tests::file_and_search_previews_number_source_lines_and_mark_only_the_hit ... ok
+#18 211.5 test render::picker::workspace_tests::short_lists_keep_the_reserved_column_empty_when_text_overflows ... ok
+#18 211.5 test render::buffer::tests::viewport::markdown_semantics_reach_the_real_cell_grid ... ok
+#18 211.5 test render::picker::workspace_tests::find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview ... ok
+#18 211.5 test render::picker::workspace_tests::workspace_symbols_scrollbar_paints_track_thumb_and_moves_with_selection ... ok
+#18 211.5 test render::picker::preview::tests::workspace_symbols_preview_points_at_the_declaration_line ... ok
+#18 211.5 test render::frame_tests::gutters_and_sidebar_render ... ok
+#18 211.5 test render::buffer::tests::viewport::long_line_tabs_unicode_and_native_caret_share_origin ... ok
+#18 211.5 test render::buffer::tests::matching::unmatched_delimiter_paints_nothing ... ok
+#18 211.5 test render::buffer::tests::matching::matching_pair_paints_both_delimiter_cells ... ok
+#18 211.5 test render::buffer::tests::matching::moving_the_caret_off_leaves_no_stale_highlight ... ok
+#18 211.5 test render::buffer::tests::collection::collection_bodies_project_syntax_and_paint_hits ... ok
+#18 211.5 test render::buffer::tests::matching::offscreen_partner_paints_nothing_and_scrolls_nothing ... ok
+#18 211.6 test render::frame_tests::repeated_paint_without_change_admits_no_work_or_viewport_drift ... ok
+#18 211.6 test render::frame_tests::search_keeps_outer_geometry_and_recovers_active_field_after_tiny_resize ... ok
+#18 211.7 test render::buffer::tests::matching::cpp_angle_brackets_never_paint ... ok
+#18 212.1 test render::picker::workspace_tests::engine_picker_geometry_matches_the_toolkit_solver ... ok
+#18 217.6 test render::frame_tests::key_soup_never_panics ... ok
+#18 217.6 
+#18 217.6 test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.45s
+#18 217.6 
+#18 217.6      Running tests/cli_locations.rs (target/debug/deps/cli_locations-ad4c4304b6c7ba0c)
+#18 217.6 
+#18 217.6 running 5 tests
+#18 217.7 test invalid_explicit_location_is_a_launch_error ... ok
+#18 217.7 test literal_separator_protects_a_real_colon_filename ... ok
+#18 217.7 test native_filename_bytes_survive_the_real_cli ... ok
+#18 217.7 test line_beyond_end_clamps_to_the_last_content_line ... ok
+#18 217.7 test both_location_forms_position_before_the_first_edit ... ok
+#18 217.7 
+#18 217.7 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+#18 217.7 
+#18 217.7      Running tests/differential.rs (target/debug/deps/differential-e54a92dfc63bcbb9)
+#18 217.7 
+#18 217.7 running 1 test
+#18 219.9 test differential_vs_nvim ... ok
+#18 219.9 
+#18 219.9 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.20s
+#18 219.9 
+#18 219.9      Running tests/remote_ssh.rs (target/debug/deps/remote_ssh-2780277052d4594e)
+#18 219.9 
+#18 219.9 running 9 tests
+#18 221.7 test openssh_failures_keep_the_current_buffer_and_explain_the_cause ... ok
+#18 222.6 test writes::remote_conflict_keeps_local_edits_and_write_quit_target_cannot_overwrite_original ... ok
+#18 222.7 test openssh_reads_native_names_and_replay_needs_no_ssh ... ok
+#18 222.9 test writes::remote_edit_save_refresh_preserves_native_path_mode_and_time ... ok
+#18 223.2 test writes::ssh_crashes_at_rename_never_publish_partial_files_and_verify_lost_receipts ... ok
+#18 225.8 test search::search_here_preserves_ssh_identity_through_preview_open_collection_and_replay ... ok
+#18 238.1 test filesystem::remote_rename_preserves_dirty_text_and_requires_fresh_write_authority ... ok
+#18 238.8 test filesystem::remote_directory_emptied_by_strop_can_be_removed_and_replayed ... ok
+#18 242.9 test filesystem::remote_creation_and_copy_publish_the_explicit_version_without_clobbering ... ok
+#18 242.9 
+#18 242.9 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.97s
+#18 242.9 
+#18 242.9      Running tests/terminal_editor.rs (target/debug/deps/terminal_editor-828d4a7ad76728bd)
+#18 242.9 
+#18 242.9 running 1 test
+#18 275.4 test real_terminal_input_consent_quit_and_execution_free_replay ... ok
+#18 275.4 
+#18 275.4 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.74s
+#18 275.4 
+#18 275.4      Running tests/terminal_helper.rs (target/debug/deps/terminal_helper-7293b3e5632cf2ad)
+#18 275.4 
+#18 275.4 running 3 tests
+#18 275.4 test lease_revocation_before_launch_does_not_run_a_program ... ok
+#18 275.4 test partial_unadmitted_command_is_revoked_by_lease_eof ... ok
+#18 275.7 test native_resize_input_final_output_and_background_cleanup_share_one_lifetime ... ok
+#18 275.7 
+#18 275.7 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+#18 275.7 
+#18 275.7      Running tests/tracing.rs (target/debug/deps/tracing-ca9e2fbf49e8cb7c)
+#18 275.7 
+#18 275.7 running 3 tests
+#18 275.7 test metadata_does_not_disclose_paste_and_existing_log_is_not_truncated ... ok
+#18 275.9 test full_trace_roundtrips_literal_keys_and_closes_cleanly ... ok
+#18 276.5 test deferred_grammar_keeps_typeahead_repeat_and_macro_order_in_full_replay ... ok
+#18 276.5 
+#18 276.5 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+#18 276.5 
+#18 276.5      Running tests/ui_stdio/main.rs (target/debug/deps/ui_stdio-fd69df87a9ff5044)
+#18 276.5 
+#18 276.5 running 16 tests
+#18 276.5 test client_eof_shuts_down_orderly ... ok
+#18 276.5 test parity::wrong_version_hello_is_typed_and_terminal ... ok
+#18 276.5 test quit_intent_exits_orderly ... ok
+#18 276.5 test stale_generations_refuse_and_resync_recovers ... ok
+#18 276.5 test driver_resync_reestablishes_the_base ... ok
+#18 276.5 test parity::mid_journey_drop_poisons_and_resync_recovers ... ok
+#18 276.5 test parity::clipboard_effects_round_trip_exactly_once ... ok
+#18 276.5 test viewport_bounds_and_clipboard_effect ... ok
+#18 276.5 test parity::shutdown_drains_in_flight_work ... ok
+#18 276.5 test unicode_and_partial_io ... ok
+#18 276.6 test boolean_search_journey ... ok
+#18 276.6 test malformed_frames_get_typed_errors ... ok
+#18 276.6 test open_edit_undo_save_journey ... ok
+#18 276.6 test terminal_journey ... ok
+#18 276.6 test protocol_states_match_the_headless_driver ... ok
+#18 276.8 test storm::streaming_search_shutdown_storm_settles ... ok
+#18 276.8 
+#18 276.8 test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+#18 276.8 
+#18 276.8      Running tests/worker_ssh.rs (target/debug/deps/worker_ssh-35bd63f343ec000c)
+#18 276.8 
+#18 276.8 running 4 tests
+#18 283.4 test deploy_handshake_read_write_notify_parity_over_real_sshd ... ok
+#18 293.2 test first_deploy_is_consent_gated_then_quietly_reused ... ok
+#18 ...
+
+#12 [builder 5/9] WORKDIR /app
+#12 CACHED
+
+#18 [test 2/2] RUN cargo fmt --check     && cargo clippy --locked --workspace --all-targets -- -D warnings     && STROP_REQUIRE_SSH_TESTS=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked
+#18 300.5 test interrupted_deploy_leaves_no_partial_activation ... ok
+#18 300.7 test sftp_only_host_keeps_read_only_with_a_typed_refusal ... ok
+#18 300.7 
+#18 300.7 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.93s
+#18 300.7 
+#18 300.7      Running tests/worker_stdio.rs (target/debug/deps/worker_stdio-b4287974a1aeed2b)
+#18 300.7 
+#18 300.7 running 4 tests
+#18 300.7 test a_non_worker_binary_fails_the_handshake_typed ... ok
+#18 300.7 test handshake_and_filesystem_round_trip_through_the_real_binary ... ok
+#18 300.7 test stale_prepared_authority_fails_closed_after_a_kill ... ok
+#18 300.7 test kill_minus_nine_is_a_typed_failure_with_no_fallback ... ok
+#18 300.7 
+#18 300.7 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+#18 300.7 
+#18 300.7      Running unittests src/lib.rs (target/debug/deps/strop_engine-db4400fb5db7001c)
+#18 300.7 
+#18 300.7 running 688 tests
+#18 300.7 test config::tests::malformed_falls_back ... ok
+#18 300.7 test config::tests::every_knob_resolves_a_real_value ... ok
+#18 300.7 test config::tests::defaults_when_absent ... ok
+#18 300.7 test config::tests::parses_indent_guides ... ok
+#18 300.7 test config::tests::parses_tab_size ... ok
+#18 300.7 test editor::collections::journal::tests::disjoint_reverse_order_edits_keep_pre_edit_coordinates ... ok
+#18 300.7 test editor::collections::journal::tests::overlapping_sequential_edits_preserve_only_the_final_inserted_text ... ok
+#18 300.7 test config::tests::malformed_layer_sets_no_provenance ... ok
+#18 300.7 test config::tests::knobs_name_real_fields_and_cover_all_of_them ... ok
+#18 300.8 test config::tests::provenance_names_the_actual_winning_layer ... ok
+#18 300.8 test editor::analysis::tests::an_edit_serves_the_previous_frame_instead_of_blanking ... ok
+#18 300.8 test editor::changes::review::tests::nearby_edits_share_one_hunk_with_context_on_both_sides ... ok
+#18 300.8 test editor::changes::tests::a_stale_formatter_does_not_save_newer_user_input ... ok
+#18 300.8 test editor::changes::tests::format_applies_edits_and_records_a_receipt ... ok
+#18 300.8 test editor::changes::tests::auto_format_chains_the_save_when_already_formatted ... ok
+#18 300.8 test editor::changes::tests::auto_format_chains_the_save_on_formatter_refusal ... ok
+#18 300.8 test editor::changes::review::tests::cancel_mutates_nothing_and_leaves_a_cancelled_receipt ... ok
+#18 300.8 test editor::changes::review::tests::a_single_clean_document_applies_directly_with_the_existing_receipt ... ok
+#18 300.8 test editor::changes::review::tests::a_source_edited_since_the_proposal_is_refused_by_name ... ok
+#18 300.9 test editor::changes::tests::rename_applies_across_open_documents ... ok
+#18 300.9 test editor::changes::tests::unbound_targets_are_named_refusals_never_silent ... ok
+#18 300.9 test editor::changes::tests::plain_save_without_a_binding_writes_directly ... ok
+#18 300.9 test editor::changes::review::tests::apply_mutates_exactly_the_planned_sources_and_leaves_a_receipt ... ok
+#18 300.9 test editor::changes::tests::stale_edit_replies_never_touch_the_buffer ... ok
+#18 300.9 test editor::changes::tests::a_document_edited_since_the_plan_is_refused_by_name ... ok
+#18 300.9 test editor::collections::tests::collection_builds_from_picker_hits ... ok
+#18 300.9 test editor::collections::tests::anchors_remap_when_the_source_grows ... ok
+#18 300.9 test editor::changes::review::tests::editing_a_review_cannot_apply_the_hidden_original_plan ... ok
+#18 300.9 test editor::changes::review::tests::multi_target_plan_opens_a_diff_review_without_mutating ... ok
+#18 300.9 test editor::changes::review::tests::a_source_closed_since_the_proposal_is_refused_by_name ... ok
+#18 300.9 test editor::changes::tests::auto_format_chains_the_save_after_formatting ... ok
+#18 300.9 test editor::collections::tests::collection_undo_restores_sources_and_the_view ... ok
+#18 300.9 test editor::collections::tests::collection_enter_on_header_only ... ok
+#18 300.9 test editor::changes::review::tests::a_newer_proposal_supersedes_the_older_buffer_visibly ... ok
+#18 300.9 test editor::collections::tests::an_edit_spanning_excerpts_is_refused ... ok
+#18 300.9 test editor::collections::tests::editing_a_header_is_refused_and_the_view_refreshes ... ok
+#18 300.9 test editor::changes::tests::grouped_undo_skips_buffers_edited_since_the_receipt ... ok
+#18 300.9 test editor::collections::tests::collection_close_keeps_dirty_sources ... ok
+#18 300.9 test editor::collections::tests::a_source_edited_elsewhere_refreshes_the_view ... ok
+#18 300.9 test editor::collections::tests::collection_loads_unopened_sources_in_the_background ... ok
+#18 300.9 test editor::collections::tests::collection_write_saves_dirty_sources_and_refuses_a_target ... ok
+#18 300.9 test editor::collections::tests::editing_an_excerpt_writes_back_to_the_source ... ok
+#18 300.9 test editor::changes::review::tests::save_change_retains_each_file_outcome_after_focus_moves ... ok
+#18 300.9 test editor::collections::tests::live::closing_a_source_removes_only_its_excerpts_and_keeps_the_view_usable ... ok
+#18 300.9 test editor::collections::tests::live::context_merges_preserve_same_line_matches_and_source_position ... ok
+#18 300.9 test editor::collections::tests::collection_undo_preflight_refuses_a_moved_source ... ok
+#18 300.9 test editor::collections::tests::file_card_navigation_steps_between_cards ... ok
+#18 300.9 test editor::collections::tests::collection_open_source_maps_positions_and_returns ... ok
+#18 300.9 test editor::collections::tests::inserting_between_excerpts_is_refused ... ok
+#18 300.9 test editor::collections::tests::inserting_a_line_inside_a_body_writes_the_wider_span_back ... ok
+#18 300.9 test editor::collections::tests::live::indentation_controls_capture_the_excerpt_source_not_the_projection ... ok
+#18 300.9 test editor::collections::tests::occurrence_selection_skips_collection_chrome ... ok
+#18 300.9 test editor::collections::tests::one_card_per_file_with_gap_rows ... ok
+#18 300.9 test editor::collections::tests::live::grouped_history_preflights_every_sources_write_authority ... ok
+#18 300.9 test editor::collections::tests::live::final_line_without_newline_deletes_and_undoes_without_editing_chrome ... ok
+#18 300.9 test editor::collections::tests::live::source_edits_preserve_collection_carets_and_jump_anchors ... ok
+#18 300.9 test editor::collections::tests::live::typing_publishes_each_key_and_keeps_one_source_undo_group ... ok
+#18 300.9 test editor::collections::tests::live::gap_refresh_keeps_carets_and_history_on_their_own_sources ... ok
+#18 300.9 test editor::containers::tests::attached_container_uses_shared_directory_navigation_without_local_paths ... ok
+#18 300.9 test editor::containers::tests::container_files_refuse_writes_and_writable_flag_bypasses ... ok
+#18 300.9 test editor::containers::tests::late_container_inspection_cannot_replace_newer_typing ... ok
+#18 300.9 test editor::collections::tests::live::redo_refuses_a_different_history_branch_without_consuming_the_receipt ... ok
+#18 300.9 test editor::containers::tests::recycled_container_cannot_replace_a_held_attachment ... ok
+#18 300.9 test editor::containers::tests::superseded_container_result_cannot_open_an_old_context ... ok
+#18 300.9 test editor::contract_probes::review_clipboard_reply_preserves_destination ... ok
+#18 300.9 test editor::collections::tests::relative_startup_path_collects_all_hits ... ok
+#18 300.9 test editor::collections::tests::ownership::a_collection_finishing_after_typing_does_not_steal_the_view ... ok
+#18 300.9 test editor::collections::tests::one_commit_across_excerpts_writes_back_to_both_sources ... ok
+#18 300.9 test editor::contract_probes::review_marks_follow_undo ... ok
+#18 300.9 test editor::contract_probes::review_operator_find_accepts_digit_as_target ... ok
+#18 300.9 test editor::collections::tests::ownership::stale_source_load_cannot_complete_a_newer_collection ... ok
+#18 300.9 test editor::contract_probes::review_ranged_yank_updates_unnamed_register ... ok
+#18 300.9 test editor::contract_probes::review_marks_map_in_two_documents_with_equal_history_depth ... ok
+#18 300.9 test editor::contract_probes::review_stale_replace_range_is_utf8_safe ... ok
+#18 300.9 test editor::contract_probes::review_unicode_filename_matches_itself ... ok
+#18 300.9 test editor::collections::tests::remote_sources_join_collections_and_refuse_without_a_permit ... ok
+#18 300.9 test editor::collections::tests::unopened_sources_load_in_the_background_and_assemble ... ok
+#18 300.9 test editor::collections::tests::ownership::collecting_a_filtered_location_list_uses_only_its_visible_workset ... ok
+#18 300.9 test editor::contract_probes::review_preview_contract_is_honest ... ok
+#18 300.9 test editor::contract_probes::review_unicode_filename_reports_char_columns ... ok
+#18 300.9 test editor::collections::tests::stale_collection_explains_its_readonly_source ... ok
+#18 300.9 test editor::dispatch::tests::late_cards_cannot_consume_modal_field_input ... ok
+#18 300.9 test editor::dispatch::tests::overlays_forward_in_insert_and_consume_in_normal ... ok
+#18 300.9 test editor::document::indentation::detect_tests::blank_and_top_level_lines_are_ignored ... ok
+#18 300.9 test editor::document::indentation::detect_tests::comma_siblings_at_the_same_depth_are_evidence ... ok
+#18 300.9 test editor::document::indentation::detect_tests::comments_are_not_evidence ... ok
+#18 300.9 test editor::document::indentation::detect_tests::common_widths ... ok
+#18 300.9 test editor::document::indentation::detect_tests::continuation_alignment_is_not_evidence ... ok
+#18 300.9 test editor::document::indentation::detect_tests::deep_nesting_is_evidence ... ok
+#18 300.9 test editor::document::indentation::detect_tests::divisor_ties_are_ambiguous ... ok
+#18 300.9 test editor::document::indentation::detect_tests::mixed_styles_are_unknown ... ok
+#18 300.9 test editor::contract_probes::review_save_preserves_symlink ... ok
+#18 300.9 test editor::document::indentation::detect_tests::multiline_prose_never_votes_for_a_code_indent ... ok
+#18 301.0 test editor::contract_probes::review_split_from_empty_scratch_retains_live_panes ... ok
+#18 301.0 test editor::document::indentation::detect_tests::tabs_carry_no_width ... ok
+#18 301.0 test editor::document::indentation::detect_tests::thin_samples_are_unknown ... ok
+#18 301.0 test editor::document::indentation::detect_tests::sampling_is_bounded_by_lines ... ok
+#18 301.0 test editor::events::tests::disconnect_is_observed_only_after_every_admitted_event_drains ... ok
+#18 301.0 test editor::events::tests::lanes_alternate_so_neither_class_starves ... ok
+#18 301.0 test editor::events::tests::a_full_semantic_lane_refuses_visibly_and_recovers_after_drain ... ok
+#18 301.0 test editor::events::tests::resize_and_focus_are_latest_wins ... ok
+#18 301.0 test editor::directory::tests::failed_refresh_retains_the_directory_instead_of_publishing_empty_success ... ok
+#18 301.0 test editor::events::tests::shutdown_settles_owned_work_without_waiting_for_service_liveness ... ok
+#18 301.0 test editor::events::tests::send_blocking_unblocks_when_the_receiver_closes ... ok
+#18 301.0 test editor::events::tests::terminal_wakes_coalesce_per_session_without_losing_sessions ... ok
+#18 301.0 test editor::explain::tests::explain_lists_effect_classification ... ok
+#18 301.0 test editor::events::tests::refused_admission_is_surfaced_in_the_editor_message ... ok
+#18 301.0 test editor::events::tests::recv_timeout_distinguishes_timeout_from_disconnect ... ok
+#18 301.0 test editor::explain::tests::explain_names_filesystem_readonly_source ... ok
+#18 301.0 test editor::explain::tests::explain_names_command_readonly_source ... ok
+#18 301.0 test editor::explain::tests::explain_names_remote_readonly_source_and_ssh_target ... ok
+#18 301.0 test editor::explain::tests::explain_names_recovery_surface_readonly_source ... ok
+#18 301.0 test editor::events::tests::paste_bytes_are_bounded_but_a_lone_oversize_paste_is_never_stranded ... ok
+#18 301.0 test editor::explain::tests::explain_shows_indent_provenance_and_detection ... ok
+#18 301.0 test editor::explain::tests::explain_names_terminal_readonly_source ... ok
+#18 301.0 test editor::field::tests::exclusions_refuse_loudly ... ok
+#18 301.0 test editor::field::tests::change_enters_the_fields_own_insert_mode ... ok
+#18 301.0 test editor::explain::tests::explain_shows_config_provenance_layers ... ok
+#18 301.0 test editor::field::tests::pure_motions_never_bump_the_revision ... ok
+#18 301.0 test editor::explain::tests::explain_lists_workspaces_and_config ... ok
+#18 301.0 test editor::field::tests::linewise_and_aliases_and_char_delete ... ok
+#18 301.0 test editor::events::tests::semantic_events_are_never_coalesced_or_reordered ... ok
+#18 301.0 test editor::events::tests::sustained_output_flood_stays_bounded_and_input_is_never_lost ... ok
+#18 301.0 test editor::field::tests::word_operators_are_the_real_grammar ... ok
+#18 301.0 test editor::events::tests::send_blocking_backpressures_the_reader_until_the_lane_drains ... ok
+#18 301.0 test editor::directory::tests::directory_file_and_parent_roundtrips_preserve_scope_and_selection ... ok
+#18 301.0 test editor::field::tests::field_editing_matches_grammar_resolution ... ok
+#18 301.0 test editor::directory::tests::reveal_explicitly_clears_a_filter_that_hides_the_source ... ok
+#18 301.0 test editor::directory::tests::local_reload_preserves_identity_readonly_and_adopts_the_observed_save_baseline ... ok
+#18 301.0 test editor::directory::tests::closed_directory_restores_filter_and_source_entry_from_native_identity ... ok
+#18 301.1 test editor::filesystem::draft::tests::refresh_keeps_edited_names_and_records_new_source_observations ... ok
+#18 301.1 test editor::conformance::conformance_generated_streams_match_the_model ... ok
+#18 301.1 test editor::filesystem::tests::committed_move_retires_alias_spelled_preview_state ... ok
+#18 301.1 test editor::filesystem::draft::tests::whole_entry_yank_paste_keeps_copy_provenance_without_text_inference ... ok
+#18 301.1 test editor::filesystem::tests::a_redelivered_applied_receipt_reconciles_once ... ok
+#18 301.1 test editor::filesystem::draft::tests::delete_paste_and_history_restore_the_original_entry_identity ... ok
+#18 301.1 test editor::filesystem::draft::tests::ambiguous_join_refuses_then_undo_recovers_source_provenance ... ok
+#18 301.1 test editor::filesystem::tests::an_admitted_move_blocks_save_as_through_a_parent_alias ... ok
+#18 301.1 test editor::filesystem::tests::closing_an_unapplied_review_releases_only_its_preparation ... ok
+#18 301.1 test editor::document::indentation::detect_tests::sampling_is_bounded_by_bytes ... ok
+#18 301.1 test editor::filesystem::tests::committed_mutation_outcome_survives_focus_change ... ok
+#18 301.1 test editor::filesystem::tests::dirty_file_rename_preserves_document_undo_and_writes_the_new_name ... ok
+#18 301.1 test editor::filesystem::tests::cleanup_failure_keeps_observed_receipts_and_their_binding_updates ... ok
+#18 301.1 test editor::filesystem::tests::closing_the_review_cannot_drop_an_admitted_mutation_receipt ... ok
+#18 301.1 test editor::filesystem::tests::committed_rename_retires_completion_candidates_for_the_old_name ... ok
+#18 301.1 test editor::filesystem::draft::tests::external_text_creates_a_name_not_a_copied_source ... ok
+#18 301.1 test editor::filesystem::draft::tests::browsing_an_open_filename_draft_keeps_its_text_history_and_provenance ... ok
+#18 301.1 test editor::filesystem::tests::pending_format_then_save_cannot_be_retargeted_by_a_file_move ... ok
+#18 301.1 test editor::filesystem::tests::an_unconfirmed_outcome_blocks_conflicting_authority_until_verified ... ok
+#18 301.1 test editor::filesystem::tests::reverse_move_recovery_refuses_a_changed_recorded_version ... ok
+#18 301.1 test editor::git_memory::presentation::tests::changed_spans_use_each_sides_unicode_offsets ... ok
+#18 301.1 test editor::git_memory::sidebar::tests::tree_groups_by_directory_with_native_indices ... ok
+#18 301.1 test editor::git_memory::sidebar::tests::narrow_commits_get_the_minimum_column ... ok
+#18 301.2 test editor::filesystem::tests::copy_recovery_cannot_remove_contents_changed_after_publication ... ok
+#18 301.2 test editor::git_memory::sidebar::tests::wide_names_clamp_the_interior_at_the_maximum ... ok
+#18 301.2 test editor::events::tests::forwarded_semantic_event_survives_a_full_lane ... ok
+#18 301.2 test editor::filesystem::tests::filesystem_destinations_use_source_parent_without_changing_ex_open_scope ... ok
+#18 301.2 test editor::git::tests::gutter_tracks_live_edits ... ok
+#18 301.2 test editor::git_memory::tests::ownership::failed_log_settles_the_surface ... ok
+#18 301.2 test editor::git::tests::hunk_nav_and_undo ... ok
+#18 301.2 test editor::git::tests::space_g_namespace_dispatches ... ok
+#18 301.2 test editor::filesystem::draft::tests::modal_names_review_cancel_and_apply_one_shared_filesystem_plan ... ok
+#18 301.2 test editor::git::tests::hunk_surface_moves_and_undoes ... ok
+#18 301.2 test editor::git_memory::tests::ownership::card_results_follow_their_line_and_dismissal ... ok
+#18 301.2 test editor::git_memory::tests::ownership::dive_results_need_their_surface ... ok
+#18 301.2 test editor::filesystem::tests::native_trash_restore_cleans_metadata_and_preserves_the_detached_draft ... ok
+#18 301.2 test editor::git_memory::tests::ownership::log_results_need_the_registered_request ... ok
+#18 301.2 test editor::git_memory::tests::ownership::mutation_success_invalidates_view_and_rejects_preindex_results ... ok
+#18 301.2 test editor::git_memory::tests::ownership::hunk_failures_are_terminal_and_retry_gets_a_new_request ... ok
+#18 301.2 test editor::filesystem::tests::permanent_removal_detaches_dirty_text_and_cannot_recreate_the_old_binding ... ok
+#18 301.2 test editor::git_memory::tests::ownership::queued_mutations_are_serial_and_failure_keeps_the_queue_live ... ok
+#18 301.2 test editor::filesystem::tests::directory_refresh_keeps_the_renamed_entry_selected_after_resorting ... ok
+#18 301.2 test editor::filesystem::tests::exclusive_creation_reviews_every_parent_then_opens_the_committed_file ... ok
+#18 301.2 test editor::filesystem::tests::pending_save_as_blocks_a_move_from_an_unrelated_document ... ok
+#18 301.2 test editor::git_memory::tests::ownership::gutter_incarnations_are_ticket_owned ... ok
+#18 301.2 test editor::git_memory::tests::ownership::stale_hunk_results_never_clear_the_newer_owner ... ok
+#18 301.2 test editor::help::tests::space_question_opens_help ... ok
+#18 301.2 test editor::filesystem::tests::mixed_copy_versions_use_the_reviewed_snapshot_for_each_destination ... ok
+#18 301.2 test editor::input::frontend::tests::coalesced_escape_is_not_motion_specific ... ok
+#18 301.2 test editor::help::tests::help_buffer_lists_every_section_and_searches ... ok
+#18 301.2 test editor::input::frontend::tests::coalesced_escape_leaves_insert_before_applying_motion ... ok
+#18 301.2 test editor::filesystem::tests::directory_move_keeps_dirty_descendants_and_their_document_ids ... ok
+#18 301.2 test editor::input::frontend::tests::releases_do_not_edit_and_unmapped_alt_still_escapes ... ok
+#18 301.2 test editor::git::tests::stale_hunk_surface_refuses ... ok
+#18 301.2 test editor::input::tests::counts_cap_under_adversarial_input ... ok
+#18 301.2 test editor::input::tests::display_shows_the_full_state ... ok
+#18 301.2 test editor::input::tests::junk_never_doubles_a_count ... ok
+#18 301.2 test editor::input::frontend::tests::legacy_nul_reaches_query_suggestions ... ok
+#18 301.2 test editor::input::tests::every_row_completes_and_grounds ... ok
+#18 301.2 test editor::input::tests::zero_is_a_motion_when_no_count2_pending ... ok
+#18 301.2 test editor::io::remote_tests::moving_focus_cancels_remote_navigation ... ok
+#18 301.2 test editor::io::remote_tests::closing_the_only_remote_snapshot_quits_without_a_dead_current_document ... ok
+#18 301.2 test editor::io::remote_tests::refresh_preserves_split_positions_and_failure_keeps_old_text ... ok
+#18 301.2 test editor::git::tests::stage_refuses_a_dirty_buffer ... ok
+#18 301.2 test editor::io::remote_tests::escaped_and_superseded_opens_cannot_replace_the_current_buffer ... ok
+#18 301.2 test editor::io::worker_tests::a_broken_symlink_is_a_typed_failure_not_a_new_file ... ok
+#18 301.2 test editor::jumps::tests::ctrl_o_skips_jumps_into_closed_buffers ... ok
+#18 301.2 test editor::jumps::tests::edits_above_the_record_remap_caret_and_view ... ok
+#18 301.2 test editor::jumps::tests::closing_help_restores_and_remaps_the_complete_source_view ... ok
+#18 301.2 test editor::io::worker_tests::missing_file_opens_empty_through_the_worker ... ok
+#18 301.2 test editor::jumps::tests::jumplist_walks_back_and_forward_across_buffers ... ok
+#18 301.2 test editor::filesystem::tests::directory_restoration_tracks_the_original_entry_across_name_reuse ... ok
+#18 301.2 test editor::jumps::tests::jump_restores_caret_view_hscroll_and_selection ... ok
+#18 301.2 test editor::jumps::tests::landing_centers_a_target_at_the_view_edge ... ok
+#18 301.2 test editor::jumps::tests::new_jump_truncates_the_forward_path ... ok
+#18 301.2 test editor::jumps::tests::jump_restores_view_across_buffers ... ok
+#18 301.2 test editor::jumps::tests::landing_centers_an_offscreen_target ... ok
+#18 301.2 test editor::jumps::tests::landing_keeps_a_comfortably_visible_target ... ok
+#18 301.2 test editor::io::worker_tests::local_open_rides_the_worker_lease ... ok
+#18 301.2 test editor::jumps::tests::restored_view_invalid_after_resize_falls_back_to_centering ... ok
+#18 301.2 test editor::jumps::tests::search_lands_with_jump_recorded ... ok
+#18 301.2 test editor::lsp::attach::tests::attach_args_replay_legacy_local_records_as_local ... ok
+#18 301.2 test editor::jumps::tests::search_then_ctrl_o_ctrl_i ... ok
+#18 301.2 test editor::collections::tests::live::long_insert_undo_restores_the_collection_source_position ... ok
+#18 301.2 test editor::lsp::attach::tests::attach_keys_separate_local_from_remote_targets ... ok
+#18 301.2 test editor::lsp::attach::tests::decision_labels_are_stable ... ok
+#18 301.2 test editor::io::worker_tests::readonly_evidence_is_the_worker_observation ... ok
+#18 301.2 test editor::lsp::tests::a_hover_card_arriving_mid_insert_swallows_no_keystroke ... ok
+#18 301.2 test editor::lsp::tests::attachment::attach_skips_unknown_languages_without_discovery ... ok
+#18 301.2 test editor::lsp::tests::attachment::failed_server_event_names_the_command_and_removes_the_server ... ok
+#18 301.2 test editor::lsp::tests::attachment::layer_diagnostic_survives_a_healthy_attach_and_ready ... ok
+#18 301.2 test editor::lsp::attach::tests::local_discovery_refuses_without_a_server ... ok
+#18 301.2 test editor::lsp::tests::attachment::refused_attach_messages_are_reported ... ok
+#18 301.2 test editor::lsp::tests::attachment::multiple_layer_diagnostics_report_with_a_count ... ok
+#18 301.2 test editor::lsp::tests::attachment::stale_attach_completion_is_refused ... ok
+#18 301.2 test editor::lsp::tests::attachment::spawn_failure_refusal_carries_its_reason ... ok
+#18 301.2 test editor::lsp::tests::attachment::sticky_refusal_reports_once_but_trust_refusals_repeat ... ok
+#18 301.2 test editor::lsp::tests::close_reopen_same_path_rejects_old_incarnation_reply ... ok
+#18 301.2 test editor::lsp::tests::diagnostics::diagnostics_beyond_the_document_clamp_instead_of_panicking ... ok
+#18 301.2 test editor::lsp::tests::diagnostics::diagnostics_resolve_utf8_columns_in_place ... ok
+#18 301.2 test editor::lsp::tests::diagnostics::diagnostics_resolve_utf16_columns_against_the_rope ... ok
+#18 301.2 test editor::git_memory::tests::hunk_discard_undoes_byte_exact ... ok
+#18 301.2 test editor::lsp::tests::equal_revision_documents_do_not_share_hover_ownership ... ok
+#18 301.2 test editor::lsp::tests::moving_the_cursor_revokes_a_pending_hover ... ok
+#18 301.2 test editor::lsp::tests::navigation::a_second_project_never_switches_an_existing_binding ... ok
+#18 301.2 test editor::lsp::tests::navigation::ambiguous_c_header_inherits_cpp_context ... ok
+#18 301.2 test editor::lsp::tests::navigation::document_symbols_empty_reply_names_the_document ... ok
+#18 301.2 test editor::lsp::tests::navigation::document_symbols_boolean_content_and_kind_narrow ... ok
+#18 301.2 test editor::lsp::tests::navigation::document_symbols_kind_narrows_the_retained_tree ... ok
+#18 301.2 test editor::git::tests::stage_and_unstage_name_their_edges ... ok
+#18 301.2 test editor::lsp::tests::navigation::extensionless_header_inherits_the_navigation_language ... ok
+#18 301.2 test editor::lsp::tests::navigation::document_symbols_open_a_picker_and_accepting_jumps ... ok
+#18 301.2 test editor::lsp::tests::navigation::document_symbols_operator_free_keeps_static_list_fuzzy_narrowing ... ok
+#18 301.2 test editor::lsp::tests::navigation::external_header_keeps_the_originating_server ... ok
+#18 301.2 test editor::lsp::tests::navigation::goto_completion_uses_target_encoding_and_records_original_jump ... ok
+#18 301.2 test editor::lsp::tests::navigation::manual_external_open_names_the_context_route ... ok
+#18 301.2 test editor::lsp::tests::old_server_reply_is_not_accepted_by_replacement_binding ... ok
+#18 301.2 test editor::lsp::tests::older_hover_cannot_overwrite_newer_reply_at_revision_zero ... ok
+#18 301.2 test editor::lsp::tests::navigation::navigation_changed_during_load_does_not_switch_or_consume_new_request ... ok
+#18 301.2 test editor::lsp::tests::diagnostics::attached_server_diagnostics_survive_full_replay ... ok
+#18 301.2 test editor::lsp::tests::remote::closing_the_last_remote_document_retires_its_server ... ok
+#18 301.2 test editor::lsp::tests::remote::partial_remote_window_refuses_attach_visibly ... ok
+#18 301.2 test editor::lsp::tests::remote::remote_diagnostics_never_alias_local_paths ... ok
+#18 301.2 test editor::lsp::tests::remote::remote_goto_resolves_utf16_columns_against_the_remote_rope ... ok
+#18 301.2 test editor::lsp::tests::resolved_diag_round_trips_serde ... ok
+#18 301.2 test editor::lsp::tests::remote::remote_navigation_context_never_binds_local_targets ... ok
+#18 301.2 test editor::lsp::tests::remote::remote_goto_routes_to_the_remote_target_not_local ... ok
+#18 301.2 test editor::lsp::tests::revision_zero_is_valid_but_does_not_bypass_edit_rejection ... ok
+#18 301.2 test editor::lsp::tests::server_message_reaches_the_modeline_from_its_owner ... ok
+#18 301.2 test editor::lsp::tests::warm_up::marker_families_map_to_languages_and_ambiguity_stays_cold ... ok
+#18 301.2 test editor::lsp::tests::navigation::document_symbols_broken_query_keeps_rows_and_shows_the_diagnostic ... ok
+#18 301.2 test editor::lsp::tests::warm_up::ambiguous_marker_records_a_cold_status_row ... ok
+#18 301.2 test editor::lsp::tests::warm_up::live_placements_and_sticky_refusals_are_never_rediscovered ... ok
+#18 301.2 test editor::git_memory::tests::blame_card_shows_commit ... ok
+#18 301.2 test editor::lsp::tests::warm_up::sticky_refusal_records_its_status_row ... ok
+#18 301.2 test editor::matching::tests::a_cancelled_scan_reports_cancellation ... ok
+#18 301.2 test editor::matching::tests::a_delivery_against_an_old_revision_is_dropped ... ok
+#18 301.2 test editor::lsp::tests::warm_up::surface_change_clears_project_statuses ... ok
+#18 301.2 test editor::lsp::tests::warm_up::warm_completion_records_no_server_status_row ... ok
+#18 301.2 test editor::matching::tests::angle_brackets_are_never_probed ... ok
+#18 301.2 test editor::matching::tests::a_superseded_delivery_is_dropped ... ok
+#18 301.2 test editor::lsp::tests::warm_up::warm_up_requires_services_and_the_symbols_picker ... ok
+#18 301.2 test editor::matching::tests::a_moved_caret_never_sees_the_old_carets_result ... ok
+#18 301.2 test editor::matching::tests::an_unmatched_quoted_probe_cannot_escape_its_string ... ok
+#18 301.2 test editor::git_memory::tests::gutter_result_dropped_after_toggle_off ... ok
+#18 301.2 test editor::matching::tests::cpp_angle_brackets_paint_nothing_and_own_no_job ... ok
+#18 301.2 test editor::lsp::tests::navigation::document_symbols_path_atoms_decide_from_the_document_path ... ok
+#18 301.2 test editor::matching::tests::nesting_counts_the_same_kind_only ... ok
+#18 301.2 test editor::matching::tests::mode_and_view_changes_are_key_changes ... ok
+#18 301.2 test editor::matching::tests::incomplete_code_pairs_nothing ... ok
+#18 301.2 test editor::matching::tests::insert_mode_probes_the_just_typed_byte ... ok
+#18 301.2 test editor::matching::tests::escaped_quotes_do_not_end_a_balanced_string ... ok
+#18 301.2 test editor::matching::tests::pairs_on_open_and_close ... ok
+#18 301.2 test editor::document::pathbuf_tests::non_utf8_filename_opens_highlights_and_saves ... ok
+#18 301.3 test editor::lsp::tests::warm_up::status_row_accepts_as_directory_never_a_symbol ... ok
+#18 301.3 test editor::git_memory::tests::native_paths::control_characters_in_filenames_keep_one_row_and_a_native_dive_target ... ok
+#18 301.3 test editor::matching::tests::string_bytes_are_skipped_in_both_directions ... ok
+#18 301.3 test editor::git_memory::tests::blame_gutter_toggles_and_dives ... ok
+#18 301.3 test editor::matching::tests::unmatched_and_unknown_states_cache_a_negative ... ok
+#18 301.3 test editor::matching::tests::overlay_and_percent_agree_inside_comments_and_balanced_strings ... ok
+#18 301.3 test editor::git_memory::tests::commit_browser_dives_to_delta ... ok
+#18 301.3 test editor::git_memory::tests::q_in_split_closes_pane_then_buffer ... ok
+#18 301.3 test editor::multicursor_tests::tests::esc_collapses_to_primary ... ok
+#18 301.3 test editor::matching::tests::rust_pairs_skip_quoted_brackets_and_balance_comment_brackets_like_vim ... ok
+#18 301.3 test editor::multicursor_tests::tests::delete_cascades_and_undoes_as_one_unit ... ok
+#18 301.3 test editor::git_memory::tests::permalink_needs_remote ... ok
+#18 301.3 test editor::multicursor_tests::tests::change_flows_into_mirrored_insert ... ok
+#18 301.3 test editor::multicursor_tests::tests::q_toggles_at_point_and_motions_move_all ... ok
+#18 301.3 test editor::multicursor_tests::tests::paste_cascades_to_every_cursor ... ok
+#18 301.3 test editor::notify::tests::a_dead_remote_generation_never_acts ... ok
+#18 301.3 test editor::multicursor_tests::tests::space_c_stacks_down_a_column ... ok
+#18 301.3 test editor::multicursor_tests::tests::stacked_cursors_edit_once ... ok
+#18 301.3 test editor::multicursor_tests::tests::n_cascades_to_every_cursor ... ok
+#18 301.3 test editor::matching::tests::collection_chrome_paints_nothing ... ok
+#18 301.3 test editor::notify::tests::remote_hints_mark_dirty_remote_documents_and_never_clobber ... ok
+#18 301.3 test editor::notify::tests::remote_subscription_identity_comes_from_the_settle_record ... ok
+#18 301.3 test editor::git_memory::tests::stale_log_results_are_dropped ... ok
+#18 301.3 test editor::git_memory::tests::diff_surface_rows_carry_line_numbers ... ok
+#18 301.3 test editor::matching::tests::collection_pairing_never_maps_into_gaps_or_other_sources ... ok
+#18 301.3 test editor::occurrence_tests::tests::add_next_walks_document_order_and_wraps_once ... ok
+#18 301.3 test editor::occurrence_tests::tests::caret_on_whitespace_seeds_nothing ... ok
+#18 301.3 test editor::git_memory::tests::permalink_alias_failure_publishes_nothing ... ok
+#18 301.3 test editor::matching::tests::collection_pairing_maps_across_excerpts_of_the_same_source ... ok
+#18 301.3 test editor::git_memory::tests::permalink_ssh_alias_resolves_on_io_worker ... ok
+#18 301.3 test editor::occurrence_tests::tests::delete_cascades_across_occurrences ... ok
+#18 301.3 test editor::occurrence_tests::tests::esc_finishes_visual_then_normal_esc_clears_the_session ... ok
+#18 301.3 test editor::occurrence_tests::tests::change_cascades_and_undoes_as_one_group ... ok
+#18 301.3 test editor::occurrence_tests::tests::edits_make_the_session_reseed_instead_of_acting_on_ghosts ... ok
+#18 301.3 test editor::git_memory::tests::permalink_pins_sha_and_yanks ... ok
+#18 301.3 test editor::git_memory::tests::permalink_alias_open_waits_for_resolution ... ok
+#18 301.3 test editor::occurrence_tests::tests::motions_move_heads_and_keep_anchors ... ok
+#18 301.3 test editor::contract_probes::review_highlight_updates_during_insert ... ok
+#18 301.3 test editor::occurrence_tests::tests::pop_removes_last_added_then_ends_the_session ... ok
+#18 301.3 test editor::occurrence_tests::tests::seed_selects_the_word_under_the_caret ... ok
+#18 301.3 test editor::occurrence_tests::tests::select_all_covers_every_match ... ok
+#18 301.3 test editor::git_memory::tests::permalink_preserves_fqdn_authority_and_nested_repo_path ... ok
+#18 301.3 test editor::git_memory::tests::stale_gutter_falls_back_to_card ... ok
+#18 301.3 test editor::git_memory::tests::commit_file_nav_walks_files ... ok
+#18 301.3 test editor::occurrence_tests::tests::skip_passes_a_candidate_without_selecting_it ... ok
+#18 301.3 test editor::occurrence_tests::tests::skip_then_select_all_keeps_the_skip ... ok
+#18 301.3 test editor::git_memory::tests::return_point_restores_when_origin_not_current ... ok
+#18 301.3 test editor::occurrence_tests::tests::unicode_seeds_stay_on_char_boundaries ... ok
+#18 301.3 test editor::git_memory::tests::tab_cycles_focus_between_sidebar_and_diff ... ok
+#18 301.3 test editor::occurrence_tests::tests::visual_selection_seeds_literal_text_not_a_pattern ... ok
+#18 301.3 test editor::occurrence_tests::tests::yank_cascades_and_keeps_the_selections ... ok
+#18 301.3 test editor::pending::tests::accepting_a_visual_pipe_returns_its_original_range_and_literal_command ... ok
+#18 301.3 test editor::git_memory::tests::native_paths::commit_navigation_keeps_native_identity_when_display_labels_collide ... ok
+#18 301.3 test editor::pending::tests::esc_once_is_modal_twice_aborts_and_sigil_deletion_aborts ... ok
+#18 301.3 test editor::pending::tests::ex_line_change_reenters_insert_and_sigil_ops_abort ... ok
+#18 301.3 test editor::pending::tests::paste_is_literal_and_newlines_are_rejected ... ok
+#18 301.3 test editor::notify::tests::a_dead_generation_never_acts ... ok
+#18 301.3 test editor::picker::lifecycle_traces::tests::truncated_completion_stays_visibly_incomplete ... ok
+#18 301.3 test editor::pending::tests::ex_line_normal_mode_is_the_real_grammar ... ok
+#18 301.3 test editor::picker::lifecycle_traces::tests::retired_stream_generation_never_publishes ... ok
+#18 301.3 test editor::panes::tests::vsplit_shares_buffer_and_navigates ... ok
+#18 301.3 test editor::contract_probes::review_highlight_updates_after_undo ... ok
+#18 301.3 test editor::picker::query_tests::a_source_warning_keeps_results_acceptable ... ok
+#18 301.3 test editor::picker::query_tests::qualifier_edits_do_not_clear_ranked_results ... ok
+#18 301.3 test editor::picker::query_tests::invalid_file_query_cannot_accept_the_previous_ranked_result ... ok
+#18 301.3 test editor::panes::tests::split_with_path_opens_other_file ... ok
+#18 301.3 test editor::notify::tests::close_retires_the_subscription ... ok
+#18 301.3 test editor::picker::lifecycle_traces::tests::warm_drain_holds_the_bound_and_dies_with_the_surface ... ok
+#18 301.3 test editor::picker::replace::tests::changed_regex_context_and_empty_matches_refuse_old_hits ... ok
+#18 301.3 test editor::notify::tests::worker_loss_reestablishes_with_a_fresh_generation ... ok
+#18 301.3 test editor::picker::query_tests::reopening_a_picker_revalidates_successful_disk_previews ... ok
+#18 301.3 test editor::notify::tests::a_hint_preserves_a_dirty_buffer_with_external_change_state ... ok
+#18 301.3 test editor::notify::tests::a_removed_file_preserves_the_buffer ... ok
+#18 301.3 test editor::picker::replace::tests::excluded_rows_stay_out_of_the_apply_set ... ok
+#18 301.3 test editor::notify::tests::a_hint_reloads_a_clean_buffer ... ok
+#18 301.3 test editor::picker::replace::tests::verified_edits_skips_stale_witnesses ... ok
+#18 301.3 test editor::notify::tests::a_hint_reobserves_an_open_directory ... ok
+#18 301.3 test editor::notify::tests::overflow_rescans_conservatively ... ok
+#18 301.3 test editor::picker::replace::tests::enter_without_content_expression_is_a_named_refusal ... ok
+#18 301.3 test editor::picker::query_tests::relative_spelling_keeps_the_dirty_live_preview ... ok
+#18 301.3 test editor::picker::query_tests::boolean_negative_guards_narrow_the_engine_surface ... ok
+#18 301.3 test editor::picker::query_tests::filter_only_files_and_literal_content_share_scope ... ok
+#18 301.3 test editor::picker::replace::tests::enter_without_matches_mutates_nothing ... ok
+#18 301.4 test editor::picker::lifecycle_traces::tests::retired_wsymbols_generation_never_merges ... ok
+#18 301.4 test editor::picker::tests::picker_tests::ctrl_space_suggests_and_enter_completes ... ok
+#18 301.4 test editor::picker::query_tests::dirty_source_search_and_cancelled_replace_preserve_working_context ... ok
+#18 301.4 test editor::picker::search_tests::toggling_a_live_query_keeps_its_producer_and_parked_editors ... ok
+#18 301.4 test editor::picker::query_tests::warm_server_workspace_symbols_merge_dedup_and_supersede ... ok
+#18 301.4 test editor::picker::query_tests::boolean_queries_search_through_the_engine_surface ... ok
+#18 301.4 test editor::picker::tests::picker_tests::jumps_picker_walks_history_and_ctrl_o_returns ... ok
+#18 301.4 test editor::picker::replace::tests::failed_open_is_named_in_review_and_receipt ... ok
+#18 301.4 test editor::picker::replace::tests::replace_filters_narrow_the_apply_set ... ok
+#18 301.4 test editor::picker::tests::picker_tests::paste_into_picker_edits_the_field_not_the_document ... ok
+#18 301.4 test editor::picker::tests::picker_tests::paste_into_remote_address_field_is_accepted_verbatim ... ok
+#18 301.4 test editor::picker::replace::tests::apply_refuses_a_target_edited_since_the_review_by_name ... ok
+#18 301.4 test editor::picker::search_tests::live_preview_witness_cache_rechecks_each_source_revision ... ok
+#18 301.4 test editor::picker::tests::picker_tests::paste_newline_into_picker_is_rejected_with_a_message ... ok
+#18 301.4 test editor::picker::replace::tests::cancel_mutates_nothing ... ok
+#18 301.4 test editor::picker::replace::tests::readonly_target_is_named_not_bulk_written ... ok
+#18 301.4 test editor::picker::query_tests::workspace_symbols_field_edits_notify_exactly_once_per_completed_command ... ok
+#18 301.4 test editor::picker::replace::tests::dirty_open_buffer_wins_over_disk ... ok
+#18 301.4 test editor::picker::query_tests::workspace_symbols_operator_free_keeps_static_list_fuzzy_narrowing ... ok
+#18 301.4 test editor::picker::search_tests::refreshed_source_witness_does_not_transfer_an_exclusion_to_new_text ... ok
+#18 301.4 test editor::picker::tests::picker_tests::picker_field_is_modal ... ok
+#18 301.4 test editor::picker::search_tests::canonical_aliases_prepare_only_one_edit_plan_for_the_source ... ok
+#18 301.4 test editor::picker::query_tests::workspace_symbols_wire_probe_never_carries_qualifiers ... ok
+#18 301.4 test editor::picker::search_tests::stale_open_cannot_retire_the_original_pristine_scratch ... ok
+#18 301.4 test editor::picker::query_tests::workspace_symbols_lists_and_jump_lands_on_the_declaration ... ok
+#18 301.4 test editor::picker::tests::picker_tests::jumps_picker_filters_dead_documents ... ok
+#18 301.4 test editor::picker::tests::picker_tests::remote_hosts_empty_enter_opens_the_address_box ... ok
+#18 301.4 test editor::picker::tests::picker_tests::grep_query_language_end_to_end ... ok
+#18 301.4 test editor::picker::tests::picker_tests::picker_field_refusals_are_surfaced_never_swallowed ... ok
+#18 301.4 test editor::picker::tests::picker_tests::search_options_toggle_the_session_default ... ok
+#18 301.4 test editor::picker::tests::picker_tests::remote_hosts_enter_carries_unmatched_text_into_the_address_box ... ok
+#18 301.4 test editor::picker::tests::picker_tests::invalid_query_never_launches ... ok
+#18 301.4 test editor::picker::tests::worker_lifecycle_tests::empty_success_settles_the_stream_without_error ... ok
+#18 301.4 test editor::picker::tests::worker_lifecycle_tests::preview_empty_success_is_ready_and_cancel_does_not_resubmit ... ok
+#18 301.4 test editor::picker::tests::picker_tests::suggestions_stay_out_of_literal_fields ... ok
+#18 301.4 test editor::picker::tests::worker_lifecycle_tests::files_request_registers_before_launch_and_cancels_on_close ... ok
+#18 301.4 test editor::picker::tests::worker_lifecycle_tests::preview_failure_is_visible_and_retryable_after_reopen ... ok
+#18 301.4 test editor::picker::search_tests::obsolete_review_completion_cannot_publish_after_search_reentry ... ok
+#18 301.4 test editor::picker::search_tests::save_as_cannot_retarget_a_prepared_search_plan ... ok
+#18 301.4 test editor::picker::replace::tests::replace_review_apply_and_save_change_flow ... ok
+#18 301.4 test editor::picker::tests::worker_lifecycle_tests::read_preview_types_every_miss ... ok
+#18 301.4 test editor::picker::tests::worker_lifecycle_tests::superseded_requests_cannot_touch_the_new_owner ... ok
+#18 301.4 test editor::prepare::tests::picker_geometry_boundaries ... ok
+#18 301.4 test editor::picker::tests::worker_lifecycle_tests::streamed_items_survive_a_terminal_failure_and_error_is_sticky ... ok
+#18 301.4 test editor::privacy::tests::decisions_pinned_per_family_and_target ... ok
+#18 301.4 test editor::prepare::tests::geometry_and_revision_changes_rekey_the_prepared_view ... ok
+#18 301.4 test editor::privacy::tests::default_policy_withholds_everything ... ok
+#18 301.4 test editor::picker::search_tests::dirty_source_identity_survives_cwd_and_relative_display_spelling ... ok
+#18 301.4 test editor::privacy::tests::persistence_admission_is_target_aware ... ok
+#18 301.5 test editor::privacy::tests::terminal_capture_needs_its_own_opt_in ... ok
+#18 301.5 test editor::prepare::tests::unchanged_preparation_admits_zero_work ... ok
+#18 301.5 test editor::picker::tests::picker_tests::picker_arrows_navigate_and_move_caret ... ok
+#18 301.5 test editor::picker::query_tests::workspace_symbols_unknown_evidence_and_invalid_query_stay_honest ... ok
+#18 301.5 test editor::picker::tests::picker_tests::picker_field_normal_mode_is_the_real_grammar ... ok
+#18 301.5 test editor::picker::query_tests::workspace_symbols_status_rows_survive_ast_relaunch_unconsumed ... ok
+#18 301.5 test editor::picker::search_tests::included_same_line_matches_drive_both_collect_and_review ... ok
+#18 301.5 test editor::picker::replace::tests::ambiguous_boolean_queries_refuse_replacement_by_name ... ok
+#18 301.5 test editor::recovery::tests::memory_only_mode_persists_nothing_and_says_so ... ok
+#18 301.5 test editor::picker::replace::tests::boolean_replacement_targets_the_single_positive_atom ... ok
+#18 301.5 test editor::remote::save::tests::cancelled_admission_cannot_publish_a_queued_write_grant ... ok
+#18 301.5 test editor::remote::save::tests::cancellation_does_not_discard_a_save_receipt_already_queued ... ok
+#18 301.5 test editor::remote::save::tests::collection_write_and_quit_waits_for_the_remote_receipt ... ok
+#18 301.5 test editor::picker::tests::picker_tests::picker_normal_mode_jk_walk_results ... ok
+#18 301.5 test editor::picker::search_tests::late_review_does_not_steal_typing_and_stale_collect_refuses ... ok
+#18 301.5 test editor::picker::query_tests::workspace_symbols_ast_narrows_syntax_and_lsp_tiers ... ok
+#18 301.5 test editor::recovery::tests::a_persistence_failure_is_visible_and_writes_nothing ... ok
+#18 301.5 test editor::remote::save::tests::older_save_receipt_keeps_new_edits_and_does_not_close_the_pane ... ok
+#18 301.5 test editor::remote::save::tests::pending_edit_admission_and_follow_cannot_share_a_document ... ok
+#18 301.5 test editor::recovery::tests::a_suppressed_tape_never_launches_recovery_natively ... ok
+#18 301.5 test editor::remote::save::tests::refused_collection_save_cannot_close_on_an_unrelated_old_receipt ... ok
+#18 301.5 test editor::remote::tests::browsing_does_not_become_eof_stickiness ... ok
+#18 301.5 test editor::remote::tests::refresh_clamps_the_column_within_the_original_line ... ok
+#18 301.5 test editor::remote::tests::follow_moves_the_eof_cursor_but_not_marks_or_jump_history ... ok
+#18 301.5 test editor::remote::tests::historical_permalink_uses_the_rendered_source_coordinate ... ok
+#18 301.5 test editor::remote::tests::same_path_snapshots_never_share_cached_gutters ... ok
+#18 301.5 test editor::remote::tests::shrink_clamps_browsing_to_a_real_grapheme ... ok
+#18 301.5 test editor::remote::workers::tests::synthesized_catalog_parses_and_binds_this_build ... ok
+#18 301.5 test editor::remote::save::tests::write_and_quit_does_not_discard_an_explicit_destination ... ok
+#18 301.5 test editor::remote_completion::tests::applied_uris_keep_native_path_identity ... ok
+#18 301.5 test editor::recovery::tests::remote_drafts_persist_only_with_explicit_session_consent ... ok
+#18 301.5 test editor::recovery::tests::a_deleted_source_restores_without_recreating_it ... ok
+#18 301.5 test editor::recovery::tests::a_live_rename_reports_the_renamed_state ... ok
+#18 301.5 test editor::remote_completion::tests::home_paths_are_refused_not_guessed ... ok
+#18 301.5 test editor::remote_completion::tests::late_results_after_cancel_are_dropped_not_applied ... ok
+#18 301.5 test editor::remote_completion::tests::focus_change_rejects_delivery ... ok
+#18 301.5 test editor::remote_completion::tests::host_candidates_apply_then_cycle_without_new_requests ... ok
+#18 301.5 test editor::remote_completion::tests::directories_route_as_prefixes_files_as_full_uris ... ok
+#18 301.5 test editor::remote_completion::tests::late_results_cannot_replace_edited_input ... ok
+#18 301.5 test editor::remote_completion::tests::non_file_commands_fall_back_to_command_name_cycling ... ok
+#18 301.5 test editor::recovery::tests::an_external_change_reports_conflict_and_never_overwrites ... ok
+#18 301.5 test editor::remote_completion::tests::percent_prefixes_classify_into_the_path_segment ... ok
+#18 301.5 test editor::recovery::tests::scratch_draft_checkpoints_and_restores_after_crash ... ok
+#18 301.5 test editor::remote_completion::tests::path_completion_never_connects_and_says_so ... ok
+#18 301.5 test editor::shell::process::unix::tests::descendant_helper ... ok
+#18 301.5 test editor::remote_completion::tests::superseded_tickets_are_rejected ... ok
+#18 301.5 test editor::remote_completion::tests::raw_spaces_and_mid_line_cursors_refuse_with_a_hint ... ok
+#18 301.5 test editor::shell::tests::bang_opens_focused_output_buffer_with_both_streams ... ok
+#18 301.5 test editor::picker::search_tests::find_enter_opens_sources_in_both_presentations_and_resume_keeps_scope ... ok
+#18 301.5 test editor::recovery::tests::orderly_close_checkpoints_eligible_drafts ... ok
+#18 301.5 test editor::recovery::tests::a_deliberate_discard_drops_the_record ... ok
+#18 301.5 test editor::shell::process::unix::tests::cancellation_kills_non_exec_shell_descendant_then_supervisor_progresses ... ok
+#18 301.5 test editor::recovery::tests::a_confirmed_save_retires_only_the_checkpoint_it_supersedes ... ok
+#18 301.5 test editor::remote_completion::tests::tail_range_browse_and_follow_complete_their_uri_operand ... ok
+#18 301.5 test editor::shell::tests::closed_document_invalidation_kills_pipe_owner ... ok
+#18 301.5 test editor::shell::tests::display_cancellation_publishes_nothing ... ok
+#18 301.5 test editor::shell::tests::cancellation_settles_promptly_then_next_command_progresses ... ok
+#18 301.5 test editor::shell::tests::display_failure_keeps_partial_output_and_explains_itself ... ok
+#18 301.5 test editor::remote_completion::tests::local_completion_preserves_native_names_and_opens_the_selected_file ... ok
+#18 301.5 test editor::shell::tests::display_reorder_cannot_steal_focus_and_duplicates_die ... ok
+#18 301.5 test editor::recovery::tests::dirty_document_checkpoints_and_restores_after_crash ... ok
+#18 301.5 test editor::recovery::tests::a_multi_document_change_captures_one_coherent_cohort ... ok
+#18 301.5 test editor::shell::tests::pipe_duplicate_applies_once ... ok
+#18 301.5 test editor::shell::tests::pipe_failure_never_mutates_and_reports_stderr ... ok
+#18 301.5 test editor::shell::tests::pipe_failure_without_stderr_reports_the_failure ... ok
+#18 301.5 test editor::remote_completion::tests::local_directory_completion_descends_and_rejects_stale_field_results ... ok
+#18 301.5 test editor::shell::tests::input_between_bang_and_landing_puts_output_in_background ... ok
+#18 301.5 test editor::shell::tests::pipe_range_mismatch_rejects_at_same_revision ... ok
+#18 301.5 test editor::shell::tests::failed_exit_never_touches_source ... ok
+#18 301.5 test editor::shell::process::unix::tests::concurrent_io_and_early_broken_pipe ... ok
+#18 301.5 test editor::shell::tests::pipe_readonly_refuses ... ok
+#18 301.5 test editor::shell::tests::failed_pipe_then_new_pipe_progresses ... ok
+#18 301.5 test editor::shell::tests::pipe_revision_rejects_after_edit_and_undo_restores_bytes ... ok
+#18 301.5 test editor::shell::tests::multibyte_offsets_clamp_to_char_boundaries ... ok
+#18 301.5 test editor::shell::tests::unowned_result_is_rejected_without_side_effects ... ok
+#18 301.5 test editor::shell::tests::trailing_newline_policy_linewise_keeps_charwise_trims ... ok
+#18 301.5 test editor::terminal::tests::focus_loss_cancels_a_pending_terminal_escape_prefix ... ok
+#18 301.5 test editor::shell::tests::sort_pipe_replaces_selection_in_one_undo_unit ... ok
+#18 301.5 test editor::terminal::tests::private_terminal_command_paste_is_classified_before_action_capture ... ok
+#18 301.5 test editor::terminal::tests::buffers_list_shows_terminals_with_their_live_phase ... ok
+#18 301.5 test editor::terminal::tests::terminal_window_prefix_moves_panes_without_reaching_the_child ... ok
+#18 301.5 test editor::tests::edit_tests::clipboard_paste_reports_missing_provider ... ok
+#18 301.5 test editor::tests::edit_tests::arrows_speak_hjkl ... ok
+#18 301.5 test editor::tests::edit_tests::clipboard_paste_inserts_read_result ... ok
+#18 301.5 test editor::terminal::tests::wide_cells_keep_byte_mapping_and_motion_boundaries ... ok
+#18 301.5 test editor::tests::edit_tests::clipboard_stale_ticket_never_pastes_into_newer_request ... ok
+#18 301.5 test editor::terminal::tests::modal_terminal_baseline_journey ... ok
+#18 301.5 test editor::terminal::tests::terminal_refresh_remaps_anchors_across_scrollback_drops ... ok
+#18 301.5 test editor::tests::edit_tests::alias_verbs ... ok
+#18 301.5 test editor::tests::edit_tests::dot_repeat_replays_insert ... ok
+#18 301.5 test editor::tests::edit_tests::count_motions_and_ex_line_jump ... ok
+#18 301.5 test editor::terminal::tests::terminal_snapshot_cannot_be_made_writable_saved_or_implicitly_relaunched ... ok
+#18 301.5 test editor::tests::edit_tests::indent_and_dedent ... ok
+#18 301.5 test editor::terminal::tests::unsupported_remote_terminal_never_retargets_the_document_to_local_execution ... ok
+#18 301.5 test editor::tests::edit_tests::dot_repeats_delete_and_change ... ok
+#18 301.5 test editor::tests::edit_tests::named_registers_yank_and_paste ... ok
+#18 301.5 test editor::tests::edit_tests::replace_char_and_join ... ok
+#18 301.5 test editor::tests::edit_tests::paste_is_one_undo_unit ... ok
+#18 301.5 test editor::tests::edit_tests::semicolon_and_comma_repeat_find ... ok
+#18 301.5 test editor::tests::edit_tests::space_y_yanks_motion_to_system_register ... ok
+#18 301.5 test editor::tests::edit_tests::noh_clears_search_highlight ... ok
+#18 301.5 test editor::tests::edit_tests::repeated_unicode_till_skips_the_adjacent_previous_target ... ok
+#18 301.5 test editor::tests::edit_tests::star_from_inside_unicode_word_does_not_cross_the_previous_separator ... ok
+#18 301.5 test editor::tests::alignment_tests::qa_quits_everything_and_refuses_dirty_buffers ... ok
+#18 301.5 test editor::tests::edit_tests::empty_search_repeats_last ... ok
+#18 301.5 test editor::tests::alignment_tests::document_set_stays_honest ... ok
+#18 301.5 test editor::tests::edit_tests::visual_line_change_keeps_the_following_line_and_one_undo_group ... ok
+#18 301.5 test editor::tests::edit_tests::visual_space_y_yanks_selection_to_system_register ... ok
+#18 301.5 test editor::tests::edit_tests::visual_indent_and_dedent ... ok
+#18 301.5 test editor::tests::edit_tests::visual_line_deletes_whole_lines ... ok
+#18 301.5 test editor::tests::edit_tests::star_searches_word_under_cursor_whole_word ... ok
+#18 301.5 test editor::tests::edit_tests::x_on_multibyte_char_deletes_the_whole_char ... ok
+#18 301.5 test editor::tests::hardening_tests::quote_object_scans_forward_on_the_line ... ok
+#18 301.5 test editor::tests::hardening_tests::quit_leaves_editor_drain_safe ... ok
+#18 301.5 test editor::tests::indent_tests::detected_tabs_keep_the_configured_width ... ok
+#18 301.5 test editor::tests::hardening_tests::undo_after_visual_delete ... ok
+#18 301.5 test editor::tests::indent_tests::detection_off_uses_config_despite_content ... ok
+#18 301.5 test editor::tests::hardening_tests::undo_lands_cursor_at_change_start ... ok
+#18 301.5 test editor::tests::indent_tests::detection_follows_the_files_own_convention ... ok
+#18 301.5 test editor::tests::indent_tests::indent_style_override_and_refusal ... ok
+#18 301.5 test editor::tests::indent_tests::tab_size_auto_clears_the_override ... ok
+#18 301.5 test editor::tests::indent_tests::tab_key_inserts_the_documents_indent_unit ... ok
+#18 301.5 test editor::tests::indent_tests::tab_size_out_of_range_is_refused_visibly ... ok
+#18 301.5 test editor::tests::indent_tests::o_auto_indents ... ok
+#18 301.5 test editor::tests::indent_tests::tab_size_from_config ... ok
+#18 301.5 test editor::tests::edit_tests::ex_open_and_close_buffers ... ok
+#18 301.5 test editor::tests::indent_tests::tab_size_override_beats_detection ... ok
+#18 301.5 test editor::terminal::tests::terminal_projection_supports_the_full_motion_surface ... ok
+#18 301.5 test editor::tests::edit_tests::wq_never_closes_a_failed_save ... ok
+#18 301.5 test editor::tests::indent_tests::enter_copies_and_deepens_indent ... ok
+#18 301.5 test editor::tests::keybinds_tests::arrows_consume_pending_counts ... ok
+#18 301.6 test editor::tests::indent_tests::tab_size_selector_applies_and_validates ... ok
+#18 301.6 test editor::tests::indent_tests::tabs_style_config_indents_with_tabs ... ok
+#18 301.6 test editor::tests::keybinds_tests::ctrl_c_warns_once_then_forces ... ok
+#18 301.6 test editor::tests::keybinds_tests::dbg_l_from_3 ... ok
+#18 301.6 test editor::tests::keybinds_tests::change_list_walks_and_invalidates ... ok
+#18 301.6 test editor::tests::keybinds_tests::block_mode_ops ... ok
+#18 301.6 test editor::tests::keybinds_tests::bracketed_paste_is_one_text_unit ... ok
+#18 301.6 test editor::tests::keybinds_tests::dbg_l_steps ... ok
+#18 301.6 test editor::tests::keybinds_tests::dw_leaves_exactly_one_cursor ... ok
+#18 301.6 test editor::tests::keybinds_tests::dbg_unicode ... ok
+#18 301.6 test editor::tests::indent_tests::new_file_opens_empty_and_saves ... ok
+#18 301.6 test editor::tests::keybinds_tests::diagnostic_jumps_wrap ... ok
+#18 301.6 test editor::tests::keybinds_tests::ctrl_d_u_scroll_half_pages ... ok
+#18 301.6 test editor::shell::tests::head_early_exit_still_replaces ... ok
+#18 301.6 test editor::tests::indent_tests::override_survives_refresh_and_other_buffers ... ok
+#18 301.6 test editor::tests::keybinds_tests::edits_map_marks_jumps_and_other_panes ... ok
+#18 301.6 test editor::tests::keybinds_tests::gv_reselects_and_gi_reinserts ... ok
+#18 301.6 test editor::tests::keybinds_tests::project_replace_is_byte_exact_past_multibyte ... ok
+#18 301.6 test editor::tests::keybinds_tests::paste_after_multibyte_inserts_after_the_char ... ok
+#18 301.6 test editor::tests::keybinds_tests::failed_open_keeps_the_scratch_document ... ok
+#18 301.6 test editor::tests::keybinds_tests::failed_pipe_never_touches_the_source ... ok
+#18 301.6 test editor::tests::keybinds_tests::alternate_buffer_round_trips ... ok
+#18 301.6 test editor::tests::keybinds_tests::view_place_centers_and_edges ... ok
+#18 301.6 test editor::tests::keybinds_tests::question_mark_is_search_backward ... ok
+#18 301.6 test editor::tests::register_tests::block_change_skips_short_rows_and_undo_restores_one_unit ... ok
+#18 301.6 test editor::tests::keybinds_tests::visible_jumps_and_counts ... ok
+#18 301.6 test editor::tests::keybinds_tests::ex_ranges_and_substitute ... ok
+#18 301.6 test editor::tests::register_tests::block_paste_creates_crlf_rows_without_mixing_endings ... ok
+#18 301.6 test editor::tests::register_tests::multibyte_characterwise_paste_lands_on_a_character_boundary ... ok
+#18 301.6 test editor::tests::register_tests::configured_tabs_and_empty_rows_keep_block_paste_columns ... ok
+#18 301.6 test editor::tests::register_tests::block_append_pads_short_rows_while_insert_skips_them ... ok
+#18 301.6 test editor::tests::reviewer_battery::counted_insert_repeats_text ... ok
+#18 301.6 test editor::tests::register_tests::tab_intersection_preserves_unselected_cells_and_full_tabs ... ok
+#18 301.6 test editor::tests::reviewer_battery::c_enters_insert_at_deletion_start ... ok
+#18 301.6 test editor::tests::register_tests::block_paste_before_after_and_count_preserve_rectangle_shape ... ok
+#18 301.6 test editor::tests::register_tests::partial_wide_cluster_is_cells_not_broken_utf8 ... ok
+#18 301.6 test editor::tests::reviewer_battery::cc_keeps_the_line_and_indent ... ok
+#18 301.6 test editor::tests::reviewer_battery::rejected_commands_report_and_leave_input_reusable ... ok
+#18 301.6 test editor::tests::scratch_tests::view_marks_readonly_and_edits_refuse ... ok
+#18 301.6 test editor::tests::reviewer_battery::i_caret_tilde_s_work ... ok
+#18 301.6 test editor::tests::reviewer_battery::counts_multiply_non_operator_commands ... ok
+#18 301.6 test editor::tests::keybinds_tests::pathless_save_is_an_error_not_a_lie ... ok
+#18 301.6 test editor::tests::search_tests::accepted_origin_edit_restores_before_remapping_and_consumes_pending_operator ... ok
+#18 301.6 test editor::tests::search_tests::clipboard_yank_uses_counted_operator_state_and_backspace_cancels_it ... ok
+#18 301.6 test editor::tests::search_tests::bracketed_paste_belongs_to_the_prompt_not_the_document ... ok
+#18 301.6 test editor::tests::search_tests::backward_and_wrapping_search_keep_preview_commit_and_jump_agreeing ... ok
+#18 301.6 test editor::tests::keybinds_tests::marks_set_and_jump ... ok
+#18 301.6 test editor::tests::search_tests::document_switch_cancels_before_rebinding_and_never_executes_the_old_operator ... ok
+#18 301.6 test editor::tests::search_tests::counted_registered_operator_preview_and_execution_share_the_saved_origin ... ok
+#18 301.6 test editor::tests::search_tests::ex_completion_updates_the_same_caret_used_by_later_typing ... ok
+#18 301.6 test editor::tests::search_tests::double_escape_restores_all_anchors_duplicates_and_both_view_axes ... ok
+#18 301.6 test editor::tests::search_tests::empty_search_reuses_query_without_losing_the_new_count_or_direction ... ok
+#18 301.6 test editor::tests::search_tests::enter_uses_the_preview_origin_for_every_counted_cursor ... ok
+#18 301.6 test editor::tests::scratch_tests::edited_scratch_survives ... ok
+#18 301.6 test editor::tests::search_tests::equal_revision_and_reused_slot_cannot_accept_another_documents_prompt ... ok
+#18 301.6 test editor::tests::search_tests::sigil_backspace_and_normal_delete_both_cancel_and_release_input ... ok
+#18 301.6 test editor::tests::search_tests::stale_and_overlapping_batches_do_not_cancel_or_move_the_prompt ... ok
+#18 301.6 test editor::tests::scratch_tests::first_open_replaces_the_scratch_buffer ... ok
+#18 301.6 test editor::shell::process::unix::tests::nonzero_exit_keeps_output_and_output_is_bounded ... ok
+#18 301.6 test editor::tests::smartindent_tests::closer_dedents_on_indent_only_line ... ok
+#18 301.6 test editor::tests::search_tests::readonly_buffers_keep_live_search_and_enter_on_the_same_path ... ok
+#18 301.6 test editor::tests::keybinds_tests::grep_respawns_reach_the_production_event_source ... ok
+#18 301.6 test editor::tests::search_tests::unmatched_and_invalid_queries_do_not_edit_or_leave_jumped_cursors ... ok
+#18 301.6 test editor::tests::search_tests::unrelated_document_commit_preserves_the_live_prompt_and_focus ... ok
+#18 301.6 test editor::tests::surround_tests::ds_deletes_pair ... ok
+#18 301.6 test editor::tests::surround_tests::cs_changes_pair ... ok
+#18 301.6 test editor::tests::surround_tests::visual_s_wraps_selection ... ok
+#18 301.6 test editor::tests::smartindent_tests::closer_noop_with_real_text_before ... ok
+#18 301.6 test editor::tests::search_tests::typing_backspace_and_interior_caret_edits_reresolve ... ok
+#18 301.6 test editor::tests::surround_tests::ysiw_wraps_word ... ok
+#18 301.6 test editor::tests::transaction_tests::delayed_pipe_rejects_offsets_inside_new_multibyte_text ... ok
+#18 301.6 test editor::tests::transaction_tests::accepted_pipe_maps_anchors_and_is_undoable ... ok
+#18 301.6 test editor::tests::transaction_tests::gateway_refusal_leaves_the_document_untouched ... ok
+#18 301.6 test editor::tests::transaction_tests::ranged_ex_delete_maps_marks_through_the_gateway ... ok
+#18 301.6 test editor::tests::undo_tests::edit_after_undo_forks_and_ctrlr_redoes_last_branch ... ok
+#18 301.6 test editor::tests::keybinds_tests::write_to_path_respects_overwrite_policy ... ok
+#18 301.6 test editor::tests::undo_tests::change_op_holds_one_undo_unit ... ok
+#18 301.6 test editor::tests::search_tests::plain_search_and_nonsearch_bodies_never_leak_structural_overlays ... ok
+#18 301.6 test editor::tests::undo_tests::insert_session_undoes_as_one_unit ... ok
+#18 301.6 test editor::tests::undo_tests::readonly_buffers_refuse_undo ... ok
+#18 301.6 test editor::tests::visual_object_tests::va_quote_includes_quotes ... ok
+#18 301.6 test editor::trace::model::tests::adjacent_ranges_are_valid_but_overlap_and_utf8_splits_are_not ... ok
+#18 301.6 test editor::tests::visual_object_tests::vi_paren_selects_inner ... ok
+#18 301.6 test editor::tests::undo_tests::n_repeats_search_and_wraps ... ok
+#18 301.6 test editor::trace::model::tests::kept_mutants_violate_independent_correspondence_checks ... ok
+#18 301.6 test editor::trace::generated::adjacent_and_overlapping_regressions_exercise_real_gateway ... ok
+#18 301.6 test editor::trace::model::tests::observe_catches_an_unreported_mutation ... ok
+#18 301.6 test editor::trace::seed::tests::legacy_input_capture_is_not_reinterpreted_as_the_new_query_language ... ok
+#18 301.6 test editor::tests::search_tests::prompt_accept_matrix_reaches_ex_search_and_pipe_error_effects ... ok
+#18 301.6 test editor::transaction_conformance::prepared_batches_are_bound_to_their_buffer_and_revision ... ok
+#18 301.6 test editor::transaction_conformance::rejected_batches_change_nothing ... ok
+#18 301.6 test editor::transaction_conformance::traces::consumed_ticket_never_lands_twice ... ok
+#18 301.6 test editor::trace::tests::recording_after_finish_is_refused ... ok
+#18 301.6 test editor::transaction_conformance::traces::deliver_on_moved_revision_drops_without_publication ... ok
+#18 301.6 test editor::transaction_conformance::editor_apply_refuses_dead_and_stale_without_side_effects ... ok
+#18 301.6 test editor::transaction_conformance::traces::deliver_on_dead_document_is_no_document ... ok
+#18 301.6 test editor::transaction_conformance::traces::readonly_delivery_refused_before_freshness ... ok
+#18 301.6 test editor::transaction_conformance::traces::fresh_deliver_lands_on_exactly_the_asked_document ... ok
+#18 301.6 test editor::transaction_conformance::undo_groups_batches_but_promises_no_durability ... ok
+#18 301.6 test editor::transaction_conformance::traces::reincarnation_never_accepts_the_old_ticket ... ok
+#18 301.6 test editor::workspaces::tests::rebinding_keeps_identity_and_disconnect_bumps_incarnation ... ok
+#18 301.6 test keymap::lookup::index_tests::literals_and_longer_paths_keep_independent_terminals ... ok
+#18 301.6 test keymap::lookup::index_tests::table_precedence_wins_over_literal_specificity ... ok
+#18 301.6 test editor::undo::tests::browser_q_closes_back_to_origin ... ok
+#18 301.6 test keymap::tests::coverage_shape ... ok
+#18 301.6 test keymap::tests::terminal_escapes_render_live_in_help ... ok
+#18 301.6 test editor::undo::tests::browser_lists_tree_and_restores_branch ... ok
+#18 301.6 test keymap::tests::compat_report_is_fresh ... ok
+#18 301.6 test keymap::tests::which_key_children ... ok
+#18 301.6 test session::tests::legacy_paths_migrate_and_ambiguous_paths_fail ... ok
+#18 301.6 test session::tests::a_malformed_trust_store_fails_closed ... ok
+#18 301.6 test editor::prepare::tests::pane_bounds_distinguish_loading_from_complete ... ok
+#18 301.6 test session::tests::empty_or_readonly_never_persist ... ok
+#18 301.6 test session::tests::failed_restore_leaves_live_state_untouched ... ok
+#18 301.6 test keymap::tests::keys_notation_expands ... ok
+#18 301.6 test editor::tests::search_tests::prompt_edit_cancel_matrix_uses_identical_modal_rules_on_all_surfaces ... ok
+#18 301.6 test keymap::tests::every_dispatched_sequence_has_a_row ... ok
+#18 301.6 test editor::transaction_conformance::replay_witnesses_roundtrip ... ok
+#18 301.6 test session::tests::atomic_publication_replaces_destination_symlink_without_touching_target ... ok
+#18 301.6 test session::tests::failed_publication_preserves_previous_session_and_cleans_staging ... ok
+#18 301.6 test session::tests::trust_store_remembers_projects ... ok
+#18 301.6 test session::tests::trust_rejects_unusable_native_paths ... ok
+#18 301.6 test session::tests::native_paths_roundtrip_without_loss ... ok
+#18 301.6 test session::tests::roundtrip_restores_buffers_and_position ... ok
+#18 301.6 test editor::transaction_conformance::service_oracle_generated_streams_match_the_contract ... ok
+#18 301.6 test session::tests::remote_trust_is_endpoint_scoped ... ok
+#18 301.6 test editor::trace::tests::recorded_frames_replay_the_same_cell_observation ... ok
+#18 301.6 test editor::trace::tests::seed_refuses_mid_session_capture ... ok
+#18 301.6 test editor::transaction_conformance::batch_oracle_generated_streams_match_the_contract ... ok
+#18 301.6 test editor::shell::tests::big_cat_pipe_does_not_deadlock ... ok
+#18 301.6 test editor::trace::tests::cursor_fade_retriggers_only_on_focus_returns_and_large_jumps ... ok
+#18 301.6 test editor::trace::tests::changing_recorded_request_identity_fails_before_native_launch ... ok
+#18 301.6 test session::tests::undo_history_crosses_when_disk_matches ... ok
+#18 301.6 test editor::trace::tests::stale_picker_terminal_cannot_end_recorded_new_query ... ok
+#18 301.6 test editor::trace::tests::duplicate_pipe_completion_is_applied_once_and_replay_undo_restores_original ... ok
+#18 301.6 test editor::trace::tests::recorded_picker_field_dw_replays ... ok
+#18 301.7 test editor::trace::tests::recorded_reordered_shell_outputs_keep_both_but_only_newest_focus ... ok
+#18 301.7 test keymap::tests::live_rows_dispatch_through_the_table ... ok
+#18 301.8 test editor::trace::generated::generated_publications_match_text_revision_and_refusal_model ... ok
+#18 301.9 test editor::recovery::tests::an_over_bound_draft_is_reported_not_truncated ... ok
+#18 302.1 test editor::tests::keybinds_tests::incremental_syntax_equals_fresh_parse ... ok
+#18 302.1 
+#18 302.1 test result: ok. 688 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+#18 302.1 
+#18 302.1      Running unittests src/lib.rs (target/debug/deps/strop_fs-1e5a9c5609bd6330)
+#18 302.1 
+#18 302.1 running 25 tests
+#18 302.1 test adversarial::reserved_namespaces_refuse_case_and_normalization_aliases ... ok
+#18 302.1 test adversarial::parent_swapped_between_prepare_and_apply_is_a_typed_conflict ... ok
+#18 302.1 test adversarial::operation_locks_are_per_name_domains_with_checked_identity ... ok
+#18 302.1 test guard::cleanup::tests::completed_lock_ownership_does_not_survive_an_inherited_descriptor ... ok
+#18 302.1 test adversarial::symlink_ancestor_retarget_between_prepare_and_apply_is_refused ... ok
+#18 302.1 test adversarial::cancellation_before_publication_leaves_no_effect ... ok
+#18 302.1 test guard::cleanup::tests::an_active_lock_is_never_unlinked ... ok
+#18 302.1 test guard::cleanup::tests::new_arrivals_are_not_rescanned_or_deleted ... ok
+#18 302.1 test guard::cleanup::tests::lock_shaped_user_data_and_unknown_nfs_entries_are_preserved ... ok
+#18 302.1 test guard::cleanup::tests::replacement_of_a_captured_lock_is_not_adopted_for_cleanup ... ok
+#18 302.1 test tests::permanent_remove_refuses_nonempty_directories_and_changed_sources ... ok
+#18 302.1 test adversarial::cross_mount_rename_is_a_typed_unsupported_refusal ... ok
+#18 302.1 test adversarial::permission_transition_between_prepare_and_apply_fails_closed ... ok
+#18 302.1 test adversarial::source_changed_between_prepare_and_apply_is_a_typed_conflict ... ok
+#18 302.1 test adversarial::native_byte_and_control_names_roundtrip_exactly ... ok
+#18 302.1 test adversarial::symlinked_ancestors_resolve_but_the_final_entry_is_never_followed ... ok
+#18 302.1 test tests::exclusive_creation_and_destination_races_preserve_other_files ... ok
+#18 302.1 test tests::rename_directory_and_conflicts_use_no_replace_semantics ... ok
+#18 302.1 test tests::rename_graph_orders_vacancies_and_refuses_cycles_before_mutation ... ok
+#18 302.1 test tests::move_verification_requires_an_owned_after_version_not_just_inode_occupancy ... ok
+#18 302.1 test tests::a_directory_emptied_through_checked_operations_can_be_removed ... ok
+#18 302.1 test tests::missing_parents_are_visible_steps_and_only_created_on_apply ... ok
+#18 302.1 test tests::stored_and_buffer_copies_publish_exact_bytes_without_changing_source ... ok
+#18 302.2 test trash::tests::committed_rename_with_io_error_retains_trash_metadata_and_verifiable_recovery ... ok
+#18 302.2 test tests::trash_is_recoverable_and_restore_refuses_occupied_names ... ok
+#18 302.2 
+#18 302.2 test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+#18 302.2 
+#18 302.2      Running unittests src/lib.rs (target/debug/deps/strop_git-4e14a4a58d670e13)
+#18 302.2 
+#18 302.2 running 70 tests
+#18 302.2 test container::tests::unborn_head_and_no_remotes_are_honest_data ... ok
+#18 302.2 test container::tests::context_reports_container_target_and_head_state ... ok
+#18 302.2 test exec::tests::container_error_displays_the_boundary_diagnosis ... ok
+#18 302.2 test container::tests::no_repo_is_none_and_other_failures_are_typed ... ok
+#18 302.2 test exec::tests::for_target_selects_container_for_a_container_target ... ok
+#18 302.2 test exec::tests::for_target_selects_the_only_valid_backend ... ok
+#18 302.2 test exec::tests::container_run_refuses_a_non_utf8_argument_typed ... ok
+#18 302.2 test exec::tests::container_run_refuses_a_non_utf8_workdir_typed ... ok
+#18 302.2 test exec::tests::truncated_stdout_is_refused ... ok
+#18 302.2 test numstat::tests::binary_rename_keeps_destination ... ok
+#18 302.2 test numstat::tests::empty_stream_is_no_rows ... ok
+#18 302.2 test numstat::tests::malformed_output_is_an_error ... ok
+#18 302.2 test numstat::tests::non_utf8_path_arrives_as_bytes ... ok
+#18 302.2 test numstat::tests::parses_real_git_bytes ... ok
+#18 302.2 test numstat::tests::unicode_path_stays_unquoted ... ok
+#18 302.2 test permalink::tests::dotless_ssh_hosts_are_unresolved_aliases ... ok
+#18 302.2 test permalink::tests::git_suffix_strips_once ... ok
+#18 302.2 test permalink::tests::https_authority_and_nested_repo_path_survive ... ok
+#18 302.2 test permalink::tests::permalink_percent_encodes_non_utf8_path_bytes ... ok
+#18 302.2 test permalink::tests::permalink_pins_sha_and_encodes_segments ... ok
+#18 302.2 test permalink::tests::pick_remote_prefers_upstream_then_origin ... ok
+#18 302.2 test permalink::tests::reviewer_table_identities ... ok
+#18 302.2 test permalink::tests::unsupported_urls_refuse_instead_of_guessing ... ok
+#18 302.2 test remote::parsers::tests::commit_parents_root_and_merged ... ok
+#18 302.2 test remote::parsers::tests::remote_config_records_parse_native ... ok
+#18 302.2 test remote::parsers::tests::shas_are_validated_object_names ... ok
+#18 302.2 test remote::parsers::tests::toplevel_is_absolute_native_path ... ok
+#18 302.2 test remote::parsers::tests::tree_and_index_records_keep_native_paths ... ok
+#18 302.2 test remote::tests::no_matching_remote_config_is_data_but_real_failure_is_not ... ok
+#18 302.2 test remote::tests::nonzero_exit_is_a_typed_error ... ok
+#18 302.2 test remote::tests::truncation_is_typed ... ok
+#18 302.2 test ssh::tests::parses_effective_hostname_from_g_output ... ok
+#18 302.2 test ssh::tests::refuses_non_hostname_shaped_output ... ok
+#18 302.2 test memory::tests::blame_file_rejects_missing_file ... ok
+#18 302.2 test target::tests::container_identity_is_id_plus_workdir ... ok
+#18 302.2 test target::tests::container_target_is_neither_remote_nor_local ... ok
+#18 302.2 test ssh::tests::missing_program_is_spawn_failure ... ok
+#18 302.2 test target::tests::rel_of_strips_the_owning_workdir ... ok
+#18 302.2 test target::tests::remote_file_carries_endpoint_and_native_path ... ok
+#18 302.2 test target::tests::remote_identity_is_endpoint_plus_workdir ... ok
+#18 302.2 test target::tests::local_target_has_no_remote_identity ... ok
+#18 302.2 test target::tests::serde_round_trips_remote_provenance ... ok
+#18 302.2 test ssh::tests::effective_host_spawns_one_safe_argv_element ... ok
+#18 302.2 test target::tests::serde_round_trips_container_and_decodes_legacy_variants ... ok
+#18 302.2 test ssh::tests::failing_ssh_reports_stderr ... ok
+#18 302.2 test ssh::tests::option_shaped_hosts_never_spawn ... ok
+#18 302.2 test exec::tests::local_exit_codes_are_data ... ok
+#18 302.2 test exec::tests::native_path_arguments_select_the_exact_index_entry ... ok
+#18 302.2 test exec::tests::run_records_reports_nonzero_exits ... ok
+#18 302.3 test tests::unborn_head_stages_all_add ... ok
+#18 302.3 test repo::head_tests::head_content_probe ... ok
+#18 302.3 test tests::untracked_file_is_all_add_not_failure ... ok
+#18 302.3 test tests::outside_workdir_is_typed_not_empty ... ok
+#18 302.3 test memory::tests::show_stat_preserves_non_utf8_paths ... ok
+#18 302.3 test tests::clean_buffer_has_no_hunks ... ok
+#18 302.3 test tests::change_and_add_and_delete ... ok
+#18 302.3 test tests::pure_delete_marks_following_line ... ok
+#18 302.3 test tests::commit_file_diff_root_commit ... ok
+#18 302.3 test memory::tests::blame_file_attributes_lines ... ok
+#18 302.3 test repo::head_tests::four_state_edges ... ok
+#18 302.3 test memory::tests::log_graph_returns_marked_rows ... ok
+#18 302.3 test tests::line_numbers_track_both_sides ... ok
+#18 302.3 test tests::stage_hunk_applies_to_index ... ok
+#18 302.3 test tests::git_context_serde_and_equality ... ok
+#18 302.3 test tests::gutter_from_contents_matches_repo_semantics ... ok
+#18 302.3 test tests::stage_hunk_is_byte_precise ... ok
+#18 302.3 test tests::commit_file_diff_is_structured ... ok
+#18 302.3 test memory::tests::show_stat_paths_feed_commit_file_diff ... ok
+#18 302.3 test tests::stage_hunk_preserves_a_missing_final_newline ... ok
+#18 302.3 test memory::tests::show_stat_keeps_native_paths ... ok
+#18 302.3 
+#18 302.3 test result: ok. 70 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+#18 302.3 
+#18 302.3      Running tests/container.rs (target/debug/deps/container-5816a9ee5bab208d)
+#18 302.3 
+#18 302.3 running 2 tests
+#18 302.3 test discover_without_git_fails_typed_never_hangs ... ok
+#18 302.3 test missing_git_in_container_fails_typed_never_hangs ... ok
+#18 302.3 
+#18 302.3 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 302.3 
+#18 302.3      Running unittests src/lib.rs (target/debug/deps/strop_grammar-6e09981b18191277)
+#18 302.3 
+#18 302.3 running 37 tests
+#18 302.3 test resolve::search::tests::literal_hits_carry_explicit_ends ... ok
+#18 302.3 test resolve::search::tests::empty_matches_walk_but_never_past_eof ... ok
+#18 302.3 test resolve::search::tests::regex_hits_carry_explicit_ends ... ok
+#18 302.3 test resolve::pairs::tests::neovim_quote_comment_and_escape_witnesses ... ok
+#18 302.3 test tests::contract::bracket_object_around_includes_delimiters ... ok
+#18 302.3 test tests::contract::big_word_objects_are_whitespace_delimited ... ok
+#18 302.3 test tests::contract::bracket_object_cursor_on_close ... ok
+#18 302.3 test tests::contract::bracket_object_cursor_on_open ... ok
+#18 302.3 test tests::contract::bracket_object_from_inside ... ok
+#18 302.3 test tests::contract::bracket_object_nested ... ok
+#18 302.3 test tests::contract::counts_multiply ... ok
+#18 302.3 test tests::contract::doubled_operator_is_linewise ... ok
+#18 302.3 test tests::contract::cw_changes_to_word_end_never_trailing_space ... ok
+#18 302.3 test tests::contract::inner_word_object_on_blanks_selects_the_blank_run ... ok
+#18 302.3 test tests::contract::find_and_till ... ok
+#18 302.3 test tests::contract::search_motion_is_exclusive ... ok
+#18 302.3 test tests::contract::search_motion_lands_on_the_match_start ... ok
+#18 302.3 test tests::contract::search_motion_supports_the_regex_dialect ... ok
+#18 302.3 test tests::contract::spec_footer_names_the_target ... ok
+#18 302.3 test tests::contract::word_motions_and_objects ... ok
+#18 302.3 test tests::cursor_moves::h_stops_at_line_start ... ok
+#18 302.3 test tests::cursor_moves::l_moves_right_and_stops_at_line_end ... ok
+#18 302.3 test tests::contract::word_motions_are_multibyte_honest ... ok
+#18 302.3 test tests::extended::named_register_prefix ... ok
+#18 302.3 test tests::extended::big_word_skips_punctuation ... ok
+#18 302.3 test tests::extended::match_pair_both_sides ... ok
+#18 302.3 test tests::query_dialect::lone_cr_is_a_plain_char ... ok
+#18 302.3 test tests::query_dialect::crlf_line_breaks_are_one_unit ... ok
+#18 302.3 test tests::query_dialect::malformed_queries_are_typed_errors ... ok
+#18 302.3 test tests::query_dialect::parse_refuses_uncompilable_search_motions ... ok
+#18 302.3 test tests::query_dialect::resolve_many_resolves_every_cursor_independently ... ok
+#18 302.3 test tests::query_dialect::unicode_word_boundaries_follow_the_editor_model ... ok
+#18 302.3 test tests::query_dialect::unsupported_constructs_are_typed_errors ... ok
+#18 302.3 test tests::query_dialect::whole_word_folds_into_the_query ... ok
+#18 302.3 test tests::zero_tests::zero_is_line_start_not_count ... ok
+#18 302.3 test tests::query_corpus::dialect_matches_vim_on_the_corpus ... ok
+#18 302.6 test tests::query_dialect::bounded_engine_errors_on_pathological_patterns ... ok
+#18 302.6 
+#18 302.6 test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+#18 302.6 
+#18 302.6      Running unittests src/lib.rs (target/debug/deps/strop_lsp-d13f767dbf268b89)
+#18 302.6 
+#18 302.6 running 60 tests
+#18 302.6 test client::queue::tests::a_stopped_queue_reports_closed_and_drops_retained_snapshots ... ok
+#18 302.6 test client::queue::tests::a_close_for_the_document_bars_coalescing_across_it ... ok
+#18 302.6 test client::queue::tests::an_admitted_request_bars_coalescing_the_version_it_observes ... ok
+#18 302.6 test client::queue::tests::superseded_unsent_changes_coalesce_without_a_barrier ... ok
+#18 302.6 test client::tests::changes::format_rename_and_code_action_refuse_admission_without_providers ... ok
+#18 302.6 test client::tests::default_negotiation_is_utf16_and_converts_columns ... ok
+#18 302.6 test client::tests::preinit_change_is_coalesced_into_first_open ... ok
+#18 302.6 test client::tests::responses::hover_error_receives_a_terminal_note_with_the_original_stamp ... ok
+#18 302.6 test client::tests::preinit_close_discards_old_open_and_queued_requests_and_converts_after_negotiation ... ok
+#18 302.6 test client::trace_io::tests::wire_metadata_never_contains_text_payloads ... ok
+#18 302.6 test client::tests::changes::superseded_unsent_snapshots_reach_the_wire_as_the_final_version ... ok
+#18 302.6 test client::tests::responses::goto_null_is_a_note_and_switch_header_null_is_a_note ... ok
+#18 302.6 test client::tests::live_close_reopen_sends_fresh_content_and_reordered_replies_keep_original_owners ... ok
+#18 302.6 test languages::tests::absolute_commands_skip_the_path_scan ... ok
+#18 302.6 test client::queue::tests::the_job_count_bound_refuses_visibly ... ok
+#18 302.6 test client::tests::changes::rename_with_resource_operations_or_a_foreign_version_is_a_refusal_note ... ok
+#18 302.6 test client::tests::changes::format_returns_edits_and_null_is_an_explicit_empty ... ok
+#18 302.6 test languages::tests::helix_extra_keys_are_ignored ... ok
+#18 302.6 test client::tests::changes::code_actions_decode_edits_and_commands ... ok
+#18 302.6 test languages::tests::broken_layer_diagnoses_with_its_exact_path_and_never_bricks ... ok
+#18 302.6 test client::tests::responses::workspace_symbols_crosses_the_engine_probe_verbatim ... ok
+#18 302.6 test client::tests::responses::document_symbols_flatten_both_reply_shapes ... ok
+#18 302.6 test client::tests::changes::rename_over_changes_map_and_document_changes_produce_workspace_edits ... ok
+#18 302.6 test languages::tests::language_override_picks_the_config_defined_server ... ok
+#18 302.6 test languages::tests::malformed_remote_layer_diagnoses_the_endpoint_not_a_local_path ... ok
+#18 302.6 test languages::tests::every_broken_layer_reports_its_own_path ... ok
+#18 302.6 test languages::tests::parses_helix_style_fixture ... ok
+#18 302.6 test languages::tests::per_language_granularity_of_the_merge ... ok
+#18 302.6 test client::trace_io::tests::split_and_concatenated_frames_emit_exact_response_metadata ... ok
+#18 302.6 test languages::tests::unspawnable_and_unknown_names_warn ... ok
+#18 302.6 test languages::tests::resolution_project_over_xdg_over_embedded ... ok
+#18 302.6 test registry::tests::curated_languages_have_servers ... ok
+#18 302.6 test target::tests::filesystems_and_locations_never_alias_across_hosts ... ok
+#18 302.6 test languages::tests::remote_layers_merge_xdg_with_fetched_project_only ... ok
+#18 302.6 test target::tests::remote_decode_refuses_other_schemes_hosts_and_broken_escapes ... ok
+#18 302.6 test tests::capabilities_gate_hover_and_goto ... ok
+#18 302.6 test target::tests::workspace_labels_and_roots ... ok
+#18 302.6 test target::tests::remote_uri_roundtrips_native_bytes_without_local_probe ... ok
+#18 302.6 test tests::column_encoding_roundtrips_unicode ... ok
+#18 302.6 test tests::option_shaped_providers_count_as_enabled ... ok
+#18 302.6 test tests::server_location_trace_round_trips_native_path_bytes ... ok
+#18 302.6 test languages::tests::project_layer_discovery_walks_up ... ok
+#18 302.6 test languages::tests::malformed_layer_keeps_valid_layering_and_config ... ok
+#18 302.6 test languages::tests::project_root_is_the_project_layers_dir ... ok
+#18 302.6 test registry::tests::root_walks_to_git ... ok
+#18 302.6 test registry::tests::command_status_is_a_pure_metadata_check ... ok
+#18 302.7 test client::tests::startup::preinit_close_cancels_queued_requests_with_terminal_notes ... ok
+#18 302.7 test client::tests::responses::workspace_symbols_refuse_unready_and_uncapable_servers ... ok
+#18 302.7 test client::tests::unsupported_capability_refuses_admission_without_wire_traffic ... ok
+#18 302.7 test client::tests::stale_revision_and_unopened_documents_refuse_admission ... ok
+#18 302.7 test client::tests::wire_order_is_admission_order_change_before_request ... ok
+#18 302.7 test client::tests::startup::preinit_request_backlog_is_bounded_with_terminal_notes ... ok
+#18 302.7 test client::tests::responses::locations_null_is_an_empty_list_and_errors_are_notes ... ok
+#18 302.7 test client::tests::responses::hover_null_and_empty_results_are_explicit_empties ... ok
+#18 302.7 test client::tests::responses::workspace_symbols_are_document_free_and_map_both_shapes ... ok
+#18 302.7 test client::tests::startup::startup_notifications_do_not_kill_the_client ... ok
+#18 302.7 test client::tests::spawn::initialize_carries_workspace_folders_and_config_answers_pulls ... ok
+#18 303.1 test client::queue::tests::coalescing_tracks_bytes_so_the_bound_reflects_what_is_retained ... ok
+#18 303.1 test client::queue::tests::the_snapshot_byte_bound_refuses_changes_but_not_lifecycle ... ok
+#18 303.4 test client::tests::content_modified_retries_once_and_keeps_the_original_context ... ok
+#18 303.4 
+#18 303.4 test result: ok. 60 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+#18 303.4 
+#18 303.4      Running unittests src/lib.rs (target/debug/deps/strop_picker-50809f1006897357)
+#18 303.4 
+#18 303.4 running 143 tests
+#18 303.4 test line_edit::tests::edits_bump_the_revision_exactly_once ... ok
+#18 303.4 test line_edit::tests::set_text_refuses_newlines - should panic ... ok
+#18 303.4 test line_edit::tests::the_single_line_invariant_holds ... ok
+#18 303.4 test line_edit::tests::insert_backspace_and_caret_roundtrip ... ok
+#18 303.4 test query::highlight::tests::negation_is_its_own_role ... ok
+#18 303.4 test query::highlight::tests::qualifier_parts_get_roles ... ok
+#18 303.4 test query::highlight::tests::quoted_reserved_words_stay_literal ... ok
+#18 303.4 test query::highlight::tests::unclosed_quote_is_incomplete ... ok
+#18 303.4 test query::lexer::tests::colon_in_uri_is_not_a_qualifier ... ok
+#18 303.4 test query::lexer::tests::escapes_are_only_the_active_quote_and_backslash ... ok
+#18 303.4 test query::lexer::tests::negation_only_for_known_qualifiers ... ok
+#18 303.4 test query::lexer::tests::qualifiers_and_words ... ok
+#18 303.4 test query::lexer::tests::quoted_words_are_never_qualifiers ... ok
+#18 303.4 test query::lexer::tests::quotes_preserve_spaces_and_paths ... ok
+#18 303.4 test query::lexer::tests::spans_cover_the_input ... ok
+#18 303.4 test query::lexer::tests::unclosed_quote_is_a_token_not_an_error ... ok
+#18 303.4 test query::lexer::tests::unknown_qualifier_shaped_words_stay_literal ... ok
+#18 303.4 test query::parser::tests::alias_rs_resolves_to_rust ... ok
+#18 303.4 test query::parser::tests::boolean_grouping_and_juxtaposition ... ok
+#18 303.5 test query::parser::tests::conflicting_case_options_are_located_errors ... ok
+#18 303.5 test query::parser::tests::boolean_precedence_not_and_or ... ok
+#18 303.5 test query::parser::tests::dangling_operators_and_unbalanced_groups_diagnose_located ... ok
+#18 303.5 test query::parser::tests::full_canonical_query ... ok
+#18 303.5 test query::parser::tests::identical_singletons_are_harmless ... ok
+#18 303.5 test query::parser::tests::misspelled_qualifier_is_a_correction_not_silence ... ok
+#18 303.5 test query::parser::tests::multiword_bare_text_is_one_literal_phrase ... ok
+#18 303.5 test query::parser::tests::negations ... ok
+#18 303.5 test query::parser::tests::operator_free_queries_are_untouched ... ok
+#18 303.5 test query::parser::tests::qualifier_values_stay_opaque_to_grouping ... ok
+#18 303.5 test query::parser::tests::quoted_glob_with_spaces ... ok
+#18 303.5 test query::parser::tests::quoted_operands_are_atoms ... ok
+#18 303.5 test query::parser::tests::quoted_operator_word_stays_literal_content ... ok
+#18 303.5 test query::parser::tests::quoted_reserved_filename_is_literal ... ok
+#18 303.5 test query::parser::tests::text_and_free_text_conflict ... ok
+#18 303.5 test query::parser::tests::parse_format_parse_round_trips ... ok
+#18 303.5 test query::parser::tests::unclosed_quote_is_incomplete_not_invalid ... ok
+#18 303.5 test query::parser::tests::unknown_language_is_a_located_error_with_a_suggestion ... ok
+#18 303.5 test query::parser::tests::unsupported_negative_options_cannot_silently_change_policy ... ok
+#18 303.5 test query::parser::tests::uri_schemes_and_scoped_paths_are_literal_text ... ok
+#18 303.5 test query::parser::tests::visibility_options ... ok
+#18 303.5 test query::parser::tests::whitespace_runs_preserve_the_next_token_and_quoted_content ... ok
+#18 303.5 test query::plan::tests::filter_only_content_surface_needs_an_expression ... ok
+#18 303.5 test query::plan::tests::invalid_glob_is_a_diagnostic ... ok
+#18 303.5 test query::plan::tests::invalid_regex_is_a_diagnostic ... ok
+#18 303.5 test query::plan::tests::language_filters_by_extension_family ... ok
+#18 303.5 test query::plan::tests::globs_and_exclusions_win ... ok
+#18 303.5 test query::plan::tests::path_substring_and_negation ... ok
+#18 303.5 test query::plan::tests::literal_is_escaped_and_case_smart_default ... ok
+#18 303.5 test query::plan::tests::same_family_ors_different_families_and ... ok
+#18 303.5 test query::plan::tests::explicit_regex_and_case ... ok
+#18 303.5 test query::plan::tests::type_alias_normalizes_to_kind ... ok
+#18 303.5 test query::store::tests::options_are_never_boolean_branch_operands ... ok
+#18 303.5 test query::store::tests::unknown_versions_are_typed_rejections_never_silent_reads ... ok
+#18 303.5 test query::plan::tests::wsymbols_probe_carries_only_bare_content_text ... ok
+#18 303.5 test query::store::tests::v1_migration_keeps_flat_qualifiers_and_typing_states ... ok
+#18 303.5 test query::store::tests::stored_query_parses_with_its_recorded_versions_semantics ... ok
+#18 303.5 test query::store::tests::wire_shape_pins_the_version_field ... ok
+#18 303.5 test query::suggest::tests::case_values ... ok
+#18 303.5 test query::store::tests::canonical_form_places_query_wide_options_in_a_leading_preamble ... ok
+#18 303.5 test query::suggest::tests::empty_field_offers_all_qualifiers ... ok
+#18 303.5 test query::suggest::tests::kind_values_offer_the_symbol_kinds ... ok
+#18 303.5 test query::suggest::tests::language_values_and_aliases ... ok
+#18 303.5 test query::plan::tests::boolean_branches_do_not_flatten ... ok
+#18 303.5 test query::suggest::tests::quoted_spans_offer_nothing ... ok
+#18 303.5 test query::suggest::tests::partial_key_filters ... ok
+#18 303.5 test query::store::tests::migrated_output_parse_format_parse ... ok
+#18 303.5 test score::tests::matched_columns_reported ... ok
+#18 303.5 test score::tests::boundaries_beat_middle ... ok
+#18 303.5 test score::tests::subsequence_required ... ok
+#18 303.5 test source::cache::tests::abandon_restores_the_snapshot ... ok
+#18 303.5 test source::cache::tests::hints_translate_into_deeper_scopes_only ... ok
+#18 303.5 test source::cache::tests::rescan_latch_coalesces_storms_and_full_build_clears_it ... ok
+#18 303.5 test source::cache::tests::invalidation_snapshot_survives_mid_scan_arrivals ... ok
+#18 303.5 test query::plan::tests::symbol_candidates_decide_kind_from_their_own_classification ... ok
+#18 303.5 test source::cache::tests::losing_coverage_invalidates_the_baseline ... ok
+#18 303.5 test query::store::tests::v1_migration_corpus_preserves_literal_meaning ... ok
+#18 303.5 test source::grep::tests::an_invalid_regex_is_a_diagnostic_at_plan_time ... ok
+#18 303.5 test query::plan::tests::flat_kind_and_repo_are_implicit_ands ... ok
+#18 303.5 test source::grep::e2e::remote_hits_carry_the_remote_namespace_and_never_escape_the_scope ... ok
+#18 303.5 test source::catalog::tests::ignored_repositories_are_missed_soundly ... ok
+#18 303.5 test source::grep::tests::filter_only_query_is_a_named_failure_not_a_silent_everything_search ... ok
+#18 303.5 test source::grep::tests::reducer_settles_every_terminal_shape ... ok
+#18 303.5 test query::plan::tests::boolean_metadata_narrows_by_path_and_language ... ok
+#18 303.5 test source::grep::tests::rg_failure_is_a_terminal_failure_not_silence_legacy ... ignored, the old -t flag grammar is gone; rg's own failure paths are covered by spawn failures
+#18 303.5 test source::grep::tests::rg_exit_verdicts ... ok
+#18 303.5 test query::plan::tests::pending_qualifiers_overfetch_inside_and ... ok
+#18 303.5 test source::catalog::tests::discovers_repositories_worktrees_markers_and_loose_scope ... ok
+#18 303.5 test query::plan::tests::not_never_turns_failure_into_a_match ... ok
+#18 303.5 test source::query::tests::json_matches_retain_scope_and_exact_submatch_coordinates ... ok
+#18 303.5 test source::remote::tests::record_framing_bounds_split_native_names_and_rejects_truncation ... ok
+#18 303.5 test source::selection::tests::a_broken_symlink_never_empties_the_walk ... ok
+#18 303.5 test query::plan::tests::boolean_admits_same_line_conjunction_and_exclusion ... ok
+#18 303.5 test source::grep::tests::grep_worker_streams_and_finishes ... ok
+#18 303.5 test query::plan::tests::boolean_case_modes_apply_to_atoms ... ok
+#18 303.5 test query::plan::tests::not_never_drops_lines_through_a_pending_qualifier ... ok
+#18 303.5 test source::selection::tests::dotfiles_show_by_default_but_ignore_files_hold ... ok
+#18 303.5 test source::selection::tests::git_internals_are_never_results ... ok
+#18 303.5 test source::grep::e2e::unicode_names_and_symbols_keep_exact_locations_end_to_end ... ok
+#18 303.5 test query::plan::tests::symbol_content_atoms_match_name_or_qualified_form ... ok
+#18 303.5 test source::symbols::tests::cancelled_build_is_unknown ... ok
+#18 303.5 test source::symbols::tests::kinds_cover_methods_under_function ... ok
+#18 303.6 test source::selection::tests::hidden_exclude_restores_the_old_world ... ok
+#18 303.6 test source::selection::tests::ignored_include_surfaces_ignored_output ... ok
+#18 303.6 test query::plan::tests::repo_atoms_decide_with_a_catalog_and_admit_without ... ok
+#18 303.6 test source::worker::tests::only_the_latest_pending_request_runs_after_physical_work_drains ... ok
+#18 303.6 test source::tests::files_worker_walks ... ok
+#18 303.6 test tests::ctrl_d_excludes_a_whole_file ... ok
+#18 303.6 test source::worker::tests::shutdown_retires_pending_work_but_waits_for_the_running_owner ... ok
+#18 303.6 test tests::filter_and_rank ... ok
+#18 303.6 test tests::pinned_tail_survives_filtering_below_real_matches ... ok
+#18 303.6 test source::selection::tests::language_filter_only_lists_that_family ... ok
+#18 303.6 test tests::selection_wraps ... ok
+#18 303.6 test workset::tests::file_exclusion_never_crosses_namespace_or_host ... ok
+#18 303.6 test tests::regex_query_never_hides_rg_rows ... ok
+#18 303.6 test query::plan::tests::glob_stars_span_unanchored_suffixes ... ok
+#18 303.6 test source::lifecycle_traces::tests::incomplete_overlay_never_decides ... ok
+#18 303.6 test source::lifecycle_traces::tests::edit_buffer_retires_disk_revision_evidence ... ok
+#18 303.6 test source::symbols::tests::file_bound_leaves_rest_unknown ... ok
+#18 303.6 test source::grep::e2e::cancelling_a_running_search_settles_exactly_once_with_no_late_rows ... ok
+#18 303.6 test query::plan::tests::plain_queries_never_build_the_symbol_index ... ok
+#18 303.6 test source::query::tests::admission_closure_sees_path_line_and_text ... ok
+#18 303.6 test source::symbols::tests::decides_from_complete_evidence ... ok
+#18 303.6 test source::symbols::tests::overlay_replaces_disk_evidence ... ok
+#18 303.6 test source::tests::workspace_symbols_worker_lists_declarations_with_chips ... ok
+#18 303.6 test query::plan::tests::replacement_targets_are_single_positive_atoms_only ... ok
+#18 303.6 test query::plan::tests::provider_prefilter_is_sound_for_every_admitted_line ... ok
+#18 303.6 test source::grep::e2e::a_worktree_narrows_repo_to_its_basename_not_the_parent ... ok
+#18 303.6 test source::grep::e2e::a_superseded_generation_never_publishes ... ok
+#18 303.7 test query::plan::tests::kind_atoms_narrow_with_symbol_evidence_and_admit_without ... ok
+#18 303.7 test source::query::tests::a_small_wire_record_cannot_expand_into_an_unbounded_result_batch ... ok
+#18 303.7 test source::tests::workspace_symbols_ast_admission_narrows_declarations ... ok
+#18 303.7 test query::properties::operator_free_queries_stay_flat ... ok
+#18 303.9 test source::grep::e2e::unchanged_scope_is_reused_not_rescanned ... ok
+#18 303.9 test source::grep::e2e::a_missed_hint_self_heals_by_observation ... ok
+#18 303.9 test source::grep::e2e::a_hinted_write_rescans_only_the_invalidated_file ... ok
+#18 303.9 test query::properties::canonical_formatting_is_a_fixed_point_for_ready_queries ... ok
+#18 304.0 test source::grep::e2e::without_coverage_every_search_scans_fresh ... ok
+#18 304.0 test source::grep::e2e::overflow_forces_a_full_rescan ... ok
+#18 304.0 test source::grep::tests::mixed_directory_queries_narrow_exactly_end_to_end ... ok
+#18 304.1 test source::grep::e2e::dirty_source_text_is_authoritative_for_content_and_kind_evidence ... ok
+#18 304.5 test query::properties::admission_agrees_with_the_reference_interpreter ... ok
+#18 304.5 test query::properties::arbitrary_input_never_panics_and_settles_into_a_known_state ... ok
+#18 309.2 test source::grep::tests::exhausted_catalog_reports_failure_after_the_bounded_prefix ... ok
+#18 309.2 
+#18 309.2 test result: ok. 142 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 5.86s
+#18 309.2 
+#18 309.2      Running unittests src/lib.rs (target/debug/deps/strop_remote-7f09f0897468957a)
+#18 309.2 
+#18 309.2 running 111 tests
+#18 309.2 test bootstrap::tests::discovery_reply_decoding_is_strict ... ok
+#18 309.2 test bootstrap::tests::the_local_target_round_trips_through_the_same_table ... ok
+#18 309.2 test exec::spec::tests::non_absolute_cwd_is_refused ... ok
+#18 309.2 test exec::spec::tests::nonces_between_calls_differ ... ok
+#18 309.2 test exec::supervisor::tests::records_keep_launch_and_cancel_kinds ... ok
+#18 309.2 test exec::supervisor::tests::records_accept_only_this_sessions_nonce ... ok
+#18 309.2 test deploy_provider::tests::provider_classification_keeps_status_codes_authoritative ... ok
+#18 309.2 test deploy_provider::tests::lstat_decoding_maps_kinds_mode_owner_and_length ... ok
+#18 309.2 test exec::spec::tests::base64_matches_rfc4648_vectors ... ok
+#18 309.2 test bootstrap::tests::target_mapping_names_exact_artifact_triples ... ok
+#18 309.2 test exec::supervisor::tests::shell_quoting_survives_every_metacharacter ... ok
+#18 309.2 test bundle_digests::save_bundle_bytes_reproduce_from_the_tree_and_match_their_pin ... ok
+#18 309.2 test bootstrap::tests::quoting_wraps_every_word_and_escapes_only_single_quotes ... ok
+#18 309.2 test exec::spec::tests::nul_bytes_are_refused ... ok
+#18 309.2 test exec::tests::validation_refuses_nul_and_relative_paths ... ok
+#18 309.2 test bundle_digests::supervisor_source_matches_its_pin_and_embedded_block ... ok
+#18 309.2 test bundle_digests::filesystem_bundle_bytes_reproduce_from_the_tree_and_match_their_pin ... ok
+#18 309.2 test hosts::tests::discover_lists_standard_locations_and_survives_no_home ... ok
+#18 309.2 test exec::spec::tests::oversize_argv_is_a_typed_refusal ... ok
+#18 309.2 test hosts::tests::missing_files_are_silently_absent ... ok
+#18 309.2 test hosts::tests::config_blocks_qualify_literal_aliases_only ... ok
+#18 309.2 test hosts::tests::quoted_tokens_and_comments_tokenize_like_ssh ... ok
+#18 309.2 test hosts::tests::match_blocks_contribute_nothing_and_exec_never_runs ... ok
+#18 309.2 test hosts::tests::global_user_and_port_qualify_their_file ... ok
+#18 309.2 test save::protocol::reply_tests::a_failed_exit_cannot_report_written ... ok
+#18 309.2 test hosts::tests::include_glob_relative_and_cycles_are_bounded ... ok
+#18 309.2 test hosts::tests::typed_user_and_port_digits_are_respected ... ok
+#18 309.2 test save::protocol::reply_tests::dropped_or_oversize_replies_are_bounded_failures ... ok
+#18 309.2 test save::protocol::reply_tests::absent_null_and_duplicate_fields_are_not_defaults ... ok
+#18 309.2 test hosts::tests::known_hosts_variants ... ok
+#18 309.2 test hosts::tests::unreadable_input_is_a_note_not_a_failure ... ok
+#18 309.2 test save::protocol::reply_tests::a_version_mismatch_is_a_protocol_failure ... ok
+#18 309.2 test save::protocol::reply_tests::malformed_and_trailing_replies_are_protocol_failures ... ok
+#18 309.2 test save::protocol::reply_tests::refusals_carry_kind_and_the_unconfirmed_flag ... ok
+#18 309.2 test save::protocol::reply_tests::written_and_unchanged_decode_with_their_stamps ... ok
+#18 309.2 test save::protocol::reply_tests::unknown_status_and_unknown_fields_are_rejected ... ok
+#18 309.2 test hosts::tests::inadmissible_names_are_skipped_not_guessed ... ok
+#18 309.3 test hosts::tests::relative_include_without_base_is_a_note ... ok
+#18 309.3 test hosts::tests::history_is_admitted_first_and_deduplicates_identical_tokens ... ok
+#18 309.3 test exec::tests::failed_input_keeps_the_programs_refusal_output ... ok
+#18 309.3 test exec::python::tests::invalid_explicit_program_cannot_execute_shell_syntax_or_fall_back ... ok
+#18 309.4 test exec::tests::argv_metacharacters_are_inert_data ... ok
+#18 309.4 test pool::tests::queued_cancel_preserves_shared_stream_and_last_lease_reaps ... ok
+#18 309.4 test exec::tests::the_remote_working_directory_is_native_bytes ... ok
+#18 309.5 test selection::tests::deserialization_cannot_bypass_read_admission ... ok
+#18 309.5 test selection::tests::full_covers_everything ... ok
+#18 309.5 test selection::tests::limits_are_checked_at_construction ... ok
+#18 309.5 test selection::tests::ranges_clamp_to_the_inspected_end ... ok
+#18 309.5 test selection::tests::tails_stop_at_the_start_of_file ... ok
+#18 309.5 test transport::error::tests::batchmode_auth_failure_is_auth ... ok
+#18 309.5 test transport::error::tests::cancellation_is_identifiable ... ok
+#18 309.5 test transport::error::tests::display_carries_context_without_invented_hint ... ok
+#18 309.5 test transport::error::tests::host_key_refusal_is_trust ... ok
+#18 309.5 test transport::error::tests::missing_subsystem_is_named ... ok
+#18 309.5 test transport::error::tests::network_failures_are_network ... ok
+#18 309.5 test transport::error::tests::trust_outranks_auth_wording ... ok
+#18 309.5 test transport::error::tests::unclassified_stays_connect ... ok
+#18 309.5 test transport::stderr::tests::chunks_accumulate_within_the_cap ... ok
+#18 309.5 test transport::stderr::tests::empty_tail_renders_nothing ... ok
+#18 309.5 test transport::stderr::tests::head_is_kept_and_overflow_counted ... ok
+#18 309.5 test transport::wire::tests::a_reply_for_another_request_cannot_supply_a_file_handle ... ok
+#18 309.5 test exec::tests::a_missing_program_is_an_actionable_launch_failure ... ok
+#18 309.5 test transport::wire::tests::deploy_failures_are_typed_and_a_failed_close_poisons ... ok
+#18 309.5 test transport::wire::tests::a_server_cannot_append_beyond_the_captured_snapshot_length ... ok
+#18 309.5 test transport::wire::tests::deploy_lstat_decodes_owner_mode_and_size_from_real_attrs ... ok
+#18 309.5 test transport::wire::tests::deploy_listing_skips_dot_entries_and_bounds_names ... ok
+#18 309.5 test transport::wire::tests::deploy_rename_prefers_posix_rename_only_when_advertised ... ok
+#18 309.5 test transport::wire::tests::deploy_read_back_enforces_the_length_bound_and_still_closes ... ok
+#18 309.5 test transport::wire::tests::deploy_write_sequence_sends_exact_flags_offsets_and_modes ... ok
+#18 309.5 test transport::wire::tests::early_eof_never_becomes_a_successful_partial_snapshot ... ok
+#18 309.5 test transport::wire::tests::failed_close_cannot_complete_a_snapshot ... ok
+#18 309.5 test transport::wire::tests::home_expansion_decodes_the_realpath_name_reply ... ok
+#18 309.5 test transport::wire::tests::home_expansion_refuses_ambiguous_name_counts ... ok
+#18 309.5 test exec::tests::exit_codes_are_relayed_as_data ... ok
+#18 309.5 test transport::wire::tests::invalid_utf8_is_not_trimmed_from_a_whole_file ... ok
+#18 309.5 test transport::wire::tests::malformed_nested_lengths_and_extra_reply_bytes_are_rejected ... ok
+#18 309.5 test transport::wire::tests::memory_cap_applies_to_the_window_not_the_remote_file ... ok
+#18 309.5 test transport::wire::tests::packet_bound_is_checked_before_reading_or_allocating_payload ... ok
+#18 309.5 test exec::tests::status_records_survive_a_stderr_flood ... ok
+#18 309.5 test worker_transport::tests::the_worker_line_is_one_quoted_word_plus_the_fixed_flag ... ok
+#18 309.5 test worker_transport::tests::a_welcome_round_trips_the_reported_facts ... ok
+#18 309.5 test worker_transport::tests::shell_diagnostics_can_never_impersonate_a_welcome ... ok
+#18 309.5 test transport::wire::tests::range_edges_trim_only_cut_utf8_and_report_the_actual_bytes ... ok
+#18 309.6 test exec::tests::signal_deaths_are_reported_as_signals ... ok
+#18 309.6 test exec::tests::stdout_and_stderr_arrive_separately ... ok
+#18 309.6 test exec::tests::descendants_are_killed_after_a_normal_exit ... ok
+#18 309.6 test exec::tests::forged_records_with_a_foreign_nonce_grant_no_outcome ... ok
+#18 309.6 test exec::python::tests::versioned_only_path_and_explicit_unicode_path_execute ... ok
+#18 309.6 test exec::tests::an_unusable_working_directory_is_an_actionable_launch_failure ... ok
+#18 309.6 test exec::tests::relayed_stdin_and_a_graceful_lease_close ... ok
+#18 309.6 test save::tests::external_drift_during_stage_preparation_refuses_and_preserves_the_drift ... ok
+#18 309.7 test exec::tests::selected_python_receives_chunks_without_losing_isolation_or_lease ... ok
+#18 309.7 test save::tests::observed_termination_during_stage_write_preserves_original_and_cleans_stage ... ok
+#18 309.8 test save::tests::competing_lock_refuses_save_without_touching_the_original ... ok
+#18 309.8 test filesystem::tests::occupied_and_changed_sources_never_overwrite_or_remove ... ok
+#18 309.8 test save::tests::crash_after_metadata_restoration_keeps_draft_behind_private_directory ... ok
+#18 309.8 test save::tests::failed_rename_is_uncertain_and_verifies_unchanged ... ok
+#18 309.8 test save::tests::post_commit_sync_failure_is_uncertain_and_verifies_written ... ok
+#18 309.8 test save::tests::cleanup_failure_after_commit_cannot_report_a_clean_failure ... ok
+#18 309.8 test save::tests::metadata_restoration_failure_refuses_before_commit_and_cleans_the_stage ... ok
+#18 309.9 test save::tests::symlinks_hardlinks_and_protocol_namespace_cannot_gain_write_authority ... ok
+#18 309.9 test filesystem::tests::native_name_copy_uses_the_explicit_content_version ... ok
+#18 310.0 test filesystem::tests::rename_verification_requires_the_owned_after_version ... ok
+#18 310.0 test save::tests::postrename_lost_receipt_requires_explicit_durable_verification ... ok
+#18 310.0 test save::tests::save_preserves_permissions_time_and_conflicts_on_same_size_changes ... ok
+#18 310.0 test filesystem::tests::post_publication_failure_retains_verifiable_object_evidence ... ok
+#18 310.2 test save::tests::symlinked_ancestor_directories_resolve_but_the_target_stays_strict ... ok
+#18 310.2 test filesystem::tests::lock_only_directory_removal_closes_unlinked_locks_before_rmdir ... ok
+#18 310.3 test exec::tests::tampered_specs_fault_before_any_launch ... ok
+#18 310.3 test filesystem::tests::directory_removal_preserves_an_active_cooperative_lock ... ok
+#18 312.0 test exec::tests::lease_close_while_running_cancels_the_worker ... ok
+#18 312.0 
+#18 312.0 test result: ok. 111 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.77s
+#18 312.0 
+#18 312.0      Running unittests src/lib.rs (target/debug/deps/strop_syntax-ea14aeec45e0a111)
+#18 312.0 
+#18 312.0 running 35 tests
+#18 312.0 test guides::tests::alignment_does_not_invent_intermediate_rails ... ok
+#18 312.0 test languages::tests::shebang_resolves_when_extension_unknown_or_absent ... ok
+#18 312.0 test languages::tests::known_extension_beats_shebang ... ok
+#18 312.0 test languages::tests::core_catalog_membership_matches_syntax_catalog ... ok
+#18 312.0 test guides::tests::blank_rows_follow_the_surrounding_scope_not_the_previous_indent ... ok
+#18 312.0 test spans::tests::nested_emphasis_survives_an_injected_foreground ... ok
+#18 312.0 test tests::first_line_assembly_walks_rope_chunks ... ok
+#18 312.0 test tests::symbols_fallback::unsupported_languages_have_no_extractor ... ok
+#18 312.0 test languages::tests::exact_filenames_beat_extension_and_shebang ... ok
+#18 312.0 test guides::tests::nested_tabs_and_dedents_use_display_columns ... ok
+#18 312.0 test tests::symbols_fallback::lua_functions_and_methods ... ok
+#18 312.0 test tests::symbols_fallback::rust_declarations ... ok
+#18 312.0 test tests::symbols_fallback::python_declarations ... ok
+#18 312.0 test tests::symbols_fallback::cancelled_parse_is_not_evidence ... ok
+#18 312.1 test tests::symbols_fallback::c_declarations ... ok
+#18 312.1 test tests::symbols_fallback::multiline_spans_cover_bodies ... ok
+#18 312.2 test tests::cmake_commands_variables_and_conditions_have_semantic_styles ... ok
+#18 312.2 test tests::html_embedded_script_and_style_use_the_shared_registry ... ok
+#18 312.2 test tests::window_and_cache_semantics_hold ... ok
+#18 312.2 test tests::fish_lua_and_sql ... ok
+#18 312.2 test tests::rust_keywords_and_strings ... ok
+#18 312.2 test tests::shebang_detection_is_bounded_at_256_bytes ... ok
+#18 312.2 test tests::for_path_is_pure_over_path_and_rope ... ok
+#18 312.2 test tests::symbols_fallback::cpp_classes_and_methods ... ok
+#18 312.3 test tests::editing_a_fence_language_retires_old_injected_spans ... ok
+#18 312.4 test tests::predicates_evaluate_across_rope_chunk_boundaries ... ok
+#18 312.4 test tests::markdown_inline_styles_and_fenced_rust_keep_their_byte_domains ... ok
+#18 312.4 test tests::incremental_on_multichunk_rope_matches_clean_parse ... ok
+#18 312.4 test tests::incremental_replacement_matches_clean_parse ... ok
+#18 312.5 test tests::cpp_highlights_with_cxx_scanner ... ok
+#18 312.5 test tests::python_and_go_and_ts ... ok
+#18 312.6 test tests::highlight_survives_backtracking_requests ... ok
+#18 312.6 test tests::incremental_multiline_edit_matches_clean_parse ... ok
+#18 312.6 test tests::incremental_undo_roundtrip_matches_clean_parse ... ok
+#18 312.7 test tests::additional_grammars_highlight_representative_language_tokens ... ok
+#18 312.7 
+#18 312.7 test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+#18 312.7 
+#18 312.7      Running unittests src/lib.rs (target/debug/deps/strop_terminal-de878fc71a5049ae)
+#18 312.7 
+#18 312.7 running 23 tests
+#18 312.7 test model::tests::padded_rows_drop_their_trailing_padding ... ok
+#18 312.7 test protocol::tests::partial_write_keeps_capacity_charged_until_packet_is_released ... ok
+#18 312.7 test model::tests::styled_and_wide_cells_survive_the_run_wire ... ok
+#18 312.7 test protocol::tests::truncated_or_oversized_record_is_not_an_orderly_channel_close ... ok
+#18 312.7 test model::tests::repeated_row_references_are_bounded_and_checked ... ok
+#18 312.7 test protocol::tests::saturated_output_preserves_room_for_final_control_records ... ok
+#18 312.7 test model::tests::legacy_per_column_cell_arrays_still_decode ... ok
+#18 312.7 test model::tests::frame_wire_derives_projection_and_offsets ... ok
+#18 312.7 test vt::tests::focus_reports_follow_the_child_negotiated_mode ... ok
+#18 312.7 test vt::tests::clipboard_reads_are_denied_and_multiline_paste_requires_explicit_consent ... ok
+#18 312.7 test model::tests::run_expansion_is_bounded_and_shape_consistent ... ok
+#18 312.7 test vt::tests::nul_retains_modifiers_and_negotiated_repeat_release_semantics ... ok
+#18 312.7 test model::tests::frame_wire_re_derives_trailing_padding ... ok
+#18 312.7 test vt::tests::keyboard_advertisement_matches_the_captured_frontend_profile ... ok
+#18 312.7 test vt::tests::erased_cells_retain_their_terminal_background_color ... ok
+#18 312.7 test vt::tests::continuing_output_cannot_mutate_an_inspection_snapshot ... ok
+#18 312.7 test vt::tests::osc_and_window_attempts_stay_in_their_namespace ... ok
+#18 312.7 test vt::tests::the_embedder_palette_configures_defaults_and_survives_indexed_output ... ok
+#18 312.7 test vt::tests::oversized_paste_refusal_leaves_the_terminal_encoder_usable ... ok
+#18 312.7 test vt::tests::soft_wrap_and_grapheme_cells_share_the_readonly_text_projection ... ok
+#18 312.7 test vt::tests::replay_admission_checks_real_grapheme_and_projection_correspondence ... ok
+#18 312.7 test model::tests::legacy_frames_with_explicit_projection_still_decode ... ok
+#18 312.7 test model::tests::frame_wire_interns_repeated_rows ... ok
+#18 312.7 
+#18 312.7 test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+#18 312.7 
+#18 312.7      Running unittests src/lib.rs (target/debug/deps/strop_trace-3d8e2eaf0baf7b7c)
+#18 312.7 
+#18 312.7 running 32 tests
+#18 312.7 test bounded::tests::oversize_write_fails_instead_of_truncating ... ok
+#18 312.7 test chunk::tests::a_single_chunk_run_round_trips ... ok
+#18 312.7 test tests::content_privacy::omitted_fixture_content_cannot_enable_native_requests_or_calls ... ok
+#18 312.7 test tests::fixture_tests::fixture_missing_observation_fails_the_test_not_native ... ok
+#18 312.8 test tests::fixture_tests::fixture_records_without_native_and_replays_identically ... ok
+#18 312.8 test tests::content_privacy::metadata_scope_withholds_payload_and_restores_after_unwinding ... ok
+#18 312.8 test tests::delayed_writer_still_reports_the_real_capture_byte_limit ... ok
+#18 312.8 test tests::tape_divergences_are_sticky_and_never_reach_native ... ok
+#18 312.8 test tests::schema_two_traces_read_unchanged ... ok
+#18 312.8 test writer::tests::disk_failure_is_returned_not_silenced ... ok
+#18 312.8 test writer::tests::terminal_marker_always_writes_within_reservation ... ok
+#18 312.8 test chunk::tests::chunk_records_require_schema_three ... ok
+#18 312.8 test tests::reader_rejects_sequence_gaps_duplicates_and_trailing_records ... ok
+#18 312.8 test tests::content_privacy::opaque_capture_is_valid_diagnostics_but_cannot_replay_missing_private_actions ... ok
+#18 312.8 test chunk::tests::ordinary_records_may_interleave_a_chunk_run ... ok
+#18 312.8 test tests::event_cap_ends_with_explicit_incomplete_terminal_marker ... ok
+#18 312.8 test chunk::tests::chunk_run_reassembles_into_one_logical_record ... ok
+#18 312.8 test tests::invalid_limits_are_refused_before_any_file_exists ... ok
+#18 312.8 test tests::live_tape_without_capture_runs_native_and_records_nothing ... ok
+#18 312.8 test tests::metadata_export_removes_every_content_bearing_field ... ok
+#18 312.8 test chunk::tests::an_interrupted_run_is_detectable_and_never_delivered ... ok
+#18 312.8 test chunk::tests::missing_duplicate_and_reordered_chunks_are_refused ... ok
+#18 312.8 test chunk::tests::foreign_orphan_and_reused_chunks_are_refused ... ok
+#18 312.8 test tests::in_budget_burst_is_complete_when_the_writer_runs_after_producers ... ok
+#18 312.8 test chunk::tests::wrong_totals_and_bad_digests_are_refused ... ok
+#18 312.8 test tests::metadata_mode_never_writes_chunked_payloads ... ok
+#18 312.8 test tests::oversize_record_marks_capture_incomplete ... ok
+#18 312.8 test chunk::tests::worst_case_escaping_stays_within_the_record_cap ... ok
+#18 312.9 test tests::oversize_forensic_value_chunks_and_replays_completely ... ok
+#18 312.9 test tests::replay_nodes_require_complete_full_content_capture ... ok
+#18 312.9 test tests::value_at_record_cap_boundary_chunks_exactly_when_over ... ok
+#18 312.9 test tests::trace_lifecycle_is_exclusive_ordered_and_durable ... ok
+#18 312.9 
+#18 312.9 test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+#18 312.9 
+#18 312.9      Running unittests src/lib.rs (target/debug/deps/strop_ui_protocol-09823b90221ccd95)
+#18 312.9 
+#18 312.9 running 16 tests
+#18 312.9 test client::tests::a_pane_set_mismatch_poisons ... ok
+#18 312.9 test client::tests::a_foreign_incarnation_poisons_deltas ... ok
+#18 312.9 test client::tests::bye_stops_actions_but_retains_the_known_view ... ok
+#18 312.9 test client::tests::a_dropped_delta_poisons_until_resync ... ok
+#18 312.9 test client::tests::snapshot_then_deltas_apply_in_order ... ok
+#18 312.9 test frame::tests::blocking_read_distinguishes_clean_eof_from_truncation ... ok
+#18 312.9 test frame::tests::extra_headers_are_ignored_like_lsp ... ok
+#18 312.9 test frame::tests::missing_and_malformed_headers_are_typed ... ok
+#18 312.9 test frame::tests::oversized_body_is_typed_at_the_header ... ok
+#18 312.9 test frame::tests::partial_io_reassembles_byte_by_byte ... ok
+#18 312.9 test frame::tests::roundtrip_whole_and_concatenated ... ok
+#18 312.9 test frame::tests::oversized_header_is_typed_before_unbounded_buffering ... ok
+#18 312.9 test message::tests::unknown_envelopes_fail_decoding ... ok
+#18 312.9 test message::tests::envelopes_round_trip ... ok
+#18 312.9 test message::tests::server_envelopes_round_trip ... ok
+#18 313.0 test client::tests::random_publication_sequences_never_diverge ... ok
+#18 313.0 
+#18 313.0 test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+#18 313.0 
+#18 313.0      Running unittests src/lib.rs (target/debug/deps/strop_worker-e5ea54dc9adacb5b)
+#18 313.0 
+#18 313.0 running 29 tests
+#18 313.0 test exec::tests::a_cancelled_token_never_spawns ... ok
+#18 313.0 test exec::tests::nonce_marked_lines_parse_only_for_their_session ... ok
+#18 313.0 test exec::tests::a_recorded_exit_beats_the_cancel_that_raced_it ... ok
+#18 313.0 test exec::tests::half_close_is_not_revocation ... ok
+#18 313.0 test exec::tests::spec_admission_refuses_unrepresentable_values ... ok
+#18 313.0 test exec::tests::status_records_are_byte_compatible_with_the_anchor ... ok
+#18 313.0 test exec::tests::byte_exact_argv_and_cwd_survive_exec ... ok
+#18 313.0 test notify::tests::remote_and_container_scopes_are_typed_refusals ... ok
+#18 313.0 test exec::tests::launch_failures_are_classified_not_disguised_as_exits ... ok
+#18 313.0 test exec::tests::normal_exit_kills_leftover_descendants_before_reaping ... ok
+#18 313.0 test notify::tests::reconcile_boundary_precedes_hints_and_sequences_are_monotone ... ok
+#18 313.0 test notify::tests::create_modify_rename_replace_delete_classify ... ok
+#18 313.0 test notify::tests::subscription_limit_is_typed ... ok
+#18 313.0 test notify::tests::rename_out_of_scope_is_ambiguous_never_guessed ... ok
+#18 313.0 test notify::tests::generation_staleness_is_refused ... ok
+#18 313.0 test notify::tests::poll_reports_readiness ... ok
+#18 313.0 test notify::tests::move_in_from_outside_is_created ... ok
+#18 313.0 test notify::tests::recursive_covers_new_directory_trees ... ok
+#18 313.0 test notify::tests::unsubscribe_stops_events_promptly ... ok
+#18 313.0 test notify::tests::excluded_subtree_invalidates_baseline_at_subscribe ... ok
+#18 313.0 test notify::tests::root_removal_and_rename_are_explicit ... ok
+#18 313.0 test notify::tests::full_pending_queue_latches_overflow_never_silent_loss ... ok
+#18 313.0 test notify::tests::in_scope_directory_rename_rekeys_subtree ... ok
+#18 313.0 test exec::tests::exit_codes_and_signals_are_recorded_data ... ok
+#18 313.0 test exec::tests::dropping_abandons_the_lease_and_tears_down ... ok
+#18 313.3 test exec::tests::the_cancel_latch_revokes_through_the_token ... ok
+#18 313.3 test exec::tests::a_term_cooperative_exit_is_still_revoked_not_recorded ... ok
+#18 313.4 test exec::tests::revoke_escalates_term_grace_kill_and_reaps_last ... ok
+#18 315.2 test notify::tests::churn_storm_bounds_hold ... ok
+#18 315.2 
+#18 315.2 test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.24s
+#18 315.2 
+#18 315.2      Running tests/serve.rs (target/debug/deps/serve-7b5347c86bca6cf4)
+#18 315.2 
+#18 315.2 running 6 tests
+#18 315.2 test a_second_hello_is_refused_and_closes ... ok
+#18 315.2 test eof_before_hello_exits_cleanly ... ok
+#18 315.2 test noise_before_hello_is_a_typed_error ... ok
+#18 315.2 test a_stale_incarnation_is_a_typed_refusal ... ok
+#18 315.2 test welcome_reports_the_exact_build_target ... ok
+#18 315.2 test garbage_body_is_a_decode_error_and_close ... ok
+#18 315.2 
+#18 315.2 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+#18 315.2 
+#18 315.2      Running unittests src/lib.rs (target/debug/deps/strop_worker_client-74ee18548387a733)
+#18 315.2 
+#18 315.2 running 0 tests
+#18 315.2 
+#18 315.2 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 315.2 
+#18 315.2      Running tests/loopback.rs (target/debug/deps/loopback-1f360978ef3b3174)
+#18 315.2 
+#18 315.2 running 8 tests
+#18 315.2 test cancellation_is_typed_before_send ... ok
+#18 315.2 test handshake_grants_a_session_and_capabilities ... ok
+#18 315.2 test shutdown_then_next_request_spawns_a_fresh_incarnation ... ok
+#18 315.2 test finite_exec_streams_output_and_exits ... ok
+#18 315.2 test observe_list_and_read_round_trip ... ok
+#18 315.3 test prepare_apply_and_verify_a_create ... ok
+#18 315.3 test notify_subscription_delivers_hints_and_retires ... ok
+#18 317.2 test deployed_worker_binds_the_endpoint_target ... ok
+#18 317.2 
+#18 317.2 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+#18 317.2 
+#18 317.2      Running unittests src/lib.rs (target/debug/deps/strop_worker_deploy-48e336535ceb28f4)
+#18 317.2 
+#18 317.2 running 10 tests
+#18 317.2 test cache::tests::native_spelling_policy ... ok
+#18 317.2 test container::tests::cache_location_prefers_xdg_then_home_then_passwd ... ok
+#18 317.2 test container::tests::engine_failures_map_to_provider_taxonomy ... ok
+#18 317.2 test container::tests::op_failures_classify_truthfully ... ok
+#18 317.2 test container::tests::passwd_entries_resolve_names_to_numeric_principals ... ok
+#18 317.2 test container::tests::platform_maps_to_the_musl_catalog_targets ... ok
+#18 317.2 test manifest::tests::missing_worker_section_is_a_truthful_refusal ... ok
+#18 317.2 test manifest::tests::compatibility_binds_exact_release_protocol_and_target ... ok
+#18 317.2 test manifest::tests::mistyped_worker_facts_are_rejected ... ok
+#18 317.2 test manifest::tests::wire_shape_parses_exactly ... ok
+#18 317.2 
+#18 317.2 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 317.2 
+#18 317.2      Running tests/container.rs (target/debug/deps/container-482fb3ee0cfa4e22)
+#18 317.2 
+#18 317.2 running 5 tests
+#18 317.2 test deploy_then_read_write_notify_and_lease_reap ... ok
+#18 317.2 test preinstalled_shellless_worker_needs_no_deploy ... ok
+#18 317.2 test read_only_container_refuses_truthfully ... ok
+#18 317.2 test shellless_deploy_is_a_typed_refusal ... ok
+#18 317.2 test stale_incarnation_is_refused ... ok
+#18 317.2 
+#18 317.2 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 317.2 
+#18 317.2      Running tests/deploy.rs (target/debug/deps/deploy-d731739670e2e9ad)
+#18 317.2 
+#18 317.2 running 12 tests
+#18 317.2 test endpoint_without_worker_artifact_falls_back_honestly ... ok
+#18 317.2 test handshake_identity_mismatch_is_refusal_not_downgrade ... ok
+#18 317.2 test invalid_preinstalled_override_never_chooses_another_file ... ok
+#18 317.2 test preinstalled_validates_and_activates_in_place ... ok
+#18 317.2 test offline_without_artifact_is_a_truthful_refusal ... ok
+#18 317.2 test online_without_local_artifact_refuses_and_points_at_the_pipeline ... ok
+#18 317.2 test consent_gated_first_deploy_publishes_and_activates ... ok
+#18 317.3 test previously_authorized_endpoint_reuses_authorization_quietly ... ok
+#18 317.3 test corrupt_cache_object_is_retired_and_redeployed ... ok
+#18 317.3 test first_deploy_without_consent_refuses_with_precise_reason ... ok
+#18 317.3 test oversized_local_artifact_is_refused_before_any_upload ... ok
+#18 317.3 test exact_verified_cache_hit_is_reused_without_upload ... ok
+#18 317.3 
+#18 317.3 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+#18 317.3 
+#18 317.3      Running tests/gc.rs (target/debug/deps/gc-5a087c279ca84e24)
+#18 317.3 
+#18 317.3 running 2 tests
+#18 317.3 test gc_retires_only_unreferenced_objects ... ok
+#18 317.3 test live_lease_artifact_is_never_retired_even_when_not_current ... ok
+#18 317.3 
+#18 317.3 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 317.3 
+#18 317.3      Running tests/interrupted.rs (target/debug/deps/interrupted-30a29fc10bfe9522)
+#18 317.3 
+#18 317.3 running 6 tests
+#18 317.3 test corrupt_transfer_never_publishes ... ok
+#18 317.3 test handshake_failure_is_published_not_ready ... ok
+#18 317.3 test lease_registration_failure_is_published_not_ready ... ok
+#18 317.3 test receipt_failure_publishes_but_never_claims_ready ... ok
+#18 317.3 test rename_failure_retains_old_entry_and_drops_staging ... ok
+#18 317.3 test upload_failure_leaves_no_trace ... ok
+#18 317.3 
+#18 317.3 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+#18 317.3 
+#18 317.3      Running unittests src/lib.rs (target/debug/deps/strop_worker_protocol-5c83b8501a242f1a)
+#18 317.3 
+#18 317.3 running 29 tests
+#18 317.3 test codec::tests::chunk_binary_shape_is_pinned ... ok
+#18 317.3 test codec::tests::chunk_bounds_and_flags_are_typed ... ok
+#18 317.3 test frame::tests::clean_eof_only_at_boundary ... ok
+#18 317.3 test frame::tests::fragmented_and_coalesced_frames ... ok
+#18 317.3 test frame::tests::malformed_headers_are_typed ... ok
+#18 317.3 test frame::tests::oversized_body_refused_at_header_parse ... ok
+#18 317.3 test frame::tests::oversized_header_refused ... ok
+#18 317.3 test frame::tests::round_trip_one_frame ... ok
+#18 317.3 test guard::tests::foreign_lease_is_rejected ... ok
+#18 317.3 test guard::tests::close_refuses_everything ... ok
+#18 317.3 test guard::tests::live_session_is_admitted ... ok
+#18 317.3 test guard::tests::quiesce_refuses_mutations_but_admits_drain ... ok
+#18 317.3 test guard::tests::stale_incarnation_is_rejected ... ok
+#18 317.3 test codec::tests::envelope_round_trip_with_bytes_at_bound ... ok
+#18 317.3 test guard::tests::stale_subscription_generation_is_rejected ... ok
+#18 317.3 test id::tests::ids_are_transparent_u64s ... ok
+#18 317.3 test id::tests::namespace_identity_keeps_principal ... ok
+#18 317.3 test id::tests::session_pin ... ok
+#18 317.3 test id::tests::subscription_pin ... ok
+#18 317.3 test message::tests::coverage_round_trip ... ok
+#18 317.3 test message::tests::limits_round_trip ... ok
+#18 317.3 test message::tests::refusal_wire_shape_is_pinned ... ok
+#18 317.3 test request::tests::exit_status_pin ... ok
+#18 317.3 test request::tests::exec_spec_keeps_native_bytes ... ok
+#18 317.3 test request::tests::hello_wire_shape_is_pinned ... ok
+#18 317.3 test request::tests::notify_events_carry_subscription_and_sequence ... ok
+#18 317.3 test request::tests::refused_outcome_round_trip ... ok
+#18 317.3 test request::tests::request_envelope_carries_session ... ok
+#18 317.3 test tests::target_triple_is_the_exact_compile_time_target ... ok
+#18 317.3 
+#18 317.3 test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+#18 317.3 
+#18 317.3      Running tests/loopback.rs (target/debug/deps/loopback-ea890d4ae516e81b)
+#18 317.3 
+#18 317.3 running 3 tests
+#18 317.3 test stale_incarnation_frame_is_rejected_over_loopback ... ok
+#18 317.3 test fragmented_stream_survives_arbitrary_splits ... ok
+#18 317.3 test handshake_and_request_round_trip_over_loopback ... ok
+#18 317.3 
+#18 317.3 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+#18 317.3 
+#18 317.3      Running unittests src/lib.rs (target/debug/deps/strop_workspace-720e8c7839c8e9f0)
+#18 317.3 
+#18 317.3 running 39 tests
+#18 317.3 test addr::endpoint::tests::a_path_is_refused_on_an_endpoint ... ok
+#18 317.3 test addr::endpoint::tests::alias_with_user_and_port ... ok
+#18 317.3 test addr::endpoint::tests::aliases_keep_their_spelling ... ok
+#18 317.3 test addr::endpoint::tests::hostile_authorities ... ok
+#18 317.3 test addr::endpoint::tests::identity_and_hashing_follow_the_decoded_value ... ok
+#18 317.3 test addr::endpoint::tests::ipv4_shapes_must_be_addresses ... ok
+#18 317.3 test addr::endpoint::tests::ipv6_brackets_canonicalize_and_roundtrip ... ok
+#18 317.3 test addr::endpoint::tests::port_boundaries ... ok
+#18 317.3 test addr::endpoint::tests::ipv6_hostility ... ok
+#18 317.3 test addr::endpoint::tests::serde_roundtrips_the_canonical_uri ... ok
+#18 317.3 test addr::file::tests::a_home_query_is_not_canonical ... ok
+#18 317.3 test addr::file::tests::a_literal_tilde_directory_is_not_aliased_to_a_home_query ... ok
+#18 317.3 test addr::file::tests::absent_path_and_query_are_refused ... ok
+#18 317.3 test addr::file::tests::fields_come_from_the_endpoint_and_the_decoded_path ... ok
+#18 317.3 test addr::file::tests::identity_follows_the_decoded_value ... ok
+#18 317.3 test addr::file::tests::malformed_percent_and_nul ... ok
+#18 317.3 test addr::file::tests::native_filename_bytes_roundtrip ... ok
+#18 317.3 test addr::file::tests::paths_are_never_trimmed_or_normalized ... ok
+#18 317.3 test addr::file::tests::percent_decoding_and_canonical_display ... ok
+#18 317.3 test addr::file::tests::serde_rejects_invalid_values ... ok
+#18 317.3 test addr::file::tests::serde_roundtrips_the_canonical_uri ... ok
+#18 317.3 test addr::file::tests::shell_metacharacters_are_path_data ... ok
+#18 317.3 test addr::file::tests::unencodable_raw_bytes_are_refused ... ok
+#18 317.3 test addr::file::tests::unicode_path_data_roundtrips_through_escapes ... ok
+#18 317.3 test addr::file::tests::with_path_keeps_the_endpoint_and_checks_admission ... ok
+#18 317.3 test addr::location::tests::a_literal_escaped_tilde_is_not_a_home_query ... ok
+#18 317.3 test addr::location::tests::absolute_locations_expose_their_canonical_file ... ok
+#18 317.3 test addr::location::tests::admission_failures_match_the_file_grammar ... ok
+#18 317.3 test addr::location::tests::files_convert_into_locations ... ok
+#18 317.3 test addr::location::tests::home_queries_stay_unresolved_and_round_trip ... ok
+#18 317.3 test addr::location::tests::serde_roundtrips_both_forms ... ok
+#18 317.3 test addr::uri::tests::decoding_refuses_malformed_escapes_and_keeps_data_bytes ... ok
+#18 317.3 test addr::uri::tests::escaping_reproduces_only_necessary_escapes ... ok
+#18 317.3 test container::tests::canonical_ids_roundtrip_and_names_refuse ... ok
+#18 317.3 test directory::tests::names_are_native_components_not_paths_or_urls ... ok
+#18 317.3 test resource::tests::non_utf8_names_and_literal_escape_text_have_distinct_display_and_uri ... ok
+#18 317.3 test resource::tests::resource_uri_roundtrips_without_namespace_fallback ... ok
+#18 317.3 test resource::tests::remote_resources_never_expose_a_local_path ... ok
+#18 317.3 test resource::tests::decodes_the_legacy_docpath_shape ... ok
+#18 317.3 
+#18 317.3 test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+#18 317.3 
+#18 317.3    Doc-tests strop_containers
+#18 317.5 
+#18 317.5 running 0 tests
+#18 317.5 
+#18 317.5 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 317.5 
+#18 317.5    Doc-tests strop_core
+#18 318.1 
+#18 318.1 running 0 tests
+#18 318.1 
+#18 318.1 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 318.1 
+#18 318.1    Doc-tests strop_engine
+#18 320.5 
+#18 320.5 running 0 tests
+#18 320.5 
+#18 320.5 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 320.5 
+#18 320.5    Doc-tests strop_fs
+#18 320.7 
+#18 320.7 running 0 tests
+#18 320.7 
+#18 320.7 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 320.7 
+#18 320.7    Doc-tests strop_git
+#18 320.9 
+#18 320.9 running 0 tests
+#18 320.9 
+#18 320.9 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 320.9 
+#18 320.9    Doc-tests strop_grammar
+#18 321.2 
+#18 321.2 running 0 tests
+#18 321.2 
+#18 321.2 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 321.2 
+#18 321.2    Doc-tests strop_lsp
+#18 321.5 
+#18 321.5 running 0 tests
+#18 321.5 
+#18 321.5 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 321.5 
+#18 321.6    Doc-tests strop_picker
+#18 321.9 
+#18 321.9 running 0 tests
+#18 321.9 
+#18 321.9 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 321.9 
+#18 321.9    Doc-tests strop_remote
+#18 322.2 
+#18 322.2 running 0 tests
+#18 322.2 
+#18 322.2 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 322.2 
+#18 322.2    Doc-tests strop_syntax
+#18 322.3 
+#18 322.3 running 0 tests
+#18 322.3 
+#18 322.3 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 322.3 
+#18 322.3    Doc-tests strop_terminal
+#18 322.5 
+#18 322.5 running 0 tests
+#18 322.5 
+#18 322.5 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 322.5 
+#18 322.5    Doc-tests strop_trace
+#18 322.6 
+#18 322.6 running 0 tests
+#18 322.6 
+#18 322.6 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 322.6 
+#18 322.6    Doc-tests strop_ui_protocol
+#18 322.8 
+#18 322.8 running 0 tests
+#18 322.8 
+#18 322.8 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 322.8 
+#18 322.8    Doc-tests strop_worker
+#18 322.9 
+#18 322.9 running 0 tests
+#18 322.9 
+#18 322.9 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 322.9 
+#18 322.9    Doc-tests strop_worker_client
+#18 323.0 
+#18 323.0 running 0 tests
+#18 323.0 
+#18 323.0 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 323.0 
+#18 323.0    Doc-tests strop_worker_deploy
+#18 323.0 
+#18 323.0 running 0 tests
+#18 323.0 
+#18 323.0 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 323.0 
+#18 323.1    Doc-tests strop_worker_protocol
+#18 323.3 
+#18 323.3 running 0 tests
+#18 323.3 
+#18 323.3 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 323.3 
+#18 323.3    Doc-tests strop_workspace
+#18 323.5 
+#18 323.5 running 0 tests
+#18 323.5 
+#18 323.5 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#18 323.5 
+#18 DONE 323.9s
+
+#19 exporting to image
+#19 exporting layers
+#19 exporting layers 184.6s done
+#19 exporting manifest sha256:4587d9e2f490431f1e57ca54f4aaabef19eb0ce574e9c7e83ea655132922af3e 0.0s done
+#19 exporting config sha256:6d29d27f21095c89378129a8334a7590f4794f00ffb326ad4b969e3d2a0abe37 0.0s done
+#19 exporting attestation manifest sha256:a0840f5b3a0f0f8f914606e553727850428517a472005c99f716f3a27ee31e8f 0.0s done
+#19 exporting manifest list sha256:beb08f2f176e0941b2b2b209e93debe5e843af55df7fe53da1125d694e21fc58 0.0s done
+#19 naming to docker.io/library/strop-preworker-6c4491b-test:latest done
+#19 unpacking to docker.io/library/strop-preworker-6c4491b-test:latest
+#19 unpacking to docker.io/library/strop-preworker-6c4491b-test:latest 36.8s done
+#19 DONE 221.5s
+
+#20 resolving provenance for metadata file
+#20 DONE 0.0s
+ Image strop-preworker-6c4491b-test Built 
+ Container strop-preworker-6c4491b-test-run-08bcd54958db Creating 
+ Container strop-preworker-6c4491b-test-run-08bcd54958db Created 
+gate passed: fmt + clippy -D warnings + cargo test

@@ -11,13 +11,11 @@
 
 use std::io::{self, Read, Write};
 
-/// Header bytes accepted before the terminator must exist (the shared
-/// decoder bound).
-pub const MAX_HEADER_BYTES: usize = 8192;
+pub use strop_core::worker::frame_policy::{MAX_BODY_BYTES, MAX_HEADER_BYTES};
 
-/// Body bound: 1 MiB. Stream chunks are further bounded by
-/// [`crate::codec::MAX_CHUNK_BYTES`]; control envelopes are far smaller.
-pub const MAX_BODY_BYTES: usize = 1024 * 1024;
+use strop_core::worker::frame_policy::{
+    body_admitted, frame_ready, header_admitted, MAX_BUFFER_OFFSET,
+};
 
 /// A framing violation. Frame-level corruption poisons the stream — the
 /// next boundary is unknowable — so the peer reports this typed error
@@ -74,25 +72,28 @@ impl FrameDecoder {
         Ok(())
     }
 
-    /// Take one complete frame body, if one is buffered.
+    /// Take one complete frame body, if one is buffered. The bounds and
+    /// completeness decisions are the verified framing kernels.
     pub fn next_frame(&mut self) -> Result<Option<Vec<u8>>, FrameError> {
         let Some(header_end) = find(&self.buffer, b"\r\n\r\n") else {
             return Ok(None);
         };
-        if header_end + 4 > MAX_HEADER_BYTES {
+        debug_assert!(header_end <= MAX_BUFFER_OFFSET);
+        if !header_admitted(header_end) {
             return Err(FrameError::HeaderTooLarge {
                 limit: MAX_HEADER_BYTES,
             });
         }
         let length = content_length(&self.buffer[..header_end])?;
-        if length > MAX_BODY_BYTES {
+        if !body_admitted(length) {
             return Err(FrameError::BodyTooLarge {
                 limit: MAX_BODY_BYTES,
                 actual: length,
             });
         }
+        debug_assert!(self.buffer.len() <= MAX_BUFFER_OFFSET);
         let start = header_end + 4;
-        if self.buffer.len() < start + length {
+        if !frame_ready(header_end, length, self.buffer.len()) {
             return Ok(None);
         }
         let body = self.buffer[start..start + length].to_vec();

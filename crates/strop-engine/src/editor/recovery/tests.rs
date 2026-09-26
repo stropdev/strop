@@ -222,6 +222,12 @@ fn an_over_bound_draft_is_reported_not_truncated() {
     editor.feed_text("x");
     settle(&mut editor);
     editor.open_fixture(&huge).unwrap();
+    assert_eq!(
+        editor.buf().path.as_deref(),
+        Some(huge.as_path()),
+        "{}",
+        editor.message
+    );
     editor.feed_text("x");
     settle(&mut editor);
 

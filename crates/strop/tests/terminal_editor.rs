@@ -15,6 +15,7 @@ struct Tui {
     child: Child,
     master: File,
     screen: vt100::Parser,
+    trace: std::path::PathBuf,
 }
 impl Tui {
     fn start(directory: &std::path::Path, trace: &std::path::Path) -> Self {
@@ -89,8 +90,26 @@ impl Tui {
             child: command.spawn().unwrap(),
             master,
             screen: vt100::Parser::new(30, 120, 0),
+            trace: trace.to_path_buf(),
         }
     }
+    fn recent_trace(&self) -> String {
+        std::fs::read_to_string(&self.trace)
+            .unwrap_or_default()
+            .lines()
+            .rev()
+            .filter(|line| {
+                line.contains("terminal.update")
+                    || line.contains("terminal.start")
+                    || line.contains("\"event\":\"error\"")
+                    || line.contains("\"event\":\"panic\"")
+            })
+            .map(|line| line.chars().take(1200).collect::<String>())
+            .take(12)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn poll(&self, events: libc::c_short, deadline: Instant) {
         let left = deadline.saturating_duration_since(Instant::now());
         assert!(!left.is_zero(), "terminal deadline");
@@ -109,8 +128,9 @@ impl Tui {
         };
         assert!(
             ready > 0 || io::Error::last_os_error().kind() == io::ErrorKind::Interrupted,
-            "terminal poll timed out:\n{}",
-            self.screen.screen().contents()
+            "terminal poll timed out:\n{}\nrecent trace:\n{}",
+            self.screen.screen().contents(),
+            self.recent_trace()
         );
     }
     /// Soft poll: false on deadline instead of asserting (retry loops).

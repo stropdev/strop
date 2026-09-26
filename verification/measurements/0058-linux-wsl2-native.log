@@ -1,0 +1,101 @@
+   Compiling strop-core v0.35.0 (/home/tarek/workspace/strop/crates/strop-core)
+   Compiling strop-workspace v0.35.0 (/home/tarek/workspace/strop/crates/strop-workspace)
+   Compiling strop-fs v0.35.0 (/home/tarek/workspace/strop/crates/strop-fs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.97s
+     Running unittests src/lib.rs (target/debug/deps/strop_fs-2aa92dac9aee66ac)
+
+running 16 tests
+test tests::store::protected_store_refuses_same_size_external_edits_even_when_mtime_is_restored ... ok
+test tests::store::store_edit_admission_proves_the_displayed_bytes ... ok
+test tests::store::failed_rename_keeps_original_and_private_stage_until_explicit_verification ... ok
+test tests::store::metadata_restore_failure_refuses_before_publication_and_cleans_stage ... ok
+test tests::store::protected_store_refuses_replaced_inode_with_identical_content_and_mtime ... ok
+test tests::store::store_refuses_missing_parents_hardlinks_links_and_directories ... ok
+test tests::store::store_verify_distinguishes_unchanged_from_landed ... ok
+test tests::store::store_creates_an_absent_document_file ... ok
+test tests::store::store_save_as_refuses_an_occupied_name_unless_forced ... ok
+test tests::store::third_party_write_during_private_stage_refuses_without_overwriting_it ... ok
+test tests::store::store_refuses_a_moved_baseline_and_force_overwrites ... ok
+test tests::store::post_commit_directory_sync_failure_verifies_durable_intended_bytes ... ok
+test tests::store::store_commits_preserving_permissions_and_publishes_a_witness ... ok
+test tests::store::store_same_size_change_verifies_after_a_lost_receipt ... ok
+test tests::store::recovered_store_can_be_observed_but_old_write_authority_stays_revoked ... ok
+test tests::store::receiptless_store_recovery_refuses_changed_extended_attributes ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.04s
+
+   Compiling strop-core v0.35.0 (/home/tarek/workspace/strop/crates/strop-core)
+   Compiling strop-workspace v0.35.0 (/home/tarek/workspace/strop/crates/strop-workspace)
+   Compiling strop-worker-protocol v0.35.0 (/home/tarek/workspace/strop/crates/strop-worker-protocol)
+   Compiling strop-fs v0.35.0 (/home/tarek/workspace/strop/crates/strop-fs)
+   Compiling strop-worker-client v0.35.0 (/home/tarek/workspace/strop/crates/strop-worker-client)
+   Compiling strop-worker v0.35.0 (/home/tarek/workspace/strop/crates/strop-worker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.40s
+     Running tests/loopback.rs (target/debug/deps/loopback-d86a27924b54596b)
+
+running 22 tests
+test cancellation_is_typed_before_send ... ok
+test exec_env_overlay_malformed_is_a_typed_failure ... ok
+test exec_env_overlay_crosses_the_codec ... ok
+test handshake_grants_a_session_and_capabilities ... ok
+test child_printing_framed_worker_control_remains_stdout_data ... ok
+test shutdown_then_next_request_spawns_a_fresh_incarnation ... ok
+test dropping_exec_output_drains_child_to_completion ... ok
+test pty::pty_resize_boundary_arrives_in_wire_order ... ok
+test prepare_apply_and_verify_a_create ... ok
+test pty::pty_controls_remain_bound_to_the_admitting_incarnation ... ok
+test notify_subscription_delivers_hints_and_retires ... ok
+test pty::pty_spawn_feed_output_and_exit_classification ... ok
+test observe_list_and_read_round_trip ... ok
+test store_save_round_trip_with_conflict_and_verify ... ok
+test large_read_returns_exact_bytes_and_does_not_starve_control ... ok
+test large_exec_output_backpressures_off_control_without_losing_bytes ... ok
+test pty::pty_output_backpressure_is_bounded_and_lossless ... ok
+test pty::pty_stalled_consumer_resumes_without_losing_vt_bytes ... ok
+test finite_exec_streams_output_and_exits ... ok
+test deployed_worker_binds_the_endpoint_target ... ok
+test cancelled_quiet_exec_unblocks_its_reader_and_revokes_exact_lease ... ok
+test pty::pty_terminate_revokes_without_a_guessed_exit ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.58s
+
+   Compiling strop-core v0.35.0 (/home/tarek/workspace/strop/crates/strop-core)
+   Compiling strop-terminal v0.35.0 (/home/tarek/workspace/strop/crates/strop-terminal)
+   Compiling strop-workspace v0.35.0 (/home/tarek/workspace/strop/crates/strop-workspace)
+   Compiling strop-syntax v0.35.0 (/home/tarek/workspace/strop/crates/strop-syntax)
+   Compiling strop-grammar v0.35.0 (/home/tarek/workspace/strop/crates/strop-grammar)
+   Compiling strop-worker-protocol v0.35.0 (/home/tarek/workspace/strop/crates/strop-worker-protocol)
+   Compiling strop-containers v0.35.0 (/home/tarek/workspace/strop/crates/strop-containers)
+   Compiling strop-fs v0.35.0 (/home/tarek/workspace/strop/crates/strop-fs)
+   Compiling strop-worker-client v0.35.0 (/home/tarek/workspace/strop/crates/strop-worker-client)
+   Compiling strop-worker v0.35.0 (/home/tarek/workspace/strop/crates/strop-worker)
+   Compiling strop-worker-deploy v0.35.0 (/home/tarek/workspace/strop/crates/strop-worker-deploy)
+   Compiling strop-lsp v0.35.0 (/home/tarek/workspace/strop/crates/strop-lsp)
+   Compiling strop-remote v0.35.0 (/home/tarek/workspace/strop/crates/strop-remote)
+   Compiling strop-picker v0.35.0 (/home/tarek/workspace/strop/crates/strop-picker)
+   Compiling strop-git v0.35.0 (/home/tarek/workspace/strop/crates/strop-git)
+   Compiling strop-engine v0.35.0 (/home/tarek/workspace/strop/crates/strop-engine)
+   Compiling strop-ui-protocol v0.35.0 (/home/tarek/workspace/strop/crates/strop-ui-protocol)
+   Compiling strop-editor v0.35.0 (/home/tarek/workspace/strop/crates/strop)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.36s
+     Running tests/worker_stdio.rs (target/debug/deps/worker_stdio-e5531aa7a29ca6d1)
+
+running 4 tests
+test handshake_and_filesystem_round_trip_through_the_real_binary ... ok
+test stale_prepared_authority_fails_closed_after_a_kill ... ok
+test kill_minus_nine_is_a_typed_failure_with_no_fallback ... ok
+test a_non_worker_binary_fails_the_handshake_typed ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.00s
+
+   Compiling strop-editor v0.35.0 (/home/tarek/workspace/strop/crates/strop)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.11s
+     Running tests/terminal_editor.rs (target/debug/deps/terminal_editor-5759a43f683b95db)
+
+running 1 test
+test real_terminal_input_consent_quit_and_execution_free_replay ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 38.34s
+
+
+[Showing lines 1-99 of 100. Use :100 to continue]

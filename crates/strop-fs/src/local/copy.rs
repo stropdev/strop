@@ -102,6 +102,7 @@ pub(super) fn copy(
                 .value
                 .as_ref()
                 .is_some_and(|value| value.digest.is_some()),
+            false,
             token,
         )? != source.value
         {

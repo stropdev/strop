@@ -140,6 +140,10 @@ impl Editor {
             })
         });
         let args = ticket.clone();
+        // Discovery is read-only: it consumes only an already-admitted
+        // endpoint worker. A restricted/SFTP-only host refuses Git
+        // truthfully; no Python command is spawned.
+        let workers = self.remote.workers.clone();
         self.launch_git_job(
             "git-discover-remote",
             "git.discover",
@@ -150,10 +154,16 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                match strop_git::remote::discover(&endpoint, &from_dir, &cancel) {
+                let lease = workers.get(&endpoint);
+                match strop_git::remote::discover(&endpoint, &from_dir, lease.as_ref(), &cancel) {
                     Ok(None) => Outcome::Success(None),
                     Ok(Some(workdir)) => {
-                        match strop_git::remote::context(&endpoint, &workdir, &cancel) {
+                        match strop_git::remote::context(
+                            &endpoint,
+                            &workdir,
+                            lease.as_ref(),
+                            &cancel,
+                        ) {
                             Ok(context) => Outcome::Success(Some(context)),
                             Err(error) => Outcome::Failed {
                                 failure: strop_core::worker::Failure::new(
@@ -215,6 +225,12 @@ impl Editor {
             })
         });
         let args = ticket.clone();
+        let container_worker = self
+            .containers
+            .attached
+            .get(container.as_str())
+            .and_then(|identity| self.containers.workers.get(identity))
+            .map(|lease| lease.worker().clone());
         self.launch_git_job(
             "git-discover-container",
             "git.discover",
@@ -232,10 +248,23 @@ impl Editor {
                     ),
                     partial: None,
                 };
-                match strop_git::container::discover(&container, &from_dir, &cancel) {
+                // No Git query acquires deployment authority. A missing
+                // container worker refuses typed; the tar browser stays
+                // read-only without falling back to docker-exec sh.
+                match strop_git::container::discover(
+                    &container,
+                    &from_dir,
+                    container_worker.as_ref(),
+                    &cancel,
+                ) {
                     Ok(None) => Outcome::Success(None),
                     Ok(Some(workdir)) => {
-                        match strop_git::container::context(&container, &workdir, &cancel) {
+                        match strop_git::container::context(
+                            &container,
+                            &workdir,
+                            container_worker.as_ref(),
+                            &cancel,
+                        ) {
                             Ok(context) => Outcome::Success(Some(context)),
                             Err(error) => fail(&error),
                         }

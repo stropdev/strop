@@ -227,10 +227,25 @@ impl RemoteWorker {
         }
     }
 
+    /// In-process codec transport for consumer tests: the real worker
+    /// serve loop, without requiring an SSH daemon or a second policy.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(endpoint: &RemoteEndpoint, worker: Worker) -> Self {
+        Self {
+            endpoint: endpoint.clone(),
+            worker,
+        }
+    }
+
     /// The untranslated lease for location-free families (subscribe,
     /// unsubscribe, health, exec) and lease observation.
     pub fn worker(&self) -> &Worker {
         &self.worker
+    }
+
+    /// The exact SSH endpoint whose namespace this lease serves.
+    pub fn endpoint(&self) -> &RemoteEndpoint {
+        &self.endpoint
     }
 
     /// One editor-side location in the worker's own spelling. Any
@@ -305,6 +320,38 @@ impl RemoteWorker {
         translated
     }
 
+    fn operation_to_worker(
+        &self,
+        operation: &PreparedOperation,
+    ) -> Result<PreparedOperation, ClientError> {
+        let mut translated = operation.clone();
+        translated.intent = self.intent_to_worker(&operation.intent)?;
+        let observation = |source: &LocatedObservation| {
+            Ok::<_, ClientError>(LocatedObservation {
+                location: self.to_worker(&source.location)?,
+                value: source.value.clone(),
+            })
+        };
+        translated.source = operation.source.as_ref().map(observation).transpose()?;
+        translated.destination = operation
+            .destination
+            .as_ref()
+            .map(observation)
+            .transpose()?;
+        translated.parents = operation
+            .parents
+            .iter()
+            .map(observation)
+            .collect::<Result<Vec<_>, _>>()?;
+        translated.capability.trash_root = operation
+            .capability
+            .trash_root
+            .as_ref()
+            .map(|root| self.to_worker(root))
+            .transpose()?;
+        Ok(translated)
+    }
+
     fn intent_from_worker(&self, intent: &OperationIntent) -> OperationIntent {
         let mut translated = intent.clone();
         translated.source = intent.source.as_ref().map(|source| self.to_editor(source));
@@ -351,6 +398,46 @@ impl RemoteWorker {
             operation: self.operation_from_worker(&receipt.operation),
             outcome: self.outcome_from_worker(&receipt.outcome),
         }
+    }
+
+    fn receipt_to_worker(&self, attempt: StepReceipt) -> Result<StepReceipt, ClientError> {
+        Ok(StepReceipt {
+            step: attempt.step,
+            operation: self.operation_to_worker(&attempt.operation)?,
+            outcome: match &attempt.outcome {
+                StepOutcome::Committed {
+                    source_after,
+                    destination_after,
+                    recovery,
+                    warnings,
+                    publication,
+                } => StepOutcome::Committed {
+                    source_after: source_after.clone(),
+                    destination_after: destination_after.clone(),
+                    recovery: recovery
+                        .as_ref()
+                        .map(|path| self.to_worker(path))
+                        .transpose()?,
+                    warnings: warnings.clone(),
+                    publication: *publication,
+                },
+                StepOutcome::Unconfirmed {
+                    detail,
+                    observed_destination,
+                    recovery,
+                    publication,
+                } => StepOutcome::Unconfirmed {
+                    detail: detail.clone(),
+                    observed_destination: observed_destination.clone(),
+                    recovery: recovery
+                        .as_ref()
+                        .map(|path| self.to_worker(path))
+                        .transpose()?,
+                    publication: *publication,
+                },
+                other => other.clone(),
+            },
+        })
     }
 
     /// Bounded stat-class observation of exact resources.
@@ -433,47 +520,7 @@ impl RemoteWorker {
     ) -> Result<Vec<StepReceipt>, ClientError> {
         let steps = steps
             .iter()
-            .map(|step| {
-                let mut translated = step.clone();
-                translated.intent = self.intent_to_worker(&step.intent)?;
-                translated.source = step
-                    .source
-                    .as_ref()
-                    .map(|source| {
-                        Ok::<_, ClientError>(LocatedObservation {
-                            location: self.to_worker(&source.location)?,
-                            value: source.value.clone(),
-                        })
-                    })
-                    .transpose()?;
-                translated.destination = step
-                    .destination
-                    .as_ref()
-                    .map(|destination| {
-                        Ok::<_, ClientError>(LocatedObservation {
-                            location: self.to_worker(&destination.location)?,
-                            value: destination.value.clone(),
-                        })
-                    })
-                    .transpose()?;
-                translated.parents = step
-                    .parents
-                    .iter()
-                    .map(|parent| {
-                        Ok::<_, ClientError>(LocatedObservation {
-                            location: self.to_worker(&parent.location)?,
-                            value: parent.value.clone(),
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                translated.capability.trash_root = step
-                    .capability
-                    .trash_root
-                    .as_ref()
-                    .map(|root| self.to_worker(root))
-                    .transpose()?;
-                Ok::<_, ClientError>(translated)
-            })
+            .map(|step| self.operation_to_worker(step))
             .collect::<Result<Vec<_>, _>>()?;
         let receipts = self.worker.apply(token, steps, content)?;
         Ok(receipts
@@ -574,16 +621,19 @@ impl RemoteWorker {
         token: &strop_core::worker::CancelToken,
         attempt: StepReceipt,
     ) -> Result<strop_workspace::operation::VerifiedOutcome, ClientError> {
-        let attempt = StepReceipt {
-            step: attempt.step,
-            operation: {
-                let mut operation = attempt.operation.clone();
-                operation.intent = self.intent_to_worker(&attempt.operation.intent)?;
-                operation
-            },
-            outcome: attempt.outcome.clone(),
-        };
-        self.worker.verify(token, attempt)
+        self.worker.verify(token, self.receipt_to_worker(attempt)?)
+    }
+
+    /// Reconcile a frozen old-session Store with fresh read authority;
+    /// the worker refuses any changed native boot/mount/principal.
+    pub fn verify_recovered(
+        &self,
+        token: &strop_core::worker::CancelToken,
+        attempt: StepReceipt,
+        namespace: strop_worker_protocol::NamespaceIdentity,
+    ) -> Result<strop_workspace::operation::VerifiedOutcome, ClientError> {
+        self.worker
+            .verify_recovered(token, self.receipt_to_worker(attempt)?, namespace)
     }
 }
 
@@ -686,6 +736,9 @@ mod tests {
                             max_subscriptions: 0,
                             max_streams: 0,
                             max_exec_processes: 0,
+                            max_concurrent_reads: 0,
+                            control_reserve: 0,
+                            max_queued_data_chunks: 0,
                         },
                         capabilities: Capabilities {
                             observe: false,

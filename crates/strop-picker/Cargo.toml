@@ -13,6 +13,7 @@ parking_lot = "0.12"
 strop-core = { path = "../strop-core", version = "0.35.0" }
 strop-workspace = { path = "../strop-workspace", version = "0.35.0" }
 strop-remote = { path = "../strop-remote", version = "0.35.0" }
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.35.0" }
 strop-syntax = { path = "../strop-syntax", version = "0.35.0" }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
@@ -24,4 +25,7 @@ thiserror = "2"
 
 [dev-dependencies]
 nucleo-matcher = "0.3"
+strop-remote = { path = "../strop-remote", version = "0.35.0", features = ["test-support"] }
+strop-worker = { path = "../strop-worker", version = "0.35.0" }
+strop-worker-client = { path = "../strop-worker-client", version = "0.35.0" }
 tempfile = "3"

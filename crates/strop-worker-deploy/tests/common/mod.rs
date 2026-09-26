@@ -18,6 +18,7 @@ use strop_worker_protocol::{EndpointInfo, Session};
 
 /// The catalog of the editor's own release, matching the WK05 wire shape.
 pub fn catalog(version: &str) -> ReleaseCatalog {
+    let protocol = strop_worker_protocol::PROTOCOL_VERSION;
     let body = format!(
         r#"{{
   "schema": 1,
@@ -35,7 +36,7 @@ pub fn catalog(version: &str) -> ReleaseCatalog {
     }}
   ],
   "worker": {{
-    "protocol": 1,
+    "protocol": {protocol},
     "min_editor": "0.35.0",
     "targets": ["x86_64-unknown-linux-musl"]
   }}
@@ -112,9 +113,14 @@ impl Entry {
 #[derive(Debug, Default)]
 pub struct Failures {
     pub mkdir: Option<ProviderError>,
+    /// A second installer wins the mkdir race; the server reports
+    /// EEXIST only as generic SFTP Failure.
+    pub mkdir_race: Option<(String, Entry)>,
     pub upload: Option<ProviderError>,
     pub corrupt_upload: bool,
     pub write: Option<ProviderError>,
+    /// Simulate a storage loss after a successful receipt-write reply.
+    pub lose_receipt_after_write: bool,
     pub fetch: Option<ProviderError>,
     pub set_mode: Option<ProviderError>,
     pub rename: Option<ProviderError>,
@@ -211,6 +217,14 @@ impl DeployProvider for FakeProvider {
     }
 
     fn mkdir_private(&self, path: &str) -> Result<(), ProviderError> {
+        if let Some((target, entry)) = self.failures.borrow().mkdir_race.as_ref() {
+            if target == path {
+                self.entries
+                    .borrow_mut()
+                    .insert(path.to_owned(), entry.clone());
+                return Err(ProviderError::Transport("SFTP status 4: Failure".into()));
+            }
+        }
         self.fail(&self.failures.borrow().mkdir)?;
         let mut current = String::new();
         for part in path.split('/').filter(|part| !part.is_empty()) {
@@ -242,10 +256,16 @@ impl DeployProvider for FakeProvider {
 
     fn write(&self, dest: &str, bytes: &[u8]) -> Result<(), ProviderError> {
         self.fail(&self.failures.borrow().write)?;
-        self.entries.borrow_mut().insert(
+        let lose_receipt =
+            self.failures.borrow().lose_receipt_after_write && dest.contains("/receipts/");
+        let mut entries = self.entries.borrow_mut();
+        entries.insert(
             dest.to_string(),
             Entry::file(0o600, &self.endpoint.principal, bytes),
         );
+        if lose_receipt {
+            entries.remove(dest);
+        }
         Ok(())
     }
 
@@ -302,8 +322,23 @@ impl DeployProvider for FakeProvider {
             .collect())
     }
 
-    fn handshake(&self, _object: &str) -> Result<HandshakeReport, ProviderError> {
+    fn handshake(&self, object: &str) -> Result<HandshakeReport, ProviderError> {
         self.fail(&self.failures.borrow().handshake)?;
+        if let Some((root, sha)) = object.rsplit_once("/objects/") {
+            // A real cache worker registers its own lease before Welcome.
+            // The provider stops this probe; deploy must then retire only
+            // this short-lived record, never advertise it as the live one.
+            let record = strop_core::worker::cache_record::LeaseRecord {
+                lease: self.handshake_report.session.lease.0,
+                object_sha256: sha.to_owned(),
+            };
+            let bytes = serde_json::to_vec(&record)
+                .map_err(|error| ProviderError::Transport(error.to_string()))?;
+            let path = format!("{root}/leases/{}.json", record.lease);
+            self.entries
+                .borrow_mut()
+                .insert(path, Entry::file(0o600, &self.endpoint.principal, &bytes));
+        }
         Ok(self.handshake_report.clone())
     }
 }
