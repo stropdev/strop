@@ -108,6 +108,20 @@ fn nul_retains_modifiers_and_negotiated_repeat_release_semantics() {
 }
 
 #[test]
+fn terminal_escape_precedes_the_next_literal_key() {
+    use strop_core::frontend_input::{KeyCode, KeyEvent};
+    let mut vt = terminal(20, 3);
+    let escape = vt
+        .input(&Input::Key(KeyEvent::press(KeyCode::Escape)), false)
+        .unwrap();
+    assert_eq!(escape.reply, b"\x1b");
+    let letter = vt
+        .input(&Input::Key(KeyEvent::press(KeyCode::Char('x'))), false)
+        .unwrap();
+    assert_eq!(letter.reply, b"x");
+}
+
+#[test]
 fn oversized_paste_refusal_leaves_the_terminal_encoder_usable() {
     let mut vt = terminal(20, 3);
     vt.feed(b"\x1b[?2004h").unwrap();

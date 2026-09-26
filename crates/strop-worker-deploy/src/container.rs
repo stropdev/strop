@@ -12,16 +12,15 @@
 //!   root, so the header is what keeps the cache principal-owned. Cache
 //!   directory/mode/rename/remove operations are scoped single-program
 //!   execs through the AR07 supervisor, as the selected principal,
-//!   never root. The worker is then exec'd supervised (relay mode): its
-//!   stdin is the AR07 lifetime lease.
+//!   never root. The worker and its activation probe exec directly:
+//!   the worker itself supervises children and its stdin is the lease.
 //! - **Verified preinstalled worker** ([`ShellPolicy::Absent`]): the
-//!   shellless/distroless case. Nothing is deployed; WK06 validates the
-//!   object in place (regular file, no symlink, owner-exec, hashed in
-//!   place) and the worker is exec'd *directly* through
-//!   [`AdmittedExec::worker_command`] — the worker binary is its own
-//!   supervisor and needs no shell utilities. No claim that every
-//!   distroless image can be auto-provisioned: a `Required` endpoint on
-//!   a shell-less image refuses truthfully at the first cache exec.
+//!   shellless/distroless case. Provider cache mutations refuse before
+//!   staging bytes; WK06 validates the object in place (regular file,
+//!   no symlink, owner-exec, hashed in place). The worker takes the
+//!   *same* direct [`AdmittedExec::worker_command`] path. No claim that
+//!   every distroless image can be auto-provisioned: a `Required`
+//!   endpoint on a shell-less image refuses at its first cache exec.
 //!
 //! Identity and elevation rules held here:
 //! - The endpoint context is `docker:<canonical-id>@<started-at>`; a
@@ -64,15 +63,14 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Retained worker/supervisor stderr for typed diagnostics.
 const STDERR_LIMIT: usize = 64 * 1024;
 
-/// Whether the image's POSIX `sh` may carry the AR07 supervisor.
+/// Whether scoped cache/bootstrap mutation may use POSIX `sh`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellPolicy {
-    /// Automatic deployment: cache/exec operations run through the
-    /// supervisor, and the worker is exec'd supervised. A shell-less
-    /// image fails truthfully at the first exec.
+    /// Automatic deployment may write the private cache through scoped
+    /// shell utilities. The admitted worker itself always execs directly.
     Required,
-    /// Verified preinstalled worker: no deployment happens, no shell is
-    /// touched; the worker execs directly and is its own supervisor.
+    /// Verified preinstalled worker: read-only object verification, no
+    /// provider cache mutation or shell. Native worker still execs directly.
     Absent,
 }
 
@@ -284,11 +282,24 @@ impl ContainerProvider {
         }
     }
 
+    /// Preinstalled means read-only cache verification, not permission
+    /// to upload/stage bytes because Docker tar can bypass a missing sh.
+    fn require_cache_shell(&self) -> Result<(), ProviderError> {
+        if self.shell == ShellPolicy::Absent {
+            return Err(ProviderError::NoExec(
+                "automatic container cache mutation requires POSIX sh; selected worker is preinstalled"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// One scoped single-program exec through the AR07 supervisor, as
     /// the selected principal, in `/`. Admission re-checks the
     /// incarnation; a non-zero exit classifies into the provider
     /// taxonomy.
     fn run(&self, program: &str, args: &[String]) -> Result<(), ProviderError> {
+        self.require_cache_shell()?;
         let spec = ExecSpec::new(&self.engine, &self.reference, program, args, Path::new("/"))
             .map_err(map_engine)?;
         let spec = match &self.user_arg {
@@ -306,12 +317,10 @@ impl ContainerProvider {
         }
     }
 
-    /// The admitted exec for the worker object: supervised on a
-    /// `Required` endpoint (the AR07 relay lease), direct on an
-    /// `Absent` one (the worker is its own supervisor). Admission
-    /// re-checks the incarnation *now* — the lease factory calls this
-    /// on every (re)connect, so a restarted container can never be
-    /// retargeted by a stale lease.
+    /// An admitted direct native-worker exec in the selected
+    /// incarnation, principal and working directory. The worker is
+    /// its own process supervisor on both provisioned and preinstalled
+    /// paths; an old generic shell cannot impersonate its handshake.
     fn worker_exec(
         &self,
         object: &str,
@@ -336,16 +345,14 @@ impl ContainerProvider {
     /// the editor's read/write/notify for this container's workspace
     /// ride this connection. The handshake binds the worker's reported
     /// target to the endpoint's catalog target (a foreign-platform
-    /// worker is a typed mismatch, never a downgrade). Cleanup rides
-    /// the AR07 supervised lease: dropping the lease's last clone kills
-    /// the local exec, the daemon closes stdin, and the in-container
-    /// supervisor tears the group down (TERM, grace, KILL).
+    /// worker is a typed mismatch, never a downgrade). The native
+    /// worker owns its child groups: the direct Docker exec's stdin
+    /// is the lease, and its EOF triggers native session teardown.
     pub fn worker(&self, object: &str) -> Worker {
         let engine = self.engine.clone();
         let reference = self.reference.clone();
         let user_arg = self.user_arg.clone();
         let workdir = self.workdir.clone();
-        let shell = self.shell;
         let program = object.to_string();
         Worker::connect_deployed(self.endpoint.target.clone(), move || {
             let (token, handle) = CancelToken::standalone();
@@ -362,10 +369,7 @@ impl ContainerProvider {
                 None => spec,
             };
             let admitted = spec.admit(&token).map_err(io_failed)?;
-            let mut command = match shell {
-                ShellPolicy::Required => admitted.command(),
-                ShellPolicy::Absent => admitted.worker_command(),
-            };
+            let mut command = admitted.worker_command();
             let spawned = command.spawn();
             drop(handle); // admission is done; the op token retires here
             let mut child = spawned?;
@@ -427,6 +431,7 @@ impl DeployProvider for ContainerProvider {
     }
 
     fn upload(&self, source: &Path, dest: &str) -> Result<(), ProviderError> {
+        self.require_cache_shell()?;
         let bytes = std::fs::read(source)
             .map_err(|error| ProviderError::Transport(format!("read local artifact: {error}")))?;
         write_file(
@@ -441,6 +446,7 @@ impl DeployProvider for ContainerProvider {
     }
 
     fn write(&self, dest: &str, bytes: &[u8]) -> Result<(), ProviderError> {
+        self.require_cache_shell()?;
         write_file(
             &self.engine,
             &self.reference,
@@ -479,10 +485,7 @@ impl DeployProvider for ContainerProvider {
     }
     fn handshake(&self, object: &str) -> Result<HandshakeReport, ProviderError> {
         let admitted = self.worker_exec(object, &self.token)?;
-        let mut command = match self.shell {
-            ShellPolicy::Required => admitted.command(),
-            ShellPolicy::Absent => admitted.worker_command(),
-        };
+        let mut command = admitted.worker_command();
         let mut child = command
             .spawn()
             .map_err(|error| ProviderError::Transport(format!("docker exec spawn: {error}")))?;

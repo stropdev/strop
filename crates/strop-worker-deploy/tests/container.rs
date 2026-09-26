@@ -11,6 +11,8 @@
 #![cfg(unix)]
 
 mod common;
+#[path = "container/perf.rs"]
+mod perf;
 
 use std::ffi::OsStr;
 use std::io::Read;
@@ -161,12 +163,16 @@ impl Fixture {
     /// Launch busybox without seeding (a read-only rootfs cannot take
     /// the seed write; refusal tests use this).
     fn busybox_raw(tag: &str, extra: &[&str]) -> Fixture {
+        Self::busybox_raw_for(tag, extra, "300")
+    }
+
+    fn busybox_raw_for(tag: &str, extra: &[&str], lifetime_seconds: &str) -> Fixture {
         let name = format!("strop-wk08-{tag}");
         let mut args = vec!["run", "-d", "--label"];
         let label = format!("strop-test-run={tag}");
         args.push(&label);
         args.extend_from_slice(extra);
-        args.extend_from_slice(&["--name", &name, "busybox", "sleep", "300"]);
+        args.extend_from_slice(&["--name", &name, "busybox", "sleep", lifetime_seconds]);
         let id = run_docker(&args);
         Fixture { id, image: None }
     }
@@ -232,10 +238,14 @@ impl Fixture {
     fn assert_workers_reaped(&self, within: Duration) {
         let deadline = Instant::now() + within;
         loop {
-            if !self.processes().contains("worker-stdio") {
+            let processes = self.processes();
+            if !processes.contains("worker-stdio") {
                 return;
             }
-            assert!(Instant::now() < deadline, "worker survived lease close");
+            assert!(
+                Instant::now() < deadline,
+                "worker survived lease close:\n{processes}"
+            );
             std::thread::sleep(Duration::from_millis(200));
         }
     }
@@ -595,6 +605,39 @@ fn shellless_deploy_is_a_typed_refusal() {
         }
         other => panic!("expected Refused, got {other:?}"),
     }
+}
+
+/// A preinstalled-only selection is a policy, not a guess from whether
+/// Docker's daemon can tar-write a path. Even on a writable image with
+/// POSIX sh, it must not create cache bytes through the provider.
+#[test]
+fn preinstalled_policy_refuses_daemon_tar_writes_before_staging() {
+    if !gate("preinstalled_policy_refuses_daemon_tar_writes_before_staging") {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("supply");
+    std::fs::write(&source, b"must not land").unwrap();
+    let fixture = Fixture::busybox(&tag(), &[]);
+    let (cancel, _guard) = token();
+    let engine_ref = engine(&cancel).expect("engine probes");
+    let identity = fixture.identity(&engine_ref, &cancel);
+    let provider = ContainerProvider::capture(&engine_ref, &identity, ShellPolicy::Absent, &cancel)
+        .expect("preinstalled policy admits read-only context");
+    let upload = "/data/absent-policy-upload";
+    let receipt = "/data/absent-policy-receipt";
+    assert!(matches!(
+        provider.upload(&source, upload),
+        Err(strop_worker_deploy::provider::ProviderError::NoExec(reason))
+            if reason.contains("POSIX sh")
+    ));
+    assert!(matches!(
+        provider.write(receipt, b"fake receipt"),
+        Err(strop_worker_deploy::provider::ProviderError::NoExec(reason))
+            if reason.contains("POSIX sh")
+    ));
+    assert!(provider.lstat(upload).unwrap().is_none());
+    assert!(provider.lstat(receipt).unwrap().is_none());
 }
 
 /// A read-only container filesystem classifies truthfully: the cache

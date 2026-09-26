@@ -485,6 +485,28 @@ location, safe transfer capability, architecture support or permission is classi
 truthfully. No claim that every distroless container can be auto-provisioned.
 The native worker itself must not need shell utilities to supervise ordinary programs.
 
+WK20's real repeated container deployment also exposed a worker-only
+legacy shell detour: `ShellPolicy::Required` launches the **worker**
+and its activation probe through the generic sh/cat supervisor, even
+though `AdmittedExec::worker_command` already serves the shellless
+native-worker case with the same captured container/user/cwd and
+leased stdio. Use that direct native command for both worker routes;
+keep the scoped shell only for cache/bootstrap operations that
+actually require it. A no-init BusyBox PID 1 leaves orphaned
+bootstrap `sh`/`cat` zombies after repeated Docker exec; their count
+is not a count of live workers and cannot be fixed by installing an
+init in someone else's container. Measure/report them separately,
+verify actual worker processes by executable path and mode, and do
+not claim universal PID 1 reaping. The selected-context, worker
+teardown and shellless/preinstalled tests must still pass.
+
+`ShellPolicy` remains a cache/bootstrap capability boundary:
+`Absent` permits read-only preinstalled-object verification and
+direct native worker execution, but refuses provider cache writes
+and shell mutations before any stage is published. `Required`
+still admits the existing scoped bootstrap utilities when a real
+shell is available; it no longer wraps the worker or its probe.
+
 ## 6. WK09–WK13: preserve the whole existing product
 
 ### Filesystem and saving
@@ -1253,11 +1275,62 @@ PTY output→paint p50 4.469/4.794 ms, p95 5.167/5.544 ms,
 p99/max 5.402/5.801 ms, with raw samples and artifact/source
 digests in `verification/measurements/`.
 
-The schema-6 diagnostic freeze checks artifact, fixture, method and
-raw-percentile bindings, but records a dirty worktree; `--check`
-refuses release qualification. LSP sync/request, cold/warm
-SSH/container deployment, transfer/retirement high-water marks and
-terminal-load performance on other native targets remain unmeasured.
+The PR native matrix now builds both releases on each GNU x86_64/
+aarch64 and macOS Intel/arm runner, executes the same nine real
+local-product journeys and uploads the raw target profiles. No new
+runner measurements are qualified until those jobs actually pass
+and their artifacts are bound to the final source candidate.
+
+The same WSL2 host also ran 64 cold and 64 warm real
+Python-free localhost OpenSSH/SFTP worker deployments, plus 64 live
+SSH handshakes. Cold discovery→verified probe p50/p95/p99/max was
+3267.452/3298.986/3325.715/3325.715 ms; warm reuse was
+1877.756/1893.147/1918.905/1918.905 ms; live handshakes were
+37.038/37.883/39.363/39.363 ms. Every session recorded its own
+lease; a private fixture removed only its unleased object and receipt
+outside each cold measurement. The `worker_ssh` test split by concern
+retains its Python-free real SSH parity gate.
+
+A second scoped native target, a no-init BusyBox container, completed
+64 real cold uploads (p50/p95/p99/max
+3527.577/3557.050/3574.675/3574.675 ms), 64 warm cache reuses
+(2934.731/2968.992/3014.016/3014.016 ms) and 64 live worker
+handshakes (85.146/91.042/93.682/93.682 ms) with exactly one
+actual worker process after each Welcome. The deliberately nonreaping
+PID 1 retained 892 `[cat]`/`[sh]` children after the reuse phase,
+including 71 private fixture resets outside timing. This is not
+892 live workers or universal container behavior, but it prevents
+claiming a bounded retirement high-water on no-init containers.
+The container-test image compiled the direct provider and preinstalled
+cache guard; method/worker digests and raw samples live under
+`verification/measurements/`. The worker executable remains the
+earlier static artifact, not the final exact-source candidate.
+
+The same host measured eight warmups and 64 real installed
+`rust-analyzer` definition replies through `strop --ui-stdio` on
+matched static pre-worker and worker artifacts. Input `gd` to the
+painted definition measured p50/p95/p99/max
+25.558/25.733/25.825/25.825 ms before and
+25.445/25.561/25.615/25.615 ms after. A separate 64-sample
+trailing-space edit→`didChange`→`gd`→paint route measured
+25.663/26.022/26.176/26.176 ms before and
+25.686/25.925/26.054/26.054 ms after. That second path is an
+end-to-end sync/request upper bound, **not** a standalone
+`didChange` acknowledgment or a claimed speedup. Both targets
+retained one actual local worker; server readiness alone was not
+counted until eight real definition landings stabilized. Raw
+samples, server version and source/artifact bindings live in
+`verification/measurements/0058-linux-x86-lsp-ui.json`. Native
+PR runners must execute the same path on GNU and macOS hosts;
+this Linux-only result does not close WPERF-FULL.
+
+The schema-9 diagnostic freeze checks scoped artifact, fixture, method,
+LSP server identity and raw-percentile bindings. A dirty tree fails
+`freeze.py --check`; even a clean exact freeze cannot pass
+`check.py --release` while `WPERF-FULL`/`WPLAT-NATIVE` remain
+blocked. Final-source LSP sync/request on the other native targets,
+transfer/retirement high-water, cold/warm SSH/container beyond this
+Linux WSL2 host and terminal-load performance outside Linux remain open.
 
 The native PR run
 [`36243016093`](https://github.com/stropdev/strop/actions/runs/36243016093)
@@ -1272,10 +1345,19 @@ the guarded `libproc` repair. Run
 [`36246567485`](https://github.com/stropdev/strop/actions/runs/36246567485)
 then passed GNU Store/worker/editor journeys again and reached the
 real TUI on both macOS targets: both stalled after `BYTE-READY`,
-waiting for eight exact raw input bytes. A bounded diagnostic now
-completes a short read with distinct bytes only on failure; the
-product's actual missing bytes and final-candidate Mac/arm behavior
-are still unqualified. Full performance remains blocked.
+waiting for eight exact raw input bytes. The next run's bounded
+failure-only diagnostic isolated the lost byte below; final-candidate
+Mac/arm input behavior and full performance remain unqualified.
+
+Run [`36248998773`](https://github.com/stropdev/strop/actions/runs/36248998773)
+isolated the same byte loss on both native macOS architectures: the
+child received `12 78 1b 5b 31 35 7e` instead of
+`12 1b 78 1b 5b 31 35 7e`; the missing `1b` precedes `x`, not F5.
+The test sent a diagnostic `3f` only after the exact sequence timed
+out; its failure remains a failure. The next native run records the
+fixture's explicitly consented key actions so we can distinguish
+frontend Alt decoding from the PTY encoder. Do not mask the failure,
+alter the expected bytes or add a macOS-only input shortcut.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

@@ -41,6 +41,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lsp_evidence import validate as validate_native_lsp
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "dist" / "worker-candidate.json"
 
@@ -150,8 +152,10 @@ TERMINAL_LOAD_MEASUREMENTS = (
     "verification/measurements/0058-linux-x86-terminal-load-after-fix-comparison.json",
 )
 NATIVE_PRODUCT_REPORT = "verification/measurements/0058-linux-x86-native-product.json"
+CONTAINER_DEPLOY_REPORT = "verification/measurements/0058-linux-x86-container-deploy.json"
+SSH_DEPLOY_REPORT = "verification/measurements/0058-linux-x86-ssh-deploy.json"
 
-SCHEMA = 6
+SCHEMA = 9
 
 
 def sha256_file(rel: str) -> str:
@@ -508,6 +512,95 @@ def native_product_evidence() -> dict:
             "artifact_sha256": report["candidate_sha256"]}
 
 
+def container_deploy_evidence() -> dict:
+    report = json.loads((ROOT / CONTAINER_DEPLOY_REPORT).read_text(encoding="utf-8"))
+    measured = report.get("observed", {})
+    method = report.get("method", {})
+    worker = json.loads((ROOT / LINUX_MEASUREMENTS[1]).read_text(encoding="utf-8"))
+    if (
+        report.get("schema") != 1
+        or method.get("test") != "perf::native_container_cold_warm_deploy_and_launch_samples"
+        or method.get("path") != "crates/strop-worker-deploy/tests/container/perf.rs"
+        or method.get("sha256") != sha256_file(method["path"])
+        or method.get("provider") != "crates/strop-worker-deploy/src/container.rs"
+        or method.get("provider_sha256") != sha256_file(method["provider"])
+        or measured.get("target") != "x86_64-unknown-linux-musl"
+        or measured.get("artifact_sha256") != worker["binary_sha256"]
+        or measured.get("artifact_bytes") != worker["bytes"]
+        or measured.get("warmup_requests") != 8
+        or measured.get("measured_requests") != 64
+        or measured.get("fixture_resets_outside_measurement") != 71
+        or measured.get("worker_count_after_each_live_welcome") != 1
+        or not isinstance(measured.get("observed_unreaped_fixture_children_after_reuse"), int)
+        or measured["observed_unreaped_fixture_children_after_reuse"] < 0
+    ):
+        raise SystemExit("container deployment samples lack exact native fixture/source binding")
+    for name, summary in (
+        ("cold_raw_ms", "cold_deploy_ms"),
+        ("warm_raw_ms", "warm_reuse_ms"),
+        ("launch_raw_ms", "warm_launch_ms"),
+    ):
+        raw = measured.get(name)
+        if (not isinstance(raw, list) or len(raw) != 64
+                or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                           and value >= 0 for value in raw)):
+            raise SystemExit(f"container {name} has no complete 64-sample observation")
+        ordered = sorted(raw)
+        percentiles = {f"p{n}": ordered[math.ceil(n * len(raw) / 100) - 1]
+                       for n in (50, 95, 99)} | {"max": ordered[-1]}
+        if measured.get(summary) != percentiles:
+            raise SystemExit(f"container {name} percentiles differ from raw effects")
+    return {"sha256": sha256_file(CONTAINER_DEPLOY_REPORT),
+            "method_sha256": method["sha256"],
+            "provider_sha256": method["provider_sha256"],
+            "artifact_sha256": measured["artifact_sha256"]}
+
+
+def ssh_deploy_evidence() -> dict:
+    report = json.loads((ROOT / SSH_DEPLOY_REPORT).read_text(encoding="utf-8"))
+    measured = report.get("observed", {})
+    method = report.get("method", {})
+    worker = json.loads((ROOT / LINUX_MEASUREMENTS[1]).read_text(encoding="utf-8"))
+    if (
+        report.get("schema") != 1
+        or method.get("test") != "perf::native_ssh_cold_warm_deploy_and_launch_samples"
+        or method.get("path") != "crates/strop/tests/worker_ssh/perf.rs"
+        or method.get("sha256") != sha256_file(method["path"])
+        or method.get("fixture") != "crates/strop/tests/worker_ssh.rs"
+        or method.get("fixture_sha256") != sha256_file(method["fixture"])
+        or method.get("provider") != "crates/strop-remote/src/deploy_provider.rs"
+        or method.get("provider_sha256") != sha256_file(method["provider"])
+        or measured.get("target") != "x86_64-unknown-linux-musl"
+        or measured.get("artifact_sha256") != worker["binary_sha256"]
+        or measured.get("artifact_bytes") != worker["bytes"]
+        or measured.get("warmup_requests") != 8
+        or measured.get("measured_requests") != 64
+        or measured.get("fixture_resets_outside_measurement") != 71
+        or measured.get("max_observed_live_lease_records_after_welcome") != 1
+    ):
+        raise SystemExit("SSH deployment measurements do not bind the native worker fixture")
+    for name, summary in (
+        ("cold_raw_ms", "cold_deploy_ms"),
+        ("warm_raw_ms", "warm_reuse_ms"),
+        ("launch_raw_ms", "warm_launch_ms"),
+    ):
+        raw = measured.get(name)
+        if (not isinstance(raw, list) or len(raw) != 64
+                or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                           and value >= 0 for value in raw)):
+            raise SystemExit(f"SSH {name} is not a complete 64-sample product route")
+        ordered = sorted(raw)
+        percentiles = {f"p{n}": ordered[math.ceil(n * len(raw) / 100) - 1]
+                       for n in (50, 95, 99)} | {"max": ordered[-1]}
+        if measured.get(summary) != percentiles:
+            raise SystemExit(f"SSH {name} summary differs from raw worker effects")
+    return {"sha256": sha256_file(SSH_DEPLOY_REPORT),
+            "method_sha256": method["sha256"],
+            "fixture_sha256": method["fixture_sha256"],
+            "provider_sha256": method["provider_sha256"],
+            "artifact_sha256": measured["artifact_sha256"]}
+
+
 def freeze(allow_dirty: bool) -> dict:
     commit = git("rev-parse", "HEAD")
     dirty = git("status", "--porcelain").splitlines()
@@ -542,6 +635,11 @@ def freeze(allow_dirty: bool) -> dict:
         "linux_tui_input_frame_evidence": tui_frame_evidence(),
         "linux_terminal_output_load_evidence": terminal_load_evidence(),
         "linux_native_product_evidence": native_product_evidence(),
+        "linux_container_deployment_evidence": container_deploy_evidence(),
+        "linux_ssh_deployment_evidence": ssh_deploy_evidence(),
+        "linux_lsp_ui_evidence": validate_native_lsp(
+            ROOT, LINUX_MEASUREMENTS[0], LINUX_MEASUREMENTS[1]
+        ),
         "baseline": baseline_hashes(),
         "install_transaction": {
             "install.sh": sha256_file("install.sh"),
@@ -602,6 +700,9 @@ def check(path: Path) -> int:
         "linux_tui_input_frame_evidence",
         "linux_terminal_output_load_evidence",
         "linux_native_product_evidence",
+        "linux_container_deployment_evidence",
+        "linux_ssh_deployment_evidence",
+        "linux_lsp_ui_evidence",
         "benchmark_sha256",
         "warm_roundtrip_benchmark_sha256",
         "verus_crate_pins",

@@ -135,6 +135,14 @@
   inaccessible descendant or uncertain listing still refuses clean
   settlement. All 19 direct supervisor tests passed on both native
   macOS architectures; complete editor journeys remain a release gate.
+- **Container workers no longer carry an extra sh/cat supervisor**
+  (0058 WK08/WK20): verified-worker probes and live leases now use
+  the same direct native `docker exec` on provisioned and shellless
+  endpoints. `ShellPolicy` governs only cache/bootstrap mutations;
+  preinstalled mode refuses tar writes before staging any bytes.
+  Selected engine/user/cwd admission and live lease tests still pass.
+  A no-init container's PID 1 can retain orphaned bootstrap children;
+  their bounded-retirement evidence remains an open WK20 gate.
 - **Trace capture no longer self-invalidates its watched workspace**:
   notifications for the active trace file are filtered before waking
   the editor; unrelated file hints still reach source invalidation.
@@ -183,8 +191,8 @@
   Each sample ends only after the PTY's VT100-decoded grid shows
   the next exact edit. Baseline/current p50 0.976/0.908 ms, p95
   1.541/1.289 ms, p99/max 1.668/1.565 ms on Linux Docker-on-WSL2.
-  Raw samples and method digest are archived; SSH/container deployment,
-  LSP and TUI paint on other native targets remain release gates.
+  Raw samples and method digest are archived; SSH/container deployment
+  on other native targets, LSP and TUI paint there remain release gates.
 - **Scoped loaded terminal output latency** (0058 WK20): matched static
   artifacts each handled 64 two-key input requests that produced 256
   real worker-PTY shell lines; every timer stopped at the exact final
@@ -193,6 +201,35 @@
   The pre-fix worker's p50 256.634 ms regression and both after-fix raw
   samples are archived. This does not qualify remote, LSP,
   memory high-water or the other native target profiles.
+- **Scoped real SSH and container worker deployment latency** (0058
+  WK20): Linux x86_64 WSL2 ran eight warmups plus 64 each of cold
+  verified deployment, warm cache reuse and live worker launch.
+  Python-free localhost OpenSSH/SFTP cold p50/p95/p99/max was
+  3267.452/3298.986/3325.715/3325.715 ms, reuse
+  1877.756/1893.147/1918.905/1918.905 ms and live handshake
+  37.038/37.883/39.363/39.363 ms. A selected no-init BusyBox
+  container compiled the direct provider/cache guard and measured
+  cold 3527.577/3557.050/3574.675/3574.675 ms, reuse
+  2934.731/2968.992/3014.016/3014.016 ms and live admission
+  85.146/91.042/93.682/93.682 ms, with one actual worker after
+  each Welcome. The fixture observed 892 unreaped `[cat]`/`[sh]`
+  children after repeated Docker exec, including 71 deliberate
+  cache resets outside timing. This is neither 892 workers nor a
+  qualified retirement high-water; the worker artifact still predates
+  the final exact-source build and other-native-target qualification
+  remains open.
+- **Scoped real-server LSP responsiveness** (0058 WK20): matched
+  pre-worker and wake-fixed static binaries each completed eight
+  warmups and 64 actual `rust-analyzer` `gd` requests from the
+  product UI to a painted definition on Linux x86_64 WSL2.
+  Pre-worker/worker p50/p95/p99/max was
+  25.558/25.733/25.825/25.825 ms versus
+  25.445/25.561/25.615/25.615 ms. A separate edit→`didChange`→
+  `gd`→paint route measured 25.663/26.022/26.176/26.176 ms
+  versus 25.686/25.925/26.054/26.054 ms. The latter is a
+  combined user-visible sync/request bound, not a standalone
+  `didChange` acknowledgment. Other native targets and the final
+  exact-source artifact remain unqualified.
 - **Python-free SSH deployment evidence** (0058 WK07): a separate
   OpenSSH image without a Python interpreter deploys and launches the
   actual native worker, then exercises read/write/notification parity.

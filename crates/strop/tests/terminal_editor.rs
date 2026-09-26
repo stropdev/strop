@@ -128,6 +128,21 @@ impl Tui {
             .join("\n")
     }
 
+    /// This fixture explicitly opted into terminal content capture.
+    /// Show only consented key actions on a byte mismatch; source input
+    /// stays private in ordinary editor sessions.
+    fn recent_input_trace(&self) -> String {
+        std::fs::read_to_string(&self.trace)
+            .unwrap_or_default()
+            .lines()
+            .rev()
+            .filter(|line| line.contains("\"kind\":\"action\"") && line.contains("\"Input\""))
+            .take(24)
+            .map(|line| line.chars().take(700).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn poll(&self, events: libc::c_short, deadline: Instant) {
         let left = deadline.saturating_duration_since(Instant::now());
         assert!(!left.is_zero(), "terminal deadline");
@@ -358,7 +373,10 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         tui.send(b"????????");
         let observed =
             tui.until_within(Duration::from_secs(15), |screen| line(screen, "BYTE-DONE"));
-        panic!("terminal did not pass the exact raw input bytes:\n{observed}");
+        panic!(
+            "terminal did not pass the exact raw input bytes:\n{observed}\nconsented key actions:\n{}",
+            tui.recent_input_trace()
+        );
     }
     tui.until(|screen| line(screen, "BYTE-DONE"));
     // The prefix grammar's pass-through contract (0055 §12, literal

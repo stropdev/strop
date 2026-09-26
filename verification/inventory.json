@@ -858,7 +858,7 @@
       "id": "container-admission",
       "kind": "authority",
       "title": "Container context/incarnation and exec admission (AR07)",
-      "promise": "Accepted container work is bound to the selected engine/context, the canonical container ID plus StartedAt incarnation, and the declared user/cwd; a restarted container or changed context cannot retarget it. Exec argv is pinned, supervised stdio only, and status records are accepted only for this session's marked lines.",
+      "promise": "Accepted container work is bound to the selected engine/context, canonical container ID plus StartedAt incarnation and declared user/cwd; a restarted container or changed context cannot retarget it. Ordinary exec argv uses supervised stdio and marked status records; the verified native worker and its probe exec directly with stdin as their lease, and preinstalled mode cannot mutate the provider cache.",
       "exclusions": "A setsid-ing descendant escapes the lease (documented honest limit); docker top's host PID is not an adapter-local PID. Docker Engine itself is trusted.",
       "authoritative_state": "the admitted ExecSpec/AdmittedExec token and the container identity record",
       "trusted": [
@@ -877,7 +877,7 @@
       "claims": [
         {
           "id": "CON-ADMIT",
-          "statement": "Spec validation refuses unsafe shapes before any engine call; the admitted command is pinned argv with supervised stdio; capture mode selects the null lease.",
+          "statement": "Spec validation refuses unsafe shapes before any engine call; ordinary admitted commands use pinned argv and supervised stdio while capture mode selects the null lease. A verified worker is its own supervisor and takes the direct same-context Docker exec in both provisioned and preinstalled modes; Absent cache policy refuses tar uploads, receipt writes and scoped shell mutation before staging bytes.",
           "status": "native-tested",
           "evidence": [
             {
@@ -896,7 +896,8 @@
               "path": "crates/strop-worker-deploy/tests/container.rs",
               "gate": "container-test",
               "tests": [
-                "shellless_deploy_is_a_typed_refusal"
+                "shellless_deploy_is_a_typed_refusal",
+                "preinstalled_policy_refuses_daemon_tar_writes_before_staging"
               ]
             }
           ],
@@ -977,13 +978,13 @@
         "sources": {
           "crates/strop-containers/src/engine.rs": "3a34148eddf290a54bd738c87bf7293e5206cbad24fa0466672c985b128bc1e5",
           "crates/strop-containers/src/error.rs": "d9948fe37feacb71dab44886f84339623ca1f3dad5734c9d93a459e61db424dd",
-          "crates/strop-containers/src/exec.rs": "e659aef175d0b0df6fce47b671cbd56cb8997b013ae100ab0a97135f392327b8",
+          "crates/strop-containers/src/exec.rs": "c8581b44f57293db34e6a27d52635b76ae987bf1e26aa10e15f01f80f7f3c8a4",
           "crates/strop-containers/src/identity.rs": "74728fd8011a582416038907544d80e900edd98edc8ba597f5bfc2bbd236a826",
           "crates/strop-containers/src/read.rs": "0a3d7c1a0c482c4ed0d0c640edf14867438a167fe63abe0fb54b7156ea9ecf65",
           "crates/strop-containers/src/tar.rs": "f3893f14678db94d531c06ba92075bcf4dba12e6cdbc5d8667d989c4d371bad1",
           "crates/strop-engine/src/editor/containers/container_worker.rs": "55d45fbddca46caefa1c5121403f66f592c4676fc9d9db13b2711fa7d0cddce9"
         },
-        "evidence": "072e50491f603e8b4f6599e7dd812917c2e94c8ea570cd21faea37c8813a6a60"
+        "evidence": "f644d4cfe58d6f779f3a31104d3607aa611492dd54b94f64934335e126f485ce"
       }
     },
     {
@@ -1207,10 +1208,17 @@
             },
             {
               "kind": "test",
-              "path": "crates/strop/tests/worker_ssh.rs",
+              "path": "crates/strop/tests/worker_ssh/journeys.rs",
               "gate": "test",
               "tests": [
-                "deploy_handshake_read_write_notify_parity_over_real_sshd",
+                "deploy_handshake_read_write_notify_parity_over_real_sshd"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/worker_ssh/refusals.rs",
+              "gate": "test",
+              "tests": [
                 "first_deploy_is_consent_gated_then_quietly_reused",
                 "interrupted_deploy_leaves_no_partial_activation",
                 "sftp_only_host_keeps_read_only_with_a_typed_refusal"
@@ -1241,7 +1249,7 @@
           "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
           "crates/strop-remote/src/transport/wire.rs": "3fd192fbaca09ebca5c4f5f2ecd6f99ba8c7642713451bcbae67abef3b1dc54c"
         },
-        "evidence": "9cbaae14c0ce554b279302966aef18a8daf3e0d4b5fe2dae586f4d4a613d1f77"
+        "evidence": "566196c5233cea2c84731e008f5ed3308f7fd59329428d7a3b32f7b8f0804433"
       }
     },
     {
@@ -2161,7 +2169,7 @@
         },
         {
           "id": "REL-ASSURANCE-GATES",
-          "statement": "PR and tag run locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native correspondence, container editor and x86_64/aarch64 GNU worker/Store/terminal scenarios. Native GNU runners install the nested Neovim test fixture; Intel/arm macOS now also install it and exercise direct supervisor exit/PTY semantics before client and terminal tests. The tag builds native Mac artifacts, restricts their system dylibs (including the worker's libproc group enumeration), rechecks the frozen four-platform source candidate and gates publication on the proof ledger. Matrix wiring is not execution evidence: full performance and current macOS native results remain blocked.",
+          "statement": "PR and tag run locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native correspondence, container editor and x86_64/aarch64 GNU worker/Store/terminal scenarios. GNU and Intel/arm macOS runners install the nested Neovim fixture and run real local OpenSSH parity, direct supervisor exit/PTY and VT Alt-key encoding before client and terminal tests. Each PR native job builds clean a05d84f pre-worker and current release binaries on the same actual target, runs nine local worker/UI/TUI/terminal-load paths plus matched installed rust-analyzer LSP request and edit→sync→request paths with raw p50/p95/p99/max, and uploads the observations; scheduling is not execution proof. The tag builds native Mac artifacts, restricts system dylibs (including worker libproc enumeration), rechecks the frozen four-platform source candidate and gates publication on the proof ledger. Full remote/high-water performance and complete Mac results remain blocked.",
           "status": "specified",
           "evidence": [
             {
@@ -2183,7 +2191,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "PR run 36246567485 passed native x86_64/aarch64 GNU Store, worker-client and nested-editor journeys; both macOS architectures passed direct native supervisor and framed-worker tests but the real TUI stalled after BYTE-READY while waiting for eight exact raw input bytes. The TUI harness now completes a short read with distinct diagnostic bytes only on timeout so the next CI run can reveal what the product actually sent; no success or platform qualification is claimed yet. Exact final-candidate four-target journeys/artifacts and archived raw target logs remain WPLAT-NATIVE release gates.",
+          "statement": "PR run 36246567485 passed native x86_64/aarch64 GNU Store, worker-client and nested-editor journeys; both macOS architectures passed direct native supervisor and framed-worker tests but the real TUI stalled after BYTE-READY. Run 36248998773 captured the exact child bytes `12 78 1b 5b 31 35 7e` instead of `12 1b 78 1b 5b 31 35 7e` on both Intel and arm64: an Escape preceding x was lost, not F5. The next CI run's explicitly consented terminal-key action trace plus native VT encoder tests must identify/fix the owning boundary without weakening the exact byte assertion. Passing final-candidate four-target journeys/artifacts and archived target profiles remain WPLAT-NATIVE gates.",
           "status": "blocked",
           "evidence": [
             {
@@ -2219,12 +2227,12 @@
       "pins": {
         "sources": {
           ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
-          ".github/workflows/ci.yml": "a0353f322439b54120afa4b8774d31d33d647b01dd5f7f4dd5e1d7168e56e604",
-          ".github/workflows/release.yml": "ca89fc7bad6e3660a52afe09266b8caf3d7d8b951e0701cd4529f70acae38358",
+          ".github/workflows/ci.yml": "92c52496fc28776c1802d7589bd76153e400d71bb1b850507ba954199e7c687b",
+          ".github/workflows/release.yml": "91a82dc015d1f3e805991e94b602dab07bce0e448c8a4d2aff05c1644fd41612",
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "ec719d3cfc4be98d45f9b3d7866f0d954020d472894f4b34eb5b68a98092facf"
+        "evidence": "27d88a391c30fea7a9a9c511ef9a37406f770cb90edf3bde9a3a3534dc19a5d2"
       }
     },
     {
@@ -2397,7 +2405,7 @@
           "crates/strop-terminal/src/vt/mod.rs": "fe40a77f280f36c96769f9195d2c752151ad3e25871ba3947e7367dfd84a79d8",
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50"
         },
-        "evidence": "73a1f0db46d0b838797a0f59a0f4a50b3df2ec1bf92898296ee4330dffbe24d5"
+        "evidence": "7858e3ecfe825f55392488404423579e70e2e15632b4d058fa7a130195fce0e3"
       }
     },
     {
@@ -3054,8 +3062,35 @@
           }
         },
         {
+          "id": "WPERF-LSP-LOCAL",
+          "statement": "On one Linux x86_64 WSL2 host, the matched a05d84f pre-worker and wake-fixed worker static artifacts each admitted 64 real installed rust-analyzer gd requests from a Rust callsite through a 120x40 product UI to the painted definition after eight warmups. Pre-worker/worker p50/p95/p99/max was 25.558/25.733/25.825/25.825 ms and 25.445/25.561/25.615/25.615 ms. A separate 64 edit→didChange→gd→paint path measured 25.663/26.022/26.176/26.176 and 25.686/25.925/26.054/26.054 ms, an end-to-end upper bound, not a standalone didChange acknowledgment. Both paths had exactly one real local worker and waited for eight successful definition landings before timing. The static artifact predates final-source qualification; other native targets remain unmeasured.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "script",
+              "path": "verification/bench_lsp_ui.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/lsp_evidence.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-lsp-ui.json",
+              "gate": "benchmark"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "real installed rust-analyzer product requests and edit-to-reply upper bound, same-host preworker/current artifacts only"
+          }
+        },
+        {
           "id": "WPERF-FULL",
-          "statement": "WK20 still requires cold and warm SSH/container deployment, transfer/retirement high-water marks and worker counts under load, LSP sync/request, and local TUI/terminal-output performance across every required native target. Nine matched local Hello, Health, worker-backed UI edit, TUI cell paint and 256-line terminal load paths are now real and source-bound on Linux Docker-on-WSL2; they cannot qualify those unmeasured product/platform paths, and the pre-fix 250 ms terminal wake regression was repaired before the current sample.",
+          "statement": "WK20 still requires final-source LSP sync/request latency on each required native platform, bounded transfer/retirement high-water marks including the no-init Docker PID 1 zombie risk, and matched cold/warm SSH/container and input/TUI/terminal-load performance on every required target. The Linux Docker-on-WSL2 candidate has nine local product paths, matched 64-sample real rust-analyzer gd and edit-to-reply paths, and 64 each of selected-context SSH/container cold uploads, warm cache reuse and live handshakes; one worker/lease after Welcome is observed. The container-test image compiled the direct provider/cache guard, but the tested static worker artifact predates the final exact-source build, and same-host SSH is not a WAN latency proof. No full product/platform qualification follows from these scoped raw samples.",
           "status": "blocked",
           "evidence": [
             {
@@ -3086,6 +3121,21 @@
             {
               "kind": "measurement",
               "path": "verification/measurements/0058-linux-x86-native-product.json",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-container-deploy.json",
+              "gate": "container-test"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-ssh-deploy.json",
+              "gate": "ssh-pythonfree"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-lsp-ui.json",
               "gate": "benchmark"
             }
           ],
@@ -3132,7 +3182,7 @@
           "evidence": [
             {
               "kind": "test",
-              "path": "crates/strop/tests/worker_ssh.rs",
+              "path": "crates/strop/tests/worker_ssh/journeys.rs",
               "gate": "ssh-pythonfree",
               "tests": [
                 "deploy_handshake_read_write_notify_parity_over_real_sshd"
@@ -3185,13 +3235,13 @@
           "crates/strop-worker/src/serve/fs.rs": "57601c334d6a1656fe12a63f4522009428612e75c038afc59b8c0774ae62f074",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
-          "crates/strop/tests/terminal_editor.rs": "7ec412aee8b65cfe6a7ce8d88a99df455045f143ec4351209a58beab93b89742",
+          "crates/strop/tests/terminal_editor.rs": "1d4acc7748a26e9e4e26efa55c80079372a7680bbc16988c4d1e6b6330fd287e",
           "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
           "verification/bench_ui_input_frame.py": "3daf76eabf9a1298386888df528af3f301725b0320fb1b68854f316b644fb8f9",
           "verification/bench_worker.py": "cbb606889fbde28c53ddba5bcf171fe19fff196989b9bc39c92f077a63ce83a1",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "ff8a8074297b7430d4cb12e93f0d5cc262f2f51c989948070e44e4f7471404e4"
+        "evidence": "8b43a9f71b861306ea739590468a832cb8326a3fb9c057befeaeef6e696d2eec"
       }
     },
     {
@@ -3487,7 +3537,7 @@
             },
             {
               "kind": "test",
-              "path": "crates/strop/tests/worker_ssh.rs",
+              "path": "crates/strop/tests/worker_ssh/journeys.rs",
               "gate": "test",
               "tests": [
                 "deploy_handshake_read_write_notify_parity_over_real_sshd"
@@ -3518,7 +3568,7 @@
         },
         {
           "id": "WDEP-CONTEXT",
-          "statement": "A selected Docker engine/user/cwd and canonical id/StartedAt survive default-context changes, namespace-local execution and restart; the editor explicitly authorizes the worker without granting container file writes. The 100-column :explain view shows the digest on its own line, not clipped behind the container id.",
+          "statement": "Selected Docker engine/user/cwd and canonical id/StartedAt survive default-context changes, namespace-local execution and restart; the editor explicitly authorizes the worker without granting container file writes. Native verified-worker probes and editor sessions now exec directly under the same captured context without the extra generic sh/cat supervisor. Absent-shell preinstalled admission verifies read-only and refuses tar/cache mutations before staging bytes. The 100-column :explain view shows the digest on its own line, not clipped behind the container id.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3544,6 +3594,42 @@
             "from": null,
             "classification": "new",
             "basis": "new selected-container worker admission"
+          }
+        },
+        {
+          "id": "WDEP-CONTAINER-PERF",
+          "statement": "One WSL2 x86_64 Docker host executed eight warmups and 64 real cold BusyBox container worker uploads after exact fixture-owned cache resets, 64 warm verified reuses and 64 live direct-worker Welcome journeys. The container-test image compiled the direct provider and preinstalled cache guard. Cold p50/p95/p99/max was 3527.577/3557.050/3574.675/3574.675 ms, reuse 2934.731/2968.992/3014.016/3014.016 ms, and live admission 85.146/91.042/93.682/93.682 ms. Exactly one actual verified object worker ran after every live Welcome. No-init PID 1 retained 892 [cat]/[sh] children after warm probes, including 71 deliberate cache resets outside timing; this is neither a live-worker count nor a bounded retirement high-water. The worker executable predates the final exact-source build; WPERF-FULL remains blocked.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-deploy/tests/container/perf.rs",
+              "gate": "container-test",
+              "tests": [
+                "native_container_cold_warm_deploy_and_launch_samples"
+              ]
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-container-deploy.json",
+              "gate": "container-test"
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-deploy/tests/container.rs",
+              "gate": "container-test",
+              "tests": [
+                "deploy_then_read_write_notify_and_lease_reap",
+                "preinstalled_shellless_worker_needs_no_deploy",
+                "shellless_deploy_is_a_typed_refusal",
+                "preinstalled_policy_refuses_daemon_tar_writes_before_staging"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "real selected-container deployment and direct native-worker measurements scoped to Linux x86_64; PID 1 reaping remains an explicit boundary"
           }
         },
         {
@@ -3598,7 +3684,7 @@
             },
             {
               "kind": "test",
-              "path": "crates/strop/tests/worker_ssh.rs",
+              "path": "crates/strop/tests/worker_ssh/journeys.rs",
               "gate": "ssh-pythonfree",
               "tests": [
                 "deploy_handshake_read_write_notify_parity_over_real_sshd"
@@ -3769,7 +3855,7 @@
           "evidence": [
             {
               "kind": "test",
-              "path": "crates/strop/tests/worker_ssh.rs",
+              "path": "crates/strop/tests/worker_ssh/journeys.rs",
               "gate": "ssh-pythonfree",
               "tests": [
                 "deploy_handshake_read_write_notify_parity_over_real_sshd"
@@ -3817,7 +3903,7 @@
           "crates/strop-remote/src/deploy_provider.rs": "8f47f3e3b11e3bb2aed7fe5c0a095c20e270fb461cf1d9a0d731cdb3d59a52a3",
           "crates/strop-worker-client/src/lib.rs": "7e407102eb08ee53bf870a4ea901115a84957be9818eda23fa2391dc45e72121",
           "crates/strop-worker-deploy/src/cache.rs": "31101fb57d92311542fdc42a65d25738991e99422634324f2d8ff9f5754123ec",
-          "crates/strop-worker-deploy/src/container.rs": "a556e495b1d92fef10f7d58bb964d99258910c2b6c686168474f66996c301b97",
+          "crates/strop-worker-deploy/src/container.rs": "088c1427a0d633791f7c823e1b8b70c7659bbea9e942153e982f0d0f9637990f",
           "crates/strop-worker-deploy/src/deploy.rs": "9bf618fcdc92aaf5fed2ab27ca9ffa0370284ba9d2514f8bc7b6d1d381007a21",
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
@@ -3828,7 +3914,7 @@
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop/Cargo.toml": "40267880d30b5233ea3e8b595a6cc05402f230aae78cd2567fbeb4dafb6ebd04"
         },
-        "evidence": "da886a238cf5d8e57b938bc6e16ff636c126919d4468e3f39aac13e909f13155"
+        "evidence": "72d5d570082175a4e7b5da0772f9b907fbb1c1e7850dcb1dc7d7b066732db6f8"
       }
     },
     {
@@ -3979,7 +4065,7 @@
           "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "6deca8ed551e5146680753c525a4c045481e82661d75d02741bf460bed833681"
+        "evidence": "217f43f02bef23ee0a3ee1e0395216cb4b4aaf37bdcc99cf9b998e6a40ef0b97"
       }
     },
     {
