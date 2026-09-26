@@ -290,6 +290,20 @@ migration, Python-helper removal, assurance migration). 0058's full
 ledger and 0057's remainder continue after 0.35.0; nothing already
 gated is weakened.
 
+Amendment (2026-09-26): the user returned the deferred product tail to
+the delivery sequence: release the verified 0.36.0 worker alone, then
+land/release 0059 completion, then begin 0061 native Windows/WSL GUI.
+0060 debugger no longer blocks **beginning** GUI implementation; 0061
+UI10 still requires the debugger before claiming complete GUI parity
+unless the user explicitly changes that release requirement. Retain
+0057/0058 proof and native gates; this is an ordering change, not a
+waiver. The real-PTY `crates/strop/tests/terminal_editor.rs` harness
+has reached 778 lines after bounded exit diagnostics. Before the next
+substantial test journey pushes it past the ~800-line ceiling, split
+the existing harness, product journey and benchmark cases into
+`terminal_editor/{mod,harness,journeys,perf}.rs`; keep their real
+worker/PTY path and measurement-method digests together.
+
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,
 platform or evidence ledger is silently removed by inserting the worker.

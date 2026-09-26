@@ -7,7 +7,7 @@ use std::{
         fd::{AsRawFd, FromRawFd},
         unix::process::CommandExt,
     },
-    process::{Child, Command, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
     time::{Duration, Instant},
 };
 
@@ -208,10 +208,34 @@ impl Tui {
                     }
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                // Linux reports EIO (rather than EOF) after the last
+                // PTY slave closes. This soft wait treats a closed
+                // output stream as completion; wait_exit still checks
+                // the child's actual exit status separately.
+                Err(error) if error.raw_os_error() == Some(libc::EIO) => return None,
                 Err(error) => panic!("terminal read: {error}"),
             }
         }
     }
+    /// Reap only this fixture's editor. Keep draining its PTY while
+    /// waiting, so the child cannot block on a full output pipe;
+    /// expiry names the visible owner and recent consented trace.
+    fn wait_exit(&mut self) -> ExitStatus {
+        let deadline = Instant::now() + Duration::from_secs(90);
+        loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                return status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "terminal editor did not exit: {}\nrecent trace:\n{}",
+                self.screen.screen().contents(),
+                self.recent_trace()
+            );
+            let _ = self.until_soft(Duration::from_millis(16), |_| false);
+        }
+    }
+
     fn send(&mut self, mut bytes: &[u8]) {
         let deadline = Instant::now() + Duration::from_secs(15);
         while !bytes.is_empty() {
@@ -533,9 +557,12 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x1c\x0e:qa\r");
     tui.until(|screen| screen.contains("terminal sessions are running"));
     tui.send(b":terminal-stop\r");
-    tui.until(|screen| screen.contains("terminal ended") || screen.contains("terminal exited"));
+    tui.until(|screen| {
+        screen.contains("NORMAL")
+            && (screen.contains("terminal ended") || screen.contains("terminal exited"))
+    });
     tui.send(b":qa\r");
-    assert!(tui.child.wait().unwrap().success());
+    assert!(tui.wait_exit().success());
     // The flood never degraded the capture: the file says so itself.
     let terminal = std::fs::read_to_string(&trace)
         .unwrap()
@@ -649,10 +676,7 @@ fn native_terminal_input_to_painted_frame_samples() {
         }
     }
     tui.send(b"\x1b:qa!\r");
-    assert!(
-        tui.child.wait().unwrap().success(),
-        "TUI did not exit cleanly"
-    );
+    assert!(tui.wait_exit().success(), "TUI did not exit cleanly");
 
     let input_to_grid_ms = benchmark_percentiles(&raw_ms);
     let report = serde_json::json!({
@@ -728,10 +752,7 @@ done
     tui.send(b"\x1c\x0e:terminal-stop\r");
     tui.until(|screen| screen.contains("terminal ended") || screen.contains("terminal exited"));
     tui.send(b":qa\r");
-    assert!(
-        tui.child.wait().unwrap().success(),
-        "loaded TUI did not exit cleanly"
-    );
+    assert!(tui.wait_exit().success(), "loaded TUI did not exit cleanly");
 
     let output_to_grid_ms = benchmark_percentiles(&raw_ms);
     let report = serde_json::json!({

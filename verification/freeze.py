@@ -100,6 +100,7 @@ WORKER_SOURCES = [
     "crates/strop-worker-deploy/src/container.rs",
     "crates/strop-worker-deploy/src/provider.rs",
     "crates/strop-engine/src/editor/mod.rs",
+    "crates/strop-engine/src/editor/events.rs",
     "crates/strop-engine/src/editor/namespace.rs",
     "crates/strop-engine/src/editor/io/save.rs",
     "crates/strop-engine/src/editor/remote/save.rs",
@@ -110,6 +111,9 @@ WORKER_SOURCES = [
     "crates/strop-engine/src/editor/lsp/attach.rs",
     "crates/strop-engine/src/editor/picker/query.rs",
     "crates/strop-engine/src/editor/explain.rs",
+    "crates/strop/src/headless/driver.rs",
+    "crates/strop/src/terminal.rs",
+    "crates/strop/src/ui_stdio/serve.rs",
 ]
 
 BASELINE = {

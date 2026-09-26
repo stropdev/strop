@@ -3,14 +3,14 @@
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "measurement": "verification/measurements/0058-linux-x86-preworker.json",
-    "sha256": "08a2fb9e0780c286d09be7125418397bb873de5148060af261650b901478cd9d"
+    "sha256": "e968f9c574c5b5e7f665cadb68e3a6a3eafc2ce5a53e99e23f65b0e15dcea3a0"
   },
   "candidate": {
-    "artifact_sha256": "7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b",
+    "artifact_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
     "commit": null,
     "measurement": "verification/measurements/0058-linux-x86-worker.json",
-    "sha256": "ec84422541f3ae8edb2c7d80e921c80ba385a9a648ab94a645c34ab5e7d54e42",
-    "state": "working tree dirty; no release-qualified source commit"
+    "sha256": "b64707e419eee974e30b23ee80598c9e6e4db4b230360cf076969ea67ffabf7d",
+    "state": "0.36.0 wake-safe static artifact measured with bounded PTY reap fixture; final native-platform and tag qualification pending"
   },
   "method": {
     "excludes": [
@@ -25,22 +25,22 @@
     "measures": "process spawn through decoded Welcome; /proc RSS and threads immediately at welcome",
     "percentile": "nearest rank",
     "samples_per_artifact": 64,
-    "sha256": "cbb606889fbde28c53ddba5bcf171fe19fff196989b9bc39c92f077a63ce83a1",
+    "sha256": "982a8ebc933ff08a0a66d4adb9a118a11a7f48cecc6a1448675d87629f691194",
     "warmup": 8
   },
   "observed": {
     "baseline_bytes": 46226704,
     "baseline_ready_ms": {
-      "max": 1.15,
-      "p50": 0.795,
-      "p95": 1.023,
-      "p99": 1.15
+      "max": 1.409,
+      "p50": 0.809,
+      "p95": 1.125,
+      "p99": 1.409
     },
     "baseline_rss_kib": {
-      "max": 4272,
-      "p50": 4268,
-      "p95": 4268,
-      "p99": 4272
+      "max": 4228,
+      "p50": 4224,
+      "p95": 4228,
+      "p99": 4228
     },
     "baseline_threads": {
       "max": 2,
@@ -48,19 +48,19 @@
       "p95": 2,
       "p99": 2
     },
-    "bytes_delta": 1146944,
-    "candidate_bytes": 47373648,
+    "bytes_delta": 1089600,
+    "candidate_bytes": 47316304,
     "candidate_ready_ms": {
-      "max": 1.187,
-      "p50": 0.76,
-      "p95": 0.881,
-      "p99": 1.187
+      "max": 1.078,
+      "p50": 0.832,
+      "p95": 0.949,
+      "p99": 1.078
     },
     "candidate_rss_kib": {
-      "max": 5556,
-      "p50": 5540,
-      "p95": 5548,
-      "p99": 5556
+      "max": 4736,
+      "p50": 4724,
+      "p95": 4732,
+      "p99": 4736
     },
     "candidate_threads": {
       "max": 3,

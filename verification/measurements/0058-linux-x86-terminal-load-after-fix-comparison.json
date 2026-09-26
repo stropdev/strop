@@ -5,19 +5,19 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json",
-    "sha256": "832520c3fc633f54c7f74dbbc6f10cd2c215fab6696d2999eddfb39ca6728022"
+    "sha256": "bf78be8b4ab103f23b94a8c7e710867f5900c10e6d9e331777e74b812ccccf7d"
   },
   "candidate": {
     "commit": null,
-    "state": "measured before final WK20 platform/performance qualification",
-    "artifact_sha256": "7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b",
+    "state": "0.36.0 wake-safe static artifact measured with bounded PTY reap fixture; final native-platform and tag qualification pending",
+    "artifact_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
     "measurement": "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json",
-    "sha256": "6e3ea3cff610b67001908556782f88c80c3b75944c49efc38adad0df71b07a82"
+    "sha256": "d09b93a448f75d046d78ef7c45ece105d6d1930b67d4c04230eeefe59e3e7619"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
     "test": "native_terminal_output_under_load_samples",
-    "sha256": "1d4acc7748a26e9e4e26efa55c80079372a7680bbc16988c4d1e6b6330fd287e",
+    "sha256": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b",
     "warmup": 8,
     "samples_per_artifact": 64,
     "output_lines_per_request": 256,
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 5.619,
-      "p50": 4.455,
-      "p95": 5.184,
-      "p99": 5.619
+      "max": 5.917,
+      "p50": 4.371,
+      "p95": 5.221,
+      "p99": 5.917
     },
     "candidate_ms": {
-      "max": 5.837,
-      "p50": 4.901,
-      "p95": 5.397,
-      "p99": 5.837
+      "max": 5.965,
+      "p50": 4.887,
+      "p95": 5.482,
+      "p99": 5.965
     }
   },
   "regression_archive": "verification/measurements/0058-linux-x86-terminal-load-regression.json"

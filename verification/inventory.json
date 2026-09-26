@@ -627,7 +627,7 @@
       "claims": [
         {
           "id": "EVT-BOUNDED",
-          "statement": "Bounded lanes with legal coalescing only: terminal wakes coalesce per session without losing sessions, resize/focus are latest-wins, paste bytes are bounded but a lone oversize paste is never stranded, and forwarded job-channel events (one-shot facts such as completions and terminal stops) backpressure a full semantic lane instead of being dropped — a refused forwarder delivery must never strand editor pending state (0057 VF19 storm finding). Worker notify wakes coalesce into the bounded hint lane; trace-owned file hints cannot create a self-wake loop while other file changes still wake the editor.",
+          "statement": "Bounded lanes with legal coalescing only: terminal wakes coalesce per session without losing sessions, resize/focus are latest-wins, paste bytes are bounded but a lone oversize paste is never stranded, and forwarded job-channel events (one-shot facts such as completions and terminal stops) backpressure a full semantic lane instead of being dropped — a refused forwarder delivery must never strand editor pending state (0057 VF19 storm finding). Worker notify wakes coalesce into the bounded hint lane; trace-owned file hints cannot create a self-wake loop while other file changes still wake the editor. A physical picker-source thread may finish after its last semantic event; shutdown/jobs barriers recheck that silent completion on a bounded quiescence interval rather than parking until the entire failure deadline.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -699,7 +699,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/events.rs": "48b449ffbffa749584fad44ce119d8f6952665f81ba0ea71f4d3b813af9f12e6",
+          "crates/strop-engine/src/editor/events.rs": "411e92f14c42f643ea499ffcb83a67fae6a127a70662c6615dc659d2dfb7f338",
           "crates/strop-engine/src/editor/events/channel.rs": "ce65976c13db7525ec93b5899cb7815d83977e1664d1fbaa2376df8d50764d53",
           "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
@@ -708,7 +708,7 @@
           "crates/strop-trace/src/replay.rs": "e2e3578f5c7f23964609778eb4f77d7d572c55572c5affed67c88fdfde91b2c8",
           "crates/strop-trace/src/writer.rs": "20ea24a24dcf8f88321e8d4cb2ef9fb40c6fb7ede89ed9ec69c0fdbab2923591"
         },
-        "evidence": "4c471e415ab3758d07d4d1f7e03c8d3b4d2ee3f084aa5098480ead881288c582"
+        "evidence": "8f1c4faad7d163f94b474c9ab9457f5fa13c17f6a8fe7833d270c1904e365c28"
       }
     },
     {
@@ -877,7 +877,7 @@
       "claims": [
         {
           "id": "CON-ADMIT",
-          "statement": "Spec validation refuses unsafe shapes before any engine call; ordinary admitted commands use pinned argv and supervised stdio while capture mode selects the null lease. A verified worker is its own supervisor and takes the direct same-context Docker exec in both provisioned and preinstalled modes; Absent cache policy refuses tar uploads, receipt writes and scoped shell mutation before staging bytes.",
+          "statement": "Spec validation refuses unsafe shapes before any engine call; ordinary admitted commands use pinned argv and supervised stdio while capture mode selects the null lease. A verified worker is its own supervisor and takes the direct same-context Docker exec in both provisioned and preinstalled modes; Absent cache policy refuses tar uploads, receipt writes and scoped shell mutation before staging bytes. Closing the editor permanently closes its admitted incarnation table and the published worker; an in-flight publication racing closure cannot reacquire authority.",
           "status": "native-tested",
           "evidence": [
             {
@@ -898,6 +898,14 @@
               "tests": [
                 "shellless_deploy_is_a_typed_refusal",
                 "preinstalled_policy_refuses_daemon_tar_writes_before_staging"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-client/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
               ]
             }
           ],
@@ -982,9 +990,9 @@
           "crates/strop-containers/src/identity.rs": "74728fd8011a582416038907544d80e900edd98edc8ba597f5bfc2bbd236a826",
           "crates/strop-containers/src/read.rs": "0a3d7c1a0c482c4ed0d0c640edf14867438a167fe63abe0fb54b7156ea9ecf65",
           "crates/strop-containers/src/tar.rs": "f3893f14678db94d531c06ba92075bcf4dba12e6cdbc5d8667d989c4d371bad1",
-          "crates/strop-engine/src/editor/containers/container_worker.rs": "55d45fbddca46caefa1c5121403f66f592c4676fc9d9db13b2711fa7d0cddce9"
+          "crates/strop-engine/src/editor/containers/container_worker.rs": "c4a44070ced71e7ee7272a4dda8c8be9de6736a14f10fb2912c0cc3a9f8adf5e"
         },
-        "evidence": "8e051821b13255236c778503f3e0e71eed6b88b886848ccc691345b708a6af57"
+        "evidence": "921f7ea74da2aa80f5431777383b4e70900d34e494d9e5acd3d0bf52baabd232"
       }
     },
     {
@@ -1264,7 +1272,7 @@
       "id": "remote-save",
       "kind": "io",
       "title": "Protected Store and filesystem effects through the native worker (VF09/WK09/WK13)",
-      "promise": "Remote Store keeps exact content/object/xattr/mtime baselines, private staged publication, cooperative name locks and distinct committed/refused/unconfirmed outcomes; a lost reply retains frozen evidence for read-only verification in the same boot/mount/principal without retry.",
+      "promise": "Remote Store keeps exact content/object/xattr/mtime baselines, private staged publication, cooperative name locks and distinct committed/refused/unconfirmed outcomes; a lost reply retains frozen evidence for read-only verification in the same boot/mount/principal without retry. Closing the editor permanently revokes the admitted worker lease before an outstanding job can reconnect.",
       "exclusions": "The OS, OpenSSH, bounded xattr API and cooperating writers are premises; real process kills are not power-loss durability or universal compare-and-swap.",
       "authoritative_state": "the prepared Store/StepReceipt plus editor document permit, revision and frozen attempted bytes; actual disk names are reobserved by the selected native worker",
       "trusted": [
@@ -1326,7 +1334,7 @@
         },
         {
           "id": "RSAVE-AUTHORITY",
-          "statement": "The native Store refuses symlink/hardlink targets, replaced inodes, same-size/same-time content drift and changed xattrs; real SSH edit/save preserves mode and mtime while a conflict leaves local edits dirty.",
+          "statement": "The native Store refuses symlink/hardlink targets, replaced inodes, same-size/same-time content drift and changed xattrs; real SSH edit/save preserves mode and mtime while a conflict leaves local edits dirty. Closing the editor invalidates a retained worker clone rather than admitting a new post-owner Store.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -1347,6 +1355,14 @@
               "tests": [
                 "remote_edit_save_refresh_preserves_native_path_mode_and_time",
                 "remote_conflict_keeps_local_edits_and_write_quit_target_cannot_overwrite_original"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-client/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
               ]
             }
           ],
@@ -1557,11 +1573,11 @@
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/local/store.rs": "9d864432d233582bf5e84619966fa83df9e7702ca7d5e8221f75feb13f418981",
           "crates/strop-fs/src/local/verify.rs": "7a40cb78d0203882accbb5bbfdfbffe16d055d6efeb468b1e2202ec20010c8fe",
-          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
+          "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-workspace/src/operation.rs": "24fc4391fb73d5ca824051d354e5e4a94d16cd38940633e05f657dcf9088cc7b"
         },
-        "evidence": "fd724b57e2ac4482c24847990fb701cb4ef20b9513cc538fe31bc9b4f875c954"
+        "evidence": "e7439a2c1fa7c0b9c4753f7ff7798c6706c500cd6baf3e07f5fbd93724354b7e"
       }
     },
     {
@@ -2012,7 +2028,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "c9cc98721eb0d11a8254063a63d0b0b77f6870a4be653f0e7b8d66c90cbce31e",
+          "crates/strop-fs/Cargo.toml": "319933176bf67f6a223d0c8d5a9974e65d44317e25b6f9d240bf206a496ebda7",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -2221,7 +2237,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "PR run 36256978392 reproduced native Ghostty macOS Alt-x as a lost ESC; run 36258208968 passed the repaired Alt-x and separate Escape+x encoder tests on Apple Silicon, then the real SSH parity test hit macOS BSM's UNKNOWN peer from a pipe-only `sshd -i` fixture. Each test now owns private real TCP loopback OpenSSH daemons instead of fabricating a peer; Mac SSH and full TUI still need execution on this source. That PR's GNU x86 full Docker gate also proved killed-worker prepared authority could reconnect and commit in a fresh worker even after OS-confirmed SIGKILL; session-stamped prepare/apply, protected Store and review refusals now pass focused real regressions. Four-target final-source journeys, matching artifacts and raw profiles remain WPLAT-NATIVE gates; scoped Linux and encoder tests are not a platform release.",
+          "statement": "The wake-safe 0.36.0 static local Linux musl candidate passed the full Docker fmt/clippy/test gate and 64 matched local product journeys. Python-free authenticated TCP OpenSSH and selected Docker worker sessions each passed 64 cold/warm/live native measurements. PR run 36268378164 passed GNU aarch64 SSH/client/TUI behavior but could not check out the previously unadvertised a05d84f benchmark baseline; the exact historical source is now reachable on verification/preworker-0057. GNU x86 full Docker gate exposed a 60s search shutdown lost-wake; all three frontend waiters now have a 16ms physical-quiescence recheck and the eight-backend local static product journey passes. Both native macOS architectures passed SSH and worker client but stalled in an unbounded nested TUI Child::wait; the TUI fixture now bounds reap with screen/trace diagnostics and CI isolates that step. No four-target benchmark artifacts have passed the new exact candidate; WPLAT-NATIVE remains blocked.",
           "status": "blocked",
           "evidence": [
             {
@@ -2257,12 +2273,12 @@
       "pins": {
         "sources": {
           ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
-          ".github/workflows/ci.yml": "dc26dd65bbc7b868cb4a67749b00fd8b4f3379c5c985e5df345006f1be26bf3c",
+          ".github/workflows/ci.yml": "9fb09d15a298ecd4ea101fd7e480fe081db173a89eb718c241ba9e4f32f270b6",
           ".github/workflows/release.yml": "a5a2a5403ef17f30e646c96c08a25913c166ca17aba0bd0318feec02367395f1",
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "c74591b85fa7b217b53da721ec68f0820db52c64fc46454567d10d4ad6e7719c"
+        "evidence": "9cf9fc06921f9c51ec59e0a7d096c2ee722e2e4cdbfb384c289a251fcd693b14"
       }
     },
     {
@@ -2290,7 +2306,8 @@
         "crates/strop-terminal/native/bridge.c",
         "crates/strop-terminal/src/vt/mod.rs",
         "crates/strop-terminal/src/launch.rs",
-        "crates/strop-worker-client/src/session.rs"
+        "crates/strop-worker-client/src/session.rs",
+        "crates/strop/src/terminal.rs"
       ],
       "claims": [
         {
@@ -2332,7 +2349,7 @@
         },
         {
           "id": "TERM-WAKE-LOAD",
-          "statement": "The worker-backed terminal service drains stale arrival nudges before nonblocking input/output polling and rechecks after every published bounded turn; a burst longer than 32 chunks cannot lose its remaining wake and sleep for the 250 ms recovery timeout. On one Linux Docker-on-WSL2 host, 64 real PTY requests each printed 256 lines and reached the physical 120x30 VT100 grid: baseline/new worker p50 4.469/4.794 ms, p95 5.167/5.544 ms, p99/max 5.402/5.801 ms. The earlier worker artifact measured p50 256.634 ms with its drain-after-poll bug. Raw method/binary hashes and exact painted markers are archived; no remote, LSP, high-water or other-native-target qualification follows from this local observation.",
+          "statement": "The worker-backed terminal service drains stale arrival nudges before nonblocking input/output polling and rechecks after every published bounded turn; a burst longer than 32 chunks cannot lose its remaining wake and sleep for the 250 ms recovery timeout. On one Linux Docker-on-WSL2 host, 64 real PTY requests each printed 256 lines and reached the physical 120x30 VT100 grid: baseline/0.36.0 worker p50 4.371/4.887 ms, p95 5.221/5.482 ms, p99/max 5.917/5.965 ms. The earlier worker artifact measured p50 256.634 ms with its drain-after-poll bug. Raw method/binary hashes and exact painted markers are archived; no remote, LSP, high-water or other-native-target qualification follows from this local observation.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2424,7 +2441,7 @@
         },
         {
           "id": "TERM-OWNERSHIP",
-          "statement": "Editor-owned chords never leak to the child: window-prefix moves panes without reaching the child, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end.",
+          "statement": "Editor-owned chords never leak to the child: window-prefix moves panes without reaching the child, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end. TUI finish keeps its absolute jobs deadline while rechecking a source thread that can settle silently after its final app event.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2435,6 +2452,14 @@
                 "terminal_window_prefix_moves_panes_without_reaching_the_child",
                 "focus_loss_cancels_a_pending_terminal_escape_prefix",
                 "modal_terminal_baseline_journey"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor.rs",
+              "gate": "test",
+              "tests": [
+                "real_terminal_input_consent_quit_and_execution_free_replay"
               ]
             }
           ],
@@ -2464,9 +2489,10 @@
           "crates/strop-terminal/src/service/worker.rs": "3937065e226a4f55d7ab6f914b865f507cd5d722136625d5b7f430f2a22b9f63",
           "crates/strop-terminal/src/vt/input.rs": "15bdef918d1fd1ac162d9be4b1b527f9bc33d45be241a88a54c99f35f7612bb2",
           "crates/strop-terminal/src/vt/mod.rs": "fe40a77f280f36c96769f9195d2c752151ad3e25871ba3947e7367dfd84a79d8",
-          "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50"
+          "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
+          "crates/strop/src/terminal.rs": "021a365c9d693c424bc496139ae106f02d923fa12187866fbec62383619379aa"
         },
-        "evidence": "9a7876347b875e8c57da7c1a28182dd9c0ba3ca6a2f16620385c4050e648a246"
+        "evidence": "54c563c539e328f8999f44642566a15f5bdf9d4cabcdf4e7bfb6844174492fec"
       }
     },
     {
@@ -2593,7 +2619,8 @@
         "crates/strop-engine/src/editor/input/frontend.rs",
         "crates/strop/src/headless/directives.rs",
         "crates/strop/src/headless/driver.rs",
-        "crates/strop/src/replay.rs"
+        "crates/strop/src/replay.rs",
+        "crates/strop/src/ui_stdio/serve.rs"
       ],
       "claims": [
         {
@@ -2648,6 +2675,42 @@
             "classification": "strengthened",
             "basis": "The one UI-stdio engine now owns nested worker service results under the same bounded presentation protocol."
           }
+        },
+        {
+          "id": "UI-SHUTDOWN-LIVENESS",
+          "statement": "UI stdio, headless and TUI shutdown/jobs waits keep an absolute failure deadline but inspect silent physical picker-source completion at bounded intervals after the final delivered app event. A concurrent eight-backend real streaming-search shutdown must settle and publish bye rather than parking until the full 60-second budget after the source thread exits. This poll never enters input→render.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/ui_stdio/storm.rs",
+              "gate": "test",
+              "tests": [
+                "streaming_search_shutdown_storm_settles"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/events/tests.rs",
+              "gate": "test",
+              "tests": [
+                "forwarded_semantic_event_survives_a_full_lane"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor.rs",
+              "gate": "test",
+              "tests": [
+                "real_terminal_input_consent_quit_and_execution_free_replay"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "A native GNU x86 UI shutdown exposed a silent physical source-thread completion after the last semantic event; shared bounded shutdown waiters now recheck that state without affecting input/render."
+          }
         }
       ],
       "gates": [
@@ -2657,13 +2720,14 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/frontend_input.rs": "2902349ea09990f0a4f85e0c6106e16e7ab29d7e2af59a4c4ee23bd21871ca27",
-          "crates/strop-engine/src/editor/events.rs": "48b449ffbffa749584fad44ce119d8f6952665f81ba0ea71f4d3b813af9f12e6",
+          "crates/strop-engine/src/editor/events.rs": "411e92f14c42f643ea499ffcb83a67fae6a127a70662c6615dc659d2dfb7f338",
           "crates/strop-engine/src/editor/input/frontend.rs": "12037bcb1c08fec236591d6bf36aa9ae449d3e6cf9465884deac106bef46c8fa",
           "crates/strop/src/headless/directives.rs": "818a64a5998954089141b9829753b959d1b0cbd3ac4f647ed05259387f7720b5",
-          "crates/strop/src/headless/driver.rs": "d2b5325460e49cd09e0ba97aea99cc585c9ded171e0a1ff0226188e1026f955b",
-          "crates/strop/src/replay.rs": "87b0acfb0525b1827389f80b31fa1979c7c6a08d89b6c35b62250659bec9c5e9"
+          "crates/strop/src/headless/driver.rs": "b22e0d366bcdb6397ca442c038df1226c7be87b5be7eeef1143e5efe83173fb0",
+          "crates/strop/src/replay.rs": "87b0acfb0525b1827389f80b31fa1979c7c6a08d89b6c35b62250659bec9c5e9",
+          "crates/strop/src/ui_stdio/serve.rs": "5f845cd95487a47e9c1f556dd4cf76f4733d6d6ad9a75009b8f03d195624ff68"
         },
-        "evidence": "7224466486babcc35ee191fdb4bce9d31ff21accc99aa3c9c5eab2581ab858b2"
+        "evidence": "112d143630784c4fd9ee633be51a22cc8242e80f41091d81198a835cae68efcf"
       }
     },
     {
@@ -2978,7 +3042,7 @@
         },
         {
           "id": "WS-CLIENT",
-          "statement": "Client lifecycle over the loopback: handshake grants session/capabilities, requests cancel typed before send, fs prepare/apply/verify and observe/list/read roundtrip, a ranged read closes its stream once and leaves the health route live, finite exec streams and exits, and shutdown-then-request spawns a fresh incarnation.",
+          "statement": "Client lifecycle over the loopback: handshake grants session/capabilities, requests cancel typed before send, fs prepare/apply/verify and observe/list/read roundtrip, a ranged read closes its stream once and leaves the health route live, finite exec streams and exits, and shutdown-then-request spawns a fresh incarnation. An editor owner can instead close permanently: outstanding clones then fail Closed rather than spawning after editor exit.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2993,7 +3057,8 @@
                 "observe_list_and_read_round_trip",
                 "finite_exec_streams_output_and_exits",
                 "deployed_worker_binds_the_endpoint_target",
-                "store_save_round_trip_with_conflict_and_verify"
+                "store_save_round_trip_with_conflict_and_verify",
+                "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
               ]
             }
           ],
@@ -3042,7 +3107,7 @@
         },
         {
           "id": "WS-WARM-HANDSHAKE",
-          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the wake-fixed native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.798/0.765 ms, p95 1.066/0.992 ms, p99/max 1.310/1.399 ms; binaries 46,226,704/47,373,648 bytes. Candidate artifact sha256 7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b. RSS and threads at Welcome are raw observations, not high-water marks, remote deployment or user-input latency; protocol differences and raw spread preclude a blanket speedup claim.",
+          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the wake-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.809/0.832 ms, p95 1.125/0.949 ms, p99/max 1.409/1.078 ms; binaries 46,226,704/47,316,304 bytes. Candidate artifact sha256 0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7. RSS and threads at Welcome are raw observations, not high-water marks, remote deployment or user-input latency; protocol differences and raw spread preclude a blanket speedup claim.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3074,7 +3139,7 @@
         },
         {
           "id": "WS-WARM-CONTROL",
-          "statement": "The same stripped static x86_64 musl wake-fixed worker (sha256 7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b, 47,373,648 bytes) on WSL2 completed eight warmups and 64 real Hello-bound Health requests. Local write+flush-to-result p50 0.196 ms, p95 0.248 ms, p99/max 0.274 ms; raw samples, RSS, threads and framed byte counts are archived. This is warm local IPC, not user input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
+          "statement": "The stripped static x86_64 musl wake-safe 0.36.0 worker (sha256 0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7, 47,316,304 bytes) on WSL2 completed eight warmups and 64 real Hello-bound Health requests. Local write+flush-to-result p50/p95/p99/max 0.201/0.261/0.351/0.351 ms; raw samples, RSS, threads and framed byte counts are archived. This is warm local IPC, not user input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3096,7 +3161,7 @@
         },
         {
           "id": "WS-UI-FRAME",
-          "statement": "On the same WSL2 x86_64 release-musl profile, clean pre-worker and wake-fixed worker artifacts each completed eight warmups and 64 real --ui-stdio committed-text actions after opening a 10,000-line file through one live local worker at 120x40. Every semantic frame contains the next exact visible edit. Baseline/candidate write+flush-to-view p50 0.232/0.234 ms, p95 0.330/0.291 ms, p99/max 0.482/0.529 ms; raw samples, framed bytes and observed RSS/threads are archived. This is not TUI cell-grid paint, SSH/container, LSP or high-water evidence.",
+          "statement": "On the same WSL2 x86_64 release-musl profile, clean pre-worker and wake-safe 0.36.0 worker artifacts each completed eight warmups and 64 real --ui-stdio committed-text actions after opening a 10,000-line file through one live local worker at 120x40. Every semantic frame contains the next exact visible edit. Baseline/candidate write+flush-to-view p50 0.276/0.227 ms, p95 0.420/0.288 ms, p99/max 0.494/0.347 ms; raw samples, framed bytes and observed RSS/threads are archived. This is not TUI cell-grid paint, SSH/container, LSP or high-water evidence.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3128,7 +3193,7 @@
         },
         {
           "id": "WS-TUI-FRAME",
-          "statement": "Linux x86_64 Docker-on-WSL2 pre-worker and wake-fixed native worker static artifacts each completed eight warmups and 64 actual 120x30 TUI PTY input journeys after opening a 10,000-line file through the local worker. A VT100-decoded cell grid verifies the exact edited line before every timer stop. Baseline/candidate key-write-to-painted-grid p50 0.976/0.908 ms, p95 1.541/1.289 ms, p99/max 1.668/1.565 ms; raw records, source method and artifact digests are archived. The native product harness also exercised the worker-backed terminal flood, but remote, LSP, high-water and other targets remain separate.",
+          "statement": "Linux x86_64 Docker-on-WSL2 pre-worker and wake-safe 0.36.0 native worker static artifacts each completed eight warmups and 64 actual 120x30 TUI PTY input journeys after opening a 10,000-line file through the local worker. A VT100-decoded cell grid verifies the exact edited line before every timer stop. Baseline/candidate key-write-to-painted-grid p50 0.939/0.966 ms, p95 1.510/1.345 ms, p99/max 1.755/1.478 ms; raw records, bounded PTY test method and artifact digests are archived. The native product harness also exercised the worker-backed terminal flood, but remote, LSP, high-water and other targets remain separate.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3168,7 +3233,7 @@
         },
         {
           "id": "WPERF-LSP-LOCAL",
-          "statement": "On one Linux x86_64 WSL2 host, the matched a05d84f pre-worker and wake-fixed worker static artifacts each admitted 64 real installed rust-analyzer gd requests from a Rust callsite through a 120x40 product UI to the painted definition after eight warmups. Pre-worker/worker p50/p95/p99/max was 25.558/25.733/25.825/25.825 ms and 25.445/25.561/25.615/25.615 ms. A separate 64 edit→didChange→gd→paint path measured 25.663/26.022/26.176/26.176 and 25.686/25.925/26.054/26.054 ms, an end-to-end upper bound, not a standalone didChange acknowledgment. Both paths had exactly one real local worker and waited for eight successful definition landings before timing. The static artifact predates final-source qualification; other native targets remain unmeasured.",
+          "statement": "On one Linux x86_64 WSL2 host, the matched a05d84f pre-worker and wake-safe 0.36.0 worker static artifacts each admitted 64 real installed rust-analyzer gd requests from a Rust callsite through a 120x40 product UI to the painted definition after eight warmups. Pre-worker/worker p50/p95/p99/max was 25.518/25.661/25.799/25.799 ms and 25.500/25.624/25.704/25.704 ms. A separate 64 edit→didChange→gd→paint path measured 25.628/25.936/26.110/26.110 and 25.658/25.866/26.087/26.087 ms, an end-to-end upper bound, not a standalone didChange acknowledgment. Both paths had exactly one real local worker and waited for eight successful definition landings before timing. Other native targets remain unmeasured.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3195,7 +3260,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "WK20 still requires final-source LSP sync/request latency on each required native platform, bounded transfer/retirement high-water marks including the no-init Docker PID 1 zombie risk, and matched cold/warm SSH/container and input/TUI/terminal-load performance on every required target. The Linux Docker-on-WSL2 candidate has nine local product paths, matched 64-sample real rust-analyzer gd and edit-to-reply paths, and 64 each of selected-context SSH/container cold uploads, warm cache reuse and live handshakes; one worker/lease after Welcome is observed. The container-test image compiled the direct provider/cache guard, but the tested static worker artifact predates the final exact-source build, and same-host SSH is not a WAN latency proof. No full product/platform qualification follows from these scoped raw samples.",
+          "statement": "WK20 now has 64 matched Linux x86_64 local product launches, semantic views, real 120x30 TUI cell-grid edits and 256-line terminal floods, plus 64 real rust-analyzer request and edit-to-paint journeys. The exact static 0.36.0 worker completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions, and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit but all 64 fixed workers were gone immediately, with candidate worker VmHWM p50 7,264 KiB versus pre-worker 5,040 KiB. The no-init BusyBox PID 1 nevertheless retained 892 Docker-exec [cat]/[sh] children after repeated deployment: not 900 workers, but no bounded no-init retirement claim is possible. GNU/macOS native platform run 36268378164 was cancelled after the Mac terminal test remained unbounded on both native hosts; bounded diagnostic and rerun are outstanding; same-host SSH is not WAN latency. WPERF-FULL remains blocked until the full native matrix and honest external-PID-1 retirement scope are resolved.",
           "status": "blocked",
           "evidence": [
             {
@@ -3247,6 +3312,21 @@
               "kind": "measurement",
               "path": "verification/measurements/0058-linux-x86-lsp-ui.json",
               "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-preworker-transfer-ui.json",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-worker-transfer-ui.json",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/transfer_evidence.py",
+              "gate": "benchmark"
             }
           ],
           "migration": {
@@ -3287,7 +3367,7 @@
         },
         {
           "id": "WS-ACTIVE-LEASE",
-          "statement": "A cache-executed worker verifies its final executable and matching private receipt, takes the shared OS lock, writes its own owner-private LeaseRecord before Welcome, and retires that record on orderly shutdown; a stopped deployment probe cannot stand in for the editor session. The real SSH worker and container provider verify the actual session's recorded lease, with a fresh SSH lease after reconnect. A cached final path unlinked before Hello or pointing at a different running inode on Linux refuses typed before Welcome. A process killed before cleanup leaves conservative evidence; native cross-client retirement is tested but not yet model-refined or release-qualified.",
+          "statement": "A cache-executed worker verifies its final executable and matching private receipt, takes the shared OS lock, writes its own owner-private LeaseRecord before Welcome, and retires that record on orderly shutdown; a stopped deployment probe cannot stand in for the editor session. The real SSH worker and container provider verify the actual session's recorded lease, with a fresh SSH lease after reconnect. A cached final path unlinked before Hello or pointing at a different running inode on Linux refuses typed before Welcome. A process killed before cleanup leaves conservative evidence; native cross-client retirement is tested but not yet model-refined or release-qualified. On editor shutdown an admitted worker is permanently closed even if background clones survive; the 64 Linux product UI transfer exits each reaped their one owned local worker.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3314,6 +3394,19 @@
                 "deleted_cache_object_cannot_welcome_an_unleased_worker",
                 "cached_worker_waits_for_exclusive_lease_snapshot_before_welcome"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-client/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
+              ]
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-linux-x86-worker-transfer-ui.json",
+              "gate": "benchmark"
             }
           ],
           "migration": {
@@ -3336,29 +3429,29 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "b9df6a96a00edd766c2ea653ab6b3a96e36aad19a10abf0436281ec39aeaec1a",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "c9cc98721eb0d11a8254063a63d0b0b77f6870a4be653f0e7b8d66c90cbce31e",
+          "crates/strop-fs/Cargo.toml": "319933176bf67f6a223d0c8d5a9974e65d44317e25b6f9d240bf206a496ebda7",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
           "crates/strop-worker-client/src/connection/reader.rs": "83bfa7c00f07310fae842df2644aaee11ed814d027a6e61f703fa6d94409c6f2",
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
-          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
+          "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "bd0b298971ac5a65ac0aa7799ec19c9891692637e25740bb4ac8f1b35e598e51",
+          "crates/strop-worker/Cargo.toml": "dcfb9421e65710f749e2080673bc1a88747e715bf60faeaae71fdef1ce70a5df",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
-          "crates/strop/tests/terminal_editor.rs": "1d4acc7748a26e9e4e26efa55c80079372a7680bbc16988c4d1e6b6330fd287e",
+          "crates/strop/tests/terminal_editor.rs": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b",
           "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
           "verification/bench_transfer_ui.py": "d1f5b711804e3f9d581c4f906051581834422a00c8349f4533b4696a21e4bd73",
           "verification/bench_ui_input_frame.py": "689ce08d3468b85d8f05cddc38f2971f9d5450233da5142fb0d899ced2339903",
-          "verification/bench_worker.py": "cbb606889fbde28c53ddba5bcf171fe19fff196989b9bc39c92f077a63ce83a1",
+          "verification/bench_worker.py": "982a8ebc933ff08a0a66d4adb9a118a11a7f48cecc6a1448675d87629f691194",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "f8aefc98045e3e229bdca8118250df99eb1751f7c39e9d64e05df1d703d55d35"
+        "evidence": "b2c625c9a8e8df414cbe3334e9e484b05d082d0cf9c6c6da68f90dd65f373692"
       }
     },
     {
@@ -3685,7 +3778,7 @@
         },
         {
           "id": "WDEP-CONTEXT",
-          "statement": "Selected Docker engine/user/cwd and canonical id/StartedAt survive default-context changes, namespace-local execution and restart; the editor explicitly authorizes the worker without granting container file writes. Native verified-worker probes and editor sessions now exec directly under the same captured context without the extra generic sh/cat supervisor. Absent-shell preinstalled admission verifies read-only and refuses tar/cache mutations before staging bytes. The 100-column :explain view shows the digest on its own line, not clipped behind the container id.",
+          "statement": "Selected Docker engine/user/cwd and canonical id/StartedAt survive default-context changes, namespace-local execution and restart; the editor explicitly authorizes the worker without granting container file writes. Native verified-worker probes and editor sessions now exec directly under the same captured context without the extra generic sh/cat supervisor. Absent-shell preinstalled admission verifies read-only and refuses tar/cache mutations before staging bytes. The 100-column :explain view shows the digest on its own line, not clipped behind the container id. The editor now closes all captured leases and rejects a publication racing owner shutdown instead of leaving a worker to an outstanding clone.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3705,6 +3798,14 @@
               "tests": [
                 "container_worker_requires_explicit_command_and_never_grants_file_writes"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-client/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
+              ]
             }
           ],
           "migration": {
@@ -3715,7 +3816,7 @@
         },
         {
           "id": "WDEP-CONTAINER-PERF",
-          "statement": "One WSL2 x86_64 Docker host executed eight warmups and 64 real cold BusyBox container worker uploads after exact fixture-owned cache resets, 64 warm verified reuses and 64 live direct-worker Welcome journeys. The container-test image compiled the direct provider and preinstalled cache guard. Cold p50/p95/p99/max was 3527.577/3557.050/3574.675/3574.675 ms, reuse 2934.731/2968.992/3014.016/3014.016 ms, and live admission 85.146/91.042/93.682/93.682 ms. Exactly one actual verified object worker ran after every live Welcome. No-init PID 1 retained 892 [cat]/[sh] children after warm probes, including 71 deliberate cache resets outside timing; this is neither a live-worker count nor a bounded retirement high-water. The worker executable predates the final exact-source build; WPERF-FULL remains blocked.",
+          "statement": "One WSL2 x86_64 Docker host executed eight warmups and 64 real cold BusyBox container worker uploads after exact fixture-owned cache resets, 64 warm verified reuses and 64 live direct-worker Welcome journeys. The container-test image compiled the direct provider and preinstalled cache guard. Cold p50/p95/p99/max was 3393.997/3430.478/3452.144/3452.144 ms, reuse 2841.565/2870.218/2899.490/2899.490 ms, and live admission 84.814/90.891/94.059/94.059 ms. Exactly one actual verified object worker ran after every live Welcome. No-init PID 1 retained 892 [cat]/[sh] children after warm probes, including 71 deliberate cache resets outside timing; this is neither a live-worker count nor a bounded retirement high-water. The artifact was the wake-safe 0.36.0 static source candidate; WPERF-FULL remains blocked.",
           "status": "native-tested",
           "evidence": [
             {
@@ -4013,25 +4114,25 @@
           "crates/strop-containers/src/engine.rs": "3a34148eddf290a54bd738c87bf7293e5206cbad24fa0466672c985b128bc1e5",
           "crates/strop-core/src/worker/cache_record.rs": "3030cb87bc678044938ad67758f10d8d0ab06c7b59f0b05c329cf25cebc77292",
           "crates/strop-core/src/worker/deploy_policy.rs": "b07466797094af38dd676c242b4cd93754c2b4be64cead12190f6d666d5eaf63",
-          "crates/strop-engine/src/editor/containers/container_worker.rs": "55d45fbddca46caefa1c5121403f66f592c4676fc9d9db13b2711fa7d0cddce9",
+          "crates/strop-engine/src/editor/containers/container_worker.rs": "c4a44070ced71e7ee7272a4dda8c8be9de6736a14f10fb2912c0cc3a9f8adf5e",
           "crates/strop-engine/src/editor/explain.rs": "06d50bc1af2abffb46dbde57aca49cbcb3dc80078b14b6f0369cbc13a6cd6644",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
-          "crates/strop-engine/src/editor/remote/workers.rs": "edc263c327e47fcf856c71df16095909c779d5c308ef2bd5c03df16fee652464",
+          "crates/strop-engine/src/editor/remote/workers.rs": "b887d7b9a7fcfccbdcacdd6a6cfd27c0f161f555207fec06e77fac741582b5a6",
           "crates/strop-remote/src/deploy_provider.rs": "8f47f3e3b11e3bb2aed7fe5c0a095c20e270fb461cf1d9a0d731cdb3d59a52a3",
-          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
+          "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-deploy/src/cache.rs": "31101fb57d92311542fdc42a65d25738991e99422634324f2d8ff9f5754123ec",
           "crates/strop-worker-deploy/src/container.rs": "088c1427a0d633791f7c823e1b8b70c7659bbea9e942153e982f0d0f9637990f",
           "crates/strop-worker-deploy/src/deploy.rs": "9bf618fcdc92aaf5fed2ab27ca9ffa0370284ba9d2514f8bc7b6d1d381007a21",
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "bd0b298971ac5a65ac0aa7799ec19c9891692637e25740bb4ac8f1b35e598e51",
+          "crates/strop-worker/Cargo.toml": "dcfb9421e65710f749e2080673bc1a88747e715bf60faeaae71fdef1ce70a5df",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "40267880d30b5233ea3e8b595a6cc05402f230aae78cd2567fbeb4dafb6ebd04"
+          "crates/strop/Cargo.toml": "5a51ce1ce022b6a464958abd67d214b3d58a008e463746b33ca64677239f28f2"
         },
-        "evidence": "4ec1ba757e68455770e2d938272804c684a6621f651bddf1ec6b19ca77e4ed78"
+        "evidence": "2ee9727acc1cabee462780487e959c2368aaf59acbcad76b82dfcc9fecdb5f9e"
       }
     },
     {
@@ -4182,7 +4283,7 @@
           "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "217f43f02bef23ee0a3ee1e0395216cb4b4aaf37bdcc99cf9b998e6a40ef0b97"
+        "evidence": "c14a5e192a937620e91b18cc17e0a09bc56f4881f973c8f6ecc305bd48e80f37"
       }
     },
     {
@@ -4265,7 +4366,7 @@
         },
         {
           "id": "WREC-EDITOR",
-          "statement": "A lost worker response never clears dirty text or retries the Store; explicit verification accepts a matching older revision once while newer edits remain dirty and file/permit ownership is rechecked.",
+          "statement": "A lost worker response never clears dirty text or retries the Store; explicit verification accepts a matching older revision once while newer edits remain dirty and file/permit ownership is rechecked. Editor owner close is terminal: unlike an explicitly still-owned shutdown, an old job clone cannot reconnect after the UI exits.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -4276,6 +4377,14 @@
                 "lost_worker_reply_keeps_dirty_attempt_until_explicit_verification",
                 "older_save_receipt_keeps_new_edits_and_does_not_close_the_pane",
                 "cancellation_does_not_discard_a_save_receipt_already_queued"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-worker-client/tests/loopback.rs",
+              "gate": "test",
+              "tests": [
+                "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
               ]
             }
           ],
@@ -4388,10 +4497,10 @@
           "crates/strop-engine/src/editor/remote/save.rs": "b548ed478153246baab80c12f98cfc5468f182a55b95e3da07e74e9e7c5d5053",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/src/local/verify.rs": "7a40cb78d0203882accbb5bbfdfbffe16d055d6efeb468b1e2202ec20010c8fe",
-          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
+          "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4"
         },
-        "evidence": "0bf40bc5262563a107398366be200894f2395f71d51a9e79fe38c7084851f2a3"
+        "evidence": "7361b8ff301409f14442fb3065a8a8d38b66111dd0127871aa85db1030564b92"
       }
     }
   ],

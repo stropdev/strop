@@ -5,19 +5,19 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-tui-frame.json",
-    "sha256": "07fc25f88a3498f98fd7bd59f1c0ce5f26038775146d0bf15180e001e5b73688"
+    "sha256": "505283f2dcdb6244bac4e12228478eaec4896615b56c0bc7769cce07f2e4b12d"
   },
   "candidate": {
     "commit": null,
-    "state": "binary measured before final committed worker candidate",
-    "artifact_sha256": "7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b",
+    "state": "0.36.0 wake-safe static artifact measured with bounded PTY reap fixture; final native-platform and tag qualification pending",
+    "artifact_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
     "measurement": "verification/measurements/0058-linux-x86-worker-tui-frame.json",
-    "sha256": "a952dac0cd064098d3e6b338df2bbce86bab95670eac287b453294bb362a2cb1"
+    "sha256": "97b4b59995779e6406704c020fa0e57cbf9c6b92d459c7cf098afa327b92d397"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
     "test": "native_terminal_input_to_painted_frame_samples",
-    "sha256": "1d4acc7748a26e9e4e26efa55c80079372a7680bbc16988c4d1e6b6330fd287e",
+    "sha256": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b",
     "warmup": 8,
     "samples_per_artifact": 64,
     "fixture_lines": 10000,
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 1.495,
-      "p50": 0.924,
-      "p95": 1.344,
-      "p99": 1.495
+      "max": 1.755,
+      "p50": 0.939,
+      "p95": 1.51,
+      "p99": 1.755
     },
     "candidate_ms": {
-      "max": 1.87,
-      "p50": 0.921,
-      "p95": 1.335,
-      "p99": 1.87
+      "max": 1.478,
+      "p50": 0.966,
+      "p95": 1.345,
+      "p99": 1.478
     }
   }
 }

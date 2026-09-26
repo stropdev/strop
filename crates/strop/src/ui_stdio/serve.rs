@@ -575,17 +575,16 @@ impl Session {
                     "editor jobs did not settle",
                 ));
             }
-            match events.recv_timeout(remaining) {
+            match events.recv_timeout(remaining.min(strop_engine::editor::events::QUIESCENCE_POLL))
+            {
                 Ok(event) => {
                     let tick = editor.tape().sample_tick();
                     editor.recorded_action(Action::Event(event), tick)?;
                 }
-                Err(strop_engine::editor::events::RecvTimeoutError::Timeout) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "editor jobs did not settle",
-                    ));
-                }
+                // The last source-thread is_finished transition can be
+                // silent after its final event. Recheck async_pending
+                // until the absolute deadline; never claim success early.
+                Err(strop_engine::editor::events::RecvTimeoutError::Timeout) => {}
                 Err(strop_engine::editor::events::RecvTimeoutError::Disconnected) => {
                     return Ok(());
                 }

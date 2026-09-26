@@ -176,6 +176,12 @@ per transport.
   This does not make a container PID 1 that fails to reap its own
   Docker-exec children into a reaper; that external no-init case is
   measured and reported separately under 0058 WK20.
+- **Shutdown quiescence recheck (0.36.0)**: UI stdio, headless
+  jobs and TUI finish keep their absolute timeout while checking
+  silent physical picker-source completion every 16 ms. The last
+  semantic completion can be received before its thread returns,
+  so waiting for another event until the whole timeout can fail a
+  completed shutdown. No such poll enters the live input→render path.
 
 
 WK04 integration amendments (integration-owner approved 2026-09-24):

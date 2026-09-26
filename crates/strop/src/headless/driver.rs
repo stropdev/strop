@@ -103,18 +103,18 @@ impl Driver<'_> {
                     Ok(())
                 };
             }
-            match self.events.recv_timeout(remaining) {
+            let wait_for = if target == WaitTarget::Delay {
+                remaining
+            } else {
+                remaining.min(crate::editor::events::QUIESCENCE_POLL)
+            };
+            match self.events.recv_timeout(wait_for) {
                 Ok(event) => self.apply(Action::Event(event))?,
-                Err(RecvTimeoutError::Timeout) => {
-                    return if target != WaitTarget::Delay {
-                        Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "editor jobs did not settle",
-                        ))
-                    } else {
-                        Ok(())
-                    };
-                }
+                Err(RecvTimeoutError::Timeout) if target == WaitTarget::Delay => return Ok(()),
+                // Physical worker completion can be silent after its
+                // final event; inspect the predicate again, not the
+                // whole remaining budget as a single channel wait.
+                Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => {
                     return Err(io::Error::new(
                         io::ErrorKind::BrokenPipe,
