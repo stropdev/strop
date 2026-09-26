@@ -144,7 +144,14 @@ TUI_FRAME_MEASUREMENTS = (
     "verification/measurements/0058-linux-x86-tui-frame-comparison.json",
 )
 
-SCHEMA = 5
+TERMINAL_LOAD_MEASUREMENTS = (
+    "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json",
+    "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json",
+    "verification/measurements/0058-linux-x86-terminal-load-after-fix-comparison.json",
+)
+NATIVE_PRODUCT_REPORT = "verification/measurements/0058-linux-x86-native-product.json"
+
+SCHEMA = 6
 
 
 def sha256_file(rel: str) -> str:
@@ -398,6 +405,109 @@ def tui_frame_evidence() -> dict:
     }
 
 
+def terminal_load_evidence() -> dict:
+    hashes = {rel: sha256_file(rel) for rel in TERMINAL_LOAD_MEASUREMENTS}
+    baseline, worker, summary = [
+        json.loads((ROOT / rel).read_text(encoding="utf-8"))
+        for rel in TERMINAL_LOAD_MEASUREMENTS
+    ]
+    method = summary.get("method", {})
+    if (
+        summary.get("schema") != 1
+        or method.get("harness") != "crates/strop/tests/terminal_editor.rs"
+        or method.get("test") != "native_terminal_output_under_load_samples"
+        or method.get("sha256") != sha256_file("crates/strop/tests/terminal_editor.rs")
+        or method.get("warmup") != 8
+        or method.get("samples_per_artifact") != 64
+        or method.get("output_lines_per_request") != 256
+        or method.get("geometry") != [120, 30]
+        or baseline.get("platform") != worker.get("platform")
+        or baseline.get("platform") != {"os": "linux", "arch": "x86_64"}
+    ):
+        raise SystemExit("terminal-load source, platform and fixture are not pinned")
+    for role, rel, measured, warm_rel in zip(
+        ("baseline", "candidate"), TERMINAL_LOAD_MEASUREMENTS[:2],
+        (baseline, worker), LINUX_MEASUREMENTS[:2], strict=True
+    ):
+        artifact = json.loads((ROOT / warm_rel).read_text(encoding="utf-8"))
+        raw = measured.get("raw_ms")
+        fixture = measured.get("fixture", {})
+        if (
+            not isinstance(raw, list)
+            or len(raw) != 64
+            or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                       and value >= 0 for value in raw)
+            or measured.get("warmup_requests") != 8
+            or measured.get("measured_requests") != 64
+            or measured.get("binary_sha256") != artifact["binary_sha256"]
+            or measured.get("binary_bytes") != artifact["bytes"]
+            or measured.get("method") != method["timing"]
+            or fixture.get("output_lines_per_request") != 256
+            or fixture.get("geometry") != [120, 30]
+            or fixture.get("input") != "one two-key line to a worker-leased shell PTY"
+            or fixture.get("capture") is not False
+            or summary[role]["artifact_sha256"] != artifact["binary_sha256"]
+            or summary[role]["measurement"] != rel
+            or summary[role]["sha256"] != hashes[rel]
+        ):
+            raise SystemExit(f"Linux {role} loaded terminal does not match its artifact")
+        ordered = sorted(raw)
+        percentiles = {f"p{n}": ordered[math.ceil(n * len(raw) / 100) - 1]
+                       for n in (50, 95, 99)} | {"max": ordered[-1]}
+        if (measured.get("output_to_grid_ms") != percentiles
+                or summary["observed"][f"{role}_ms"] != percentiles):
+            raise SystemExit(f"Linux {role} terminal-load summary differs from its raw frames")
+    return {
+        "samples": hashes,
+        "method_sha256": sha256_file("crates/strop/tests/terminal_editor.rs"),
+        "binary_sha256": {"baseline": baseline["binary_sha256"],
+                          "candidate": worker["binary_sha256"]},
+    }
+
+
+def native_product_evidence() -> dict:
+    report = json.loads((ROOT / NATIVE_PRODUCT_REPORT).read_text(encoding="utf-8"))
+    methods = (
+        "verification/bench_native_product.py",
+        "verification/bench_worker.py",
+        "verification/bench_worker_roundtrip.py",
+        "verification/bench_ui_input_frame.py",
+        "crates/strop/tests/terminal_editor.rs",
+    )
+    measurements = {
+        "baseline_handshake_ms": (LINUX_MEASUREMENTS[0], "ready_ms"),
+        "candidate_handshake_ms": (LINUX_MEASUREMENTS[1], "ready_ms"),
+        "candidate_health_ms": ("verification/measurements/0058-linux-x86-worker-roundtrip.json",
+                                "roundtrip_ms"),
+        "baseline_semantic_ms": (UI_FRAME_MEASUREMENTS[0], "input_to_view_ms"),
+        "candidate_semantic_ms": (UI_FRAME_MEASUREMENTS[1], "input_to_view_ms"),
+        "baseline_tui_ms": (TUI_FRAME_MEASUREMENTS[0], "input_to_grid_ms"),
+        "candidate_tui_ms": (TUI_FRAME_MEASUREMENTS[1], "input_to_grid_ms"),
+        "baseline_terminal_load_ms": (TERMINAL_LOAD_MEASUREMENTS[0], "output_to_grid_ms"),
+        "candidate_terminal_load_ms": (TERMINAL_LOAD_MEASUREMENTS[1], "output_to_grid_ms"),
+    }
+    if (
+        report.get("schema") != 1
+        or report.get("target") != "x86_64-unknown-linux-musl"
+        or report.get("profile") != "release-musl-stripped"
+        or report.get("samples_per_artifact") != 64
+        or report.get("methods") != {rel: sha256_file(rel) for rel in methods}
+        or report.get("baseline_sha256")
+        != json.loads((ROOT / LINUX_MEASUREMENTS[0]).read_text())["binary_sha256"]
+        or report.get("candidate_sha256")
+        != json.loads((ROOT / LINUX_MEASUREMENTS[1]).read_text())["binary_sha256"]
+        or set(report.get("observed", {})) != set(measurements)
+    ):
+        raise SystemExit("native product report does not bind its exact source/artifacts")
+    for key, (rel, metric) in measurements.items():
+        sample = json.loads((ROOT / rel).read_text(encoding="utf-8"))
+        if report["observed"][key] != sample[metric]:
+            raise SystemExit(f"native product comparison differs from {rel}")
+    return {"sha256": sha256_file(NATIVE_PRODUCT_REPORT),
+            "methods": report["methods"],
+            "artifact_sha256": report["candidate_sha256"]}
+
+
 def freeze(allow_dirty: bool) -> dict:
     commit = git("rev-parse", "HEAD")
     dirty = git("status", "--porcelain").splitlines()
@@ -430,6 +540,8 @@ def freeze(allow_dirty: bool) -> dict:
         "linux_warm_roundtrip_evidence": warm_roundtrip_evidence(),
         "linux_ui_input_frame_evidence": ui_frame_evidence(),
         "linux_tui_input_frame_evidence": tui_frame_evidence(),
+        "linux_terminal_output_load_evidence": terminal_load_evidence(),
+        "linux_native_product_evidence": native_product_evidence(),
         "baseline": baseline_hashes(),
         "install_transaction": {
             "install.sh": sha256_file("install.sh"),
@@ -488,6 +600,8 @@ def check(path: Path) -> int:
         "linux_warm_roundtrip_evidence",
         "linux_ui_input_frame_evidence",
         "linux_tui_input_frame_evidence",
+        "linux_terminal_output_load_evidence",
+        "linux_native_product_evidence",
         "benchmark_sha256",
         "warm_roundtrip_benchmark_sha256",
         "verus_crate_pins",

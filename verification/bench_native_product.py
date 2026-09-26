@@ -2,9 +2,9 @@
 """Measure matched pre-worker/current native binaries through live worker and UI paths.
 
 Run on the same native host, release build profile, and fixture for both
-artifacts. All seven sampled journeys must succeed before any result is written. This
-is local launch, Health, worker-backed UI semantic view and PTY TUI paint;
-remote deploy, LSP and terminal output load have separate WK20 obligations.
+artifacts. All nine sampled journeys must succeed before any result is written. This
+is local launch, Health, worker-backed UI semantic view, PTY TUI paint and
+256-line terminal output under load; remote deploy and LSP are separate WK20 gates.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ METHODS = (
     "crates/strop/tests/terminal_editor.rs",
 )
 TUI_MARKER = re.compile(r"STROP_TUI_BENCH=(\{[^\n]+\})")
+LOAD_MARKER = re.compile(r"STROP_TERMINAL_LOAD_BENCH=(\{[^\n]+\})")
 
 
 def execute(command: list[str], *, binary: Path | None = None) -> str:
@@ -71,12 +72,23 @@ def sample(binary: Path, target: str, profile: str, protocol: int) -> dict[str, 
     if len(matched) != 1 or "test result: ok. 1 passed" not in tested:
         raise RuntimeError("the real PTY test did not publish one passing benchmark")
     grid = json.loads(matched[0])
+    loaded = execute([
+        "cargo", "test", "--release", "--locked", "-p", "strop-editor",
+        "--test", "terminal_editor", "native_terminal_output_under_load_samples",
+        "--", "--ignored", "--nocapture",
+    ], binary=binary)
+    found = LOAD_MARKER.findall(loaded)
+    if len(found) != 1 or "test result: ok. 1 passed" not in loaded:
+        raise RuntimeError("the worker-leased terminal did not paint its 256-line flood")
+    terminal_load = json.loads(found[0])
     digest = worker["binary_sha256"]
     for name, observed, values, summary in (
         ("handshake", worker, [row["ready_ms"] for row in worker["warm_runs"]],
          worker["ready_ms"]),
         ("semantic", semantic, semantic["raw_ms"], semantic["input_to_view_ms"]),
         ("grid", grid, grid["raw_ms"], grid["input_to_grid_ms"]),
+        ("terminal load", terminal_load, terminal_load["raw_ms"],
+         terminal_load["output_to_grid_ms"]),
     ):
         if (observed["binary_sha256"] != digest or len(values) != 64
                 or observed.get("measured_requests", 64) != 64
@@ -95,9 +107,12 @@ def sample(binary: Path, target: str, profile: str, protocol: int) -> dict[str, 
         raise RuntimeError("worker and UI samples were not taken on the same native host")
     expected_os = "macos" if target.endswith("-apple-darwin") else "linux"
     if (grid["platform"]["os"] != expected_os
-            or grid["platform"]["arch"] != target.split("-", 1)[0]):
-        raise RuntimeError("decoded terminal grid ran on a different native target")
-    return {"handshake": worker, "semantic_frame": semantic, "tui_cell_grid": grid}
+            or grid["platform"]["arch"] != target.split("-", 1)[0]
+            or grid["platform"] != terminal_load["platform"]
+            or terminal_load["fixture"]["output_lines_per_request"] != 256):
+        raise RuntimeError("the terminal output load ran under a different native fixture")
+    return {"handshake": worker, "semantic_frame": semantic,
+            "tui_cell_grid": grid, "terminal_load": terminal_load}
 
 
 def main() -> None:
@@ -146,6 +161,8 @@ def main() -> None:
             "candidate-semantic": current["semantic_frame"],
             "baseline-tui": base["tui_cell_grid"],
             "candidate-tui": current["tui_cell_grid"],
+            "baseline-terminal-load": base["terminal_load"],
+            "candidate-terminal-load": current["terminal_load"],
             "candidate-control": control,
         }
         hashes = {rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
@@ -157,7 +174,7 @@ def main() -> None:
             "candidate_sha256": current["handshake"]["binary_sha256"],
             "methods": hashes,
             "samples_per_artifact": 64,
-            "scope": "native local worker Hello, Health, worker-backed semantic edit, real PTY TUI cell-grid paint; not cold/warm remote deploy, LSP, terminal output load or retirement high-water",
+            "scope": "native local worker Hello, Health, worker-backed semantic edit, real PTY TUI cell-grid paint and 256-line terminal output load; not cold/warm remote deploy, LSP or retirement high-water",
             "observed": {
                 "baseline_handshake_ms": base["handshake"]["ready_ms"],
                 "candidate_handshake_ms": current["handshake"]["ready_ms"],
@@ -166,6 +183,8 @@ def main() -> None:
                 "candidate_semantic_ms": current["semantic_frame"]["input_to_view_ms"],
                 "baseline_tui_ms": base["tui_cell_grid"]["input_to_grid_ms"],
                 "candidate_tui_ms": current["tui_cell_grid"]["input_to_grid_ms"],
+                "baseline_terminal_load_ms": base["terminal_load"]["output_to_grid_ms"],
+                "candidate_terminal_load_ms": current["terminal_load"]["output_to_grid_ms"],
             },
         }
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired,

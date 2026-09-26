@@ -144,7 +144,12 @@ impl Drop for Actor {
 impl Actor {
     fn drive(&mut self) -> Result<Update, Error> {
         loop {
+            // Clear old nudges before checking the queues. Arrivals after
+            // this drain retain their datagram until the next turn.
+            drain_wake(&self.start.wake)?;
+            let mut published = false;
             if let Some(update) = self.client.poll()? {
+                published = true;
                 self.acknowledged = update.acknowledged_input;
                 if !update.phase.live() {
                     return Ok(update);
@@ -174,7 +179,6 @@ impl Actor {
                     }
                 });
             }
-            drain_wake(&self.start.wake)?;
             let mut filled_turn = true;
             for _ in 0..32 {
                 if self.pending.is_none() {
@@ -296,7 +300,10 @@ impl Actor {
                     }
                 }
             }
-            if !filled_turn {
+            // A bounded output turn may have left chunks queued even if
+            // all their arrival nudges were drained. Recheck before
+            // parking; the 250 ms timeout is only wake-loss recovery.
+            if !filled_turn && !published {
                 self.client.wait(&self.start.wake)?;
             }
         }

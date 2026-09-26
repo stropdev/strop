@@ -3,13 +3,13 @@
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "measurement": "verification/measurements/0058-linux-x86-preworker.json",
-    "sha256": "07e2b7b24a9a3a65f7939136a5131e8511fe2e6afc228f2bf4cf9928d5dc3cb1"
+    "sha256": "0cdb5e9a8b45c9405a9b0c6909a446e2c76428d2cfa8350dfe59712210245312"
   },
   "candidate": {
-    "artifact_sha256": "67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130",
+    "artifact_sha256": "7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b",
     "commit": null,
     "measurement": "verification/measurements/0058-linux-x86-worker.json",
-    "sha256": "f930de6da4ed197c1cc14bd0fe672bfb34e25057ef20d83cf894dc208b9ce3e6",
+    "sha256": "95524354757d73dabcbb3b88a44feec07d9d2dc80e41feb286a4e0df96ccd762",
     "state": "working tree dirty; no release-qualified source commit"
   },
   "method": {
@@ -31,16 +31,16 @@
   "observed": {
     "baseline_bytes": 46226704,
     "baseline_ready_ms": {
-      "max": 1.115,
-      "p50": 0.731,
-      "p95": 0.866,
-      "p99": 1.115
+      "max": 1.31,
+      "p50": 0.798,
+      "p95": 1.066,
+      "p99": 1.31
     },
     "baseline_rss_kib": {
-      "max": 6104,
-      "p50": 6100,
-      "p95": 6104,
-      "p99": 6104
+      "max": 4280,
+      "p50": 4276,
+      "p95": 4280,
+      "p99": 4280
     },
     "baseline_threads": {
       "max": 2,
@@ -51,21 +51,21 @@
     "bytes_delta": 1146944,
     "candidate_bytes": 47373648,
     "candidate_ready_ms": {
-      "max": 1.459,
-      "p50": 0.808,
-      "p95": 0.954,
-      "p99": 1.459
+      "max": 1.399,
+      "p50": 0.765,
+      "p95": 0.992,
+      "p99": 1.399
     },
     "candidate_rss_kib": {
       "max": 4716,
-      "p50": 4576,
+      "p50": 4704,
       "p95": 4708,
       "p99": 4716
     },
     "candidate_threads": {
       "max": 3,
       "p50": 2,
-      "p95": 3,
+      "p95": 2,
       "p99": 3
     }
   },

@@ -580,6 +580,25 @@ The completed 0055 terminal remains a real current consumer. Worker-owned local 
 process handles, input/resize/close and VT bytes use the common service contract;
 emulation, history/projection, controlling-view decisions and presentation stay in
 the engine. Preserve local outer-terminal behavior and no local input-latency cliff.
+
+A real worker-backed terminal flood exposed a WK12 input→paint
+regression: on the same WSL2 host, the pre-worker 256-line load reached
+the grid in p50 4.515 ms, while the native worker waited for its
+250 ms wake-loss fallback (p50 256.634 ms). The terminal service
+polled at most 32 chunks **before** draining all datagram nudges;
+prequeued chunks then had no remaining wake and slept until timeout.
+Drain the wake **before** polling the bounded output/input queues, and
+after any published update recheck them before parking. New arrivals
+between drain and check retain their wake. Neither shortening the
+timeout nor special-casing 256 lines repairs the cause.
+
+The wake-first service loop now drains its bounded backlog before
+parking. On the same static host and 256-line PTY fixture, baseline/
+wake-fixed worker write→paint p50 was 4.469/4.794 ms, p95
+5.167/5.544 ms, p99/max 5.402/5.801 ms; each of 64 sampled markers
+landed in the decoded physical grid. The 250 ms cliff is gone on
+this Linux target, not proved absent on native Mac/arm.
+
 This does not enable SSH/container interactive terminals ahead of their authorized
 milestones: unsupported capabilities remain disabled even if transport primitives
 could carry them. Native Windows still renders the WSL-owned terminal later in 0061.
@@ -1195,31 +1214,31 @@ and three additional conditional retirement theorems; the matched
 foreign-context negative proof fails as required. Those model proofs
 do not establish OS lock behavior or native macOS/arm execution.
 
-### WK20 scoped static worker, UI and TUI measurements: local Linux only
+### WK20 scoped static worker, UI, TUI and loaded-terminal measurements: local Linux only
 
 On the WSL2 Ryzen 9950X3D, clean pre-worker `a05d84f` and the
-sampled pre-macOS-fix stripped 47,373,648-byte x86_64 musl worker (`sha256
-67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130`)
+wake-fixed stripped 47,373,648-byte x86_64 musl worker (`sha256
+7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b`)
 each ran eight warmups and 64 real Hello/Welcome launches (pre-worker
 protocol 1; native worker protocol 2). Baseline/current readiness p50
-was 0.731/0.808 ms, p95 0.866/0.954 ms, p99/max 1.115/1.459 ms;
-the binaries were 46,226,704/47,373,648 bytes. The sampled worker
-completed eight warmups and 64 serial Health requests through
-real framed IPC: write+flush to result p50 0.203 ms, p95 0.275 ms,
-p99/max 0.320 ms. Neither protocol-different warm launches nor these
+was 0.798/0.765 ms, p95 1.066/0.992 ms, p99/max 1.310/1.399 ms;
+the binaries were 46,226,704/47,373,648 bytes. The wake-fixed
+worker completed eight warmups and 64 serial Health requests through
+real framed IPC: write+flush to result p50 0.196 ms, p95 0.248 ms,
+p99/max 0.274 ms. Neither protocol-different warm launches nor these
 samples establish a speedup.
 `verification/bench_worker.py` and
 `verification/bench_worker_roundtrip.py` pin raw samples, artifact
 digests, RSS/threads and request bytes in `verification/measurements/`.
 
-The same clean pre-worker and sampled worker artifacts each ran eight
+The same clean pre-worker and wake-fixed worker artifacts each ran eight
 warmups and 64 real `--ui-stdio` committed-text actions after the
 editor opened a 10,000-line file through one live worker at 120×40.
 `verification/bench_ui_input_frame.py` checks that each complete
 semantic-view frame visibly contains the next edit on line 5000.
-Baseline/current write+flush→view p50 was 0.226/0.235 ms, p95
-0.297/0.330 ms, p99/max 0.427/0.352 ms. The higher current p95
-is recorded, not called a no-regression result. Raw samples, framed
+Baseline/current write+flush→view p50 was 0.232/0.234 ms, p95
+0.330/0.291 ms, p99/max 0.482/0.529 ms. This local comparison is
+not a platform-wide no-regression result. Raw samples, framed
 bytes and observed worker/editor RSS and thread counts are archived.
 
 On the same two static artifacts, the real 120×30 TUI opened the
@@ -1227,15 +1246,20 @@ On the same two static artifacts, the real 120×30 TUI opened the
 single-character edits. The opt-in
 `terminal_editor::native_terminal_input_to_painted_frame_samples`
 waits until the VT100-decoded **cell grid** displays each exact edit:
-baseline/current key-write→paint p50 0.957/0.935 ms, p95
-1.544/1.343 ms, p99/max 1.734/1.550 ms. Scoped local samples
-vary across runs and do not establish platform-wide no regression.
+baseline/current key-write→paint p50 0.976/0.908 ms, p95
+1.541/1.289 ms, p99/max 1.668/1.565 ms. The matched nine-path
+`verification/bench_native_product.py` also records 256-line loaded
+PTY output→paint p50 4.469/4.794 ms, p95 5.167/5.544 ms,
+p99/max 5.402/5.801 ms, with raw samples and artifact/source
+digests in `verification/measurements/`.
 
-The schema-5 diagnostic freeze checks artifact, fixture, method and
+The schema-6 diagnostic freeze checks artifact, fixture, method and
 raw-percentile bindings, but records a dirty worktree; `--check`
-refuses release qualification. LSP sync/request, terminal output under
-load, cold/warm SSH/container deployment and transfer/retirement
-high-water marks remain unmeasured. PR native CI run
+refuses release qualification. LSP sync/request, cold/warm
+SSH/container deployment, transfer/retirement high-water marks and
+terminal-load performance on other native targets remain unmeasured.
+
+The native PR run
 [`36243016093`](https://github.com/stropdev/strop/actions/runs/36243016093)
 found macOS exec/PTY `Lost` exits and missing nested `nvim` on both GNU
 runners. After provisioning that test fixture, run
@@ -1244,11 +1268,14 @@ passed native x86_64 and aarch64 GNU Store, worker client and editor
 journeys. The later
 [`36245536278`](https://github.com/stropdev/strop/actions/runs/36245536278)
 passed all 19 direct supervisor tests on both macOS architectures with
-the guarded `libproc` repair. Intel still observed a test's marker
-between file open and write; Apple Silicon reached a TUI test whose
-`openpty` pointers were not mutable. Those fixture/portability fixes
-are now in source but have not passed native CI. Final-candidate
-Mac/arm qualification and full performance remain blocked.
+the guarded `libproc` repair. Run
+[`36246567485`](https://github.com/stropdev/strop/actions/runs/36246567485)
+then passed GNU Store/worker/editor journeys again and reached the
+real TUI on both macOS targets: both stalled after `BYTE-READY`,
+waiting for eight exact raw input bytes. A bounded diagnostic now
+completes a short read with distinct bytes only on failure; the
+product's actual missing bytes and final-candidate Mac/arm behavior
+are still unqualified. Full performance remains blocked.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

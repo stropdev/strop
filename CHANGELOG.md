@@ -119,6 +119,14 @@
   mainloop reader. A server that exits after answering configuration
   now publishes its classified status instead of stranding a pending
   read forever.
+- **Worker terminal flood no longer sleeps on a stale wake** (0058
+  WK12/WK20): the service drained all stream-arrival nudges after
+  reading only 32 buffered output chunks, then waited for its 250 ms
+  recovery timeout while later chunks were already queued. It now
+  drains the wake first and rechecks after each published bounded
+  turn. A real 256-line PTY burst changed from pre-fix p50 256.634 ms
+  to p50 4.794 ms on the wake-fixed static worker; the matched
+  pre-worker was p50 4.469 ms on the same Linux host.
 - **macOS exec/PTY exits retain their attested status** (0058 WK20):
   XNU may return `EPERM` for a process-group signal when only its
   unreaped zombie leader remains. The worker now accepts that result
@@ -145,40 +153,46 @@
   `a05d84f` Linux x86_64 pre-worker snapshot retains six raw passing
   gates beside the untouched dirty historical archive. On the same
   WSL2 host, 64 real static-worker handshakes per build measured
-  baseline/current p50 0.731/0.808 ms, p95 0.866/0.954 ms and
-  p99/max 1.115/1.459 ms (pre-worker protocol 1; worker protocol 2),
+  baseline/current p50 0.798/0.765 ms, p95 1.066/0.992 ms and
+  p99/max 1.310/1.399 ms (pre-worker protocol 1; worker protocol 2),
   46,226,704/47,373,648-byte artifacts pinned in
   `verification/measurements/`. This is local launch, not cold SSH
   deployment, TUI cell-grid paint or native macOS/aarch64 evidence.
 - **Scoped worker control-frame latency** (0058 WK20, not full
   performance qualification): the stripped static worker on WSL2
   completed eight warmups and 64 serial Health requests through the
-  real framed IPC; write+flush-to-result p50 0.203 ms, p95 0.275 ms,
-  p99/max 0.320 ms for the 47,373,648-byte artifact (sha256
-  67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130)
+  real framed IPC; write+flush-to-result p50 0.196 ms, p95 0.248 ms,
+  p99/max 0.274 ms for the 47,373,648-byte artifact (sha256
+  7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b)
   with raw samples and request bytes pinned in
-  `verification/measurements/`. TUI cell-grid paint,
-  cold remote deployment, LSP and terminal load remain unmeasured.
+  `verification/measurements/`. Cold remote deployment and LSP
+  remain unmeasured.
 - **Scoped real editor semantic-frame latency** (0058 WK20, not TUI
   render qualification): clean pre-worker and current static binaries
   each performed eight warmups plus 64 `--ui-stdio` text edits on the
   same WSL2 host after the editor opened a 10,000-line file through
   one real worker. Every returned frame visibly contains the next
-  edit. Baseline/current write+flush-to-view p50 was 0.226/0.235 ms,
-  p95 0.297/0.330 ms, p99/max 0.427/0.352 ms; raw samples,
+  edit. Baseline/current write+flush-to-view p50 was 0.232/0.234 ms,
+  p95 0.330/0.291 ms, p99/max 0.482/0.529 ms; raw samples,
   artifact hashes, framed bytes and RSS/threads are archived under
-  `verification/measurements/`. Candidate p95 is higher; no
-  no-regression claim. TUI paint on other native targets,
-  SSH/container deployment, LSP and terminal load still need evidence.
+  `verification/measurements/`. This scoped local result does not
+  qualify TUI paint, SSH/container deployment or LSP on other targets.
 - **Scoped real TUI cell-grid paint latency** (0058 WK20): the same
   two static artifacts each completed eight warmups and 64 real
   worker-backed TUI insertions in a 10,000-line file at 120×30.
   Each sample ends only after the PTY's VT100-decoded grid shows
-  the next exact edit. Baseline/current p50 0.957/0.935 ms, p95
-  1.544/1.343 ms, p99/max 1.734/1.550 ms on Linux Docker-on-WSL2.
-  Raw samples and method digest are archived; scoped local timings
-  vary between runs. SSH/container deployment, LSP, terminal output
-  load and other native targets remain release gates.
+  the next exact edit. Baseline/current p50 0.976/0.908 ms, p95
+  1.541/1.289 ms, p99/max 1.668/1.565 ms on Linux Docker-on-WSL2.
+  Raw samples and method digest are archived; SSH/container deployment,
+  LSP and TUI paint on other native targets remain release gates.
+- **Scoped loaded terminal output latency** (0058 WK20): matched static
+  artifacts each handled 64 two-key input requests that produced 256
+  real worker-PTY shell lines; every timer stopped at the exact final
+  VT100-painted grid marker. Linux Docker-on-WSL2 baseline/wake-fixed
+  p50 4.469/4.794 ms, p95 5.167/5.544 ms, p99/max 5.402/5.801 ms.
+  The pre-fix worker's p50 256.634 ms regression and both after-fix raw
+  samples are archived. This does not qualify remote, LSP,
+  memory high-water or the other native target profiles.
 - **Python-free SSH deployment evidence** (0058 WK07): a separate
   OpenSSH image without a Python interpreter deploys and launches the
   actual native worker, then exercises read/write/notification parity.
