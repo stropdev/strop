@@ -39,12 +39,14 @@ toml = "0.8"
 tempfile = "3"
 thiserror = "2"
 sha2 = "0.10"
+parking_lot = "0.12"
 
 [dev-dependencies]
 strop-trace = { path = "../strop-trace", version = "0.35.0", features = ["test-support"] }
 # WK04: the engine's own tests cross the real worker codec against the
 # in-process serve loop (transport seam, not a policy twin).
 strop-worker = { path = "../strop-worker", version = "0.35.0" }
+strop-remote = { path = "../strop-remote", version = "0.35.0", features = ["test-support"] }
 ratatui = "0.29"
 
 # 0057 VF11: Loom-instrumented coordination campaigns over the REAL

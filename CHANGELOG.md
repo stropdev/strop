@@ -20,9 +20,65 @@
   endpoint quietly reuses its verified cache. Restricted or SFTP-only
   hosts keep the exact read-only SFTP behavior, with mutations answered
   by the typed refusal — never an alternate write path.
+- **Explicit worker consent without write authority** (0058 WK09–WK15):
+  `:remote worker [URI]` admits an SSH worker for Git/LSP/search
+  without granting a document edit permit. Starting a remote search
+  admits its worker off the input path. `:container-worker` admits a
+  worker for the selected Docker engine and exact container incarnation;
+  browsing remains read-only and never deploys. Git and LSP in those
+  namespaces now require their bound worker; missing tools or authority
+  refuse typed instead of running Python or a container shell.
+- **Consumer-driven worker streams and recovery** (0058 WK11–WK13):
+  finite reads, process output and live PTY VT bytes return chunk
+  credits only as the consumer drains them; a stalled terminal no
+  longer loses output to a full receive queue. Dropped streams drain
+  without retaining unbounded data. Exec exit follows output delivery.
+  Stale PTY/exec controls cannot cross a worker incarnation. An
+  uncertain Store retains its prepared attempt for read-only
+  verification after a worker restart in the same observed
+  boot/mount/principal.
+- **Worker-owned scoped cache retirement** (0058 WK05/WK19):
+  an admitted SSH/container worker runs native cache maintenance before
+  publishing ready. A persistent per-cache OS lock excludes new
+  executable leases between the bounded lease snapshot and each
+  unlink; the worker accepts only the context on its own private
+  receipt. It preserves every recorded lease and its own executable,
+  removes only unleased same-context receipted objects, and reports
+  exact partial retirements on failure. Preinstalled objects remain
+  outside the managed cache. Generalized lock/snapshot induction
+  holds in the refined model; native platform qualification remains.
 
 ### Fixed
 
+- **Recovered Store refuses acknowledged attempts** (0058 WK18):
+  the worker now checks the actual Unconfirmed receipt outcome in
+  addition to the attested, matching namespace before read-only
+  reconciliation; a caller cannot make a committed receipt eligible
+  by selecting the recovered request name.
+
+- **Ranged worker reads close exactly once** (0058 WK19):
+  an exact-length read previously enqueued a terminal data chunk and
+  then another terminal marker on the next loop. The second marker
+  could reach the client after its stream was closed and poison the
+  session (`chunk on unknown stream 0`). The read now returns after
+  enqueueing its final chunk; a subsequent health request and read
+  remain live.
+- **Worker cache leases follow the real session** (0058 WK19):
+  a deployment probe previously left a cache record for its own
+  short-lived lease while the editor's live SSH worker had none. The
+  worker now verifies its final object and matching private receipt,
+  acquires the cache lock and registers its session before Welcome;
+  SSH/container admission awaits that handshake, and reconnect
+  registers a new lease. Stale crash records remain conservatively
+  pinned; the native collector does not infer their age or liveness.
+- **Deleted cache objects cannot become unleased workers** (0058 WK19):
+  removing a verified object after exec but before Hello previously
+  bypassed cache-lease registration and still granted Welcome. Cached
+  workers now refuse an unlinked or changed final path before
+  admission (including a Linux running-inode check); the client
+  receives that pre-handshake protocol error instead of a ten-second
+  timeout. The cache lock now excludes retirement until a new
+  admission has validated and registered the running inode.
 - **Shutdown no longer wedges behind a full event lane** (0057 VF19, the
   UiSessionModel storm finding): under a parallel storm of
   streaming-search-then-shutdown sessions, a backend could burn its
@@ -32,23 +88,161 @@
   `picker_ranking.retiring` never emptied. Forwarded job-channel events
   (one-shot facts: completions, terminal stops) now backpressure a full
   lane instead of being dropped — the picker stream bridge included.
+- **Protected Store rejects stale same-time sources** (0058 WK09):
+  save preserves the original nanosecond mtime, owner/group, mode and
+  bounded xattr set. The remote edit permit retains content, inode and
+  xattr baselines; an external same-size change with restored mtime or
+  a replaced inode cannot borrow that permit. Worker-loss or
+  cancellation after Store submission remains unconfirmed until
+  verified; no automatic write retry or source-dirty acknowledgment.
+- **Cache retirement no longer races another worker's Welcome**
+  (0058 WK06/WK19): the former standalone deployment-side GC and its
+  policy-only tests are gone. The actual worker holds the stable
+  owner-private OS lock across lease snapshot and scoped retirement;
+  foreign contexts and corrupt lease records cannot authorize unlink.
+  A second real worker/build survives collection. Both the SSH editor
+  and container editor retire an old object and receipt during
+  explicit worker admission; the direct SSH/provider journey does too.
+  Crashed worker leases stay pinned.
+- **Worker activation checks the exact receipt** (0058 WK18):
+  the cache reissues a stale receipt for the verified object and checks
+  its release, target, size, digest and provenance after writing. A
+  receipt lost after a successful write reply refuses before launch
+  rather than claiming readiness.
+- **Terminal flood exit no longer overtakes queued output** (0058 WK12):
+  worker wire frames remain ordered, but the client routes output and
+  status into separate channels. The terminal retains the status until
+  the output stream's final marker; a 32-chunk UI turn cannot mistake
+  still-queued VT bytes for output sent after exit.
+- **Worker-leased LSP exit no longer loses its EOF wake** (0058 WK10):
+  the stdout pump closes its bounded queue before waking a parked
+  mainloop reader. A server that exits after answering configuration
+  now publishes its classified status instead of stranding a pending
+  read forever.
+- **Worker terminal flood no longer sleeps on a stale wake** (0058
+  WK12/WK20): the service drained all stream-arrival nudges after
+  reading only 32 buffered output chunks, then waited for its 250 ms
+  recovery timeout while later chunks were already queued. It now
+  drains the wake first and rechecks after each published bounded
+  turn. A real 256-line PTY burst changed from pre-fix p50 256.634 ms
+  to p50 4.794 ms on the wake-fixed static worker; the matched
+  pre-worker was p50 4.469 ms on the same Linux host.
+- **macOS exec/PTY exits retain their attested status** (0058 WK20):
+  XNU may return `EPERM` for a process-group signal when only its
+  unreaped zombie leader remains. The worker now accepts that result
+  only after a non-reaping exit observation and a bounded system
+  `libproc` listing confirms the leader is the sole member; an
+  inaccessible descendant or uncertain listing still refuses clean
+  settlement. All 19 direct supervisor tests passed on both native
+  macOS architectures; complete editor journeys remain a release gate.
+- **Trace capture no longer self-invalidates its watched workspace**:
+  notifications for the active trace file are filtered before waking
+  the editor; unrelated file hints still reach source invalidation.
 
 ### Verification
 
-- **The core-assurance lane** (0057 VF19/VF20):
-  `docker compose run --build --rm core-assurance` runs the non-TLC
-  assurance campaigns — model-fleet anchor/drift pins, helper digest
-  pins, the remote-save fault-injection harnesses, the instrumented
-  Loom campaigns over the real synchronization seams, and the picker
-  teardown storm campaign.
-- **Mutant calibration registry** (0057 VF19): verification/mutants.json
-  maps every calibrated seam to its named mutants, the exact
-  invariant/test that must kill each and the lane demonstrating the
-  kill (16 seams, 79 attributed kill obligations);
-  verification/check_mutants.py fails on a seam without mutants, on
-  wrong/killed-by-nothing attribution (broken gate vs kill) and runs
-  the native kill executions (`--cfg strop_mutant`, never in release
-  artifacts).
+- **Core-assurance migration** (0057 VF20 / 0058 WK16–WK20):
+  the pre-worker candidate, inventory and Python helper digests are
+  preserved byte-for-byte under `verification/baseline/`. The worker
+  lane replaces helper-bundle tests with native Store, recovered
+  receipts, PTY stream-credit and concurrent cache-install journeys,
+  plus the existing instrumented Loom and mutant campaigns. The
+  final worker claim inventory and source/candidate requalification
+  remain release gates, not inherited badges.
+- **Scoped pre-worker and current worker startup evidence**: a clean
+  `a05d84f` Linux x86_64 pre-worker snapshot retains six raw passing
+  gates beside the untouched dirty historical archive. On the same
+  WSL2 host, 64 real static-worker handshakes per build measured
+  baseline/current p50 0.798/0.765 ms, p95 1.066/0.992 ms and
+  p99/max 1.310/1.399 ms (pre-worker protocol 1; worker protocol 2),
+  46,226,704/47,373,648-byte artifacts pinned in
+  `verification/measurements/`. This is local launch, not cold SSH
+  deployment, TUI cell-grid paint or native macOS/aarch64 evidence.
+- **Scoped worker control-frame latency** (0058 WK20, not full
+  performance qualification): the stripped static worker on WSL2
+  completed eight warmups and 64 serial Health requests through the
+  real framed IPC; write+flush-to-result p50 0.196 ms, p95 0.248 ms,
+  p99/max 0.274 ms for the 47,373,648-byte artifact (sha256
+  7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b)
+  with raw samples and request bytes pinned in
+  `verification/measurements/`. Cold remote deployment and LSP
+  remain unmeasured.
+- **Scoped real editor semantic-frame latency** (0058 WK20, not TUI
+  render qualification): clean pre-worker and current static binaries
+  each performed eight warmups plus 64 `--ui-stdio` text edits on the
+  same WSL2 host after the editor opened a 10,000-line file through
+  one real worker. Every returned frame visibly contains the next
+  edit. Baseline/current write+flush-to-view p50 was 0.232/0.234 ms,
+  p95 0.330/0.291 ms, p99/max 0.482/0.529 ms; raw samples,
+  artifact hashes, framed bytes and RSS/threads are archived under
+  `verification/measurements/`. This scoped local result does not
+  qualify TUI paint, SSH/container deployment or LSP on other targets.
+- **Scoped real TUI cell-grid paint latency** (0058 WK20): the same
+  two static artifacts each completed eight warmups and 64 real
+  worker-backed TUI insertions in a 10,000-line file at 120×30.
+  Each sample ends only after the PTY's VT100-decoded grid shows
+  the next exact edit. Baseline/current p50 0.976/0.908 ms, p95
+  1.541/1.289 ms, p99/max 1.668/1.565 ms on Linux Docker-on-WSL2.
+  Raw samples and method digest are archived; SSH/container deployment,
+  LSP and TUI paint on other native targets remain release gates.
+- **Scoped loaded terminal output latency** (0058 WK20): matched static
+  artifacts each handled 64 two-key input requests that produced 256
+  real worker-PTY shell lines; every timer stopped at the exact final
+  VT100-painted grid marker. Linux Docker-on-WSL2 baseline/wake-fixed
+  p50 4.469/4.794 ms, p95 5.167/5.544 ms, p99/max 5.402/5.801 ms.
+  The pre-fix worker's p50 256.634 ms regression and both after-fix raw
+  samples are archived. This does not qualify remote, LSP,
+  memory high-water or the other native target profiles.
+- **Python-free SSH deployment evidence** (0058 WK07): a separate
+  OpenSSH image without a Python interpreter deploys and launches the
+  actual native worker, then exercises read/write/notification parity.
+  CI runs this gate independently of the Python-equipped full suite.
+- **Symbolic worker-session safety proof** (0058 WK17): TLAPS proves
+  initialization, 19-action/stutter induction and named authority,
+  stream-credit, exit-order and uncertain-Store invariants over the
+  same WorkerSession model TLC exhausts. Three bounded configurations
+  retain their exact pre-normalization graphs; a matched healthy
+  Commit proof passes and the stale-commit mutant fails its own
+  safety obligation. Same-source Rust admission kernels now cover
+  framing, recovery and terminal delivery; OS effects and observer
+  premises are still separate evidence obligations.
+- **Symbolic worker-deployment safety proof** (0058 WK17): TLAPS now
+  proves initialization, 15-action/stutter induction and
+  consent/verified-activation/selected-context/owned-cleanup/live-lease
+  safety over the same WorkerDeploy model TLC exhausts, for arbitrary
+  nonempty client/context/digest sets. The full-state normalization
+  preserves the exact bounded state graphs; a matched scoped-Collect
+  proof passes and the cross-context cleanup mutant fails its own
+  obligation. Same-source Rust admission kernels now cover catalog,
+  content addresses, staged activation and lease-aware keep decisions;
+  the native collector's cross-client lock/snapshot exclusion has a
+  separate refined proof.
+- **Native cache exclusion model and generalized proof** (0058
+  WK17–WK19): TLC exhausts 35,897 two-client/two-context/two-build
+  lock/snapshot/retirement states, kills four attributable faults and
+  reaches concurrent workers, a blocked Welcome and a crashed lease.
+  TLAPS proves 447 induction obligations over the same transition
+  relation, including snapshot completeness, active-object, stale-record
+  and scoped-retirement invariants for arbitrary nonempty client,
+  context and digest sets disjoint from the non-value sentinel. Another
+  34 conditional retirement obligations pass; the matched
+  foreign-context mutation fails its own theorem. This does not prove
+  the OS lock, native macOS/arm execution or full WK20 performance.
+- **Mutant calibration and worker admission proof** (0057 VF19 /
+  0058 WK17–WK18): `verification/mutants.json` maps 20 seams to
+  99 named kill obligations. Four refined cache-model faults violate
+  their named invariants; the two executable Rust GC mutants die under
+  the real lock and second-worker tests in the core-assurance gate.
+  The native session classifier verifies against the pinned Verus
+  toolchain; OS and deployment premises are not discharged by that
+  pure admission proof.
+- **Same-source worker admission proofs** (0058 WK18): the wire decoder,
+  recovered-Store verifier, effect resolver, deploy compatibility/
+  activation and GC call verified `strop-core` kernels. The proof covers
+  those pure decisions, not codec byte scanning, SSH/Docker/OS effects,
+  receipt provenance, host durability or cross-client GC. Live worker
+  journeys include a lost acknowledgment and a lost or stale activation
+  receipt. Full WK20 platform/performance evidence remains open.
 
 ## 0.35.0 — 2026-09-17
 

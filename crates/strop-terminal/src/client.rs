@@ -1,116 +1,169 @@
-//! Worker-only session owner. Polling and destruction may perform native work;
-//! editor state receives only model::Update, never this type or its descriptors.
+//! Worker-owned PTY session (0058 WK12). The child, its terminal and its
+//! supervised lease live on the namespace's worker — reached through the
+//! worker client over the same wire as every other owned execution —
+//! while the VT, bounded history and immutable publications stay here.
+//! Editor state receives only model::Update, never transport handles.
+//!
+//! Ordering contract (the 0055 lifecycle, preserved over the wire):
+//!
+//! - Input chunks are admitted into one client sequence space and the
+//!   worker acknowledges each delivered chunk ([`ExecEvent::Input`]);
+//!   acknowledgments release the retained-input budget exactly like the
+//!   helper's ACKs did. A child that stops draining fills the worker's
+//!   bounded queue and is revoked — input admission fails truthfully
+//!   here first (the budget), never by a dropped byte.
+//! - Resize rides the worker's ordered PTY control queue; the reply is
+//!   applied-geometry, and the worker client's [`StreamEvent::Resized`]
+//!   marker arrives on the output stream in exact wire order. The VT
+//!   parser's geometry flips only at that marker, so output before it
+//!   is parsed under the old geometry and output after it under the
+//!   new — the helper's ACK-boundary semantics unchanged.
+//! - Exit is truthful: the supervisor's attested status maps to
+//!   [`Phase::Exited`], an unattested one (`Lost`, revocation) carries
+//!   no code, and a dead worker is a failure, never a guessed exit.
 use crate::{
-    launch::{Launch, WireLaunch},
+    launch::Launch,
     model::*,
-    protocol,
     vt::{Emission, Vt},
     Error,
 };
+use parking_lot::Mutex;
 use std::{
-    collections::VecDeque,
-    io,
-    os::{
-        fd::AsRawFd,
-        unix::{net::UnixStream, process::CommandExt},
-    },
-    process::{Command, Stdio},
+    collections::{HashMap, VecDeque},
+    os::unix::net::UnixDatagram,
+    sync::LazyLock,
 };
-use strop_core::{process::OwnedProcess, worker::CancelToken};
+use strop_core::worker::CancelToken;
+use strop_worker_client::{ExecEvent, PtySession, StreamEvent, Worker};
+use strop_worker_protocol::{ExitStatus, PtyGeometry, StreamId};
 
-struct Connection {
-    channel: UnixStream,
-    process: OwnedProcess,
-}
-impl Drop for Connection {
-    fn drop(&mut self) {
-        // A panicking worker no longer drains output. Close both halves before
-        // OwnedProcess waits, so helper backpressure cannot deadlock destruction.
-        let _ = self.channel.shutdown(std::net::Shutdown::Both);
-    }
-}
+/// One admitted input or resize awaiting its worker acknowledgment.
 struct Pending {
     sequence: u64,
     bytes: usize,
-    resize: Option<Geometry>,
+}
+
+/// Stream arrivals nudge the owning service's wake datagram: the
+/// connection's reader thread delivers chunks, this registry turns them
+/// into the same poll wake the intents use, so output latency never
+/// depends on the poll timeout. Entries key on the raw stream id;
+/// cross-worker collisions nudge a second service spuriously (it finds
+/// no chunk and sleeps again), never drop the real owner's wake.
+type WakeRegistry = HashMap<u64, Vec<(u64, UnixDatagram)>>;
+static WAKES: LazyLock<Mutex<WakeRegistry>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Install the stream-arrival hook on one lease (idempotent): worker
+/// stream chunks nudge the registered service wakes. One hook per
+/// lease; the terminal service owns it (readers of finite payloads use
+/// blocking reads and need no nudge).
+pub(crate) fn install_wake_hook(worker: &Worker) {
+    worker.set_stream_notifier(|stream: StreamId| {
+        let wakes = WAKES.lock();
+        if let Some(entries) = wakes.get(&stream.0) {
+            for (_, wake) in entries {
+                // A full datagram buffer means the service is already
+                // awake; dropping the nudge loses nothing.
+                let _ = wake.send(&[1]);
+            }
+        }
+    });
+}
+
+fn register_wake(stream: StreamId, session: SessionId, wake: UnixDatagram) {
+    WAKES
+        .lock()
+        .entry(stream.0)
+        .or_default()
+        .push((session.get(), wake));
+}
+
+fn deregister_wake(stream: StreamId, session: SessionId) {
+    let mut wakes = WAKES.lock();
+    if let Some(entries) = wakes.get_mut(&stream.0) {
+        entries.retain(|(owner, _)| *owner != session.get());
+        if entries.is_empty() {
+            wakes.remove(&stream.0);
+        }
+    }
 }
 
 pub struct Client {
-    connection: Connection,
+    pty: PtySession,
     token: CancelToken,
-    reader: protocol::Reader,
-    writer: protocol::Writer,
     vt: Vt,
     session: SessionId,
     phase: Phase,
-    final_phase: Option<Phase>,
+    exit: Option<ExitStatus>,
+    output_closed: bool,
     failure: Option<String>,
     warning: Option<String>,
     pending: VecDeque<Pending>,
+    resizes: VecDeque<(u64, Geometry)>,
     retained_input: usize,
     sequence: u64,
     acknowledged: u64,
     geometry_revision: u64,
     effects: Vec<Effect>,
 }
+
+/// Emulator settings owned by the embedder rather than the PTY lease.
+pub(crate) struct EmulationSettings<'a> {
+    pub keyboard: u8,
+    pub palette: Option<&'a Palette>,
+}
+
 impl Client {
-    pub fn spawn(
+    pub(crate) fn spawn(
         session: SessionId,
+        worker: Worker,
         launch: &Launch,
         geometry: Geometry,
-        keyboard: u8,
-        palette: Option<&Palette>,
+        emulation: EmulationSettings<'_>,
+        wake: UnixDatagram,
         token: &CancelToken,
     ) -> Result<Self, Error> {
-        let body = WireLaunch::encode(launch, geometry)?;
-        let mut vt = Vt::new(session, geometry, palette)?;
-        vt.keyboard_capabilities(keyboard)?;
-        let (channel, inherited) =
-            UnixStream::pair().map_err(|error| io_error("create helper channel", error))?;
-        channel
-            .set_nonblocking(true)
-            .map_err(|error| io_error("configure helper channel", error))?;
-        let lease = channel
-            .try_clone()
-            .map_err(|error| io_error("retain helper lease", error))?;
-        let fd = inherited.as_raw_fd();
-        let executable =
-            std::env::current_exe().map_err(|error| io_error("locate terminal helper", error))?;
-        let mut command = Command::new(executable);
-        command
-            .args(["--terminal-helper", &fd.to_string()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        // SAFETY: inherited is owned through spawn. Only this child's fd loses
-        // CLOEXEC; no other concurrent process can inherit the private socket.
-        unsafe {
-            command.pre_exec(move || {
-                let flags = libc::fcntl(fd, libc::F_GETFD);
-                if flags == -1 || libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        let process = OwnedProcess::spawn_leased(&mut command, token, lease)
-            .map_err(|failure| Error::Unavailable(failure.message))?;
-        drop(inherited);
-        let connection = Connection { channel, process };
-        let mut writer = protocol::Writer::default();
-        writer.push(protocol::LAUNCH, body)?;
+        use std::os::unix::ffi::OsStrExt;
+        let mut vt = Vt::new(session, geometry, emulation.palette)?;
+        vt.keyboard_capabilities(emulation.keyboard)?;
+        let spec = strop_worker_protocol::ExecSpec {
+            program: launch.program.as_bytes().to_vec(),
+            argv: launch
+                .arguments
+                .iter()
+                .map(|argument| argument.as_bytes().to_vec())
+                .collect(),
+            cwd: launch.directory.as_os_str().as_bytes().to_vec(),
+            env: launch
+                .environment
+                .iter()
+                .map(|(name, value)| strop_worker_protocol::request::EnvVar {
+                    name: name.as_bytes().to_vec(),
+                    value: value.as_bytes().to_vec(),
+                })
+                .collect(),
+            service: true,
+            pty: Some(PtyGeometry {
+                columns: geometry.columns,
+                rows: geometry.rows,
+            }),
+        };
+        let pty = worker.exec_pty(token, spec).map_err(|error| match error {
+            strop_worker_client::ClientError::Cancelled => Error::Closed,
+            other => Error::Unavailable(other.to_string()),
+        })?;
+        register_wake(pty.output_stream(), session, wake);
         Ok(Self {
-            connection,
+            pty,
             token: token.clone(),
-            reader: protocol::Reader::default(),
-            writer,
             vt,
             session,
-            phase: Phase::Starting,
-            final_phase: None,
+            phase: Phase::Running,
+            exit: None,
+            output_closed: false,
             failure: None,
             warning: None,
             pending: VecDeque::new(),
+            resizes: VecDeque::new(),
             retained_input: 0,
             sequence: 0,
             acknowledged: 0,
@@ -123,32 +176,25 @@ impl Client {
         &self.phase
     }
 
-    pub(crate) fn wait(&self, wake: &std::os::unix::net::UnixDatagram) -> Result<(), Error> {
-        let writable = self.writer.pending() && self.phase != Phase::Closing;
-        let mut descriptors = [
-            libc::pollfd {
-                fd: self.connection.channel.as_raw_fd(),
-                events: libc::POLLIN | if writable { libc::POLLOUT } else { 0 },
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: wake.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
-        ];
-        // SAFETY: the worker owns both descriptors and writable pollfd storage.
-        let result = unsafe {
-            libc::poll(
-                descriptors.as_mut_ptr(),
-                descriptors.len() as libc::nfds_t,
-                250,
-            )
-        };
+    /// Wait for service wakes (intents and stream-arrival nudges share
+    /// the one datagram). The timeout only bounds wake-loss recovery;
+    /// ordinary output arrives by nudge, never by poll.
+    pub(crate) fn wait(&self, wake: &UnixDatagram) -> Result<(), Error> {
+        use std::os::fd::AsRawFd;
+        let mut descriptors = [libc::pollfd {
+            fd: wake.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+        // SAFETY: the service owns the descriptor and the pollfd storage.
+        let result = unsafe { libc::poll(descriptors.as_mut_ptr(), 1, 250) };
         if result < 0 {
-            let error = io::Error::last_os_error();
-            if error.kind() != io::ErrorKind::Interrupted {
-                return Err(io_error("wait for terminal worker input", error));
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::Interrupted {
+                return Err(Error::Io {
+                    operation: "wait for terminal worker input",
+                    detail: error.to_string(),
+                });
             }
         }
         Ok(())
@@ -163,7 +209,7 @@ impl Client {
             return Err(Error::Closed);
         }
         let emission = self.vt.input(input, confirmed)?;
-        let sequence = self.admit(protocol::INPUT, emission.reply, None)?;
+        let sequence = self.feed(&emission.reply)?;
         self.effects(emission.effects);
         Ok(sequence)
     }
@@ -173,7 +219,7 @@ impl Client {
             return Err(Error::Closed);
         }
         let emission = self.vt.focus(focused)?;
-        self.admit(protocol::INPUT, emission.reply, None)
+        self.feed(&emission.reply)
     }
 
     pub fn resize(&mut self, geometry: Geometry) -> Result<u64, Error> {
@@ -183,11 +229,74 @@ impl Client {
         if !geometry.valid() || geometry.revision <= self.geometry_revision {
             return Err(Error::Protocol("stale or invalid terminal geometry".into()));
         }
-        let bytes =
-            serde_json::to_vec(&geometry).map_err(|error| Error::Protocol(error.to_string()))?;
-        let sequence = self.admit(protocol::RESIZE, bytes, Some(geometry))?;
+        // Applied-geometry semantics: the worker's reply means the ioctl
+        // landed; the parser flips at the ordered output marker.
+        self.pty
+            .resize(PtyGeometry {
+                columns: geometry.columns,
+                rows: geometry.rows,
+            })
+            .map_err(|error| Error::Unavailable(error.to_string()))?;
+        let charge = 16usize;
+        if charge > (MAX_INPUT_BYTES + 128).saturating_sub(self.retained_input)
+            || self.pending.len() >= 128
+        {
+            return Err(Error::InputFull);
+        }
+        let sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
+        self.retained_input += charge;
+        self.sequence = sequence;
+        self.pending.push_back(Pending {
+            sequence,
+            bytes: charge,
+        });
+        self.resizes.push_back((sequence, geometry));
         self.geometry_revision = geometry.revision;
         Ok(sequence)
+    }
+
+    /// One input emission as bounded ordered chunks. Oversized text is
+    /// split well under the wire ceiling; the last chunk's sequence
+    /// acknowledges the whole emission (chunks are delivered in order).
+    fn feed(&mut self, bytes: &[u8]) -> Result<u64, Error> {
+        const FEED_CHUNK: usize = 128 * 1024;
+        if bytes.is_empty() {
+            let sequence = self
+                .sequence
+                .checked_add(1)
+                .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
+            self.sequence = sequence;
+            return Ok(sequence);
+        }
+        let chunks = bytes.chunks(FEED_CHUNK);
+        let count = chunks.len();
+        let total: usize = bytes.len() + 8 * count;
+        if total > (MAX_INPUT_BYTES + 128).saturating_sub(self.retained_input)
+            || self.pending.len() + count > 128
+        {
+            return Err(Error::InputFull);
+        }
+        let mut last = self.sequence;
+        for chunk in chunks {
+            let sequence = self
+                .sequence
+                .checked_add(1)
+                .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
+            self.pty
+                .feed(chunk)
+                .map_err(|error| Error::Unavailable(error.to_string()))?;
+            self.retained_input += chunk.len() + 8;
+            self.sequence = sequence;
+            self.pending.push_back(Pending {
+                sequence,
+                bytes: chunk.len() + 8,
+            });
+            last = sequence;
+        }
+        Ok(last)
     }
 
     pub fn stop(&mut self) -> Result<(), Error> {
@@ -198,138 +307,118 @@ impl Client {
         if !self.pending.is_empty() {
             self.warning = Some("terminal stopped; unacknowledged input was revoked".into());
         }
-        self.writer = protocol::Writer::default();
-        self.connection
-            .process
+        self.pty
             .terminate()
-            .map_err(|failure| Error::Unavailable(failure.message))
+            .map_err(|error| Error::Unavailable(error.to_string()))
     }
 
-    /// Consume a bounded turn. ACK precedes output under the new geometry, so
-    /// resize is applied to the parser only at that ordered transport boundary.
+    /// Consume a bounded turn: output chunks, the ordered resize
+    /// markers and input acknowledgments, then settlement. The VT
+    /// geometry flips only at a marker, preserving the 0055 resize
+    /// boundary over the wire.
     pub fn poll(&mut self) -> Result<Option<Update>, Error> {
         if !self.phase.live() {
             return Ok(None);
         }
-        if self.token.is_cancelled() && self.phase.live() && self.phase != Phase::Closing {
+        if self.token.is_cancelled() && self.phase != Phase::Closing {
             self.stop()?;
         }
         let mut changed = false;
         let mut dirty = false;
         for _ in 0..32 {
-            if self.final_phase.is_some() {
+            if self.output_closed {
                 break;
             }
-            let Some(packet) = self.reader.next(&mut self.connection.channel)? else {
-                break;
-            };
-            changed = true;
-            match packet.kind {
-                protocol::READY => {
-                    if !matches!(self.phase, Phase::Starting | Phase::Closing)
-                        || packet.body != protocol::VERSION.to_le_bytes()
-                    {
-                        return Err(Error::Protocol("invalid terminal helper readiness".into()));
+            let event = match self.pty.try_output() {
+                Ok(event) => event,
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.output_closed = true;
+                    if self.exit.is_none() && self.failure.is_none() {
+                        self.failure =
+                            Some("terminal output channel closed without a status".into());
                     }
-                    if self.phase == Phase::Starting {
-                        self.phase = Phase::Running;
-                    }
-                    dirty = true;
-                }
-                protocol::OUTPUT => {
-                    if self.final_phase.is_some() {
-                        return Err(Error::Protocol(
-                            "terminal output followed final status".into(),
-                        ));
-                    }
-                    let emission = self.vt.feed(&packet.body)?;
-                    self.emission(emission)?;
-                    dirty = true;
-                }
-                protocol::ACK => {
-                    let (sequence, remaining) = protocol::sequence(&packet.body)?;
-                    let expected = self.pending.front().ok_or_else(|| {
-                        Error::Protocol("unexpected terminal acknowledgment".into())
-                    })?;
-                    if !remaining.is_empty() || sequence != expected.sequence {
-                        return Err(Error::Protocol(
-                            "out-of-order terminal acknowledgment".into(),
-                        ));
-                    }
-                    if let Some(pending) = self.pending.pop_front() {
-                        self.retained_input -= pending.bytes;
-                        if let Some(geometry) = pending.resize {
-                            self.vt.resize(geometry)?;
-                            dirty = true;
-                        }
-                    }
-                    self.acknowledged = sequence;
-                }
-                protocol::FAILED => {
-                    let text = String::from_utf8(packet.body)
-                        .map_err(|_| Error::Protocol("invalid terminal failure text".into()))?;
-                    self.failure = Some(strop_core::layout::printable_text(text).into_owned());
-                    self.phase = Phase::Closing;
-                    self.writer = protocol::Writer::default();
-                }
-                protocol::EXITED => {
-                    let phase = serde_json::from_slice(&packet.body)
-                        .map_err(|error| Error::Protocol(error.to_string()))?;
-                    if self.final_phase.is_some() || !matches!(phase, Phase::Exited { .. }) {
-                        return Err(Error::Protocol("invalid terminal final status".into()));
-                    }
-                    self.final_phase = Some(phase);
-                    // Final status closes the protocol. A short-lived helper may
-                    // close with late input still unread; don't reinterpret that
-                    // socket reset as failure after its validated final record.
-                    self.phase = Phase::Closing;
-                    self.writer = protocol::Writer::default();
+                    changed = true;
                     break;
                 }
-                _ => {
-                    return Err(Error::Protocol(
-                        "unexpected terminal helper response".into(),
-                    ))
+            };
+            changed = true;
+            match event {
+                StreamEvent::Chunk(chunk) => {
+                    // The worker orders the terminal chunk before ExecExit
+                    // on one wire, but the client routes them into separate
+                    // bounded channels. A 32-chunk poll turn may observe
+                    // the exit first while older chunks remain queued.
+                    // Only the output stream's final marker permits phase
+                    // settlement below; the exit event is retained meanwhile.
+                    if !chunk.bytes.is_empty() {
+                        let emission = self.vt.feed(&chunk.bytes)?;
+                        self.emission(emission)?;
+                        dirty = true;
+                    }
+                    if chunk.last {
+                        self.output_closed = true;
+                    }
+                }
+                StreamEvent::Resized => {
+                    let Some((sequence, geometry)) = self.resizes.pop_front() else {
+                        return Err(Error::Protocol(
+                            "unexpected terminal resize boundary".into(),
+                        ));
+                    };
+                    self.vt.resize(geometry)?;
+                    self.cover(sequence);
+                    dirty = true;
+                }
+                StreamEvent::Failed(reason) => {
+                    self.failure = Some(reason);
+                    self.output_closed = true;
                 }
             }
         }
-        if self.reader.eof() && self.final_phase.is_none() {
-            return Err(Error::Protocol(
-                "terminal helper closed without final status".into(),
-            ));
-        }
-        if self.phase != Phase::Closing && self.final_phase.is_none() {
-            if let Err(error) = self.writer.flush(&mut self.connection.channel) {
-                self.warning = Some(format!(
-                    "terminal input transport closed: {error}; draining final status"
-                ));
-                self.stop()?;
-                changed = true;
+        loop {
+            match self.pty.events().try_recv() {
+                Ok(ExecEvent::Input { sequence }) => {
+                    self.cover(sequence);
+                    changed = true;
+                }
+                Ok(ExecEvent::Exit(status)) => {
+                    self.exit = Some(status);
+                    changed = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    if self.exit.is_none() {
+                        self.exit = Some(ExitStatus::Lost);
+                    }
+                    break;
+                }
             }
         }
-        if self.final_phase.is_some()
-            && self
-                .connection
-                .process
-                .has_exited()
-                .map_err(|failure| Error::Unavailable(failure.message))?
-        {
-            let status = self
-                .connection
-                .process
-                .wait()
-                .map_err(|failure| Error::Unavailable(failure.message))?;
+        if self.output_closed && self.exit.is_some() {
+            let status = self.exit.take();
             self.phase = if let Some(failure) = self.failure.take() {
                 Phase::Failed(failure)
-            } else if !status.success() {
-                Phase::Failed(format!("terminal helper exited with {status}"))
             } else {
-                self.final_phase
-                    .take()
-                    .ok_or_else(|| Error::Protocol("missing terminal final state".into()))?
+                match status {
+                    Some(ExitStatus::Exit(code)) => Phase::Exited {
+                        code: Some(code),
+                        signal: None,
+                    },
+                    Some(ExitStatus::Signal(signal)) => Phase::Exited {
+                        code: None,
+                        signal: Some(signal),
+                    },
+                    // Revocation and every unattested settlement: no
+                    // code is ever guessed.
+                    Some(ExitStatus::Lost) | None => Phase::Exited {
+                        code: None,
+                        signal: None,
+                    },
+                }
             };
-            self.final_phase = None;
             self.pending.clear();
+            self.resizes.clear();
             self.retained_input = 0;
             changed = true;
         }
@@ -353,36 +442,30 @@ impl Client {
         }))
     }
 
-    fn admit(&mut self, kind: u8, bytes: Vec<u8>, resize: Option<Geometry>) -> Result<u64, Error> {
-        let charge = bytes.capacity().saturating_add(8);
-        if charge > (MAX_INPUT_BYTES + 128).saturating_sub(self.retained_input)
-            || self.pending.len() >= 128
+    /// One delivered sequence: inputs and ordered resizes share one
+    /// client sequence space, and the worker delivers in order, so an
+    /// acknowledgment covers every earlier admission.
+    fn cover(&mut self, sequence: u64) {
+        while self
+            .pending
+            .front()
+            .is_some_and(|pending| pending.sequence <= sequence)
         {
-            return Err(Error::InputFull);
+            if let Some(pending) = self.pending.pop_front() {
+                self.retained_input -= pending.bytes;
+            }
         }
-        let sequence = self
-            .sequence
-            .checked_add(1)
-            .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
-        self.writer.push_sequenced(kind, sequence, bytes)?;
-        self.retained_input += charge;
-        self.sequence = sequence;
-        self.pending.push_back(Pending {
-            sequence,
-            bytes: charge,
-            resize,
-        });
-        Ok(sequence)
+        self.acknowledged = self.acknowledged.max(sequence);
     }
 
     fn emission(&mut self, emission: Emission) -> Result<(), Error> {
         self.effects(emission.effects);
-        if !emission.reply.is_empty() && self.phase == Phase::Running && self.final_phase.is_none()
-        {
-            self.admit(protocol::INPUT, emission.reply, None)?;
+        if !emission.reply.is_empty() && self.phase == Phase::Running && self.exit.is_none() {
+            self.feed(&emission.reply)?;
         }
         Ok(())
     }
+
     fn effects(&mut self, effects: Vec<Effect>) {
         for effect in effects {
             // Effects are state/flags, not an unbounded event history. Preserve
@@ -397,9 +480,12 @@ impl Client {
         }
     }
 }
-fn io_error(operation: &'static str, error: io::Error) -> Error {
-    Error::Io {
-        operation,
-        detail: error.to_string(),
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        deregister_wake(self.pty.output_stream(), self.session);
+        if self.phase.live() {
+            let _ = self.pty.terminate();
+        }
     }
 }

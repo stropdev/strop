@@ -126,6 +126,10 @@ impl Editor {
         }
         let operation = ticket.key.operation.clone();
         let tx = self.io.tx.clone();
+        // The endpoint's admitted worker lease when the session holds
+        // one (0058 WK10): the remote `ssh -G` rides the lease's
+        // supervised exec; read-only routing, never a deploy.
+        let workers = self.remote.workers.clone();
         let handle = worker::spawn(
             "strop-native",
             move |outcome| {
@@ -168,8 +172,13 @@ impl Editor {
                                 strop_git::ssh::effective_host(&remote, &cancel)
                             }
                             strop_git::RepoTarget::Remote { endpoint, workdir } => {
+                                let lease = workers.get(endpoint);
                                 strop_git::remote::effective_host(
-                                    endpoint, workdir, &remote, &cancel,
+                                    endpoint,
+                                    workdir,
+                                    &remote,
+                                    lease.as_ref(),
+                                    &cancel,
                                 )
                             }
                             strop_git::RepoTarget::Container { .. } => {

@@ -5,7 +5,7 @@
 //! (`ResultOutcome::Failed`), never blurred into admission refusals.
 
 use std::collections::HashMap;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -18,7 +18,9 @@ use strop_worker_protocol::{Refusal, RequestId, ResultOutcome, WorkerMessage};
 use strop_workspace::operation::{FsFailure, FsFailureKind, LocatedObservation, StepReceipt};
 use strop_workspace::ResourceLocation;
 
-use super::{failure, io_failure, Inbound, SessionState};
+use super::stream_window::{StreamRegistration, WindowUse};
+
+use super::{failure, io_failure, Inbound, PushChunk, SessionState};
 
 /// Read payloads stream in 64 KiB chunks (the wire ceiling is 256 KiB).
 const READ_CHUNK: usize = 64 * 1024;
@@ -26,8 +28,8 @@ const READ_CHUNK: usize = 64 * 1024;
 /// an apply's declared length is verified against exactly what arrived.
 pub(super) const MAX_CONTENT_BYTES: usize = 256 * 1024 * 1024;
 
-pub(super) fn observe<W: Write>(
-    shared: &Arc<SessionState<W>>,
+pub(super) fn observe(
+    shared: &Arc<SessionState>,
     token: &CancelToken,
     locations: &[ResourceLocation],
 ) -> ResultOutcome {
@@ -52,11 +54,13 @@ fn observe_one(
     location: &ResourceLocation,
 ) -> Result<LocatedObservation, FsFailure> {
     context.admit(location)?;
-    let value = strop_fs::observe(&location.path, false, token)?;
+    let value = strop_fs::observe(&location.path, false, false, token)?;
     let value = match value {
         Some(observation) if observation.kind == strop_workspace::EntryKind::SymbolicLink => {
             match std::fs::canonicalize(&location.path) {
-                Ok(target) => strop_fs::observe(&target, false, token)?.or(Some(observation)),
+                Ok(target) => {
+                    strop_fs::observe(&target, false, false, token)?.or(Some(observation))
+                }
                 Err(_) => Some(observation),
             }
         }
@@ -68,8 +72,8 @@ fn observe_one(
     })
 }
 
-pub(super) fn list<W: Write>(
-    shared: &Arc<SessionState<W>>,
+pub(super) fn list(
+    shared: &Arc<SessionState>,
     token: &CancelToken,
     location: ResourceLocation,
     cursor: Option<String>,
@@ -95,15 +99,15 @@ pub(super) fn list<W: Write>(
 /// completion — the client's payload errors on the short body, never
 /// silently truncating (the wire has no stream-error frame; the announced
 /// `size` is the integrity anchor).
-pub(super) fn read_streaming<W: Write + Send + 'static>(
-    shared: &Arc<SessionState<W>>,
+pub(super) fn read_streaming(
+    shared: &Arc<SessionState>,
     id: RequestId,
     token: &CancelToken,
     location: ResourceLocation,
     offset: u64,
     length: Option<u64>,
 ) {
-    let reply = |outcome| shared.send(&WorkerMessage::Result { id, outcome });
+    let reply = |outcome| shared.send(WorkerMessage::Result { id, outcome });
     use std::io::Seek as _;
     let file = (|| -> Result<std::fs::File, FsFailure> {
         shared.context.admit(&location)?;
@@ -143,6 +147,7 @@ pub(super) fn read_streaming<W: Write + Send + 'static>(
         length.map_or(available, |left| left.min(available))
     });
     let stream = shared.mint_stream();
+    let window = StreamRegistration::new(shared, stream);
     reply(ResultOutcome::ReadOpened {
         stream,
         size: announced,
@@ -153,59 +158,73 @@ pub(super) fn read_streaming<W: Write + Send + 'static>(
     loop {
         let want = remaining.map_or(READ_CHUNK, |left| left.min(READ_CHUNK as u64) as usize);
         if token.is_cancelled() || want == 0 || shared.stop.load(Ordering::Acquire) {
-            shared.send_chunk(&StreamChunk {
-                stream,
-                sequence,
-                last: true,
-                bytes: Vec::new(),
-            });
+            // The terminal marker bypasses a full data lane: a cancelled
+            // bulk read never waits behind its own queued bytes.
+            shared.end_stream(stream, sequence);
             return;
         }
-        match file.read(&mut buffer[..want]) {
+        if window.take(token) != WindowUse::Emit {
+            shared.end_stream(stream, sequence);
+            return;
+        }
+        let read = loop {
+            match file.read(&mut buffer[..want]) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                result => break result,
+            }
+        };
+        match read {
             Ok(0) => {
-                shared.send_chunk(&StreamChunk {
-                    stream,
-                    sequence,
-                    last: true,
-                    bytes: Vec::new(),
-                });
+                shared.end_stream(stream, sequence);
                 return;
             }
             Ok(count) => {
                 let last = remaining == Some(count as u64);
-                shared.send_chunk(&StreamChunk {
-                    stream,
-                    sequence,
-                    last,
-                    bytes: buffer[..count].to_vec(),
-                });
+                let pushed = shared.push_chunk(
+                    StreamChunk {
+                        stream,
+                        sequence,
+                        last,
+                        bytes: buffer[..count].to_vec(),
+                    },
+                    Some(token),
+                );
+                match pushed {
+                    // This chunk IS the terminal marker. Falling into
+                    // the next loop would emit a second `last` for the
+                    // same range and poison the client's closed stream.
+                    PushChunk::Enqueued if last => return,
+                    PushChunk::Enqueued => {}
+                    // Cancelled while blocked behind the full data lane:
+                    // the stream still ends honestly — short of the
+                    // announced size, so the client errors, never
+                    // silently truncates.
+                    PushChunk::Cancelled => {
+                        shared.end_stream(stream, sequence + 1);
+                        return;
+                    }
+                    PushChunk::Halted => return,
+                }
                 sequence += 1;
                 if let Some(left) = remaining.as_mut() {
                     *left -= count as u64;
                 }
             }
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => {
                 shared.note(format_args!("read: {error}"));
-                shared.send_chunk(&StreamChunk {
-                    stream,
-                    sequence,
-                    last: true,
-                    bytes: Vec::new(),
-                });
+                shared.end_stream(stream, sequence);
                 return;
             }
         }
     }
 }
 
-pub(super) fn prepare<W: Write>(
-    shared: &Arc<SessionState<W>>,
+pub(super) fn prepare(
+    shared: &Arc<SessionState>,
     token: &CancelToken,
     intents: &[strop_workspace::operation::OperationIntent],
     environment: Option<strop_worker_protocol::request::EnvironmentOverride>,
 ) -> ResultOutcome {
-    // A client's admitted environment override wins (per-session trash
     // roots); absent fields keep this worker's captured context.
     let environment = environment.map_or_else(
         || shared.environment.clone(),
@@ -223,8 +242,8 @@ pub(super) fn prepare<W: Write>(
     }
 }
 
-pub(super) fn apply<W: Write>(
-    shared: &Arc<SessionState<W>>,
+pub(super) fn apply(
+    shared: &Arc<SessionState>,
     token: &CancelToken,
     steps: Vec<strop_workspace::operation::PreparedOperation>,
     content: Option<strop_worker_protocol::StreamRef>,
@@ -246,9 +265,14 @@ pub(super) fn apply<W: Write>(
         };
         let rope = ropey::Rope::from_str(text);
         for (step, operation) in steps.iter().enumerate() {
-            if operation.intent.kind == strop_workspace::operation::OperationKind::Copy
-                && operation.intent.copy_version == strop_workspace::operation::CopyVersion::Buffer
-            {
+            let carries_content = matches!(
+                operation.intent.kind,
+                strop_workspace::operation::OperationKind::Store
+            ) || (operation.intent.kind
+                == strop_workspace::operation::OperationKind::Copy
+                && operation.intent.copy_version
+                    == strop_workspace::operation::CopyVersion::Buffer);
+            if carries_content {
                 contents.insert(step, rope.clone());
             }
         }
@@ -263,8 +287,8 @@ pub(super) fn apply<W: Write>(
 
 /// Consume one completed upload stream: it must exist, be closed by its
 /// `last` chunk, and match the declared length and digest exactly.
-fn take_content<W: Write>(
-    shared: &Arc<SessionState<W>>,
+fn take_content(
+    shared: &Arc<SessionState>,
     reference: strop_worker_protocol::StreamRef,
 ) -> Result<Vec<u8>, Box<ResultOutcome>> {
     let taken = shared.inbound.lock().remove(&reference.stream);
@@ -293,13 +317,46 @@ fn take_content<W: Write>(
     Ok(bytes)
 }
 
-pub(super) fn verify<W: Write>(
-    shared: &Arc<SessionState<W>>,
+pub(super) fn verify(
+    shared: &Arc<SessionState>,
     token: &CancelToken,
     attempt: &StepReceipt,
     binding: Option<strop_worker_protocol::DocumentStamp>,
 ) -> ResultOutcome {
     match strop_fs::batch::verify(&shared.context, attempt, token) {
+        Ok(verified) => ResultOutcome::Verified { verified, binding },
+        Err(failure) => ResultOutcome::Failed { failure },
+    }
+}
+
+/// Only observation and durable synchronization are permitted after
+/// reconnect. The client's old prepared capability is never applied.
+pub(super) fn verify_recovered(
+    shared: &Arc<SessionState>,
+    token: &CancelToken,
+    attempt: &StepReceipt,
+    expected: &strop_worker_protocol::NamespaceIdentity,
+    binding: Option<strop_worker_protocol::DocumentStamp>,
+) -> ResultOutcome {
+    use strop_core::worker::recovery_policy::recovery_admitted;
+    let attested = expected.identity != "unattested";
+    let namespace_matches = expected == &shared.namespace;
+    // The receipt, not the request name, supplies the uncertainty
+    // premise. A committed, refused or cancelled attempt cannot enter
+    // read-only recovery even if a client sends VerifyRecovered for it.
+    if !recovery_admitted(
+        attested,
+        namespace_matches,
+        attempt.outcome.is_unconfirmed(),
+    ) {
+        return ResultOutcome::Failed {
+            failure: failure(
+                FsFailureKind::Conflict,
+                "worker namespace or principal changed; recovered save cannot be verified",
+            ),
+        };
+    }
+    match strop_fs::batch::verify_recovered(&shared.context, attempt, token) {
         Ok(verified) => ResultOutcome::Verified { verified, binding },
         Err(failure) => ResultOutcome::Failed { failure },
     }

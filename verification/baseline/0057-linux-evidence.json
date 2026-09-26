@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "qualification": "linux-x86_64-local-evidence-only",
+  "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+  "tree": "3ac5fdd501d42dc300915ad05b84b0004ce9ab78",
+  "cargo_lock_sha256": "36a41f260b06d64538cf19f7d0a1f418ab689e6ecfe60ff66b80650f2fb3e4b6",
+  "candidate": {
+    "path": "verification/baseline/0057-linux-candidate.json",
+    "sha256": "15ab49230ad7f76a6dc5f0901f07ac87e0f43f25e8d8388dea6a2c8b04aed7b2"
+  },
+  "inventory": {
+    "path": "verification/baseline/0057-linux-inventory.json",
+    "sha256": "5bd0ad567a28e8562edaa4d5f12879a8b68f07af6b25d2c18c91ac83a8adde61",
+    "boundaries": 21,
+    "claims": 74
+  },
+  "helper_digests_sha256": "7067e2969445da4876668744300d736bb3c9320ece0d8aed7be98a560ad49414",
+  "builder": "rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d",
+  "host": {
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "architecture": "x86_64"
+  },
+  "gates": {
+    "test": {
+      "command": "docker compose run --build --rm test",
+      "log": "verification/baseline/0057-linux-logs/test.log",
+      "sha256": "7e73b1f81ea4afefcc39ea501a488e3d0a0aeda7bec31ea203a5f76941c150a0",
+      "status": "passed"
+    },
+    "model": {
+      "command": "docker compose run --build --rm model",
+      "log": "verification/baseline/0057-linux-logs/model.log",
+      "sha256": "b6c25a8073f61c4ea10118bd49ba63965c528aa291d875fc5c77fd0aee40e541",
+      "status": "passed"
+    },
+    "verify-tlaps": {
+      "command": "docker compose run --build --rm verify && docker compose run --build --rm tlaps",
+      "log": "verification/baseline/0057-linux-logs/verify-tlaps.log",
+      "sha256": "799db797bf0daa4d1284cef9df32798d3f88e820af617b0b74722a237e64fd5e",
+      "status": "passed"
+    },
+    "core-assurance": {
+      "command": "docker compose run --build --rm core-assurance",
+      "log": "verification/baseline/0057-linux-logs/core-assurance.log",
+      "sha256": "fba0e2eeb5f523d0ff144a29e38fa584aa61f953e03242c739b35aefc400f175",
+      "status": "passed"
+    },
+    "container-test": {
+      "command": "docker compose run --build --rm container-test",
+      "log": "verification/baseline/0057-linux-logs/container-test.log",
+      "sha256": "c43cbb0eb91ad5d5ea59f997703884c49188681a06cbb2f051ec41f081e35435",
+      "status": "passed"
+    },
+    "static-release": {
+      "command": "docker compose build release",
+      "log": "verification/baseline/0057-linux-logs/static-release.log",
+      "sha256": "bb8665a9ce8ed47a711584e62d9a2495fcc43a95d9536e8422010142e66edc42",
+      "status": "passed"
+    }
+  },
+  "not_covered": [
+    "macOS and aarch64 actual target execution was not available on this workstation",
+    "FS-STORE is the 75th claim in the earlier dirty historical archive and belongs to the later worker cutover; this clean baseline contains 74 claims",
+    "These Linux x86 gates do not qualify VF20 for release on all supported platforms"
+  ]
+}

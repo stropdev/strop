@@ -170,6 +170,10 @@ pub struct Observation {
     pub gid: Option<u32>,
     pub links: Option<u64>,
     pub digest: Option<[u8; 32]>,
+    /// Bounded xattr-set digest, present only for protected Store
+    /// preparation and recovery. Ordinary listings never hash xattrs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attributes: Option<[u8; 32]>,
 }
 impl Observation {
     pub fn unknown(kind: EntryKind) -> Self {
@@ -184,6 +188,7 @@ impl Observation {
             gid: None,
             links: None,
             digest: None,
+            attributes: None,
         }
     }
     pub fn same_object(&self, other: &Self) -> bool {

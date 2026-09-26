@@ -90,6 +90,7 @@ fn spawn_search(
         },
         ResourceLocation::local(cwd.to_path_buf()),
         snapshots,
+        None,
         tx,
     );
     (worker, request)
@@ -288,6 +289,7 @@ fn a_superseded_generation_never_publishes() {
         policy(),
         ResourceLocation::local(root.to_path_buf()),
         vec![busy_snapshot(root, "gena_hit in the buffer")],
+        None,
         tx_a,
     );
     let first = rx_a.recv_timeout(TIMEOUT).unwrap();
@@ -303,6 +305,7 @@ fn a_superseded_generation_never_publishes() {
         policy(),
         ResourceLocation::local(root.to_path_buf()),
         Vec::new(),
+        None,
         tx_b,
     );
     // A settles exactly once as superseded and never publishes again.

@@ -12,7 +12,7 @@ mod presentation;
 mod sidebar;
 pub use file_list::PreparedFiles;
 pub(crate) use hunk_set::HunkSet;
-pub(crate) use jobs::{git_failure, repo_or_unavailable};
+pub(crate) use jobs::{git_failure, repo_lease, repo_or_unavailable};
 pub use presentation::PreparedDiff;
 pub use sidebar::{Sidebar, SidebarRow};
 mod types;
@@ -225,6 +225,9 @@ impl Editor {
             file.clone().map(trace::services::NativePath),
             range,
         );
+        let workers = self.remote.workers.clone();
+        let containers = self.containers.workers.clone();
+        let container_started = self.git_container_started(&repo);
         self.launch_git_job(
             "git-log",
             "git.log",
@@ -235,7 +238,14 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let exec = GitExec::for_target(&repo);
+                let lease =
+                    jobs::repo_lease(&workers, &containers, container_started.as_deref(), &repo);
+                let exec = match GitExec::for_target_routed(&repo, lease.as_ref()) {
+                    Ok(exec) => exec,
+                    Err(error) => {
+                        return Outcome::failed(FailureKind::Unavailable, error.to_string())
+                    }
+                };
                 match memory::log_graph_range(&exec, &cancel, 200, file.as_deref(), range) {
                     Ok(rows) => Outcome::Success(rows),
                     Err(message) => Outcome::failed(FailureKind::Exit, message),

@@ -135,8 +135,9 @@ Open a directory with `strop DIRECTORY`, `:browse`, or `:e DIRECTORY`.
 cwd unchanged; Enter opens a structured entry and `-`/Backspace goes to its
 parent. Directory-local `Space a` opens filesystem actions.
 
-Filesystem mutations use **Review → Apply → Receipt**, locally and on supported
-POSIX/Python SSH hosts:
+Filesystem mutations use **Review → Apply → Receipt**, locally and on SSH
+hosts where the native worker is admitted (restricted/SFTP-only hosts
+remain read-only):
 
 ```vim
 :fs create nested/new.txt
@@ -236,8 +237,10 @@ totals. Links and special entries have distinct type markers. Enter opens an ent
 `:filter` narrows names, and an empty filter restores the full listing.
 
 Search here uses the same query fields, inclusion decisions and source previews
-as local Search. Native filename bytes remain separate from display text, and a
-dirty local buffer at an identical path is never substituted for remote content.
+as local Search. Starting a remote search explicitly admits a verified worker
+on that endpoint; restricted/SFTP-only hosts refuse search without a fallback.
+Native filename bytes remain separate from display text; a dirty local
+buffer at an identical path is never substituted for remote content.
 Source enumeration is limited to 100,000 selected paths or 16 MiB of names.
 rg records are limited to 1 MiB and 4,096 submatches; decoded batches are limited
 to 4 MiB. A source request publishes at most 100,000 result rows or 64 MiB of
@@ -257,10 +260,14 @@ them without touching external SSH masters.
 
 Full-file snapshots support remote LSP diagnostics, hover, definition/references and
 source/header navigation, plus Git context, staged/unstaged diffs, log, blame and
-commit/file navigation. Services run **on the remote host**, never against a local
-lookalike path. Project-command trust is scoped to the endpoint and remote root
-(`:trust`). Partial windows and following refuse full-document language services;
-Git mutations, remote save-as and arbitrary shell/filter commands remain unsupported.
+commit/file navigation once the endpoint has an admitted worker. Run
+**`:remote worker [URI]`** to authorize a verified worker without granting a
+file write permit, or **`:remote edit`** on a complete snapshot to admit the
+worker and separately verify edit authority. Services run **on the remote
+host**, never against a local lookalike path. Project-command trust is scoped
+to the endpoint and remote root (`:trust`). Partial windows and following
+refuse full-document language services; Git mutations, remote save-as and
+arbitrary shell/filter commands remain unsupported.
 
 OpenSSH supplies aliases, keys, agent and ProxyJump configuration. Host keys must
 already be trusted; authentication is noninteractive. Percent-encode reserved path
@@ -288,30 +295,35 @@ lock identity. Do not delete active locks.
 participants share a lock. Completed changes by other programs are detected before
 commit, but a nonparticipating writer can race the final check/rename window.
 `:w!` never bypasses that conflict check or grants authority to a read-only snapshot.
-
 Escape in normal mode requests cancellation. If a save may have crossed rename,
 local edits stay dirty and the outcome is explicitly unconfirmed. **`:remote verify`**
-compares the original and intended states and syncs matching saved content before
-acknowledgment; it never blindly overwrites or retries. A conflict preserves local
-edits. Successful `:e!` refresh revokes the permit; pending/unconfirmed saves must
-settle or be verified first. A failed refresh does not discard edits or permissions.
+uses the frozen prepared attempt and any available receipt to reobserve and
+sync matching saved content, including after a worker restart in the same
+Linux boot/mount namespace and principal. It never blindly overwrites or
+retries. Missing evidence or a changed namespace remains unconfirmed.
+Conflicts preserve local edits. Successful `:e!` refresh revokes the permit;
+pending/unconfirmed saves must settle or be verified first.
+A failed refresh does not discard edits or permissions.
 Forced close may leave an unconfirmed remote outcome and a private orphan stage.
 
 See the [remote-save contract and safety limits](plans/0040-remote-editing-and-saving.md).
 Remote contents and write permits are never restored from persisted sessions.
 
-SFTP reading needs no remote Python or daemon setup. Remote editing and execution
-need a POSIX environment and Python; Git/LSP also need their respective programs.
-Compatible Python 3.8+ is discovered as `python3` or a versioned program on remote
-PATH; set local `STROP_REMOTE_PYTHON=/opt/tools/python3.11` to select an explicit
-remote executable. An invalid override fails rather than choosing a fallback.
-Owned process groups are cleaned up when the server observes lease loss; network
-partitions delay detection, descendants creating new sessions can escape the group,
-and a killed supervisor cannot guarantee cleanup. Remote content is not persisted
-or automatically restored.
+SFTP browsing and ranged reads need no remote worker or Python. Protected
+editing, Git, LSP and search run through a verified native worker in the
+selected namespace; worker admission may write a private executable cache
+on that host. A restricted/SFTP-only account remains read-only, with typed
+refusals instead of Python, shell, SFTP-write or local-path fallbacks. The
+worker artifact must match the target and protocol; a foreign-target
+artifact can be supplied with `STROP_WORKER_BINARY`. Git/LSP also need
+their respective programs in the remote workspace. Owned process groups
+are cleaned up when the worker observes lease loss; network partitions
+delay detection, descendants creating new sessions can escape the group,
+and a killed worker cannot guarantee cleanup. Remote content is not
+persisted or automatically restored.
 
-The standalone `strop-remote` crate owns transport and execution; editor glue owns
-views and replay. See the [workspace contract](plans/0036-remote-workspace-execution.md),
+`strop-remote` owns SFTP and the SSH worker transport; the editor owns
+views, write permits and replay. See the [workspace contract](plans/0036-remote-workspace-execution.md),
 [protocol evidence](plans/0034-ssh-log-buffers.md),
 [prioritized remote roadmap](plans/0035-remote-workflow-roadmap.md), and
 [Dev Containers design](plans/0037-devcontainers-and-workspace-contexts.md).
@@ -350,6 +362,20 @@ input view controls PTY geometry; mirrors never independently resize it. Linux
 supervision requires pidfds. Source builds require **Zig 0.16.0** explicitly
 installed for the pinned static emulator; prebuilt users need neither Zig nor a
 Ghostty installation. See the [terminal contract](plans/0055-embedded-terminal-tui-and-gui.md).
+
+## Container workspaces
+
+Run **`:containers`** to select a running container. Directory browsing,
+file reads and tab completion stay read-only and do not install software.
+Run **`:container-worker`** in an attached container buffer to authorize
+a verified native worker in that container's selected Docker engine,
+canonical id, StartedAt, user and working directory. The default path
+uploads the matching static artifact into that user's private executable
+cache. For shell-less images, set `STROP_CONTAINER_WORKER_PATH` to an
+already installed matching binary; the worker is verified in place,
+without upload. Missing tools, wrong targets and recycled containers
+refuse typed rather than executing Git/LSP on the host or through an
+implicit `docker exec sh` fallback. Container files remain read-only.
 
 ## Headless scripts
 

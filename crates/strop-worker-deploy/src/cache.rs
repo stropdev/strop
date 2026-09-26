@@ -18,49 +18,13 @@
 //! `/tmp` names, container images or package databases — the provider
 //! surface has no such operation.
 
-use serde::{Deserialize, Serialize};
+use strop_core::worker::cache_record::{
+    CacheReceipt, CACHE_DIR_NAME, LEASES_DIR, MAX_RECORD_BYTES, OBJECTS_DIR, RECEIPTS_DIR,
+};
 
 use crate::provider::{DeployProvider, ProviderError, RemoteKind, RemoteStat};
-use crate::MAX_RECORD_BYTES;
 
-/// The one component deployment owns under the principal's cache base.
-pub const CACHE_DIR_NAME: &str = "strop-worker";
-
-const OBJECTS: &str = "objects";
-const RECEIPTS: &str = "receipts";
 const STAGING: &str = "staging";
-const LEASES: &str = "leases";
-
-/// Receipt schema version.
-pub const RECEIPT_SCHEMA: u32 = 1;
-
-/// Provenance/binding facts for one cached object. Digests and identity
-/// only — never source payloads or credentials.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CacheReceipt {
-    pub schema: u32,
-    /// Endpoint context this deployment was authorized for.
-    pub context: String,
-    /// Principal the deployment runs as.
-    pub principal: String,
-    /// Exact release the object was deployed from (== the client's).
-    pub version: String,
-    /// Target triple the object was built for (== the endpoint's).
-    pub target: String,
-    /// Content address: sha256 of the object bytes.
-    pub object_sha256: String,
-    pub object_bytes: u64,
-    /// Provenance anchor: sha256 of the release-catalog tarball these
-    /// bytes were verified against.
-    pub tarball_sha256: String,
-}
-
-/// One live worker lease: GC never retires the referenced object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LeaseRecord {
-    pub lease: u64,
-    pub object_sha256: String,
-}
 
 /// Cache resolution/validation failure — each a precise refusal reason.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -104,16 +68,16 @@ impl CacheLayout {
         &self.root
     }
     pub fn objects_dir(&self) -> String {
-        format!("{}/{OBJECTS}", self.root)
+        format!("{}/{OBJECTS_DIR}", self.root)
     }
     pub fn receipts_dir(&self) -> String {
-        format!("{}/{RECEIPTS}", self.root)
+        format!("{}/{RECEIPTS_DIR}", self.root)
     }
     pub fn staging_dir(&self) -> String {
         format!("{}/{STAGING}", self.root)
     }
     pub fn leases_dir(&self) -> String {
-        format!("{}/{LEASES}", self.root)
+        format!("{}/{LEASES_DIR}", self.root)
     }
     pub fn object(&self, sha256: &str) -> String {
         format!("{}/{sha256}", self.objects_dir())
@@ -160,7 +124,7 @@ pub fn resolve(provider: &impl DeployProvider) -> Result<CacheLayout, CacheError
     )?;
     let root = format!("{base}/{CACHE_DIR_NAME}");
     ensure_dir(provider, &root, &principal, true)?;
-    for sub in [OBJECTS, RECEIPTS, STAGING, LEASES] {
+    for sub in [OBJECTS_DIR, RECEIPTS_DIR, STAGING, LEASES_DIR] {
         ensure_dir(provider, &format!("{root}/{sub}"), &principal, true)?;
     }
     Ok(CacheLayout { root })
@@ -176,8 +140,22 @@ fn ensure_dir(
     must_be_private: bool,
 ) -> Result<(), CacheError> {
     match provider.lstat(path)? {
-        None => Ok(provider.mkdir_private(path)?),
         Some(stat) => validate_dir(path, &stat, principal, must_be_private),
+        None => {
+            // Another installer can create the same private component
+            // after our absence observation. SFTP reports only generic
+            // Failure for EEXIST; re-observe and validate exact owner,
+            // type and mode rather than trusting the error text.
+            let created = provider.mkdir_private(path);
+            match provider.lstat(path)? {
+                Some(stat) => validate_dir(path, &stat, principal, must_be_private),
+                None => Err(CacheError::Provider(created.err().unwrap_or_else(|| {
+                    ProviderError::Transport(format!(
+                        "cache directory {path} vanished immediately after creation"
+                    ))
+                }))),
+            }
+        }
     }
 }
 

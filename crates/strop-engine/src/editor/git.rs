@@ -133,6 +133,9 @@ impl Editor {
             let workdir = context.repo.workdir().to_path_buf();
             let head_sha = context.head_sha.clone();
             let rel = context.repo.rel_of(remote.path());
+            // The endpoint's admitted worker lease when the session
+            // holds one (0058 WK10); read-only, never deploying.
+            let workers = self.remote.workers.clone();
             self.launch_git_job(
                 "git-hunks-remote",
                 "git.hunks",
@@ -150,12 +153,14 @@ impl Editor {
                         );
                     };
                     let text = snapshot.to_string();
+                    let lease = workers.get(&endpoint);
                     match strop_git::remote::gutter(
                         &endpoint,
                         &workdir,
                         head_sha.as_deref(),
                         &rel,
                         &text,
+                        lease.as_ref(),
                         &cancel,
                     ) {
                         Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {

@@ -17,6 +17,19 @@ pub struct SaveRequest {
     force: bool,
 }
 
+/// The frozen save plan (0058 WK09): admission evidence decomposed so the
+/// engine can route the write through the worker's Store intent. Carries
+/// the same fields [`SaveRequest::execute`] consumes in-process.
+pub struct SavePlan {
+    pub text: Rope,
+    pub origin: Option<PathBuf>,
+    pub target: PathBuf,
+    pub revision: BufferRevision,
+    pub baseline: Option<SystemTime>,
+    pub new_name: bool,
+    pub force: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SaveReceipt {
     #[serde(with = "crate::path_serde::option")]
@@ -27,6 +40,27 @@ pub struct SaveReceipt {
     canonical: PathBuf,
     revision: BufferRevision,
     stamp: Option<SystemTime>,
+}
+
+impl SaveReceipt {
+    /// A worker-served store's receipt (0058 WK09): identical retirement
+    /// evidence to the in-process writer's — [`Buffer::accept_save`]
+    /// cannot tell the difference.
+    pub fn from_store(
+        origin: Option<PathBuf>,
+        target: PathBuf,
+        canonical: PathBuf,
+        revision: BufferRevision,
+        stamp: Option<SystemTime>,
+    ) -> Self {
+        Self {
+            origin,
+            target,
+            canonical,
+            revision,
+            stamp,
+        }
+    }
 }
 
 impl Buffer {
@@ -111,6 +145,19 @@ impl Buffer {
 }
 
 impl SaveRequest {
+    /// Decompose into the frozen plan for a worker-routed store (0058
+    /// WK09). `execute` stays for the in-process consumers.
+    pub fn into_plan(self) -> SavePlan {
+        SavePlan {
+            text: self.text,
+            origin: self.origin,
+            target: self.target,
+            revision: self.revision,
+            baseline: self.baseline,
+            new_name: self.new_name,
+            force: self.force,
+        }
+    }
     /// Blocking filesystem work; no editor borrow crosses this boundary.
     pub fn execute(self) -> io::Result<SaveReceipt> {
         let target = if self.new_name {

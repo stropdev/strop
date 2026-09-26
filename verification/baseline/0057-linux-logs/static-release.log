@@ -1,0 +1,321 @@
+ Image strop-preworker-6c4491b-release Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 571B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 7.67kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.4s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 resolve docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d
+#5 DONE 0.0s
+
+#6 [builder 1/9] FROM docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d
+#6 resolve docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d 0.1s done
+#6 DONE 0.1s
+
+#7 [internal] load .dockerignore
+#7 transferring context: 2B done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 10.63MB 0.1s done
+#8 DONE 0.2s
+
+#9 [builder 5/9] WORKDIR /app
+#9 CACHED
+
+#10 [builder 8/9] COPY docs ./docs
+#10 CACHED
+
+#11 [test 1/2] RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
+#11 CACHED
+
+#12 [builder 3/9] COPY .github/scripts/install-zig.sh /tmp/install-zig.sh
+#12 CACHED
+
+#13 [builder 6/9] COPY Cargo.toml Cargo.lock ./
+#13 CACHED
+
+#14 [builder 7/9] COPY crates ./crates
+#14 CACHED
+
+#15 [builder 2/9] RUN apk add --no-cache build-base git ripgrep neovim less curl ca-certificates xz     && rustup component add clippy rustfmt
+#15 CACHED
+
+#16 [builder 4/9] RUN sh /tmp/install-zig.sh /opt/strop-zig && rm /tmp/install-zig.sh
+#16 CACHED
+
+#17 [builder 5/9] WORKDIR /app
+#17 CACHED
+
+#18 [test 2/2] RUN cargo fmt --check     && cargo clippy --locked --workspace --all-targets -- -D warnings     && STROP_REQUIRE_SSH_TESTS=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked
+#18 CACHED
+
+#19 [builder 9/9] COPY verification ./verification
+#19 CACHED
+
+#20 [release 1/1] RUN cargo build --release --locked -p strop-editor     && strip target/release/strop     && ! readelf -d target/release/strop | grep -q NEEDED     && file target/release/strop | grep -qE "static-pie linked|statically linked"     && echo "static: ok"
+#20 0.893    Compiling libc v0.2.189
+#20 0.893    Compiling shlex v2.0.1
+#20 0.893    Compiling find-msvc-tools v0.1.11
+#20 0.894    Compiling proc-macro2 v1.0.107
+#20 0.894    Compiling unicode-ident v1.0.24
+#20 0.900    Compiling quote v1.0.47
+#20 0.902    Compiling tree-sitter-language v0.1.8
+#20 0.904    Compiling memchr v2.8.3
+#20 0.904    Compiling serde_core v1.0.229
+#20 0.907    Compiling zmij v1.0.23
+#20 0.907    Compiling smallvec v1.16.0
+#20 0.910    Compiling serde v1.0.229
+#20 0.910    Compiling equivalent v1.0.2
+#20 0.911    Compiling cfg-if v1.0.4
+#20 0.911    Compiling bitflags v2.13.1
+#20 0.913    Compiling hashbrown v0.17.1
+#20 0.914    Compiling version_check v0.9.5
+#20 0.914    Compiling itoa v1.0.18
+#20 0.914    Compiling rustix v1.1.4
+#20 0.914    Compiling parking_lot_core v0.9.12
+#20 0.915    Compiling typenum v1.20.1
+#20 0.923    Compiling once_cell v1.21.4
+#20 0.927    Compiling linux-raw-sys v0.12.1
+#20 0.929    Compiling serde_json v1.0.151
+#20 0.935    Compiling scopeguard v1.2.0
+#20 0.936    Compiling verus_prettyplease v0.0.0-2026-09-06-0133
+#20 0.937    Compiling thiserror v2.0.20
+#20 0.937    Compiling unicode-segmentation v1.13.3
+#20 0.937    Compiling unicode-width v0.2.0
+#20 0.937    Compiling getrandom v0.4.3
+#20 0.937    Compiling stable_deref_trait v1.2.1
+#20 0.937    Compiling convert_case v0.4.0
+#20 0.964    Compiling vstd v0.0.0-2026-09-06-0133
+#20 0.982    Compiling cpufeatures v0.2.17
+#20 0.989    Compiling fastrand v2.5.0
+#20 1.152    Compiling verus_builtin v0.0.0-2026-09-06-0133
+#20 1.168    Compiling str_indices v0.4.4
+#20 1.184    Compiling log v0.4.34
+#20 1.319    Compiling lock_api v0.4.14
+#20 1.395    Compiling writeable v0.6.4
+#20 1.420    Compiling litemap v0.8.3
+#20 1.506    Compiling icu_properties_data v2.3.0
+#20 1.520    Compiling generic-array v0.14.7
+#20 1.568    Compiling icu_normalizer_data v2.3.0
+#20 1.569    Compiling utf8_iter v1.0.4
+#20 1.621    Compiling pin-project-lite v0.2.17
+#20 1.670    Compiling strop-worker-protocol v0.35.0 (/app/crates/strop-worker-protocol)
+#20 1.682    Compiling regex-syntax v0.8.11
+#20 1.783    Compiling pkg-config v0.3.34
+#20 1.826    Compiling ropey v1.6.1
+#20 1.956    Compiling percent-encoding v2.3.2
+#20 1.986    Compiling vcpkg v0.2.15
+#20 2.007    Compiling bytes v1.12.1
+#20 2.043    Compiling crc32fast v1.5.2
+#20 2.054    Compiling bytemuck v1.25.2
+#20 2.064    Compiling futures-core v0.3.34
+#20 2.101    Compiling crossbeam-utils v0.8.22
+#20 2.118    Compiling futures-sink v0.3.34
+#20 2.203    Compiling aho-corasick v1.1.5
+#20 2.222    Compiling indexmap v2.14.1
+#20 2.281    Compiling form_urlencoded v1.2.2
+#20 2.306    Compiling crossbeam-epoch v0.9.20
+#20 2.322    Compiling rand_core v0.9.5
+#20 2.338    Compiling simd-adler32 v0.3.10
+#20 2.353    Compiling rustversion v1.0.23
+#20 2.367    Compiling bitmaps v3.2.1
+#20 2.447    Compiling safe_arch v0.7.4
+#20 2.458    Compiling adler2 v2.0.1
+#20 2.635    Compiling futures-io v0.3.34
+#20 2.687    Compiling futures-channel v0.3.34
+#20 2.759    Compiling miniz_oxide v0.9.1
+#20 2.768    Compiling archery v1.2.3
+#20 2.787    Compiling streaming-iterator v0.1.9
+#20 2.909    Compiling rand_xoshiro v0.7.0
+#20 2.991    Compiling slab v0.4.12
+#20 2.991    Compiling futures-task v0.3.34
+#20 3.087    Compiling tinyvec_macros v0.1.1
+#20 3.113    Compiling crossbeam-deque v0.8.7
+#20 3.241    Compiling tinyvec v1.13.2
+#20 3.266    Compiling bstr v1.13.1
+#20 3.362    Compiling wide v0.7.33
+#20 3.437    Compiling tracing-core v0.1.36
+#20 3.462    Compiling strsim v0.11.1
+#20 3.492    Compiling toml_write v0.1.2
+#20 3.557    Compiling same-file v1.0.6
+#20 3.749    Compiling syn v3.0.4
+#20 3.826    Compiling syn v2.0.119
+#20 3.834    Compiling verus_syn v0.0.0-2026-09-06-0133
+#20 3.915    Compiling ident_case v1.0.1
+#20 3.940    Compiling jobserver v0.1.35
+#20 3.995    Compiling filetime v0.2.29
+#20 4.053    Compiling imbl-sized-chunks v0.1.3
+#20 4.086    Compiling winnow v0.7.15
+#20 4.093    Compiling bitflags v1.3.2
+#20 4.103    Compiling signal-hook v0.3.18
+#20 4.198    Compiling walkdir v2.5.0
+#20 4.209    Compiling tower-service v0.3.3
+#20 4.239    Compiling rustix v0.38.44
+#20 4.335    Compiling unicode-normalization v0.1.25
+#20 4.364    Compiling block-buffer v0.10.4
+#20 4.377    Compiling cc v1.2.67
+#20 4.456    Compiling crypto-common v0.1.7
+#20 4.483    Compiling flate2 v1.1.10
+#20 4.503    Compiling tower-layer v0.3.3
+#20 4.519    Compiling nucleo-matcher v0.3.1
+#20 4.536    Compiling base64 v0.22.1
+#20 4.570    Compiling allocator-api2 v0.2.21
+#20 4.634    Compiling instability v0.3.13
+#20 4.833    Compiling digest v0.10.7
+#20 4.894    Compiling errno v0.3.14
+#20 4.925    Compiling mio v1.2.2
+#20 4.946    Compiling foldhash v0.1.5
+#20 5.058    Compiling heck v0.5.0
+#20 5.094    Compiling portable-atomic v1.15.0
+#20 5.306    Compiling parking_lot v0.12.5
+#20 5.397    Compiling signal-hook-registry v1.4.8
+#20 5.408    Compiling linux-raw-sys v0.4.15
+#20 5.479    Compiling either v1.18.0
+#20 5.513    Compiling paste v1.0.15
+#20 5.569    Compiling hashbrown v0.15.5
+#20 5.638    Compiling sha2 v0.10.9
+#20 5.686    Compiling ryu v1.0.23
+#20 5.706    Compiling static_assertions v1.1.0
+#20 5.797    Compiling indoc v2.0.7
+#20 5.802    Compiling unicode-width v0.1.14
+#20 5.901    Compiling tokio v1.53.1
+#20 5.997    Compiling itertools v0.13.0
+#20 6.007    Compiling castaway v0.2.4
+#20 6.135    Compiling console v0.15.11
+#20 6.162    Compiling number_prefix v0.4.0
+#20 6.238    Compiling compact_str v0.8.2
+#20 6.508    Compiling cassowary v0.3.0
+#20 6.561    Compiling signal-hook-mio v0.2.5
+#20 7.594    Compiling xattr v1.6.1
+#20 8.410    Compiling regex-automata v0.4.18
+#20 9.004    Compiling tar v0.4.46
+#20 9.154    Compiling lru v0.12.5
+#20 9.175    Compiling indicatif v0.17.11
+#20 10.03    Compiling libz-sys v1.1.29
+#20 10.48    Compiling tree-sitter-javascript v0.25.0
+#20 10.68    Compiling tree-sitter-typescript v0.23.2
+#20 11.11    Compiling tree-sitter-lua v0.5.0
+#20 11.25    Compiling tree-sitter-c v0.24.2
+#20 11.28    Compiling tree-sitter-sequel v0.3.11
+#20 11.38    Compiling tree-sitter-go v0.25.0
+#20 11.41    Compiling tree-sitter-md v0.5.3
+#20 11.47    Compiling tree-sitter-fish v3.6.0
+#20 11.79    Compiling tree-sitter-c-sharp v0.23.5
+#20 12.19    Compiling tree-sitter-python v0.25.0
+#20 12.30    Compiling tree-sitter-bash v0.25.1
+#20 12.35    Compiling tree-sitter-toml-ng v0.7.0
+#20 12.42    Compiling tree-sitter-json v0.24.8
+#20 12.44    Compiling tree-sitter-cpp v0.23.4
+#20 12.54    Compiling tree-sitter-rust v0.24.2
+#20 12.69    Compiling tree-sitter-html v0.23.2
+#20 12.77    Compiling tree-sitter-java v0.23.5
+#20 12.87    Compiling tree-sitter-yaml v0.7.2
+#20 12.88    Compiling tree-sitter-ruby v0.23.1
+#20 12.97    Compiling tree-sitter-php v0.24.2
+#20 13.12    Compiling tree-sitter-cmake v0.7.4
+#20 13.29    Compiling tree-sitter-css v0.25.0
+#20 13.38    Compiling libgit2-sys v0.18.8+1.9.7
+#20 14.03    Compiling tree-sitter v0.25.10
+#20 16.95    Compiling imbl v7.0.1
+#20 17.91    Compiling darling_core v0.24.1
+#20 18.21    Compiling strop-terminal v0.35.0 (/app/crates/strop-terminal)
+#20 18.24    Compiling unicode-truncate v1.1.0
+#20 18.25    Compiling crossterm v0.28.1
+#20 20.15    Compiling synstructure v0.13.2
+#20 21.22    Compiling serde_derive v1.0.229
+#20 21.28    Compiling thiserror-impl v2.0.20
+#20 21.29    Compiling zerovec-derive v0.11.6
+#20 21.29    Compiling displaydoc v0.2.7
+#20 21.56    Compiling futures-macro v0.3.34
+#20 21.61    Compiling serde_repr v0.1.21
+#20 22.48    Compiling regex v1.13.1
+#20 22.53    Compiling globset v0.4.20
+#20 22.75    Compiling tokio-util v0.7.19
+#20 24.20    Compiling zerofrom-derive v0.1.7
+#20 24.27    Compiling yoke-derive v0.8.2
+#20 24.32    Compiling futures-util v0.3.34
+#20 24.69    Compiling tracing-attributes v0.1.31
+#20 24.77    Compiling ignore v0.4.33
+#20 24.82    Compiling strum_macros v0.26.4
+#20 27.52    Compiling tempfile v3.27.0
+#20 27.64    Compiling verus_state_machines_macros v0.0.0-2026-09-06-0133
+#20 27.77    Compiling verus_builtin_macros v0.0.0-2026-09-06-0133
+#20 28.07    Compiling waitpid-any v0.3.0
+#20 28.38    Compiling zerofrom v0.1.8
+#20 28.47    Compiling rustix-openpty v0.2.0
+#20 28.64    Compiling tracing v0.1.44
+#20 28.64    Compiling yoke v0.8.3
+#20 29.05    Compiling zerovec v0.11.8
+#20 29.08    Compiling zerotrie v0.2.5
+#20 31.36    Compiling strum v0.26.3
+#20 32.40    Compiling tinystr v0.8.4
+#20 32.45    Compiling potential_utf v0.1.6
+#20 32.76    Compiling strop-trace v0.35.0 (/app/crates/strop-trace)
+#20 32.91    Compiling icu_collections v2.3.0
+#20 33.02    Compiling icu_locale_core v2.3.0
+#20 33.17    Compiling toml_datetime v0.6.11
+#20 33.80    Compiling serde_spanned v0.6.9
+#20 34.10    Compiling darling_macro v0.24.1
+#20 34.49    Compiling toml_edit v0.22.27
+#20 35.47    Compiling darling v0.24.1
+#20 35.48    Compiling icu_provider v2.3.1
+#20 36.09    Compiling icu_normalizer v2.3.0
+#20 36.46    Compiling icu_properties v2.3.0
+#20 36.87    Compiling futures v0.3.34
+#20 36.89    Compiling ratatui v0.29.0
+#20 39.28    Compiling toml v0.8.23
+#20 40.19    Compiling idna_adapter v1.2.2
+#20 40.69    Compiling idna v1.1.0
+#20 41.50    Compiling url v2.5.8
+#20 42.99    Compiling lsp-types v0.95.1
+#20 48.65    Compiling strop-core v0.35.0 (/app/crates/strop-core)
+#20 51.92    Compiling strop-workspace v0.35.0 (/app/crates/strop-workspace)
+#20 51.92    Compiling strop-syntax v0.35.0 (/app/crates/strop-syntax)
+#20 51.92    Compiling strop-grammar v0.35.0 (/app/crates/strop-grammar)
+#20 53.75    Compiling strop-containers v0.35.0 (/app/crates/strop-containers)
+#20 53.77    Compiling strop-fs v0.35.0 (/app/crates/strop-fs)
+#20 56.33    Compiling strop-worker-client v0.35.0 (/app/crates/strop-worker-client)
+#20 56.35    Compiling strop-worker v0.35.0 (/app/crates/strop-worker)
+#20 57.85    Compiling strop-worker-deploy v0.35.0 (/app/crates/strop-worker-deploy)
+#20 61.66    Compiling strop-remote v0.35.0 (/app/crates/strop-remote)
+#20 68.33    Compiling async-lsp v0.2.4
+#20 68.92    Compiling git2 v0.20.4
+#20 69.67    Compiling strop-picker v0.35.0 (/app/crates/strop-picker)
+#20 74.27    Compiling strop-lsp v0.35.0 (/app/crates/strop-lsp)
+#20 82.26    Compiling strop-git v0.35.0 (/app/crates/strop-git)
+#20 123.4    Compiling strop-engine v0.35.0 (/app/crates/strop-engine)
+#20 140.8    Compiling strop-ui-protocol v0.35.0 (/app/crates/strop-ui-protocol)
+#20 270.5    Compiling strop-editor v0.35.0 (/app/crates/strop)
+#20 318.7     Finished `release` profile [optimized] target(s) in 5m 19s
+#20 319.4 static: ok
+#20 DONE 319.7s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 34.5s done
+#21 exporting manifest sha256:280f07fd24916835be103422f370db77c8eca38524eda449b0e6172159b4c42c 0.0s done
+#21 exporting config sha256:df7e4d851ce9d33a52f6877432bd4aca1304038fd381765cf54e456bb3727658 0.0s done
+#21 exporting attestation manifest sha256:50bd2a136f04f10d1eeea59847e0aed7d1a46bb2bd19a92be7e36c44ad66bbbf
+#21 exporting attestation manifest sha256:50bd2a136f04f10d1eeea59847e0aed7d1a46bb2bd19a92be7e36c44ad66bbbf 0.1s done
+#21 exporting manifest list sha256:79d31654a9384f7e809b69e80f45b761f87bb3b588f34a99c6bed17b56df9ae3 0.1s done
+#21 naming to docker.io/library/strop-preworker-6c4491b-release:latest
+#21 naming to docker.io/library/strop-preworker-6c4491b-release:latest 0.0s done
+#21 unpacking to docker.io/library/strop-preworker-6c4491b-release:latest
+#21 unpacking to docker.io/library/strop-preworker-6c4491b-release:latest 7.1s done
+#21 DONE 42.0s
+
+#22 resolving provenance for metadata file
+#22 DONE 0.0s
+ Image strop-preworker-6c4491b-release Built 
+
+[Showing lines 1-319 of 320. Use :320 to continue]

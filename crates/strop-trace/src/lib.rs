@@ -129,6 +129,8 @@ struct Recorder {
     failure: Arc<Failure>,
     started: Instant,
     max_record: usize,
+    /// Capture-owned output, resolved once outside the editor input path.
+    path: Option<PathBuf>,
 }
 
 /// Owning lifetime of a trace. Explicit finish reports errors; Drop still drains.
@@ -156,6 +158,10 @@ pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceEr
         path: path.to_path_buf(),
         source,
     })?;
+    let capture_path = path
+        .canonicalize()
+        .ok()
+        .or_else(|| path.is_absolute().then(|| path.to_path_buf()));
     let (sender, receiver) = channel();
     let failure = Arc::new(Failure::default());
     let writer_failure = Arc::clone(&failure);
@@ -169,6 +175,7 @@ pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceEr
         failure,
         started: Instant::now(),
         max_record: limits.record_bytes,
+        path: capture_path,
     });
     *active = Some(Arc::clone(&recorder));
     CONTENT.store(options.content == ContentPolicy::Full, Ordering::Release);
@@ -182,6 +189,19 @@ pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceEr
 #[inline]
 pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
+}
+
+/// The active capture's own output file. Watch consumers suppress only
+/// self-generated hints for this resource; user file changes keep their
+/// ordinary freshness semantics. No filesystem work occurs at query time.
+pub fn active_path() -> Option<PathBuf> {
+    if !enabled() {
+        return None;
+    }
+    ACTIVE
+        .lock()
+        .as_ref()
+        .and_then(|capture| capture.path.clone())
 }
 #[inline]
 pub fn capture_content() -> bool {

@@ -136,9 +136,13 @@ impl Editor {
         }
         if let Some(rx) = self.notify.take_rx() {
             let queue = std::sync::Arc::clone(&self.notify.queue);
-            forward(rx, tx.clone(), move |event| {
-                queue.push_event(event);
-                AppEvent::Notify
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                while let Ok(event) = rx.recv() {
+                    if queue.push_event(event) && tx.send_blocking(AppEvent::Notify).is_err() {
+                        break;
+                    }
+                }
             });
         }
         self.connect_picker_stream(&tx);

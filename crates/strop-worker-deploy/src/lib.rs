@@ -8,10 +8,10 @@
 //! tar are thin provider implementations), and an object is activated only
 //! after its digest, provenance, target and executable mode verify against
 //! the WK05 release-catalog manifest — at its final published path, never
-//! stage-then-blind-exec. Activation, execution and readiness are separate
-//! outcomes: upload finishing never reports installed/ready; only a real
-//! protocol handshake whose reported identity matches the client's exact
-//! release/target captures the lease.
+//! stage-then-blind-exec. A temporary activation handshake proves that
+//! the binary can serve this release/target; it is not the editor's
+//! worker. The owning client admits a fresh, live worker whose session
+//! registers its own cache lease before becoming visible as ready.
 //!
 //! Hard rules held by construction:
 //! - no PATH/shell-rc/project-tree/image/package-database mutation — the
@@ -25,14 +25,12 @@
 //!   record endpoint, principal, version, target and digests only.
 //!
 //! The providers are thin; the state machine in [`deploy`] is the product.
-//! Cache garbage collection ([`gc`]) is receipt-scoped and lease-aware: a
-//! live lease's object is never retired, and cleanup only ever touches
-//! positively identified content-addressed entries.
+//! Cache retirement runs inside the admitted native worker under its
+//! cross-process lock, not through an unlocked SFTP/container listing.
 
 pub mod cache;
 pub mod container;
 pub mod deploy;
-pub mod gc;
 pub mod manifest;
 pub mod provider;
 
@@ -52,8 +50,5 @@ pub const MIN_EDITOR_VERSION: &str = "0.35.0";
 
 /// Hard ceiling on worker object bytes accepted for upload and read-back
 /// (0058 §5: the stage has a bounded length before any byte is accepted).
-/// Release binaries are an order of magnitude under this.
+/// A larger artifact refuses before transfer; no release size is assumed.
 pub const MAX_WORKER_BYTES: u64 = 256 * 1024 * 1024;
-
-/// Ceiling on receipt/lease payloads — these are tiny facts documents.
-pub const MAX_RECORD_BYTES: u64 = 16 * 1024;

@@ -69,7 +69,8 @@ pub(super) fn committed(
                 }
                 OperationKind::CreateFile
                 | OperationKind::CreateDirectory
-                | OperationKind::Copy => {
+                | OperationKind::Copy
+                | OperationKind::Store => {
                     publication
                         .zip(destination.as_ref())
                         .is_some_and(|(owned, after)| {

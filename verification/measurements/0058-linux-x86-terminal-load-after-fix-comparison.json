@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "scope": "Linux x86_64 Docker on WSL2, 120x30 worker-backed TUI, two-key PTY input causes 256 real shell output lines; measure until exact final marker painted; matched baseline and worker after wake-order fix, not remote/LSP/retirement evidence",
+  "baseline": {
+    "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+    "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+    "measurement": "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json",
+    "sha256": "e47e2fcf228011e499371038af8c02f5ef16e264ddd1fdae85cc1867d11c4316"
+  },
+  "candidate": {
+    "commit": null,
+    "state": "measured before final WK20 platform/performance qualification",
+    "artifact_sha256": "7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b",
+    "measurement": "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json",
+    "sha256": "2527fc788f5795e1db58d0d2f2c8ea447d7a1eb85672f5fb50a7c1dbe3b6de70"
+  },
+  "method": {
+    "harness": "crates/strop/tests/terminal_editor.rs",
+    "test": "native_terminal_output_under_load_samples",
+    "sha256": "7ec412aee8b65cfe6a7ce8d88a99df455045f143ec4351209a58beab93b89742",
+    "warmup": 8,
+    "samples_per_artifact": 64,
+    "output_lines_per_request": 256,
+    "geometry": [
+      120,
+      30
+    ],
+    "timing": "two-key PTY input through 256 output lines to VT100 decoded and verified final grid marker"
+  },
+  "observed": {
+    "baseline_ms": {
+      "max": 5.402,
+      "p50": 4.469,
+      "p95": 5.167,
+      "p99": 5.402
+    },
+    "candidate_ms": {
+      "max": 5.801,
+      "p50": 4.794,
+      "p95": 5.544,
+      "p99": 5.801
+    }
+  },
+  "regression_archive": "verification/measurements/0058-linux-x86-terminal-load-regression.json"
+}

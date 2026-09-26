@@ -27,8 +27,6 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY docs ./docs
-# The VF08 helper digest pins are read by strop-remote's test lane.
-COPY verification ./verification
 
 FROM builder AS test
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
@@ -36,12 +34,21 @@ RUN cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
     && STROP_REQUIRE_SSH_TESTS=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked
 
+# Real SSH deployment on a host with no Python interpreter: this stage
+# adds OpenSSH to the Rust builder but never installs python3. The shared
+# worker_ssh parity fixture deploys and launches the actual native worker.
+FROM builder AS ssh-pythonfree
+RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server
+RUN ! command -v python && ! command -v python2 && ! command -v python3 \
+    && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor \
+        --test worker_ssh deploy_handshake_read_write_notify_parity_over_real_sshd
+
 FROM builder AS bin
 RUN cargo build --locked -p strop-editor
 
 # Only the integration runner needs a Docker client; the shipping binary does not.
 FROM bin AS container-test
-RUN apk add --no-cache docker-cli
+RUN apk add --no-cache docker-cli openssh-client
 
 # Stripped static release binary (0002 §4). The gate: no NEEDED shared
 # libraries. (`ldd | grep "not a dynamic"` is wrong on current
@@ -71,10 +78,10 @@ WORKDIR /work
 COPY specs ./specs
 RUN sh specs/gate.sh
 
-# The Verus pilot (0045): proves the edit-geometry kernel in strop-core.
-# Deliberately NOT rust:alpine — the verifier pins its own compiler
-# (1.98.0) and solver (z3 4.16.0); the shipping TUI toolchain is
-# untouched. Tooling is checksum-pinned like the model stage.
+# Same-source Verus lane (0057 VF18, 0058 WK18): edit geometry,
+# session/framing/recovery/effect decisions and deploy admission/cache
+# keep policy. The verifier pins its own compiler and solver; the
+# shipping musl toolchain stays untouched.
 FROM rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27 AS verify
 ARG VERUS_SHA256=13d01e134c0620c3b29770874707d16c33b3d227c843a489c8ceb744d43c0a16
 ARG Z3_SHA256=7288c49a5bd6dbafd7b0b0d1f65956b91672da24b08f09242919af159be3418e
@@ -88,13 +95,13 @@ ENV VERUS_Z3_PATH=/opt/z3/z3-4.16.0-x64-glibc-2.39/bin/z3
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-# Only strop-core carries verus! blocks today; verify it alone.
+# Both edit geometry and worker admission execute from strop-core.
 RUN cargo verus verify -p strop-core
 
-# The TLAPS proof lane (0057 VF17, discharging 0063 §6.6): inductive
-# safety of the search lifecycle model plus the kept-mutant negative
-# control. Deliberately NOT part of the shipping build graph — like the
-# verify stage, it pins its own toolchain. TLAPS 1.5.0 (tag 202210041448)
+# The TLAPS proof lane (0057 VF17 and 0058 WK17): inductive safety of
+# SearchLifecycle, WorkerSession and WorkerDeploy with matched mutants.
+# Deliberately outside the shipping build graph; like the verify stage,
+# it pins its own toolchain. TLAPS 1.5.0 (tag 202210041448)
 # is the last versioned release; the 1.6.0 pre-release is a moving asset
 # (cf. the tla2tools note above), so the dated, checksum-verified
 # installer is pinned. x86_64 only, like the Verus zip.
@@ -116,24 +123,29 @@ WORKDIR /work
 COPY specs ./specs
 RUN sh specs/tlaps-gate.sh
 
-# The core-assurance lane (0057 VF19/VF20): the non-TLC assurance
-# campaigns that fit neither the model nor the verify lane — the VF07
-# model-fleet anchor/drift pins, the VF08 helper digest pins, the VF09
-# semantic fault-injection harnesses, the instrumented Loom campaigns
-# over the REAL synchronization seams (never a copied algorithm), the
-# VF19 mutant-calibration registry (structural attribution plus the
-# native kill executions; TLA mutant kills stay calibrated in the
-# model/tlaps lanes) and the picker-teardown storm campaign. Builds
+# The core-assurance lane (0057 VF19/VF20; 0058 WK16–WK20):
+# exact candidate inventory/source/evidence bindings, native
+# Store/recovery/stream journeys, instrumented Loom campaigns over
+# shipped synchronization seams, mutant calibration and picker storm.
 # FROM test so the plain cargo fingerprints are warm; the cfg-
 # instrumented runs (strop_loom, strop_mutant) rebuild what their cfg
 # touches and ship nothing — the cfgs exist only in this image.
 FROM test AS core-assurance
+# Inventory changes re-run only assurance, never rebuild the locked
+# workspace tests; no Rust target embeds verification/ as a runtime path.
+COPY verification ./verification
 COPY specs ./specs
-RUN python3 verification/check_model_anchors.py \
+COPY .github ./.github
+COPY tests ./tests
+COPY install.sh ./install.sh
+COPY Dockerfile ./Dockerfile
+RUN python3 verification/check.py \
     && python3 verification/check_mutants.py \
     && python3 verification/check_mutants.py --self-test \
-    && cargo test --locked -p strop-remote bundle_digests \
-    && cargo test --locked -p strop-remote --lib save::tests:: \
-    && RUSTFLAGS="--cfg strop_loom" cargo test --locked -p strop-engine -p strop-lsp loom \
+    && cargo test --locked -p strop-fs tests::store:: \
+    && cargo test --locked -p strop-worker-client --test loopback store_save_round_trip_with_conflict_and_verify \
+    && cargo test --locked -p strop-worker-client --test loopback pty_stalled_consumer_resumes_without_losing_vt_bytes \
+    && cargo test --locked -p strop-worker-deploy concurrent_private_cache_creation_reuses_only_the_other_installers_owned_directory \
+    && RUSTFLAGS="--cfg strop_loom" cargo test --locked -p strop-engine -p strop-lsp -p strop-worker loom \
     && python3 verification/check_mutants.py --execute \
     && cargo test --locked -p strop-editor --test ui_stdio storm

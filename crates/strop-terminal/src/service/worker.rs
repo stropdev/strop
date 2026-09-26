@@ -21,6 +21,7 @@ use strop_core::worker::CancelToken;
 
 pub(super) struct Start {
     pub session: SessionId,
+    pub worker: strop_worker_client::Worker,
     pub launch: Launch,
     pub geometry: Geometry,
     pub keyboard: u8,
@@ -29,6 +30,9 @@ pub(super) struct Start {
     pub palette: Option<crate::model::Palette>,
     pub receiver: Receiver<Request>,
     pub wake: UnixDatagram,
+    /// Send-side wake clone the PTY session registers for stream
+    /// arrivals (0058 WK12): worker output nudges this service's poll.
+    pub nudge: UnixDatagram,
     pub mailbox: Arc<Mailbox>,
     pub budget: Arc<Budget>,
 }
@@ -46,12 +50,28 @@ impl Start {
         }
         self.mailbox
             .publish(empty_update(self.session, Phase::Starting, None));
+        let nudge = match self.nudge.try_clone() {
+            Ok(nudge) => nudge,
+            Err(error) => {
+                return empty_update(
+                    self.session,
+                    Phase::Failed(
+                        super::io_error("retain terminal stream wake", error).to_string(),
+                    ),
+                    None,
+                )
+            }
+        };
         let client = match Client::spawn(
             self.session,
+            self.worker.clone(),
             &self.launch,
             self.geometry,
-            self.keyboard,
-            self.palette.as_ref(),
+            crate::client::EmulationSettings {
+                keyboard: self.keyboard,
+                palette: self.palette.as_ref(),
+            },
+            nudge,
             &token,
         ) {
             Ok(client) => client,
@@ -124,7 +144,12 @@ impl Drop for Actor {
 impl Actor {
     fn drive(&mut self) -> Result<Update, Error> {
         loop {
+            // Clear old nudges before checking the queues. Arrivals after
+            // this drain retain their datagram until the next turn.
+            drain_wake(&self.start.wake)?;
+            let mut published = false;
             if let Some(update) = self.client.poll()? {
+                published = true;
                 self.acknowledged = update.acknowledged_input;
                 if !update.phase.live() {
                     return Ok(update);
@@ -154,7 +179,6 @@ impl Actor {
                     }
                 });
             }
-            drain_wake(&self.start.wake)?;
             let mut filled_turn = true;
             for _ in 0..32 {
                 if self.pending.is_none() {
@@ -276,7 +300,10 @@ impl Actor {
                     }
                 }
             }
-            if !filled_turn {
+            // A bounded output turn may have left chunks queued even if
+            // all their arrival nudges were drained. Recheck before
+            // parking; the 250 ms timeout is only wake-loss recovery.
+            if !filled_turn && !published {
                 self.client.wait(&self.start.wake)?;
             }
         }

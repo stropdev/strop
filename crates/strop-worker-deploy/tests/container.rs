@@ -18,14 +18,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::catalog;
+use common::{catalog, sha256_hex};
 use strop_containers::{engine, inspect, ContainerIdentity, EngineRef};
-use strop_core::worker::CancelToken;
+use strop_core::worker::{cache_record::CACHE_LOCK_FILE, CancelToken};
 use strop_worker_deploy::container::{ContainerProvider, ShellPolicy};
 use strop_worker_deploy::deploy::{
     deploy, ArtifactSupply, Consent, DeployOrigin, DeployOutcome, DeployRequest,
 };
-use strop_worker_deploy::provider::DeployProvider;
+use strop_worker_deploy::provider::{DeployProvider, RemoteKind};
 use strop_worker_deploy::MAX_WORKER_BYTES;
 use strop_workspace::operation::{CopyVersion, OperationIntent, OperationKind, StepOutcome};
 use strop_workspace::ResourceLocation;
@@ -262,10 +262,10 @@ fn request(supply: ArtifactSupply) -> DeployRequest {
     }
 }
 
-fn ready(outcome: DeployOutcome) -> strop_worker_deploy::deploy::ReadyDeployment {
+fn probed(outcome: DeployOutcome) -> strop_worker_deploy::deploy::ProbedDeployment {
     match outcome {
-        DeployOutcome::Ready(ready) => ready,
-        other => panic!("expected Ready, got {other:?}"),
+        DeployOutcome::Probed(ready) => ready,
+        other => panic!("expected a verified probe, got {other:?}"),
     }
 }
 
@@ -295,7 +295,7 @@ fn deploy_then_read_write_notify_and_lease_reap() {
         &provider,
         &request(ArtifactSupply::LocalBinary { path: binary }),
     );
-    let deployed = ready(report.outcome);
+    let deployed = probed(report.outcome);
     assert_eq!(deployed.origin, DeployOrigin::Uploaded);
     assert!(deployed.object.path.contains("/strop-worker/objects/"));
 
@@ -312,6 +312,11 @@ fn deploy_then_read_write_notify_and_lease_reap() {
     ]);
     assert_eq!(stat, "0 500", "principal-owned 0500 object");
     fixture.assert_workers_reaped(Duration::from_secs(10)); // activation's handshake left nothing
+    let layout = strop_worker_deploy::cache::resolve(&provider).unwrap();
+    assert!(
+        provider.list(&layout.leases_dir()).unwrap().is_empty(),
+        "the stopped container deployment probe cannot hold a live cache lease"
+    );
 
     // The workspace lease: read, write and notify inside the container.
     let worker = provider.worker(&deployed.object.path);
@@ -327,6 +332,52 @@ fn deploy_then_read_write_notify_and_lease_reap() {
     let mut bytes = Vec::new();
     payload.read_to_end(&mut bytes).unwrap();
     assert_eq!(bytes, b"hello strop\n");
+    let active = worker
+        .session()
+        .expect("the live container worker handshook");
+    assert!(
+        provider
+            .lstat(&layout.lease(active.lease.0))
+            .unwrap()
+            .is_some(),
+        "the container worker registers its own session before serving"
+    );
+    let lock_path = format!("{}/{}", layout.root(), CACHE_LOCK_FILE);
+    let lock = provider.lstat(&lock_path).unwrap().unwrap();
+    assert_eq!(lock.kind, RemoteKind::File);
+    assert_eq!(lock.owner, provider.endpoint().principal);
+    assert_eq!(lock.mode & 0o077, 0, "cache lock is private");
+
+    // Real in-container retirement: only the unleased receipt for
+    // this selected endpoint is removed, not the executing object.
+    let old_bytes = b"old container worker";
+    let old_sha = sha256_hex(old_bytes);
+    provider.write(&layout.object(&old_sha), old_bytes).unwrap();
+    provider.set_mode(&layout.object(&old_sha), 0o500).unwrap();
+    let old_receipt = strop_core::worker::cache_record::CacheReceipt {
+        schema: strop_core::worker::cache_record::RECEIPT_SCHEMA,
+        context: provider.endpoint().context.clone(),
+        principal: provider.endpoint().principal.clone(),
+        version: "0.34.0".into(),
+        target: provider.endpoint().target.clone(),
+        object_sha256: old_sha.clone(),
+        object_bytes: old_bytes.len() as u64,
+        tarball_sha256: "b".repeat(64),
+    };
+    provider
+        .write(
+            &layout.receipt(&old_sha),
+            &serde_json::to_vec(&old_receipt).unwrap(),
+        )
+        .unwrap();
+    let maintenance = worker
+        .collect_cache(&cancel, &provider.endpoint().context)
+        .unwrap();
+    assert!(maintenance.failure.is_none(), "{:?}", maintenance.failure);
+    assert!(maintenance.report.removed_objects.contains(&old_sha));
+    assert!(provider.lstat(&layout.object(&old_sha)).unwrap().is_none());
+    assert!(provider.lstat(&layout.receipt(&old_sha)).unwrap().is_none());
+    assert!(provider.lstat(&deployed.object.path).unwrap().is_some());
 
     let (steps, refused) = worker
         .prepare(
@@ -339,6 +390,7 @@ fn deploy_then_read_write_notify_and_lease_reap() {
                 ))),
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
+                store: None,
             }],
             None,
         )
@@ -392,6 +444,17 @@ fn deploy_then_read_write_notify_and_lease_reap() {
 
     drop(worker);
     fixture.assert_workers_reaped(Duration::from_secs(15));
+    assert!(
+        provider
+            .lstat(&layout.lease(active.lease.0))
+            .unwrap()
+            .is_none(),
+        "orderly container worker retirement releases its own cache lease"
+    );
+    assert!(
+        provider.lstat(&lock_path).unwrap().is_some(),
+        "orderly retirement must keep the shared lock inode"
+    );
 }
 
 /// A restarted container is a different endpoint: the pinned provider
@@ -457,7 +520,7 @@ fn preinstalled_shellless_worker_needs_no_deploy() {
             path: "/worker/strop".to_string(),
         }),
     );
-    let deployed = ready(report.outcome);
+    let deployed = probed(report.outcome);
     assert_eq!(deployed.origin, DeployOrigin::Preinstalled);
     assert_eq!(deployed.object.path, "/worker/strop");
     assert_eq!(

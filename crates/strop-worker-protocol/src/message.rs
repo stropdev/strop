@@ -10,8 +10,10 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The only wire version this build speaks.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// This wire version adds consumer-driven credits for finite file reads
+/// and non-PTY process output. A v1 worker is refused at handshake,
+/// never allowed to ignore a new stream-credit control envelope.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Who a peer is, for the handshake record: name, version, the exact
 /// build identity and the target triple. Deployment binds the worker to
@@ -26,7 +28,14 @@ pub struct EndpointInfo {
 }
 
 /// The worker's hard bounds, restated on the wire so the client never
-/// guesses them (0056 AR06 conventions; 0058 WK11 registers the budgets).
+/// guesses them (0056 AR06 conventions; WK11 registers the budgets).
+///
+/// The scheduling vocabulary (WK11): every admitted request carries a
+/// [`RequestClass`]; `max_pending_requests` is the total in-flight
+/// ceiling and `control_reserve` of those slots are held for
+/// control-class requests, so cancel/health/quiesce admission never
+/// queues behind bulk work. Bulk streaming reads additionally draw from
+/// `max_concurrent_reads`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Limits {
     pub max_frame_bytes: usize,
@@ -39,6 +48,32 @@ pub struct Limits {
     pub max_subscriptions: usize,
     pub max_streams: usize,
     pub max_exec_processes: usize,
+    /// Concurrent bulk streaming reads (the data-producing class).
+    pub max_concurrent_reads: usize,
+    /// In-flight request slots reserved for control-class requests
+    /// (health/quiesce/exec cancellation): non-control admission stops
+    /// this many slots short of `max_pending_requests`, so control is
+    /// never starved by bulk classes.
+    pub control_reserve: usize,
+    /// Outbound data-lane depth in chunks: the flow-control window
+    /// between stream producers and the transport. Producers block
+    /// (cancel-aware) past it; terminal chunks always bypass it.
+    pub max_queued_data_chunks: usize,
+}
+
+/// The scheduling class of one request (WK11). Control requests are
+/// admitted into the reserved slots and their outcomes are scheduled
+/// ahead of bulk stream data; bulk reads are the bounded
+/// data-producing class; everything else is standard work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestClass {
+    /// Cancellation, health and retirement: never queued behind bulk.
+    Control,
+    /// Streaming reads: bounded concurrent data producers.
+    Bulk,
+    /// Ordinary requests: bounded by the non-reserved slots.
+    Standard,
 }
 
 /// How a namespace can be watched, reported honestly (2026-09-16
@@ -227,9 +262,28 @@ mod tests {
             max_subscriptions: 64,
             max_streams: 128,
             max_exec_processes: 32,
+            max_concurrent_reads: 16,
+            control_reserve: 8,
+            max_queued_data_chunks: 256,
         };
         let json = serde_json::to_string(&limits).unwrap();
         let back: Limits = serde_json::from_str(&json).unwrap();
         assert_eq!(back, limits);
+    }
+
+    #[test]
+    fn request_class_wire_shape_is_pinned() {
+        assert_eq!(
+            serde_json::to_string(&RequestClass::Control).unwrap(),
+            r#""control""#
+        );
+        assert_eq!(
+            serde_json::to_string(&RequestClass::Bulk).unwrap(),
+            r#""bulk""#
+        );
+        assert_eq!(
+            serde_json::to_string(&RequestClass::Standard).unwrap(),
+            r#""standard""#
+        );
     }
 }

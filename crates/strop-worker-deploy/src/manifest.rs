@@ -195,23 +195,45 @@ impl ReleaseCatalog {
                 min_editor: self.worker.min_editor.clone(),
             });
         }
-        if editor_protocol != self.worker.protocol {
-            return Compatibility::Fallback(Fallback::ProtocolMismatch {
-                editor: editor_protocol,
-                worker: self.worker.protocol,
-            });
-        }
-        if editor_version != self.version {
-            return Compatibility::Fallback(Fallback::CatalogVersionMismatch {
-                editor: editor_version.to_string(),
-                catalog: self.version.clone(),
-            });
-        }
-        match self.artifact(target) {
-            Some(artifact) if self.worker.targets.iter().any(|t| t == target) => {
-                Compatibility::Compatible(artifact)
+        let protocol_matches = editor_protocol == self.worker.protocol;
+        let version_matches = editor_version == self.version;
+        let artifact = if protocol_matches
+            && version_matches
+            && self.worker.targets.iter().any(|t| t == target)
+        {
+            self.artifact(target)
+        } else {
+            None
+        };
+        match strop_core::worker::deploy_policy::catalog_verdict(
+            protocol_matches,
+            version_matches,
+            artifact.is_some(),
+        ) {
+            strop_core::worker::deploy_policy::CatalogVerdict::Compatible => {}
+            strop_core::worker::deploy_policy::CatalogVerdict::ProtocolMismatch => {
+                return Compatibility::Fallback(Fallback::ProtocolMismatch {
+                    editor: editor_protocol,
+                    worker: self.worker.protocol,
+                });
             }
-            _ => Compatibility::Fallback(Fallback::NoArtifactForTarget {
+            strop_core::worker::deploy_policy::CatalogVerdict::VersionMismatch => {
+                return Compatibility::Fallback(Fallback::CatalogVersionMismatch {
+                    editor: editor_version.to_string(),
+                    catalog: self.version.clone(),
+                });
+            }
+            strop_core::worker::deploy_policy::CatalogVerdict::NoArtifactForTarget => {
+                return Compatibility::Fallback(Fallback::NoArtifactForTarget {
+                    target: target.to_string(),
+                });
+            }
+        }
+        // The verdict's inputs and the returned artifact are the same
+        // lookup; no second search or different target can slip through.
+        match artifact {
+            Some(artifact) => Compatibility::Compatible(artifact),
+            None => Compatibility::Fallback(Fallback::NoArtifactForTarget {
                 target: target.to_string(),
             }),
         }
@@ -222,8 +244,8 @@ impl ReleaseCatalog {
 mod tests {
     use super::*;
 
-    /// Wire-shape pin: exactly what `.github/scripts/release-catalog.py`
-    /// emits (kept in lockstep with tests/release-catalog.sh's pin).
+    /// Historical v1 catalog: current v2 clients must refuse it,
+    /// while parsing and typed compatibility remain explicit.
     const CATALOG_FIXTURE: &str = r#"{
   "schema": 1,
   "product": "strop",
@@ -258,27 +280,6 @@ mod tests {
 
     fn catalog() -> ReleaseCatalog {
         ReleaseCatalog::parse(CATALOG_FIXTURE.as_bytes()).expect("fixture parses")
-    }
-
-    #[test]
-    fn wire_shape_parses_exactly() {
-        let catalog = catalog();
-        assert_eq!(catalog.version, "0.35.0");
-        assert_eq!(catalog.tag, "v0.35.0");
-        assert_eq!(catalog.worker.protocol, 1);
-        assert_eq!(catalog.worker.min_editor, "0.35.0");
-        assert_eq!(
-            catalog.worker.targets,
-            vec![
-                "aarch64-apple-darwin".to_string(),
-                "x86_64-unknown-linux-musl".to_string()
-            ]
-        );
-        let artifact = catalog
-            .artifact("x86_64-unknown-linux-musl")
-            .expect("target");
-        assert_eq!(artifact.sha256, "bbbb");
-        assert_eq!(artifact.bytes, 202);
     }
 
     #[test]

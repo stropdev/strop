@@ -318,8 +318,12 @@ fn execute_with(
             info.file.sync_all().map_err(io_failure)?;
             info.parent.file.sync_all().map_err(io_failure)?;
         }
-        if observation::observe(&source.location.path, approved.digest.is_some(), token)?
-            != source.value
+        if observation::observe(
+            &source.location.path,
+            approved.digest.is_some(),
+            false,
+            token,
+        )? != source.value
         {
             return Err(failure(
                 FsFailureKind::Conflict,

@@ -505,8 +505,30 @@ impl Editor {
                 })
             })
             .collect();
+        let lease = match &root.filesystem {
+            strop_workspace::Filesystem::Remote(endpoint) => {
+                Some(match self.remote.workers.get(endpoint) {
+                    Some(worker) => strop_picker::SearchWorker::Admitted(worker),
+                    None => {
+                        let endpoint = endpoint.clone();
+                        let workers = self.remote.workers.clone();
+                        strop_picker::SearchWorker::Admit(Box::new(move |token| {
+                            workers
+                                .admit(&endpoint, "search in remote workspace", token)
+                                .map_err(|error| {
+                                    strop_core::worker::Failure::new(
+                                        strop_core::worker::FailureKind::Unavailable,
+                                        error.to_string(),
+                                    )
+                                })
+                        }))
+                    }
+                })
+            }
+            _ => None,
+        };
         let worker = match self.source_worker() {
-            Ok(source) => source.search(plans, policy, root, snapshots, tx),
+            Ok(source) => source.search(plans, policy, root, snapshots, lease, tx),
             Err(failure) => {
                 let _ = tx.send(PickerMsg::Finished(strop_core::worker::Outcome::Failed {
                     failure,

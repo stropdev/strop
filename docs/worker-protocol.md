@@ -27,70 +27,58 @@ The baseline this release migrates is the post-0056 candidate:
   VF01–VF20 as named in `plans/0057-core-verification-and-assurance.md`;
   the worker release rebinds rather than inherits them (0058 §8 mapping
   table is the migration manifest's skeleton).
+- The immutable 0057 archive has 75 claims but recorded dirty inputs.
+  A second clean Linux x86_64 snapshot at `a05d84f` has 74 claims and
+  six raw passing gates (`verification/baseline/0057-linux-evidence.json`);
+  it is local profile evidence, not macOS/aarch64 or full VF20
+  publication. FS-STORE is the additional worker-cutover claim.
 
 One worker integration owner controls protocol/context/identity/outcome
 contracts, caller migration and the final proof manifest (0058 §2). This
 document is that contract's protocol half.
 
-## 2. Caller inventory (current consumers of strop-remote / strop-fs)
+## 2. Caller inventory and cutover ownership
 
-Every consumer below migrates to the worker client; WK14 removes the old
-paths as a clean cutover.
+The 0.34.0 baseline named in §1 used a Python supervisor for SSH commands
+and protected saving. That was an implementation baseline, not a runtime
+option: the old supervisor, interpreter selector, filesystem/save bundles
+and their Rust carriers are no longer shipped. There is no Python helper
+fallback.
 
-**Engine I/O and filesystem (strop-engine):**
-`editor/filesystem/{mod,prepare,verify}.rs` drive `strop_fs::batch`
-prepare/apply/verify on worker threads (`strop-fs-prepare/apply/verify`);
-`editor/filesystem/reconcile.rs` is the editor-side guarded-reload
-surface (admission/receipt vocabulary, dirty buffers never clobbered);
-`editor/filesystem/draft/*` compiles Directory intents;
-`editor/io/open.rs`, `editor/directory/{mod,jobs}.rs`,
-`editor/document/directory.rs` and `editor/remote_completion/directory.rs`
-consume `strop_fs::{list, parent, from_remote, from_container}`.
-
-**Engine remote browsing/save (strop-engine → strop-remote):**
-`editor/remote/{mod,chooser,commands,view,follow,save}.rs` use
-`RemoteClient` (read-only SFTP), `ReadSelection`/`RemoteWindow`/
-`RemoteOffset`/`ReadLimit` ranged reads and `strop_remote::save` for
-protected remote save; `editor/picker/preview.rs` resolves ranged
-previews; `editor/remote_completion/mod.rs` and
-`editor/remote/chooser.rs` use `enumerate_hosts`/`HostSources`.
-
-**Picker/search (strop-picker):** `source/remote.rs` runs `rg` over SSH
-through `strop_remote::stream` with bounded argv batches;
-`source/{worker,grep}.rs` run local search; `source/{catalog,snapshots}.rs`
-are the 0063 ProjectCatalog/snapshot consumers whose invalidation rides
-the notify family (§5 below).
-
-**LSP (strop-lsp):** `client/spawn.rs` spawns local servers in the
-workspace root and remote servers through strop-remote's one-owned-process
-policy (`RemoteCommand` + `command_supervised`, `StdinMode::Relayed`,
-`SupervisionKey`); containers go through strop-containers exec.
-
-**Git (strop-git):** `exec.rs` and `remote/mod.rs` run finite Git
-commands over endpoints via `RemoteCommand`/`strop_remote::run`;
-container Git uses the bounded exec-capture boundary; libgit2 hot paths
-stay native (WK10 changes where jobs run, not their algorithm).
-
-**Terminal (strop-terminal/strop):** the 0055 terminal owns local
-PTY/emulator semantics; `strop --terminal-helper` is an early-entry edge
-(§7). Worker-owned PTY input/resize/close joins the exec family behind
-`capabilities.pty`; no remote/container interactive terminal ahead of its
-authorized milestone.
-
-**CLI (strop):** `cli.rs` uses `ReadSelection`/`ReadLimit` for
-noninteractive remote reads; `ui_stdio.rs` serves the separate AR09
-presentation protocol (nested UI-server→worker ownership, never a second
-engine).
-
-**Providers themselves:** strop-remote (`client.rs` SFTP read-only codec
-+ pool, `transport/wire.rs`, `exec/{run,python,spec,supervisor,stream}.rs`
-Python-supervised exec, `filesystem/` protected.py bundle, `save/`
-helper.py, `hosts/`, `selection.rs`); strop-fs native executor
-(`local/{prepare,execute,verify,outcome,copy}.rs`, `observation.rs`,
-`stage.rs`, `batch.rs`, `guard.rs`, `trash.rs`, `listing.rs`). strop-fs
-currently depends on strop-remote/strop-containers adapters; WK03 inverts
-that direction — the shared kernel must not reach back through clients
-(acyclic split, no worker→client→worker cycle).
+- `strop-engine::editor::io`, `namespace`, `directory` and
+  `remote_completion` own resource binding and read-only browsing. Local
+  observations, listings and reads use the local worker; SSH keeps
+  read-only SFTP browsing/ranged access when no worker can run, while
+  admitted endpoints use `RemoteWorker`. Container browsing needs no
+  deployment; an explicitly admitted `BoundWorker` routes its reads.
+- `editor::remote::save` owns the document's protected write permit,
+  frozen Store attempt and `:remote verify`. `:remote edit` deploys/
+  admits a verified worker and then checks the displayed snapshot
+  against its actual Store baseline. `:remote worker [URI]` admits the
+  same endpoint worker without granting a file write permit. No
+  worker means no remote mutation route.
+- `strop-picker::source::remote` streams native `rg` output through
+  `Worker::exec`, never shell interpolation or an analogous local path.
+  Starting a remote search is itself the explicit worker-using action;
+  deployment takes place on the source thread, not input→render.
+- `strop-git::exec`, `strop-git::remote` and `strop-git::container`
+  issue finite Git commands on an already-admitted, endpoint-bound
+  worker. Native local libgit2 hot paths remain native.
+- `strop-lsp::Client::spawn` uses an admitted worker for every
+  local, SSH and container server. The editor supplies its local worker
+  lease; missing non-local authority refuses typed, never via a shell,
+  Python or direct local process fallback. Project-command trust
+  still precedes every launch.
+- `editor::containers::ContainerWorkers` records a selected Docker
+  engine and canonical id/StartedAt incarnation. `:container-worker`
+  authorizes private-cache deployment (or a configured preinstalled
+  artifact), without changing readonly browsing or granting writes.
+- `strop-terminal` owns VT interpretation and history; the local
+  worker owns the PTY, child and stream. SSH/container interactive
+  terminals remain disabled even when their worker transport could
+  technically carry PTY frames.
+- The `strop --ui-stdio` presentation server remains a distinct,
+  bounded editor presentation protocol; it is not a second executor.
 
 ## 3. Wire shape (WK02, implemented by `strop-worker-protocol`)
 
@@ -100,7 +88,11 @@ per transport.
 
 - **Framing** (`frame.rs`): bounded `Content-Length: N\r\n\r\n` + body,
   the convention strop-ui-protocol/strop-lsp already pin. Header bound
-  8192 bytes; body bound 1 MiB. Every violation is a typed `FrameError`;
+  8192 bytes; body bound 1 MiB. The decoder calls the same-source Verus
+  header/body/completeness gates before slicing; the proved bound on
+  ready-frame indices assumes the codec supplied its scanned header
+  offset and parsed body length. The codec's byte scanner is tested,
+  not formally proved. Every violation is a typed `FrameError`;
   corruption poisons the stream and closes it, never resynchronizes by
   guessing.
 - **Bodies** (`codec.rs`): one class byte, then either a JSON control
@@ -120,9 +112,13 @@ per transport.
   compromised host — the trusted-host assumption stays explicit.
 - **Request families** (`request.rs`): observation
   (`observe`/`list`/`read`/range), mutation (`prepare`/`apply`/`verify`
-  with frozen content streams and typed receipts), exec
-  (`exec`/stdin chunks/half-close/`exec_cancel`/exit events),
-  notify (`subscribe`/`unsubscribe`/events), lifecycle
+  with frozen content streams and typed receipts), read-only
+  `verify_recovered` for a frozen `StepOutcome::Unconfirmed` receipt
+  under an exact boot/mount/principal witness (an acknowledged commit
+  cannot enter recovered verification), exec (`exec`/stdin chunks/
+  half-close/`exec_cancel`/`exec_resize`/exit and `exec_input` events —
+  the PTY family included), notify (`subscribe`/`unsubscribe`/events),
+  scoped cache maintenance (`collect_cache { context }`), lifecycle
   (`health`/`quiesce`/`shutdown`, `cancel` per request).
 - **Outcomes**: the wire reuses strop-workspace's pure taxonomy —
   `OperationIntent`, `PreparedOperation`, `StepReceipt`/`StepOutcome`
@@ -132,11 +128,43 @@ per transport.
   (`wrong_incarnation`, `wrong_lease`, `unknown_handle`,
   `stale_subscription`, `capability`, `limit`, `busy`,
   `namespace_changed`, `retiring`, `closed`). The two layers never blur.
+  `CacheCollected` reports exact removed object addresses, removed
+  receipt count, kept objects and an optional typed `FsFailure`; a
+  failure after any unlink is `Incomplete` with partial retirements,
+  never an empty success or an automatic retransmission.
+
+- **Same-source admission proof** (`strop-core::worker::session`):
+  Verus checks the real `classify_session` function for arbitrary
+  `u64` incarnation/lease values and refusal precedence through
+  quiesce/close. The worker
+  calls that function before handle lookup. The proof assumes the
+  handshake's identity facts are honest; it does not verify SSH, Docker,
+  OS effects, deployment, frame parsing or save durability.
 
 - **Streams**: every bulk payload has a `StreamId`; chunks are ordered
   per stream; stream handles are session-scoped. Child stdout/stderr are
   data streams, never control messages — a child echoing valid-looking
   JSON cannot forge a committed/exit/control event.
+- **Consumer-driven streams (protocol v2)**: file reads, non-PTY exec
+  stdout/stderr and live PTY output start with 32 chunk credits per
+  stream, below the client's 64-chunk inbound bound. Only the producer
+  parks when spent; the client returns session-stamped `stream_credit`
+  as chunks leave the consumer queue. Control/cancel/health remain live.
+  Dropping an unfinished file payload cancels its request; dropping
+  exec or PTY output sends `stream_abandon`, so the worker drains the
+  child without retaining bytes or waiting for credits. Process
+  revocation remains explicit through its pinned exec/PTY control.
+  Late credits/abandonment for finished streams are no-ops; malformed
+  credits poison the session. An older v1 worker fails the handshake.
+- **Exec settlement (WK11/WK12)**: the worker keeps an admitted exec's
+  cancellation owner alive through its output pumps and publishes
+  `exec_exit` only after stdout/stderr terminal chunks reach the actual
+  writer. A popped chunk is not proof of delivery. Control frames,
+  especially `ReadOpened`/`ExecStarted`, precede all queued data so
+  a chunk cannot arrive before its stream exists. The client binds
+  stdin/resize/revoke to the admitting connection; a new
+  incarnation cannot inherit a reused numeric exec ID.
+
 
 WK04 integration amendments (integration-owner approved 2026-09-24):
 `ResultOutcome::Failed { failure }` carries the workspace `FsFailure`
@@ -157,9 +185,36 @@ Three identities are kept distinct on the wire (`id.rs`):
    attempt uses retained before/intended/observed evidence plus newly
    admitted read authority and never revives an old session's write
    capability.
-2. **Host/mount namespace** — `NamespaceIdentity`, a native boot/mount/
-   container observation plus principal; a changed namespace fails
-   closed (`namespace_changed`), never retargets retained authority.
+   When executing a verified cache object, the worker rechecks its
+   matching private receipt and final executable, acquires the stable
+   owner-private cache lock, then writes its own `LeaseRecord` before
+   Welcome. The deployment probe is another, short-lived session and
+   cannot grant the editor a live lease. Reconnect records its new
+   session. A killed process may leave a stale record; the collector
+   keeps every recorded lease rather than inferring liveness by age.
+   If the managed executable was unlinked after exec but before Hello,
+   or (on Linux) its final cache path no longer names the running
+   inode, no live lease or Welcome is issued. The client receives the
+   pre-handshake protocol refusal directly, not a timeout that might
+   be mistaken for a usable worker.
+   On live SSH/container admission, the selected worker runs native
+   `collect_cache` before the editor publishes ready; a preinstalled
+   administrator object outside the managed cache is not a target.
+   The worker binds the requested context to its own receipt. Its
+   OS lock excludes a new Welcome from lease snapshot through scoped
+   retirement. Malformed leases refuse before deletion; concurrent
+   publishers that lose the race fail their final-path handshake rather
+   than claiming a removed object is ready. This is a cooperating
+   same-principal OS-lock contract, not a crash-durability or hostile
+   peer guarantee; native platform qualification remains open.
+2. **Host/mount namespace** — `NamespaceIdentity` captures the Linux
+   boot ID, mount-namespace id and effective principal, separately
+   from the per-process worker session. A recovered Store verifies
+   through fresh *read-only* authority only if this witness matches;
+   stale prepared writes still refuse. An unattested platform can
+   verify in its live session but cannot claim cross-restart recovery.
+   Containers additionally bind their selected Docker engine, canonical
+   id and StartedAt at the deployment provider.
 3. **Editor document binding** — `DocumentStamp { document, revision }`,
    carried opaquely on mutation requests and echoed in receipts so a
    late committed outcome reconciles its source exactly once. Workers do
@@ -207,13 +262,14 @@ SFTP browsing survives for hosts that cannot run a worker (WK15).
 Deployment consent/policy (WK05–WK08 contract, recorded here so protocol
 and deployment agree):
 
-- First deployment requires an explicit authorized worker-using action
-  with endpoint/principal-bound consent/policy; browsing a read-only
-  SFTP host never uploads or executes code.
-- The artifact is the same release's binary in `--worker-stdio` mode,
-  bound to the client's exact release/build/target; a private per-user
-  cache holds immutable version/target/content-addressed artifacts with
-  verified-object activation and lease-safe, receipt-scoped cleanup.
+- First deployment requires an explicit worker-using action (`:remote
+  edit`, `:remote worker`, remote search or `:container-worker`) with
+  endpoint/principal-bound consent. Read-only browsing never deploys;
+  a restricted/SFTP-only host remains readable without a worker.
+- The verified artifact is a matching native binary in `--worker-stdio`
+  mode, bound to the declared version/protocol/target and exact
+  content digest. The private cache holds content-addressed objects;
+  a version string or handshake alone is not host attestation.
 - No root/PATH/rc/image/package-database/noexec-evasion tricks; an
   explicit administrator-provisioned path is validated under the same
   rules and an invalid override never chooses another file.
@@ -235,10 +291,11 @@ enable (0058 §4):
 - trace and config loading, and worker diagnostics themselves (private
   bounded stderr, never protocol authority);
 - release/cache bootstrap I/O: artifact verification, upload, cache
-  activation/cleanup (WK05/WK06) — the worker being deployed cannot
-  deploy itself;
-- the `--terminal-helper` and `--ui-stdio` early entries and the
-  replay/export CLI paths, which run before editor setup;
+  activation and probe cleanup (WK05/WK06) — the worker being deployed
+  cannot deploy itself; later scoped garbage collection runs only in
+  the admitted native worker;
+- the `--ui-stdio` early entry and native-free replay/export CLI paths,
+  which run before editor setup;
 - `strop update` / installer identity (AR11/AR12).
 
 This is not a loophole: user-file save and admitted service execution

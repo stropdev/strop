@@ -15,26 +15,42 @@ struct Tui {
     child: Child,
     master: File,
     screen: vt100::Parser,
+    trace: std::path::PathBuf,
 }
 impl Tui {
     fn start(directory: &std::path::Path, trace: &std::path::Path) -> Self {
+        Self::spawn(
+            directory,
+            trace,
+            std::path::Path::new(env!("CARGO_BIN_EXE_strop")),
+            true,
+        )
+    }
+
+    fn spawn(
+        directory: &std::path::Path,
+        trace: &std::path::Path,
+        binary: &std::path::Path,
+        capture: bool,
+    ) -> Self {
         let (mut master, mut slave) = (-1, -1);
-        let size = libc::winsize {
+        let mut size = std::mem::MaybeUninit::new(libc::winsize {
             ws_row: 30,
             ws_col: 120,
             ws_xpixel: 0,
             ws_ypixel: 0,
-        };
-        // SAFETY: valid output pointers and winsize. This dedicated integration
-        // binary has one test/launcher; no concurrent fork can inherit the pair.
+        });
+        // SAFETY: valid output pointers and an initialized, writable
+        // winsize for Linux's const and macOS's mutable openpty APIs.
+        // This dedicated integration binary has no concurrent fork.
         assert_eq!(
             unsafe {
                 libc::openpty(
                     &mut master,
                     &mut slave,
                     std::ptr::null_mut(),
-                    std::ptr::null(),
-                    &size,
+                    std::ptr::null_mut::<libc::termios>(),
+                    size.as_mut_ptr(),
                 )
             },
             0
@@ -55,7 +71,7 @@ impl Tui {
             unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
             -1
         );
-        let mut command = Command::new(env!("CARGO_BIN_EXE_strop"));
+        let mut command = Command::new(binary);
         command
             .env_clear()
             .env(
@@ -69,12 +85,15 @@ impl Tui {
             .env("SHELL", "/bin/sh")
             .env("TERM", "xterm-256color")
             .env_remove("STROP_LOG")
-            .args(["--log-file"])
-            .arg(trace)
-            .arg("--log-terminal-content")
             .stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave));
+        if capture {
+            command
+                .args(["--log-file"])
+                .arg(trace)
+                .arg("--log-terminal-content");
+        }
         // SAFETY: pre_exec performs only async-signal-safe session/tty syscalls;
         // stdin is the child-owned duplicate of this test's PTY slave.
         unsafe {
@@ -89,8 +108,26 @@ impl Tui {
             child: command.spawn().unwrap(),
             master,
             screen: vt100::Parser::new(30, 120, 0),
+            trace: trace.to_path_buf(),
         }
     }
+    fn recent_trace(&self) -> String {
+        std::fs::read_to_string(&self.trace)
+            .unwrap_or_default()
+            .lines()
+            .rev()
+            .filter(|line| {
+                line.contains("terminal.update")
+                    || line.contains("terminal.start")
+                    || line.contains("\"event\":\"error\"")
+                    || line.contains("\"event\":\"panic\"")
+            })
+            .map(|line| line.chars().take(1200).collect::<String>())
+            .take(12)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn poll(&self, events: libc::c_short, deadline: Instant) {
         let left = deadline.saturating_duration_since(Instant::now());
         assert!(!left.is_zero(), "terminal deadline");
@@ -109,8 +146,9 @@ impl Tui {
         };
         assert!(
             ready > 0 || io::Error::last_os_error().kind() == io::ErrorKind::Interrupted,
-            "terminal poll timed out:\n{}",
-            self.screen.screen().contents()
+            "terminal poll timed out:\n{}\nrecent trace:\n{}",
+            self.screen.screen().contents(),
+            self.recent_trace()
         );
     }
     /// Soft poll: false on deadline instead of asserting (retry loops).
@@ -302,7 +340,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"stty raw -echo; printf 'BYTE-READY\\n'; dd bs=1 count=8 2>/dev/null | od -An -tx1; stty sane; printf '\\r\\nBYTE-DONE\\n'\r");
     tui.until(|screen| line(screen, "BYTE-READY"));
     tui.send(b"\x12\x1bx\x1b[15~");
-    tui.until(|screen| {
+    let expected_bytes = |screen: &str| {
         screen.lines().any(|row| {
             strip_track(row)
                 .split_whitespace()
@@ -310,7 +348,18 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
                 .join(" ")
                 == "12 1b 78 1b 5b 31 35 7e"
         })
-    });
+    };
+    if tui
+        .until_soft(Duration::from_secs(30), expected_bytes)
+        .is_none()
+    {
+        // Complete a short read for diagnosis without accepting substituted
+        // bytes: the expected exact sequence above still fails.
+        tui.send(b"????????");
+        let observed =
+            tui.until_within(Duration::from_secs(15), |screen| line(screen, "BYTE-DONE"));
+        panic!("terminal did not pass the exact raw input bytes:\n{observed}");
+    }
     tui.until(|screen| line(screen, "BYTE-DONE"));
     // The prefix grammar's pass-through contract (0055 §12, literal
     // escape-prefix recovery): `Ctrl-W .` delivers the literal 0x17, and a
@@ -503,4 +552,188 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         std::fs::read(directory.path().join("run-count")).unwrap(),
         before
     );
+}
+
+fn benchmark_binary() -> (std::path::PathBuf, String, u64) {
+    use sha2::{Digest, Sha256};
+
+    let binary = std::env::var_os("STROP_BENCH_BINARY")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_BIN_EXE_strop")));
+    let mut artifact = File::open(&binary).unwrap();
+    let mut hasher = Sha256::new();
+    let mut bytes = [0; 65_536];
+    loop {
+        let count = artifact.read(&mut bytes).unwrap();
+        if count == 0 {
+            break;
+        }
+        hasher.update(&bytes[..count]);
+    }
+    let sha256 = format!("{:x}", hasher.finalize());
+    (binary, sha256, artifact.metadata().unwrap().len())
+}
+
+fn benchmark_percentiles(raw_ms: &[f64]) -> serde_json::Value {
+    let mut ordered = raw_ms.to_vec();
+    ordered.sort_by(f64::total_cmp);
+    let percentile = |n: usize| ordered[(n * ordered.len()).div_ceil(100) - 1];
+    serde_json::json!({
+        "p50": percentile(50),
+        "p95": percentile(95),
+        "p99": percentile(99),
+        "max": ordered[ordered.len() - 1],
+    })
+}
+
+/// Opt-in native performance observation. Each sample waits until a real PTY's
+/// decoded cell grid shows the edit, rather than stopping at an input ACK or
+/// an internal semantic view. The same harness can drive a clean baseline
+/// artifact through STROP_BENCH_BINARY without changing the shipped editor.
+#[test]
+#[ignore = "native TUI performance measurement; run explicitly with --ignored --nocapture"]
+fn native_terminal_input_to_painted_frame_samples() {
+    let (binary, binary_sha256, binary_bytes) = benchmark_binary();
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut notes = io::BufWriter::new(File::create(directory.path().join("notes.txt")).unwrap());
+    for line in 0..10_000 {
+        if line != 0 {
+            notes.write_all(b"\n").unwrap();
+        }
+        write!(notes, "line {line:05} worker frame fixture").unwrap();
+    }
+    notes.flush().unwrap();
+    drop(notes);
+    let trace = directory.path().join("no-capture.jsonl");
+    let mut tui = Tui::spawn(directory.path(), &trace, &binary, false);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b":e notes.txt\r");
+    tui.until(|screen| screen.contains("line 00000 worker frame fixture"));
+    tui.send(b":5000\rA");
+    tui.until(|screen| {
+        screen.contains("INSERT") && screen.contains("line 04999 worker frame fixture")
+    });
+
+    let warmup = 8;
+    let iterations = 64;
+    let mut raw_ms = Vec::with_capacity(iterations);
+    let mut expected = String::from("line 04999 worker frame fixture");
+    for index in 0..(warmup + iterations) {
+        expected.push('x');
+        let started = Instant::now();
+        tui.send(b"x");
+        tui.until_within(Duration::from_secs(15), |screen| {
+            numbered_line(screen, &expected)
+        });
+        if index >= warmup {
+            raw_ms.push((started.elapsed().as_secs_f64() * 1_000_000.0).round() / 1_000.0);
+        }
+    }
+    tui.send(b"\x1b:qa!\r");
+    assert!(
+        tui.child.wait().unwrap().success(),
+        "TUI did not exit cleanly"
+    );
+
+    let input_to_grid_ms = benchmark_percentiles(&raw_ms);
+    let report = serde_json::json!({
+        "binary_sha256": binary_sha256,
+        "binary_bytes": binary_bytes,
+        "platform": {
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+        },
+        "fixture": {
+            "lines": 10_000,
+            "geometry": [120, 30],
+            "input": "one committed character at line 5000",
+            "capture": false,
+        },
+        "method": "PTY key write through VT100 decoded and verified TUI cell-grid paint",
+        "warmup_requests": warmup,
+        "measured_requests": iterations,
+        "raw_ms": raw_ms,
+        "input_to_grid_ms": input_to_grid_ms,
+    });
+    println!("STROP_TUI_BENCH={report}");
+}
+
+/// One real worker-leased terminal, repeatedly flooded with 256 shell
+/// output lines per two-key request. Timing ends only when the unique
+/// final marker is painted on the decoded host cell grid. The request
+/// contains no marker text, so input echo cannot impersonate output.
+#[test]
+#[ignore = "native terminal output-load measurement; run explicitly with --ignored --nocapture"]
+fn native_terminal_output_under_load_samples() {
+    use std::fmt::Write as _;
+
+    let (binary, binary_sha256, binary_bytes) = benchmark_binary();
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("producer.sh"),
+        r#"#!/bin/sh
+printf 'BENCH-READY\n'
+n=0
+while IFS= read -r request; do
+    i=0
+    while [ "$i" -lt 256 ]; do
+        printf 'L%04d\n' "$i"
+        i=$((i+1))
+    done
+    printf 'OUTPUT-END-%03d\n' "$n"
+    n=$((n+1))
+done
+"#,
+    )
+    .unwrap();
+    let trace = directory.path().join("no-capture.jsonl");
+    let mut tui = Tui::spawn(directory.path(), &trace, &binary, false);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b":terminal /bin/sh producer.sh\r");
+    tui.until(|screen| screen.contains("TERMINAL") && line(screen, "BENCH-READY"));
+
+    let warmup = 8;
+    let iterations = 64;
+    let mut raw_ms = Vec::with_capacity(iterations);
+    let mut marker = String::with_capacity(32);
+    for index in 0..(warmup + iterations) {
+        marker.clear();
+        write!(&mut marker, "OUTPUT-END-{index:03}").unwrap();
+        let started = Instant::now();
+        tui.send(b"x\r");
+        tui.until_within(Duration::from_secs(30), |screen| line(screen, &marker));
+        if index >= warmup {
+            raw_ms.push((started.elapsed().as_secs_f64() * 1_000_000.0).round() / 1_000.0);
+        }
+    }
+    tui.send(b"\x1c\x0e:terminal-stop\r");
+    tui.until(|screen| screen.contains("terminal ended") || screen.contains("terminal exited"));
+    tui.send(b":qa\r");
+    assert!(
+        tui.child.wait().unwrap().success(),
+        "loaded TUI did not exit cleanly"
+    );
+
+    let output_to_grid_ms = benchmark_percentiles(&raw_ms);
+    let report = serde_json::json!({
+        "binary_sha256": binary_sha256,
+        "binary_bytes": binary_bytes,
+        "platform": {
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+        },
+        "fixture": {
+            "output_lines_per_request": 256,
+            "geometry": [120, 30],
+            "input": "one two-key line to a worker-leased shell PTY",
+            "capture": false,
+        },
+        "method": "two-key PTY input through 256 output lines to VT100 decoded and verified final grid marker",
+        "warmup_requests": warmup,
+        "measured_requests": iterations,
+        "raw_ms": raw_ms,
+        "output_to_grid_ms": output_to_grid_ms,
+    });
+    println!("STROP_TERMINAL_LOAD_BENCH={report}");
 }

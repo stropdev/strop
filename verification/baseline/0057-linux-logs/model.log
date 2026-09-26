@@ -1,0 +1,767 @@
+ Network strop-preworker-6c4491b_default Creating 
+ Network strop-preworker-6c4491b_default Creating 
+ Network strop-preworker-6c4491b_default Created 
+ Network strop-preworker-6c4491b_default Created 
+ Image strop-preworker-6c4491b-model Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 561B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile:
+#2 transferring dockerfile: 7.67kB done
+#2 DONE 0.1s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.6s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 resolve docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre@sha256:6cbdfc89c9657478bc5abea638030310f6c0267404e98a5808097bb1925932f1
+#5 DONE 0.7s
+
+#6 [model 2/5] ADD --checksum=sha256:936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar /tla/tla2tools.jar
+#6 DONE 0.0s
+
+#7 [model 1/5] FROM docker.io/library/eclipse-temurin:21-jre@sha256:6cbdfc89c9657478bc5abea638030310f6c0267404e98a5808097bb1925932f1
+#7 resolve docker.io/library/eclipse-temurin:21-jre@sha256:6cbdfc89c9657478bc5abea638030310f6c0267404e98a5808097bb1925932f1 0.1s done
+#7 DONE 0.1s
+
+#8 [model 2/5] ADD --checksum=sha256:936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar /tla/tla2tools.jar
+#8 CACHED
+
+#9 [model 3/5] WORKDIR /work
+#9 CACHED
+
+#10 [internal] load .dockerignore
+#10 transferring context: 2B done
+#10 DONE 0.1s
+
+#11 [internal] load build context
+#11 transferring context: 603.62kB 0.0s done
+#11 DONE 0.1s
+
+#12 [model 4/5] COPY specs ./specs
+#12 CACHED
+
+#13 [model 5/5] RUN sh specs/gate.sh
+#13 0.322 [model gate] EditorProtocol: expect a clean check
+#13 9.748 [model gate] EditorProtocol_Mutant: expect freshness violations
+#13 12.30 editor model gate: bounded checks clean; freshness mutant rejected
+#13 12.30 [model gate] sftp-wire-main: expect clean safety/progress checks
+#13 13.28 3569 states generated, 78 distinct states found, 0 states left on queue.
+#13 13.28 The depth of the complete state graph search is 10.
+#13 13.28 Finished in 00s at (2026-09-25 19:30:19)
+#13 13.28 [model gate] sftp-wire-wrong-id: expect ReplyIdentity (temporal=no)
+#13 14.27 206 states generated, 13 distinct states found, 8 states left on queue.
+#13 14.27 Finished in 00s at (2026-09-25 19:30:20)
+#13 14.27 [model gate] sftp-wire-over-read: expect SnapshotBounded (temporal=no)
+#13 15.67 1505 states generated, 38 distinct states found, 11 states left on queue.
+#13 15.67 Finished in 00s at (2026-09-25 19:30:21)
+#13 15.67 [model gate] sftp-wire-unbounded-alloc: expect PacketBounded (temporal=no)
+#13 17.03 2 states generated, 2 distinct states found, 0 states left on queue.
+#13 17.03 Finished in 00s at (2026-09-25 19:30:23)
+#13 17.03 [model gate] sftp-wire-success-witness: expect WitnessNoSuccess (temporal=no)
+#13 18.35 3568 states generated, 77 distinct states found, 12 states left on queue.
+#13 18.35 Finished in 00s at (2026-09-25 19:30:24)
+#13 18.35 [model gate] sftp-wire-utf8-witness: expect WitnessNoUtf8Failure (temporal=no)
+#13 19.68 3134 states generated, 61 distinct states found, 23 states left on queue.
+#13 19.68 Finished in 00s at (2026-09-25 19:30:25)
+#13 19.68 [model gate] remote-read-main: expect clean safety/progress checks
+#13 135.6 Progress(11) at 2026-09-25 19:30:30: 320,927 states generated (320,927 s/min), 116,261 distinct states found (116,261 ds/min), 62,043 states left on queue.
+#13 135.6 Progress(19) at 2026-09-25 19:31:30: 16,596,684 states generated (16,275,757 s/min), 4,340,898 distinct states found (4,224,637 ds/min), 838,137 states left on queue.
+#13 135.6 28086530 states generated, 7020664 distinct states found, 0 states left on queue.
+#13 135.6 The depth of the complete state graph search is 28.
+#13 135.6 Finished in 01min 55s at (2026-09-25 19:32:21)
+#13 135.6 [model gate] remote-read-liveness: expect clean safety/progress checks
+#13 149.1 Progress(12) at 2026-09-25 19:32:26: 37,763 states generated (37,763 s/min), 12,744 distinct states found (12,744 ds/min), 4,131 states left on queue.
+#13 149.1 Progress(20) at 2026-09-25 19:32:33: 164,400 states generated, 46,762 distinct states found, 0 states left on queue.
+#13 149.1 164400 states generated, 46762 distinct states found, 0 states left on queue.
+#13 149.1 The depth of the complete state graph search is 20.
+#13 149.1 Finished in 12s at (2026-09-25 19:32:35)
+#13 149.1 [model gate] remote-read-stale-publish: expect FreshPublication (temporal=no)
+#13 150.8 112786 states generated, 45574 distinct states found, 27002 states left on queue.
+#13 150.8 Finished in 01s at (2026-09-25 19:32:37)
+#13 150.8 [model gate] remote-read-duplicate-terminal: expect TerminalOnce (temporal=no)
+#13 152.2 55330 states generated, 23378 distinct states found, 14622 states left on queue.
+#13 152.2 Finished in 01s at (2026-09-25 19:32:38)
+#13 152.2 [model gate] remote-read-pid-reuse: expect SignalOwnedPid (temporal=no)
+#13 153.5 18433 states generated, 8620 distinct states found, 5770 states left on queue.
+#13 153.5 Finished in 00s at (2026-09-25 19:32:39)
+#13 153.5 [model gate] remote-read-cleanup: expect NoUnownedChild (temporal=no)
+#13 154.5 5452 states generated, 2850 distinct states found, 2014 states left on queue.
+#13 154.5 Finished in 00s at (2026-09-25 19:32:40)
+#13 154.5 [model gate] remote-read-cleanup-live: expect  (temporal=EventuallyReaped)
+#13 158.4 69152 states generated, 21632 distinct states found, 3694 states left on queue.
+#13 158.4 Finished in 03s at (2026-09-25 19:32:44)
+#13 158.4 [model gate] remote-read-WitnessNoAdmission: expect WitnessNoAdmission (temporal=no)
+#13 159.3 2 states generated, 2 distinct states found, 0 states left on queue.
+#13 159.3 Finished in 00s at (2026-09-25 19:32:45)
+#13 159.3 [model gate] remote-read-WitnessNoPublication: expect WitnessNoPublication (temporal=no)
+#13 160.6 55330 states generated, 23378 distinct states found, 14622 states left on queue.
+#13 160.6 Finished in 00s at (2026-09-25 19:32:46)
+#13 160.6 [model gate] remote-read-WitnessNoCancelledChild: expect WitnessNoCancelledChild (temporal=no)
+#13 161.5 1422 states generated, 835 distinct states found, 612 states left on queue.
+#13 161.5 Finished in 00s at (2026-09-25 19:32:47)
+#13 161.5 [model gate] remote-read-WitnessNoDroppedSuccess: expect WitnessNoDroppedSuccess (temporal=no)
+#13 163.1 112786 states generated, 45574 distinct states found, 27002 states left on queue.
+#13 163.1 Finished in 01s at (2026-09-25 19:32:49)
+#13 163.1 ssh model gate: bounded safety and qualified progress checked; seven faulty modes rejected; witnesses reached
+#13 163.1 [model gate] remote-process-main: expect clean safety/progress checks
+#13 168.6 Progress(23) at 2026-09-25 19:32:53: 680,939 states generated (680,939 s/min), 189,447 distinct states found (189,447 ds/min), 29,590 states left on queue.
+#13 168.6 1046049 states generated, 268248 distinct states found, 0 states left on queue.
+#13 168.6 The depth of the complete state graph search is 31.
+#13 168.6 Finished in 04s at (2026-09-25 19:32:54)
+#13 168.6 [model gate] remote-process-progress: expect clean safety/progress checks
+#13 203.0 Progress(15) at 2026-09-25 19:32:58: 37,897 states generated (37,897 s/min), 11,361 distinct states found (11,361 ds/min), 4,423 states left on queue.
+#13 203.0 Progress(28) at 2026-09-25 19:33:25: 461,880 states generated, 119,238 distinct states found, 0 states left on queue.
+#13 203.0 461880 states generated, 119238 distinct states found, 0 states left on queue.
+#13 203.0 The depth of the complete state graph search is 28.
+#13 203.0 Finished in 33s at (2026-09-25 19:33:29)
+#13 203.0 [model gate] process-ungated: expect LaunchGated (temporal=no)
+#13 204.0 133 states generated, 73 distinct states found, 36 states left on queue.
+#13 204.0 Finished in 00s at (2026-09-25 19:33:30)
+#13 204.0 [model gate] process-early-reap: expect ReapAfterFinalKill (temporal=no)
+#13 205.1 2478 states generated, 903 distinct states found, 527 states left on queue.
+#13 205.1 Finished in 00s at (2026-09-25 19:33:31)
+#13 205.1 [model gate] process-reused-pid: expect SignalOwnedTarget (temporal=no)
+#13 206.2 5852 states generated, 1899 distinct states found, 995 states left on queue.
+#13 206.2 Finished in 00s at (2026-09-25 19:33:32)
+#13 206.2 [model gate] process-post-eof: expect NoPostEofDelivery (temporal=no)
+#13 207.2 675 states generated, 328 distinct states found, 209 states left on queue.
+#13 207.2 Finished in 00s at (2026-09-25 19:33:33)
+#13 207.2 [model gate] process-premature-success: expect OutcomeClean (temporal=no)
+#13 208.3 13128 states generated, 4059 distinct states found, 1888 states left on queue.
+#13 208.3 Finished in 00s at (2026-09-25 19:33:34)
+#13 208.3 [model gate] process-unreaped-ssh: expect NoUnownedSsh (temporal=no)
+#13 209.4 6717 states generated, 2175 distinct states found, 1101 states left on queue.
+#13 209.4 Finished in 00s at (2026-09-25 19:33:35)
+#13 209.4 [model gate] process-orphan-progress: expect  (temporal=EventuallyRemoteSettled)
+#13 235.6 Progress(17) at 2026-09-25 19:33:39: 115,017 states generated (115,017 s/min), 34,565 distinct states found (34,565 ds/min), 13,217 states left on queue.
+#13 235.6 Progress(29) at 2026-09-25 19:34:00: 1,051,536 states generated, 270,726 distinct states found, 0 states left on queue.
+#13 235.6 1051536 states generated, 270726 distinct states found, 0 states left on queue.
+#13 235.6 Finished in 25s at (2026-09-25 19:34:01)
+#13 235.6 [model gate] process-eof-progress: expect  (temporal=EventuallyEofObserved)
+#13 239.7 104966 states generated, 31954 distinct states found, 9127 states left on queue.
+#13 239.7 Finished in 03s at (2026-09-25 19:34:05)
+#13 239.7 [model gate] process-WitnessNoAdmission: expect WitnessNoAdmission (temporal=no)
+#13 240.6 2 states generated, 2 distinct states found, 0 states left on queue.
+#13 240.6 Finished in 00s at (2026-09-25 19:34:06)
+#13 240.6 [model gate] process-WitnessNoLaunch: expect WitnessNoLaunch (temporal=no)
+#13 241.5 132 states generated, 72 distinct states found, 35 states left on queue.
+#13 241.5 Finished in 00s at (2026-09-25 19:34:07)
+#13 241.5 [model gate] process-WitnessNoWorkerRun: expect WitnessNoWorkerRun (temporal=no)
+#13 242.5 1160 states generated, 470 distinct states found, 285 states left on queue.
+#13 242.5 Finished in 00s at (2026-09-25 19:34:08)
+#13 242.5 [model gate] process-WitnessNoExitOutcome: expect WitnessNoExitOutcome (temporal=no)
+#13 244.9 302258 states generated, 86984 distinct states found, 24230 states left on queue.
+#13 244.9 Finished in 01s at (2026-09-25 19:34:11)
+#13 244.9 [model gate] process-WitnessNoCancelDuringRun: expect WitnessNoCancelDuringRun (temporal=no)
+#13 245.9 5685 states generated, 1871 distinct states found, 974 states left on queue.
+#13 245.9 Finished in 00s at (2026-09-25 19:34:12)
+#13 245.9 [model gate] process-WitnessNoBackpressuredEof: expect WitnessNoBackpressuredEof (temporal=no)
+#13 246.9 4748 states generated, 1611 distinct states found, 869 states left on queue.
+#13 246.9 Finished in 00s at (2026-09-25 19:34:13)
+#13 246.9 [model gate] process-WitnessNoStragglerCleanup: expect WitnessNoStragglerCleanup (temporal=no)
+#13 248.0 23824 states generated, 7163 distinct states found, 3114 states left on queue.
+#13 248.0 Finished in 00s at (2026-09-25 19:34:14)
+#13 248.0 [model gate] process-WitnessNoPartitionWindow: expect WitnessNoPartitionWindow (temporal=no)
+#13 248.8 64 states generated, 31 distinct states found, 7 states left on queue.
+#13 248.8 Finished in 00s at (2026-09-25 19:34:15)
+#13 248.8 [model gate] workspace-main: expect clean safety/progress checks
+#13 432.8 Progress(9) at 2026-09-25 19:34:18: 384,094 states generated (384,094 s/min), 140,043 distinct states found (140,043 ds/min), 91,395 states left on queue.
+#13 432.8 Progress(14) at 2026-09-25 19:35:18: 9,870,458 states generated (9,486,364 s/min), 2,820,652 distinct states found (2,680,609 ds/min), 1,042,557 states left on queue.
+#13 432.8 Progress(15) at 2026-09-25 19:36:18: 18,117,975 states generated (8,247,517 s/min), 4,812,241 distinct states found (1,991,589 ds/min), 1,066,398 states left on queue.
+#13 432.8 Progress(20) at 2026-09-25 19:37:18: 25,550,895 states generated (7,432,920 s/min), 6,309,717 distinct states found (1,497,476 ds/min), 28,959 states left on queue.
+#13 432.8 25590599 states generated, 6314011 distinct states found, 0 states left on queue.
+#13 432.8 The depth of the complete state graph search is 22.
+#13 432.8 Finished in 03min 03s at (2026-09-25 19:37:18)
+#13 432.8 [model gate] workspace-progress: expect clean safety/progress checks
+#13 451.4 Progress(11) at 2026-09-25 19:37:23: 56,524 states generated (56,524 s/min), 25,750 distinct states found (25,750 ds/min), 11,830 states left on queue.
+#13 451.4 Progress(20) at 2026-09-25 19:37:34: 322,187 states generated, 118,079 distinct states found, 0 states left on queue.
+#13 451.4 322187 states generated, 118079 distinct states found, 0 states left on queue.
+#13 451.4 The depth of the complete state graph search is 20.
+#13 451.4 Finished in 18s at (2026-09-25 19:37:37)
+#13 451.4 [model gate] workspace-epoch: expect ReplyOwnsDispatch (temporal=no)
+#13 452.5 4345 states generated, 2204 distinct states found, 1570 states left on queue.
+#13 452.5 Finished in 00s at (2026-09-25 19:37:38)
+#13 452.5 [model gate] workspace-queued-cancel: expect NoQueuedSkipTeardown (temporal=no)
+#13 453.5 4243 states generated, 2167 distinct states found, 1550 states left on queue.
+#13 453.5 Finished in 00s at (2026-09-25 19:37:39)
+#13 453.5 [model gate] workspace-lease-release: expect LastLeaseSignalsStop (temporal=no)
+#13 454.4 6 states generated, 5 distinct states found, 2 states left on queue.
+#13 454.4 Finished in 00s at (2026-09-25 19:37:40)
+#13 454.4 [model gate] workspace-stale-service: expect ServiceOwnership (temporal=no)
+#13 456.4 139638 states generated, 55745 distinct states found, 39336 states left on queue.
+#13 456.4 Finished in 01s at (2026-09-25 19:37:42)
+#13 456.4 [model gate] workspace-WitnessNoReuse: expect WitnessNoReuse (temporal=no)
+#13 458.2 133147 states generated, 53495 distinct states found, 37888 states left on queue.
+#13 458.2 Finished in 01s at (2026-09-25 19:37:44)
+#13 458.2 [model gate] workspace-WitnessNoReconnect: expect WitnessNoReconnect (temporal=no)
+#13 459.6 33881 states generated, 15607 distinct states found, 11940 states left on queue.
+#13 459.6 Finished in 00s at (2026-09-25 19:37:45)
+#13 459.6 [model gate] workspace-WitnessNoActiveCancel: expect WitnessNoActiveCancel (temporal=no)
+#13 460.7 7492 states generated, 3926 distinct states found, 3162 states left on queue.
+#13 460.7 Finished in 00s at (2026-09-25 19:37:46)
+#13 460.7 [model gate] workspace-WitnessNoQueuedCancel: expect WitnessNoQueuedCancel (temporal=no)
+#13 461.8 1357 states generated, 732 distinct states found, 592 states left on queue.
+#13 461.8 Finished in 00s at (2026-09-25 19:37:47)
+#13 461.8 [model gate] workspace-WitnessNoLastLeaseShutdown: expect WitnessNoLastLeaseShutdown (temporal=no)
+#13 462.7 80 states generated, 44 distinct states found, 35 states left on queue.
+#13 462.7 Finished in 00s at (2026-09-25 19:37:48)
+#13 462.7 [model gate] workspace-WitnessNoRefusal: expect WitnessNoRefusal (temporal=no)
+#13 463.6 338 states generated, 176 distinct states found, 140 states left on queue.
+#13 463.6 Finished in 00s at (2026-09-25 19:37:49)
+#13 463.6 [model gate] workspace-WitnessNoServicePublication: expect WitnessNoServicePublication (temporal=no)
+#13 465.0 36231 states generated, 16498 distinct states found, 12567 states left on queue.
+#13 465.0 Finished in 00s at (2026-09-25 19:37:51)
+#13 465.0 [model gate] workspace-WitnessNoStoppedJob: expect WitnessNoStoppedJob (temporal=no)
+#13 466.0 1390 states generated, 750 distinct states found, 607 states left on queue.
+#13 466.0 Finished in 00s at (2026-09-25 19:37:52)
+#13 466.0 [model gate] workspace-WitnessNoStaleBytesDiscarded: expect WitnessNoStaleBytesDiscarded (temporal=no)
+#13 467.1 7521 states generated, 3932 distinct states found, 3165 states left on queue.
+#13 467.1 Finished in 00s at (2026-09-25 19:37:53)
+#13 467.1 [model gate] workspace-WitnessNoReincarnation: expect WitnessNoReincarnation (temporal=no)
+#13 468.1 14 states generated, 10 distinct states found, 7 states left on queue.
+#13 468.1 Finished in 00s at (2026-09-25 19:37:54)
+#13 468.1 [model gate] workspace-follow: expect clean safety/progress checks
+#13 469.1 16666 states generated, 6951 distinct states found, 0 states left on queue.
+#13 469.1 The depth of the complete state graph search is 13.
+#13 469.1 Finished in 00s at (2026-09-25 19:37:55)
+#13 469.1 [model gate] workspace-stat-identity: expect FollowWindowHonest (temporal=no)
+#13 470.2 2848 states generated, 1195 distinct states found, 621 states left on queue.
+#13 470.2 Finished in 00s at (2026-09-25 19:37:56)
+#13 470.2 [model gate] follow-WitnessNoFollowPublish: expect WitnessNoFollowPublish (temporal=no)
+#13 471.1 77 states generated, 40 distinct states found, 31 states left on queue.
+#13 471.1 Finished in 00s at (2026-09-25 19:37:57)
+#13 471.1 [model gate] follow-WitnessNoFollowAppend: expect WitnessNoFollowAppend (temporal=no)
+#13 472.1 1757 states generated, 824 distinct states found, 541 states left on queue.
+#13 472.1 Finished in 00s at (2026-09-25 19:37:58)
+#13 472.1 [model gate] follow-WitnessNoFollowReset: expect WitnessNoFollowReset (temporal=no)
+#13 473.0 8 states generated, 8 distinct states found, 6 states left on queue.
+#13 473.0 Finished in 00s at (2026-09-25 19:37:59)
+#13 473.0 [model gate] follow-WitnessNoSameStatReplacement: expect WitnessNoSameStatReplacement (temporal=no)
+#13 473.9 7 states generated, 7 distinct states found, 5 states left on queue.
+#13 473.9 Finished in 00s at (2026-09-25 19:38:00)
+#13 473.9 remote model gate: safety, qualified progress, exact fault rejection and witnesses checked
+#13 474.0 [model gate] save-main: expect clean safety/progress checks
+#13 475.0 3330 states generated, 1023 distinct states found, 0 states left on queue.
+#13 475.0 The depth of the complete state graph search is 15.
+#13 475.0 Finished in 00s at (2026-09-25 19:38:01)
+#13 475.0 [model gate] save-concurrency: expect clean safety/progress checks
+#13 475.9 514 states generated, 411 distinct states found, 0 states left on queue.
+#13 475.9 The depth of the complete state graph search is 20.
+#13 475.9 Finished in 00s at (2026-09-25 19:38:02)
+#13 475.9 [model gate] save-progress: expect clean safety/progress checks
+#13 476.8 Progress(11) at 2026-09-25 19:38:03: 48 states generated, 41 distinct states found, 0 states left on queue.
+#13 476.8 48 states generated, 41 distinct states found, 0 states left on queue.
+#13 476.8 The depth of the complete state graph search is 11.
+#13 476.8 Finished in 00s at (2026-09-25 19:38:03)
+#13 476.8 [model gate] save-stat-only: expect NoBlindOverwrite (temporal=no)
+#13 477.8 1833 states generated, 621 distinct states found, 130 states left on queue.
+#13 477.8 Finished in 00s at (2026-09-25 19:38:04)
+#13 477.8 [model gate] save-in-place: expect NoPartialOriginal (temporal=no)
+#13 478.7 14 states generated, 14 distinct states found, 8 states left on queue.
+#13 478.7 Finished in 00s at (2026-09-25 19:38:04)
+#13 478.7 [model gate] save-metadata-loss: expect MetadataPreserved (temporal=no)
+#13 479.7 1056 states generated, 398 distinct states found, 139 states left on queue.
+#13 479.7 Finished in 00s at (2026-09-25 19:38:05)
+#13 479.7 [model gate] save-follow-link: expect NoLinkWrites (temporal=no)
+#13 480.6 1928 states generated, 647 distinct states found, 125 states left on queue.
+#13 480.6 Finished in 00s at (2026-09-25 19:38:06)
+#13 480.6 [model gate] save-readable-stage: expect PrivateDraft (temporal=no)
+#13 481.5 65 states generated, 48 distinct states found, 33 states left on queue.
+#13 481.5 Finished in 00s at (2026-09-25 19:38:07)
+#13 481.5 [model gate] save-stale-ack: expect OwnedAcknowledgment (temporal=no)
+#13 482.5 2400 states generated, 769 distinct states found, 93 states left on queue.
+#13 482.5 Finished in 00s at (2026-09-25 19:38:08)
+#13 482.5 [model gate] save-unsynced-ack: expect DurableAcknowledgment (temporal=no)
+#13 483.6 1558 states generated, 551 distinct states found, 142 states left on queue.
+#13 483.6 Finished in 00s at (2026-09-25 19:38:09)
+#13 483.6 [model gate] save-lock-replacement: expect SingleLockDomain (temporal=no)
+#13 484.8 106 states generated, 83 distinct states found, 40 states left on queue.
+#13 484.8 Finished in 00s at (2026-09-25 19:38:11)
+#13 484.8 [model gate] save-nonparticipant-limit: expect NoBlindOverwrite (temporal=no)
+#13 485.8 52 states generated, 40 distinct states found, 8 states left on queue.
+#13 485.8 Finished in 00s at (2026-09-25 19:38:12)
+#13 485.8 [model gate] save-WitnessNoCommit: expect WitnessNoCommit (temporal=no)
+#13 486.9 1062 states generated, 408 distinct states found, 148 states left on queue.
+#13 486.9 Finished in 00s at (2026-09-25 19:38:13)
+#13 486.9 [model gate] save-WitnessNoConfirmed: expect WitnessNoConfirmed (temporal=no)
+#13 487.9 2015 states generated, 672 distinct states found, 121 states left on queue.
+#13 487.9 Finished in 00s at (2026-09-25 19:38:14)
+#13 487.9 [model gate] save-WitnessNoCancelledCommit: expect WitnessNoCancelledCommit (temporal=no)
+#13 489.0 1558 states generated, 551 distinct states found, 142 states left on queue.
+#13 489.0 Finished in 00s at (2026-09-25 19:38:15)
+#13 489.0 [model gate] save-WitnessNoPrivateOrphan: expect WitnessNoPrivateOrphan (temporal=no)
+#13 490.0 16 states generated, 16 distinct states found, 10 states left on queue.
+#13 490.0 Finished in 00s at (2026-09-25 19:38:16)
+#13 490.0 [model gate] save-WitnessNoVerification: expect WitnessNoVerification (temporal=no)
+#13 491.0 24 states generated, 23 distinct states found, 16 states left on queue.
+#13 491.0 Finished in 00s at (2026-09-25 19:38:17)
+#13 491.0 remote save model gate: conditional safety, progress, fault rejection and witnesses checked
+#13 491.0 [model gate] change-main: expect clean safety/progress checks
+#13 492.0 6130 states generated, 2187 distinct states found, 0 states left on queue.
+#13 492.0 The depth of the complete state graph search is 12.
+#13 492.0 Finished in 00s at (2026-09-25 19:38:18)
+#13 492.0 [model gate] change-progress: expect clean safety/progress checks
+#13 492.9 Progress(6) at 2026-09-25 19:38:19: 18 states generated, 11 distinct states found, 0 states left on queue.
+#13 492.9 18 states generated, 11 distinct states found, 0 states left on queue.
+#13 492.9 The depth of the complete state graph search is 6.
+#13 492.9 Finished in 00s at (2026-09-25 19:38:19)
+#13 492.9 [model gate] change-unchecked-apply: expect NoStaleApplication (temporal=no)
+#13 493.8 45 states generated, 37 distinct states found, 26 states left on queue.
+#13 493.8 Finished in 00s at (2026-09-25 19:38:20)
+#13 493.8 [model gate] change-dropped-refusal: expect HonestReceipt (temporal=no)
+#13 494.7 418 states generated, 249 distinct states found, 163 states left on queue.
+#13 494.7 Finished in 00s at (2026-09-25 19:38:20)
+#13 494.7 [model gate] change-phantom-applied: expect PartialProgressHonest (temporal=no)
+#13 495.6 9 states generated, 9 distinct states found, 6 states left on queue.
+#13 495.6 Finished in 00s at (2026-09-25 19:38:21)
+#13 495.6 [model gate] change-protected-applied: expect ProtectedNeverApplied (temporal=no)
+#13 496.4 7 states generated, 7 distinct states found, 4 states left on queue.
+#13 496.4 Finished in 00s at (2026-09-25 19:38:22)
+#13 496.4 [model gate] change-overlapping-applied: expect NoDuplicateMutation (temporal=no)
+#13 497.2 9 states generated, 9 distinct states found, 6 states left on queue.
+#13 497.2 Finished in 00s at (2026-09-25 19:38:23)
+#13 497.3 [model gate] change-cross-source-effect: expect MemberSourceBound (temporal=no)
+#13 498.0 7 states generated, 7 distinct states found, 4 states left on queue.
+#13 498.0 Finished in 00s at (2026-09-25 19:38:24)
+#13 498.0 [model gate] change-partial-group: expect GroupUniformOutcome (temporal=no)
+#13 498.8 7 states generated, 7 distinct states found, 4 states left on queue.
+#13 498.8 Finished in 00s at (2026-09-25 19:38:25)
+#13 498.8 [model gate] change-WitnessNoFullSuccess: expect WitnessNoFullSuccess (temporal=no)
+#13 499.6 418 states generated, 249 distinct states found, 163 states left on queue.
+#13 499.6 Finished in 00s at (2026-09-25 19:38:25)
+#13 499.6 [model gate] change-WitnessNoPartial: expect WitnessNoPartial (temporal=no)
+#13 500.5 1188 states generated, 601 distinct states found, 341 states left on queue.
+#13 500.5 Finished in 00s at (2026-09-25 19:38:26)
+#13 500.5 [model gate] change-WitnessNoInvalidatedAll: expect WitnessNoInvalidatedAll (temporal=no)
+#13 501.4 2579 states generated, 1127 distinct states found, 495 states left on queue.
+#13 501.4 Finished in 00s at (2026-09-25 19:38:27)
+#13 501.4 [model gate] change-WitnessNoCancellation: expect WitnessNoCancellation (temporal=no)
+#13 502.2 6 states generated, 6 distinct states found, 3 states left on queue.
+#13 502.2 Finished in 00s at (2026-09-25 19:38:28)
+#13 502.2 change plan model gate: revision safety, receipt honesty, fault rejection and witnesses checked
+#13 502.2 [model gate] SearchLifecycle: expect clean safety/progress checks
+#13 727.6 Progress(15) at 2026-09-25 19:38:32: 1,670,432 states generated (1,670,432 s/min), 418,776 distinct states found (418,776 ds/min), 176,466 states left on queue.
+#13 727.6 Progress(23) at 2026-09-25 19:39:32: 33,896,307 states generated (32,225,875 s/min), 6,050,966 distinct states found (5,632,190 ds/min), 1,080,512 states left on queue.
+#13 727.6 Progress(26) at 2026-09-25 19:40:31: 53,711,199 states generated (19,814,892 s/min), 8,909,972 distinct states found (2,859,006 ds/min), 1,052,527 states left on queue.
+#13 727.6 Progress(29) at 2026-09-25 19:41:31: 73,065,043 states generated (19,353,844 s/min), 11,410,012 distinct states found (2,500,040 ds/min), 713,285 states left on queue.
+#13 727.6 89066405 states generated, 13131660 distinct states found, 0 states left on queue.
+#13 727.6 The depth of the complete state graph search is 42.
+#13 727.6 Finished in 03min 44s at (2026-09-25 19:42:13)
+#13 727.6 [model gate] SearchLifecycle_Mutant: expect publication and stale-accept violations
+#13 731.9 search lifecycle model gate: bounded checks clean; publication and stale-accept mutants rejected
+#13 731.9 [model gate] recovery-main: expect clean safety/progress checks
+#13 894.9 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:42:19.
+#13 894.9 Progress(10) at 2026-09-25 19:42:22: 310,812 states generated (310,812 s/min), 130,510 distinct states found (130,510 ds/min), 78,497 states left on queue.
+#13 894.9 Progress(15) at 2026-09-25 19:43:21: 8,708,999 states generated (8,398,187 s/min), 2,725,603 distinct states found (2,595,093 ds/min), 978,105 states left on queue.
+#13 894.9 Progress(17) at 2026-09-25 19:44:21: 19,212,316 states generated (10,503,317 s/min), 4,957,341 distinct states found (2,231,738 ds/min), 815,063 states left on queue.
+#13 894.9 25664759 states generated, 5862936 distinct states found, 0 states left on queue.
+#13 894.9 The depth of the complete state graph search is 23.
+#13 894.9 Finished in 02min 42s at (2026-09-25 19:45:00)
+#13 894.9 [model gate] recovery-half-cohort: expect CohortCoherent (temporal=no)
+#13 897.0 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:02.
+#13 897.0 7168 states generated, 3649 distinct states found, 2444 states left on queue.
+#13 897.0 Finished in 01s at (2026-09-25 19:45:03)
+#13 897.0 [model gate] recovery-half-cohort-image: expect DurableMatchesLastComplete (temporal=no)
+#13 899.0 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:04.
+#13 899.0 1166 states generated, 597 distinct states found, 399 states left on queue.
+#13 899.0 Finished in 01s at (2026-09-25 19:45:05)
+#13 899.0 [model gate] recovery-premature-cleanup: expect DurableMatchesLastComplete (temporal=no)
+#13 900.4 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:06.
+#13 900.4 1167 states generated, 598 distinct states found, 400 states left on queue.
+#13 900.4 Finished in 00s at (2026-09-25 19:45:06)
+#13 900.4 [model gate] recovery-checkpoint-as-save: expect SaveRetiresOnlySuperseded (temporal=no)
+#13 901.8 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:07.
+#13 901.8 79 states generated, 57 distinct states found, 45 states left on queue.
+#13 901.8 Finished in 00s at (2026-09-25 19:45:07)
+#13 901.8 [model gate] recovery-restore-clobbers: expect RestoreNeverWritesDisk (temporal=no)
+#13 903.3 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:09.
+#13 903.3 366 states generated, 206 distinct states found, 148 states left on queue.
+#13 903.3 Finished in 01s at (2026-09-25 19:45:09)
+#13 903.3 [model gate] recovery-checkpoint-cleans: expect CheckpointNeverCleans (temporal=no)
+#13 904.6 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:10.
+#13 904.6 79 states generated, 57 distinct states found, 45 states left on queue.
+#13 904.6 Finished in 00s at (2026-09-25 19:45:10)
+#13 904.6 [model gate] recovery-consent-ignored: expect RemoteConsentGated (temporal=no)
+#13 905.8 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:12.
+#13 905.8 89 states generated, 66 distinct states found, 53 states left on queue.
+#13 905.8 Finished in 00s at (2026-09-25 19:45:12)
+#13 905.8 [model gate] recovery-WitnessNoDurable: expect WitnessNoDurable (temporal=no)
+#13 907.2 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:13.
+#13 907.2 79 states generated, 57 distinct states found, 45 states left on queue.
+#13 907.2 Finished in 00s at (2026-09-25 19:45:13)
+#13 907.2 [model gate] recovery-WitnessNoMultiDocCohort: expect WitnessNoMultiDocCohort (temporal=no)
+#13 908.8 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:14.
+#13 908.8 2515 states generated, 1217 distinct states found, 768 states left on queue.
+#13 908.8 Finished in 01s at (2026-09-25 19:45:14)
+#13 908.8 [model gate] recovery-WitnessNoFailedPublish: expect WitnessNoFailedPublish (temporal=no)
+#13 910.2 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:16.
+#13 910.2 80 states generated, 58 distinct states found, 46 states left on queue.
+#13 910.2 Finished in 00s at (2026-09-25 19:45:16)
+#13 910.2 [model gate] recovery-WitnessNoConflictRestore: expect WitnessNoConflictRestore (temporal=no)
+#13 911.8 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:17.
+#13 911.8 1069 states generated, 538 distinct states found, 353 states left on queue.
+#13 911.8 Finished in 01s at (2026-09-25 19:45:18)
+#13 911.8 [model gate] recovery-WitnessNoCrashRestore: expect WitnessNoCrashRestore (temporal=no)
+#13 913.1 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:19.
+#13 913.1 1231 states generated, 640 distinct states found, 434 states left on queue.
+#13 913.1 Finished in 00s at (2026-09-25 19:45:19)
+#13 913.1 [model gate] recovery-WitnessNoConsentCycle: expect WitnessNoConsentCycle (temporal=no)
+#13 914.2 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:20.
+#13 914.2 63 states generated, 44 distinct states found, 34 states left on queue.
+#13 914.2 Finished in 00s at (2026-09-25 19:45:20)
+#13 914.2 [model gate] recovery-WitnessNoQueueReplace: expect WitnessNoQueueReplace (temporal=no)
+#13 915.6 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:21.
+#13 915.6 926 states generated, 445 distinct states found, 279 states left on queue.
+#13 915.6 Finished in 00s at (2026-09-25 19:45:21)
+#13 915.6 [model gate] recovery-WitnessNoRetirement: expect WitnessNoRetirement (temporal=no)
+#13 916.9 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:23.
+#13 916.9 1166 states generated, 597 distinct states found, 399 states left on queue.
+#13 916.9 Finished in 00s at (2026-09-25 19:45:23)
+#13 916.9 [model gate] recovery-WitnessNoDiscard: expect WitnessNoDiscard (temporal=no)
+#13 918.3 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:24.
+#13 918.3 367 states generated, 207 distinct states found, 149 states left on queue.
+#13 918.3 Finished in 00s at (2026-09-25 19:45:24)
+#13 918.3 [model gate] recovery-WitnessNoMemoryOnly: expect WitnessNoMemoryOnly (temporal=no)
+#13 919.4 Finished computing initial states: 2 distinct states generated at 2026-09-25 19:45:25.
+#13 919.4 3 states generated, 3 distinct states found, 1 states left on queue.
+#13 919.4 Finished in 00s at (2026-09-25 19:45:25)
+#13 919.4 recovery model gate: bounded checks clean; six mutants rejected; ten witnesses reached
+#13 919.4 [model gate] lsp-wire-main: expect clean safety/progress checks
+#13 1013.4 Progress(15) at 2026-09-25 19:45:29: 293,414 states generated (293,414 s/min), 188,833 distinct states found (188,833 ds/min), 88,401 states left on queue.
+#13 1013.4 Progress(22) at 2026-09-25 19:46:29: 6,515,593 states generated (6,222,179 s/min), 3,583,324 distinct states found (3,394,491 ds/min), 628,992 states left on queue.
+#13 1013.4 9549280 states generated, 5086110 distinct states found, 0 states left on queue.
+#13 1013.4 The depth of the complete state graph search is 31.
+#13 1013.4 Finished in 01min 33s at (2026-09-25 19:46:59)
+#13 1013.4 [model gate] lsp-wire-barrier-coalesce: expect CoalesceLegal (temporal=no)
+#13 1014.8 33231 states generated, 22064 distinct states found, 11809 states left on queue.
+#13 1014.8 Finished in 00s at (2026-09-25 19:47:01)
+#13 1014.8 [model gate] lsp-wire-refused-binding: expect BindingOnlyIfAdmitted (temporal=no)
+#13 1015.8 456 states generated, 316 distinct states found, 199 states left on queue.
+#13 1015.8 Finished in 00s at (2026-09-25 19:47:01)
+#13 1015.8 [model gate] lsp-wire-close-skips-cancel: expect WireOrdered (temporal=no)
+#13 1016.8 1442 states generated, 974 distinct states found, 608 states left on queue.
+#13 1016.8 Finished in 00s at (2026-09-25 19:47:03)
+#13 1016.8 [model gate] lsp-wire-stale-reply: expect LateNeverApplies (temporal=no)
+#13 1017.8 2840 states generated, 1954 distinct states found, 1204 states left on queue.
+#13 1017.8 Finished in 00s at (2026-09-25 19:47:04)
+#13 1017.8 [model gate] lsp-wire-unbounded: expect Bounded (temporal=no)
+#13 1018.7 436 states generated, 301 distinct states found, 189 states left on queue.
+#13 1018.7 Finished in 00s at (2026-09-25 19:47:04)
+#13 1018.7 [model gate] lsp-wire-double-terminal: expect TerminalOnce (temporal=no)
+#13 1019.7 196 states generated, 136 distinct states found, 85 states left on queue.
+#13 1019.7 Finished in 00s at (2026-09-25 19:47:05)
+#13 1019.7 [model gate] lsp-wire-WitnessNoCoalesce: expect WitnessNoCoalesce (temporal=no)
+#13 1020.6 1023 states generated, 715 distinct states found, 451 states left on queue.
+#13 1020.6 Finished in 00s at (2026-09-25 19:47:06)
+#13 1020.6 [model gate] lsp-wire-WitnessNoRefusal: expect WitnessNoRefusal (temporal=no)
+#13 1021.9 436 states generated, 301 distinct states found, 189 states left on queue.
+#13 1021.9 Finished in 00s at (2026-09-25 19:47:08)
+#13 1021.9 [model gate] lsp-wire-WitnessNoReopen: expect WitnessNoReopen (temporal=no)
+#13 1023.2 165 states generated, 111 distinct states found, 66 states left on queue.
+#13 1023.2 Finished in 00s at (2026-09-25 19:47:09)
+#13 1023.2 [model gate] lsp-wire-WitnessNoCancelNote: expect WitnessNoCancelNote (temporal=no)
+#13 1024.4 71 states generated, 50 distinct states found, 31 states left on queue.
+#13 1024.4 Finished in 00s at (2026-09-25 19:47:10)
+#13 1024.4 [model gate] lsp-wire-WitnessNoFlush: expect WitnessNoFlush (temporal=no)
+#13 1025.5 3 states generated, 3 distinct states found, 1 states left on queue.
+#13 1025.5 Finished in 00s at (2026-09-25 19:47:11)
+#13 1025.5 [model gate] lsp-wire-WitnessNoLateRejected: expect WitnessNoLateRejected (temporal=no)
+#13 1027.0 2840 states generated, 1954 distinct states found, 1204 states left on queue.
+#13 1027.0 Finished in 01s at (2026-09-25 19:47:13)
+#13 1027.0 [model gate] lsp-wire-WitnessNoApplied: expect WitnessNoApplied (temporal=no)
+#13 1028.4 1281 states generated, 887 distinct states found, 562 states left on queue.
+#13 1028.4 Finished in 00s at (2026-09-25 19:47:14)
+#13 1028.4 [model gate] lsp-wire-WitnessNoRestart: expect WitnessNoRestart (temporal=no)
+#13 1029.7 14 states generated, 10 distinct states found, 5 states left on queue.
+#13 1029.7 Finished in 00s at (2026-09-25 19:47:15)
+#13 1029.7 lsp wire model gate: bounded checks clean; six mutants rejected; eight witnesses reached
+#13 1029.7 [model gate] terminal-main: expect clean safety/progress checks
+#13 1144.5 Progress(13) at 2026-09-25 19:47:20: 848,022 states generated (848,022 s/min), 170,274 distinct states found (170,274 ds/min), 83,814 states left on queue.
+#13 1144.5 Progress(21) at 2026-09-25 19:48:19: 31,002,918 states generated (30,154,896 s/min), 4,444,090 distinct states found (4,273,816 ds/min), 895,921 states left on queue.
+#13 1144.5 57441315 states generated, 7191073 distinct states found, 0 states left on queue.
+#13 1144.5 The depth of the complete state graph search is 33.
+#13 1144.5 Finished in 01min 54s at (2026-09-25 19:49:10)
+#13 1144.5 [model gate] terminal-stale-frame: expect FrameFresh (temporal=no)
+#13 1145.7 1927 states generated, 753 distinct states found, 564 states left on queue.
+#13 1145.7 Finished in 00s at (2026-09-25 19:49:11)
+#13 1145.7 [model gate] terminal-dragged-pin: expect PinnedNeverDragged (temporal=no)
+#13 1147.4 24495 states generated, 6661 distinct states found, 4262 states left on queue.
+#13 1147.4 Finished in 01s at (2026-09-25 19:49:13)
+#13 1147.4 [model gate] terminal-resurrect: expect TerminalAbsorbing (temporal=no)
+#13 1148.6 49 states generated, 42 distinct states found, 35 states left on queue.
+#13 1148.6 Finished in 00s at (2026-09-25 19:49:14)
+#13 1148.6 [model gate] terminal-resurrect-twice: expect ExitAnnouncedOnce (temporal=no)
+#13 1149.8 427 states generated, 222 distinct states found, 179 states left on queue.
+#13 1149.8 Finished in 00s at (2026-09-25 19:49:16)
+#13 1149.8 [model gate] terminal-dead-input: expect InputNeverToDead (temporal=no)
+#13 1151.0 49 states generated, 42 distinct states found, 35 states left on queue.
+#13 1151.0 Finished in 00s at (2026-09-25 19:49:17)
+#13 1151.0 [model gate] terminal-host-effect: expect OutputNeverMutates (temporal=no)
+#13 1152.0 11 states generated, 11 distinct states found, 8 states left on queue.
+#13 1152.0 Finished in 00s at (2026-09-25 19:49:18)
+#13 1152.0 [model gate] terminal-child-resize: expect GeometryOwned (temporal=no)
+#13 1153.2 12 states generated, 12 distinct states found, 9 states left on queue.
+#13 1153.2 Finished in 00s at (2026-09-25 19:49:19)
+#13 1153.3 [model gate] terminal-dead-input-boundary: expect ExitBoundary (temporal=no)
+#13 1154.3 6 states generated, 6 distinct states found, 3 states left on queue.
+#13 1154.3 Finished in 00s at (2026-09-25 19:49:20)
+#13 1154.3 [model gate] terminal-WitnessNoPinnedLag: expect WitnessNoPinnedLag (temporal=no)
+#13 1155.7 24495 states generated, 6661 distinct states found, 4262 states left on queue.
+#13 1155.7 Finished in 00s at (2026-09-25 19:49:21)
+#13 1155.7 [model gate] terminal-WitnessNoRefresh: expect WitnessNoRefresh (temporal=no)
+#13 1157.0 7726 states generated, 2458 distinct states found, 1700 states left on queue.
+#13 1157.0 Finished in 00s at (2026-09-25 19:49:23)
+#13 1157.0 [model gate] terminal-WitnessNoExitRetained: expect WitnessNoExitRetained (temporal=no)
+#13 1158.2 1927 states generated, 753 distinct states found, 564 states left on queue.
+#13 1158.2 Finished in 00s at (2026-09-25 19:49:24)
+#13 1158.2 [model gate] terminal-WitnessNoDenied: expect WitnessNoDenied (temporal=no)
+#13 1159.2 11 states generated, 11 distinct states found, 8 states left on queue.
+#13 1159.2 Finished in 00s at (2026-09-25 19:49:25)
+#13 1159.2 [model gate] terminal-WitnessNoLateDrop: expect WitnessNoLateDrop (temporal=no)
+#13 1160.1 50 states generated, 43 distinct states found, 36 states left on queue.
+#13 1160.1 Finished in 00s at (2026-09-25 19:49:26)
+#13 1160.1 [model gate] terminal-WitnessNoReentry: expect WitnessNoReentry (temporal=no)
+#13 1161.0 67 states generated, 52 distinct states found, 42 states left on queue.
+#13 1161.0 Finished in 00s at (2026-09-25 19:49:27)
+#13 1161.0 [model gate] terminal-WitnessNoClosing: expect WitnessNoClosing (temporal=no)
+#13 1161.9 42 states generated, 36 distinct states found, 30 states left on queue.
+#13 1161.9 Finished in 00s at (2026-09-25 19:49:28)
+#13 1161.9 [model gate] terminal-WitnessNoTwoSessions: expect WitnessNoTwoSessions (temporal=no)
+#13 1162.8 4 states generated, 4 distinct states found, 1 states left on queue.
+#13 1162.8 Finished in 00s at (2026-09-25 19:49:29)
+#13 1162.8 [model gate] terminal-WitnessNoPasteBoundary: expect WitnessNoPasteBoundary (temporal=no)
+#13 1163.8 6 states generated, 6 distinct states found, 3 states left on queue.
+#13 1163.8 Finished in 00s at (2026-09-25 19:49:30)
+#13 1163.8 terminal model gate: bounded checks clean; six mutants rejected; nine witnesses reached
+#13 1163.8 [model gate] install-main: expect clean safety/progress checks
+#13 1164.8 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:30.
+#13 1164.8 3165 states generated, 1699 distinct states found, 0 states left on queue.
+#13 1164.8 The depth of the complete state graph search is 33.
+#13 1164.8 Finished in 00s at (2026-09-25 19:49:31)
+#13 1164.8 [model gate] install-unverified-publish: expect VerifiedBeforeActivation (temporal=no)
+#13 1165.7 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:31.
+#13 1165.7 76 states generated, 65 distinct states found, 24 states left on queue.
+#13 1165.7 Finished in 00s at (2026-09-25 19:49:31)
+#13 1165.7 [model gate] install-inplace-partial: expect InstalledComplete (temporal=no)
+#13 1166.6 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:32.
+#13 1166.6 174 states generated, 127 distinct states found, 31 states left on queue.
+#13 1166.6 Finished in 00s at (2026-09-25 19:49:32)
+#13 1166.6 [model gate] install-inplace-clobber: expect NoClobberOnFailure (temporal=no)
+#13 1167.5 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:33.
+#13 1167.5 239 states generated, 162 distinct states found, 34 states left on queue.
+#13 1167.5 Finished in 00s at (2026-09-25 19:49:33)
+#13 1167.5 [model gate] install-path-channel: expect ChannelGate (temporal=no)
+#13 1168.4 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:34.
+#13 1168.4 442 states generated, 288 distinct states found, 82 states left on queue.
+#13 1168.4 Finished in 00s at (2026-09-25 19:49:34)
+#13 1168.4 [model gate] install-receipt-ahead: expect ReceiptNeverAhead (temporal=no)
+#13 1169.3 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:35.
+#13 1169.3 119 states generated, 96 distinct states found, 30 states left on queue.
+#13 1169.3 Finished in 00s at (2026-09-25 19:49:35)
+#13 1169.3 [model gate] install-stale-catalog: expect StaleNeverPublishes (temporal=no)
+#13 1170.2 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:36.
+#13 1170.2 212 states generated, 144 distinct states found, 29 states left on queue.
+#13 1170.2 Finished in 00s at (2026-09-25 19:49:36)
+#13 1170.2 [model gate] install-WitnessNoUpdate: expect WitnessNoUpdate (temporal=no)
+#13 1171.1 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:37.
+#13 1171.1 174 states generated, 127 distinct states found, 31 states left on queue.
+#13 1171.1 Finished in 00s at (2026-09-25 19:49:37)
+#13 1171.1 [model gate] install-WitnessNoDigestRefusal: expect WitnessNoDigestRefusal (temporal=no)
+#13 1172.0 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:38.
+#13 1172.0 77 states generated, 65 distinct states found, 23 states left on queue.
+#13 1172.0 Finished in 00s at (2026-09-25 19:49:38)
+#13 1172.0 [model gate] install-WitnessNoInterrupt: expect WitnessNoInterrupt (temporal=no)
+#13 1172.9 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:39.
+#13 1172.9 23 states generated, 23 distinct states found, 12 states left on queue.
+#13 1172.9 Finished in 00s at (2026-09-25 19:49:39)
+#13 1172.9 [model gate] install-WitnessNoManagerRefusal: expect WitnessNoManagerRefusal (temporal=no)
+#13 1173.7 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:39.
+#13 1173.7 18 states generated, 18 distinct states found, 11 states left on queue.
+#13 1173.7 Finished in 00s at (2026-09-25 19:49:39)
+#13 1173.7 [model gate] install-WitnessNoUnknownRefusal: expect WitnessNoUnknownRefusal (temporal=no)
+#13 1174.3 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:40.
+#13 1174.3 14 states generated, 14 distinct states found, 10 states left on queue.
+#13 1174.3 Finished in 00s at (2026-09-25 19:49:40)
+#13 1174.3 [model gate] install-WitnessNoStaleNoop: expect WitnessNoStaleNoop (temporal=no)
+#13 1175.1 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:41.
+#13 1175.1 32 states generated, 32 distinct states found, 15 states left on queue.
+#13 1175.1 Finished in 00s at (2026-09-25 19:49:41)
+#13 1175.1 [model gate] install-WitnessNoReceiptCarry: expect WitnessNoReceiptCarry (temporal=no)
+#13 1176.0 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:42.
+#13 1176.0 301 states generated, 205 distinct states found, 46 states left on queue.
+#13 1176.0 Finished in 00s at (2026-09-25 19:49:42)
+#13 1176.0 [model gate] install-WitnessNoReceiptLag: expect WitnessNoReceiptLag (temporal=no)
+#13 1177.1 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:43.
+#13 1177.1 239 states generated, 162 distinct states found, 34 states left on queue.
+#13 1177.1 Finished in 00s at (2026-09-25 19:49:43)
+#13 1177.1 [model gate] install-WitnessNoFreshInstall: expect WitnessNoFreshInstall (temporal=no)
+#13 1178.4 Finished computing initial states: 9 distinct states generated at 2026-09-25 19:49:44.
+#13 1178.4 174 states generated, 127 distinct states found, 31 states left on queue.
+#13 1178.4 Finished in 00s at (2026-09-25 19:49:44)
+#13 1178.4 install model gate: bounded checks clean; five mutants rejected; nine witnesses reached
+#13 1178.4 [model gate] notify-main: expect clean safety/progress checks
+#13 1187.2 Progress(15) at 2026-09-25 19:49:48: 368,170 states generated (368,170 s/min), 115,865 distinct states found (115,865 ds/min), 37,378 states left on queue.
+#13 1187.2 1210924 states generated, 294806 distinct states found, 0 states left on queue.
+#13 1187.2 The depth of the complete state graph search is 26.
+#13 1187.2 Finished in 08s at (2026-09-25 19:49:53)
+#13 1187.2 [model gate] notify-hint-authority: expect HintsNeverAuthority (temporal=no)
+#13 1188.3 251 states generated, 175 distinct states found, 139 states left on queue.
+#13 1188.3 Finished in 00s at (2026-09-25 19:49:54)
+#13 1188.3 [model gate] notify-stale-identity: expect StaleIdentityNeverActs (temporal=no)
+#13 1189.3 1417 states generated, 779 distinct states found, 606 states left on queue.
+#13 1189.3 Finished in 00s at (2026-09-25 19:49:55)
+#13 1189.3 [model gate] notify-guessed-relocation: expect AmbiguousNeverRelocates (temporal=no)
+#13 1190.3 263 states generated, 183 distinct states found, 146 states left on queue.
+#13 1190.3 Finished in 00s at (2026-09-25 19:49:56)
+#13 1190.3 [model gate] notify-premature-fresh: expect FreshRequiresCoverage (temporal=no)
+#13 1191.1 5 states generated, 5 distinct states found, 3 states left on queue.
+#13 1191.1 Finished in 00s at (2026-09-25 19:49:57)
+#13 1191.2 [model gate] notify-silent-drop: expect CoalesceNeverLosesStaleness (temporal=no)
+#13 1192.0 249 states generated, 173 distinct states found, 137 states left on queue.
+#13 1192.0 Finished in 00s at (2026-09-25 19:49:58)
+#13 1192.0 [model gate] notify-boundary-erasure: expect ScanNeverErasesNewer (temporal=no)
+#13 1193.0 6676 states generated, 3123 distinct states found, 2355 states left on queue.
+#13 1193.0 Finished in 00s at (2026-09-25 19:49:59)
+#13 1193.0 [model gate] notify-dirty-clobber: expect DirtyNeverClobbered (temporal=no)
+#13 1194.2 7654 states generated, 3524 distinct states found, 2619 states left on queue.
+#13 1194.2 Finished in 00s at (2026-09-25 19:50:00)
+#13 1194.2 [model gate] notify-stale-reload: expect StaleReloadNeverClears (temporal=no)
+#13 1195.8 31330 states generated, 12882 distinct states found, 9356 states left on queue.
+#13 1195.8 Finished in 01s at (2026-09-25 19:50:02)
+#13 1195.8 [model gate] notify-invisible-crawl: expect CoverageHonest (temporal=no)
+#13 1196.8 13 states generated, 12 distinct states found, 8 states left on queue.
+#13 1196.8 Finished in 00s at (2026-09-25 19:50:03)
+#13 1196.8 [model gate] notify-WitnessNoOverflow: expect WitnessNoOverflow (temporal=no)
+#13 1197.8 249 states generated, 173 distinct states found, 137 states left on queue.
+#13 1197.8 Finished in 00s at (2026-09-25 19:50:03)
+#13 1197.8 [model gate] notify-WitnessNoRescan: expect WitnessNoRescan (temporal=no)
+#13 1198.9 1424 states generated, 784 distinct states found, 610 states left on queue.
+#13 1198.9 Finished in 00s at (2026-09-25 19:50:05)
+#13 1198.9 [model gate] notify-WitnessNoRestart: expect WitnessNoRestart (temporal=no)
+#13 1199.8 2 states generated, 2 distinct states found, 0 states left on queue.
+#13 1199.8 Finished in 00s at (2026-09-25 19:50:06)
+#13 1199.8 [model gate] notify-WitnessNoStaleDrop: expect WitnessNoStaleDrop (temporal=no)
+#13 1201.0 1417 states generated, 779 distinct states found, 606 states left on queue.
+#13 1201.0 Finished in 00s at (2026-09-25 19:50:07)
+#13 1201.0 [model gate] notify-WitnessNoDuplicate: expect WitnessNoDuplicate (temporal=no)
+#13 1202.2 252 states generated, 176 distinct states found, 140 states left on queue.
+#13 1202.2 Finished in 00s at (2026-09-25 19:50:08)
+#13 1202.2 [model gate] notify-WitnessNoBoundaryNewer: expect WitnessNoBoundaryNewer (temporal=no)
+#13 1203.5 6676 states generated, 3123 distinct states found, 2355 states left on queue.
+#13 1203.5 Finished in 00s at (2026-09-25 19:50:09)
+#13 1203.5 [model gate] notify-WitnessNoUnsupportedRefusal: expect WitnessNoUnsupportedRefusal (temporal=no)
+#13 1204.4 12 states generated, 11 distinct states found, 7 states left on queue.
+#13 1204.4 Finished in 00s at (2026-09-25 19:50:10)
+#13 1204.4 [model gate] notify-WitnessNoOnDemand: expect WitnessNoOnDemand (temporal=no)
+#13 1205.3 11 states generated, 10 distinct states found, 6 states left on queue.
+#13 1205.3 Finished in 00s at (2026-09-25 19:50:11)
+#13 1205.3 [model gate] notify-WitnessNoExclusions: expect WitnessNoExclusions (temporal=no)
+#13 1206.2 10 states generated, 9 distinct states found, 5 states left on queue.
+#13 1206.2 Finished in 00s at (2026-09-25 19:50:12)
+#13 1206.2 [model gate] notify-WitnessNoControlPressure: expect WitnessNoControlPressure (temporal=no)
+#13 1207.2 246 states generated, 171 distinct states found, 135 states left on queue.
+#13 1207.2 Finished in 00s at (2026-09-25 19:50:13)
+#13 1207.2 [model gate] notify-WitnessNoSaveRace: expect WitnessNoSaveRace (temporal=no)
+#13 1208.2 1461 states generated, 803 distinct states found, 625 states left on queue.
+#13 1208.2 Finished in 00s at (2026-09-25 19:50:14)
+#13 1208.2 [model gate] notify-WitnessNoDirtyExternal: expect WitnessNoDirtyExternal (temporal=no)
+#13 1209.2 7654 states generated, 3524 distinct states found, 2619 states left on queue.
+#13 1209.2 Finished in 00s at (2026-09-25 19:50:15)
+#13 1209.2 [model gate] notify-WitnessNoRelocation: expect WitnessNoRelocation (temporal=no)
+#13 1210.2 1725 states generated, 917 distinct states found, 701 states left on queue.
+#13 1210.2 Finished in 00s at (2026-09-25 19:50:16)
+#13 1210.2 [model gate] notify-WitnessNoRescanChurn: expect WitnessNoRescanChurn (temporal=no)
+#13 1211.4 28887 states generated, 11973 distinct states found, 8802 states left on queue.
+#13 1211.4 Finished in 00s at (2026-09-25 19:50:17)
+#13 1211.4 [model gate] notify-WitnessNoTwoEstablished: expect WitnessNoTwoEstablished (temporal=no)
+#13 1212.3 201 states generated, 151 distinct states found, 121 states left on queue.
+#13 1212.3 Finished in 00s at (2026-09-25 19:50:18)
+#13 1212.3 notify model gate: bounded checks clean; nine mutants rejected; fifteen witnesses reached
+#13 1212.3 [model gate] ui-main: expect clean safety/progress checks
+#13 1214.6 365702 states generated, 196841 distinct states found, 0 states left on queue.
+#13 1214.6 The depth of the complete state graph search is 20.
+#13 1214.6 Finished in 01s at (2026-09-25 19:50:20)
+#13 1214.6 [model gate] ui-stale-base: expect StaleNeverActs (temporal=no)
+#13 1215.4 3 states generated, 3 distinct states found, 0 states left on queue.
+#13 1215.4 Finished in 00s at (2026-09-25 19:50:21)
+#13 1215.4 [model gate] ui-future-base: expect FutureNeverActs (temporal=no)
+#13 1216.3 4 states generated, 4 distinct states found, 1 states left on queue.
+#13 1216.3 Finished in 00s at (2026-09-25 19:50:22)
+#13 1216.3 [model gate] ui-foreign-base: expect ForeignNeverActs (temporal=no)
+#13 1217.1 5 states generated, 5 distinct states found, 2 states left on queue.
+#13 1217.1 Finished in 00s at (2026-09-25 19:50:23)
+#13 1217.1 [model gate] ui-poisoned-act: expect PoisonedNeverActs (temporal=no)
+#13 1218.1 6405 states generated, 3815 distinct states found, 2436 states left on queue.
+#13 1218.1 Finished in 00s at (2026-09-25 19:50:24)
+#13 1218.1 [model gate] ui-delta-unpoison: expect PoisonedUntilSnapshot (temporal=no)
+#13 1219.0 2232 states generated, 1361 distinct states found, 860 states left on queue.
+#13 1219.0 Finished in 00s at (2026-09-25 19:50:25)
+#13 1219.0 [model gate] ui-empty-publish: expect NoEmptyPublication (temporal=no)
+#13 1219.8 9 states generated, 9 distinct states found, 6 states left on queue.
+#13 1219.8 Finished in 00s at (2026-09-25 19:50:26)
+#13 1219.8 [model gate] ui-double-effect: expect EffectExactlyOnce (temporal=no)
+#13 1220.7 859 states generated, 552 distinct states found, 372 states left on queue.
+#13 1220.7 Finished in 00s at (2026-09-25 19:50:26)
+#13 1220.7 [model gate] ui-early-bye: expect ByeAfterFinalAck (temporal=no)
+#13 1221.5 9 states generated, 9 distinct states found, 6 states left on queue.
+#13 1221.5 Finished in 00s at (2026-09-25 19:50:27)
+#13 1221.5 [model gate] ui-post-bye-publish: expect NoPostByePublication (temporal=no)
+#13 1222.4 48 states generated, 45 distinct states found, 35 states left on queue.
+#13 1222.4 Finished in 00s at (2026-09-25 19:50:28)
+#13 1222.4 [model gate] ui-WitnessNoDrop: expect WitnessNoDrop (temporal=no)
+#13 1223.2 11 states generated, 11 distinct states found, 8 states left on queue.
+#13 1223.2 Finished in 00s at (2026-09-25 19:50:29)
+#13 1223.2 [model gate] ui-WitnessNoPoison: expect WitnessNoPoison (temporal=no)
+#13 1224.1 228 states generated, 156 distinct states found, 114 states left on queue.
+#13 1224.1 Finished in 00s at (2026-09-25 19:50:30)
+#13 1224.1 [model gate] ui-WitnessNoRecovery: expect WitnessNoRecovery (temporal=no)
+#13 1225.0 769 states generated, 503 distinct states found, 346 states left on queue.
+#13 1225.0 Finished in 00s at (2026-09-25 19:50:31)
+#13 1225.0 [model gate] ui-WitnessNoEffect: expect WitnessNoEffect (temporal=no)
+#13 1225.8 263 states generated, 179 distinct states found, 132 states left on queue.
+#13 1225.8 Finished in 00s at (2026-09-25 19:50:32)
+#13 1225.8 [model gate] ui-WitnessNoStaleRefusal: expect WitnessNoStaleRefusal (temporal=no)
+#13 1226.6 3 states generated, 3 distinct states found, 0 states left on queue.
+#13 1226.6 Finished in 00s at (2026-09-25 19:50:32)
+#13 1226.6 [model gate] ui-WitnessNoFutureRefusal: expect WitnessNoFutureRefusal (temporal=no)
+#13 1227.5 4 states generated, 4 distinct states found, 1 states left on queue.
+#13 1227.5 Finished in 00s at (2026-09-25 19:50:33)
+#13 1227.5 [model gate] ui-WitnessNoForeignRefusal: expect WitnessNoForeignRefusal (temporal=no)
+#13 1228.4 5 states generated, 5 distinct states found, 2 states left on queue.
+#13 1228.4 Finished in 00s at (2026-09-25 19:50:34)
+#13 1228.4 [model gate] ui-WitnessNoBye: expect WitnessNoBye (temporal=no)
+#13 1229.2 9 states generated, 9 distinct states found, 6 states left on queue.
+#13 1229.2 Finished in 00s at (2026-09-25 19:50:35)
+#13 1229.2 [model gate] ui-WitnessNoOutrun: expect WitnessNoOutrun (temporal=no)
+#13 1230.1 43 states generated, 40 distinct states found, 32 states left on queue.
+#13 1230.1 Finished in 00s at (2026-09-25 19:50:36)
+#13 1230.1 [model gate] ui-WitnessNoSameGenDelta: expect WitnessNoSameGenDelta (temporal=no)
+#13 1230.9 8 states generated, 8 distinct states found, 5 states left on queue.
+#13 1230.9 Finished in 00s at (2026-09-25 19:50:37)
+#13 1230.9 ui model gate: bounded checks clean; nine mutants rejected; ten witnesses reached
+#13 DONE 1231.0s
+
+#14 exporting to image
+#14 exporting layers 0.1s done
+#14 exporting manifest sha256:3cef3c41c3d26cf8e51524d550b14bbaa8dbec5665aa5bdc2a9c0aa9cb6dcc61 0.0s done
+#14 exporting config sha256:c30acc6770e5e92bbcfaa78d59a202398158db33496425d9f2a1ab53235ead21 0.0s done
+#14 exporting attestation manifest sha256:9a6fdd4e692118643c70c76b5b71c4ba81d33f4fd1f9615d3351edd153790f3c 0.0s done
+#14 exporting manifest list sha256:ddf4fe2ee4fb4ca8899e28113a91e61bcc6f0bcc94e5c76bef5c3d1b128ca130 0.0s done
+#14 naming to docker.io/library/strop-preworker-6c4491b-model:latest done
+#14 unpacking to docker.io/library/strop-preworker-6c4491b-model:latest 0.0s done
+#14 DONE 0.2s
+
+#15 resolving provenance for metadata file
+#15 DONE 0.0s
+ Image strop-preworker-6c4491b-model Built 
+ Container strop-preworker-6c4491b-model-run-4045ae438b51 Creating 
+ Container strop-preworker-6c4491b-model-run-4045ae438b51 Created 
+gate passed: editor protocol model checks clean (TLC)
+
+[Showing lines 1-765 of 766. Use :766 to continue]

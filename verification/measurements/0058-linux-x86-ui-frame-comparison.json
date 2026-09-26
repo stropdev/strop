@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "scope": "Linux x86_64 release-musl-stripped, actual local-worker-backed --ui-stdio committed-text action to complete semantic view frame; not TUI cell-grid paint, SSH/container deployment, LSP or terminal load",
+  "baseline": {
+    "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+    "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+    "measurement": "verification/measurements/0058-linux-x86-preworker-ui-frame.json",
+    "sha256": "5897baa98d7d8501253f163a4a269079c2f3b457b53c018cdd0e5cb9ec78d8f0"
+  },
+  "candidate": {
+    "commit": null,
+    "state": "working tree dirty; no release-qualified source commit",
+    "artifact_sha256": "7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b",
+    "measurement": "verification/measurements/0058-linux-x86-worker-ui-frame.json",
+    "sha256": "f46d3d04f8fb28c00edf53cdd9721fd9e9f3f8bacbf262c27c754920fa30138d"
+  },
+  "method": {
+    "harness": "verification/bench_ui_input_frame.py",
+    "sha256": "3daf76eabf9a1298386888df528af3f301725b0320fb1b68854f316b644fb8f9",
+    "warmup": 8,
+    "samples_per_artifact": 64,
+    "fixture_lines": 10000,
+    "geometry": [
+      120,
+      40
+    ],
+    "timing": "framed UI admitted input write+flush through complete semantic view frame"
+  },
+  "observed": {
+    "baseline_ms": {
+      "max": 0.482,
+      "p50": 0.232,
+      "p95": 0.33,
+      "p99": 0.482
+    },
+    "candidate_ms": {
+      "max": 0.529,
+      "p50": 0.234,
+      "p95": 0.291,
+      "p99": 0.529
+    },
+    "baseline_editor_rss_kib_after_open": 12688,
+    "candidate_editor_rss_kib_after_open": 13012,
+    "baseline_worker_rss_kib_after_open": 5016,
+    "candidate_worker_rss_kib_after_open": 5280,
+    "baseline_worker_count_after_open": 1,
+    "candidate_worker_count_after_open": 1,
+    "baseline_request_bytes": 9984,
+    "candidate_request_bytes": 9984,
+    "baseline_view_bytes": 132132,
+    "candidate_view_bytes": 132132
+  }
+}

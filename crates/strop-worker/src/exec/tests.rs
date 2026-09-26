@@ -2,7 +2,6 @@
 //! launch classification, the kill/leak/reap races and the status-record
 //! codec. Real processes, hermetic tempdirs, no network.
 
-use super::record::{mark_line, records};
 use super::*;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -341,38 +340,251 @@ fn dropping_abandons_the_lease_and_tears_down() {
     });
 }
 
-#[test]
-fn status_records_are_byte_compatible_with_the_anchor() {
-    assert_eq!(StatusRecord::Exited(3).encode(), [0, 3, 0, 0, 0]);
-    assert_eq!(StatusRecord::Signaled(15).encode(), [1, 15, 0, 0, 0]);
-    assert_eq!(StatusRecord::LaunchFailed(2).encode(), [2, 2, 0, 0, 0]);
-    for record in [
-        StatusRecord::Exited(3),
-        StatusRecord::Signaled(15),
-        StatusRecord::LaunchFailed(2),
-    ] {
-        assert_eq!(StatusRecord::decode(&record.encode()), Some(record));
+/// Read until `needle` appears in the PTY master's output (deadline-
+/// bounded, so a broken launch fails the test instead of hanging).
+fn pty_read_until(master: &std::fs::File, needle: &str) -> String {
+    use std::os::fd::AsRawFd;
+    let mut collected = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let mut descriptors = [libc::pollfd {
+            fd: master.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+        // SAFETY: the test owns the live master and the pollfd storage.
+        let ready = unsafe { libc::poll(descriptors.as_mut_ptr(), 1, 100) };
+        if ready > 0 {
+            let mut chunk = [0_u8; 4096];
+            match (&*master).read(&mut chunk) {
+                Ok(count) => collected.extend_from_slice(&chunk[..count]),
+                Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) => panic!("pty read failed: {error}"),
+            }
+            if String::from_utf8_lossy(&collected).contains(needle) {
+                return String::from_utf8_lossy(&collected).into_owned();
+            }
+        }
     }
-    assert_eq!(StatusRecord::decode(&[0, 3]), None);
-    assert_eq!(StatusRecord::decode(&[9, 0, 0, 0, 0]), None);
+    panic!(
+        "pty output never contained {needle:?}: {:?}",
+        String::from_utf8_lossy(&collected)
+    );
 }
 
 #[test]
-fn nonce_marked_lines_parse_only_for_their_session() {
-    let nonce = [0xab_u8; 16];
-    let other = [0xcd_u8; 16];
-    let mut stream = Vec::new();
-    stream.extend_from_slice(b"target's own output\n");
-    stream.extend_from_slice(&mark_line(&nonce, "exit 3"));
-    stream.extend_from_slice(&mark_line(&other, "exit 4"));
-    stream.extend_from_slice(b"STROP-SUP-v1 nothex exit 9\n");
-    assert_eq!(
-        records(&stream, &nonce),
-        vec![SupervisionOutcome::Exited(3)]
-    );
-    // The rendered frame keeps the exact supervisor framing.
-    assert_eq!(
-        mark_line(&[0_u8; 16], "cancel"),
-        b"\nSTROP-SUP-v1 00000000000000000000000000000000 cancel\n".to_vec()
-    );
+fn pty_launch_owns_a_controlling_terminal_and_classifies_exit() {
+    with_token(|token| {
+        let size = PtySize {
+            columns: 37,
+            rows: 9,
+        };
+        let pty = launch_pty(
+            &sh("[ -t 0 ] && [ -t 1 ] || exit 90; stty size; read value; printf 'RESULT:%s\\n' \"$value\"; exit 7"),
+            size,
+            &token,
+        )
+        .unwrap();
+        let master = pty.master().try_clone().unwrap();
+        // The admitted geometry is the terminal's winsize.
+        assert!(pty_read_until(&master, "9 37").contains("9 37"));
+        pty.master().write_all(b"hello\n").unwrap();
+        assert!(pty_read_until(&master, "RESULT:hello").contains("RESULT:hello"));
+        let running = pty.into_running();
+        assert_eq!(
+            running.wait().unwrap(),
+            Settlement::Recorded(StatusRecord::Exited(7))
+        );
+    });
+}
+
+#[test]
+fn pty_launch_failures_are_typed_not_disguised_as_exits() {
+    with_token(|token| {
+        let missing = ExecSpec::new(
+            OsString::from("sh").as_os_str(),
+            vec![OsString::from("-c"), OsString::from("exit 0")],
+            Path::new("/definitely/missing"),
+        )
+        .unwrap();
+        let error = launch_pty(
+            &missing,
+            PtySize {
+                columns: 80,
+                rows: 24,
+            },
+            &token,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ExecError::Launch { ref diagnostics } if diagnostics.contains("chdir")),
+            "{error}"
+        );
+    });
+}
+
+#[test]
+fn pty_resize_applies_the_new_winsize_in_order() {
+    with_token(|token| {
+        let directory = tempfile::tempdir().unwrap();
+        let fifo = directory.path().join("gate");
+        // SAFETY: creating a FIFO at a fresh tempdir path cannot clash.
+        let path = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let script = format!(
+            "stty size; cat \"{}\" >/dev/null; stty size",
+            fifo.display()
+        );
+        let size = PtySize {
+            columns: 80,
+            rows: 24,
+        };
+        let pty = launch_pty(
+            &ExecSpec::new(
+                OsString::from("sh").as_os_str(),
+                vec![OsString::from("-c"), OsString::from(script)],
+                directory.path(),
+            )
+            .unwrap(),
+            size,
+            &token,
+        )
+        .unwrap();
+        let master = pty.master().try_clone().unwrap();
+        assert!(pty_read_until(&master, "24 80").contains("24 80"));
+        resize_pty(
+            pty.master(),
+            PtySize {
+                columns: 37,
+                rows: 9,
+            },
+        )
+        .unwrap();
+        // Open after the child is known to be inside `cat`: open blocks
+        // until both ends arrive, which is the ordering handshake.
+        std::fs::write(&fifo, b"go").unwrap();
+        assert!(pty_read_until(&master, "9 37").contains("9 37"));
+        let running = pty.into_running();
+        assert_eq!(
+            running.wait().unwrap(),
+            Settlement::Recorded(StatusRecord::Exited(0))
+        );
+    });
+}
+
+#[test]
+fn pty_revoke_tears_down_the_whole_session() {
+    with_token(|token| {
+        let pty = launch_pty(
+            &sh("(trap '' HUP TERM; printf 'BG:%s\\n' $$; exec sleep 600) & read value; exit 0"),
+            PtySize {
+                columns: 80,
+                rows: 24,
+            },
+            &token,
+        )
+        .unwrap();
+        let master = pty.master().try_clone().unwrap();
+        let output = pty_read_until(&master, "BG:");
+        let running = pty.into_running();
+        assert_eq!(running.revoke().unwrap(), Settlement::Revoked);
+        // The group teardown kills the trapped background member too.
+        let child: u32 = output
+            .split("BG:")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(pid_gone(child), "background member survived revocation");
+    });
+}
+
+// ---- environment overlays (0058 WK10) --------------------------------------
+
+/// The admitted overlay reaches the child byte-exactly, on top of the
+/// inherited environment, and never leaks into another exec.
+#[test]
+fn env_overlay_applies_and_stays_scoped() {
+    with_token(|token| {
+        let spec = sh(r#"printf %s "$STROP_WK10"; printf :; test -n "$PATH" && printf inherited"#)
+            .with_env_overlay(vec![(b"STROP_WK10".to_vec(), b"present".to_vec())])
+            .unwrap();
+        let mut running = launch(&spec, &token).unwrap();
+        let mut stdout = running.take_stdout().unwrap();
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).unwrap();
+        assert_eq!(
+            running.wait().unwrap(),
+            Settlement::Recorded(StatusRecord::Exited(0))
+        );
+        assert_eq!(output, b"present:inherited");
+
+        // A second exec without the overlay never sees the variable.
+        let spec = sh(r#"printf %s "${STROP_WK10-unset}""#);
+        let mut running = launch(&spec, &token).unwrap();
+        let mut stdout = running.take_stdout().unwrap();
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).unwrap();
+        assert_eq!(
+            running.wait().unwrap(),
+            Settlement::Recorded(StatusRecord::Exited(0))
+        );
+        assert_eq!(output, b"unset");
+    });
+}
+
+/// Non-UTF8 values cross the overlay unchanged.
+#[test]
+fn env_overlay_keeps_native_bytes() {
+    with_token(|token| {
+        let spec = sh(r#"printf %s "$STROP_WK10" | od -An -tx1 | tr -d ' \n'"#)
+            .with_env_overlay(vec![
+                (b"STROP_WK10".to_vec(), vec![0x66, 0x80, 0x67]),
+                (b"STROP_EMPTY".to_vec(), Vec::new()),
+            ])
+            .unwrap();
+        let mut running = launch(&spec, &token).unwrap();
+        let mut stdout = running.take_stdout().unwrap();
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).unwrap();
+        assert_eq!(
+            running.wait().unwrap(),
+            Settlement::Recorded(StatusRecord::Exited(0))
+        );
+        assert_eq!(output, b"668067");
+    });
+}
+
+/// Malformed and oversized overlays are typed admission refusals.
+#[test]
+fn env_overlay_refusals_are_typed() {
+    let invalid = |vars: Vec<(Vec<u8>, Vec<u8>)>| {
+        sh("true")
+            .with_env_overlay(vars)
+            .expect_err("overlay must be refused")
+    };
+    assert!(matches!(
+        invalid(vec![(Vec::new(), b"v".to_vec())]),
+        ExecError::Invalid { .. }
+    ));
+    assert!(matches!(
+        invalid(vec![(b"NAME=VALUE".to_vec(), b"v".to_vec())]),
+        ExecError::Invalid { .. }
+    ));
+    assert!(matches!(
+        invalid(vec![(b"NAME".to_vec(), vec![0])]),
+        ExecError::Invalid { .. }
+    ));
+    assert!(matches!(
+        invalid(vec![(b"NAME".to_vec(), vec![b'x'; 128 * 1024])]),
+        ExecError::Invalid { .. }
+    ));
+    let too_many: Vec<(Vec<u8>, Vec<u8>)> = (0..257)
+        .map(|index| (format!("STROP_N{index}").into_bytes(), b"v".to_vec()))
+        .collect();
+    assert!(matches!(invalid(too_many), ExecError::Invalid { .. }));
 }

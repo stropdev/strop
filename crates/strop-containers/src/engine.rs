@@ -50,7 +50,7 @@ pub struct EngineRef {
 }
 
 /// How invocations stay pinned to the connection the probe selected.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum EngineContext {
     /// `DOCKER_HOST`/`DOCKER_CONTEXT` in strop's own environment selected
     /// the connection; children inherit that environment unchanged.
@@ -64,6 +64,11 @@ impl EngineRef {
     /// `ServerVersion` as the probe reported it.
     pub fn server_version(&self) -> &str {
         &self.server_version
+    }
+    /// Whether two captures selected the same Docker connection route.
+    /// ServerVersion is metadata, not a connection identity.
+    pub fn same_connection(&self, other: &Self) -> bool {
+        self.context == other.context
     }
 
     /// The invocation prefix that pins the selected connection: the

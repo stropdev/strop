@@ -189,6 +189,7 @@ pub fn prepare(
                 destination: Some(parent),
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
+                store: None,
             };
             match prepare_one(kernel, &intent, false, environment, token) {
                 Ok(parent) => result.steps.push(parent),
@@ -284,6 +285,11 @@ fn dependencies(steps: &mut Vec<PreparedOperation>) -> Result<(), FsFailure> {
                 })
                 .ok_or_else(|| conflict("missing parent has no reviewed creation step"))?;
             edges[index].push(dependency);
+        }
+        // A Store's occupied destination is governed by its own baseline
+        // contract at effect time, never by a vacating earlier step.
+        if step.intent.kind == OperationKind::Store {
+            continue;
         }
         if let Some(target) = step
             .destination
@@ -398,6 +404,28 @@ pub fn verify(
         _ => Err(FsFailure::new(
             FsFailureKind::Unsupported,
             "step's namespace is not this kernel's admitted namespace",
+        )),
+    }
+}
+
+/// Reconcile an old session's frozen receipt only after the transport
+/// proved the new worker observes the same native boot/mount/principal.
+/// This is read-only; it cannot execute the prepared operation again.
+pub fn verify_recovered(
+    context: &ExecutionContext,
+    receipt: &StepReceipt,
+    token: &CancelToken,
+) -> Result<VerifiedOutcome, FsFailure> {
+    match receipt.operation.intent.location() {
+        Some(location)
+            if location.filesystem == context.namespace().filesystem()
+                && matches!(context.namespace(), NamespaceView::Native) =>
+        {
+            crate::local::verify_recovered(receipt, context, token)
+        }
+        _ => Err(FsFailure::new(
+            FsFailureKind::Unsupported,
+            "recovered step is outside the admitted native namespace",
         )),
     }
 }

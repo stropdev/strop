@@ -21,6 +21,29 @@ fn follow_moves_the_eof_cursor_but_not_marks_or_jump_history() {
 }
 
 #[test]
+fn remote_worker_consent_does_not_grant_a_file_write_permit() {
+    let mut e = editor("read-only\n");
+    let endpoint = e.remote_endpoint().unwrap().clone();
+    e.feed_text(":remote worker<cr>");
+    assert_eq!(e.message, "admitting verified remote worker");
+    assert!(e.remote.controls.values().any(
+        |key| matches!(&key.operation, RemoteControl::AdmitWorker(target) if target == &endpoint)
+    ));
+    assert!(e.remote.workers.get(&endpoint).is_none());
+    assert!(e.cur().remote_metadata().unwrap().write.is_none());
+    assert!(e.buf().readonly);
+    e.workspaces
+        .bind(strop_workspace::Filesystem::Remote(endpoint), None)
+        .unwrap();
+    e.open_explain();
+    assert!(e
+        .buf()
+        .text()
+        .to_string()
+        .contains("worker admission requested; SFTP browsing remains available"));
+}
+
+#[test]
 fn browsing_does_not_become_eof_stickiness() {
     let mut e = editor("first\nend\n");
     let id = e.current();

@@ -1,5 +1,6 @@
-//! Bounded frontend handle. The VT, socket protocol, child and native destruction
-//! stay on its worker; callers only enqueue intents or take immutable updates.
+//! Bounded frontend handle. The PTY lives on the namespace's worker (0058
+//! WK12); the VT and session state stay on this crate's service thread.
+//! Callers only enqueue intents or take immutable updates.
 mod mailbox;
 mod worker;
 use crate::{
@@ -91,8 +92,15 @@ pub struct Service {
     stopped: bool,
 }
 impl Service {
+    /// Start one session behind the namespace's worker lease (0058
+    /// WK12): the PTY spawns on that worker, and the lease's stream
+    /// hook nudges this service's wake on output. The caller (the
+    /// engine) selected the namespace; the lease's admitted
+    /// capabilities decide whether a PTY is possible — a refusal is
+    /// typed, never a guessed local launch.
     pub fn start(
         session: SessionId,
+        worker: strop_worker_client::Worker,
         launch: Launch,
         geometry: Geometry,
         keyboard: u8,
@@ -116,18 +124,24 @@ impl Service {
         listening
             .set_nonblocking(true)
             .map_err(|error| io_error("configure terminal worker wake", error))?;
+        crate::client::install_wake_hook(&worker);
+        let nudge = wake
+            .try_clone()
+            .map_err(|error| io_error("retain terminal stream wake", error))?;
         let mailbox = Arc::new(Mailbox::new(session, notify));
         let budget = Arc::new(Budget::default());
         let outcome_mailbox = mailbox.clone();
         let outcome_budget = budget.clone();
         let work = worker::Start {
             session,
+            worker,
             launch,
             geometry,
             keyboard,
             palette,
             receiver,
             wake: listening,
+            nudge,
             mailbox: mailbox.clone(),
             budget: budget.clone(),
         };

@@ -1,5 +1,5 @@
 //! Client-side namespace dispatch above the worker protocol (0058
-//! WK03/WK04/WK07). Local operations ride the worker client, and SSH
+//! WK03/WK04/WK07/WK09). Local operations ride the worker client, and SSH
 //! workspaces whose host admits a worker ride that endpoint's deployed
 //! worker lease ([`super::remote::workers::RemoteWorkers`]) — the same
 //! handlers, the same protocol, no in-process filesystem twin anywhere
@@ -7,22 +7,26 @@
 //! SFTP path byte-identically; mutations there are the deploy state
 //! machine's typed refusal, never an alternate write path. Browsing
 //! never deploys: read arms use only an already-admitted live lease,
-//! and [`admit`] runs exclusively from mutation families. Containers
-//! stay read-only by policy until WK08. Transport selection lives here
-//! — never inside the kernel, which sees namespace identity and
-//! capabilities only as data.
+//! and [`RemoteWorkers::admit`] runs exclusively from mutation families.
+//! Containers stay read-only by policy. Document saves (`:w`) are the
+//! [`StoreDispatch`] path: the Store intent's protected save through the
+//! same kernel the worker serves. Transport selection lives here — never
+//! inside the kernel, which sees namespace identity and capabilities only
+//! as data.
 //!
 //! The in-process strop-fs kernel remains directly usable by lower-level
 //! tests (strop-fs's own suite); engine tests cross the real codec
 //! through an in-process transport ([`local_worker`]).
 
+use super::containers::BoundWorker;
 use strop_core::worker::CancelToken;
 use strop_fs::batch::PreparedBatch;
 use strop_fs::Environment;
 use strop_remote::worker_transport::RemoteWorker;
 use strop_worker_client::{ClientError, Worker};
 use strop_workspace::operation::{
-    FsFailure, FsFailureKind, OperationIntent, StepOutcome, StepReceipt, VerifiedOutcome,
+    FsFailure, FsFailureKind, OperationIntent, PreparedOperation, StepOutcome, StepReceipt,
+    VerifiedOutcome,
 };
 use strop_workspace::{EntryKind, Filesystem, ResourceLocation};
 
@@ -73,7 +77,7 @@ pub(crate) fn local_worker() -> Worker {
 /// transport/admission failures map onto the closest honest kind. The
 /// message keeps the exact cause — failures are visible in the status
 /// line, never silent.
-fn map_client(error: ClientError) -> FsFailure {
+pub(crate) fn map_client(error: ClientError) -> FsFailure {
     let kind = match &error {
         ClientError::Cancelled => FsFailureKind::Cancelled,
         ClientError::Domain(failure) => return failure.clone(),
@@ -115,6 +119,7 @@ pub(crate) fn list(
     location: &ResourceLocation,
     client: &strop_remote::RemoteClient,
     container: Option<&strop_containers::ContainerIdentity>,
+    container_worker: Option<&BoundWorker>,
     token: &CancelToken,
 ) -> Result<Listed, FsFailure> {
     if !location.path.is_absolute() {
@@ -171,6 +176,19 @@ pub(crate) fn list(
                         "attach the container before browsing its filesystem",
                     )
                 })?;
+            if let Some(worker) = container_worker {
+                if !worker.matches(identity) {
+                    return Err(failure(
+                        FsFailureKind::Conflict,
+                        "container worker lease belongs to a stale incarnation",
+                    ));
+                }
+                let snapshot = worker.list(token, location).map_err(map_client)?;
+                return Ok(Listed {
+                    directory: strop_fs::ListedDirectory { snapshot },
+                    connection: None,
+                });
+            }
             let path = location.path.to_str().ok_or_else(|| {
                 failure(
                     FsFailureKind::Unsupported,
@@ -455,5 +473,125 @@ pub(crate) fn verify(
     match kernel(&namespace, worker, remote, token)? {
         Dispatch::Local(worker) => worker.verify(token, receipt.clone()).map_err(map_client),
         Dispatch::Remote(worker) => worker.verify(token, receipt.clone()).map_err(map_client),
+    }
+}
+
+/// One admitted Store dispatch target (0058 WK09): the local worker lease
+/// or the endpoint's deployed worker lease. Same protocol, same kernel —
+/// transport selection lives here, never in the kernel.
+pub(crate) enum StoreDispatch {
+    Local(Worker),
+    Remote(RemoteWorker),
+}
+
+/// The outcome of one protected document store: either admission refused
+/// before any effect was possible, or exactly one step receipt —
+/// committed, refused at effect time, cancelled, or unconfirmed with its
+/// frozen evidence.
+pub(crate) enum StoreOutcome {
+    Refused(FsFailure),
+    Receipt(Box<StepReceipt>),
+}
+
+impl StoreDispatch {
+    /// Prepare one Store intent: the admitted step (its destination
+    /// observation is the editor's evidence) or the typed refusal.
+    pub(crate) fn prepare_store(
+        &self,
+        intent: OperationIntent,
+        token: &CancelToken,
+    ) -> Result<PreparedOperation, FsFailure> {
+        let prepared = match self {
+            // No environment override crosses for a store: trash roots are
+            // not save policy, and a remote worker captures its own.
+            Self::Local(worker) => worker.prepare(token, vec![intent], None),
+            Self::Remote(worker) => worker.prepare(token, vec![intent]),
+        };
+        let (mut steps, refused) = prepared.map_err(map_client)?;
+        if let Some(refusal) = refused.into_iter().next() {
+            return Err(refusal.failure);
+        }
+        if steps.len() != 1 {
+            return Err(failure(
+                FsFailureKind::Protocol,
+                "a document store prepares exactly one step",
+            ));
+        }
+        Ok(steps.remove(0))
+    }
+
+    /// Apply one prepared Store step with its frozen content stream. A
+    /// transport loss after launch is honest uncertainty with the frozen
+    /// evidence retained — never a silent retry or a guessed outcome.
+    pub(crate) fn apply_store(
+        &self,
+        operation: PreparedOperation,
+        content: &[u8],
+        token: &CancelToken,
+    ) -> StoreOutcome {
+        let applied = match self {
+            Self::Local(worker) => worker.apply(token, vec![operation.clone()], Some(content)),
+            Self::Remote(worker) => worker.apply(token, vec![operation.clone()], Some(content)),
+        };
+        match applied {
+            Ok(receipts) if receipts.len() == 1 => {
+                StoreOutcome::Receipt(Box::new(receipts.into_iter().next().unwrap()))
+            }
+            Ok(_) => StoreOutcome::Receipt(Box::new(StepReceipt {
+                step: 0,
+                operation,
+                outcome: StepOutcome::Unconfirmed {
+                    detail: "the worker answered a store with the wrong receipt count".into(),
+                    observed_destination: None,
+                    recovery: None,
+                    publication: None,
+                },
+            })),
+            // Admission refusal and the worker's apply-domain error are
+            // pre-effect. Client-side cancellation can race after the
+            // request crossed the publication boundary and belongs to
+            // the unconfirmed path below.
+            Err(error @ (ClientError::Domain(_) | ClientError::Refused(_))) => {
+                StoreOutcome::Refused(map_client(error))
+            }
+            Err(error) => StoreOutcome::Receipt(Box::new(StepReceipt {
+                step: 0,
+                operation,
+                outcome: StepOutcome::Unconfirmed {
+                    detail: format!("store outcome unconfirmed: {}", map_client(error)),
+                    observed_destination: None,
+                    recovery: None,
+                    publication: None,
+                },
+            })),
+        }
+    }
+
+    /// Verify a frozen old-session Store after reconnect without
+    /// reviving its prepared mutation capability. The worker proves
+    /// the exact captured native namespace before observing/syncing.
+    pub(crate) fn verify_store_recovered(
+        &self,
+        receipt: StepReceipt,
+        namespace: strop_worker_protocol::NamespaceIdentity,
+        token: &CancelToken,
+    ) -> Result<VerifiedOutcome, FsFailure> {
+        if namespace.identity == "unattested" {
+            // macOS has no admitted boot+mount witness yet. The same
+            // live worker can still verify its own capability, but a
+            // restarted one fails the ordinary incarnation guard.
+            return match self {
+                Self::Local(worker) => worker.verify(token, receipt).map_err(map_client),
+                Self::Remote(worker) => worker.verify(token, receipt).map_err(map_client),
+            };
+        }
+        match self {
+            Self::Local(worker) => worker
+                .verify_recovered(token, receipt, namespace)
+                .map_err(map_client),
+            Self::Remote(worker) => worker
+                .verify_recovered(token, receipt, namespace)
+                .map_err(map_client),
+        }
     }
 }
