@@ -1506,6 +1506,17 @@ error, and the fixture's scoped files were deleted on failure.
 observation field, never its value; the failed native replay must
 be diagnosed and corrected before Mac/platform qualification.
 
+Run [`36276723847`](https://github.com/stropdev/strop/actions/runs/36276723847)
+reproduced that exact replay refusal on **both** macOS architectures
+after the real terminal quit. Its captured-value-free checkpoint
+diagnostic isolated the first discrepancy to the editor's `message`
+field; native Store, SSH and worker binary gates passed beforehand.
+The terminal fixture alone now opts into test-support-only diagnostics
+of its **synthetic** status strings at the failing replay tick; remove
+this diagnostic after correcting the producer and proving the same
+real TUI/replay journey passes natively. Never weaken the comparison
+or expose general users' captured status values.
+
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.
 `WDEP-GC` now has a serialized native caller, two-worker/SSH/container

@@ -537,6 +537,17 @@ impl Tape {
                         .map_or(reason, |(_, reason)| reason);
                         return self.fail(reason);
                     }
+                    #[cfg(feature = "test-support")]
+                    if reason == "replay status message diverged"
+                        && std::env::var_os("STROP_TEST_REPLAY_DIAG").is_some()
+                    {
+                        eprintln!(
+                            "synthetic fixture at tick {}: captured={:?}, replayed={:?}",
+                            self.now().monotonic_ms,
+                            expected.get("message").and_then(Value::as_str),
+                            value.get("message").and_then(Value::as_str)
+                        );
+                    }
                     self.fail(reason)
                 }
                 _ => self.fail("editor state diverged"),
