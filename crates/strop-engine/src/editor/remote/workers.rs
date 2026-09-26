@@ -50,10 +50,16 @@ struct EndpointLease {
     deploying: Mutex<()>,
 }
 
+#[derive(Default)]
+struct EndpointTable {
+    closed: bool,
+    endpoints: HashMap<RemoteEndpoint, Arc<EndpointLease>>,
+}
+
 /// Per-endpoint worker leases shared with filesystem jobs.
 #[derive(Clone, Default)]
 pub(crate) struct RemoteWorkers {
-    inner: Arc<Mutex<HashMap<RemoteEndpoint, Arc<EndpointLease>>>>,
+    inner: Arc<Mutex<EndpointTable>>,
 }
 
 fn failure(kind: FsFailureKind, detail: impl Into<String>) -> FsFailure {
@@ -69,8 +75,12 @@ impl RemoteWorkers {
     }
 
     pub(crate) fn get_ready(&self, endpoint: &RemoteEndpoint) -> Option<Arc<WorkerReady>> {
-        self.inner
-            .lock()
+        let table = self.inner.lock();
+        if table.closed {
+            return None;
+        }
+        table
+            .endpoints
             .get(endpoint)
             .and_then(|lease| lease.ready.get())
             .cloned()
@@ -79,10 +89,12 @@ impl RemoteWorkers {
     /// Input-side observation only: never wait on the endpoint's SSH
     /// deployment lock while rendering an explain buffer.
     pub(crate) fn admitting(&self, endpoint: &RemoteEndpoint) -> bool {
-        self.inner
-            .lock()
-            .get(endpoint)
-            .is_some_and(|lease| lease.deploying.try_lock().is_none())
+        let table = self.inner.lock();
+        !table.closed
+            && table
+                .endpoints
+                .get(endpoint)
+                .is_some_and(|lease| lease.deploying.try_lock().is_none())
     }
 
     /// Admit a worker for one endpoint, deploying consent-gated on
@@ -98,9 +110,16 @@ impl RemoteWorkers {
         token: &CancelToken,
     ) -> Result<RemoteWorker, FsFailure> {
         let lease = {
-            let mut endpoints = self.inner.lock();
+            let mut table = self.inner.lock();
+            if table.closed {
+                return Err(failure(
+                    FsFailureKind::Cancelled,
+                    "editor worker owner closed",
+                ));
+            }
             Arc::clone(
-                endpoints
+                table
+                    .endpoints
                     .entry(endpoint.clone())
                     .or_insert_with(|| Arc::new(EndpointLease::default())),
             )
@@ -111,8 +130,17 @@ impl RemoteWorkers {
         // The network/deployment work holds ONLY this endpoint's lock.
         // Lookups and unrelated endpoints remain nonblocking.
         let _deploying = lease.deploying.lock();
-        if let Some(ready) = lease.ready.get() {
-            return Ok(ready.worker.clone());
+        {
+            let table = self.inner.lock();
+            if table.closed {
+                return Err(failure(
+                    FsFailureKind::Cancelled,
+                    "editor worker owner closed",
+                ));
+            }
+            if let Some(ready) = lease.ready.get() {
+                return Ok(ready.worker.clone());
+            }
         }
         let facts = strop_remote::bootstrap::discover(endpoint, token).map_err(|error| {
             failure(
@@ -188,8 +216,23 @@ impl RemoteWorkers {
                     target: target.to_owned(),
                     artifact: ready.object,
                 });
-                let published = lease.ready.set(info);
-                debug_assert!(published.is_ok(), "one deployment per endpoint lock");
+                let published = {
+                    let table = self.inner.lock();
+                    if table.closed {
+                        false
+                    } else {
+                        let published = lease.ready.set(info);
+                        debug_assert!(published.is_ok(), "one deployment per endpoint lock");
+                        true
+                    }
+                };
+                if !published {
+                    worker.worker().close();
+                    return Err(failure(
+                        FsFailureKind::Cancelled,
+                        "editor worker owner closed",
+                    ));
+                }
                 Ok(worker)
             }
             DeployOutcome::Fallback(fallback) => {
@@ -200,6 +243,24 @@ impl RemoteWorkers {
                 FsFailureKind::Io,
                 format!("worker published on {endpoint} but not ready: {reason}"),
             )),
+        }
+    }
+
+    /// Permanently stop all admitted leases. Publication racing closure
+    /// observes the closed table and retires its still-private client.
+    pub(crate) fn close_all(&self) {
+        let leases = {
+            let mut table = self.inner.lock();
+            if table.closed {
+                return;
+            }
+            table.closed = true;
+            std::mem::take(&mut table.endpoints)
+        };
+        for (_, lease) in leases {
+            if let Some(ready) = lease.ready.get() {
+                ready.worker.worker().close();
+            }
         }
     }
 }
@@ -253,6 +314,7 @@ mod tests {
         workers
             .inner
             .lock()
+            .endpoints
             .insert(endpoint.clone(), Arc::clone(&lease));
         let (held_tx, held_rx) = std::sync::mpsc::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();

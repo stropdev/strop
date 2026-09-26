@@ -1,6 +1,7 @@
 //! One lease's connection factory, reconnect slot and final retirement.
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc::Sender, Arc};
 
 use parking_lot::Mutex;
@@ -56,6 +57,7 @@ impl Connector {
 pub(super) struct Shared {
     pub(super) connector: Connector,
     pub(super) slot: Mutex<Option<Arc<Conn>>>,
+    pub(super) closed: AtomicBool,
     /// Serializes (re)connection so one death never spawns two workers.
     pub(super) connecting: Mutex<()>,
     pub(super) events: Mutex<Option<Sender<Event>>>,
@@ -69,6 +71,7 @@ impl Shared {
         Self {
             connector,
             slot: Mutex::new(None),
+            closed: AtomicBool::new(false),
             connecting: Mutex::new(()),
             events: Mutex::new(None),
             stream_notifier: Mutex::new(None),

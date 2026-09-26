@@ -1,7 +1,7 @@
 //! Real OpenSSH authentication + SFTP, over a private inetd connection: no
 //! network, real HOME, host key discovery or sleeps. Required by Docker's gate.
 #![cfg(unix)]
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -104,15 +104,24 @@ impl Fixture {
         if let Some(artifact) = &self.artifact {
             command.env("STROP_WORKER_BINARY", artifact);
         }
-        let output = successful(
-            command
-                .current_dir(self.root())
-                .env("PATH", &self.path)
-                .env("HOME", self.root().join("home"))
-                .env("XDG_CONFIG_HOME", self.root().join("config"))
-                .env("XDG_STATE_HOME", self.root().join("state"))
-                .env_remove("STROP_LOG")
-                .args(args),
+        let output = command
+            .current_dir(self.root())
+            .env("PATH", &self.path)
+            .env("HOME", self.root().join("home"))
+            .env("XDG_CONFIG_HOME", self.root().join("config"))
+            .env("XDG_STATE_HOME", self.root().join("state"))
+            .env_remove("STROP_LOG")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\nrecorded trace: {}",
+            String::from_utf8_lossy(&output.stderr),
+            args.windows(2)
+                .find(|pair| pair[0].as_os_str() == OsStr::new("--log-file"))
+                .and_then(|pair| std::fs::read_to_string(&pair[1]).ok())
+                .unwrap_or_default()
         );
         String::from_utf8(output.stdout).unwrap()
     }

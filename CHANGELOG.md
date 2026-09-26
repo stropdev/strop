@@ -50,6 +50,18 @@
 
 ### Fixed
 
+- **Editor exit retires its native worker** (0058 WK20): ordinary
+  UI/headless/TUI shutdown now closes local, admitted SSH and admitted
+  container worker leases even when a background job still holds a
+  clone. A closed clone cannot reconnect or publish a late worker.
+  On the exact 0.36.0 static Linux build, all 64 real 17.28 MiB
+  UI-open journeys left **zero** workers after editor exit, versus
+  64/64 survivors on the original pre-worker baseline. Open→visible
+  p50 was 78.170 ms versus 78.169 ms; worker kernel peak-memory p50
+  increased from 5,040 to 7,264 KiB. Mac/arm and no-init Docker
+  retirement still need their native gates; no universal bound is
+  claimed from this one host.
+
 - **Recovered Store refuses acknowledged attempts** (0058 WK18):
   the worker now checks the actual Unconfirmed receipt outcome in
   addition to the attested, matching namespace before read-only
@@ -125,8 +137,8 @@
   recovery timeout while later chunks were already queued. It now
   drains the wake first and rechecks after each published bounded
   turn. A real 256-line PTY burst changed from pre-fix p50 256.634 ms
-  to p50 4.794 ms on the wake-fixed static worker; the matched
-  pre-worker was p50 4.469 ms on the same Linux host.
+  to p50 4.922 ms on the session-safe static worker; the matched
+  pre-worker was p50 4.335 ms on the same Linux host.
 - **macOS exec/PTY exits retain their attested status** (0058 WK20):
   XNU may return `EPERM` for a process-group signal when only its
   unreaped zombie leader remains. The worker now accepts that result
@@ -185,27 +197,27 @@
   `a05d84f` Linux x86_64 pre-worker snapshot retains six raw passing
   gates beside the untouched dirty historical archive. On the same
   WSL2 host, 64 real static-worker handshakes per build measured
-  baseline/current p50 0.798/0.765 ms, p95 1.066/0.992 ms and
-  p99/max 1.310/1.399 ms (pre-worker protocol 1; worker protocol 2),
-  46,226,704/47,373,648-byte artifacts pinned in
+  baseline/current p50 0.813/0.794 ms, p95 1.184/0.896 ms and
+  p99/max 1.296/1.292 ms (pre-worker protocol 1; worker protocol 2),
+  46,226,704/47,287,632-byte artifacts pinned in
   `verification/measurements/`. This is local launch, not cold SSH
   deployment, TUI cell-grid paint or native macOS/aarch64 evidence.
 - **Scoped worker control-frame latency** (0058 WK20, not full
   performance qualification): the stripped static worker on WSL2
   completed eight warmups and 64 serial Health requests through the
-  real framed IPC; write+flush-to-result p50 0.196 ms, p95 0.248 ms,
-  p99/max 0.274 ms for the 47,373,648-byte artifact (sha256
-  7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b)
+  real framed IPC; write+flush-to-result p50 0.195 ms, p95 0.213 ms,
+  p99/max 0.292 ms for the 47,287,632-byte artifact (sha256
+  4e4fecfd0eb7a42574c6c5a52ed84cfa022eb79e4c1326b2e768829ef82ec996)
   with raw samples and request bytes pinned in
-  `verification/measurements/`. Cold remote deployment and LSP
-  remain unmeasured.
+  `verification/measurements/`. Remote deployment and LSP have
+  separate scoped measurements; this is only local control latency.
 - **Scoped real editor semantic-frame latency** (0058 WK20, not TUI
   render qualification): clean pre-worker and current static binaries
   each performed eight warmups plus 64 `--ui-stdio` text edits on the
   same WSL2 host after the editor opened a 10,000-line file through
   one real worker. Every returned frame visibly contains the next
-  edit. Baseline/current write+flush-to-view p50 was 0.232/0.234 ms,
-  p95 0.330/0.291 ms, p99/max 0.482/0.529 ms; raw samples,
+  edit. Baseline/current write+flush-to-view p50 was 0.236/0.236 ms,
+  p95 0.296/0.327 ms, p99/max 0.536/0.481 ms; raw samples,
   artifact hashes, framed bytes and RSS/threads are archived under
   `verification/measurements/`. This scoped local result does not
   qualify TUI paint, SSH/container deployment or LSP on other targets.
@@ -213,16 +225,16 @@
   two static artifacts each completed eight warmups and 64 real
   worker-backed TUI insertions in a 10,000-line file at 120×30.
   Each sample ends only after the PTY's VT100-decoded grid shows
-  the next exact edit. Baseline/current p50 0.976/0.908 ms, p95
-  1.541/1.289 ms, p99/max 1.668/1.565 ms on Linux Docker-on-WSL2.
+  the next exact edit. Baseline/current p50 0.937/0.959 ms, p95
+  1.438/1.320 ms, p99/max 2.704/1.709 ms on Linux Docker-on-WSL2.
   Raw samples and method digest are archived; SSH/container deployment
   on other native targets, LSP and TUI paint there remain release gates.
 - **Scoped loaded terminal output latency** (0058 WK20): matched static
   artifacts each handled 64 two-key input requests that produced 256
   real worker-PTY shell lines; every timer stopped at the exact final
-  VT100-painted grid marker. Linux Docker-on-WSL2 baseline/wake-fixed
-  p50 4.469/4.794 ms, p95 5.167/5.544 ms, p99/max 5.402/5.801 ms.
-  The pre-fix worker's p50 256.634 ms regression and both after-fix raw
+  VT100-painted grid marker. Linux Docker-on-WSL2 baseline/session-safe
+  p50 4.335/4.922 ms, p95 5.028/5.462 ms, p99/max 5.694/5.974 ms.
+  The pre-fix worker's p50 256.634 ms regression and current raw
   samples are archived. This does not qualify remote, LSP,
   memory high-water or the other native target profiles.
 - **Scoped real SSH and container worker deployment latency** (0058
@@ -247,10 +259,10 @@
   warmups and 64 actual `rust-analyzer` `gd` requests from the
   product UI to a painted definition on Linux x86_64 WSL2.
   Pre-worker/worker p50/p95/p99/max was
-  25.558/25.733/25.825/25.825 ms versus
-  25.445/25.561/25.615/25.615 ms. A separate edit→`didChange`→
-  `gd`→paint route measured 25.663/26.022/26.176/26.176 ms
-  versus 25.686/25.925/26.054/26.054 ms. The latter is a
+  25.537/25.750/25.925/25.925 ms versus
+  25.464/25.627/25.736/25.736 ms. A separate edit→`didChange`→
+  `gd`→paint route measured 25.738/26.029/26.195/26.195 ms
+  versus 25.647/25.896/26.156/26.156 ms. The latter is a
   combined user-visible sync/request bound, not a standalone
   `didChange` acknowledgment. Other native targets and the final
   exact-source artifact remain unqualified.

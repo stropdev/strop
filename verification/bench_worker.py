@@ -3,7 +3,7 @@
 
 Run this script on each release target with its own native executable:
   python3 -B verification/bench_worker.py --binary target/release/strop \
-      --protocol 2 --version 0.35.0 --target x86_64-unknown-linux-musl
+      --protocol 2 --version 0.36.0 --target x86_64-unknown-linux-musl
 
 Reports raw samples and nearest-rank p50/p95/p99/max, not a speedup claim.
 The first launch is reported separately; subsequent runs are warmed local

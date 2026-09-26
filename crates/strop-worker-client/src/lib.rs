@@ -15,8 +15,8 @@
 //! - **Shared across compatible contexts, bounded, retired.** Clones of
 //!   one `Worker` share the single connection to the one worker process
 //!   of their compatible context; when the last clone drops, the worker
-//!   is shut down and reaped. There is no second worker per context and
-//!   no cross-session sharing.
+//!   is shut down and reaped. Its editor owner can close the lease early:
+//!   outstanding clones cannot reconnect after that closure.
 //! - **Cancellation propagates.** A cancelled [`CancelToken`] sends the
 //!   protocol `cancel` for the in-flight request; a mid-stream cancel of
 //!   a read payload ends the stream without its announced bytes, which
@@ -38,6 +38,7 @@ mod payload;
 mod session;
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
 
@@ -150,12 +151,18 @@ impl Worker {
     /// incarnation is replaced by a fresh one with fresh session
     /// authority; handles minted by the dead incarnation fail closed.
     fn connection(&self) -> Result<Arc<Conn>, ClientError> {
+        if self.shared.closed.load(Ordering::Acquire) {
+            return Err(ClientError::Closed);
+        }
         if let Some(conn) = self.shared.slot.lock().as_ref() {
-            if conn.alive() {
+            if conn.alive() && !self.shared.closed.load(Ordering::Acquire) {
                 return Ok(Arc::clone(conn));
             }
         }
         let _serialize = self.shared.connecting.lock();
+        if self.shared.closed.load(Ordering::Acquire) {
+            return Err(ClientError::Closed);
+        }
         if let Some(conn) = self.shared.slot.lock().as_ref() {
             if conn.alive() {
                 return Ok(Arc::clone(conn));
@@ -611,6 +618,19 @@ impl Worker {
         }
         *self.shared.slot.lock() = None;
         Ok(())
+    }
+
+    /// Permanently close an editor-owned lease. Unlike `shutdown`,
+    /// outstanding job clones cannot reconnect after their owner exits.
+    /// A concurrent connection attempt either finishes before close
+    /// retires it or observes `Closed` without spawning another worker.
+    pub fn close(&self) {
+        self.shared.closed.store(true, Ordering::Release);
+        let _serialize = self.shared.connecting.lock();
+        let conn = self.shared.slot.lock().take();
+        if let Some(conn) = conn {
+            conn.retire();
+        }
     }
 }
 

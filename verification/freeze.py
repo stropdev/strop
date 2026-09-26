@@ -21,8 +21,8 @@ Recorded, all from the live tree — never from memory:
   * Zig bootstrap pin (version + per-platform digests) from
     .github/scripts/install-zig.sh;
   * the Verus crate pins from strop-core (including worker admission).
-  * the exact native worker handshake/size/RSS benchmark harness bytes
-    and the separate warm control-frame roundtrip harness bytes;
+  * the exact native worker handshake/size/RSS, warm control-frame, LSP,
+    and 17 MiB UI-transfer/retirement benchmark method and raw bytes;
 
 Boring tools only: python3 stdlib + git + sha256 of files.
 
@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 
 from lsp_evidence import validate as validate_native_lsp
+from transfer_evidence import validate as validate_transfer
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "dist" / "worker-candidate.json"
@@ -98,6 +99,7 @@ WORKER_SOURCES = [
     "crates/strop-worker-deploy/src/cache.rs",
     "crates/strop-worker-deploy/src/container.rs",
     "crates/strop-worker-deploy/src/provider.rs",
+    "crates/strop-engine/src/editor/mod.rs",
     "crates/strop-engine/src/editor/namespace.rs",
     "crates/strop-engine/src/editor/io/save.rs",
     "crates/strop-engine/src/editor/remote/save.rs",
@@ -155,7 +157,7 @@ NATIVE_PRODUCT_REPORT = "verification/measurements/0058-linux-x86-native-product
 CONTAINER_DEPLOY_REPORT = "verification/measurements/0058-linux-x86-container-deploy.json"
 SSH_DEPLOY_REPORT = "verification/measurements/0058-linux-x86-ssh-deploy.json"
 
-SCHEMA = 9
+SCHEMA = 10
 
 
 def sha256_file(rel: str) -> str:
@@ -640,6 +642,9 @@ def freeze(allow_dirty: bool) -> dict:
         "linux_lsp_ui_evidence": validate_native_lsp(
             ROOT, LINUX_MEASUREMENTS[0], LINUX_MEASUREMENTS[1]
         ),
+        "linux_transfer_ui_evidence": validate_transfer(
+            ROOT, LINUX_MEASUREMENTS[0], LINUX_MEASUREMENTS[1]
+        ),
         "baseline": baseline_hashes(),
         "install_transaction": {
             "install.sh": sha256_file("install.sh"),
@@ -703,6 +708,7 @@ def check(path: Path) -> int:
         "linux_container_deployment_evidence",
         "linux_ssh_deployment_evidence",
         "linux_lsp_ui_evidence",
+        "linux_transfer_ui_evidence",
         "benchmark_sha256",
         "warm_roundtrip_benchmark_sha256",
         "verus_crate_pins",

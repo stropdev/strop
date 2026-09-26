@@ -7,7 +7,9 @@
 use std::io::Read as _;
 use std::path::Path;
 
-use strop_worker_client::{ClientError, StderrCapture, Transport, Worker};
+use strop_worker_client::{ClientError, Worker};
+#[cfg(target_os = "linux")]
+use strop_worker_client::{StderrCapture, Transport};
 use strop_workspace::operation::{CopyVersion, OperationIntent, OperationKind};
 use strop_workspace::ResourceLocation;
 
@@ -64,9 +66,9 @@ fn handshake_and_filesystem_round_trip_through_the_real_binary() {
 
 #[test]
 fn a_non_worker_binary_fails_the_handshake_typed() {
-    // /bin/true is a valid executable that is not a worker: readiness is
-    // the handshake, never a successful spawn, and never a fallback.
-    let worker = Worker::spawn_program("/bin/true");
+    // This test executable cannot serve the worker protocol. Readiness
+    // requires a handshake, not a process that merely spawned.
+    let worker = Worker::spawn_program(std::env::current_exe().unwrap());
     let (token, _handle) = token();
     match worker.health(&token) {
         Err(ClientError::Handshake(_)) | Err(ClientError::WorkerLost(_)) => {}

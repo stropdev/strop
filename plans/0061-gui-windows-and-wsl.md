@@ -1,9 +1,11 @@
 # 0061 — Final GUI arc: native Windows presentation, WSL editor engine
 
-Status: requested architectural/product/testing handoff; **not GUI implementation
-permission for the current TUI release**. The user wants the GUI after the desired
-TUI features and bug-hardening, with the entire supported editor experience—not
-an empty window, text-editor subset or independent second editor.
+Status: requested architectural/product/testing handoff; implementation
+begins **after the native worker and auto-completion releases**. The user
+explicitly moved GUI work ahead of the debugger experience; this
+reorders implementation, not an assertion that debugger UI has shipped.
+The GUI still needs the entire supported editor experience—not an empty
+window, text-editor subset or independent second editor.
 
 This refines [0038](0038-remote-experience-and-responsiveness.md)'s GPUI direction
 and [0055](0055-embedded-terminal-tui-and-gui.md)'s later GUI terminal milestone.
@@ -12,10 +14,13 @@ and [0055](0055-embedded-terminal-tui-and-gui.md)'s later GUI terminal milestone
 
 **Entry gate:** [0056](0056-architecture-prerequisites.md) AR01–AR16,
 [0057](0057-core-verification-and-assurance.md) VF01–VF20,
-[0058](0058-unified-native-worker.md) WK01–WK20, 0059 completion and 0060 debugger/
-TUI ledgers are complete first. Shared architecture, baseline verification and the
-native-worker assurance cutover are preceding releases, not GUI implementation work.
-UI01–UI18 still prove integration and full behavior over that requalified core.
+[0058](0058-unified-native-worker.md) WK01–WK20 and 0059 completion
+are complete first. The user's 2026-09-26 priority change allows
+GUI implementation to start before 0060 debugger/TUI ledgers close.
+This does **not** remove UI10 from the GUI release criteria below:
+debugger work may land during the GUI arc, but an incomplete debugger
+cannot be represented as completed parity without explicit approval
+and a roadmap impact/re-entry record.
 
 ## 1. Decision: keep GPUI, keep all workspace execution in WSL
 
@@ -83,8 +88,10 @@ or weaken an acceptance criterion to protect the original toolkit choice.
 ## 2. Entry conditions and required release ledger
 
 The GUI follows completion/hardening of the desired TUI arcs: 0051 R01–R11,
-0053 S01–S10, 0054 F01–F12, 0055 T01–T10, **0056 AR01–AR16**, **0057 VF01–VF20**,
-**0058 WK01–WK20**, **0059 C01–C09** and **0060 DBG01–DBG16**. Reconcile their evidence.
+0053 S01–S10, 0054 F01–F12, 0055 T01–T10, **0056 AR01–AR16**,
+**0057 VF01–VF20**, **0058 WK01–WK20** and **0059 C01–C09**.
+Reconcile their evidence. **0060 DBG01–DBG16 remains a requirement
+for UI10 and the complete GUI release, not for beginning GUI work.**
 0046's readonly frontend boundary is closed by 0056, not by this GUI release.
 
 The first GUI product release targets **Windows 11 x64 + supported WSL2 Linux

@@ -58,6 +58,12 @@ impl Incarnation {
     }
 }
 
+#[derive(Default)]
+struct IncarnationTable {
+    closed: bool,
+    entries: HashMap<String, Incarnation>,
+}
+
 /// A lease and the one observed incarnation it can serve. The worker
 /// factory independently revalidates this identity on every reconnect.
 pub(crate) struct BoundWorker {
@@ -157,7 +163,7 @@ impl BoundWorker {
 /// take the short table lock and never wait for Docker or upload I/O.
 #[derive(Clone, Default)]
 pub(crate) struct ContainerWorkers {
-    inner: Arc<Mutex<HashMap<String, Incarnation>>>,
+    inner: Arc<Mutex<IncarnationTable>>,
 }
 
 impl ContainerWorkers {
@@ -166,8 +172,15 @@ impl ContainerWorkers {
         identity: &ContainerIdentity,
         engine: EngineRef,
     ) -> Result<(), FsFailure> {
-        let mut entries = self.inner.lock();
-        let slot = entries
+        let mut table = self.inner.lock();
+        if table.closed {
+            return Err(failure(
+                FsFailureKind::Cancelled,
+                "editor worker owner closed",
+            ));
+        }
+        let slot = table
+            .entries
             .entry(identity.id.clone())
             .or_insert_with(|| Incarnation::new(identity));
         if slot.started_at != identity.started_at {
@@ -191,17 +204,21 @@ impl ContainerWorkers {
     }
 
     pub(crate) fn get(&self, identity: &ContainerIdentity) -> Option<Arc<BoundWorker>> {
-        self.inner.lock().get(&identity.id).and_then(|slot| {
-            (slot.started_at == identity.started_at)
-                .then(|| slot.entry.ready.get().cloned())
-                .flatten()
-        })
+        self.inner
+            .lock()
+            .entries
+            .get(&identity.id)
+            .and_then(|slot| {
+                (slot.started_at == identity.started_at)
+                    .then(|| slot.entry.ready.get().cloned())
+                    .flatten()
+            })
     }
 
     /// Match a captured repository/service request to exactly the
     /// attached container incarnation without copying its environment.
     pub(crate) fn get_for(&self, id: &ContainerId, started_at: &str) -> Option<Arc<BoundWorker>> {
-        self.inner.lock().get(id.as_str()).and_then(|slot| {
+        self.inner.lock().entries.get(id.as_str()).and_then(|slot| {
             (slot.started_at == started_at)
                 .then(|| slot.entry.ready.get().cloned())
                 .flatten()
@@ -220,22 +237,36 @@ impl ContainerWorkers {
     ) -> Result<Arc<BoundWorker>, FsFailure> {
         let id = ContainerId::canonical(identity.id.clone())
             .map_err(|error| failure(FsFailureKind::Protocol, error.to_string()))?;
-        let entry = self
-            .inner
-            .lock()
-            .get(&identity.id)
-            .filter(|slot| slot.started_at == identity.started_at)
-            .map(|slot| Arc::clone(&slot.entry))
-            .ok_or_else(|| {
-                failure(
-                    FsFailureKind::Conflict,
-                    "attach this container incarnation before admitting its worker",
-                )
-            })?;
+        let entry = {
+            let table = self.inner.lock();
+            if table.closed {
+                return Err(failure(
+                    FsFailureKind::Cancelled,
+                    "editor worker owner closed",
+                ));
+            }
+            table
+                .entries
+                .get(&identity.id)
+                .filter(|slot| slot.started_at == identity.started_at)
+                .map(|slot| Arc::clone(&slot.entry))
+                .ok_or_else(|| {
+                    failure(
+                        FsFailureKind::Conflict,
+                        "attach this container incarnation before admitting its worker",
+                    )
+                })?
+        };
         if let Some(worker) = entry.ready.get() {
             return Ok(Arc::clone(worker));
         }
         let _admitting = entry.admitting.lock();
+        if self.inner.lock().closed {
+            return Err(failure(
+                FsFailureKind::Cancelled,
+                "editor worker owner closed",
+            ));
+        }
         if let Some(worker) = entry.ready.get() {
             return Ok(Arc::clone(worker));
         }
@@ -321,8 +352,41 @@ impl ContainerWorkers {
             artifact: ready.object,
             worker: worker_lease,
         });
-        let published = entry.ready.set(Arc::clone(&worker));
-        debug_assert!(published.is_ok(), "one container admission per identity");
+        let published = {
+            let table = self.inner.lock();
+            if table.closed {
+                false
+            } else {
+                let published = entry.ready.set(Arc::clone(&worker));
+                debug_assert!(published.is_ok(), "one container admission per identity");
+                true
+            }
+        };
+        if !published {
+            worker.worker().close();
+            return Err(failure(
+                FsFailureKind::Cancelled,
+                "editor worker owner closed",
+            ));
+        }
         Ok(worker)
+    }
+
+    /// Permanently close the editor's admitted incarnation leases.
+    /// A deploy already in flight closes its private client at publish.
+    pub(crate) fn close_all(&self) {
+        let entries = {
+            let mut table = self.inner.lock();
+            if table.closed {
+                return;
+            }
+            table.closed = true;
+            std::mem::take(&mut table.entries)
+        };
+        for (_, incarnation) in entries {
+            if let Some(worker) = incarnation.entry.ready.get() {
+                worker.worker().close();
+            }
+        }
     }
 }

@@ -536,6 +536,21 @@ fn shutdown_then_next_request_spawns_a_fresh_incarnation() {
     worker.shutdown().unwrap();
 }
 
+#[test]
+fn closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect() {
+    let worker = worker();
+    let clone = worker.clone();
+    let (token, _handle) = token();
+    worker.health(&token).unwrap();
+    assert!(clone.session().is_some());
+    worker.close();
+    assert!(worker.session().is_none());
+    assert!(matches!(clone.health(&token), Err(ClientError::Closed)));
+    assert!(matches!(clone.capabilities(), Err(ClientError::Closed)));
+    clone.close();
+    assert!(matches!(worker.health(&token), Err(ClientError::Closed)));
+}
+
 /// A deployed worker's handshake binds to the *endpoint's* target, not
 /// the client's platform (0058 WK08): a lease admitted for a foreign
 /// triple accepts exactly that triple and refuses any other — the same

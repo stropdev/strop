@@ -164,6 +164,18 @@ per transport.
   a chunk cannot arrive before its stream exists. The client binds
   stdin/resize/revoke to the admitting connection; a new
   incarnation cannot inherit a reused numeric exec ID.
+- **Editor-owned lease retirement (0.36.0)**: closing any editor backend
+  cancels its jobs, stops LSP clients and permanently closes its admitted
+  SSH/container and local worker leases. The client sends `shutdown`,
+  waits at most two seconds for `bye`, then terminates and reaps its
+  owned child. A background clone remaining after the owner closes
+  cannot spawn a replacement: new requests return `ClientError::Closed`.
+  Publication racing SSH/container owner closure retires its private
+  client and reports cancellation. Explicit `Worker::shutdown` remains
+  a different operation: its still-owned lease may later reconnect.
+  This does not make a container PID 1 that fails to reap its own
+  Docker-exec children into a reaper; that external no-init case is
+  measured and reported separately under 0058 WK20.
 
 
 WK04 integration amendments (integration-owner approved 2026-09-24):

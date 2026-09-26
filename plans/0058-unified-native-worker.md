@@ -26,7 +26,8 @@ target profile.
 ```text
 0054 filesystem -> 0055 TUI terminal -> 0056 architecture -> 0057 core verification
     -> 0058 unified native worker + assurance migration
-    -> [deferred last:] 0059 completion -> 0060 debugger -> 0061 GUI (+ 0062 distribution)
+    -> 0059 completion -> 0061 GUI implementation
+    -> 0060 debugger before GUI UI10/release (+ 0062 distribution)
 ```
 
 The user explicitly chose deployment of a native worker: development hosts normally
@@ -616,10 +617,10 @@ timeout nor special-casing 256 lines repairs the cause.
 
 The wake-first service loop now drains its bounded backlog before
 parking. On the same static host and 256-line PTY fixture, baseline/
-wake-fixed worker write→paint p50 was 4.469/4.794 ms, p95
-5.167/5.544 ms, p99/max 5.402/5.801 ms; each of 64 sampled markers
-landed in the decoded physical grid. The 250 ms cliff is gone on
-this Linux target, not proved absent on native Mac/arm.
+session-safe worker write→paint p50 was 4.335/4.922 ms, p95
+5.028/5.462 ms, p99/max 5.694/5.974 ms; each of 64 sampled
+markers landed in the decoded physical grid. The 250 ms cliff is
+gone on this Linux target, not proved absent on native Mac/arm.
 
 This does not enable SSH/container interactive terminals ahead of their authorized
 milestones: unsupported capabilities remain disabled even if transport primitives
@@ -904,8 +905,11 @@ assumptions, bounds, calibration failures, native platforms and code/artifact ha
 LSP/input/source baseline and adds its own query/index/acceptance claims.
 [0060 debugger](0060-debugger-workflow-and-architecture.md) consumes native worker
 execution/streams/context/leases, not a new Python supervisor or installer.
-[0061 GUI](0061-gui-windows-and-wsl.md) consumes the WSL engine's worker-backed services
-through the separate UI protocol; it does not deploy another remote engine.
+The user advanced [0061 GUI](0061-gui-windows-and-wsl.md) implementation to
+immediately after 0059; its complete release still needs 0060 for UI10
+unless that release criterion is explicitly amended. The GUI consumes
+the WSL engine's worker-backed services through the separate UI protocol;
+it does not deploy another remote engine.
 [0062 distribution](0062-distribution-and-wsl-onboarding.md) packages the exact worker-
 capable backend and extends existing deployment identities for Windows/WSL onboarding.
 All C01–C09, DBG01–DBG16, UI01–UI18 and PKG01–PKG14 scope remains unchanged.
@@ -1249,27 +1253,27 @@ do not establish OS lock behavior or native macOS/arm execution.
 ### WK20 scoped static worker, UI, TUI and loaded-terminal measurements: local Linux only
 
 On the WSL2 Ryzen 9950X3D, clean pre-worker `a05d84f` and the
-wake-fixed stripped 47,373,648-byte x86_64 musl worker (`sha256
-7cdd60f850c527e10b3834cae7f9e52c40a1c4ddb9033a06ab3eaf03f5b01d1b`)
+session-safe stripped 47,287,632-byte x86_64 musl worker (`sha256
+4e4fecfd0eb7a42574c6c5a52ed84cfa022eb79e4c1326b2e768829ef82ec996`)
 each ran eight warmups and 64 real Hello/Welcome launches (pre-worker
 protocol 1; native worker protocol 2). Baseline/current readiness p50
-was 0.798/0.765 ms, p95 1.066/0.992 ms, p99/max 1.310/1.399 ms;
-the binaries were 46,226,704/47,373,648 bytes. The wake-fixed
-worker completed eight warmups and 64 serial Health requests through
-real framed IPC: write+flush to result p50 0.196 ms, p95 0.248 ms,
-p99/max 0.274 ms. Neither protocol-different warm launches nor these
+was 0.813/0.794 ms, p95 1.184/0.896 ms, p99/max 1.296/1.292 ms;
+the binaries were 46,226,704/47,287,632 bytes. The native worker
+completed eight warmups and 64 serial Health requests through real
+framed IPC: write+flush to result p50 0.195 ms, p95 0.213 ms,
+p99/max 0.292 ms. Neither protocol-different warm launches nor these
 samples establish a speedup.
 `verification/bench_worker.py` and
 `verification/bench_worker_roundtrip.py` pin raw samples, artifact
 digests, RSS/threads and request bytes in `verification/measurements/`.
 
-The same clean pre-worker and wake-fixed worker artifacts each ran eight
+The same clean pre-worker and session-safe worker artifacts each ran eight
 warmups and 64 real `--ui-stdio` committed-text actions after the
 editor opened a 10,000-line file through one live worker at 120×40.
 `verification/bench_ui_input_frame.py` checks that each complete
 semantic-view frame visibly contains the next edit on line 5000.
-Baseline/current write+flush→view p50 was 0.232/0.234 ms, p95
-0.330/0.291 ms, p99/max 0.482/0.529 ms. This local comparison is
+Baseline/current write+flush→view p50 was 0.236/0.236 ms, p95
+0.296/0.327 ms, p99/max 0.536/0.481 ms. This local comparison is
 not a platform-wide no-regression result. Raw samples, framed
 bytes and observed worker/editor RSS and thread counts are archived.
 
@@ -1278,11 +1282,11 @@ On the same two static artifacts, the real 120×30 TUI opened the
 single-character edits. The opt-in
 `terminal_editor::native_terminal_input_to_painted_frame_samples`
 waits until the VT100-decoded **cell grid** displays each exact edit:
-baseline/current key-write→paint p50 0.976/0.908 ms, p95
-1.541/1.289 ms, p99/max 1.668/1.565 ms. The matched nine-path
+baseline/current key-write→paint p50 0.937/0.959 ms, p95
+1.438/1.320 ms, p99/max 2.704/1.709 ms. The matched nine-path
 `verification/bench_native_product.py` also records 256-line loaded
-PTY output→paint p50 4.469/4.794 ms, p95 5.167/5.544 ms,
-p99/max 5.402/5.801 ms, with raw samples and artifact/source
+PTY output→paint p50 4.335/4.922 ms, p95 5.028/5.462 ms,
+p99/max 5.694/5.974 ms, with raw samples and artifact/source
 digests in `verification/measurements/`.
 
 The PR native matrix now builds both releases on each GNU x86_64/
@@ -1320,11 +1324,11 @@ The same host measured eight warmups and 64 real installed
 `rust-analyzer` definition replies through `strop --ui-stdio` on
 matched static pre-worker and worker artifacts. Input `gd` to the
 painted definition measured p50/p95/p99/max
-25.558/25.733/25.825/25.825 ms before and
-25.445/25.561/25.615/25.615 ms after. A separate 64-sample
+25.537/25.750/25.925/25.925 ms before and
+25.464/25.627/25.736/25.736 ms after. A separate 64-sample
 trailing-space edit→`didChange`→`gd`→paint route measured
-25.663/26.022/26.176/26.176 ms before and
-25.686/25.925/26.054/26.054 ms after. That second path is an
+25.738/26.029/26.195/26.195 ms before and
+25.647/25.896/26.156/26.156 ms after. That second path is an
 end-to-end sync/request upper bound, **not** a standalone
 `didChange` acknowledgment or a claimed speedup. Both targets
 retained one actual local worker; server readiness alone was not
@@ -1338,19 +1342,35 @@ A distinct cold-transfer probe opens a 17,280,000-byte/10,000-line
 plain-text file through each real `strop --ui-stdio` backend and its
 one worker, checks both first and final source lines, samples Linux
 kernel `VmHWM` (macOS: only observed current RSS), then records the
-worker's state **immediately after editor exit**. A WSL2 one-run
-smoke observed the original pre-worker process still sleeping after
-the editor exited; the fixture kills only its pinned worker **after**
-recording that state. Neither this pilot nor the per-test cleanup
-claims later reaping, retained-memory bounds or remote transfer
-qualification. PR runners now schedule eight warmups and 64 real
-journeys per matched artifact on each native CPU; archive their raw
-count/byte/RSS/latency records and re-run on the final source before
-closing WK20.
+worker's state **immediately after editor exit**. Eight warmups
+and 64 matched static-artifact samples on WSL2 first exposed a real
+release blocker: the original pre-worker binary and the intermediate
+0.35.0 worker candidate (`4e4fecfd`) each left **64/64** workers
+sleeping after the editor exited. The fixture killed only its pinned
+worker **after** observing that state; this was containment, not a fix.
+The editor's universal Drop cancelled jobs and stopped LSP clients
+but left local/SSH/container worker retirement to the last clone,
+which background jobs could retain beyond backend exit.
 
-The schema-9 diagnostic freeze checks scoped artifact, fixture, method,
-LSP server identity and raw-percentile bindings. A dirty tree fails
-`freeze.py --check`; even a clean exact freeze cannot pass
+The 0.36.0 static candidate (`cc6a15a6`) permanently closes the
+editor-owned local lease and every admitted SSH/container lease at
+the shutdown boundary, outside input→render. `Worker::close` serializes
+against connection creation and returns `ClientError::Closed` to
+outstanding clones; shared admission tables reject or retire a
+publication racing closure. A matched 64-run release-binary transfer
+now observed **zero surviving workers after editor exit in every
+candidate run** versus 64/64 survivors from the original baseline.
+Open→visible p50/p95/max was 78.169/78.738/78.858 ms baseline and
+78.170/78.876/79.156 ms candidate. Worker kernel `VmHWM` p50
+increased from 5,040 to 7,264 KiB; editor `VmHWM` p50 changed from
+34,284 to 34,176 KiB. These exact bytes and raw 64-per-artifact
+samples are in `verification/measurements/0058-linux-x86-*-transfer-ui.json`.
+This proves local Linux shutdown after the 17 MiB journey, **not**
+remote transfer, macOS retirement or a universal bounded-memory claim.
+
+The schema-10 diagnostic freeze checks scoped artifact, fixture, method,
+LSP server identity, 17 MiB raw transfer/retirement and percentiles.
+A dirty tree fails `freeze.py --check`; even a clean exact freeze cannot pass
 `check.py --release` while `WPERF-FULL`/`WPLAT-NATIVE` remain
 blocked. Final-source LSP sync/request on the other native targets,
 transfer/retirement high-water, cold/warm SSH/container beyond this
