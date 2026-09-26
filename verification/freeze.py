@@ -51,6 +51,7 @@ DEFAULT_OUT = ROOT / "dist" / "worker-candidate.json"
 # Every entry ships in the candidate or governs deployment/recovery;
 # the pre-worker helper list is historical evidence, not a live input.
 WORKER_SOURCES = [
+    "crates/strop-trace/src/replay.rs",
     "crates/strop-core/src/worker.rs",
     "crates/strop-core/src/worker/cache_record.rs",
     "crates/strop-core/src/worker/session.rs",

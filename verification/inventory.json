@@ -670,7 +670,7 @@
         },
         {
           "id": "EVT-RECORD",
-          "statement": "Trace lifecycle is exclusive/ordered/durable within the declared budget; readers reject sequence gaps, duplicates and trailing records; caps end with an explicit incomplete marker; metadata export removes every content-bearing field.",
+          "statement": "Trace lifecycle is exclusive/ordered/durable within the declared budget; readers reject sequence gaps, duplicates and trailing records; caps end with an explicit incomplete marker; metadata export removes every content-bearing field. Replay checkpoint errors identify only a schema-owned mismatching field, never a captured document/register/cell value.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -683,7 +683,8 @@
                 "event_cap_ends_with_explicit_incomplete_terminal_marker",
                 "oversize_record_marks_capture_incomplete",
                 "metadata_export_removes_every_content_bearing_field",
-                "replay_nodes_require_complete_full_content_capture"
+                "replay_nodes_require_complete_full_content_capture",
+                "tape_divergences_are_sticky_and_never_reach_native"
               ]
             }
           ],
@@ -705,10 +706,10 @@
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
           "crates/strop-trace/src/event.rs": "8863ed01aa88c21609f137fd201a22e7db1be8b76adf6111f600f24399d9e963",
           "crates/strop-trace/src/export.rs": "882480107025c2d7f38aacba111d18f70ae8eef71e4c42fce06f2fd950ac63ec",
-          "crates/strop-trace/src/replay.rs": "e2e3578f5c7f23964609778eb4f77d7d572c55572c5affed67c88fdfde91b2c8",
+          "crates/strop-trace/src/replay.rs": "6879786d0d4cc22ab4220c39329338030c73bfa39189ca3e4c710f2a99226567",
           "crates/strop-trace/src/writer.rs": "20ea24a24dcf8f88321e8d4cb2ef9fb40c6fb7ede89ed9ec69c0fdbab2923591"
         },
-        "evidence": "8f1c4faad7d163f94b474c9ab9457f5fa13c17f6a8fe7833d270c1904e365c28"
+        "evidence": "054500e1b056abd0c7043e254da088f2179435a8f36e3f9bfd582e54c564250f"
       }
     },
     {

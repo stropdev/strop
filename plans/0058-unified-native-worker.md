@@ -1496,6 +1496,16 @@ SSH, binary and terminal tests independently. This does **not**
 claim the macOS TUI is fixed; the rerun must prove it or expose
 the retained screen/trace at the failed boundary.
 
+Run [`36275307940`](https://github.com/stropdev/strop/actions/runs/36275307940)
+bounded the Apple Silicon TUI journey: SSH, worker binary and
+real terminal quit all passed, but the execution-free forensic
+replay then refused `editor state diverged` after the captured
+terminal session. No source bytes or trace content appeared in the
+error, and the fixture's scoped files were deleted on failure.
+`Tape::check` now names only the first mismatching schema-owned
+observation field, never its value; the failed native replay must
+be diagnosed and corrected before Mac/platform qualification.
+
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.
 `WDEP-GC` now has a serialized native caller, two-worker/SSH/container

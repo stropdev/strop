@@ -472,6 +472,73 @@ impl Tape {
         if self.is_replay() {
             match self.pop()? {
                 Node::Check { value: expected } if value == expected => Ok(()),
+                Node::Check { value: expected } => {
+                    // Never print captured values (documents, registers,
+                    // paths or terminal output). The first differing
+                    // schema-owned field is enough to locate the
+                    // producer without leaking the private observation.
+                    let reason = [
+                        ("documents", "replay documents diverged"),
+                        ("panes", "replay panes diverged"),
+                        ("mru", "replay buffer order diverged"),
+                        ("active", "replay active pane diverged"),
+                        ("mode", "replay editor mode diverged"),
+                        ("quit", "replay quit state diverged"),
+                        ("message", "replay status message diverged"),
+                        ("headless", "replay logical state diverged"),
+                        ("hover", "replay hover state diverged"),
+                        ("hunks", "replay hunk state diverged"),
+                        ("staged_hunks", "replay staged hunks diverged"),
+                        ("picker_items", "replay picker state diverged"),
+                        ("columns", "replay frame columns diverged"),
+                        ("rows", "replay frame rows diverged"),
+                        ("cursor", "replay frame cursor diverged"),
+                        ("cells", "replay private frame cells diverged"),
+                    ]
+                    .into_iter()
+                    .find(|(field, _)| expected.get(field) != value.get(field))
+                    .map_or("editor state diverged", |(_, reason)| reason);
+                    let nested = if reason == "replay logical state diverged" {
+                        expected
+                            .get("headless")
+                            .and_then(Value::as_str)
+                            .zip(value.get("headless").and_then(Value::as_str))
+                            .and_then(|(left, right)| {
+                                serde_json::from_str::<Value>(left)
+                                    .ok()
+                                    .zip(serde_json::from_str::<Value>(right).ok())
+                            })
+                    } else {
+                        None
+                    };
+                    if let Some((left, right)) = nested {
+                        let reason = [
+                            ("mode", "replay logical mode diverged"),
+                            ("cursor", "replay logical cursor diverged"),
+                            ("line", "replay logical line diverged"),
+                            ("col", "replay logical column diverged"),
+                            ("pending", "replay pending input diverged"),
+                            ("message", "replay logical message diverged"),
+                            ("extra_cursors", "replay selection state diverged"),
+                            ("panes", "replay logical panes diverged"),
+                            ("active_pane", "replay logical active pane diverged"),
+                            ("picker", "replay logical picker diverged"),
+                            ("picker_input", "replay picker input diverged"),
+                            ("picker_items", "replay picker count diverged"),
+                            ("picker_streaming", "replay picker stream diverged"),
+                            ("register", "replay register state diverged"),
+                            ("dirty", "replay dirty state diverged"),
+                            ("terminal", "replay terminal state diverged"),
+                            ("should_quit", "replay logical quit diverged"),
+                            ("documents", "replay logical documents diverged"),
+                        ]
+                        .into_iter()
+                        .find(|(field, _)| left.get(field) != right.get(field))
+                        .map_or(reason, |(_, reason)| reason);
+                        return self.fail(reason);
+                    }
+                    self.fail(reason)
+                }
                 _ => self.fail("editor state diverged"),
             }
         } else {
