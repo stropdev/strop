@@ -5,19 +5,19 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-tui-frame.json",
-    "sha256": "3807514fdc42fda9507d168dd936ae059219a8ff0a5dfc02ef90121a80f69eb6"
+    "sha256": "92f5f77f10a6256fe034d2204bced2e26cbba311b5da98ed8d5169e9ef2e4375"
   },
   "candidate": {
     "commit": null,
     "state": "binary measured before final committed worker candidate",
     "artifact_sha256": "67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130",
     "measurement": "verification/measurements/0058-linux-x86-worker-tui-frame.json",
-    "sha256": "1246cd098507d3597a64b00d96399eb735d273b992d65ae07ed01e28a131d121"
+    "sha256": "70376bd869e9598774bda8528a6ef8018ffa2762367c3657ff4a4a7369955b2a"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
     "test": "native_terminal_input_to_painted_frame_samples",
-    "sha256": "a3c8b6376a28ad7e7e1b4775fd7d4ca6932319dadbd71585736088a1dfe62a54",
+    "sha256": "dcec35ee9067486f9d9be2b32af5637cb896e5296d5e71561d92bd65ddd41e8d",
     "warmup": 8,
     "samples_per_artifact": 64,
     "fixture_lines": 10000,
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 1.913,
-      "p50": 1.065,
-      "p95": 1.865,
-      "p99": 1.913
+      "max": 1.734,
+      "p50": 0.957,
+      "p95": 1.544,
+      "p99": 1.734
     },
     "candidate_ms": {
-      "max": 2.85,
-      "p50": 1.047,
-      "p95": 1.626,
-      "p99": 2.85
+      "max": 1.55,
+      "p50": 0.935,
+      "p95": 1.343,
+      "p99": 1.55
     }
   }
 }

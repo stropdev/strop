@@ -2183,7 +2183,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "Real PR run 36244126275 exercised native x86_64 and aarch64 GNU Store, worker-client protocol, editor and nested-terminal journeys successfully after provisioning the missing Neovim fixture. Both macOS runners actually executed native Store and worker supervisor tests but `kill(-PGID)` returned EPERM for a zombie-only group, turning finite exec and PTY exits into Lost; the guarded libproc source repair has not yet run on those runners. Exact final-candidate artifacts, passing Intel/arm journeys and archived raw target logs remain WPLAT-NATIVE release gates; Linux WSL2 and the passing intermediate GNU run do not qualify Mac or the final source.",
+          "statement": "Real PR run 36244126275 passed native x86_64/aarch64 GNU Store, worker-client and nested-editor journeys after installing the missing Neovim fixture. Run 36245536278 then passed all 19 native worker supervisor tests on both macOS architectures with the retained-zombie/libproc guard; Intel passed 20/21 worker-client cases but a test observed an empty marker between shell open and write, and Apple Silicon reached terminal-test compilation where openpty requires mutable pointers. The marker now appears only after an atomic fixture rename and the PTY passes mutable pointers; neither correction has yet passed native macOS CI. Passing exact final-candidate four-target journeys, artifacts and archived raw target logs remain WPLAT-NATIVE gates; passing intermediate runs do not qualify release.",
           "status": "blocked",
           "evidence": [
             {
@@ -2224,7 +2224,7 @@
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "2b44ee58f2f59ea6a72637899a2a9678099e3797c00aec61000277ef1d5c93c1"
+        "evidence": "c6f020abfddc3a6ec246402e5e8f3a222cfb9094d780bc8413d3249053cd27a1"
       }
     },
     {
@@ -2832,7 +2832,8 @@
         "crates/strop/tests/terminal_editor.rs",
         "verification/bench_worker.py",
         "verification/bench_worker_roundtrip.py",
-        "verification/bench_ui_input_frame.py"
+        "verification/bench_ui_input_frame.py",
+        "verification/bench_native_product.py"
       ],
       "claims": [
         {
@@ -2973,9 +2974,14 @@
         },
         {
           "id": "WS-TUI-FRAME",
-          "statement": "Linux x86_64 Docker-on-WSL2 pre-worker and native worker static artifacts each completed eight warmups and 64 actual 120x30 TUI PTY input journeys after opening a 10,000-line file through the local worker. A VT100-decoded physical cell grid verifies the exact edited line on every action before the timer stops. Baseline/candidate key-write-to-painted-grid p50 1.065/1.047 ms, p95 1.865/1.626 ms, p99/max 1.913/2.850 ms; raw 64-sample records and artifact digests are archived. This is scoped local input paint, not SSH/container, LSP, terminal output under load, or no-regression evidence at the candidate's higher p99.",
+          "statement": "Linux x86_64 Docker-on-WSL2 pre-worker and sampled native worker static artifacts each completed eight warmups and 64 actual 120x30 TUI PTY input journeys after opening a 10,000-line file through the local worker. A VT100-decoded cell grid verifies the exact edited line before every timer stop. Baseline/candidate key-write-to-painted-grid p50 0.957/0.935 ms, p95 1.544/1.343 ms, p99/max 1.734/1.550 ms; raw records, methods and artifact digests are archived. The cross-platform native product harness has also run these worker-backed UI and TUI paths on Linux; SSH/container, LSP, terminal output under load and other targets remain outside this scoped measurement.",
           "status": "native-tested",
           "evidence": [
+            {
+              "kind": "script",
+              "path": "verification/bench_native_product.py",
+              "gate": "benchmark"
+            },
             {
               "kind": "test",
               "path": "crates/strop/tests/terminal_editor.rs",
@@ -3008,7 +3014,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "WK20 still requires cold and warm SSH/container deployment, transfer/retirement high-water marks and worker counts under load, LSP sync/request and terminal output under load p50/p95/p99/max on every required native target. Scoped local Hello, Health, worker-backed UI-stdio semantic views and Linux Docker TUI cell-grid paints do not qualify these unmeasured paths; the candidate UI p95 and TUI p99 exceed their matched baselines.",
+          "statement": "WK20 still requires cold and warm SSH/container deployment, transfer/retirement high-water marks and worker counts under load, LSP sync/request and terminal output under load p50/p95/p99/max on every required native target. Scoped local Hello, Health, worker-backed UI-stdio semantic views and Linux Docker TUI cell-grid paints do not qualify these unmeasured paths; current semantic-view p95 exceeds its baseline, while TUI timing varies across runs and cannot establish platform-wide no regression.",
           "status": "blocked",
           "evidence": [
             {
@@ -3128,12 +3134,13 @@
           "crates/strop-worker/src/serve/fs.rs": "57601c334d6a1656fe12a63f4522009428612e75c038afc59b8c0774ae62f074",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
-          "crates/strop/tests/terminal_editor.rs": "a3c8b6376a28ad7e7e1b4775fd7d4ca6932319dadbd71585736088a1dfe62a54",
+          "crates/strop/tests/terminal_editor.rs": "dcec35ee9067486f9d9be2b32af5637cb896e5296d5e71561d92bd65ddd41e8d",
+          "verification/bench_native_product.py": "64c722a7ef8eb3511d8644607fa25e3222cb9a4dae55b8093e48a050801e3351",
           "verification/bench_ui_input_frame.py": "3daf76eabf9a1298386888df528af3f301725b0320fb1b68854f316b644fb8f9",
           "verification/bench_worker.py": "cbb606889fbde28c53ddba5bcf171fe19fff196989b9bc39c92f077a63ce83a1",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "ce2df9ebe8ebc04613528b546109d694559d1ae61ebddb32e1234a8d1985ef2d"
+        "evidence": "3fc063da7f022bc084fc5c05925676715198e20f99ce0077820c25a1bd08121d"
       }
     },
     {
@@ -3921,7 +3928,7 @@
           "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "6c446e0fc595276b79fb684ae283f0c1ab528636bad60607074413b428c28bd8"
+        "evidence": "254a40189d02ecd49444abb22fd80db92589624240f6e55023fa5aec44c95b5f"
       }
     },
     {

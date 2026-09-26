@@ -500,7 +500,7 @@ fn dropping_exec_output_drains_child_to_completion() {
                 program: b"/bin/sh".to_vec(),
                 argv: vec![
                     b"-c".to_vec(),
-                    b"head -c 8388608 /dev/zero; printf done > \"$1\"".to_vec(),
+                    b"head -c 8388608 /dev/zero && printf done > \"$1.tmp\" && mv \"$1.tmp\" \"$1\"".to_vec(),
                     b"sh".to_vec(),
                     marker.as_os_str().as_bytes().to_vec(),
                 ],

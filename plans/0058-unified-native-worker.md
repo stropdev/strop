@@ -1227,9 +1227,9 @@ On the same two static artifacts, the real 120×30 TUI opened the
 single-character edits. The opt-in
 `terminal_editor::native_terminal_input_to_painted_frame_samples`
 waits until the VT100-decoded **cell grid** displays each exact edit:
-baseline/current key-write→paint p50 1.065/1.047 ms, p95
-1.865/1.626 ms, p99/max 1.913/2.850 ms. These Linux Docker-on-WSL2
-samples do not establish no regression at the higher current p99.
+baseline/current key-write→paint p50 0.957/0.935 ms, p95
+1.544/1.343 ms, p99/max 1.734/1.550 ms. Scoped local samples
+vary across runs and do not establish platform-wide no regression.
 
 The schema-5 diagnostic freeze checks artifact, fixture, method and
 raw-percentile bindings, but records a dirty worktree; `--check`
@@ -1241,11 +1241,14 @@ found macOS exec/PTY `Lost` exits and missing nested `nvim` on both GNU
 runners. After provisioning that test fixture, run
 [`36244126275`](https://github.com/stropdev/strop/actions/runs/36244126275)
 passed native x86_64 and aarch64 GNU Store, worker client and editor
-journeys. Both macOS runners still failed the direct supervisor test:
-their zombie-only `kill(-PGID)` returned `EPERM`. The guarded `libproc`
-repair above has not yet passed native Mac CI, and the passing GNU run
-predates this source change. Mac/arm final-candidate qualification
-and full performance remain blocked.
+journeys. The later
+[`36245536278`](https://github.com/stropdev/strop/actions/runs/36245536278)
+passed all 19 direct supervisor tests on both macOS architectures with
+the guarded `libproc` repair. Intel still observed a test's marker
+between file open and write; Apple Silicon reached a TUI test whose
+`openpty` pointers were not mutable. Those fixture/portability fixes
+are now in source but have not passed native CI. Final-candidate
+Mac/arm qualification and full performance remain blocked.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

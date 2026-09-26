@@ -34,7 +34,7 @@ impl Tui {
         capture: bool,
     ) -> Self {
         let (mut master, mut slave) = (-1, -1);
-        let size = libc::winsize {
+        let mut size = libc::winsize {
             ws_row: 30,
             ws_col: 120,
             ws_xpixel: 0,
@@ -48,8 +48,8 @@ impl Tui {
                     &mut master,
                     &mut slave,
                     std::ptr::null_mut(),
-                    std::ptr::null(),
-                    &size,
+                    std::ptr::null_mut::<libc::termios>(),
+                    &mut size,
                 )
             },
             0

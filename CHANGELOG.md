@@ -119,6 +119,14 @@
   mainloop reader. A server that exits after answering configuration
   now publishes its classified status instead of stranding a pending
   read forever.
+- **macOS exec/PTY exits retain their attested status** (0058 WK20):
+  XNU may return `EPERM` for a process-group signal when only its
+  unreaped zombie leader remains. The worker now accepts that result
+  only after a non-reaping exit observation and a bounded system
+  `libproc` listing confirms the leader is the sole member; an
+  inaccessible descendant or uncertain listing still refuses clean
+  settlement. All 19 direct supervisor tests passed on both native
+  macOS architectures; complete editor journeys remain a release gate.
 - **Trace capture no longer self-invalidates its watched workspace**:
   notifications for the active trace file are filtered before waking
   the editor; unrelated file hints still reach source invalidation.
@@ -166,11 +174,11 @@
   two static artifacts each completed eight warmups and 64 real
   worker-backed TUI insertions in a 10,000-line file at 120×30.
   Each sample ends only after the PTY's VT100-decoded grid shows
-  the next exact edit. Baseline/current p50 1.065/1.047 ms, p95
-  1.865/1.626 ms, p99/max 1.913/2.850 ms on Linux Docker-on-WSL2.
-  Raw samples and method digest are archived; candidate p99 is
-  higher. SSH/container deployment, LSP, terminal output load and
-  other native targets remain release gates.
+  the next exact edit. Baseline/current p50 0.957/0.935 ms, p95
+  1.544/1.343 ms, p99/max 1.734/1.550 ms on Linux Docker-on-WSL2.
+  Raw samples and method digest are archived; scoped local timings
+  vary between runs. SSH/container deployment, LSP, terminal output
+  load and other native targets remain release gates.
 - **Python-free SSH deployment evidence** (0058 WK07): a separate
   OpenSSH image without a Python interpreter deploys and launches the
   actual native worker, then exercises read/write/notification parity.
