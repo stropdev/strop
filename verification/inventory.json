@@ -2169,7 +2169,7 @@
         },
         {
           "id": "REL-ASSURANCE-GATES",
-          "statement": "PR and tag run locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native correspondence, container editor and x86_64/aarch64 GNU worker/Store/terminal scenarios. GNU and Intel/arm macOS runners install the nested Neovim fixture and run real local OpenSSH parity, direct supervisor exit/PTY and VT Alt-key encoding before client and terminal tests. Each PR native job builds clean a05d84f pre-worker and current release binaries on the same actual target, runs nine local worker/UI/TUI/terminal-load paths plus matched installed rust-analyzer LSP request and edit→sync→request paths with raw p50/p95/p99/max, and uploads the observations; scheduling is not execution proof. The tag builds native Mac artifacts, restricts system dylibs (including worker libproc enumeration), rechecks the frozen four-platform source candidate and gates publication on the proof ledger. Full remote/high-water performance and complete Mac results remain blocked.",
+          "statement": "PR and tag run locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native correspondence, container editor and x86_64/aarch64 GNU worker/Store/terminal scenarios. GNU runners build the same-source static musl worker before actual OpenSSH parity (a host GNU test binary cannot satisfy the release catalog); Intel/arm macOS use their actual native binary. All native runners exercise Store, supervisor exit/PTY, VT Alt encoding, client and nested editor with Neovim. Each PR native job builds clean a05d84f pre-worker and current release binaries on the same target, runs nine local worker/UI/TUI/terminal-load paths plus installed rust-analyzer LSP request and edit→sync→request paths with raw p50/p95/p99/max, and uploads the observations; scheduling is not execution proof. The tag builds native Mac artifacts, restricts system dylibs (including worker libproc enumeration), rechecks the frozen four-platform source candidate and gates publication on the proof ledger. Full remote/high-water performance and complete Mac results remain blocked.",
           "status": "specified",
           "evidence": [
             {
@@ -2191,7 +2191,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "PR run 36246567485 passed native x86_64/aarch64 GNU Store, worker-client and nested-editor journeys; both macOS architectures passed direct native supervisor and framed-worker tests but the real TUI stalled after BYTE-READY. Run 36248998773 captured the exact child bytes `12 78 1b 5b 31 35 7e` instead of `12 1b 78 1b 5b 31 35 7e` on both Intel and arm64: an Escape preceding x was lost, not F5. The next CI run's explicitly consented terminal-key action trace plus native VT encoder tests must identify/fix the owning boundary without weakening the exact byte assertion. Passing final-candidate four-target journeys/artifacts and archived target profiles remain WPLAT-NATIVE gates.",
+          "statement": "PR run 36246567485 passed native GNU Store, worker-client and nested-editor journeys; both macOS architectures passed direct supervisor and framed-worker tests but TUI stalled after BYTE-READY. Run 36248998773 captured child bytes `12 78 1b 5b 31 35 7e` instead of `12 1b 78 1b 5b 31 35 7e` on both Mac targets. Run 36256978392 reproduced the root at native Ghostty VT encoding: the Alt-x unit test emitted `78` instead of `1b 78` on both Intel and arm64; separate Escape+x passed. The bridge now sets the logical Alt option after Ghostty's per-key terminal refresh. The same run's GNU SSH fixture lacked the advertised static musl artifact; native GNU PR/tag jobs now build and supply that exact static worker. Final-source native four-target PTY/SSH/LSP and archived target profiles remain release gates; wiring and a Linux gate cannot close WPLAT-NATIVE.",
           "status": "blocked",
           "evidence": [
             {
@@ -2227,12 +2227,12 @@
       "pins": {
         "sources": {
           ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
-          ".github/workflows/ci.yml": "92c52496fc28776c1802d7589bd76153e400d71bb1b850507ba954199e7c687b",
-          ".github/workflows/release.yml": "91a82dc015d1f3e805991e94b602dab07bce0e448c8a4d2aff05c1644fd41612",
+          ".github/workflows/ci.yml": "e590005a83f16d96c46967d3328a53cad7d778bcfe35d6771fc4a8beb78256b7",
+          ".github/workflows/release.yml": "df1d58a20a6dec4d813fedf84e29e7c22c813a2a6e6b62abffc6cd15eba3a032",
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "27d88a391c30fea7a9a9c511ef9a37406f770cb90edf3bde9a3a3534dc19a5d2"
+        "evidence": "2b3049fcfb624fe0b16d5140200301190db27b172e0976b5df2eaf741557df40"
       }
     },
     {
@@ -2257,6 +2257,7 @@
         "crates/strop-terminal/src/service/mod.rs",
         "crates/strop-terminal/src/service/worker.rs",
         "crates/strop-terminal/src/vt/input.rs",
+        "crates/strop-terminal/native/bridge.c",
         "crates/strop-terminal/src/vt/mod.rs",
         "crates/strop-terminal/src/launch.rs",
         "crates/strop-worker-client/src/session.rs"
@@ -2363,6 +2364,35 @@
           }
         },
         {
+          "id": "TERM-ALT-INPUT",
+          "statement": "Crossterm presents logical Alt as a modifier. The Ghostty bridge sets option-as-alt after per-key terminal-mode refresh because Ghostty resets its macOS default to Option text translation; the Linux VT encoder already emitted ESC+x and an actual separate Escape then x. Native macOS Intel/arm64 run 36256978392 reproduced the missing prefix before this bridge repair; final native TUI must still pass its exact child-byte assertion before this can claim cross-platform execution.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-terminal/src/vt/tests.rs",
+              "gate": "test",
+              "tests": [
+                "keyboard_advertisement_matches_the_captured_frontend_profile",
+                "terminal_escape_precedes_the_next_literal_key"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor.rs",
+              "gate": "test",
+              "tests": [
+                "real_terminal_input_consent_quit_and_execution_free_replay"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "cross-platform key-encoder contract from real macOS native failure; a clean rerun remains required"
+          }
+        },
+        {
           "id": "TERM-OWNERSHIP",
           "statement": "Editor-owned chords never leak to the child: window-prefix moves panes without reaching the child, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end.",
           "status": "correspondence-tested",
@@ -2393,6 +2423,7 @@
         "sources": {
           "crates/strop-engine/src/editor/terminal/input.rs": "5b0bf2e34f15d8c3839edbc3da0296ff5fc2c43a0401f876b1c6fbba0e166720",
           "crates/strop-engine/src/editor/terminal/mod.rs": "7f15290788725ac9a44283334a3587f3a1117c2c91c7cdc3973f494f002e2c8c",
+          "crates/strop-terminal/native/bridge.c": "093dd7baf411b8e647a52404144ed7e5088424ed370ccdfb6ee974da7fd250af",
           "crates/strop-terminal/src/client.rs": "19bfcb2858bcbe280bde4a5535880091411e0fda0d0e9b37973daa7bf74d515d",
           "crates/strop-terminal/src/launch.rs": "c0b3c6b9e1ad4a98ae6598786ebacd29698a5d14376a8aa92214a9f5bc3d8dc4",
           "crates/strop-terminal/src/model/mod.rs": "e46bd12d980563a3f0aea50ef8881b6f4dd07c90c2e7612ab415751fbf380df6",
@@ -2405,7 +2436,7 @@
           "crates/strop-terminal/src/vt/mod.rs": "fe40a77f280f36c96769f9195d2c752151ad3e25871ba3947e7367dfd84a79d8",
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50"
         },
-        "evidence": "7858e3ecfe825f55392488404423579e70e2e15632b4d058fa7a130195fce0e3"
+        "evidence": "9a7876347b875e8c57da7c1a28182dd9c0ba3ca6a2f16620385c4050e648a246"
       }
     },
     {

@@ -1354,10 +1354,22 @@ isolated the same byte loss on both native macOS architectures: the
 child received `12 78 1b 5b 31 35 7e` instead of
 `12 1b 78 1b 5b 31 35 7e`; the missing `1b` precedes `x`, not F5.
 The test sent a diagnostic `3f` only after the exact sequence timed
-out; its failure remains a failure. The next native run records the
-fixture's explicitly consented key actions so we can distinguish
-frontend Alt decoding from the PTY encoder. Do not mask the failure,
-alter the expected bytes or add a macOS-only input shortcut.
+out; its failure remains a failure. Run
+[`36256978392`](https://github.com/stropdev/strop/actions/runs/36256978392)
+reached the VT encoder unit test on Intel and arm64 macOS:
+`keyboard_advertisement_matches_the_captured_frontend_profile`
+encoded logical Alt-x as `78` instead of `1b 78` on both hosts;
+literal Escape followed by x passed. The vendored Ghostty
+`ghostty_key_encoder_setopt_from_terminal` resets
+`macos_option_as_alt` to false on every key; its own C API says the
+embedding host must set that option afterward. Strop's Crossterm
+input already presents Alt as a logical modifier, not a macOS Option
+Unicode translation: set `GHOSTTY_OPTION_AS_ALT_TRUE` unconditionally
+after terminal-mode refresh, before encoding, and retain the exact
+native byte assertion. The same run's GNU SSH fixture also had
+`NoArtifactForTarget` because it advertised a musl worker but only
+the host GNU test binary was available; build and supply the exact
+native static artifact before real OpenSSH parity on GNU targets.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

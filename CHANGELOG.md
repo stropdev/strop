@@ -135,6 +135,13 @@
   inaccessible descendant or uncertain listing still refuses clean
   settlement. All 19 direct supervisor tests passed on both native
   macOS architectures; complete editor journeys remain a release gate.
+- **Native terminal Alt input retains ESC on macOS** (0058 WK20):
+  GitHub Intel and Apple Silicon runs exposed the same lost `1b`
+  before `x` in the actual PTY. Ghostty's encoder reset
+  `macos_option_as_alt` on each terminal-mode refresh; Strop now
+  reasserts logical Alt after that refresh, with no platform
+  shortcut or changed child-byte expectation. A final native
+  exact-byte TUI rerun remains required before platform qualification.
 - **Container workers no longer carry an extra sh/cat supervisor**
   (0058 WK08/WK20): verified-worker probes and live leases now use
   the same direct native `docker exec` on provisioned and shellless

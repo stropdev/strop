@@ -428,6 +428,11 @@ int strop_vt_key(void *handle, const char *name, uint32_t scalar, uint32_t modif
     ghostty_key_event_set_unshifted_codepoint(state->key,
         (modifiers & 1) && scalar >= 'A' && scalar <= 'Z' ? scalar + 32 : scalar);
     ghostty_key_encoder_setopt_from_terminal(state->encoder, state->terminal);
+    // Frontend Alt is already a logical modifier, never macOS Option text
+    // translation. from_terminal resets this non-terminal option each key.
+    GhosttyOptionAsAlt option_as_alt = GHOSTTY_OPTION_AS_ALT_TRUE;
+    ghostty_key_encoder_setopt(state->encoder,
+        GHOSTTY_KEY_ENCODER_OPT_MACOS_OPTION_AS_ALT, &option_as_alt);
     GhosttyKittyKeyFlags keyboard;
     CHECK(ghostty_terminal_get(state->terminal, GHOSTTY_TERMINAL_DATA_KITTY_KEYBOARD_FLAGS, &keyboard));
     keyboard &= state->keyboard_allowed;
