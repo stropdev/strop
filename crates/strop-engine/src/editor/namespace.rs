@@ -353,18 +353,26 @@ pub(crate) fn prepare(
                 home: environment.home.clone(),
                 data_home: environment.data_home.clone(),
             };
-            let (steps, refused) = worker
+            let (steps, refused, session) = worker
                 .prepare(token, intents.to_vec(), Some(environment))
                 .map_err(map_client)?;
-            Ok(PreparedBatch { steps, refused })
+            Ok(PreparedBatch {
+                steps,
+                refused,
+                worker_session: Some(session),
+            })
         }
         Dispatch::Remote(worker) => {
             // The remote worker captures its own environment; local
             // trash roots never cross namespaces (WK07).
-            let (steps, refused) = worker
+            let (steps, refused, session) = worker
                 .prepare(token, intents.to_vec())
                 .map_err(map_client)?;
-            Ok(PreparedBatch { steps, refused })
+            Ok(PreparedBatch {
+                steps,
+                refused,
+                worker_session: Some(session),
+            })
         }
     }
 }
@@ -377,27 +385,62 @@ pub(crate) fn execute(
     contents: &std::collections::HashMap<usize, ropey::Rope>,
     token: &CancelToken,
 ) -> Vec<StepReceipt> {
-    let namespace = batch_namespace(plan.steps.iter().filter_map(|step| {
+    let refuse = |error: FsFailure| {
+        plan.steps
+            .iter()
+            .enumerate()
+            .map(|(step, operation)| StepReceipt {
+                step,
+                operation: operation.clone(),
+                outcome: StepOutcome::Refused(error.clone()),
+            })
+            .collect()
+    };
+    let Some(session) = plan.worker_session else {
+        return refuse(failure(
+            FsFailureKind::Protocol,
+            "a worker review needs the session that prepared it",
+        ));
+    };
+    let namespace = match batch_namespace(plan.steps.iter().filter_map(|step| {
         step.intent
             .location()
             .map(|location| location.filesystem.clone())
-    }));
-    let dispatch = namespace.and_then(|namespace| kernel(&namespace, worker, remote, token));
-    let dispatch = match dispatch {
-        Ok(dispatch) => dispatch,
-        Err(error) => {
-            return plan
-                .steps
-                .iter()
-                .enumerate()
-                .map(|(step, operation)| StepReceipt {
-                    step,
-                    operation: operation.clone(),
-                    outcome: StepOutcome::Refused(error.clone()),
-                })
-                .collect();
+    })) {
+        Ok(namespace) => namespace,
+        Err(error) => return refuse(error),
+    };
+    // Prepare already admitted the remote worker. Execution only reuses
+    // that same live lease; rediscovery here could spawn a fresh worker
+    // for an old review before its captured content was examined.
+    let dispatch = match namespace {
+        Filesystem::Local => Dispatch::Local(worker.clone()),
+        Filesystem::Remote(endpoint) => match remote.get(&endpoint) {
+            Some(worker) => Dispatch::Remote(worker),
+            None => {
+                return refuse(failure(
+                    FsFailureKind::Conflict,
+                    "the remote worker that prepared this review is no longer admitted",
+                ));
+            }
+        },
+        Filesystem::Container(_) => {
+            return refuse(failure(
+                FsFailureKind::Unsupported,
+                "container filesystem operations are read-only by policy",
+            ));
         }
     };
+    let active = match &dispatch {
+        Dispatch::Local(worker) => worker.session(),
+        Dispatch::Remote(worker) => worker.worker().session(),
+    };
+    if active != Some(session) {
+        return refuse(failure(
+            FsFailureKind::Conflict,
+            "the worker session that prepared this review is no longer live",
+        ));
+    }
     // The wire carries one frozen content stream per apply; the
     // common case (one buffer pasted to any number of
     // destinations) shares those bytes. Distinct contents in one
@@ -431,11 +474,13 @@ pub(crate) fn execute(
     let applied = match &dispatch {
         Dispatch::Local(worker) => worker.apply(
             token,
+            session,
             plan.steps.clone(),
             distinct.first().map(Vec::as_slice),
         ),
         Dispatch::Remote(worker) => worker.apply(
             token,
+            session,
             plan.steps.clone(),
             distinct.first().map(Vec::as_slice),
         ),
@@ -484,6 +529,13 @@ pub(crate) enum StoreDispatch {
     Remote(RemoteWorker),
 }
 
+/// The exact worker session that observed one Store intent stays with
+/// its prepared operation until publication or typed refusal.
+pub(crate) struct StorePrepared {
+    pub operation: PreparedOperation,
+    pub(crate) session: strop_worker_protocol::Session,
+}
+
 /// The outcome of one protected document store: either admission refused
 /// before any effect was possible, or exactly one step receipt —
 /// committed, refused at effect time, cancelled, or unconfirmed with its
@@ -500,14 +552,14 @@ impl StoreDispatch {
         &self,
         intent: OperationIntent,
         token: &CancelToken,
-    ) -> Result<PreparedOperation, FsFailure> {
+    ) -> Result<StorePrepared, FsFailure> {
         let prepared = match self {
             // No environment override crosses for a store: trash roots are
             // not save policy, and a remote worker captures its own.
             Self::Local(worker) => worker.prepare(token, vec![intent], None),
             Self::Remote(worker) => worker.prepare(token, vec![intent]),
         };
-        let (mut steps, refused) = prepared.map_err(map_client)?;
+        let (mut steps, refused, session) = prepared.map_err(map_client)?;
         if let Some(refusal) = refused.into_iter().next() {
             return Err(refusal.failure);
         }
@@ -517,7 +569,10 @@ impl StoreDispatch {
                 "a document store prepares exactly one step",
             ));
         }
-        Ok(steps.remove(0))
+        Ok(StorePrepared {
+            operation: steps.remove(0),
+            session,
+        })
     }
 
     /// Apply one prepared Store step with its frozen content stream. A
@@ -525,13 +580,18 @@ impl StoreDispatch {
     /// evidence retained — never a silent retry or a guessed outcome.
     pub(crate) fn apply_store(
         &self,
-        operation: PreparedOperation,
+        prepared: StorePrepared,
         content: &[u8],
         token: &CancelToken,
     ) -> StoreOutcome {
+        let StorePrepared { operation, session } = prepared;
         let applied = match self {
-            Self::Local(worker) => worker.apply(token, vec![operation.clone()], Some(content)),
-            Self::Remote(worker) => worker.apply(token, vec![operation.clone()], Some(content)),
+            Self::Local(worker) => {
+                worker.apply(token, session, vec![operation.clone()], Some(content))
+            }
+            Self::Remote(worker) => {
+                worker.apply(token, session, vec![operation.clone()], Some(content))
+            }
         };
         match applied {
             Ok(receipts) if receipts.len() == 1 => {

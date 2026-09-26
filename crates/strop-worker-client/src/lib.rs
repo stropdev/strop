@@ -41,11 +41,12 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
 
+use strop_core::worker::session::{classify_session, Admission};
 use strop_core::worker::CancelToken;
 use strop_worker_protocol::message::NotifyCoverage;
 use strop_worker_protocol::{
-    Capabilities, ClientMessage, Event, ProtocolError, Request, ResultOutcome, StreamChunk,
-    StreamId, StreamRef, Subscription,
+    Capabilities, ClientMessage, Event, ProtocolError, Request, ResultOutcome, Session,
+    StreamChunk, StreamId, StreamRef, Subscription,
 };
 use strop_workspace::operation::{
     FsFailure, LocatedObservation, OperationIntent, OperationRefusal, PreparedOperation,
@@ -410,50 +411,93 @@ impl Worker {
     }
 
     /// Prepare one batch in the worker's namespace: exact observations
-    /// and the admitted capability, no effects yet.
+    /// and the admitted capability, no effects yet. Return the responding
+    /// session with the steps; the stable host namespace is not its substitute.
     pub fn prepare(
         &self,
         token: &CancelToken,
         intents: Vec<OperationIntent>,
         environment: Option<strop_worker_protocol::request::EnvironmentOverride>,
-    ) -> Result<(Vec<PreparedOperation>, Vec<OperationRefusal>), ClientError> {
-        match self.call(
+    ) -> Result<(Vec<PreparedOperation>, Vec<OperationRefusal>, Session), ClientError> {
+        let CallResult { outcome, conn, .. } = self.call_inner(
             token,
             Request::Prepare {
                 intents,
                 binding: None,
                 environment,
             },
-        )? {
-            ResultOutcome::Prepared { steps, refused } => Ok((steps, refused)),
+            false,
+        )?;
+        match outcome {
+            ResultOutcome::Prepared { steps, refused } => Ok((steps, refused, conn.session())),
             other => Err(unexpected(other)),
         }
     }
 
     /// Apply prepared steps with at most one frozen content stream. The
-    /// digest/length are verified against exactly the bytes uploaded
-    /// before the request.
+    /// captured session must still own the existing live connection:
+    /// a restarted worker never accepts this batch or its upload.
+    /// Digest/length bind exactly the uploaded bytes before publication.
     pub fn apply(
         &self,
         token: &CancelToken,
+        session: Session,
         steps: Vec<PreparedOperation>,
         content: Option<&[u8]>,
     ) -> Result<Vec<StepReceipt>, ClientError> {
-        let reference = match content {
-            Some(bytes) => {
-                let conn = self.connection()?;
-                Some(upload(&conn, bytes)?)
+        // A prepared mutation is not an ordinary query: do not reconnect
+        // to a new worker and then replay old authority in that session.
+        let conn = self
+            .shared
+            .slot
+            .lock()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| ClientError::WorkerLost("prepared worker session is gone".into()))?;
+        if !conn.alive() {
+            return Err(ClientError::WorkerLost(conn.death_detail()));
+        }
+        let current = conn.session();
+        match classify_session(
+            current.incarnation,
+            session.incarnation,
+            current.lease.0,
+            session.lease.0,
+            false,
+            false,
+            true,
+        ) {
+            Admission::Live => {}
+            Admission::WrongIncarnation => {
+                return Err(ClientError::Refused(Refusal::WrongIncarnation {
+                    current: current.incarnation,
+                }));
             }
-            None => None,
-        };
-        match self.call(
-            token,
-            Request::Apply {
-                steps,
-                content: reference,
-                binding: None,
-            },
-        )? {
+            Admission::WrongLease => return Err(ClientError::Refused(Refusal::WrongLease)),
+            other => {
+                debug_assert!(
+                    matches!(other, Admission::Live),
+                    "invalid live connection state"
+                );
+                return Err(ClientError::WorkerLost(
+                    "worker session is unavailable".into(),
+                ));
+            }
+        }
+        let reference = content.map(|bytes| upload(&conn, bytes)).transpose()?;
+        let outcome = self
+            .call_inner_on(
+                token,
+                Request::Apply {
+                    steps,
+                    content: reference,
+                    binding: None,
+                },
+                false,
+                conn,
+            )?
+            .outcome;
+        match outcome {
             ResultOutcome::Applied { receipts, .. } => Ok(receipts),
             other => Err(unexpected(other)),
         }

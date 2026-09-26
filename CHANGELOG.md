@@ -135,6 +135,15 @@
   inaccessible descendant or uncertain listing still refuses clean
   settlement. All 19 direct supervisor tests passed on both native
   macOS architectures; complete editor journeys remain a release gate.
+- **Prepared writes cannot cross a worker restart** (0058 WK10/WK20):
+  a killed worker's stale `Prepare` result previously could be applied
+  after reconnect, even after a fresh worker prepared the same absent
+  target. Prepared reviews and protected Stores now retain the
+  responding `Session`; the client checks the live session before
+  uploading content or sending `Apply`. The editor refuses a stale
+  review before materializing its frozen content; remote Stores
+  refuse before constructing the upload. Native killed-worker,
+  protected-Store and review-acceptance regressions pass.
 - **Native terminal Alt input retains ESC on macOS** (0058 WK20):
   GitHub Intel and Apple Silicon runs exposed the same lost `1b`
   before `x` in the actual PTY. Ghostty's encoder reset
@@ -142,6 +151,12 @@
   reasserts logical Alt after that refresh, with no platform
   shortcut or changed child-byte expectation. A final native
   exact-byte TUI rerun remains required before platform qualification.
+- **Native SSH fixture uses real scoped loopback sockets** (0058 WK20):
+  macOS BSM auditing rejected `sshd -i` launched on a pipe with an
+  `UNKNOWN` peer. Each SSH test now owns and reaps two authenticated
+  loopback OpenSSH listeners (ordinary and SFTP-only), retaining
+  Python-free parity. Linux's real OpenSSH journey passes; native
+  macOS requalification remains required.
 - **Container workers no longer carry an extra sh/cat supervisor**
   (0058 WK08/WK20): verified-worker probes and live leases now use
   the same direct native `docker exec` on provisioned and shellless

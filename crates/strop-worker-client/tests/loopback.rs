@@ -161,10 +161,10 @@ fn prepare_apply_and_verify_a_create() {
         expected_content: None,
         store: None,
     }];
-    let (steps, refused) = worker.prepare(&token, intents, None).unwrap();
+    let (steps, refused, session) = worker.prepare(&token, intents, None).unwrap();
     assert!(refused.is_empty());
     assert_eq!(steps.len(), 1);
-    let receipts = worker.apply(&token, steps, None).unwrap();
+    let receipts = worker.apply(&token, session, steps, None).unwrap();
     assert!(
         receipts
             .iter()
@@ -224,17 +224,19 @@ fn store_save_round_trip_with_conflict_and_verify() {
         }),
         ..store(false, b"x")
     };
-    let (steps, refused) = worker.prepare(&token, vec![stale], None).unwrap();
+    let (steps, refused, _session) = worker.prepare(&token, vec![stale], None).unwrap();
     assert!(steps.is_empty());
     assert_eq!(refused.len(), 1);
     assert_eq!(refused[0].failure.kind, FsFailureKind::Conflict);
     assert_eq!(std::fs::read(&target).unwrap(), b"before\n");
     // The true baseline commits through the upload stream.
-    let (steps, refused) = worker
+    let (steps, refused, session) = worker
         .prepare(&token, vec![store(false, b"after\n")], None)
         .unwrap();
     assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
-    let receipts = worker.apply(&token, steps, Some(b"after\n")).unwrap();
+    let receipts = worker
+        .apply(&token, session, steps, Some(b"after\n"))
+        .unwrap();
     assert!(
         matches!(receipts[0].outcome, StepOutcome::Committed { .. }),
         "store commits through the worker: {:?}",

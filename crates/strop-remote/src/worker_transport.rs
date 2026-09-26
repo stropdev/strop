@@ -489,12 +489,19 @@ impl RemoteWorker {
         &self,
         token: &strop_core::worker::CancelToken,
         intents: Vec<OperationIntent>,
-    ) -> Result<(Vec<PreparedOperation>, Vec<OperationRefusal>), ClientError> {
+    ) -> Result<
+        (
+            Vec<PreparedOperation>,
+            Vec<OperationRefusal>,
+            strop_worker_protocol::Session,
+        ),
+        ClientError,
+    > {
         let intents = intents
             .iter()
             .map(|intent| self.intent_to_worker(intent))
             .collect::<Result<Vec<_>, _>>()?;
-        let (steps, refused) = self.worker.prepare(token, intents, None)?;
+        let (steps, refused, session) = self.worker.prepare(token, intents, None)?;
         Ok((
             steps
                 .iter()
@@ -507,6 +514,7 @@ impl RemoteWorker {
                     failure: refusal.failure,
                 })
                 .collect(),
+            session,
         ))
     }
 
@@ -515,6 +523,7 @@ impl RemoteWorker {
     pub fn apply(
         &self,
         token: &strop_core::worker::CancelToken,
+        session: strop_worker_protocol::Session,
         steps: Vec<PreparedOperation>,
         content: Option<&[u8]>,
     ) -> Result<Vec<StepReceipt>, ClientError> {
@@ -522,7 +531,7 @@ impl RemoteWorker {
             .iter()
             .map(|step| self.operation_to_worker(step))
             .collect::<Result<Vec<_>, _>>()?;
-        let receipts = self.worker.apply(token, steps, content)?;
+        let receipts = self.worker.apply(token, session, steps, content)?;
         Ok(receipts
             .iter()
             .map(|receipt| self.receipt_from_worker(receipt))

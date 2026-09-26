@@ -131,14 +131,15 @@ class Peer:
                                    "base": base, "actions": actions})
         ack_bytes = 0
         ack_generation = None
+        view_size = 0
+        view_at = None
         while True:
             message, size, received_at = self.receive()
             kind = message["type"]
             if kind in ("snapshot", "delta"):
                 self.view(message)
-                if ack_generation is not None and self.generation == ack_generation:
-                    return ((received_at - started) / 1_000_000, request_bytes,
-                            ack_bytes, size)
+                view_size = size
+                view_at = received_at
             elif kind == "ack":
                 if message["seq"] != seq or message["outcome"]["outcome"] != "applied":
                     raise RuntimeError(f"UI action was not applied: {message}")
@@ -149,6 +150,9 @@ class Peer:
                 ack_bytes = size
             else:
                 raise RuntimeError(f"unexpected UI response to input: {message}")
+            if ack_generation is not None and self.generation >= ack_generation and view_at:
+                return ((view_at - started) / 1_000_000, request_bytes,
+                        ack_bytes, view_size)
 
     def wait_file(self) -> None:
         for _ in range(256):

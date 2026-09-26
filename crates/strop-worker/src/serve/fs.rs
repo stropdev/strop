@@ -280,6 +280,7 @@ pub(super) fn apply(
     let plan = PreparedBatch {
         steps,
         refused: Vec::new(),
+        worker_session: None,
     };
     let receipts = strop_fs::batch::execute(&shared.context, &plan, &contents, token);
     ResultOutcome::Applied { receipts, binding }

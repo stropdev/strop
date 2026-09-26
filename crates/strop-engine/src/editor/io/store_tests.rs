@@ -5,7 +5,7 @@
 //! behavior exactly, with frozen evidence retained while unconfirmed.
 
 use super::*;
-use crate::editor::namespace::StoreDispatch;
+use crate::editor::namespace::{StoreDispatch, StorePrepared};
 use strop_core::Buffer;
 use strop_workspace::operation::{OperationIntent, OperationKind, StepOutcome, StepReceipt};
 
@@ -36,7 +36,11 @@ fn store_intent(editor: &Editor, path: &std::path::Path) -> OperationIntent {
 }
 
 /// Insert a frozen unconfirmed attempt as if the receipt had been lost.
-fn inject_unconfirmed(editor: &mut Editor, document: DocumentId, path: &std::path::Path) {
+fn inject_unconfirmed(
+    editor: &mut Editor,
+    document: DocumentId,
+    path: &std::path::Path,
+) -> StorePrepared {
     let dispatch = StoreDispatch::Local(editor.filesystem.worker().clone());
     let (token, _handle) = strop_core::worker::CancelToken::standalone();
     let operation = dispatch
@@ -53,7 +57,7 @@ fn inject_unconfirmed(editor: &mut Editor, document: DocumentId, path: &std::pat
         namespace: editor.filesystem.worker().namespace().unwrap(),
         receipt: StepReceipt {
             step: 0,
-            operation,
+            operation: operation.operation.clone(),
             outcome: StepOutcome::Unconfirmed {
                 detail: "simulated lost receipt".into(),
                 observed_destination: None,
@@ -63,6 +67,7 @@ fn inject_unconfirmed(editor: &mut Editor, document: DocumentId, path: &std::pat
         },
     };
     editor.io.store_attempts.insert(document, attempt);
+    operation
 }
 
 #[test]
@@ -83,6 +88,51 @@ fn local_save_rides_the_worker_store_intent() {
     );
     assert_eq!(editor.message, "written");
     assert!(editor.filesystem.worker().session().is_some());
+}
+
+#[test]
+fn stale_prepared_store_cannot_publish_after_worker_respawns() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("note.txt");
+    std::fs::write(&path, "before\n").unwrap();
+    let mut editor = Editor::new(Buffer::from_text(""));
+    editor.open_fixture(&path).unwrap();
+    editor.feed_text("Oafter<esc>");
+    let worker = editor.filesystem.worker().clone();
+    let dispatch = StoreDispatch::Local(worker.clone());
+    let (token, _handle) = strop_core::worker::CancelToken::standalone();
+    let stale = dispatch
+        .prepare_store(store_intent(&editor, &path), &token)
+        .unwrap();
+    let old_session = stale.session;
+    worker.shutdown().unwrap();
+    worker.health(&token).unwrap();
+    assert_ne!(worker.session(), Some(old_session));
+    match dispatch.apply_store(stale, b"after\nbefore\n", &token) {
+        crate::editor::namespace::StoreOutcome::Refused(error) => {
+            assert_eq!(
+                error.kind,
+                strop_workspace::operation::FsFailureKind::Conflict
+            );
+        }
+        crate::editor::namespace::StoreOutcome::Receipt(receipt) => {
+            panic!("stale Store must refuse before publication: {receipt:?}");
+        }
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "before\n");
+    let fresh = dispatch
+        .prepare_store(store_intent(&editor, &path), &token)
+        .unwrap();
+    match dispatch.apply_store(fresh, b"after\nbefore\n", &token) {
+        crate::editor::namespace::StoreOutcome::Receipt(receipt) => {
+            assert!(receipt.outcome.is_committed(), "{receipt:?}");
+        }
+        crate::editor::namespace::StoreOutcome::Refused(error) => {
+            panic!("new-session Store should commit: {error}");
+        }
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "after\nbefore\n");
+    worker.shutdown().unwrap();
 }
 
 #[test]
@@ -191,7 +241,7 @@ fn unconfirmed_save_verifies_before_any_rewrite() {
     let mut editor = Editor::new(Buffer::from_text(""));
     let document = editor.open_fixture(&path).unwrap();
     editor.feed_text("Omine<esc>");
-    inject_unconfirmed(&mut editor, document, &path);
+    let _ = inject_unconfirmed(&mut editor, document, &path);
     // The next :w verifies instead of rewriting; the write never landed,
     // so the original is unchanged and dirty text is preserved.
     assert!(editor.request_save_document(document, None, false, false));
@@ -221,14 +271,7 @@ fn a_late_committed_store_reconciles_the_source_once() {
     let mut editor = Editor::new(Buffer::from_text(""));
     let document = editor.open_fixture(&path).unwrap();
     editor.feed_text("Omine<esc>");
-    inject_unconfirmed(&mut editor, document, &path);
-    // The worker really publishes the private stage and syncs the
-    // directory. Lose only its committed reply: writing equivalent
-    // bytes into the old inode would *not* prove Store publication.
-    let operation = editor.io.store_attempts[&document]
-        .receipt
-        .operation
-        .clone();
+    let operation = inject_unconfirmed(&mut editor, document, &path);
     let dispatch = StoreDispatch::Local(editor.filesystem.worker().clone());
     let (token, _handle) = strop_core::worker::CancelToken::standalone();
     match dispatch.apply_store(operation, b"mine\nbefore\n", &token) {
@@ -261,7 +304,7 @@ fn a_forced_rewrite_cannot_bypass_an_unverified_outcome() {
     let mut editor = Editor::new(Buffer::from_text(""));
     let document = editor.open_fixture(&path).unwrap();
     editor.feed_text("Omine<esc>");
-    inject_unconfirmed(&mut editor, document, &path);
+    let _ = inject_unconfirmed(&mut editor, document, &path);
     // :w! verifies too — force is never a blind-rewrite bypass.
     assert!(editor.request_save_document(document, None, true, false));
     editor.wait_io().unwrap();

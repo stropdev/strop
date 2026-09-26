@@ -389,7 +389,7 @@ fn deploy_then_read_write_notify_and_lease_reap() {
     assert!(provider.lstat(&layout.receipt(&old_sha)).unwrap().is_none());
     assert!(provider.lstat(&deployed.object.path).unwrap().is_some());
 
-    let (steps, refused) = worker
+    let (steps, refused, session) = worker
         .prepare(
             &cancel,
             vec![OperationIntent {
@@ -406,7 +406,9 @@ fn deploy_then_read_write_notify_and_lease_reap() {
         )
         .expect("prepare rides the worker");
     assert!(refused.is_empty());
-    let receipts = worker.apply(&cancel, steps, None).expect("apply commits");
+    let receipts = worker
+        .apply(&cancel, session, steps, None)
+        .expect("apply commits");
     assert!(
         receipts
             .iter()

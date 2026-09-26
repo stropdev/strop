@@ -1,21 +1,21 @@
 use super::*;
 use std::time::Instant;
 
-/// The real OpenSSH ProxyCommand fixture supplies a selected principal,
-/// SFTP upload, verified object/receipt and direct worker exec. A cold
-/// repetition removes only this fixture's unleased object and receipt
-/// outside the timer; neither the product nor its GC has a benchmark path.
+/// Real loopback OpenSSH supplies a selected principal, SFTP upload,
+/// verified object/receipt and direct worker exec. A cold repetition
+/// removes only this fixture's unleased object and receipt outside the
+/// timer; neither the product nor its GC has a benchmark path.
 #[test]
 #[ignore = "native OpenSSH worker cold/warm latency; run explicitly with --ignored --nocapture"]
 fn native_ssh_cold_warm_deploy_and_launch_samples() {
-    let Some(_serial) = serial() else {
+    let Some(host_fixture) = serial() else {
         panic!("native SSH benchmark requires STROP_REQUIRE_SSH_TESTS=1");
     };
-    let fixture = fixture();
+    let fixture = &host_fixture.fixture;
     let endpoint = endpoint("worker-benchmark");
     let (cancel, _owner) = token();
     let facts = discover(&endpoint, &cancel);
-    let target = facts.local_binary_target().unwrap();
+    let target = facts.target.as_str();
     let bytes = std::fs::metadata(&fixture.artifact).unwrap().len();
     let sha = &fixture.artifact_sha256;
     let supply = || ArtifactSupply::LocalBinary {
@@ -119,7 +119,7 @@ fn native_ssh_cold_warm_deploy_and_launch_samples() {
         "artifact_sha256": sha,
         "artifact_bytes": bytes,
         "target": target,
-        "fixture": "localhost OpenSSH -i through private ProxyCommand, distinct context, exact private-cache reset outside cold samples",
+        "fixture": "localhost OpenSSH TCP with two scoped daemon listeners, distinct context, exact private-cache reset outside cold samples",
         "warmup_requests": warmup,
         "measured_requests": iterations,
         "cold_deploy_ms": percentiles(&cold_ms),

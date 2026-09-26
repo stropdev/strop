@@ -475,6 +475,40 @@ fn cache_gc_holds_the_worker_lease_lock_through_retirement() {
     worker.shutdown().unwrap();
 }
 
+fn kill_and_observe(worker: &Worker) {
+    let pid = worker.worker_pid().unwrap();
+    let status = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    // kill(1)'s success attests delivery, not death. WNOWAIT observes
+    // termination without stealing the client's child-reaping duty.
+    let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
+    // SAFETY: worker_pid names this process's spawned child and info is
+    // writable; WNOWAIT does not consume its owned exit status.
+    let waited = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            info.as_mut_ptr(),
+            libc::WEXITED | libc::WNOWAIT,
+        )
+    };
+    assert!(
+        waited == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD),
+        "the worker must exit or its reader must have reaped it"
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while worker.session().is_some() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the client never retired its dead worker session"
+        );
+        std::thread::yield_now();
+    }
+}
+
 #[test]
 fn kill_minus_nine_is_a_typed_failure_with_no_fallback() {
     let directory = tempfile::tempdir().unwrap();
@@ -491,20 +525,15 @@ fn kill_minus_nine_is_a_typed_failure_with_no_fallback() {
         expected_content: None,
         store: None,
     }];
-    let (steps, refused) = worker.prepare(&token, intents, None).unwrap();
+    let (steps, refused, session) = worker.prepare(&token, intents, None).unwrap();
     assert!(refused.is_empty());
 
-    // SIGKILL the worker mid-session.
-    let pid = worker.worker_pid().unwrap();
-    let status = std::process::Command::new("kill")
-        .args(["-9", &pid.to_string()])
-        .status()
-        .unwrap();
-    assert!(status.success());
+    // SIGKILL incarnation A and wait for the actual child/reader loss.
+    kill_and_observe(&worker);
 
     // The apply fails typed: incarnation A's prepared authority is dead,
     // and there is no silent in-process fallback.
-    let error = worker.apply(&token, steps, None).unwrap_err();
+    let error = worker.apply(&token, session, steps, None).unwrap_err();
     assert!(
         matches!(error, ClientError::WorkerLost(_)),
         "killed worker fails typed, got {error:?}"
@@ -527,9 +556,9 @@ fn kill_minus_nine_is_a_typed_failure_with_no_fallback() {
         expected_content: None,
         store: None,
     }];
-    let (steps, refused) = worker.prepare(&token, intents, None).unwrap();
+    let (steps, refused, session) = worker.prepare(&token, intents, None).unwrap();
     assert!(refused.is_empty());
-    let receipts = worker.apply(&token, steps, None).unwrap();
+    let receipts = worker.apply(&token, session, steps, None).unwrap();
     assert!(
         receipts
             .iter()
@@ -556,32 +585,29 @@ fn stale_prepared_authority_fails_closed_after_a_kill() {
             store: None,
         }]
     };
-    let (steps, refused) = worker.prepare(&token, intents(), None).unwrap();
+    let (stale, refused, old_session) = worker.prepare(&token, intents(), None).unwrap();
     assert!(refused.is_empty());
+    kill_and_observe(&worker);
 
-    let pid = worker.worker_pid().unwrap();
-    assert!(std::process::Command::new("kill")
-        .args(["-9", &pid.to_string()])
-        .status()
-        .unwrap()
-        .success());
-    // Let the reader thread observe the death before the next request.
-    while worker.session().is_some() {
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-
-    // Respawned incarnation B: applying A's prepared steps must fail —
-    // the kernel's incarnation binding rejects them, typed, and no file
-    // is created.
-    let receipts_or_error = worker.apply(&token, steps, None);
-    if let Ok(receipts) = receipts_or_error {
-        assert!(
-            receipts
-                .iter()
-                .all(|receipt| !receipt.outcome.is_committed()),
-            "stale steps never commit: {receipts:?}"
-        );
-    }
-    assert!(!target.exists());
+    // A new prepare against the *same* absent target in incarnation B
+    // cannot legalize the older A batch, even with identical observations.
+    worker.health(&token).unwrap();
+    let (fresh, refused, current_session) = worker.prepare(&token, intents(), None).unwrap();
+    assert!(refused.is_empty());
+    assert_ne!(old_session, current_session);
+    let error = worker.apply(&token, old_session, stale, None).unwrap_err();
+    assert!(
+        matches!(&error, ClientError::Refused(strop_worker_client::Refusal::WrongIncarnation { current }) if *current == current_session.incarnation),
+        "old worker authority must refuse before applying: {error:?}"
+    );
+    assert!(!target.exists(), "the old prepared step had no effect");
+    let receipts = worker.apply(&token, current_session, fresh, None).unwrap();
+    assert!(
+        receipts
+            .iter()
+            .all(|receipt| receipt.outcome.is_committed()),
+        "fresh authority can publish: {receipts:?}"
+    );
+    assert!(target.exists());
     worker.shutdown().unwrap();
 }

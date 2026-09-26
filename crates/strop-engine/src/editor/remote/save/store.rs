@@ -87,6 +87,7 @@ pub(crate) fn prepare_edit(
     let dispatch = StoreDispatch::Remote(worker.clone());
     let operation = dispatch.prepare_store(intent, token).map_err(map_failure)?;
     let observed = operation
+        .operation
         .destination
         .as_ref()
         .and_then(|destination| destination.value.as_ref())
@@ -179,7 +180,13 @@ pub(crate) fn save(
         .worker()
         .namespace()
         .map_err(|error| refused(RefusalKind::Io, error.to_string()))?;
-    *prepared.lock() = Some((namespace, operation.clone()));
+    if worker.worker().session() != Some(operation.session) {
+        return Err(refused(
+            RefusalKind::Conflict,
+            "the worker session that prepared this Store is no longer live",
+        ));
+    }
+    *prepared.lock() = Some((namespace, operation.operation.clone()));
     let mut bytes = Vec::with_capacity(contents.len_bytes());
     for chunk in contents.chunks() {
         bytes.extend_from_slice(chunk.as_bytes());

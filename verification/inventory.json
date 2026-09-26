@@ -984,7 +984,7 @@
           "crates/strop-containers/src/tar.rs": "f3893f14678db94d531c06ba92075bcf4dba12e6cdbc5d8667d989c4d371bad1",
           "crates/strop-engine/src/editor/containers/container_worker.rs": "55d45fbddca46caefa1c5121403f66f592c4676fc9d9db13b2711fa7d0cddce9"
         },
-        "evidence": "f644d4cfe58d6f779f3a31104d3607aa611492dd54b94f64934335e126f485ce"
+        "evidence": "8e051821b13255236c778503f3e0e71eed6b88b886848ccc691345b708a6af57"
       }
     },
     {
@@ -1181,7 +1181,7 @@
         },
         {
           "id": "SSH-WORKER-DEPLOY",
-          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP deployment provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write/notify parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against a live sshd in the compose gate (STROP_REQUIRE_SSH_TESTS=1).",
+          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write/notify parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated network peers. Each fixture stops and reaps both exact children. The release catalog names the authenticated endpoint's target; the live worker probe attests supplied bytes instead of trusting the test runner's GNU compile triple.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1204,6 +1204,14 @@
               "tests": [
                 "provider_classification_keeps_status_codes_authoritative",
                 "lstat_decoding_maps_kinds_mode_owner_and_length"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/worker_ssh.rs",
+              "gate": "test",
+              "tests": [
+                "scoped_loopback_ssh_daemons_are_reaped_after_each_fixture"
               ]
             },
             {
@@ -1249,7 +1257,7 @@
           "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
           "crates/strop-remote/src/transport/wire.rs": "3fd192fbaca09ebca5c4f5f2ecd6f99ba8c7642713451bcbae67abef3b1dc54c"
         },
-        "evidence": "566196c5233cea2c84731e008f5ed3308f7fd59329428d7a3b32f7b8f0804433"
+        "evidence": "f196349e09a4209a85c8e2ddb83ae0ed3f0d745033f8b699fec3f98384cf8166"
       }
     },
     {
@@ -1545,15 +1553,15 @@
       "pins": {
         "sources": {
           "crates/strop-engine/src/editor/remote/save.rs": "b548ed478153246baab80c12f98cfc5468f182a55b95e3da07e74e9e7c5d5053",
-          "crates/strop-engine/src/editor/remote/save/store.rs": "552a9205d922e5e8768becfd27baad3dc4a3ea0a8d51c59e06f50947e957a7b1",
+          "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/local/store.rs": "9d864432d233582bf5e84619966fa83df9e7702ca7d5e8221f75feb13f418981",
           "crates/strop-fs/src/local/verify.rs": "7a40cb78d0203882accbb5bbfdfbffe16d055d6efeb468b1e2202ec20010c8fe",
-          "crates/strop-worker-client/src/lib.rs": "7e407102eb08ee53bf870a4ea901115a84957be9818eda23fa2391dc45e72121",
-          "crates/strop-worker/src/serve/fs.rs": "57601c334d6a1656fe12a63f4522009428612e75c038afc59b8c0774ae62f074",
+          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
+          "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-workspace/src/operation.rs": "24fc4391fb73d5ca824051d354e5e4a94d16cd38940633e05f657dcf9088cc7b"
         },
-        "evidence": "0a8c94e5499222882f03ab0b8561b31d3a8d58cfea95b4862aea63e92ee97c50"
+        "evidence": "fd724b57e2ac4482c24847990fb701cb4ef20b9513cc538fe31bc9b4f875c954"
       }
     },
     {
@@ -1852,6 +1860,7 @@
         "the platform trash facility for Trash operations"
       ],
       "files": [
+        "crates/strop-fs/Cargo.toml",
         "crates/strop-fs/src/attributes.rs",
         "crates/strop-fs/src/batch.rs",
         "crates/strop-fs/src/environment.rs",
@@ -1896,6 +1905,26 @@
             "from": "0057/FS-NOCLOBBER",
             "classification": "strengthened",
             "basis": "Shared native Store adds frozen content/inode/xattr checks and recovered read-only verification."
+          }
+        },
+        {
+          "id": "FS-SESSION-BOUNDARY",
+          "statement": "The shared native FS StepKernel constructs session-less PreparedBatch data and still rechecks OS namespace, observations and no-clobber on execution. Its worker-backed editor caller stamps that same plan with the responding worker Session; authorization to carry it into Apply belongs to the client-side same-source session classifier, not a guessed stable host-namespace string. A real reviewed rename prepared on worker A refuses after B is ready without changing either pathname.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/filesystem/session_tests.rs",
+              "gate": "test",
+              "tests": [
+                "old_review_cannot_mutate_after_a_new_worker_session_is_ready"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "native kernel plan remains pure and session-less while worker-backed editor reviews carry their authentic session into pre-effect admission"
           }
         },
         {
@@ -1983,8 +2012,9 @@
       ],
       "pins": {
         "sources": {
+          "crates/strop-fs/Cargo.toml": "c9cc98721eb0d11a8254063a63d0b0b77f6870a4be653f0e7b8d66c90cbce31e",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
-          "crates/strop-fs/src/batch.rs": "79ab2c99cda675d41d924cc71391d8675059d550915e6705aa3d6f33486b2415",
+          "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
           "crates/strop-fs/src/environment.rs": "b49942627b75237025e080d25e2666c8dc40e1d96103da7f4a314b9411301d96",
           "crates/strop-fs/src/guard.rs": "c7753cc707fd4405ac56794120f7405d728d9ce3d686f9b693a687148d8cb46a",
@@ -2003,7 +2033,7 @@
           "crates/strop-fs/src/trash/restore.rs": "310585f58292dc95c3b8c8a87a3755c906f6524cfc87d37aff53a04c50158d4f",
           "crates/strop-fs/src/unsupported.rs": "c64aa3b6a10d85bdaf98745f1ea9b42e3fbc8297b192244cfabcd28f6f9d6b78"
         },
-        "evidence": "6b8786f836aff436ad9812244c0961038eb73dc33f9606c935d42215c9efa2cd"
+        "evidence": "51a76b773d3ef05fb0ccc344098046f22c4a1da31c1fab64213fe0b4674f291c"
       }
     },
     {
@@ -2191,7 +2221,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "PR run 36246567485 passed native GNU Store, worker-client and nested-editor journeys; both macOS architectures passed direct supervisor and framed-worker tests but TUI stalled after BYTE-READY. Run 36248998773 captured child bytes `12 78 1b 5b 31 35 7e` instead of `12 1b 78 1b 5b 31 35 7e` on both Mac targets. Run 36256978392 reproduced the root at native Ghostty VT encoding: the Alt-x unit test emitted `78` instead of `1b 78` on both Intel and arm64; separate Escape+x passed. The bridge now sets the logical Alt option after Ghostty's per-key terminal refresh. The same run's GNU SSH fixture lacked the advertised static musl artifact; native GNU PR/tag jobs now build and supply that exact static worker. Final-source native four-target PTY/SSH/LSP and archived target profiles remain release gates; wiring and a Linux gate cannot close WPLAT-NATIVE.",
+          "statement": "PR run 36256978392 reproduced native Ghostty macOS Alt-x as a lost ESC; run 36258208968 passed the repaired Alt-x and separate Escape+x encoder tests on Apple Silicon, then the real SSH parity test hit macOS BSM's UNKNOWN peer from a pipe-only `sshd -i` fixture. Each test now owns private real TCP loopback OpenSSH daemons instead of fabricating a peer; Mac SSH and full TUI still need execution on this source. That PR's GNU x86 full Docker gate also proved killed-worker prepared authority could reconnect and commit in a fresh worker even after OS-confirmed SIGKILL; session-stamped prepare/apply, protected Store and review refusals now pass focused real regressions. Four-target final-source journeys, matching artifacts and raw profiles remain WPLAT-NATIVE gates; scoped Linux and encoder tests are not a platform release.",
           "status": "blocked",
           "evidence": [
             {
@@ -2232,7 +2262,7 @@
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "2b3049fcfb624fe0b16d5140200301190db27b172e0976b5df2eaf741557df40"
+        "evidence": "407311a943d97907b3457f5fd2acdd8a2cf53f5f5cc65caf17af3960587a93b6"
       }
     },
     {
@@ -2901,6 +2931,12 @@
         "crates/strop-worker-client/src/error.rs",
         "crates/strop-worker-client/src/lib.rs",
         "crates/strop-worker-client/src/payload.rs",
+        "crates/strop-fs/Cargo.toml",
+        "crates/strop-fs/src/batch.rs",
+        "crates/strop-remote/src/worker_transport.rs",
+        "crates/strop-engine/src/editor/namespace.rs",
+        "crates/strop-engine/src/editor/remote/save/store.rs",
+        "crates/strop-engine/src/editor/filesystem/mod.rs",
         "crates/strop-worker/src/lib.rs",
         "crates/strop-core/src/worker/cache_record.rs",
         "crates/strop-worker/src/serve.rs",
@@ -2964,6 +3000,43 @@
             "from": "0057/WS-CLIENT",
             "classification": "strengthened",
             "basis": "Scheduler and process pumps now preserve output-before-exit and keep control responsive under credit stalls."
+          }
+        },
+        {
+          "id": "WS-PREPARED-SESSION",
+          "statement": "Every worker-backed PreparedBatch and protected Store holds the exact session that returned the observations; the direct in-process FS kernel is explicitly session-less. Client Apply classifies the already-live connection with the same-source session guard before uploading bytes or sending an Apply request, and never reconnects stale mutation authority. A fresh worker's Prepare of the identical absent target cannot legalize the old batch. The editor's reviewed filesystem plan uses only its previously admitted remote lease and refuses stale sessions before rope materialization; protected Stores return a typed pre-effect conflict, while read-only recovered verification remains separate. Real killed-worker, protected-Store and review acceptance tests exercise both refusal and fresh-session success.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/worker_stdio.rs",
+              "gate": "test",
+              "tests": [
+                "kill_minus_nine_is_a_typed_failure_with_no_fallback",
+                "stale_prepared_authority_fails_closed_after_a_kill"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/store_tests.rs",
+              "gate": "test",
+              "tests": [
+                "stale_prepared_store_cannot_publish_after_worker_respawns"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/filesystem/session_tests.rs",
+              "gate": "test",
+              "tests": [
+                "old_review_cannot_mutate_after_a_new_worker_session_is_ready"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "real OS kill and editor acceptance exposed a prepare/apply session-boundary gap hidden by timing; same-source core classifier now gates the client before mutation"
           }
         },
         {
@@ -3254,25 +3327,31 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/worker/cache_record.rs": "3030cb87bc678044938ad67758f10d8d0ab06c7b59f0b05c329cf25cebc77292",
+          "crates/strop-engine/src/editor/filesystem/mod.rs": "b9df6a96a00edd766c2ea653ab6b3a96e36aad19a10abf0436281ec39aeaec1a",
+          "crates/strop-engine/src/editor/namespace.rs": "004057bea68a4e81007afc1ba788e79577e8047717947dc45983cada0a28cdc0",
+          "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
+          "crates/strop-fs/Cargo.toml": "c9cc98721eb0d11a8254063a63d0b0b77f6870a4be653f0e7b8d66c90cbce31e",
+          "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
+          "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
           "crates/strop-worker-client/src/connection/reader.rs": "83bfa7c00f07310fae842df2644aaee11ed814d027a6e61f703fa6d94409c6f2",
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
-          "crates/strop-worker-client/src/lib.rs": "7e407102eb08ee53bf870a4ea901115a84957be9818eda23fa2391dc45e72121",
+          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
           "crates/strop-worker/Cargo.toml": "bd0b298971ac5a65ac0aa7799ec19c9891692637e25740bb4ac8f1b35e598e51",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
-          "crates/strop-worker/src/serve/fs.rs": "57601c334d6a1656fe12a63f4522009428612e75c038afc59b8c0774ae62f074",
+          "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
           "crates/strop/tests/terminal_editor.rs": "1d4acc7748a26e9e4e26efa55c80079372a7680bbc16988c4d1e6b6330fd287e",
           "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
-          "verification/bench_ui_input_frame.py": "3daf76eabf9a1298386888df528af3f301725b0320fb1b68854f316b644fb8f9",
+          "verification/bench_ui_input_frame.py": "689ce08d3468b85d8f05cddc38f2971f9d5450233da5142fb0d899ced2339903",
           "verification/bench_worker.py": "cbb606889fbde28c53ddba5bcf171fe19fff196989b9bc39c92f077a63ce83a1",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "8b43a9f71b861306ea739590468a832cb8326a3fb9c057befeaeef6e696d2eec"
+        "evidence": "dadb9e0a3c8cb55024047cccc60d0e4d47150ab92f8d7ba188dc4448786cad57"
       }
     },
     {
@@ -3929,10 +4008,10 @@
           "crates/strop-core/src/worker/deploy_policy.rs": "b07466797094af38dd676c242b4cd93754c2b4be64cead12190f6d666d5eaf63",
           "crates/strop-engine/src/editor/containers/container_worker.rs": "55d45fbddca46caefa1c5121403f66f592c4676fc9d9db13b2711fa7d0cddce9",
           "crates/strop-engine/src/editor/explain.rs": "06d50bc1af2abffb46dbde57aca49cbcb3dc80078b14b6f0369cbc13a6cd6644",
-          "crates/strop-engine/src/editor/namespace.rs": "d6088450291d50854ef791d31ebd25b40821126815edd2dbf2967e89700dbbb2",
+          "crates/strop-engine/src/editor/namespace.rs": "004057bea68a4e81007afc1ba788e79577e8047717947dc45983cada0a28cdc0",
           "crates/strop-engine/src/editor/remote/workers.rs": "edc263c327e47fcf856c71df16095909c779d5c308ef2bd5c03df16fee652464",
           "crates/strop-remote/src/deploy_provider.rs": "8f47f3e3b11e3bb2aed7fe5c0a095c20e270fb461cf1d9a0d731cdb3d59a52a3",
-          "crates/strop-worker-client/src/lib.rs": "7e407102eb08ee53bf870a4ea901115a84957be9818eda23fa2391dc45e72121",
+          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
           "crates/strop-worker-deploy/src/cache.rs": "31101fb57d92311542fdc42a65d25738991e99422634324f2d8ff9f5754123ec",
           "crates/strop-worker-deploy/src/container.rs": "088c1427a0d633791f7c823e1b8b70c7659bbea9e942153e982f0d0f9637990f",
           "crates/strop-worker-deploy/src/deploy.rs": "9bf618fcdc92aaf5fed2ab27ca9ffa0370284ba9d2514f8bc7b6d1d381007a21",
@@ -3945,7 +4024,7 @@
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop/Cargo.toml": "40267880d30b5233ea3e8b595a6cc05402f230aae78cd2567fbeb4dafb6ebd04"
         },
-        "evidence": "72d5d570082175a4e7b5da0772f9b907fbb1c1e7850dcb1dc7d7b066732db6f8"
+        "evidence": "552a640901921d433fe1ea3d6f32370980c70f12c0ac8a241909d130190f7495"
       }
     },
     {
@@ -4300,12 +4379,12 @@
           "crates/strop-core/src/worker/recovery_policy.rs": "07f72ace1b5d56ca63fd95e7fee64b18aca23849a76efd6d7c90192c1574c7ba",
           "crates/strop-engine/src/editor/io/save.rs": "ac146535292965bef545a9dab66a1fd00eff35afd43c1e08ee95d390f09b5613",
           "crates/strop-engine/src/editor/remote/save.rs": "b548ed478153246baab80c12f98cfc5468f182a55b95e3da07e74e9e7c5d5053",
-          "crates/strop-engine/src/editor/remote/save/store.rs": "552a9205d922e5e8768becfd27baad3dc4a3ea0a8d51c59e06f50947e957a7b1",
+          "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/src/local/verify.rs": "7a40cb78d0203882accbb5bbfdfbffe16d055d6efeb468b1e2202ec20010c8fe",
-          "crates/strop-worker-client/src/lib.rs": "7e407102eb08ee53bf870a4ea901115a84957be9818eda23fa2391dc45e72121",
-          "crates/strop-worker/src/serve/fs.rs": "57601c334d6a1656fe12a63f4522009428612e75c038afc59b8c0774ae62f074"
+          "crates/strop-worker-client/src/lib.rs": "2c770741ef95cce2379e1383ab314d8517fd9ab1caafcc480b9f1791ca6031bd",
+          "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4"
         },
-        "evidence": "a2d074d3445a772d8da99366ecbd059799027dc24357b4a064407b533cfb8637"
+        "evidence": "0bf40bc5262563a107398366be200894f2395f71d51a9e79fe38c7084851f2a3"
       }
     }
   ],

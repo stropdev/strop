@@ -1371,6 +1371,48 @@ native byte assertion. The same run's GNU SSH fixture also had
 the host GNU test binary was available; build and supply the exact
 native static artifact before real OpenSSH parity on GNU targets.
 
+The next PR run
+[`36258208968`](https://github.com/stropdev/strop/actions/runs/36258208968)
+passed the native Alt-x/ESC/x encoder checks on arm64 macOS, then
+found a distinct fixture failure before the editor TUI: the real
+OpenSSH discovery's direct `ProxyCommand /usr/sbin/sshd -i` carried
+only pipes, so macOS BSM auditing received `UNKNOWN` instead of a
+network peer and closed the connection. The fixture must start two
+scoped same-host `sshd -D` listeners on selected loopback ports,
+exercise the same real SSH/SFTP/authentication protocol over TCP on
+every target, and stop/reap exactly those child daemons when each
+test scope ends. This preserves Python-free Linux parity and does
+not disable audit or skip native macOS SSH.
+
+The arm64 GNU runner built and supplied its musl release worker but
+the SSH fixture still cataloged the **host test binary's GNU triple**
+while the selected endpoint reported
+`aarch64-unknown-linux-musl`. That mismatched catalog correctly
+refused `NoArtifactForTarget`; the fixture, not the deployment
+resolver, was wrong. Build its catalog from the authenticated
+`EndpointFacts.target`, and let the deployed worker's actual
+Welcome/probe attest the supplied release bytes against that target.
+No GNU-vs-musl special case or fallback is authorized.
+
+The same native PR gate exposed a separate **worker-authority bug**
+in `kill_minus_nine_is_a_typed_failure_with_no_fallback`. Merely
+delivering SIGKILL was a race; after synchronizing the child's
+non-reaping `waitid(WEXITED|WNOWAIT)`, `Worker::apply` still
+reconnected and applied incarnation A's prepared steps in
+incarnation B. `PreparedOperation.capability.incarnation` is the
+stable host namespace, **not** a worker session. Before release:
+stamp a prepared batch with the exact `Session` that returned its
+observations; thread that session through local/SSH review and
+protected Store, check it against the already-live connection
+**before any content upload or apply envelope**, and refuse old
+authority without spawning a replacement. A new prepare on B
+must not legalize an outstanding A batch. The in-process native
+FS kernel's session-less plan remains its own explicitly scoped
+contract; `verify_recovered` still handles old uncertain
+receipts read-only. Preserve the killed-worker regression and
+add the established-B/old-A negative case; update claim/model
+correspondence instead of weakening the test.
+
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.
 `WDEP-GC` now has a serialized native caller, two-worker/SSH/container

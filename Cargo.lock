@@ -1490,6 +1490,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "strop-core",
+ "strop-worker-protocol",
  "strop-workspace",
  "tempfile",
  "thiserror",

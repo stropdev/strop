@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
-    let Some(_serial) = serial() else { return };
-    let _ = fixture();
+    let Some(host_fixture) = serial() else { return };
+    let fixture = &host_fixture.fixture;
     let host = endpoint("fixture");
     let (token, _handle) = token();
     let facts = discover(&host, &token);
@@ -14,6 +14,7 @@ fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
             .to_string()
     });
     let (provider, ready) = deploy_worker(
+        fixture,
         &host,
         &facts,
         Consent::Granted {
@@ -22,16 +23,9 @@ fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
         &token,
     );
     assert_eq!(ready.handshake.worker.version, env!("CARGO_PKG_VERSION"));
-    assert_eq!(
-        ready.handshake.worker.target,
-        facts.local_binary_target().unwrap()
-    );
+    assert_eq!(ready.handshake.worker.target, facts.target);
 
-    let worker: Worker = worker_transport::worker(
-        &host,
-        &ready.object.path,
-        facts.local_binary_target().unwrap(),
-    );
+    let worker: Worker = worker_transport::worker(&host, &ready.object.path, &facts.target);
     let capabilities = worker.capabilities().unwrap();
     assert!(capabilities.read && capabilities.write && capabilities.list);
     let first = worker.session().expect("handshake captured the lease");
@@ -86,7 +80,7 @@ fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
     // worker lands exactly on the remote filesystem (== this
     // filesystem through localhost sshd). Buffer-copy is the protocol's
     // content-carrying write; CreateFile alone creates empty.
-    let scope = tempfile::tempdir_in(fixture().root()).unwrap();
+    let scope = tempfile::tempdir_in(fixture.root()).unwrap();
     let source_file = scope.path().join("source.txt");
     std::fs::write(&source_file, "seed\n").unwrap();
     let written = scope.path().join("worker-written.txt");
@@ -98,11 +92,11 @@ fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
         expected_content: None,
         store: None,
     }];
-    let (steps, refused) = worker.prepare(&token, intents, None).unwrap();
+    let (steps, refused, session) = worker.prepare(&token, intents, None).unwrap();
     assert!(refused.is_empty());
     assert_eq!(steps.len(), 1);
     let receipts = worker
-        .apply(&token, steps, Some(b"through the ssh worker\n"))
+        .apply(&token, session, steps, Some(b"through the ssh worker\n"))
         .unwrap();
     assert_eq!(receipts.len(), 1);
     assert!(

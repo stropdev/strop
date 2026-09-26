@@ -98,6 +98,9 @@ const PARENT_LIMIT: usize = 128;
 pub struct PreparedBatch {
     pub steps: Vec<PreparedOperation>,
     pub refused: Vec<OperationRefusal>,
+    /// A worker-backed plan belongs only to the process/lease that
+    /// prepared it. The direct native kernel has no worker session.
+    pub worker_session: Option<strop_worker_protocol::Session>,
 }
 
 pub fn prepare_one(
@@ -139,6 +142,7 @@ pub fn prepare(
     let mut result = PreparedBatch {
         steps: Vec::new(),
         refused: Vec::new(),
+        worker_session: None,
     };
     if intents.len() > STEP_LIMIT {
         return Err(FsFailure::new(

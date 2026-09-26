@@ -6,9 +6,8 @@
 //! its honest read-only SFTP behavior with a typed refusal for anything
 //! more, and an interrupted deploy leaves no partial activation.
 //!
-//! Like remote_ssh.rs, there is no network: `sshd -i` speaks the real
-//! SSH protocol over a ProxyCommand pipe. Gated by
-//! STROP_REQUIRE_SSH_TESTS=1 (the compose test stage runs sshd).
+//! Loopback TCP carries the real SSH protocol to two scoped OpenSSH daemons
+//! (ordinary and SFTP-only). Gated by STROP_REQUIRE_SSH_TESTS=1.
 #![cfg(unix)]
 #[path = "worker_ssh/journeys.rs"]
 mod journeys;
@@ -18,10 +17,12 @@ mod perf;
 mod refusals;
 
 use std::io::Read as _;
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use strop_core::worker::cache_record::CACHE_LOCK_FILE;
 use strop_remote::bootstrap::{self, BootstrapError, EndpointFacts};
@@ -37,24 +38,28 @@ use strop_worker_deploy::MAX_WORKER_BYTES;
 use strop_workspace::operation::{OperationIntent, OperationKind};
 use strop_workspace::{RemoteEndpoint, ResourceLocation};
 
-/// Tests in this binary share one sshd fixture and one remote cache;
-/// deployments mutate both, so they run strictly serially.
+/// Every test owns its private sshd listeners, cache and PATH wrapper.
+/// The lock keeps process-global PATH scoped until the daemons are reaped.
 static SERIAL: Mutex<()> = Mutex::new(());
-static FIXTURE: LazyLock<Fixture> = LazyLock::new(Fixture::new);
+
+struct ScopedFixture {
+    fixture: Fixture,
+    _serial: MutexGuard<'static, ()>,
+}
 
 fn required() -> bool {
     std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() == Some(std::ffi::OsStr::new("1"))
 }
 
-fn serial() -> Option<MutexGuard<'static, ()>> {
+fn serial() -> Option<ScopedFixture> {
     if !required() {
         return None;
     }
-    Some(SERIAL.lock().unwrap_or_else(|error| error.into_inner()))
-}
-
-fn fixture() -> &'static Fixture {
-    &FIXTURE
+    let serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    Some(ScopedFixture {
+        fixture: Fixture::new(),
+        _serial: serial,
+    })
 }
 
 fn quoted(path: &Path) -> String {
@@ -71,12 +76,71 @@ fn successful(command: &mut Command) -> Output {
     output
 }
 
+struct Sshd {
+    child: Option<Child>,
+    port: u16,
+}
+
+impl Sshd {
+    fn start(root: &Path, config: &Path, name: &str) -> Self {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let log = root.join(format!("{name}.sshd.log"));
+        let stderr = std::fs::File::create(&log).unwrap();
+        let child = Command::new("/usr/sbin/sshd")
+            .args(["-D", "-e", "-f"])
+            .arg(config)
+            .args(["-p", &port.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .unwrap();
+        let mut daemon = Self {
+            child: Some(child),
+            port,
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                return daemon;
+            }
+            if daemon.child.as_mut().unwrap().try_wait().unwrap().is_some()
+                || Instant::now() >= deadline
+            {
+                panic!(
+                    "scoped {name} sshd did not bind loopback: {}",
+                    std::fs::read_to_string(&log).unwrap_or_default()
+                );
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn stop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+impl Drop for Sshd {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 struct Fixture {
     directory: tempfile::TempDir,
     /// The deployable worker artifact: the real binary, stripped under
     /// the stage's byte bound.
     artifact: PathBuf,
     artifact_sha256: String,
+    sshd: Sshd,
+    sftp_sshd: Sshd,
+    original_path: std::ffi::OsString,
 }
 
 impl Fixture {
@@ -85,6 +149,7 @@ impl Fixture {
             .tempdir_in(std::fs::canonicalize(std::env::temp_dir()).unwrap())
             .unwrap();
         let root = directory.path();
+        let original_path = std::env::var_os("PATH").unwrap();
         std::fs::create_dir(root.join("bin")).unwrap();
         std::fs::create_dir(root.join("home")).unwrap();
         std::fs::create_dir(root.join("cache")).unwrap();
@@ -100,7 +165,7 @@ impl Fixture {
         std::fs::copy(root.join("client.pub"), root.join("authorized_keys")).unwrap();
         let username = String::from_utf8(successful(Command::new("id").arg("-un")).stdout).unwrap();
         let base = format!(
-            "HostKey {}\nAuthorizedKeysFile {}\nStrictModes no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin yes\nLogLevel ERROR\nSubsystem sftp internal-sftp\n",
+            "ListenAddress 127.0.0.1\nHostKey {}\nAuthorizedKeysFile {}\nStrictModes no\nUsePAM no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin yes\nLogLevel ERROR\nSubsystem sftp internal-sftp\n",
             root.join("host").display(),
             root.join("authorized_keys").display()
         );
@@ -108,31 +173,29 @@ impl Fixture {
         // config-owned channel that pins the remote cache base inside
         // the fixture for both sshd configurations.
         let set_env = format!("SetEnv XDG_CACHE_HOME={}\n", quoted(&root.join("cache")));
-        let server = root.join("sshd_config");
-        std::fs::write(&server, format!("{base}{set_env}")).unwrap();
-        let sftp_only = root.join("sshd_sftp_only_config");
+        let server_config = root.join("sshd_config");
+        std::fs::write(&server_config, format!("{base}{set_env}")).unwrap();
+        let sftp_config = root.join("sshd_sftp_only_config");
         std::fs::write(
-            &sftp_only,
+            &sftp_config,
             format!("{base}{set_env}ForceCommand internal-sftp\n"),
         )
         .unwrap();
-        // First matching block wins: the restricted alias gets its own
-        // sshd (ForceCommand internal-sftp), every other alias the
-        // full shell + subsystem sshd.
+        // A real peer socket reaches macOS BSM audit admission; `sshd -i`
+        // on a ProxyCommand pipe supplies UNKNOWN and fails before auth.
+        let sshd = Sshd::start(root, &server_config, "full");
+        let sftp_sshd = Sshd::start(root, &sftp_config, "restricted");
         let config = root.join("ssh_config");
         std::fs::write(&config, format!(
-            "Host sftponly\n ProxyCommand /usr/sbin/sshd -i -e -f {}\nHost *\n IdentityFile {}\n HostName 127.0.0.1\n User {}\n IdentitiesOnly yes\n IdentityAgent none\n HostKeyAlias fixture\n UserKnownHostsFile {}\n GlobalKnownHostsFile /dev/null\n ProxyCommand /usr/sbin/sshd -i -e -f {}\n StrictHostKeyChecking no\n",
-            quoted(&sftp_only),
+            "Host sftponly\n HostName 127.0.0.1\n Port {}\nHost *\n IdentityFile {}\n HostName 127.0.0.1\n Port {}\n User {}\n IdentitiesOnly yes\n IdentityAgent none\n HostKeyAlias fixture\n UserKnownHostsFile {}\n GlobalKnownHostsFile /dev/null\n StrictHostKeyChecking no\n",
+            sftp_sshd.port,
             root.join("client").display(),
+            sshd.port,
             username.trim(),
             root.join("known_hosts").display(),
-            quoted(&server)
         )).unwrap();
-        // The wrapper selects the private config AND pins the remote
-        // cache base: the ssh client's environment is inherited by the
-        // ProxyCommand sshd and hence by every remote shell, so the
-        // audited discovery line resolves $HOME/$XDG_CACHE_HOME inside
-        // the fixture — never the developer's real cache.
+        // The wrapper selects the private config and cache base; server
+        // SetEnv pins the remote side without touching the real $HOME.
         let wrapper = root.join("bin/ssh");
         std::fs::write(
             &wrapper,
@@ -146,9 +209,7 @@ impl Fixture {
         .unwrap();
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
         let mut paths = vec![root.join("bin")];
-        paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
-        // Process-global by design: the provider and bootstrap spawn
-        // `ssh` by name, and this binary's tests all share the fixture.
+        paths.extend(std::env::split_paths(&original_path));
         std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
 
         let artifact = root.join("strop-worker");
@@ -177,11 +238,43 @@ impl Fixture {
             directory,
             artifact,
             artifact_sha256,
+            sshd,
+            sftp_sshd,
+            original_path,
         }
     }
 
     fn root(&self) -> &Path {
         self.directory.path()
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.sshd.stop();
+        self.sftp_sshd.stop();
+        std::env::set_var("PATH", &self.original_path);
+    }
+}
+
+#[test]
+fn scoped_loopback_ssh_daemons_are_reaped_after_each_fixture() {
+    let Some(scope) = serial() else { return };
+    let pids = [
+        scope.fixture.sshd.child.as_ref().unwrap().id(),
+        scope.fixture.sftp_sshd.child.as_ref().unwrap().id(),
+    ];
+    drop(scope);
+    for pid in pids {
+        // SAFETY: signal 0 only observes the PID; the owning Child was
+        // killed and waited by this fixture's Drop before this check.
+        let alive = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        assert_eq!(alive, -1, "this fixture left an sshd child alive");
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH),
+            "the exact child PID must have been reaped"
+        );
     }
 }
 
@@ -281,6 +374,7 @@ fn provider(
 
 /// One full deployment of the fixture artifact to `alias`.
 fn deploy_worker(
+    fixture: &Fixture,
     alias: &RemoteEndpoint,
     facts: &EndpointFacts,
     consent: Consent,
@@ -289,14 +383,14 @@ fn deploy_worker(
     SftpDeployProvider,
     strop_worker_deploy::deploy::ProbedDeployment,
 ) {
-    let size = std::fs::metadata(&fixture().artifact).unwrap().len();
+    let size = std::fs::metadata(&fixture.artifact).unwrap().len();
     deploy_worker_with(
         alias,
         facts,
         consent,
         token,
-        &fixture().artifact,
-        &fixture().artifact_sha256,
+        &fixture.artifact,
+        &fixture.artifact_sha256,
         size,
     )
 }
@@ -316,7 +410,7 @@ fn deploy_worker_with(
     strop_worker_deploy::deploy::ProbedDeployment,
 ) {
     let provider = provider(alias, facts, token);
-    let target = facts.local_binary_target().expect("same-platform fixture");
+    let target = facts.target.as_str();
     let report = deploy(
         &provider,
         &request(
@@ -340,17 +434,12 @@ fn deploy_worker_with(
 
 #[test]
 fn concurrent_real_sftp_installers_accept_only_owned_private_cache_components() {
-    let Some(_serial) = serial() else { return };
-    let fixture = fixture();
+    let Some(_host_fixture) = serial() else {
+        return;
+    };
     let alias = endpoint("fixture");
     let (setup_token, _owner) = token();
     let facts = bootstrap::discover(&alias, &setup_token).unwrap();
-    let cache = fixture.directory.path().join("cache/strop-worker");
-    if cache.exists() {
-        // This is the test's own private fixture cache, never a user
-        // or system path. All other tests in this binary hold SERIAL.
-        std::fs::remove_dir_all(&cache).unwrap();
-    }
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
     let mut installers = Vec::new();
     for _ in 0..2 {
@@ -384,12 +473,13 @@ fn concurrent_real_sftp_installers_accept_only_owned_private_cache_components() 
 fn store_save_parity_over_real_sshd() {
     use sha2::Digest as _;
     use strop_workspace::operation::{FsFailureKind, StepOutcome, StorePolicy, VerifiedOutcome};
-    let Some(_serial) = serial() else { return };
-    let _ = fixture();
+    let Some(host_fixture) = serial() else { return };
+    let fixture = &host_fixture.fixture;
     let host = endpoint("fixture");
     let (token, _handle) = token();
     let facts = discover(&host, &token);
     let (_provider, ready) = deploy_worker(
+        fixture,
         &host,
         &facts,
         Consent::Granted {
@@ -397,12 +487,8 @@ fn store_save_parity_over_real_sshd() {
         },
         &token,
     );
-    let worker: Worker = worker_transport::worker(
-        &host,
-        &ready.object.path,
-        facts.local_binary_target().unwrap(),
-    );
-    let scope = tempfile::tempdir_in(fixture().root()).unwrap();
+    let worker: Worker = worker_transport::worker(&host, &ready.object.path, &facts.target);
+    let scope = tempfile::tempdir_in(fixture.root()).unwrap();
     let file = scope.path().join("note.txt");
     std::fs::write(&file, "before\n").unwrap();
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
@@ -438,7 +524,7 @@ fn store_save_parity_over_real_sshd() {
 
     // Save-as create: an absent destination with an absent baseline.
     let created = scope.path().join("created.txt");
-    let (steps, refused) = worker
+    let (steps, refused, session) = worker
         .prepare(
             &token,
             vec![store(&created, None, false, false, b"created\n")],
@@ -446,7 +532,9 @@ fn store_save_parity_over_real_sshd() {
         )
         .unwrap();
     assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
-    let receipts = worker.apply(&token, steps, Some(b"created\n")).unwrap();
+    let receipts = worker
+        .apply(&token, session, steps, Some(b"created\n"))
+        .unwrap();
     assert!(receipts[0].outcome.is_committed(), "{receipts:?}");
     assert_eq!(std::fs::read(&created).unwrap(), b"created\n");
 
@@ -463,7 +551,7 @@ fn store_save_parity_over_real_sshd() {
                 .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(42)),
         )
         .unwrap();
-    let (steps, refused) = worker
+    let (steps, refused, _session) = worker
         .prepare(
             &token,
             vec![store(&file, Some(baseline), false, false, b"mine\n")],
@@ -482,7 +570,7 @@ fn store_save_parity_over_real_sshd() {
 
     // Forced save-as over an occupied name commits, preserving the
     // occupant's permissions on the replaced file.
-    let (steps, refused) = worker
+    let (steps, refused, session) = worker
         .prepare(
             &token,
             vec![store(&file, Some(baseline), true, false, b"mine\n")],
@@ -490,7 +578,9 @@ fn store_save_parity_over_real_sshd() {
         )
         .unwrap();
     assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
-    let receipts = worker.apply(&token, steps, Some(b"mine\n")).unwrap();
+    let receipts = worker
+        .apply(&token, session, steps, Some(b"mine\n"))
+        .unwrap();
     assert!(receipts[0].outcome.is_committed(), "{receipts:?}");
     assert_eq!(std::fs::read(&file).unwrap(), b"mine\n");
     assert_eq!(
@@ -503,7 +593,7 @@ fn store_save_parity_over_real_sshd() {
     // it from the overwritten bytes, and a receipt lost before its
     // witness arrived still verifies Committed by the intended digest.
     let baseline = mtime(&file);
-    let (steps, refused) = worker
+    let (steps, refused, session) = worker
         .prepare(
             &token,
             vec![store(&file, Some(baseline), false, false, b"yours")],
@@ -513,7 +603,7 @@ fn store_save_parity_over_real_sshd() {
     assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
     let operation = steps.into_iter().next().unwrap();
     let receipts = worker
-        .apply(&token, vec![operation.clone()], Some(b"yours"))
+        .apply(&token, session, vec![operation.clone()], Some(b"yours"))
         .unwrap();
     assert!(receipts[0].outcome.is_committed(), "{receipts:?}");
     assert_eq!(std::fs::read(&file).unwrap(), b"yours");
@@ -536,7 +626,7 @@ fn store_save_parity_over_real_sshd() {
     // state is Unknown — never a guessed reconciliation.
     std::fs::write(&file, "zzzzz\n").unwrap();
     let baseline = mtime(&file);
-    let (steps, refused) = worker
+    let (steps, refused, _session) = worker
         .prepare(
             &token,
             vec![store(&file, Some(baseline), false, false, b"fresh\n")],
@@ -572,12 +662,13 @@ fn store_save_parity_over_real_sshd() {
 /// (non-UTF8) name bytes and ranged read windows.
 #[test]
 fn read_list_native_bytes_and_windows_over_real_sshd() {
-    let Some(_serial) = serial() else { return };
-    let _ = fixture();
+    let Some(host_fixture) = serial() else { return };
+    let fixture = &host_fixture.fixture;
     let host = endpoint("fixture");
     let (token, _handle) = token();
     let facts = discover(&host, &token);
     let (_provider, ready) = deploy_worker(
+        fixture,
         &host,
         &facts,
         Consent::Granted {
@@ -585,12 +676,8 @@ fn read_list_native_bytes_and_windows_over_real_sshd() {
         },
         &token,
     );
-    let worker: Worker = worker_transport::worker(
-        &host,
-        &ready.object.path,
-        facts.local_binary_target().unwrap(),
-    );
-    let scope = tempfile::tempdir_in(fixture().root()).unwrap();
+    let worker: Worker = worker_transport::worker(&host, &ready.object.path, &facts.target);
+    let scope = tempfile::tempdir_in(fixture.root()).unwrap();
     // A native byte name that is not valid UTF-8 round-trips exactly.
     use std::os::unix::ffi::OsStrExt;
     let raw = std::ffi::OsStr::from_bytes(b"native-\xFF-name.txt");

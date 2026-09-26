@@ -6,6 +6,8 @@ mod prepare;
 mod reconcile;
 mod recovery;
 mod render;
+#[cfg(test)]
+mod session_tests;
 mod shutdown;
 #[cfg(test)]
 mod tests;
