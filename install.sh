@@ -75,14 +75,11 @@ case "$OS/$ARCH" in
     Linux/aarch64|Linux/arm64)
         TARGET="aarch64-unknown-linux-musl"
         ;;
-    Darwin/x86_64)
-        TARGET="x86_64-apple-darwin"
-        ;;
     Darwin/arm64)
         TARGET="aarch64-apple-darwin"
         ;;
     *)
-        err "no prebuilt binary for $OS/$ARCH — try: brew install stropdev/tap/strop (builds from source) or cargo install strop-editor --locked"
+        err "unsupported platform $OS/$ARCH — supported: Linux x86_64/aarch64 and macOS Apple Silicon (arm64)"
         ;;
 esac
 

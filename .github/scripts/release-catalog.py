@@ -42,6 +42,11 @@ SCHEMA = 1
 PRODUCT = "strop"
 DEFAULT_REPO = "stropdev/strop"
 ARTIFACT_RE = re.compile(r"^strop-(?P<version>[^-]+)-(?P<target>.+)\.tar\.gz$")
+ARTIFACT_TARGETS = frozenset((
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "aarch64-apple-darwin",
+))
 
 
 def utcnow() -> str:
@@ -92,6 +97,8 @@ def build_catalog(tag: str, dist: Path, base_url: str, published_at: str,
             raise ValueError(f"unexpected artifact name: {tarball.name}")
         if match.group("version") != version:
             raise ValueError(f"{tarball.name} does not match tag {tag}")
+        if match.group("target") not in ARTIFACT_TARGETS:
+            raise ValueError(f"unsupported artifact target: {match.group('target')}")
         sidecar = tarball.with_name(tarball.name + ".sha256")
         if not sidecar.is_file():
             raise ValueError(f"missing checksum sidecar for {tarball.name}")

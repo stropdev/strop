@@ -326,7 +326,22 @@ admission. Re-entry: an owned/reaping PID 1 or a provider/OS contract
 that can actually reap processes it adopts, followed by repeated
 no-init process-table and worker-retirement evidence. This preserves
 the no-init functionality and its native tests; it does not waive the
-four-platform worker gates or owned-live-worker retirement bound.
+retained-platform worker gates or owned-live-worker retirement bound.
+
+Worker 0.36 platform amendment (explicit user choice): **drop Intel
+macOS support end to end**. Retain Linux x86_64/aarch64 (GNU native
+profiles and static musl artifacts) and macOS aarch64/Apple Silicon.
+Remove the Intel CI/release lane, executable/build-host selectors,
+installer/update route and Homebrew/catalog artifact requirements.
+An Intel target is unsupported, never an alias for ARM; SSH hosts
+without an admitted worker keep their read-only SFTP behavior.
+Existing historical Intel releases/evidence remain historical, not
+requirements or qualification for 0.36. Re-entry requires explicit
+user demand, an owned native Intel qualification host, and restored
+native worker/SSH/PTY/product/LSP/retirement plus artifact/install
+evidence before readvertising support. This is a product-scope
+decision, not a claim about Apple's support lifecycle and not a waiver
+of the retained three-target native gates.
 
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,

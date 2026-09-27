@@ -122,16 +122,10 @@ jobs:
           path: ${{ runner.temp }}/strop-native-measurements/
           if-no-files-found: error
 
-  # Host-native macOS Store, framed worker and PTY ownership on both
-  # architectures; a cross-built artifact is not execution evidence.
+  # Host-native Apple Silicon Store, framed worker and PTY ownership;
+  # cross-compilation alone is not execution evidence.
   native-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: macos-15-intel, machine: x86_64, target: x86_64-apple-darwin }
-          - { runner: macos-14, machine: arm64, target: aarch64-apple-darwin }
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
         with:
@@ -145,15 +139,11 @@ jobs:
       - name: Exercise native Store protocol and VT kernel
         timeout-minutes: 20
         run: |
-          test "$(uname -m)" = "${{ matrix.machine }}"
+          test "$(uname -m)" = "arm64"
           cargo test --locked -p strop-fs tests::store::
           cargo test --locked -p strop-worker exec::tests::
           cargo test --locked -p strop-terminal vt::tests::
           cargo test --locked -p strop-worker-client --test loopback
-      # Intel's cold editor build can consume the entire SSH test limit.
-      # Keep compilation outside the unchanged runtime deadline.
-      - name: Build native OpenSSH worker test
-        run: cargo test --locked -p strop-editor --test worker_ssh --no-run
       - name: Exercise real native OpenSSH worker
         timeout-minutes: 20
         run: STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor --test worker_ssh deploy_handshake_read_write_notify_parity_over_real_sshd
@@ -174,7 +164,7 @@ jobs:
           install -m555 target/release/strop "$RUNNER_TEMP/strop-product-candidate"
           python3 -B verification/bench_native_product.py \
             --baseline "$RUNNER_TEMP/strop-preworker-target/release/strop" \
-            --candidate "$RUNNER_TEMP/strop-product-candidate" --target "${{ matrix.target }}" \
+            --candidate "$RUNNER_TEMP/strop-product-candidate" --target aarch64-apple-darwin \
             --out "$RUNNER_TEMP/strop-native-measurements"
           rustup component add rust-analyzer
           python3 -B verification/bench_lsp_ui.py \
@@ -191,6 +181,6 @@ jobs:
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-transfer.json"
       - uses: actions/upload-artifact@v7
         with:
-          name: native-product-${{ matrix.target }}
+          name: native-product-aarch64-apple-darwin
           path: ${{ runner.temp }}/strop-native-measurements/
           if-no-files-found: error

@@ -1,7 +1,7 @@
 # 0002 — Build & Release Story
 
-> Carries the rootle/gripsack build matrix over 1:1: docker + docker compose, musl-static
-> Linux binaries, native macOS builds, four tarballs, crates.io + homebrew + site dispatch.
+> Docker + docker compose, musl-static Linux binaries, native Apple Silicon builds,
+> three tarballs, crates.io + homebrew + site dispatch.
 > The new wrinkle is native C/C++ code: tree-sitter grammars and libgit2.
 
 Status: historical build/release design. Current workflow sources own implemented
@@ -21,19 +21,25 @@ actual uploaded/executed worker to the exact source/target/assurance candidate.
 
 ---
 
-## 1. Matrix (same as rootle/gripsack)
+## 1. Supported release matrix
 
 | Target | Runner | Method |
 |---|---|---|
 | `x86_64-unknown-linux-musl` | `ubuntu-latest` | `docker compose run release` (rust:alpine) |
 | `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | same compose build, native — rust:alpine is multi-arch, no cross config |
-| `x86_64-apple-darwin` | `macos-14` | native cargo, stock Xcode cross (no macos-13 queue) |
 | `aarch64-apple-darwin` | `macos-14` | native cargo |
+
+Starting with 0.36.0, the user explicitly removed Intel macOS support.
+No `x86_64-apple-darwin` binary, native CI lane or Homebrew Intel download
+is published. Install/update and remote-worker target discovery refuse
+Intel macOS rather than selecting an ARM artifact. Historical releases
+retain their original artifacts and evidence. See [0028](0028-roadmap-and-review.md)
+for the scope decision and re-entry condition.
 
 The TUI's Windows story remains WSL. Native Windows GUI distribution is now
 specified by [0061](0061-gui-windows-and-wsl.md) and
 [0062](0062-distribution-and-wsl-onboarding.md); workspace execution stays in WSL.
-A static musl binary is the whole Linux story: one artifact, every distro, every ssh box.
+One musl-static artifact per supported Linux architecture covers glibc and musl distributions.
 
 ## 2. Why musl-static survives tree-sitter (the decision this plan records)
 
@@ -130,10 +136,10 @@ Trigger: `push` on tags `v*`. `concurrency.group: release`, `cancel-in-progress:
     (`strop --headless parse <file>` spelling decided when the binary exists; the gate
     is contractual, the spelling is not). The same check runs per-PR in the docker
     `test` stage (§4) — release verify is the belt, CI is the suspenders.
-- **release** job: assemble all four tarballs, fail unless exactly 4; crates.io publish
+- **release** job: assemble all three tarballs, fail unless exactly 3; crates.io publish
   with the tag/version guard (`cargo metadata` vs `$GITHUB_REF_NAME`; strop publishes as
   `strop-editor` per plan 0001 — the guard reads that package); homebrew formula (source,
-  from the crate) + cask (prebuilt darwin binaries, per-arch sha256) bump via
+  from the crate) + cask (Apple Silicon binary and sha256) bump via
   `HOMEBREW_TAP_TOKEN`; `gh release create`; best-effort site redeploy dispatch
   (`continue-on-error`, `SITE_REPO_TOKEN`) once strop.dev has a site.
 

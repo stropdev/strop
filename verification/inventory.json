@@ -1026,7 +1026,8 @@
         "crates/strop-remote/src/transport/process.rs",
         "crates/strop-remote/src/transport/session.rs",
         "crates/strop-remote/src/transport/stderr.rs",
-        "crates/strop-remote/src/transport/wire.rs"
+        "crates/strop-remote/src/transport/wire.rs",
+        "crates/strop-remote/src/bootstrap.rs"
       ],
       "claims": [
         {
@@ -1199,7 +1200,7 @@
         },
         {
           "id": "SSH-WORKER-DEPLOY",
-          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated peers; each fixture stops and reaps both children. The catalog names the authenticated endpoint target, whose supplied release bytes the live probe attests. Linux Native Notify requires a relayed hint; a worker advertising Unsupported must answer the exact typed Notify refusal (as arm64 macOS did on PR run 36262445129). This does not claim macOS native push coverage or complete platform qualification.",
+          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated peers; each fixture stops and reaps both children. The catalog names the authenticated endpoint target, whose supplied release bytes the live probe attests. Linux Native Notify requires a relayed hint; a worker advertising Unsupported must answer the exact typed Notify refusal (as arm64 macOS did on PR run 36262445129). This does not claim macOS native push coverage or complete platform qualification. User-approved 0.36 scope retains Linux x86_64/aarch64 and Apple Silicon workers; Intel Darwin x86_64/amd64 discovery returns UnsupportedTarget before deployment, with read-only SFTP remaining available.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1249,6 +1250,16 @@
                 "interrupted_deploy_leaves_no_partial_activation",
                 "sftp_only_host_keeps_read_only_with_a_typed_refusal"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-remote/src/bootstrap.rs",
+              "gate": "test",
+              "tests": [
+                "target_mapping_names_exact_artifact_triples",
+                "discovery_reply_decoding_is_strict",
+                "intel_macos_discovery_refuses_instead_of_selecting_arm"
+              ]
             }
           ],
           "migration": {
@@ -1264,6 +1275,7 @@
       ],
       "pins": {
         "sources": {
+          "crates/strop-remote/src/bootstrap.rs": "d29a96a66b8ef3082e7ac3cbb567466032f6e966a6f1988f6fcd3198b1d1fad2",
           "crates/strop-remote/src/client.rs": "4d521295b01cb19066aafae73068af990d8e32cc7b08db4999a77a527a8505e1",
           "crates/strop-remote/src/hosts/mod.rs": "25bc681a4f64a6ebc48df059d14fbc53e4ece3a3f88edbd22bf93cc7435e3012",
           "crates/strop-remote/src/pool.rs": "a978895c007bd1817a2eb46d5c10fd9449332404f87bcce07435508ba06cc49e",
@@ -1275,7 +1287,7 @@
           "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
           "crates/strop-remote/src/transport/wire.rs": "3fd192fbaca09ebca5c4f5f2ecd6f99ba8c7642713451bcbae67abef3b1dc54c"
         },
-        "evidence": "7400a670e31d82279e1c40f79acee13e61fe8d0857c305489d0ea6bc459eb38b"
+        "evidence": "1e017c72a1f3148c686da3457259e35ca90bc677309642324c36cdf150066d8a"
       }
     },
     {
@@ -2155,12 +2167,14 @@
         "crates/strop/src/update.rs",
         "install.sh",
         ".github/workflows/ci.yml",
-        ".github/workflows/release.yml"
+        ".github/workflows/release.yml",
+        "crates/strop-terminal/build.rs",
+        ".github/scripts/install-zig.sh"
       ],
       "claims": [
         {
           "id": "INS-IDENTITY",
-          "statement": "Channel identity comes from the receipt, never path substrings; version ordering is total; a missing receipt is unknown; the catalog resolves artifacts by target and malformed catalogs are rejected; the target triple set covers the release matrix.",
+          "statement": "Channel identity comes from the receipt, never path substrings; version ordering is total; a missing receipt is unknown; the catalog resolves artifacts by target and malformed catalogs are rejected; the target triple set covers the release matrix. Intel macOS has no prebuilt/update target; Linux x86_64/aarch64 and Apple Silicon resolve exact retained artifacts, never an architecture fallback.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2169,7 +2183,7 @@
               "gate": "test",
               "tests": [
                 "version_ordering",
-                "triples_cover_the_matrix",
+                "update_targets_retain_linux_and_apple_silicon_but_refuse_intel_macos",
                 "receipt_roundtrip",
                 "missing_receipt_is_unknown",
                 "channel_identity_comes_from_the_receipt",
@@ -2186,7 +2200,7 @@
         },
         {
           "id": "INS-TRANSACTION",
-          "statement": "Shell-level hermetic fixtures: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture including the WK05 worker-manifest wire shape (protocol, min_editor, targets, byte sizes), invalid worker-facts rejection and worker-divergence detection in public verification.",
+          "statement": "Shell-level hermetic fixtures: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture including the WK05 worker-manifest wire shape (protocol, min_editor, targets, byte sizes), invalid worker-facts rejection and worker-divergence detection in public verification. Intel macOS x86_64/amd64 installer and Zig bootstrap invocations fail before any download or destination creation; unsupported Intel artifacts cannot generate a current catalog.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2208,7 +2222,7 @@
         },
         {
           "id": "REL-CATALOG",
-          "statement": "The release workflow generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties plus a headless parse and worker-mode (`strop --worker-stdio`) smoke per artifact, attests build provenance for every tarball, and records the WK05 worker compatibility manifest extracted from the pinned source constants so editors make deploy-vs-fallback decisions from catalog facts alone.",
+          "statement": "The release workflow generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties plus a headless parse and worker-mode (`strop --worker-stdio`) smoke per artifact, attests build provenance for every tarball, and records the WK05 worker compatibility manifest extracted from the pinned source constants so editors make deploy-vs-fallback decisions from catalog facts alone. The user-approved matrix is exactly three artifacts: x86_64/aarch64 Linux musl and aarch64 Apple Silicon macOS. The generator rejects unsupported targets, and Homebrew cask/formula macOS support requires ARM.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2225,7 +2239,7 @@
         },
         {
           "id": "REL-ASSURANCE-GATES",
-          "statement": "PR and tag run locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native correspondence, container editor and x86_64/aarch64 GNU worker/Store/terminal scenarios. GNU runners build a same-source static musl worker before authenticated OpenSSH parity; Intel/arm macOS use their actual native binary. All native runners exercise Store, killed-worker/stale-preparation regression, supervisor exit/PTY, VT Alt encoding, client and nested editor with Neovim. Each PR native job builds clean a05d84f pre-worker and current release binaries on the same target, runs nine local worker/UI/TUI/terminal-load paths plus installed rust-analyzer LSP request/edit-sync paths and a 17.28 MiB real-worker UI transfer/retirement high-water probe with raw p50/p95/p99/max; upload wiring is not execution proof. The tag builds native Mac artifacts, restricts system dylibs (including worker libproc enumeration), rechecks the frozen four-platform source candidate and gates publication on the proof ledger. Full remote/high-water performance and complete Mac results remain blocked.",
+          "statement": "PR and tag require locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native/Loom/calibrated mutants, selected-context container journeys, both GNU Linux architectures and native Apple Silicon Store/worker/PTY/TUI/product/LSP/transfer execution. Linux runners also execute a same-source static musl worker over authenticated SSH. The user explicitly removed Intel macOS from supported build, install/update, remote worker, catalog, Homebrew and native CI/release scope; no retained gate is waived.",
           "status": "specified",
           "evidence": [
             {
@@ -2247,7 +2261,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "Final runtime 644703f passed the entire hosted gate in run 36294464914: locked fmt/clippy/tests, Python-free SSH, TLC, Verus, TLAPS, native/Loom/calibrated mutants and selected-context container journeys. GNU x86_64 candidate 8ad2152045e9, GNU aarch64 candidate 6b5e544c42f8 and Apple Silicon candidate 739c71dedd47 each passed nine 64-sample native product paths, 64 real rust-analyzer request/sync paths and 64 17.28 MiB transfer/retirement samples; all current workers were absent after editor exit. The exact WSL2 static artifact 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed the same local paths plus 64 Python-free TCP SSH and no-init Docker cold/warm/live measurements. Intel macOS consumed 19m55s compiling in a 20-minute SSH step and the test did not finish; compilation is now separate from its unchanged runtime deadline. WPLAT-NATIVE remains blocked until that final target completes all native journeys and uploads raw evidence.",
+          "statement": "User explicitly removed Intel macOS support for 0.36; no Intel native gate remains. Pre-cutover runtime 644703f passed hosted full assurance plus all three retained native profiles in run 36294464914, with raw 64-sample product/LSP/transfer artifacts archived by GitHub. Target selectors, catalog/install policies and source-build guards now remove Intel end to end. The changed final binary/source must still be bound to retained-target exact-artifact evidence before WPLAT-NATIVE closes; earlier artifacts are not relabeled as this cutover.",
           "status": "blocked",
           "evidence": [
             {
@@ -2282,13 +2296,15 @@
       ],
       "pins": {
         "sources": {
-          ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
-          ".github/workflows/ci.yml": "ea9b5f8a14a2d608f7b8eed3c58dadc641e600906f1c213013a64d737a96f19a",
-          ".github/workflows/release.yml": "a5a2a5403ef17f30e646c96c08a25913c166ca17aba0bd0318feec02367395f1",
-          "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
-          "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
+          ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
+          ".github/scripts/release-catalog.py": "c96e67b8021d13b68e3bf7eef6527b200f37ca0d6fe50600d00dccdc959ac0ca",
+          ".github/workflows/ci.yml": "3d0e7477be2407b8a673fda0bf24c218d791883d68b8e56dd8305a8dd0c7d6f2",
+          ".github/workflows/release.yml": "ba6ac9f1db4c475cf01c1e3b606d67d2e860fd4a870bc005a1526002fa3285af",
+          "crates/strop-terminal/build.rs": "b9c2bf1ff6f4412eabdf2314ec10b542d7a430fc9c5f8a58b8a2603f608237b2",
+          "crates/strop/src/update.rs": "1bfede018d097ae69d56c5074cb89ab5aaf7b0c06983688849011df2db73300f",
+          "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
         },
-        "evidence": "6d79e6470a018ce169d7fcabc7a8b623a5dfb14d6df795fc868e58072cce8731"
+        "evidence": "754e4c40d1a5a180b8003e332d7ee1605e846ce5ded105530a39ad3acda1a1d1"
       }
     },
     {
@@ -3271,7 +3287,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "The notify-replay/LSP-write-wakeup-safe worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed nine matched 64-sample local product paths, 64 real rust-analyzer requests plus 64 edit-to-paint requests per artifact, 64 authenticated Python-free TCP OpenSSH cold/warm/live paths, and 64 selected no-init Docker cold/warm/live paths. Its 17,280,000-byte UI transfer left zero workers after all 64 editor exits versus 64 pre-worker survivors; worker VmHWM p50 7,256 versus 5,036 KiB. All current raw metrics bind this exact artifact. BusyBox PID1 again retained 889 Docker-exec sh/cat zombies after reuse including 71 fixture resets; the user explicitly retained no-init support with this risk documented, qualifying owned live-worker retirement separately from unbounded whole-container process-table growth. Qualification jobs shared the host; these are not idle-host, WAN or cross-platform limits. Final-source run 36294464914 completed GNU x86_64/aarch64 and Apple Silicon 64-sample product/LSP/transfer qualification. Intel compilation consumed its SSH test deadline before qualification; compile and execution are now separated without extending the runtime bound. WPERF-FULL remains blocked until Intel native product/LSP/transfer evidence passes.",
+          "statement": "The pre-Intel-removal worker 6c817b00 passed all local, Python-free TCP SSH, no-init container and three retained native product/LSP/transfer measurement paths with 64 samples each. User explicitly retained no-init support with its nonreaping-PID1 zombie caveat (889 observed sh/cat zombies, not live workers), and separately dropped Intel macOS support. WPERF-FULL remains blocked only until the platform-cutover executable has exact-artifact measurements and the retained three-target native evidence; no Intel requalification is required.",
           "status": "blocked",
           "evidence": [
             {
@@ -3462,7 +3478,7 @@
           "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "a3d4322e5c19386cf29e5292ebeb9372568ab73a346c4e365f42e4ecd796af86"
+        "evidence": "d06ecc14892d97a99544f614c6f48d52e1a6731624b667e896c62011996ecb47"
       }
     },
     {

@@ -23,6 +23,16 @@ worker Health control-frame observations are in
 editor input/render, LSP and terminal-load measurements on every native
 target profile.
 
+Platform amendment for 0.36.0 (explicit user approval): **Intel macOS
+is removed from the supported product and release matrix**. Retain
+GNU/musl Linux x86_64/aarch64 and Apple Silicon macOS. Remove its
+artifact, native lane, build/installer/updater/bootstrap selectors and
+Homebrew/catalog entries; never redirect an Intel host to ARM.
+Historical Intel evidence below records investigation, not a remaining
+release requirement. [0028](0028-roadmap-and-review.md) records the
+impact and re-entry condition. The retained three native profiles
+still require real execution and exact-artifact evidence.
+
 ```text
 0054 filesystem -> 0055 TUI terminal -> 0056 architecture -> 0057 core verification
     -> 0058 unified native worker + assurance migration
@@ -318,7 +328,7 @@ remote or assume the local machine's CPU/ABI matches the destination.
 
 Required coverage includes every retained shipping local TUI platform and previously
 supported remote capability profile. Exercise Linux x86_64/aarch64, glibc-based and
-musl/Alpine environments, and the shipped macOS targets. WSL uses the Linux worker.
+musl/Alpine environments, and Apple Silicon macOS. WSL uses the Linux worker.
 Inventory other claimed POSIX remote-save support before cutover; add the native
 artifact/evidence needed or obtain explicit approval for a named support change.
 A broad prior “Python works on POSIX” statement is not silently narrowed to two hosts.
@@ -511,7 +521,7 @@ Document the limitation and recommend `--init` for sustained sessions;
 do not require init for admission or turn an unbounded whole-container
 resource count into a passing metric. [0028](0028-roadmap-and-review.md)
 records the impact and re-entry condition. This support choice does not
-relax the native four-target artifact, worker-retirement or proof gates.
+relax the retained native artifact, worker-retirement or proof gates.
 
 `ShellPolicy` remains a cache/bootstrap capability boundary:
 `Absent` permits read-only preinstalled-object verification and
@@ -592,7 +602,7 @@ zombie leader; fail closed on any other member, refusal, or truncation.
 The host's system `libproc` is an explicit new macOS runtime trust
 dependency; the native artifact gate must permit only that system
 library and exercise direct supervisor plus framed exec/PTY exits on
-both Intel and Apple Silicon. Linux retains its existing `ESRCH` rule.
+Apple Silicon. Linux retains its existing `ESRCH` rule.
 [XNU's group-list API][xnu-proc-list] includes live and zombie lists.
 
 [xnu-killpg]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
@@ -1303,8 +1313,8 @@ PTY output→paint p50 3.935/4.308 ms, p95 4.671/4.937 ms,
 p99/max 4.766/6.983 ms, with raw samples and artifact/source
 digests in `verification/measurements/`.
 
-The PR native matrix now builds both releases on each GNU x86_64/
-aarch64 and macOS Intel/arm runner, executes the same nine real
+The PR native matrix now builds both releases on GNU x86_64/
+aarch64 and Apple Silicon runners, executes the same nine real
 local-product journeys and uploads the raw target profiles. No new
 runner measurements are qualified until those jobs actually pass
 and their artifacts are bound to the final source candidate.
@@ -1563,7 +1573,7 @@ an empty leader list while the worker child still had the editor's
 process PPID. The benchmark now enumerates every live editor TID,
 deduplicates exact `--worker-stdio` children, and still fails if none
 is present. A matched real static pre-worker/candidate UI-open/edit
-smoke passed; four-target native 64-sample qualification remains.
+smoke passed; retained-target native 64-sample qualification remains.
 
 Final-source rerun `36283379416` still returned `[]` after file
 open on both GNU hosts. Run
@@ -1618,8 +1628,8 @@ sampler now takes process RSS from `ps -p <pid> -o rss=` and counts
 the one header plus one row per selected thread from `ps -M -p
 <pid>` as Apple's implementation actually prints. It rejects
 missing/ambiguous RSS, a missing PID header or zero thread rows,
-never guesses a count. Native macOS benchmark output and four-target
-retirement evidence must still pass before WPLAT-NATIVE closes.
+never guesses a count. Native Apple Silicon benchmark output and
+retained-target retirement evidence must pass before WPLAT-NATIVE closes.
 
 Hosted [`36288437707`](https://github.com/stropdev/strop/actions/runs/36288437707)
 Apple Silicon passed the baseline's 64-sample native product stages
@@ -1672,10 +1682,10 @@ plus native GNU x86_64, GNU aarch64 and Apple Silicon product/LSP/
 transfer qualification on the LSP-wakeup-safe runtime. Intel macOS
 spent **19m55s compiling** its SSH test executable inside the
 20-minute test step, then timed out just after the actual test
-started. Compilation now runs in a separate `cargo test --no-run`
-step; the actual SSH test keeps its existing 20-minute deadline.
-No test is skipped, weakened or retried until green. Native Intel
-must still finish its SSH, worker, terminal and raw product matrix.
+started. Compilation was briefly split from the runtime deadline;
+the user's subsequent platform decision removed Intel macOS instead.
+That lane and its Intel-only compile staging are no longer release
+requirements. No retained-platform test is skipped or weakened.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

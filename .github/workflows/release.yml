@@ -79,9 +79,9 @@ jobs:
           cargo test --locked -p strop-editor --test worker_stdio
           cargo test --locked -p strop-editor --test terminal_editor
 
-  # Musl-static Linux builds run natively in multi-arch Docker; both
-  # macOS artifacts build and exercise PTY ownership on matching native
-  # Intel and Apple Silicon runners (no cross-only platform badge).
+  # Musl-static Linux builds run natively in multi-arch Docker; the
+  # Apple Silicon artifact builds and exercises PTY ownership natively
+  # (no cross-only platform badge).
   build:
     strategy:
       fail-fast: false
@@ -89,7 +89,6 @@ jobs:
         include:
           - { target: x86_64-unknown-linux-musl, runner: ubuntu-latest, docker: true }
           - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm, docker: true }
-          - { target: x86_64-apple-darwin, runner: macos-15-intel }
           - { target: aarch64-apple-darwin, runner: macos-14 }
     runs-on: ${{ matrix.runner }}
     steps:
@@ -210,12 +209,12 @@ jobs:
       - name: Revalidate source candidate after artifact merge
         run: python3 verification/freeze.py --check --out dist/worker-candidate.json
 
-      - name: Verify all four platform tarballs are present
+      - name: Verify all three platform tarballs are present
         run: |
           ls -la dist/
           count="$(ls dist/strop-*.tar.gz | wc -l)"
-          test "$count" -eq 4 || {
-            echo "::error::expected 4 platform tarballs, got $count"; exit 1; }
+          test "$count" -eq 3 || {
+            echo "::error::expected 3 platform tarballs, got $count"; exit 1; }
 
       # 0056 AR12: the generated release catalog is the single source of
       # truth for version/artifact/digest facts — install.sh, `strop
@@ -288,7 +287,7 @@ jobs:
           [ -z "$failed" ] || { echo "::error::failed to publish:$failed"; exit 1; }
 
       # Tap bump: formula builds from the crate, cask ships the prebuilt
-      # darwin binaries. Needs HOMEBREW_TAP_TOKEN (fine-grained PAT,
+      # Apple Silicon binary. Needs HOMEBREW_TAP_TOKEN (fine-grained PAT,
       # contents:write on stropdev/homebrew-tap) — skipped while unset.
       - name: Bump homebrew formula + cask
         id: homebrew
@@ -310,6 +309,9 @@ jobs:
             license "MIT"
 
             depends_on "rust" => :build
+            on_macos do
+              depends_on arch: :arm64
+            end
 
             def install
               system "cargo", "install", *std_cargo_args
@@ -321,21 +323,18 @@ jobs:
           end
           EOF
           sha_arm="$(cut -d' ' -f1 "dist/strop-$ver-aarch64-apple-darwin.tar.gz.sha256")"
-          sha_x64="$(cut -d' ' -f1 "dist/strop-$ver-x86_64-apple-darwin.tar.gz.sha256")"
           cat > /tmp/tap/Casks/strop.rb <<EOF
           cask "strop" do
-            arch arm: "aarch64", intel: "x86_64"
-
             version "$ver"
-            sha256 arm:   "$sha_arm",
-                   intel: "$sha_x64"
+            sha256 "$sha_arm"
 
-            url "https://github.com/stropdev/strop/releases/download/v#{version}/strop-#{version}-#{arch}-apple-darwin.tar.gz"
+            url "https://github.com/stropdev/strop/releases/download/v#{version}/strop-#{version}-aarch64-apple-darwin.tar.gz"
             name "strop"
             desc "Modal text editor — see the cut before you make it"
             homepage "https://strop.dev/"
+            depends_on arch: :arm64
 
-            binary "strop-#{version}-#{arch}-apple-darwin/strop"
+            binary "strop-#{version}-aarch64-apple-darwin/strop"
           end
           EOF
           cd /tmp/tap

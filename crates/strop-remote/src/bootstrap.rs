@@ -116,7 +116,6 @@ pub fn target_for(system: &str, machine: &str) -> Option<&'static str> {
     match (system, machine) {
         ("Linux", "x86_64" | "amd64") => Some("x86_64-unknown-linux-musl"),
         ("Linux", "aarch64" | "arm64") => Some("aarch64-unknown-linux-musl"),
-        ("Darwin", "x86_64" | "amd64") => Some("x86_64-apple-darwin"),
         ("Darwin", "arm64" | "aarch64") => Some("aarch64-apple-darwin"),
         _ => None,
     }
@@ -296,13 +295,6 @@ mod tests {
         assert_eq!(target_for("FreeBSD", "x86_64"), None);
         assert_eq!(target_for("Linux", "riscv64"), None);
     }
-    #[test]
-    fn the_local_target_round_trips_through_the_same_table() {
-        let expected = target_for(local_system(), local_machine());
-        assert_eq!(local_target(), expected);
-        // This workspace ships Linux and macOS workers; the table holds.
-        assert!(local_target().is_some());
-    }
 
     #[test]
     fn discovery_reply_decoding_is_strict() {
@@ -328,5 +320,17 @@ mod tests {
             parse_reply(b"1000\nPlan9\nx86_64\n/tmp\n"),
             Err(BootstrapError::UnsupportedTarget { .. })
         ));
+    }
+
+    #[test]
+    fn intel_macos_discovery_refuses_instead_of_selecting_arm() {
+        for machine in ["x86_64", "amd64"] {
+            let reply = format!("501\nDarwin\n{machine}\n/Users/alice/.cache\n");
+            assert!(matches!(
+                parse_reply(reply.as_bytes()),
+                Err(BootstrapError::UnsupportedTarget { system, machine: rejected })
+                    if system == "Darwin" && rejected == machine
+            ));
+        }
     }
 }

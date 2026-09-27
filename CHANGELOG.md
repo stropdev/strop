@@ -48,6 +48,15 @@
   outside the managed cache. Generalized lock/snapshot induction
   holds in the refined model; native platform qualification remains.
 
+### Changed
+
+- **Intel macOS support removed in 0.36.0**: supported native targets
+  are Linux x86_64/aarch64 and macOS Apple Silicon. Intel macOS no
+  longer has a build/CI lane, release artifact or Homebrew download.
+  Installer, updater and remote worker discovery refuse it instead
+  of selecting an ARM binary. Read-only SSH/SFTP browsing remains
+  available without worker admission.
+
 ### Fixed
 
 - **LSP stdin failure wakes a pending flush** (0058 WK20): a queued

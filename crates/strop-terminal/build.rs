@@ -2,6 +2,14 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let target = match std::env::var("TARGET")?.as_str() {
+        "x86_64-unknown-linux-gnu" => "x86_64-linux-gnu",
+        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu",
+        "x86_64-unknown-linux-musl" => "x86_64-linux-musl",
+        "aarch64-unknown-linux-musl" => "aarch64-linux-musl",
+        "aarch64-apple-darwin" => "aarch64-macos",
+        other => return Err(format!("unsupported terminal build target: {other}").into()),
+    };
     let root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").ok_or("missing package root")?);
     let out = PathBuf::from(std::env::var_os("OUT_DIR").ok_or("missing build output root")?);
     let zig = std::env::var_os("ZIG").unwrap_or_else(|| "zig".into());
@@ -17,17 +25,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tar::Archive::new(flate2::read::GzDecoder::new(archive)).unpack(&source_root)?;
     let source = source_root.join("libghostty-vt-1.3.2-HEAD-+5252b19");
     let prefix = out.join("native");
-    let target = match std::env::var("TARGET")?.as_str() {
-        "x86_64-unknown-linux-gnu" => "x86_64-linux-gnu",
-        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu",
-        "x86_64-unknown-linux-musl" => "x86_64-linux-musl",
-        "aarch64-unknown-linux-musl" => "aarch64-linux-musl",
-        "x86_64-apple-darwin" => "x86_64-macos",
-        "aarch64-apple-darwin" => "aarch64-macos",
-        _ => {
-            return Err("embedded terminals require a supported Linux or macOS build target".into())
-        }
-    };
     let status = Command::new(&zig)
         .current_dir(&source)
         .args([

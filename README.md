@@ -27,6 +27,11 @@ mise use cargo:strop-editor                      # mise
 
 Already installed? `strop update` self-updates tarball installs.
 
+Supported targets: Linux x86_64/aarch64 and macOS Apple Silicon (arm64).
+Intel macOS is no longer supported starting with 0.36.0; installers,
+self-update and remote worker admission refuse it rather than selecting
+an ARM binary.
+
 ## The grammar in one card
 
 ```
