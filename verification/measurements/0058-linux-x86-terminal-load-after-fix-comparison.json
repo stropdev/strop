@@ -5,14 +5,14 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json",
-    "sha256": "5b95c499c47808ac331559aab374ac38c4bd166f510657a3442bb98051fc4f27"
+    "sha256": "83da2757ad1095060a22d685d36c57ec042821f355f047e677932ae1f9257a91"
   },
   "candidate": {
     "commit": null,
     "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending",
     "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
     "measurement": "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json",
-    "sha256": "bbbf7e9a845b31f582ba27d3850f784a055cbccfba8af3ef8f08214a00490699"
+    "sha256": "93733e23744150fc1e55960827e53e0e722ebc50cdf446ee8b3b2cfc3203847b"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 4.988,
-      "p50": 3.607,
-      "p95": 4.116,
-      "p99": 4.988
+      "max": 4.636,
+      "p50": 3.555,
+      "p95": 4.161,
+      "p99": 4.636
     },
     "candidate_ms": {
-      "max": 4.878,
-      "p50": 4.001,
-      "p95": 4.603,
-      "p99": 4.878
+      "max": 5.01,
+      "p50": 4.106,
+      "p95": 4.837,
+      "p99": 5.01
     }
   },
   "regression_archive": "verification/measurements/0058-linux-x86-terminal-load-regression.json"

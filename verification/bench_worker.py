@@ -52,12 +52,17 @@ def process_state(pid: int) -> tuple[int, int]:
         fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
         return int(fields["VmRSS"].split()[0]), int(fields["Threads"].strip())
     if platform.system() == "Darwin":
-        observed = subprocess.check_output(
-            ["ps", "-p", str(pid), "-o", "rss=", "-o", "thcount="], text=True
+        rss = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "rss="], text=True
         ).split()
-        if len(observed) == 2:
-            return int(observed[0]), int(observed[1])
-    raise RuntimeError("worker RSS/thread sampling needs Linux /proc or macOS ps")
+        # Apple ps has no thcount format keyword. -M emits one
+        # headerless row per thread for the selected process.
+        threads = subprocess.check_output(
+            ["ps", "-M", "-p", str(pid), "-o", "pid="], text=True
+        ).splitlines()
+        if len(rss) == 1 and threads and all(row.strip() == str(pid) for row in threads):
+            return int(rss[0]), len(threads)
+    raise RuntimeError("worker RSS/thread sampling needs Linux /proc or macOS ps -M")
 
 
 def worker_processes(pid: int) -> list[int]:

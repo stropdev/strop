@@ -166,6 +166,37 @@ class Peer:
         raise RuntimeError("worker-opened file did not reach the UI view")
 
 
+def failed_worker_census(editor_pid: int) -> list[dict]:
+    """Diagnostic only: distinguish an absent worker from a hidden child.
+
+    Never accept this scan as measurement authority. The exact owned
+    `--worker-stdio` primary count must still equal one.
+    """
+    if platform.system() != "Linux":
+        return []
+    found = []
+    for process in Path("/proc").iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            status = (process / "status").read_text(encoding="utf-8")
+            fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+            ppid = int(fields["PPid"].strip())
+            argv = (process / "cmdline").read_bytes().split(b"\0")
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        worker_mode = b"--worker-stdio" in argv
+        if ppid == editor_pid or worker_mode:
+            found.append({
+                "pid": int(process.name),
+                "ppid": ppid,
+                "name": fields["Name"].strip(),
+                "state": fields["State"].split()[0],
+                "worker_mode": worker_mode,
+            })
+    return sorted(found, key=lambda item: item["pid"])[:16]
+
+
 def measure(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
     if platform.system() not in ("Linux", "Darwin"):
         raise ValueError("worker process evidence requires Linux /proc or macOS ps")
@@ -229,7 +260,12 @@ def measure(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
                     raise RuntimeError("UI did not enter insert mode")
                 workers = worker_processes(child.pid)
                 if len(workers) != 1:
-                    raise RuntimeError(f"expected one live local worker, got {workers}")
+                    raise RuntimeError(
+                        f"{binary}: expected one live local worker, got {workers}; "
+                        f"editor={child.pid} rss/threads={process_state(child.pid)} "
+                        f"status={peer.state.get('message')!r} "
+                        f"processes={failed_worker_census(child.pid)}"
+                    )
                 editor_rss, editor_threads = process_state(child.pid)
                 worker_rss, worker_threads = process_state(workers[0])
                 samples = []

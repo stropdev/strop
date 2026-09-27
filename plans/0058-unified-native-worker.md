@@ -1257,11 +1257,11 @@ stripped 47,390,032-byte x86_64 musl 0.36.0 worker (`sha256
 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a`)
 each ran eight warmups and 64 real Hello/Welcome launches (pre-worker
 protocol 1; native worker protocol 2). Baseline/current readiness p50
-was 0.738/0.741 ms, p95 1.027/0.838 ms, p99/max 1.245/1.059 ms;
+was 0.735/0.761 ms, p95 1.081/0.823 ms, p99/max 1.248/0.842 ms;
 the binaries were 46,226,704/47,390,032 bytes. The native worker
 completed eight warmups and 64 serial Health requests through real
-framed IPC: write+flush to result p50 0.193 ms, p95 0.227 ms,
-p99/max 0.271 ms. Neither protocol-different warm launches nor these
+framed IPC: write+flush to result p50 0.197 ms, p95 0.251 ms,
+p99/max 0.313 ms. Neither protocol-different warm launches nor these
 samples establish a speedup.
 `verification/bench_worker.py` and
 `verification/bench_worker_roundtrip.py` pin raw samples, artifact
@@ -1272,8 +1272,8 @@ warmups and 64 real `--ui-stdio` committed-text actions after the
 editor opened a 10,000-line file through one live worker at 120×40.
 `verification/bench_ui_input_frame.py` checks that each complete
 semantic-view frame visibly contains the next edit on line 5000.
-Baseline/current write+flush→view p50 was 0.232/0.225 ms, p95
-0.276/0.273 ms, p99/max 0.301/0.464 ms. This local comparison is
+Baseline/current write+flush→view p50 was 0.226/0.228 ms, p95
+0.269/0.284 ms, p99/max 0.296/0.311 ms. This local comparison is
 not a platform-wide no-regression result. Raw samples, framed
 bytes and observed worker/editor RSS and thread counts are archived.
 
@@ -1282,11 +1282,11 @@ On the same two static artifacts, the real 120×30 TUI opened the
 single-character edits. The opt-in
 `terminal_editor::native_terminal_input_to_painted_frame_samples`
 waits until the VT100-decoded **cell grid** displays each exact edit:
-baseline/current key-write→paint p50 0.912/0.904 ms, p95
-1.548/1.210 ms, p99/max 1.701/1.364 ms. The matched nine-path
+baseline/current key-write→paint p50 0.929/0.879 ms, p95
+1.367/1.118 ms, p99/max 1.684/1.696 ms. The matched nine-path
 `verification/bench_native_product.py` also records 256-line loaded
-PTY output→paint p50 3.607/4.001 ms, p95 4.116/4.603 ms,
-p99/max 4.988/4.878 ms, with raw samples and artifact/source
+PTY output→paint p50 3.555/4.106 ms, p95 4.161/4.837 ms,
+p99/max 4.636/5.010 ms, with raw samples and artifact/source
 digests in `verification/measurements/`.
 
 The PR native matrix now builds both releases on each GNU x86_64/
@@ -1335,11 +1335,11 @@ The same host measured eight warmups and 64 real installed
 `rust-analyzer` definition replies through `strop --ui-stdio` on
 matched static pre-worker and worker artifacts. Input `gd` to the
 painted definition measured p50/p95/p99/max
-25.497/25.659/25.747/25.747 ms before and
-25.468/25.619/25.667/25.667 ms after. A separate 64-sample
+25.481/25.688/25.750/25.750 ms before and
+25.493/25.628/25.694/25.694 ms after. A separate 64-sample
 trailing-space edit→`didChange`→`gd`→paint route measured
-25.664/25.962/26.003/26.003 ms before and
-25.701/25.953/26.038/26.038 ms after. That second path is an
+25.636/26.008/26.133/26.133 ms before and
+25.669/25.938/26.046/26.046 ms after. That second path is an
 end-to-end sync/request upper bound, **not** a standalone
 `didChange` acknowledgment or a claimed speedup. Both targets
 retained one actual local worker; server readiness alone was not
@@ -1371,10 +1371,10 @@ outstanding clones; shared admission tables reject or retire a
 publication racing closure. A matched 64-run release-binary transfer
 now observed **zero surviving workers after editor exit in every
 candidate run** versus 64/64 survivors from the original baseline.
-Open→visible p50/p95/max was 78.133/78.673/78.773 ms baseline and
-78.021/78.534/78.941 ms candidate. Worker kernel `VmHWM` p50
-increased from 5,028 to 7,400 KiB; editor `VmHWM` p50 changed from
-34,288 to 35,488 KiB. These exact bytes and raw 64-per-artifact
+Open→visible p50/p95/max was 78.098/78.556/78.720 ms baseline and
+78.129/78.594/78.916 ms candidate. Worker kernel `VmHWM` p50
+increased from 5,024 to 7,184 KiB; editor `VmHWM` p50 changed from
+34,288 to 34,528 KiB. These exact bytes and raw 64-per-artifact
 samples are in `verification/measurements/0058-linux-x86-*-transfer-ui.json`.
 This proves local Linux shutdown after the 17 MiB journey, **not**
 remote transfer, macOS retirement or a universal bounded-memory claim.
@@ -1548,6 +1548,14 @@ deduplicates exact `--worker-stdio` children, and still fails if none
 is present. A matched real static pre-worker/candidate UI-open/edit
 smoke passed; four-target native 64-sample qualification remains.
 
+Final-source rerun `36283379416` still returned `[]` after file
+open on **both** GNU hosts despite all-TID enumeration; that
+hypothesis was insufficient for these runners. A passing WSL2
+binary and a hypothetical worker process are not GNU evidence.
+Identify which baseline/candidate executable failed and inspect
+the actual child/argv/session state before changing the census
+or claiming a new process-lifetime guarantee.
+
 CI's generalized TLAPS `WorkerSessionProofs` also left the single
 monolithic `Verify(c)` induction obligation unproved (1/274).
 The proof now shows the namespace equality under `MUTATION = 0`,
@@ -1555,6 +1563,18 @@ separates changed-client from unchanged-client recovery, and proves
 TypeOK before recomposing `Inv'`. The fresh local Docker TLAPS gate
 proved all **301** WorkerSession obligations and retained its
 semantic mutant kills; native CI must rerun this exact proof input.
+
+Run [`36283379416`](https://github.com/stropdev/strop/actions/runs/36283379416)
+passed the real terminal on **both macOS architectures**, including
+full-content execution-free replay, after the typed notify drain fix. The next
+native benchmark failed before its first sample: Apple `ps` does not
+recognize `thcount=`. The benchmark keeps process RSS from `ps -o
+rss=` and obtains the actual thread count from headerless `ps -M -p
+<pid> -o pid=` rows, as specified by [Apple's `ps(1)` manual](https://raw.githubusercontent.com/apple-oss-distributions/adv_cmds/main/ps/ps.1). It
+refuses empty, missing or foreign-PID rows rather than defaulting to
+one thread. Requalified Mac/GNU matched artifact benchmarks and
+four-target final-source retirement evidence remain required before
+WPLAT-NATIVE closes.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

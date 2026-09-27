@@ -12,67 +12,67 @@
   "candidate_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
   "methods": {
     "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
-    "verification/bench_worker.py": "133c0844428ffaab2c447d291ccc74b1dca5e238e0aef6917888d3bc11ac3c43",
+    "verification/bench_worker.py": "0c7f0661598dd5e001ad6a2b0c912840e7acfab71b9d8cab0db58255c4a026a7",
     "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9",
-    "verification/bench_ui_input_frame.py": "689ce08d3468b85d8f05cddc38f2971f9d5450233da5142fb0d899ced2339903",
+    "verification/bench_ui_input_frame.py": "9f101ac04c9be6e772533bb4f7e02003a6c6263f6ff1dfd0d1e1c457afc05a9d",
     "crates/strop/tests/terminal_editor.rs": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b"
   },
   "samples_per_artifact": 64,
   "scope": "native local worker Hello, Health, worker-backed semantic edit, real PTY TUI cell-grid paint and 256-line terminal output load; not cold/warm remote deploy, LSP or retirement high-water",
   "observed": {
     "baseline_handshake_ms": {
-      "max": 1.245,
-      "p50": 0.738,
-      "p95": 1.027,
-      "p99": 1.245
+      "max": 1.248,
+      "p50": 0.735,
+      "p95": 1.081,
+      "p99": 1.248
     },
     "candidate_handshake_ms": {
-      "max": 1.059,
-      "p50": 0.741,
-      "p95": 0.838,
-      "p99": 1.059
+      "max": 0.842,
+      "p50": 0.761,
+      "p95": 0.823,
+      "p99": 0.842
     },
     "candidate_health_ms": {
-      "max": 0.271,
-      "p50": 0.193,
-      "p95": 0.227,
-      "p99": 0.271
+      "max": 0.313,
+      "p50": 0.197,
+      "p95": 0.251,
+      "p99": 0.313
     },
     "baseline_semantic_ms": {
-      "max": 0.301,
-      "p50": 0.232,
-      "p95": 0.276,
-      "p99": 0.301
+      "max": 0.296,
+      "p50": 0.226,
+      "p95": 0.269,
+      "p99": 0.296
     },
     "candidate_semantic_ms": {
-      "max": 0.464,
-      "p50": 0.225,
-      "p95": 0.273,
-      "p99": 0.464
+      "max": 0.311,
+      "p50": 0.228,
+      "p95": 0.284,
+      "p99": 0.311
     },
     "baseline_tui_ms": {
-      "max": 1.701,
-      "p50": 0.912,
-      "p95": 1.548,
-      "p99": 1.701
+      "max": 1.684,
+      "p50": 0.929,
+      "p95": 1.367,
+      "p99": 1.684
     },
     "candidate_tui_ms": {
-      "max": 1.364,
-      "p50": 0.904,
-      "p95": 1.21,
-      "p99": 1.364
+      "max": 1.696,
+      "p50": 0.879,
+      "p95": 1.118,
+      "p99": 1.696
     },
     "baseline_terminal_load_ms": {
-      "max": 4.988,
-      "p50": 3.607,
-      "p95": 4.116,
-      "p99": 4.988
+      "max": 4.636,
+      "p50": 3.555,
+      "p95": 4.161,
+      "p99": 4.636
     },
     "candidate_terminal_load_ms": {
-      "max": 4.878,
-      "p50": 4.001,
-      "p95": 4.603,
-      "p99": 4.878
+      "max": 5.01,
+      "p50": 4.106,
+      "p95": 4.837,
+      "p99": 5.01
     }
   }
 }

@@ -304,6 +304,15 @@ the existing harness, product journey and benchmark cases into
 `terminal_editor/{mod,harness,journeys,perf}.rs`; keep their real
 worker/PTY path and measurement-method digests together.
 
+The native replay cutover also touches the pre-existing over-ceiling
+`crates/strop-engine/src/editor/notify.rs` (now 1,109 lines). Before its
+next behavior change, split by owner into `notify/{mod,queue,subscribe,
+reconcile}.rs`: typed bounded queue/coalescing; local/remote subscribe
+and lease identity; guarded reload/rescan. Keep `Tape::observe_owned`
+at the single event-delivery drain, not separate per-platform paths.
+Do not disrupt 0.36.0's exact-source 64-sample/native qualification
+with an unrelated source-only move; rebind the evidence when splitting.
+
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,
 platform or evidence ledger is silently removed by inserting the worker.
