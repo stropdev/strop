@@ -150,6 +150,10 @@ jobs:
           cargo test --locked -p strop-worker exec::tests::
           cargo test --locked -p strop-terminal vt::tests::
           cargo test --locked -p strop-worker-client --test loopback
+      # Intel's cold editor build can consume the entire SSH test limit.
+      # Keep compilation outside the unchanged runtime deadline.
+      - name: Build native OpenSSH worker test
+        run: cargo test --locked -p strop-editor --test worker_ssh --no-run
       - name: Exercise real native OpenSSH worker
         timeout-minutes: 20
         run: STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor --test worker_ssh deploy_handshake_read_write_notify_parity_over_real_sshd

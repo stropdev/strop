@@ -2247,7 +2247,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "The 0.36.0 worker now includes notify-replay capture and the deterministic failed-stdin-write/pending-flush wakeup repair. The rebuilt stripped x86_64 musl artifact SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed the full Docker fmt/clippy/test gate, 16 real UI/worker LSP initialize-to-classified-exit journeys, nine matched 64-sample local product paths, 64 real rust-analyzer request/edit-to-paint paths and 64 17.28 MiB file-open/retirement journeys. Hosted pre-wakeup-fix run 36288774997 passed GNU x86 and Apple Silicon full product/LSP/transfer lanes; it did not qualify this new executable. GNU ARM exposed ETXTBSY in test-harness executable installation: a separate child copy now prevents sibling forks inheriting a writable binary descriptor, rather than retrying exec. Full four-target native execution and artifact evidence for this final source remain required; WPLAT-NATIVE stays blocked. The same new artifact passed all 64 Python-free SSH and no-init Docker cold/warm/live deployment measurements; the current full Docker fmt/clippy/test gate passed after both source fixes.",
+          "statement": "Final runtime 644703f passed the entire hosted gate in run 36294464914: locked fmt/clippy/tests, Python-free SSH, TLC, Verus, TLAPS, native/Loom/calibrated mutants and selected-context container journeys. GNU x86_64 candidate 8ad2152045e9, GNU aarch64 candidate 6b5e544c42f8 and Apple Silicon candidate 739c71dedd47 each passed nine 64-sample native product paths, 64 real rust-analyzer request/sync paths and 64 17.28 MiB transfer/retirement samples; all current workers were absent after editor exit. The exact WSL2 static artifact 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed the same local paths plus 64 Python-free TCP SSH and no-init Docker cold/warm/live measurements. Intel macOS consumed 19m55s compiling in a 20-minute SSH step and the test did not finish; compilation is now separate from its unchanged runtime deadline. WPLAT-NATIVE remains blocked until that final target completes all native journeys and uploads raw evidence.",
           "status": "blocked",
           "evidence": [
             {
@@ -2283,12 +2283,12 @@
       "pins": {
         "sources": {
           ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
-          ".github/workflows/ci.yml": "6251a36e6778492328e552eaf169c1d313014d8c38f396748eed60894f5e4124",
+          ".github/workflows/ci.yml": "ea9b5f8a14a2d608f7b8eed3c58dadc641e600906f1c213013a64d737a96f19a",
           ".github/workflows/release.yml": "a5a2a5403ef17f30e646c96c08a25913c166ca17aba0bd0318feec02367395f1",
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "02db7469bf5fbe3f1be89ff1645b1df0dacca771b28241cd17d337473fea8d69"
+        "evidence": "6d79e6470a018ce169d7fcabc7a8b623a5dfb14d6df795fc868e58072cce8731"
       }
     },
     {
@@ -3271,7 +3271,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "The notify-replay/LSP-write-wakeup-safe worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed nine matched 64-sample local product paths, 64 real rust-analyzer requests plus 64 edit-to-paint requests per artifact, 64 authenticated Python-free TCP OpenSSH cold/warm/live paths, and 64 selected no-init Docker cold/warm/live paths. Its 17,280,000-byte UI transfer left zero workers after all 64 editor exits versus 64 pre-worker survivors; worker VmHWM p50 7,256 versus 5,036 KiB. All current raw metrics bind this exact artifact. BusyBox PID1 again retained 889 Docker-exec sh/cat zombies after reuse including 71 fixture resets; the user explicitly retained no-init support with this risk documented, qualifying owned live-worker retirement separately from unbounded whole-container process-table growth. Qualification jobs shared the host; these are not idle-host, WAN or cross-platform limits. WPERF-FULL remains blocked until all four final-source native product/LSP/transfer lanes pass.",
+          "statement": "The notify-replay/LSP-write-wakeup-safe worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed nine matched 64-sample local product paths, 64 real rust-analyzer requests plus 64 edit-to-paint requests per artifact, 64 authenticated Python-free TCP OpenSSH cold/warm/live paths, and 64 selected no-init Docker cold/warm/live paths. Its 17,280,000-byte UI transfer left zero workers after all 64 editor exits versus 64 pre-worker survivors; worker VmHWM p50 7,256 versus 5,036 KiB. All current raw metrics bind this exact artifact. BusyBox PID1 again retained 889 Docker-exec sh/cat zombies after reuse including 71 fixture resets; the user explicitly retained no-init support with this risk documented, qualifying owned live-worker retirement separately from unbounded whole-container process-table growth. Qualification jobs shared the host; these are not idle-host, WAN or cross-platform limits. Final-source run 36294464914 completed GNU x86_64/aarch64 and Apple Silicon 64-sample product/LSP/transfer qualification. Intel compilation consumed its SSH test deadline before qualification; compile and execution are now separated without extending the runtime bound. WPERF-FULL remains blocked until Intel native product/LSP/transfer evidence passes.",
           "status": "blocked",
           "evidence": [
             {
@@ -3462,7 +3462,7 @@
           "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "9fdf6b479c3e4e7067ceb2396aed4aad35a5df2555bba8be0c0ab3bd068be5ad"
+        "evidence": "a3d4322e5c19386cf29e5292ebeb9372568ab73a346c4e365f42e4ecd796af86"
       }
     },
     {

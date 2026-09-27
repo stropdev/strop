@@ -1665,6 +1665,18 @@ the wakeup repair, not that every possible CI stall has that cause.
 Rebuild/re-measure the changed production binary and run the native
 matrix; do not reuse earlier executable digests as final evidence.
 
+Run [`36294464914`](https://github.com/stropdev/strop/actions/runs/36294464914)
+passed the complete hosted Docker assurance gate (test, Python-free
+SSH, TLC, Verus, TLAPS, core native/Loom/mutants and container journeys)
+plus native GNU x86_64, GNU aarch64 and Apple Silicon product/LSP/
+transfer qualification on the LSP-wakeup-safe runtime. Intel macOS
+spent **19m55s compiling** its SSH test executable inside the
+20-minute test step, then timed out just after the actual test
+started. Compilation now runs in a separate `cargo test --no-run`
+step; the actual SSH test keeps its existing 20-minute deadline.
+No test is skipped, weakened or retried until green. Native Intel
+must still finish its SSH, worker, terminal and raw product matrix.
+
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.
 `WDEP-GC` now has a serialized native caller, two-worker/SSH/container
