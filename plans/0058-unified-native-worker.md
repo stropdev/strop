@@ -1583,7 +1583,9 @@ The proof now shows the namespace equality under `MUTATION = 0`,
 separates changed-client from unchanged-client recovery, and proves
 TypeOK before recomposing `Inv'`. The fresh local Docker TLAPS gate
 proved all **301** WorkerSession obligations and retained its
-semantic mutant kills; native CI must rerun this exact proof input.
+semantic mutant kills. Hosted run `36283379416` passed the full
+test/model/verify/tlaps/core-assurance/container gate on this proof
+input; the final-source qualification run remains pending.
 
 Run [`36283379416`](https://github.com/stropdev/strop/actions/runs/36283379416)
 passed the real terminal on **both macOS architectures**, including
@@ -1601,6 +1603,30 @@ the one header plus one row per selected thread from `ps -M -p
 missing/ambiguous RSS, a missing PID header or zero thread rows,
 never guesses a count. Native macOS benchmark output and four-target
 retirement evidence must still pass before WPLAT-NATIVE closes.
+
+Hosted [`36288437707`](https://github.com/stropdev/strop/actions/runs/36288437707)
+Apple Silicon passed the baseline's 64-sample native product stages
+using the corrected Apple `ps -M` thread census; the **candidate**
+failed only after baseline Cargo PTY tests rewrote
+`target/release/strop` to the in-process test-support binary (19
+threads, no owned worker). The runner-temp production copy in
+`442f66f` isolates both macOS candidates from that same overwrite;
+it still needs to pass the exact native product, LSP and transfer
+matrix before claiming a native release target.
+
+The first `442f66f` matrix passed **all** Apple Silicon nine-path,
+LSP and 17.28 MiB transfer measurements with one real worker after
+open and no current worker after editor exit (64 runs). Its GNU ARM
+integration stopped earlier: `cache_gc_holds_the_worker_lease_lock_
+through_retirement` received Linux `ETXTBSY` when executing a
+synthetic content-addressed cache object copied directly to its
+final path. Production deployment first copies into private
+`staging/`, sets executable mode, then publishes via rename; the
+test fixture now does the same rather than exposing a writable final
+object while installing. The affected real-binary test passes
+locally. GNU ARM must pass that native test and the entire product
+matrix again; do not conflate this fixture failure with production
+worker admission or mark the target qualified yet.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

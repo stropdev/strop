@@ -105,8 +105,9 @@ Re-entry refreshes through owned work in its captured namespace/root, even if fo
 or cwd changed. Only unchanged source witnesses regain exclusions and selection;
 lost decisions are reported. In a Directory buffer, **`:fs search`** or
 **Space a → Search here** captures that directory without changing cwd.
-SSH search requires a supported POSIX/Python host with `rg`; unavailable execution
-is reported rather than searching local files or downloading the tree.
+SSH search requires an explicitly admitted matching native worker and `rg` on the
+host; unavailable execution is reported rather than searching local files or
+downloading the tree. Python is not required.
 SSH results retain their host identity through preview, opening and Collect.
 **With/Review are unavailable in SSH scopes**; individual remote write permits do
 not authorize project replacement. Container Search here remains unsupported.
@@ -376,6 +377,12 @@ already installed matching binary; the worker is verified in place,
 without upload. Missing tools, wrong targets and recycled containers
 refuse typed rather than executing Git/LSP on the host or through an
 implicit `docker exec sh` fallback. Container files remain read-only.
+
+In a container without an init/reaper at PID 1, repeated Docker exec
+bootstrap processes can remain as zombies after they exit. Strop closes
+its worker lease, but cannot reap process-table entries adopted by an
+unrelated PID 1. For sustained worker sessions without that zombie
+accumulation, start the container with an init that reaps children.
 
 ## Headless scripts
 

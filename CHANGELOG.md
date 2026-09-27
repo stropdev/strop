@@ -58,9 +58,11 @@
   UI-open journeys left **zero** workers after editor exit, versus
   64/64 survivors on the original pre-worker baseline. Open→visible
   p50 was 77.996 ms versus 78.191 ms; worker kernel peak-memory p50
-  increased from 5,036 to 7,208 KiB. Mac/arm and no-init Docker
-  retirement still need their native gates; no universal bound is
-  claimed from this one host.
+  increased from 5,036 to 7,208 KiB. Mac/arm retirement still needs
+  native qualification. In a separate 64-session no-init BusyBox
+  container measurement, PID 1 retained 889 Docker-exec bootstrap
+  `sh`/`cat` zombies (including fixture resets); no bound on an
+  unrelated nonreaping PID 1's process table is claimed.
 
 - **Search shutdown cannot miss physical completion** (0058 WK20):
   after a picker source posts its final event, its thread may exit

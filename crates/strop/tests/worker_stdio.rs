@@ -93,7 +93,8 @@ fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::
     let objects = root.join(OBJECTS_DIR);
     let leases = root.join(LEASES_DIR);
     let receipts = root.join(RECEIPTS_DIR);
-    for path in [&root, &objects, &leases, &receipts] {
+    let staging = root.join("staging");
+    for path in [&root, &objects, &leases, &receipts, &staging] {
         std::fs::create_dir(path).unwrap();
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
     }
@@ -114,8 +115,12 @@ fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let object = objects.join(&sha);
-    std::fs::copy(binary, &object).unwrap();
-    std::fs::set_permissions(&object, std::fs::Permissions::from_mode(0o500)).unwrap();
+    // Publish only after staging closes and mode is final, matching the
+    // real cache. The old direct-path fixture saw ETXTBSY on hosted ARM.
+    let staged = staging.join(&sha);
+    std::fs::copy(binary, &staged).unwrap();
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o500)).unwrap();
+    std::fs::rename(&staged, &object).unwrap();
     // SAFETY: std has no effective-uid getter; geteuid takes no pointers.
     let uid = unsafe { libc::geteuid() };
     let receipt = CacheReceipt {

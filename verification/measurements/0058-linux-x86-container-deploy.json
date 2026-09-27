@@ -240,5 +240,5 @@
     "warmup_requests": 8,
     "worker_count_after_each_live_welcome": 1
   },
-  "limitation": "888 observed unreaped fixture cat/sh children after repeated Docker exec under deliberately nonreaping BusyBox PID 1; includes 71 manual cache resets outside timed paths. Not a count of live workers or an upper bound for all containers; final retirement/high-water gate remains blocked."
+  "limitation": "889 observed unreaped fixture cat/sh children after repeated Docker exec under deliberately nonreaping BusyBox PID 1; includes 71 manual cache resets outside timed paths. Not a count of live workers or an upper bound for all containers; final retirement/high-water gate remains blocked."
 }
