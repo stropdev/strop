@@ -1632,7 +1632,7 @@
       "claims": [
         {
           "id": "EXEC-LEASE",
-          "statement": "Native worker process-group lifecycle relays attested exit/signal as typed data, keeps stdout/stderr separate, kills inherited descendants before reaping and bounds container group cleanup. XNU's zombie-only kill(-PGID) EPERM is accepted only when a second non-reaping wait attests the leader's exit and libproc lists exactly that unreaped leader; live/inaccessible members or a refused/truncated listing remain failures, with the actual supervisor diagnostic emitted rather than swallowed. This macOS branch still needs successful Intel/arm native CI before its platform claim is qualified.",
+          "statement": "Native worker process-group lifecycle relays attested exit/signal as typed data, keeps stdout/stderr separate, kills inherited descendants before reaping and bounds container group cleanup. XNU's zombie-only kill(-PGID) EPERM is accepted only when a second non-reaping wait attests the leader's exit and libproc lists exactly that unreaped leader; live/inaccessible members or a refused/truncated listing remain failures, with the actual supervisor diagnostic emitted rather than swallowed. This unchanged macOS branch passed native Apple Silicon execution in run 36294464914. Intel macOS was explicitly retired by the user; final platform qualification covers only retained targets.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1883,7 +1883,7 @@
           "crates/strop-worker/src/serve/process/pty.rs": "5bcfcdaaae3fda81a95b23562a4e2441369136e1ab94ee0837b7ba6af2fc0e22",
           "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca"
         },
-        "evidence": "403d6cd8f43f4ada665aedf7cbdf7a7ec5023a0768afde23eff8154707e3acc0"
+        "evidence": "48a8cd19f6092de6d42625df8c2477d31eb234c55570ff7760c0d68b4a591ec0"
       }
     },
     {
@@ -2261,7 +2261,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "User explicitly removed Intel macOS support for 0.36; no Intel native gate remains. Pre-cutover runtime 644703f passed hosted full assurance plus all three retained native profiles in run 36294464914, with raw 64-sample product/LSP/transfer artifacts archived by GitHub. Target selectors, catalog/install policies and source-build guards now remove Intel end to end. The changed final binary/source must still be bound to retained-target exact-artifact evidence before WPLAT-NATIVE closes; earlier artifacts are not relabeled as this cutover.",
+          "statement": "Intel macOS was explicitly removed from all current target selectors, build/CI/artifact lanes, catalog, installer/updater and Homebrew support. Retain GNU Linux x86_64/aarch64 and Apple Silicon plus both static musl execution profiles. The new static worker 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 passed full Docker fmt/clippy/test, actual unsupported-Intel guards, matched 64 local product/LSP/17.28 MiB transfer journeys, and 64 Python-free TCP SSH/no-init Docker cold/warm/live paths. Pre-cutover 644703f passed hosted full assurance and all three retained native profiles; those older artifacts are not relabeled as this new binary. WPLAT-NATIVE waits only for final retained-target qualification, never Intel.",
           "status": "blocked",
           "evidence": [
             {
@@ -2299,12 +2299,12 @@
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
           ".github/scripts/release-catalog.py": "c96e67b8021d13b68e3bf7eef6527b200f37ca0d6fe50600d00dccdc959ac0ca",
           ".github/workflows/ci.yml": "3d0e7477be2407b8a673fda0bf24c218d791883d68b8e56dd8305a8dd0c7d6f2",
-          ".github/workflows/release.yml": "ba6ac9f1db4c475cf01c1e3b606d67d2e860fd4a870bc005a1526002fa3285af",
+          ".github/workflows/release.yml": "3e05323928b45b1457e843cb83e1567ed794f263e24c89bea10842aaf3e7ae73",
           "crates/strop-terminal/build.rs": "b9c2bf1ff6f4412eabdf2314ec10b542d7a430fc9c5f8a58b8a2603f608237b2",
           "crates/strop/src/update.rs": "1bfede018d097ae69d56c5074cb89ab5aaf7b0c06983688849011df2db73300f",
           "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
         },
-        "evidence": "754e4c40d1a5a180b8003e332d7ee1605e846ce5ded105530a39ad3acda1a1d1"
+        "evidence": "1d6c000ddbf07fe650cc48250ef7f48f9ff98b24a8a0f6c2b2d057a78102844c"
       }
     },
     {
@@ -2375,7 +2375,7 @@
         },
         {
           "id": "TERM-WAKE-LOAD",
-          "statement": "The worker terminal drains stale arrival nudges before nonblocking input/output polling and rechecks after every bounded turn; a burst exceeding 32 chunks cannot lose its remaining wake and sleep until the 250 ms recovery timer. On the same WSL2 x86_64 static artifacts, 64 real PTY requests printed 256 lines each and reached the physical 120x30 VT100 grid: baseline/candidate p50 3.935/4.308 ms, p95 4.671/4.937 ms, p99 4.766/6.983 ms, max 4.766/6.983 ms. The separately archived earlier worker measured p50 256.634 ms with its drain-after-poll bug; raw current and historical artifacts are distinct. No remote or other-native-target qualification follows from this host.",
+          "statement": "The worker terminal drains stale arrival nudges before nonblocking polling and rechecks after every bounded turn, so a burst exceeding 32 chunks cannot strand its remaining wake until the 250 ms recovery timer. 64 requests printed 256 lines each and reached the physical 120x30 VT100 grid on the matched static artifacts: baseline/candidate p50 3.697/4.114 ms, p95 4.432/4.546 ms, p99 4.799/4.703 ms, max 4.799/4.703 ms. The separately archived drain-after-poll worker measured p50 256.634 ms; current observations are a different artifact. No universal or other-host timing guarantee.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2438,7 +2438,7 @@
         },
         {
           "id": "TERM-ALT-INPUT",
-          "statement": "Crossterm presents logical Alt as a modifier. The Ghostty bridge sets option-as-alt after per-key terminal-mode refresh because Ghostty resets its macOS default to Option text translation; the Linux VT encoder already emitted ESC+x and an actual separate Escape then x. Native macOS Intel/arm64 run 36256978392 reproduced the missing prefix before this bridge repair; final native TUI must still pass its exact child-byte assertion before this can claim cross-platform execution.",
+          "statement": "Crossterm presents logical Alt as a modifier. The Ghostty bridge sets option-as-alt after per-key terminal-mode refresh because Ghostty resets its macOS default to Option text translation; the Linux VT encoder already emitted ESC+x and an actual separate Escape then x. Native macOS Intel/arm64 run 36256978392 reproduced the missing prefix before this bridge repair; final retained-target native TUI must still pass its exact child-byte assertion before this can claim cross-platform execution.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2518,7 +2518,7 @@
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
           "crates/strop/src/terminal.rs": "021a365c9d693c424bc496139ae106f02d923fa12187866fbec62383619379aa"
         },
-        "evidence": "2765f3cb2e4eb366044d02da8e7f3e28370737592b07e386f261dd35d6e8e278"
+        "evidence": "472938c1d682eaa20154f963976c7847e1a2feff556a6b9e1b3967e8ad6c8509"
       }
     },
     {
@@ -3134,7 +3134,7 @@
         },
         {
           "id": "WS-WARM-HANDSHAKE",
-          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the notify-replay/LSP-write-wakeup-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.840/0.854 ms, p95 1.227/1.387 ms, p99 1.509/3.533 ms, max 1.509/3.533 ms; binaries 46,226,704/47,390,032 bytes. Candidate SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3. RSS and threads at Welcome are raw observations, not high-water limits. Qualification jobs shared the host; no isolated-host or cross-platform speedup is claimed.",
+          "statement": "On one Ryzen 9950X3D/WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the post-Intel-removal 0.36.0 worker (protocol 2) completed eight warmups plus 64 real Hello/Welcome launches each. Baseline/candidate readiness p50 0.724/0.747 ms, p95 0.828/0.860 ms, p99 0.986/0.925 ms, max 0.986/0.925 ms; binaries 46,226,704/47,390,032 bytes, candidate SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494. RSS/threads at Welcome are observations, not high-water limits; no protocol-different speedup is claimed.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3166,7 +3166,7 @@
         },
         {
           "id": "WS-WARM-CONTROL",
-          "statement": "The stripped x86_64 musl worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 (47,390,032 bytes) completed eight warmups and 64 real Hello-bound Health requests on WSL2. Local write+flush-to-result p50/p95/p99/max 0.226/0.300/0.361/0.361 ms; raw samples, framed bytes and process state are archived. This is warm local IPC, not input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
+          "statement": "The stripped x86_64 musl worker SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 (47,390,032 bytes) completed eight warmups and 64 Hello-bound Health requests on WSL2: p50/p95/p99/max 0.197/0.247/0.369/0.369 ms. Raw framed bytes/process state are archived. This is warm local IPC, not input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3188,7 +3188,7 @@
         },
         {
           "id": "WS-UI-FRAME",
-          "statement": "The same WSL2 x86_64 pre-worker and 0.36.0 static artifacts each completed eight warmups and 64 real --ui-stdio committed-text actions after opening a 10,000-line file through one live local worker at 120x40. Every semantic frame contains the next exact visible edit. Baseline/candidate write+flush-to-view p50 0.244/0.278 ms, p95 0.301/0.359 ms, p99 0.359/0.585 ms, max 0.359/0.585 ms. Raw samples, framed bytes and worker/editor process state are archived; this is not physical TUI paint or cross-platform qualification.",
+          "statement": "The matched WSL2 x86_64 pre-worker/post-Intel-removal 0.36 static artifacts completed eight warmups and 64 real --ui-stdio committed-text actions after opening 10,000 lines through one live worker at 120x40. Every frame contains the next exact visible edit. Baseline/candidate write+flush-to-view p50 0.236/0.244 ms, p95 0.293/0.283 ms, p99 0.626/0.542 ms, max 0.626/0.542 ms; byte counts, raw samples and worker/editor process state are bound to the artifacts. Not physical TUI paint or cross-platform qualification.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3220,7 +3220,7 @@
         },
         {
           "id": "WS-TUI-FRAME",
-          "statement": "The same WSL2 x86_64 static artifacts each completed eight warmups and 64 actual 120x30 TUI PTY input journeys after opening a worker-backed 10,000-line file. A VT100-decoded cell grid verifies the exact edited line before each timer stop. Baseline/candidate key-write-to-painted-grid p50 1.123/1.073 ms, p95 2.042/1.807 ms, p99 2.225/2.846 ms, max 2.225/2.846 ms. Method and executed-artifact digests are archived; no cross-platform inference is made.",
+          "statement": "The matched static artifacts completed eight warmups and 64 actual 120x30 TUI PTY edits after opening 10,000 worker-backed lines. The VT100-decoded cell grid verifies each edited line before timing stops. Baseline/candidate p50 0.972/0.915 ms, p95 1.575/1.337 ms, p99 2.142/1.782 ms, max 2.142/1.782 ms; exact method, raw samples and executed-artifact hashes are archived. No other-target inference.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3260,7 +3260,7 @@
         },
         {
           "id": "WPERF-LSP-LOCAL",
-          "statement": "The matched a05d84f and SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 static artifacts each completed 64 real installed rust-analyzer gd requests through the 120x40 UI after eight warmups on WSL2. Baseline/candidate p50/p95/p99/max 25.671/25.849/26.019/26.019 and 25.592/25.765/25.931/25.931 ms. A separate 64 edit-to-didChange-to-gd-to-paint path measured 25.919/26.132/26.395/26.395 and 25.946/26.217/26.436/26.436 ms; that is an end-to-end upper bound, not didChange acknowledgment latency. Each retained exactly one native worker. Samples, server version and method/artifact hashes are bound; other target measurements remain required.",
+          "statement": "Matched a05d84f and post-Intel-removal worker SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 each completed 64 real rust-analyzer gd requests through a 120x40 UI after eight warmups on WSL2. Baseline/candidate p50/p95/p99/max 25.780/26.121/26.366/26.366 and 25.666/25.924/27.481/27.481 ms. 64 edit-to-didChange-to-gd-to-paint requests measured 26.055/27.789/29.141/29.141 and 26.017/26.354/26.780/26.780 ms. This combined route is not didChange acknowledgment latency. Each retained one real worker; raw samples/server version and method/artifact hashes are bound. Qualification jobs shared the host; no idle-host guarantee.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3287,7 +3287,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "The pre-Intel-removal worker 6c817b00 passed all local, Python-free TCP SSH, no-init container and three retained native product/LSP/transfer measurement paths with 64 samples each. User explicitly retained no-init support with its nonreaping-PID1 zombie caveat (889 observed sh/cat zombies, not live workers), and separately dropped Intel macOS support. WPERF-FULL remains blocked only until the platform-cutover executable has exact-artifact measurements and the retained three-target native evidence; no Intel requalification is required.",
+          "statement": "Post-Intel-removal worker SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 has nine matched 64-sample local product paths, 64 real rust-analyzer request/edit-to-paint paths per artifact,64 Python-free authenticated TCP SSH cold/warm/live paths and 64 no-init container cold/warm/live paths. The 17,280,000-byte transfer left zero workers after all 64 candidate editor exits versus 64 original baseline survivors. Worker VmHWM p50 was 7,232 versus 5,036 KiB; open-to-visible p50 was 104.601 versus 78.876 ms while qualification jobs shared the host, not an isolated latency comparison. The nonreaping PID 1 sample retained 894 sh/cat zombies including 71 fixture resets; user explicitly accepted this documented risk, not a bounded whole-container claim. Intel macOS is retired by user decision. WPERF-FULL stays blocked until the final three retained native profiles bind their executed artifacts and raw performance/retirement evidence.",
           "status": "blocked",
           "evidence": [
             {
@@ -3478,7 +3478,7 @@
           "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "d06ecc14892d97a99544f614c6f48d52e1a6731624b667e896c62011996ecb47"
+        "evidence": "0e000399164024bcc6d560c3322802b739db6e25b8137e9adf368c35e1b9453e"
       }
     },
     {
@@ -3851,7 +3851,7 @@
         },
         {
           "id": "WDEP-CONTAINER-PERF",
-          "statement": "On one WSL2 x86_64 Docker host, the exact worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 completed eight warmups and 64 cold BusyBox verified uploads after private unleased-object resets, 64 warm reuses and 64 live direct-worker admissions. Cold p50/p95/p99/max 3698.442/5465.584/6043.959/6043.959 ms, warm reuse 3419.944/4398.859/4603.052/4603.052 ms and live admission 105.263/119.121/131.202/131.202 ms. Every Welcome had exactly one actual worker, with none after shutdown; observed probe worker peak after reuse was zero. Nonreaping PID1 retained 889 sh/cat Docker-exec zombies, including 71 fixture resets. The user retained no-init support with this documented risk; this does not bound the whole container process table. Qualification jobs shared the host; no idle-host or universal-container latency claim.",
+          "statement": "The post-Intel-removal static worker SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 completed eight warmups and 64 selected no-init BusyBox cold uploads, warm verified reuses and live direct-worker admissions on WSL2. Cold p50/p95/p99/max 3464.558/3531.428/3653.394/3653.394 ms; reuse 2904.992/3046.098/3212.397/3212.397 ms; live admission 88.516/92.266/95.339/95.339 ms. Each Welcome had one real worker and each shutdown passed bounded owned-worker retirement. Probe worker peak after reuse was zero; nonreaping PID 1 retained 894 sh/cat Docker-exec zombies, including 71 fixture resets. User-approved no-init support does not promise bounded whole-container process-table usage. These are qualification-host measurements, not universal timing bounds.",
           "status": "native-tested",
           "evidence": [
             {
@@ -4167,7 +4167,7 @@
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop/Cargo.toml": "5a51ce1ce022b6a464958abd67d214b3d58a008e463746b33ca64677239f28f2"
         },
-        "evidence": "fde365698952152449101de8721a2582d4a8ddb6dd284bec98328d6f4325a2a9"
+        "evidence": "fa003ee1d52f4ff796cd0935cfa4329c45f3f91080a345f71296423408cc3a4a"
       }
     },
     {

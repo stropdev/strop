@@ -332,6 +332,7 @@ jobs:
             name "strop"
             desc "Modal text editor — see the cut before you make it"
             homepage "https://strop.dev/"
+            depends_on :macos
             depends_on arch: :arm64
 
             binary "strop-#{version}-aarch64-apple-darwin/strop"

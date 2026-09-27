@@ -5,14 +5,14 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json",
-    "sha256": "cfe9593ba5fc844d818c0ae996bab5913fe7d6f121383ee7b049d282b46ca284"
+    "sha256": "0523a62508f8a7f9446fb2287270c0c00850d3e0361a096ffe738cb3f6921cf2"
   },
   "candidate": {
     "commit": null,
-    "state": "0.36.0 notify-replay and LSP-write-failure-wakeup-safe static candidate 6c817b00; final native CI and tag pending",
-    "artifact_sha256": "6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3",
+    "state": "0.36.0 Linux/Apple-Silicon worker after Intel removal; static candidate 5a9f826f; retained-target CI and tag pending",
+    "artifact_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
     "measurement": "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json",
-    "sha256": "c8f83d24ec80a6eb373e1182aebf84f32ce3f20efa08909049b0d7ab1acdf83d"
+    "sha256": "c91e3fb91c03a901fd1211d7f5478039dd4d82e7d68a45e5075d1c016e161692"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 4.766,
-      "p50": 3.935,
-      "p95": 4.671,
-      "p99": 4.766
+      "max": 4.799,
+      "p50": 3.697,
+      "p95": 4.432,
+      "p99": 4.799
     },
     "candidate_ms": {
-      "max": 6.983,
-      "p50": 4.308,
-      "p95": 4.937,
-      "p99": 6.983
+      "max": 4.703,
+      "p50": 4.114,
+      "p95": 4.546,
+      "p99": 4.703
     }
   },
   "regression_archive": "verification/measurements/0058-linux-x86-terminal-load-regression.json"

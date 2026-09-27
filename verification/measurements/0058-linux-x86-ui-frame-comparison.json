@@ -5,14 +5,14 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-ui-frame.json",
-    "sha256": "ab4f1eeb50c88bf3ae4d4bfd9dfc2d35c1fdf8d82990be7f6a903eddb4644ec4"
+    "sha256": "e49e0ff124c458d0a836f2de2fa2ac06bd99b6cbe23ea150248017c9ba1b2e38"
   },
   "candidate": {
     "commit": null,
-    "state": "0.36.0 notify-replay and LSP-write-failure-wakeup-safe static candidate 6c817b00; final native CI and tag pending",
-    "artifact_sha256": "6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3",
+    "state": "0.36.0 Linux/Apple-Silicon worker after Intel removal; static candidate 5a9f826f; retained-target CI and tag pending",
+    "artifact_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
     "measurement": "verification/measurements/0058-linux-x86-worker-ui-frame.json",
-    "sha256": "7a2fb209f661a853b55179d1929c6c17fcf563d6ec1b90fbb23e65c4ced7d0d3"
+    "sha256": "ee7488fc12b5f6ee64489e05993532d82de8a1be3f00a19ccbcbdbea7d3b1944"
   },
   "method": {
     "harness": "verification/bench_ui_input_frame.py",
@@ -28,26 +28,26 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 0.359,
-      "p50": 0.244,
-      "p95": 0.301,
-      "p99": 0.359
+      "max": 0.626,
+      "p50": 0.236,
+      "p95": 0.293,
+      "p99": 0.626
     },
     "candidate_ms": {
-      "max": 0.585,
-      "p50": 0.278,
-      "p95": 0.359,
-      "p99": 0.585
+      "max": 0.542,
+      "p50": 0.244,
+      "p95": 0.283,
+      "p99": 0.542
     },
     "baseline_editor_rss_kib_after_open": 12688,
-    "baseline_worker_rss_kib_after_open": 5036,
+    "baseline_worker_rss_kib_after_open": 5040,
     "baseline_worker_count_after_open": 1,
-    "candidate_editor_rss_kib_after_open": 12868,
-    "candidate_worker_rss_kib_after_open": 5224,
-    "candidate_worker_count_after_open": 1,
     "baseline_request_bytes": 9984,
     "baseline_ack_bytes": 6784,
     "baseline_view_bytes": 132132,
+    "candidate_editor_rss_kib_after_open": 12868,
+    "candidate_worker_rss_kib_after_open": 5100,
+    "candidate_worker_count_after_open": 1,
     "candidate_request_bytes": 9984,
     "candidate_ack_bytes": 6784,
     "candidate_view_bytes": 132132

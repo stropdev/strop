@@ -74,10 +74,11 @@
   On the exact 0.36.0 static Linux build, all 64 real 17.28 MiB
   UI-open journeys left **zero** workers after editor exit, versus
   64/64 survivors on the original pre-worker baseline. Open→visible
-  p50 was 78.258 ms versus 78.392 ms; worker kernel peak-memory p50
-  increased from 5,036 to 7,256 KiB. Mac/arm retirement still needs
-  native qualification. In a separate 64-session no-init BusyBox
-  container measurement, PID 1 retained 889 Docker-exec bootstrap
+  p50 was 104.601 ms versus 78.876 ms while qualification jobs shared
+  the host; this is not an isolated latency comparison. Worker
+  kernel peak-memory p50 increased from 5,036 to 7,232 KiB.
+  Retained native-target qualification remains. A separate 64-sample
+  no-init BusyBox container measurement left 894 Docker-exec bootstrap
   `sh`/`cat` zombies (including fixture resets); no bound on an
   unrelated nonreaping PID 1's process table is claimed.
 

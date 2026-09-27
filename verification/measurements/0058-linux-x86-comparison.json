@@ -3,14 +3,14 @@
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "measurement": "verification/measurements/0058-linux-x86-preworker.json",
-    "sha256": "403381a4db463347b6cd2c145b043390cf53fb63c516c2fb859bd7ed65811c72"
+    "sha256": "80f81f53c02b94e74e9fec0ed2f6868dae1554a253fcbf3bf71b6b32254ea69e"
   },
   "candidate": {
-    "artifact_sha256": "6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3",
+    "artifact_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
     "commit": null,
     "measurement": "verification/measurements/0058-linux-x86-worker.json",
-    "sha256": "dcae7bdf5e161b14372884ff054fa8464bed9197e659628314d3adc292f2bc42",
-    "state": "0.36.0 notify-replay and LSP-write-failure-wakeup-safe static candidate 6c817b00; final native CI and tag pending"
+    "sha256": "d0d893db6eaaab001b7c6d0b800291467ee25dcbfe93a376d2a672c46b428f64",
+    "state": "0.36.0 Linux/Apple-Silicon worker after Intel removal; static candidate 5a9f826f; retained-target CI and tag pending"
   },
   "method": {
     "excludes": [
@@ -31,10 +31,10 @@
   "observed": {
     "baseline_bytes": 46226704,
     "baseline_ready_ms": {
-      "max": 1.509,
-      "p50": 0.84,
-      "p95": 1.227,
-      "p99": 1.509
+      "max": 0.986,
+      "p50": 0.724,
+      "p95": 0.828,
+      "p99": 0.986
     },
     "baseline_rss_kib": {
       "max": 4312,
@@ -50,21 +50,21 @@
     },
     "candidate_bytes": 47390032,
     "candidate_ready_ms": {
-      "max": 3.533,
-      "p50": 0.854,
-      "p95": 1.387,
-      "p99": 3.533
+      "max": 0.925,
+      "p50": 0.747,
+      "p95": 0.86,
+      "p99": 0.925
     },
     "candidate_rss_kib": {
-      "max": 4824,
-      "p50": 4808,
-      "p95": 4816,
-      "p99": 4824
+      "max": 4692,
+      "p50": 4616,
+      "p95": 4684,
+      "p99": 4692
     },
     "candidate_threads": {
       "max": 3,
       "p50": 2,
-      "p95": 3,
+      "p95": 2,
       "p99": 3
     },
     "bytes_delta": 1163328

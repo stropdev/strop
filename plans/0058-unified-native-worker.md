@@ -1276,14 +1276,14 @@ do not establish OS lock behavior or native macOS/arm execution.
 
 On the WSL2 Ryzen 9950X3D, clean pre-worker `a05d84f` and the
 stripped 47,390,032-byte x86_64 musl 0.36.0 worker (`sha256
-6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3`)
+5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494`)
 each ran eight warmups and 64 real Hello/Welcome launches (pre-worker
 protocol 1; native worker protocol 2). Baseline/current readiness p50
-was 0.840/0.854 ms, p95 1.227/1.387 ms, p99/max 1.509/3.533 ms;
+was 0.724/0.747 ms, p95 0.828/0.860 ms, p99/max 0.986/0.925 ms;
 the binaries were 46,226,704/47,390,032 bytes. The native worker
 completed eight warmups and 64 serial Health requests through real
-framed IPC: write+flush to result p50 0.226 ms, p95 0.300 ms,
-p99/max 0.361 ms. Neither protocol-different warm launches nor these
+framed IPC: write+flush to result p50 0.197 ms, p95 0.247 ms,
+p99/max 0.369 ms. Neither protocol-different warm launches nor these
 samples establish a speedup.
 Other qualification jobs shared this host during sampling; these are
 observed same-fixture measurements, not isolated-host performance limits.
@@ -1296,8 +1296,8 @@ warmups and 64 real `--ui-stdio` committed-text actions after the
 editor opened a 10,000-line file through one live worker at 120×40.
 `verification/bench_ui_input_frame.py` checks that each complete
 semantic-view frame visibly contains the next edit on line 5000.
-Baseline/current write+flush→view p50 was 0.244/0.278 ms, p95
-0.301/0.359 ms, p99/max 0.359/0.585 ms. This local comparison is
+Baseline/current write+flush→view p50 was 0.236/0.244 ms, p95
+0.293/0.283 ms, p99/max 0.626/0.542 ms. This local comparison is
 not a platform-wide no-regression result. Raw samples, framed
 bytes and observed worker/editor RSS and thread counts are archived.
 
@@ -1306,11 +1306,11 @@ On the same two static artifacts, the real 120×30 TUI opened the
 single-character edits. The opt-in
 `terminal_editor::native_terminal_input_to_painted_frame_samples`
 waits until the VT100-decoded **cell grid** displays each exact edit:
-baseline/current key-write→paint p50 1.123/1.073 ms, p95
-2.042/1.807 ms, p99/max 2.225/2.846 ms. The matched nine-path
+baseline/current key-write→paint p50 0.972/0.915 ms, p95
+1.575/1.337 ms, p99/max 2.142/1.782 ms. The matched nine-path
 `verification/bench_native_product.py` also records 256-line loaded
-PTY output→paint p50 3.935/4.308 ms, p95 4.671/4.937 ms,
-p99/max 4.766/6.983 ms, with raw samples and artifact/source
+PTY output→paint p50 3.697/4.114 ms, p95 4.432/4.546 ms,
+p99/max 4.799/4.703 ms, with raw samples and artifact/source
 digests in `verification/measurements/`.
 
 The PR native matrix now builds both releases on GNU x86_64/
@@ -1330,9 +1330,9 @@ whatever tip a baseline name later points to.
 The same WSL2 host also ran eight warmups and 64 cold and 64 warm
 real Python-free authenticated TCP-loopback OpenSSH/SFTP worker
 deployments, plus 64 live SSH handshakes. Cold discovery→verified
-probe p50/p95/p99/max was 3922.989/5446.717/5831.842/5831.842
-ms; warm reuse was 2407.608/2931.573/3225.117/3225.117 ms;
-live handshakes were 138.370/159.036/168.080/168.080 ms.
+probe p50/p95/p99/max was 3730.683/3808.122/3880.207/3880.207
+ms; warm reuse was 2231.547/2308.670/2418.987/2418.987 ms;
+live handshakes were 123.521/128.595/132.162/132.162 ms.
 Each live session recorded exactly one lease; a private fixture
 removed only its unleased object and receipt outside each cold
 measurement. This requalification used the pinned Python-free
@@ -1343,13 +1343,13 @@ suite retains its Python-free real SSH parity gate.
 
 A second scoped native target, a no-init BusyBox container, completed
 eight warmups and 64 real cold uploads (p50/p95/p99/max
-3698.442/5465.584/6043.959/6043.959 ms), 64 warm cache reuses
-(3419.944/4398.859/4603.052/4603.052 ms) and 64 live worker
-handshakes (105.263/119.121/131.202/131.202 ms) with exactly one
+3464.558/3531.428/3653.394/3653.394 ms), 64 warm cache reuses
+(2904.992/3046.098/3212.397/3212.397 ms) and 64 live worker
+handshakes (88.516/92.266/95.339/95.339 ms) with exactly one
 actual worker process after each Welcome. The deliberately nonreaping
-PID 1 retained 889 `[cat]`/`[sh]` children after the reuse phase,
+PID 1 retained 894 `[cat]`/`[sh]` children after the reuse phase,
 including 71 private fixture resets outside timing. This is not
-889 live workers or universal container behavior. The user explicitly
+894 live workers or universal container behavior. The user explicitly
 retained no-init support with this documented risk; it does not establish
 a bounded total-container process table. Owned live-worker retirement
 remains a separate checked requirement. Qualification jobs shared the
@@ -1362,11 +1362,11 @@ The same host measured eight warmups and 64 real installed
 `rust-analyzer` definition replies through `strop --ui-stdio` on
 matched static pre-worker and worker artifacts. Input `gd` to the
 painted definition measured p50/p95/p99/max
-25.671/25.849/26.019/26.019 ms before and
-25.592/25.765/25.931/25.931 ms after. A separate 64-sample
+25.780/26.121/26.366/26.366 ms before and
+25.666/25.924/27.481/27.481 ms after. A separate 64-sample
 trailing-space edit→`didChange`→`gd`→paint route measured
-25.919/26.132/26.395/26.395 ms before and
-25.946/26.217/26.436/26.436 ms after. That second path is an
+26.055/27.789/29.141/29.141 ms before and
+26.017/26.354/26.780/26.780 ms after. That second path is an
 end-to-end sync/request upper bound, **not** a standalone
 `didChange` acknowledgment or a claimed speedup. Both targets
 retained one actual local worker; server readiness alone was not
@@ -1390,7 +1390,7 @@ The editor's universal Drop cancelled jobs and stopped LSP clients
 but left local/SSH/container worker retirement to the last clone,
 which background jobs could retain beyond backend exit.
 
-The 0.36.0 notify-replay/LSP-wakeup-safe static candidate (`6c817b00`) closes the
+The post-Intel-removal 0.36.0 static candidate (`5a9f826f`) closes the
 editor-owned local lease and every admitted SSH/container lease at
 the shutdown boundary, outside input→render. `Worker::close` serializes
 against connection creation and returns `ClientError::Closed` to
@@ -1398,11 +1398,12 @@ outstanding clones; shared admission tables reject or retire a
 publication racing closure. A matched 64-run release-binary transfer
 now observed **zero surviving workers after editor exit in every
 candidate run** versus 64/64 survivors from the original baseline.
-Open→visible p50/p95/max was 78.392/78.956/103.349 ms baseline and
-78.258/78.696/80.146 ms candidate. Worker kernel `VmHWM` p50
-increased from 5,036 to 7,256 KiB; editor `VmHWM` p50 changed from
-34,284 to 34,460 KiB. These exact bytes and raw 64-per-artifact
-samples are in `verification/measurements/0058-linux-x86-*-transfer-ui.json`.
+Open→visible p50/p95/max was 78.876/105.111/107.359 ms baseline and
+104.601/132.516/136.930 ms candidate while other qualification jobs
+shared the host. This is not an isolated-host latency comparison.
+Worker kernel `VmHWM` p50 increased from 5,036 to 7,232 KiB; editor
+`VmHWM` p50 changed from 34,284 to 34,468 KiB. Exact bytes and raw samples
+are in `verification/measurements/0058-linux-x86-*-transfer-ui.json`.
 This proves local Linux shutdown after the 17 MiB journey, **not**
 remote transfer, macOS retirement or a universal bounded-memory claim.
 
