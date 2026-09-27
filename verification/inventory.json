@@ -2261,8 +2261,8 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "Intel macOS was explicitly removed from all current target selectors, build/CI/artifact lanes, catalog, installer/updater and Homebrew support. Retain GNU Linux x86_64/aarch64 and Apple Silicon plus both static musl execution profiles. The new static worker 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 passed full Docker fmt/clippy/test, actual unsupported-Intel guards, matched 64 local product/LSP/17.28 MiB transfer journeys, and 64 Python-free TCP SSH/no-init Docker cold/warm/live paths. Pre-cutover 644703f passed hosted full assurance and all three retained native profiles; those older artifacts are not relabeled as this new binary. WPLAT-NATIVE waits only for final retained-target qualification, never Intel.",
-          "status": "blocked",
+          "statement": "User-approved supported native profiles are GNU Linux x86_64/aarch64 and Apple Silicon; both Linux musl workers also execute over real authenticated SSH. All three retained native jobs passed in run 36301459526 from runtime source bf978405a38bcac1895f88d3c93600caa45550be. Each produced 64 matched Hello/Health/semantic-UI/physical-TUI/loaded-terminal, real rust-analyzer and 17.28 MiB transfer observations; every candidate retained one worker after open and zero after all 64 editor exits. Full raw reports bind each native executable digest, benchmark source, workspace/lock, pinned compiler selector, native workflow and 67 worker source hashes. Current installers, updater, bootstrap, source-build guards, Homebrew and catalog refuse retired Intel macOS rather than downloading ARM. No Intel qualification is required.",
+          "status": "native-tested",
           "evidence": [
             {
               "kind": "script",
@@ -2278,6 +2278,16 @@
               "kind": "measurement",
               "path": "verification/measurements/0058-linux-wsl2-native.log",
               "gate": "platform-test"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-retained-native-platforms.json",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/native_evidence.py",
+              "gate": "benchmark"
             }
           ],
           "migration": {
@@ -2292,7 +2302,8 @@
         "release",
         "test",
         "ci",
-        "platform-test"
+        "platform-test",
+        "benchmark"
       ],
       "pins": {
         "sources": {
@@ -2304,7 +2315,7 @@
           "crates/strop/src/update.rs": "1bfede018d097ae69d56c5074cb89ab5aaf7b0c06983688849011df2db73300f",
           "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
         },
-        "evidence": "1d6c000ddbf07fe650cc48250ef7f48f9ff98b24a8a0f6c2b2d057a78102844c"
+        "evidence": "f0d4cb223cc977b57f82fb24669368a3e378fb367dd851dbe66e620ccc06bf97"
       }
     },
     {
@@ -3287,8 +3298,8 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "Post-Intel-removal worker SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 has nine matched 64-sample local product paths, 64 real rust-analyzer request/edit-to-paint paths per artifact,64 Python-free authenticated TCP SSH cold/warm/live paths and 64 no-init container cold/warm/live paths. The 17,280,000-byte transfer left zero workers after all 64 candidate editor exits versus 64 original baseline survivors. Worker VmHWM p50 was 7,232 versus 5,036 KiB; open-to-visible p50 was 104.601 versus 78.876 ms while qualification jobs shared the host, not an isolated latency comparison. The nonreaping PID 1 sample retained 894 sh/cat zombies including 71 fixture resets; user explicitly accepted this documented risk, not a bounded whole-container claim. Intel macOS is retired by user decision. WPERF-FULL stays blocked until the final three retained native profiles bind their executed artifacts and raw performance/retirement evidence.",
-          "status": "blocked",
+          "statement": "Exact static worker 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 passed nine matched 64-sample local product paths, 64 real rust-analyzer request/edit-to-paint paths per artifact,64 Python-free authenticated TCP SSH cold/warm/live paths and 64 no-init Docker cold/warm/live paths. The 17,280,000-byte transfer left zero workers after all 64 current editor exits versus 64 pre-worker survivors; worker VmHWM p50 was 7,232 versus 5,036 KiB. Local open-to-visible p50 was 104.601 versus 78.876 ms with concurrent qualification-host work, not an isolated comparison. Retained GNU x86_64/aarch64 and Apple Silicon each independently passed 64-sample native product/LSP/transfer qualification in run 36301459526, also with zero current workers after exit. Raw summaries, exact artifacts and source/method inputs are mechanically checked. Nonreaping BusyBox PID 1 retained 894 external sh/cat zombies including 71 fixture resets; user explicitly kept no-init support with this caveat, not a whole-container process-table bound. Intel macOS was explicitly retired. These scoped observations do not establish universal latency, memory or WAN bounds.",
+          "status": "native-tested",
           "evidence": [
             {
               "kind": "script",
@@ -3353,6 +3364,16 @@
             {
               "kind": "script",
               "path": "verification/transfer_evidence.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0058-retained-native-platforms.json",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/native_evidence.py",
               "gate": "benchmark"
             }
           ],
@@ -3478,7 +3499,7 @@
           "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "0e000399164024bcc6d560c3322802b739db6e25b8137e9adf368c35e1b9453e"
+        "evidence": "cb3498dcdd4d6d2574dd72131e122c22521f763e4b484e3b69eaca2b9ea647c3"
       }
     },
     {

@@ -890,3 +890,25 @@ could strand a refused semantic event under a full lane (UiSession's
 storm caught a variant of it); the fix ships with a cfg(strop_mutant)
 harness proving the armed mutant dies by exactly the registered test
 (reproduce-before FAILED, confirm-after green).
+
+### VF20 retained worker candidate: qualified, publication pending
+
+The pre-worker archives remain immutable and retain their original
+qualification limits; they are not retroactively labelled native-platform
+proof. [0058](0058-unified-native-worker.md) carries the actual cutover
+and the live 109-claim migration. Its GNU Linux x86_64/aarch64 and Apple
+Silicon worker/editor/LSP/transfer lanes passed in
+[`36301459526`](https://github.com/stropdev/strop/actions/runs/36301459526).
+The user explicitly retired Intel macOS and accepted the documented
+nonreaping-container-PID-1 limitation; neither decision waives retained
+platform gates or owned-worker retirement.
+
+`verification/measurements/0058-retained-native-platforms.json` archives
+all native raw samples and executed artifact/source identities.
+`verification/native_evidence.py` binds them to current runtime, manifest,
+lock, compiler-selector, workflow and benchmark inputs and rejects partial
+or stale bundles. The release-mode inventory now has zero blocked claims.
+The combined assurance gate passed on that runtime source; the final
+ledger also passes inside the qualified Docker image. Tag-owned
+publication remains, and completion begins only after the 0.36.0
+worker is released and verified.

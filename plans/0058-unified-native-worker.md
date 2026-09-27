@@ -1,13 +1,13 @@
 # 0058 — Unified native worker: local first, the same protocol remotely
 
-Status: **implementation in progress; not release-qualified**. The
-local/SSH/container worker routes, protected Store, session credits and
-PTY cutover have native evidence; `docker compose run --build --rm model`
-exhausts the WorkerSession and WorkerDeploy bounds and semantic mutants.
-`verification/check.py --release` still refuses `WPERF-FULL`
-and `WPLAT-NATIVE`. Worker-native retirement serializes registration
-with collection and its generalized lock/snapshot induction now
-passes; full native-platform and product-performance gates do not.
+Status: **release-qualified for 0.36.0; tag-owned publication pending**.
+Local/SSH/container worker routes, protected Store, credited streams,
+PTY and retirement have real execution evidence. GNU Linux
+x86_64/aarch64, Apple Silicon and the complete combined assurance
+gate passed in run `36301459526`. The local Docker quality,
+TLC/Verus/TLAPS/core-assurance/container gates also passed.
+`verification/check.py --release` accepts all 109 claims with zero
+blocked entries, including the source-bound native evidence bundle.
 WorkerSession, WorkerDeploy and WorkerCacheGC have symbolic TLAPS
 inductions over their TLC models; none proves Rust refinement,
 filesystem effects or a live peer. The original 0057
@@ -16,12 +16,11 @@ Linux x86_64 pre-worker snapshot has 74 claims and six raw passing
 gate logs under
 `verification/baseline/0057-linux-evidence.json`. The omitted FS-STORE
 claim belongs to this worker cutover, not that clean pre-worker binary.
-Neither archive qualifies macOS/aarch64 target execution; those hosts
-are unavailable on this workstation. Scoped local warm-handshake and
-worker Health control-frame observations are in
-`verification/measurements/`; §10 still needs remote deployment,
-editor input/render, LSP and terminal-load measurements on every native
-target profile.
+Neither historical archive qualifies the current release. Current
+local and retained-native raw measurements, executed binary digests,
+runtime source hashes and method bindings are recorded under
+`verification/measurements/`; the native bundle is checked by
+`verification/native_evidence.py` and included in the candidate freeze.
 
 Platform amendment for 0.36.0 (explicit user approval): **Intel macOS
 is removed from the supported product and release matrix**. Retain
@@ -1688,10 +1687,33 @@ the user's subsequent platform decision removed Intel macOS instead.
 That lane and its Intel-only compile staging are no longer release
 requirements. No retained-platform test is skipped or weakened.
 
-The same-source proofs do not verify OS effects, exact receipt
-provenance, a global liveness oracle or platform performance.
-`WDEP-GC` now has a serialized native caller, two-worker/SSH/container
-OS correspondence, exhaustive bounded model and generalized TLAPS
-induction. `WPERF-FULL` and `WPLAT-NATIVE` still require product-path
-measurements and actual native target execution. WK16–WK20 and VF20
-remain open; 0059 must not start on partial evidence.
+### WK20 retained native qualification
+
+All three retained native jobs passed in
+[`36301459526`](https://github.com/stropdev/strop/actions/runs/36301459526).
+Each measured 64 requests per path after eight warmups on the same host
+for the clean `a05d84f` baseline and post-Intel-removal candidate.
+The p50 values below are baseline/current, in milliseconds:
+
+| Native profile | TUI input→paint | Real LSP request→view | 17.28 MiB open→view | Current workers after exit |
+| --- | --- | --- | --- | --- |
+| GNU Linux x86_64 | 1.097 / 1.108 | 25.494 / 25.451 | 51.427 / 51.455 | 0 in all 64 runs |
+| GNU Linux aarch64 | 1.129 / 1.230 | 25.311 / 25.345 | 51.355 / 51.334 | 0 in all 64 runs |
+| Apple Silicon | 1.059 / 1.164 | 105.219 / 93.789 | 33.143 / 34.347 | 0 in all 64 runs |
+
+`0058-retained-native-platforms.json` retains every raw sample, not just
+this table. The validator binds the exact executables, benchmark files,
+67 runtime sources, workspace manifest/lock, Zig selector and native CI
+workflow. Missing targets, stale source hashes, mismatched LSP binaries,
+surviving current workers and detached percentile summaries were rejected
+by five isolated negative controls; the real three-profile bundle passes.
+macOS memory observations remain current RSS, not kernel peak bounds.
+Intel macOS is retired by explicit user decision, not a waived failing lane.
+
+The same-source proofs do not establish OS effects, a global liveness
+oracle or universal performance. `WDEP-GC` has native correspondence,
+bounded models and generalized lock/snapshot induction; `WPERF-FULL`
+and `WPLAT-NATIVE` now have their scoped native evidence. Combined
+assurance is green; the tag workflow owns publication. 0059 starts
+only after the worker release is published and verified.
+

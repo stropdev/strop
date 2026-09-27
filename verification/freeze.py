@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 
 from lsp_evidence import validate as validate_native_lsp
+from native_evidence import validate as validate_retained_native
 from transfer_evidence import validate as validate_transfer
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -522,6 +523,10 @@ def native_product_evidence() -> dict:
             "artifact_sha256": report["candidate_sha256"]}
 
 
+def retained_native_evidence() -> dict:
+    return validate_retained_native(ROOT, WORKER_SOURCES)
+
+
 def container_deploy_evidence() -> dict:
     report = json.loads((ROOT / CONTAINER_DEPLOY_REPORT).read_text(encoding="utf-8"))
     measured = report.get("observed", {})
@@ -645,6 +650,7 @@ def freeze(allow_dirty: bool) -> dict:
         "linux_tui_input_frame_evidence": tui_frame_evidence(),
         "linux_terminal_output_load_evidence": terminal_load_evidence(),
         "linux_native_product_evidence": native_product_evidence(),
+        "retained_native_evidence": retained_native_evidence(),
         "linux_container_deployment_evidence": container_deploy_evidence(),
         "linux_ssh_deployment_evidence": ssh_deploy_evidence(),
         "linux_lsp_ui_evidence": validate_native_lsp(
@@ -713,6 +719,7 @@ def check(path: Path) -> int:
         "linux_tui_input_frame_evidence",
         "linux_terminal_output_load_evidence",
         "linux_native_product_evidence",
+        "retained_native_evidence",
         "linux_container_deployment_evidence",
         "linux_ssh_deployment_evidence",
         "linux_lsp_ui_evidence",

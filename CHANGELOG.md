@@ -1,7 +1,7 @@
 # Changelog
 
 
-## Unreleased
+## 0.36.0 — 2026-09-27
 
 ### Added
 
@@ -46,7 +46,8 @@
   removes only unleased same-context receipted objects, and reports
   exact partial retirements on failure. Preinstalled objects remain
   outside the managed cache. Generalized lock/snapshot induction
-  holds in the refined model; native platform qualification remains.
+  holds in the refined model, with native lease/process journeys on
+  the retained release targets.
 
 ### Changed
 
@@ -77,7 +78,8 @@
   p50 was 104.601 ms versus 78.876 ms while qualification jobs shared
   the host; this is not an isolated latency comparison. Worker
   kernel peak-memory p50 increased from 5,036 to 7,232 KiB.
-  Retained native-target qualification remains. A separate 64-sample
+  GNU x86_64/aarch64 and Apple Silicon also retired every worker
+  across 64 native opens each. A separate 64-sample
   no-init BusyBox container measurement left 894 Docker-exec bootstrap
   `sh`/`cat` zombies (including fixture resets); no bound on an
   unrelated nonreaping PID 1's process table is claimed.
@@ -87,8 +89,8 @@
   without sending another wake. UI stdio, headless and TUI jobs waits
   now recheck that condition every 16 ms during shutdown, retaining
   their absolute failure deadline and never polling input→render.
-  The eight-backend real search/shutdown journey passes locally;
-  native GNU storm qualification remains open.
+  The eight-backend real search/shutdown journey passes in the
+  Docker musl gate and the host GNU build.
 
 - **Unsupported native watches replay honestly on macOS** (0058
   WK20): the forensic `Notify` action previously recorded a queue
@@ -181,8 +183,8 @@
   only after a non-reaping exit observation and a bounded system
   `libproc` listing confirms the leader is the sole member; an
   inaccessible descendant or uncertain listing still refuses clean
-  settlement. All 19 direct supervisor tests passed on both native
-  macOS architectures; complete editor journeys remain a release gate.
+  settlement. Direct supervisor, framed worker, SSH and real terminal
+  journeys pass on the retained Apple Silicon profile.
 - **Prepared writes cannot cross a worker restart** (0058 WK10/WK20):
   a killed worker's stale `Prepare` result previously could be applied
   after reconnect, even after a fresh worker prepared the same absent
@@ -193,28 +195,28 @@
   refuse before constructing the upload. Native killed-worker,
   protected-Store and review-acceptance regressions pass.
 - **Native terminal Alt input retains ESC on macOS** (0058 WK20):
-  GitHub Intel and Apple Silicon runs exposed the same lost `1b`
-  before `x` in the actual PTY. Ghostty's encoder reset
-  `macos_option_as_alt` on each terminal-mode refresh; Strop now
-  reasserts logical Alt after that refresh, with no platform
-  shortcut or changed child-byte expectation. A final native
-  exact-byte TUI rerun remains required before platform qualification.
+  native qualification exposed the lost `1b` before `x` in the
+  actual PTY. Ghostty's encoder reset `macos_option_as_alt` on each
+  terminal-mode refresh; Strop now reasserts logical Alt afterward,
+  with no platform shortcut or changed child-byte expectation.
+  The exact-byte native Apple Silicon TUI journey passes.
 - **Native SSH fixture uses real scoped loopback sockets** (0058 WK20):
   macOS BSM auditing rejected `sshd -i` launched on a pipe with an
   `UNKNOWN` peer. Each SSH test now owns and reaps two authenticated
   loopback OpenSSH listeners (ordinary and SFTP-only), retaining
   Python-free parity. Linux relays native Notify hints; macOS
   advertises Unsupported and must refuse subscription typed.
-  Apple Silicon exercised real SSH deploy/read/write before that
-  refusal; complete native editor journeys remain a release gate.
+  Apple Silicon passes the real SSH deploy/read/write journey and
+  the exact typed notification refusal.
 - **Container workers no longer carry an extra sh/cat supervisor**
   (0058 WK08/WK20): verified-worker probes and live leases now use
   the same direct native `docker exec` on provisioned and shellless
   endpoints. `ShellPolicy` governs only cache/bootstrap mutations;
   preinstalled mode refuses tar writes before staging any bytes.
   Selected engine/user/cwd admission and live lease tests still pass.
-  A no-init container's PID 1 can retain orphaned bootstrap children;
-  their bounded-retirement evidence remains an open WK20 gate.
+  No-init containers remain supported with the documented risk that
+  a nonreaping PID 1 retains orphaned bootstrap processes; Strop does
+  not claim a bounded whole-container process table.
 - **Trace capture no longer self-invalidates its watched workspace**:
   notifications for the active trace file are filtered before waking
   the editor; unrelated file hints still reach source invalidation.
@@ -226,84 +228,42 @@
   preserved byte-for-byte under `verification/baseline/`. The worker
   lane replaces helper-bundle tests with native Store, recovered
   receipts, PTY stream-credit and concurrent cache-install journeys,
-  plus the existing instrumented Loom and mutant campaigns. The
-  final worker claim inventory and source/candidate requalification
-  remain release gates, not inherited badges.
-- **Scoped pre-worker and current worker startup evidence**: a clean
-  `a05d84f` Linux x86_64 pre-worker snapshot retains six raw passing
-  gates beside the untouched dirty historical archive. On the same
-  WSL2 host, 64 real static-worker handshakes per build measured
-  baseline/current p50 0.695/0.741 ms, p95 0.761/0.833 ms and
-  p99/max 1.041/1.129 ms (pre-worker protocol 1; worker protocol 2),
-  46,226,704/47,390,032-byte artifacts pinned in
-  `verification/measurements/`. This is local launch, not cold SSH
-  deployment, TUI cell-grid paint or native macOS/aarch64 evidence.
-- **Scoped worker control-frame latency** (0058 WK20, not full
-  performance qualification): the stripped static worker on WSL2
-  completed eight warmups and 64 serial Health requests through the
-  real framed IPC; write+flush-to-result p50 0.194 ms, p95 0.231 ms,
-  p99/max 0.340 ms for the 47,390,032-byte artifact (sha256
-  85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a)
-  with raw samples and request bytes pinned in
-  `verification/measurements/`. Remote deployment and LSP have
-  separate scoped measurements; this is only local control latency.
-- **Scoped real editor semantic-frame latency** (0058 WK20, not TUI
-  render qualification): clean pre-worker and current static binaries
-  each performed eight warmups plus 64 `--ui-stdio` text edits on the
-  same WSL2 host after the editor opened a 10,000-line file through
-  one real worker. Every returned frame visibly contains the next
-  edit. Baseline/current write+flush-to-view p50 was 0.223/0.232 ms,
-  p95 0.275/0.374 ms, p99/max 0.478/0.452 ms; raw samples,
-  artifact hashes, framed bytes and RSS/threads are archived under
-  `verification/measurements/`. This scoped local result does not
-  qualify TUI paint, SSH/container deployment or LSP on other targets.
-- **Scoped real TUI cell-grid paint latency** (0058 WK20): the same
-  two static artifacts each completed eight warmups and 64 real
-  worker-backed TUI insertions in a 10,000-line file at 120×30.
-  Each sample ends only after the PTY's VT100-decoded grid shows
-  the next exact edit. Baseline/current p50 0.916/0.908 ms, p95
-  1.431/1.424 ms, p99/max 1.627/2.270 ms on the native WSL2 host.
-  Raw samples and method digest are archived; SSH/container deployment
-  on other native targets, LSP and TUI paint there remain release gates.
-- **Scoped loaded terminal output latency** (0058 WK20): matched static
-  artifacts each handled 64 two-key input requests that produced 256
-  real worker-PTY shell lines; every timer stopped at the exact final
-  VT100-painted grid marker. WSL2 baseline/0.36.0
-  p50 3.651/4.088 ms, p95 4.153/4.632 ms, p99/max 4.770/4.723 ms.
-  The pre-fix worker's p50 256.634 ms regression and current raw
-  samples are archived. This does not qualify remote, LSP,
-  memory high-water or the other native target profiles.
-- **Scoped real SSH and container worker deployment latency** (0058
-  WK20): Linux x86_64 WSL2 ran eight warmups plus 64 each of cold
-  verified deployment, warm cache reuse and live worker launch.
-  Python-free authenticated TCP-loopback OpenSSH/SFTP cold
-  p50/p95/p99/max was 3524.417/3557.102/3571.072/3571.072 ms,
-  reuse 2115.583/2133.813/2153.723/2153.723 ms and live
-  handshake 124.905/132.819/136.428/136.428 ms. This run
-  measured inside the Python-free SSH image without overlapping a
-  Docker build; pipe-only SSH timings are not comparable. A selected
-  no-init BusyBox container compiled the direct provider/cache guard
-  and measured cold 3358.249/3429.784/3519.458/3519.458 ms, reuse
-  2828.770/3032.088/3605.601/3605.601 ms and live admission
-  85.478/90.940/100.464/100.464 ms, with one actual worker after
-  each Welcome. The fixture observed 889 unreaped `[cat]`/`[sh]`
-  children after repeated Docker exec, including 71 deliberate
-  cache resets outside timing. This is neither 889 workers nor a
-  qualified no-init PID 1 retirement high-water. The 47,390,032-byte
-  0.36.0 static worker supplied these raw samples; other native
-  targets remain unqualified.
-- **Scoped real-server LSP responsiveness** (0058 WK20): matched
-  pre-worker and 0.36.0 static binaries each completed eight
-  warmups and 64 actual `rust-analyzer` `gd` requests from the
-  product UI to a painted definition on Linux x86_64 WSL2.
-  Pre-worker/worker p50/p95/p99/max was
-  25.551/25.746/25.824/25.824 ms versus
-  25.517/25.637/25.713/25.713 ms. A separate edit→`didChange`→
-  `gd`→paint route measured 25.786/26.012/26.170/26.170 ms
-  versus 25.690/25.910/26.021/26.021 ms. The latter is a
-  combined user-visible sync/request bound, not a standalone
-  `didChange` acknowledgment. Other native targets remain
-  unqualified.
+  plus the existing instrumented Loom and mutant campaigns. All 109
+  current claims are bound to their source and evidence with zero
+  blocked entries; publication still runs the exact-source gates.
+- **Matched local product measurements** (0058 WK20): the original
+  clean `a05d84f` pre-worker artifact and the 0.36.0 static candidate
+  (`5a9f826f`, 47,390,032 bytes) each ran eight warmups and 64 real
+  worker launches, semantic UI edits, physical TUI cell-grid edits and
+  256-line worker-PTY output bursts. Current local Health p50 was
+  0.197 ms; TUI input→paint p50 was 0.915 ms versus 0.972 ms.
+  Full raw distributions, bytes and process observations live in
+  `verification/measurements/`; these are scoped observations, not
+  universal latency guarantees.
+- **Retained native platform qualification**: GNU Linux x86_64,
+  GNU Linux aarch64 and Apple Silicon each passed native
+  worker/SSH/PTY/editor journeys plus 64-sample product, real-server
+  LSP and 17.28 MiB transfer measurements. Every current worker was
+  absent after all 64 editor exits on each profile. The raw native
+  bundle binds executed artifact digests, 67 runtime-source hashes,
+  workspace/lock, pinned compiler selector and benchmark methods;
+  missing targets, stale sources, mixed binaries and worker survivors
+  fail the release-evidence validator.
+- **Real SSH and container deployment measurements**: the exact
+  static candidate ran 64 authenticated Python-free TCP OpenSSH
+  cold/warm/live paths (p50 3730.683/2231.547/123.521 ms) and
+  selected no-init Docker paths (3464.558/2904.992/88.516 ms).
+  Each live admission retained one actual worker. The BusyBox
+  sample retained 894 external `sh`/`cat` zombies, including 71
+  private fixture resets; that is not a live-worker count or a
+  bounded PID-1 retirement claim. Host qualification work overlapped;
+  these are neither isolated-host nor WAN latency guarantees.
+- **Real-server LSP measurements**: 64 painted `rust-analyzer`
+  definition replies on the matched WSL2 artifacts measured p50
+  25.780/25.666 ms before/after. The separate 64 edit→`didChange`→
+  request→paint path measured 26.055/26.017 ms; it is not standalone
+  `didChange` acknowledgment latency. The retained native profiles
+  have their own raw LSP comparisons in the native evidence bundle.
 - **Python-free SSH deployment evidence** (0058 WK07): a separate
   OpenSSH image without a Python interpreter deploys and launches the
   actual native worker, then exercises read/write/notification parity.
@@ -353,7 +313,8 @@
   those pure decisions, not codec byte scanning, SSH/Docker/OS effects,
   receipt provenance, host durability or cross-client GC. Live worker
   journeys include a lost acknowledgment and a lost or stale activation
-  receipt. Full WK20 platform/performance evidence remains open.
+  receipt. Native effects and performance are qualified separately
+  from these pure proofs in the retained-target evidence bundle.
 
 ## 0.35.0 — 2026-09-17
 

@@ -407,6 +407,7 @@ def validate_migration(inv: dict, errors: list) -> None:
     try:
         candidate_freeze.baseline_hashes()
         candidate_freeze.linux_measurements()
+        candidate_freeze.retained_native_evidence()
         linux = json.loads(read_file("verification/baseline/0057-linux-inventory.json"))
     except (Failure, OSError, ValueError, KeyError, IndexError, TypeError, SystemExit) as exc:
         errors.append(f"cannot validate scoped baseline and worker measurements: {exc}")
