@@ -95,22 +95,26 @@ jobs:
           CARGO_TARGET_DIR="$RUNNER_TEMP/strop-preworker-target" cargo build --release --locked \
             --manifest-path "$RUNNER_TEMP/strop-preworker/Cargo.toml" -p strop-editor
           cargo build --release --locked -p strop-editor
+          # Cargo PTY tests build a test-support binary into target/release/strop.
+          # Keep the production candidate outside Cargo's output tree so
+          # baseline tests cannot replace its native worker with the in-process seam.
+          install -m555 target/release/strop "$RUNNER_TEMP/strop-product-candidate"
           python3 -B verification/bench_native_product.py \
             --baseline "$RUNNER_TEMP/strop-preworker-target/release/strop" \
-            --candidate target/release/strop --target "${{ matrix.target }}" \
+            --candidate "$RUNNER_TEMP/strop-product-candidate" --target "${{ matrix.target }}" \
             --out "$RUNNER_TEMP/strop-native-measurements"
           rustup component add rust-analyzer
           python3 -B verification/bench_lsp_ui.py \
             --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
             --profile release-gnu-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-lsp.json"
           python3 -B verification/bench_lsp_ui.py \
-            --binary target/release/strop --profile release-gnu-native \
+            --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-gnu-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-lsp.json"
           python3 -B verification/bench_transfer_ui.py \
             --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
             --profile release-gnu-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-transfer.json"
           python3 -B verification/bench_transfer_ui.py \
-            --binary target/release/strop --profile release-gnu-native \
+            --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-gnu-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-transfer.json"
       - uses: actions/upload-artifact@v7
         with:
@@ -161,22 +165,25 @@ jobs:
           CARGO_TARGET_DIR="$RUNNER_TEMP/strop-preworker-target" cargo build --release --locked \
             --manifest-path "$RUNNER_TEMP/strop-preworker/Cargo.toml" -p strop-editor
           cargo build --release --locked -p strop-editor
+          # The candidate's producer is cargo build; subsequent release
+          # PTY tests may write a test-support binary to target/release/strop.
+          install -m555 target/release/strop "$RUNNER_TEMP/strop-product-candidate"
           python3 -B verification/bench_native_product.py \
             --baseline "$RUNNER_TEMP/strop-preworker-target/release/strop" \
-            --candidate target/release/strop --target "${{ matrix.target }}" \
+            --candidate "$RUNNER_TEMP/strop-product-candidate" --target "${{ matrix.target }}" \
             --out "$RUNNER_TEMP/strop-native-measurements"
           rustup component add rust-analyzer
           python3 -B verification/bench_lsp_ui.py \
             --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
             --profile release-macos-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-lsp.json"
           python3 -B verification/bench_lsp_ui.py \
-            --binary target/release/strop --profile release-macos-native \
+            --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-macos-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-lsp.json"
           python3 -B verification/bench_transfer_ui.py \
             --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
             --profile release-macos-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-transfer.json"
           python3 -B verification/bench_transfer_ui.py \
-            --binary target/release/strop --profile release-macos-native \
+            --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-macos-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-transfer.json"
       - uses: actions/upload-artifact@v7
         with:

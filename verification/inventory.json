@@ -2246,7 +2246,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "The exact notify-replay-safe 0.36.0 stripped musl x86_64 static artifact 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a passed the full Docker fmt/clippy/test/model/verify/tlaps/core-assurance/container gates and matched nine 64-sample local product journeys. Python-free authenticated TCP OpenSSH and selected no-init BusyBox sessions each passed 64 real cold/warm/live measurements. Native run 36283379416 passed both macOS real terminal full-content execution-free replay journeys plus native SSH and worker binary tests, but macOS product benchmarking stopped before the first sample on an unsupported ps thcount keyword; the measurement method now uses Apple ps -M implementation (one built-in header plus one selected thread row per kernel thread); the first row-equality attempt failed, and the corrected row count still needs native proof. GNU x86_64/aarch64 integration passed worker/TUI journeys but product benchmark still returned zero owned workers after file open despite all-TID enumeration; its failing baseline/candidate executable and actual child/session state are not yet diagnosed. Source-level 301-obligation WorkerSession induction and paired mutants passed locally. No four-target final-source raw benchmark artifacts have passed; WPLAT-NATIVE remains blocked.",
+          "statement": "The exact notify-replay-safe 0.36.0 stripped musl x86_64 static artifact 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a passed the full Docker fmt/clippy/test/model/verify/tlaps/core-assurance/container gates and matched nine 64-sample local product journeys. Python-free authenticated TCP OpenSSH and selected no-init BusyBox sessions each passed 64 real cold/warm/live measurements. Native run 36283379416 passed both macOS real terminal full-content execution-free replay journeys plus native SSH and worker binary tests, but macOS product benchmarking stopped before the first sample on an unsupported ps thcount keyword; the measurement method now uses Apple ps -M implementation (one built-in header plus one selected thread row per kernel thread); the first row-equality attempt failed, and the corrected row count still needs native proof. GNU x86_64/aarch64 integration passed worker/TUI journeys, but the candidate target/release/strop was replaced by a cargo test --release test-support build during baseline PTY sampling: the observed editor had 20 threads and no child. A read-only candidate copy outside Cargo target preserved the production binary while the Cargo path changed; a matched local GNU nine-path 64-sample benchmark passed. Hosted native GNU requalification remains required. Source-level 301-obligation WorkerSession induction and paired mutants passed locally. No four-target final-source raw benchmark artifacts have passed; WPLAT-NATIVE remains blocked.",
           "status": "blocked",
           "evidence": [
             {
@@ -2282,12 +2282,12 @@
       "pins": {
         "sources": {
           ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
-          ".github/workflows/ci.yml": "9fb09d15a298ecd4ea101fd7e480fe081db173a89eb718c241ba9e4f32f270b6",
+          ".github/workflows/ci.yml": "6251a36e6778492328e552eaf169c1d313014d8c38f396748eed60894f5e4124",
           ".github/workflows/release.yml": "a5a2a5403ef17f30e646c96c08a25913c166ca17aba0bd0318feec02367395f1",
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "55a9a7e5086444422eb9c820f7119820ee837cd67d24130c6b1d36801d8bef09"
+        "evidence": "3e5f60f4570fe973c6a997bda549ba1a1e824bc7cd56b72981ba03b6cd89e262"
       }
     },
     {
@@ -3270,7 +3270,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "WK20 has 64 matched Linux x86_64 local product launches, worker-backed semantic UI views, real 120x30 TUI cell-grid edits, 256-line terminal floods, and 64 real rust-analyzer request/edit-to-paint journeys per artifact. The exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit, all 64 current workers were absent immediately, and candidate worker VmHWM p50 7,208 KiB versus pre-worker 5,036 KiB. The BusyBox PID 1 retained 889 [cat]/[sh] Docker-exec children after reuse, including 71 private cache resets; this is not a live-worker count, but no bounded no-init PID 1 retirement high-water can be claimed. Both macOS real terminal replay journeys passed in native run 36283379416 but Mac product timing stopped on ps thcount, and GNU native product worker census still returned zero after all-TID enumeration; no four-target metrics are qualified. Same-host SSH is not WAN latency. WPERF-FULL remains blocked pending native artifact performance evidence and an honest external-PID-1 support decision.",
+          "statement": "WK20 has 64 matched Linux x86_64 local product launches, worker-backed semantic UI views, real 120x30 TUI cell-grid edits, 256-line terminal floods, and 64 real rust-analyzer request/edit-to-paint journeys per artifact. The exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit, all 64 current workers were absent immediately, and candidate worker VmHWM p50 7,208 KiB versus pre-worker 5,036 KiB. The BusyBox PID 1 retained 889 [cat]/[sh] Docker-exec children after reuse, including 71 private cache resets; this is not a live-worker count, but no bounded no-init PID 1 retirement high-water can be claimed. Both macOS real terminal replay journeys passed in native run 36283379416 but Mac product timing stopped on ps thcount, and GNU native product sampling replaced the candidate file with a test-support binary during baseline Cargo PTY tests; a read-only isolated copy restored real worker semantics locally, but no four-target metrics are qualified. Same-host SSH is not WAN latency. WPERF-FULL remains blocked pending native artifact performance evidence and an honest external-PID-1 support decision.",
           "status": "blocked",
           "evidence": [
             {
@@ -3461,7 +3461,7 @@
           "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "dbc2a0257a5e11cb12dfdb9b3d3237f7cc71be7f89fc352f845c1152e8a94459"
+        "evidence": "cd48c2231f1287968870d1c056f8d95ecbe26e47f78c38d037ab78e0dcb5307f"
       }
     },
     {

@@ -1549,20 +1549,33 @@ is present. A matched real static pre-worker/candidate UI-open/edit
 smoke passed; four-target native 64-sample qualification remains.
 
 Final-source rerun `36283379416` still returned `[]` after file
-open on **both** GNU hosts despite all-TID enumeration; that
-hypothesis was insufficient for these runners. A passing WSL2
-binary and a hypothetical worker process are not GNU evidence.
-Identify which baseline/candidate executable failed and inspect
-the actual child/argv/session state before changing the census
-or claiming a new process-lifetime guarantee.
+open on both GNU hosts. Run
+[`36286341463`](https://github.com/stropdev/strop/actions/runs/36286341463)
+named the failing executable: **the candidate** at
+`target/release/strop`, with 20 editor threads, no child, and an
+otherwise valid opened view. The original `a05d84f` GNU baseline
+passed. A matching local GNU probe reproduced the actual source:
+normal `cargo build --release` at the same `target/release/strop`
+had a native child; `bench_native_product.py` then ran baseline
+`cargo test --release --test terminal_editor` from the candidate
+checkout, which **overwrote that path** with a test-support binary
+whose local worker lives in-process. The path's SHA changed, and a
+second UI-open probe produced the same 20 threads/zero child.
+This was neither a kernel child-enumeration gap nor a production
+worker regression. The native matrix must copy the production GNU/
+macOS candidate executable into a private, read-only runner-temp
+path outside Cargo's target immediately after `cargo build --release`,
+then pass that copy to every baseline/candidate PTY, semantic UI,
+LSP and transfer measurement. The test-support binary may freely
+replace Cargo's build path without changing the measured executable.
 
-Local WSL2 **GNU release** builds of the same clean `a05d84f`
-baseline and candidate each opened/edited the file with exactly
-one real child, matching the static musl smoke. That bounds the
-reproduction to the native hosted GNU environment, not to `musl`
-versus GNU in this one host. The next hosted run retains a
-failure-only process/argv/status census and names the exact binary;
-it does not make a missing worker look present.
+The corrected workflow shape passed all **nine** matched 64-sample
+GNU x86_64 local product paths on WSL2 with a separately built
+historical baseline: `target/release/strop` changed to the test-support
+SHA `0a91c71b` during Cargo PTY tests, while the read-only candidate
+copy retained production SHA `d0841d8b` and one real worker child.
+This is same-host GNU evidence, not native hosted x86_64/aarch64
+qualification; the new PR matrix must execute and upload both.
 
 CI's generalized TLAPS `WorkerSessionProofs` also left the single
 monolithic `Verify(c)` induction obligation unproved (1/274).
