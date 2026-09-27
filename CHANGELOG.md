@@ -60,6 +60,11 @@
 
 ### Fixed
 
+- **Release evidence checks leave the checkout unchanged**: the
+  qualification commands disable Python bytecode-cache writes before
+  importing their readers. The exact-source freeze no longer rejects
+  `__pycache__` files created by its own verification step.
+
 - **LSP stdin failure wakes a pending flush** (0058 WK20): a queued
   worker write could fail while the LSP mainloop waited on a separate
   flush waker, leaving the server's exit unreported. Writes and flush

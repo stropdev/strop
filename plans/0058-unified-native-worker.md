@@ -1717,3 +1717,15 @@ and `WPLAT-NATIVE` now have their scoped native evidence. Combined
 assurance is green; the tag workflow owns publication. 0059 starts
 only after the worker release is published and verified.
 
+The first tag run
+[`36307610089`](https://github.com/stropdev/strop/actions/runs/36307610089)
+passed all quality/proof/native jobs and all three artifact builds.
+Publication stopped before any crate or GitHub release: plain Python
+imports in the final verification step created `verification/__pycache__/`,
+which the exact-source freeze correctly rejected as checkout dirt.
+Both verifier entry points now disable bytecode writes before importing
+local readers; no dirty-tree exemption or ignored-source workaround is
+introduced. The user approved repairing the unpublished `v0.36.0` tag
+with this tooling-only fix. Worker code and the measured artifact inputs
+are unchanged.
+

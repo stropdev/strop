@@ -41,6 +41,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Imported evidence readers must leave the candidate checkout unchanged.
+sys.dont_write_bytecode = True
+
 from lsp_evidence import validate as validate_native_lsp
 from native_evidence import validate as validate_retained_native
 from transfer_evidence import validate as validate_transfer

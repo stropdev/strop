@@ -44,6 +44,9 @@ import re
 import sys
 from pathlib import Path
 
+# The qualification reader must not create files before the clean-tree freeze.
+sys.dont_write_bytecode = True
+
 import freeze as candidate_freeze
 
 ROOT = Path(__file__).resolve().parent.parent
