@@ -5,14 +5,14 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-ui-frame.json",
-    "sha256": "2ad16e8241d91979f2701c2926cf36f61cbd741665df4e18e6161e1ffd86616b"
+    "sha256": "a01b639124597d5753d51e29b2d6010d08d990a54c2dcc5310cb2a86458d661e"
   },
   "candidate": {
     "commit": null,
-    "state": "0.36.0 wake-safe static artifact measured with bounded PTY reap fixture; final native-platform and tag qualification pending",
-    "artifact_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
+    "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending",
+    "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
     "measurement": "verification/measurements/0058-linux-x86-worker-ui-frame.json",
-    "sha256": "9c24a2c4b1c17c8f1cf6670c43f52ce2101010ca1fce04b88152bb3982ef505c"
+    "sha256": "f11c66775bcbc0282806276219aa39d4abcf51448f80c66cffb4fd59de145ec1"
   },
   "method": {
     "harness": "verification/bench_ui_input_frame.py",
@@ -28,21 +28,21 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 0.494,
-      "p50": 0.276,
-      "p95": 0.42,
-      "p99": 0.494
+      "max": 0.301,
+      "p50": 0.232,
+      "p95": 0.276,
+      "p99": 0.301
     },
     "candidate_ms": {
-      "max": 0.347,
-      "p50": 0.227,
-      "p95": 0.288,
-      "p99": 0.347
+      "max": 0.464,
+      "p50": 0.225,
+      "p95": 0.273,
+      "p99": 0.464
     },
-    "baseline_editor_rss_kib_after_open": 12676,
-    "candidate_editor_rss_kib_after_open": 12580,
-    "baseline_worker_rss_kib_after_open": 5020,
-    "candidate_worker_rss_kib_after_open": 5080,
+    "baseline_editor_rss_kib_after_open": 12692,
+    "candidate_editor_rss_kib_after_open": 13888,
+    "baseline_worker_rss_kib_after_open": 5024,
+    "candidate_worker_rss_kib_after_open": 5368,
     "baseline_worker_count_after_open": 1,
     "candidate_worker_count_after_open": 1,
     "baseline_request_bytes": 9984,

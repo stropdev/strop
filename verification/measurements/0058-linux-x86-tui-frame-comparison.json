@@ -1,18 +1,18 @@
 {
   "schema": 1,
-  "scope": "Linux x86_64 Docker on WSL2, stripped musl static binaries, real local-worker-backed terminal editor input through decoded 120x30 VT100 cell-grid paint; not SSH/container, LSP, terminal-output load or native macOS/aarch64",
+  "scope": "Linux x86_64 WSL2 native host (matched Cargo release PTY tests), stripped musl static binaries, real local-worker-backed terminal editor input through decoded 120x30 VT100 cell-grid paint; not SSH/container, LSP, terminal-output load or native macOS/aarch64",
   "baseline": {
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-tui-frame.json",
-    "sha256": "505283f2dcdb6244bac4e12228478eaec4896615b56c0bc7769cce07f2e4b12d"
+    "sha256": "9416cde025cf7b1d10f492eca64821ee92372f092ccea5db865002f21141d338"
   },
   "candidate": {
     "commit": null,
-    "state": "0.36.0 wake-safe static artifact measured with bounded PTY reap fixture; final native-platform and tag qualification pending",
-    "artifact_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
+    "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending",
+    "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
     "measurement": "verification/measurements/0058-linux-x86-worker-tui-frame.json",
-    "sha256": "97b4b59995779e6406704c020fa0e57cbf9c6b92d459c7cf098afa327b92d397"
+    "sha256": "e3948ce3f006714c0514ee754031576c0214f1e115428b20d517bd77e0644b6b"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 1.755,
-      "p50": 0.939,
-      "p95": 1.51,
-      "p99": 1.755
+      "max": 1.701,
+      "p50": 0.912,
+      "p95": 1.548,
+      "p99": 1.701
     },
     "candidate_ms": {
-      "max": 1.478,
-      "p50": 0.966,
-      "p95": 1.345,
-      "p99": 1.478
+      "max": 1.364,
+      "p50": 0.904,
+      "p95": 1.21,
+      "p99": 1.364
     }
   }
 }

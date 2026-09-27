@@ -1,18 +1,18 @@
 {
   "schema": 1,
-  "scope": "Linux x86_64 Docker on WSL2, 120x30 worker-backed TUI, two-key PTY input causes 256 real shell output lines; measure until exact final marker painted; matched baseline and worker after wake-order fix, not remote/LSP/retirement evidence",
+  "scope": "Linux x86_64 WSL2 native host (matched Cargo release PTY tests), 120x30 worker-backed TUI, two-key PTY input causes 256 real shell output lines; measure until exact final marker painted; matched baseline and worker after wake-order fix, not remote/LSP/retirement evidence",
   "baseline": {
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json",
-    "sha256": "bf78be8b4ab103f23b94a8c7e710867f5900c10e6d9e331777e74b812ccccf7d"
+    "sha256": "5b95c499c47808ac331559aab374ac38c4bd166f510657a3442bb98051fc4f27"
   },
   "candidate": {
     "commit": null,
-    "state": "0.36.0 wake-safe static artifact measured with bounded PTY reap fixture; final native-platform and tag qualification pending",
-    "artifact_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
+    "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending",
+    "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
     "measurement": "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json",
-    "sha256": "d09b93a448f75d046d78ef7c45ece105d6d1930b67d4c04230eeefe59e3e7619"
+    "sha256": "bbbf7e9a845b31f582ba27d3850f784a055cbccfba8af3ef8f08214a00490699"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 5.917,
-      "p50": 4.371,
-      "p95": 5.221,
-      "p99": 5.917
+      "max": 4.988,
+      "p50": 3.607,
+      "p95": 4.116,
+      "p99": 4.988
     },
     "candidate_ms": {
-      "max": 5.965,
-      "p50": 4.887,
-      "p95": 5.482,
-      "p99": 5.965
+      "max": 4.878,
+      "p50": 4.001,
+      "p95": 4.603,
+      "p99": 4.878
     }
   },
   "regression_archive": "verification/measurements/0058-linux-x86-terminal-load-regression.json"

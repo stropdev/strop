@@ -267,6 +267,12 @@ events, `notify_overflow`, `reconcile_boundary`.
 - Guarded reload uses the existing admission/receipt vocabulary; dirty
   buffers receive external-change state and are never silently
   clobbered by a stale reload.
+- Full-content forensic replay records the bounded editor-side
+  notification drain (typed subscription settles, hints and rescan
+  latch), not just its `AppEvent::Notify` wake. A native `Notify`
+  refusal remains the same visible on-demand status in replay; replay
+  never launches a worker or guesses that an empty queue is fresh.
+  Without capture, the drain runs directly with no serialization.
 
 ## 6. Capability vocabulary and deployment consent
 

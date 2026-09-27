@@ -585,7 +585,6 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         .arg(&trace)
         .env("HOME", directory.path())
         .env("SHELL", "/unavailable-during-replay")
-        .env("STROP_TEST_REPLAY_DIAG", "1")
         .env_remove("STROP_LOG")
         .output()
         .unwrap();

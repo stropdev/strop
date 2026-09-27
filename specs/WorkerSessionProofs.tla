@@ -307,8 +307,36 @@ THEOREM InductiveStep == Inv /\ [Next]_vars => Inv'
       BY <1>17, HonestInputs DEF Inv, TypeOK, BoundedOutstanding, NoStaleEffect, NoStaleCommit, ForeignStopRefused, ExitAfterOutput, LastMeansFlushed, DirtyUntilProof, RecoveryInNamespace,
           Receipt, Bound, Owns, FreshAttempt, StateRecord, Owners, Attempts, Stages, None, vars
   <1>18. CASE MODE \in {0, 2} /\ \E c \in Clients : Verify(c)
-      BY <1>18, HonestInputs DEF Inv, TypeOK, BoundedOutstanding, NoStaleEffect, NoStaleCommit, ForeignStopRefused, ExitAfterOutput, LastMeansFlushed, DirtyUntilProof, RecoveryInNamespace,
-          Verify, Bound, Owns, FreshAttempt, StateRecord, Owners, Attempts, Stages, None, vars
+      <2>1. PICK c \in Clients : Verify(c)
+          BY <1>18
+      <2>2. TypeOK'
+          BY <2>1, HonestInputs DEF Inv, TypeOK, Verify,
+              Bound, StateRecord, Owners, Attempts, Stages, None, vars
+      <2>3. RecoveryInNamespace'
+          <3>1. SUFFICES \A t \in Clients :
+              state'.attempt[t].recovered
+              => state'.attempt[t].verifiedNamespace
+              BY DEF RecoveryInNamespace
+          <3>2. TAKE t \in Clients
+          <3>3. CASE t = c
+              <4>1. MUTATION = 0
+                  BY HonestInputs DEF HonestInputs
+              <4>2. state.namespace[state.bound[c]]
+                      = state.attempt[c].namespace
+                  BY <2>1, <4>1 DEF Verify
+              <4>3. QED
+                  BY <2>1, <3>3, <4>2, InvImpliesAttemptDomain
+                     DEF Inv, AttemptDomain, Verify, StateRecord
+          <3>4. CASE t # c
+              BY <2>1, <3>2, <3>4
+                 DEF Inv, RecoveryInNamespace, Verify, StateRecord
+          <3>5. QED BY <3>3, <3>4
+      <2>4. QED
+          BY <2>1, <2>2, <2>3, HonestInputs
+             DEF Inv, BoundedOutstanding, NoStaleEffect,
+                 NoStaleCommit, ForeignStopRefused, ExitAfterOutput,
+                 LastMeansFlushed, DirtyUntilProof, Verify,
+                 StateRecord, vars
   <1>19. CASE MODE \in {0, 2} /\ \E c \in Clients : RetireAttempt(c)
       BY <1>19, HonestInputs DEF Inv, TypeOK, BoundedOutstanding, NoStaleEffect, NoStaleCommit, ForeignStopRefused, ExitAfterOutput, LastMeansFlushed, DirtyUntilProof, RecoveryInNamespace,
           RetireAttempt, Bound, Owns, FreshAttempt, StateRecord, Owners, Attempts, Stages, None, vars

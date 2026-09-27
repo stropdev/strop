@@ -670,7 +670,7 @@
         },
         {
           "id": "EVT-RECORD",
-          "statement": "Trace lifecycle is exclusive/ordered/durable within the declared budget; readers reject sequence gaps, duplicates and trailing records; caps end with an explicit incomplete marker; metadata export removes every content-bearing field. Replay checkpoint errors identify only a schema-owned mismatching field, never a captured document/register/cell value.",
+          "statement": "Trace lifecycle is exclusive/ordered/durable within the declared budget; readers reject sequence gaps, duplicates and trailing records; caps end with an explicit incomplete marker; metadata export removes every content-bearing field. Replay checkpoint errors identify only a schema-owned mismatching field, never a captured document/register/cell value. Editor-owned queued results are serialized at the same delivery boundary as their wake, and replay consumes their typed observation without reading the live queue; a hermetic recorder drains that owned queue rather than substituting an OS stub.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -685,6 +685,14 @@
                 "metadata_export_removes_every_content_bearing_field",
                 "replay_nodes_require_complete_full_content_capture",
                 "tape_divergences_are_sticky_and_never_reach_native"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/trace/tests.rs",
+              "gate": "test",
+              "tests": [
+                "replay_preserves_rejected_filesystem_notification_status"
               ]
             }
           ],
@@ -706,10 +714,10 @@
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
           "crates/strop-trace/src/event.rs": "8863ed01aa88c21609f137fd201a22e7db1be8b76adf6111f600f24399d9e963",
           "crates/strop-trace/src/export.rs": "882480107025c2d7f38aacba111d18f70ae8eef71e4c42fce06f2fd950ac63ec",
-          "crates/strop-trace/src/replay.rs": "301624168ff3f1d63298be17d72fc3d7d05ca5a180e78a97025116975d9d2d92",
+          "crates/strop-trace/src/replay.rs": "b106a0e4fe78e1e944e22f4aa1047e308eb16a3ea17d634ab5f81013943cfe37",
           "crates/strop-trace/src/writer.rs": "20ea24a24dcf8f88321e8d4cb2ef9fb40c6fb7ede89ed9ec69c0fdbab2923591"
         },
-        "evidence": "054500e1b056abd0c7043e254da088f2179435a8f36e3f9bfd582e54c564250f"
+        "evidence": "e834ce33625a3115d2d39c0e9e053efdb0c2dd9431e14509bf53f376bdf59488"
       }
     },
     {
@@ -2238,7 +2246,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "The wake-safe 0.36.0 static local Linux musl candidate passed the full Docker fmt/clippy/test gate and 64 matched local product journeys. Python-free authenticated TCP OpenSSH and selected Docker worker sessions each passed 64 cold/warm/live native measurements. PR run 36268378164 passed GNU aarch64 SSH/client/TUI behavior but could not check out the previously unadvertised a05d84f benchmark baseline; the exact historical source is now reachable on verification/preworker-0057. GNU x86 full Docker gate exposed a 60s search shutdown lost-wake; all three frontend waiters now have a 16ms physical-quiescence recheck and the eight-backend local static product journey passes. Both native macOS architectures passed SSH and worker client but stalled in an unbounded nested TUI Child::wait; the TUI fixture now bounds reap with screen/trace diagnostics and CI isolates that step. No four-target benchmark artifacts have passed the new exact candidate; WPLAT-NATIVE remains blocked.",
+          "statement": "The exact notify-replay-safe 0.36.0 stripped musl x86_64 static artifact 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a passed the full Docker fmt/clippy/test gate and matched nine 64-sample local product journeys. Python-free authenticated TCP OpenSSH and selected no-init BusyBox sessions each passed 64 real cold/warm/live measurements. The earlier GNU native x86_64/aarch64 CI matrix passed real worker and TUI integration but its benchmark counted only children of the editor main TID, missing the UI background-thread-owned worker. Linux /proc TID enumeration now counts actual workers; the matched static baseline/candidate smoke passed. Earlier Mac Intel/ARM suites passed native SSH and worker client, but their full-content terminal replay lost the macOS Notify refusal queued outside the recorded wake; the owned semantic drain now records the typed outcome and its regression and Linux real terminal replay passed. The 301-obligation generalized WorkerSession TLAPS proof and mutants passed locally after splitting the Verify induction. No four-target final-source GNU/macOS benchmark artifacts have passed yet; WPLAT-NATIVE remains blocked.",
           "status": "blocked",
           "evidence": [
             {
@@ -2279,7 +2287,7 @@
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "9cf9fc06921f9c51ec59e0a7d096c2ee722e2e4cdbfb384c289a251fcd693b14"
+        "evidence": "005c1c64cb059762a68a996bebf8a305fcd5307c4e8a7b9d8b2c5dc4cedcf477"
       }
     },
     {
@@ -2493,7 +2501,7 @@
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
           "crates/strop/src/terminal.rs": "021a365c9d693c424bc496139ae106f02d923fa12187866fbec62383619379aa"
         },
-        "evidence": "9974b0cfc007a43d38a4b402eeb4243f5c7dfb2bb3a40f1dace6a9d497660db8"
+        "evidence": "8077d531b38ffbae156ee9b5198773750e0df3ab94e7ad9762b5c7978e06bda9"
       }
     },
     {
@@ -2658,7 +2666,7 @@
         },
         {
           "id": "UI-REPLAY",
-          "statement": "Recorded journeys replay deterministically: duplicated completions apply once, reordered shell outputs keep both with newest focus, and replay undo restores the original bytes.",
+          "statement": "Recorded journeys replay deterministically: duplicated completions apply once, reordered shell outputs keep both with newest focus, and replay undo restores the original bytes. An unsupported native filesystem watch remains a visible on-demand refusal after native-free replay, rather than losing the out-of-band queue result.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2667,7 +2675,8 @@
               "gate": "test",
               "tests": [
                 "duplicate_pipe_completion_is_applied_once_and_replay_undo_restores_original",
-                "recorded_reordered_shell_outputs_keep_both_but_only_newest_focus"
+                "recorded_reordered_shell_outputs_keep_both_but_only_newest_focus",
+                "replay_preserves_rejected_filesystem_notification_status"
               ]
             }
           ],
@@ -2728,7 +2737,7 @@
           "crates/strop/src/replay.rs": "87b0acfb0525b1827389f80b31fa1979c7c6a08d89b6c35b62250659bec9c5e9",
           "crates/strop/src/ui_stdio/serve.rs": "5f845cd95487a47e9c1f556dd4cf76f4733d6d6ad9a75009b8f03d195624ff68"
         },
-        "evidence": "2576f9fab6cde4cd1fe7c94707c1d0b84a60006b9482649327440a08b74959a6"
+        "evidence": "a568497a5cc6fd4753c655505458ab16a94bf3604abadbb913c7004bc2e2a3d8"
       }
     },
     {
@@ -3108,7 +3117,7 @@
         },
         {
           "id": "WS-WARM-HANDSHAKE",
-          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the wake-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.809/0.832 ms, p95 1.125/0.949 ms, p99/max 1.409/1.078 ms; binaries 46,226,704/47,316,304 bytes. Candidate artifact sha256 0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7. RSS and threads at Welcome are raw observations, not high-water marks, remote deployment or user-input latency; protocol differences and raw spread preclude a blanket speedup claim.",
+          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the notify-replay-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.738/0.741 ms, p95 1.027/0.838 ms, p99/max 1.245/1.059 ms; binaries 46,226,704/47,390,032 bytes. Candidate artifact sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a. RSS and threads at Welcome are raw observations, not high-water marks, remote deployment or user-input latency; protocol differences and raw spread preclude a blanket speedup claim.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3140,7 +3149,7 @@
         },
         {
           "id": "WS-WARM-CONTROL",
-          "statement": "The stripped static x86_64 musl wake-safe 0.36.0 worker (sha256 0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7, 47,316,304 bytes) on WSL2 completed eight warmups and 64 real Hello-bound Health requests. Local write+flush-to-result p50/p95/p99/max 0.201/0.261/0.351/0.351 ms; raw samples, RSS, threads and framed byte counts are archived. This is warm local IPC, not user input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
+          "statement": "The stripped static x86_64 musl notify-replay-safe 0.36.0 worker (sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a, 47,390,032 bytes) on WSL2 completed eight warmups and 64 real Hello-bound Health requests. Local write+flush-to-result p50/p95/p99/max 0.193/0.227/0.271/0.271 ms; raw samples, RSS, threads and framed byte counts are archived. This is warm local IPC, not user input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3261,7 +3270,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "WK20 now has 64 matched Linux x86_64 local product launches, semantic views, real 120x30 TUI cell-grid edits and 256-line terminal floods, plus 64 real rust-analyzer request and edit-to-paint journeys. The exact static 0.36.0 worker completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions, and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit but all 64 fixed workers were gone immediately, with candidate worker VmHWM p50 7,264 KiB versus pre-worker 5,040 KiB. The no-init BusyBox PID 1 nevertheless retained 892 Docker-exec [cat]/[sh] children after repeated deployment: not 900 workers, but no bounded no-init retirement claim is possible. GNU/macOS native platform run 36268378164 was cancelled after the Mac terminal test remained unbounded on both native hosts; bounded diagnostic and rerun are outstanding; same-host SSH is not WAN latency. WPERF-FULL remains blocked until the full native matrix and honest external-PID-1 retirement scope are resolved.",
+          "statement": "WK20 has 64 matched Linux x86_64 local product launches, worker-backed semantic UI views, real 120x30 TUI cell-grid edits, 256-line terminal floods, and 64 real rust-analyzer request/edit-to-paint journeys per artifact. The exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit, all 64 current workers were absent immediately, and candidate worker VmHWM p50 7,400 KiB versus pre-worker 5,028 KiB. The BusyBox PID 1 retained 889 [cat]/[sh] Docker-exec children after reuse, including 71 private cache resets; this is not a live-worker count, but no bounded no-init PID 1 retirement high-water can be claimed. Earlier Mac native terminal replay and GNU native child measurement failed on independently diagnosed sources, now changed but not requalified on four final-source targets. Same-host SSH is not WAN latency. WPERF-FULL remains blocked pending four-target product evidence and an honest external-PID-1 support decision.",
           "status": "blocked",
           "evidence": [
             {
@@ -3445,14 +3454,14 @@
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
-          "crates/strop/tests/terminal_editor.rs": "145202a876c4dc76661765d88a1fd477850a4a62c964d905e8e761bd9f5877c2",
+          "crates/strop/tests/terminal_editor.rs": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b",
           "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
           "verification/bench_transfer_ui.py": "d1f5b711804e3f9d581c4f906051581834422a00c8349f4533b4696a21e4bd73",
           "verification/bench_ui_input_frame.py": "689ce08d3468b85d8f05cddc38f2971f9d5450233da5142fb0d899ced2339903",
-          "verification/bench_worker.py": "982a8ebc933ff08a0a66d4adb9a118a11a7f48cecc6a1448675d87629f691194",
+          "verification/bench_worker.py": "133c0844428ffaab2c447d291ccc74b1dca5e238e0aef6917888d3bc11ac3c43",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "b2c625c9a8e8df414cbe3334e9e484b05d082d0cf9c6c6da68f90dd65f373692"
+        "evidence": "b27a254f8c6387c2f3ed73406b7b72ea9d0e0e27cf5672f374c2094cfa231cda"
       }
     },
     {
@@ -3582,7 +3591,7 @@
         },
         {
           "id": "NOTIFY-ENGINE",
-          "statement": "Engine reconciliation: a hint reloads a clean buffer, preserves a dirty buffer with external-change state, reobserves an open directory, preserves a removed file's buffer; overflow rescans conservatively; a dead generation never acts; close retires the subscription; worker loss reestablishes with a fresh generation; the client subscription delivers hints and retires; WK07 remote scopes: SSH workspaces on worker-admitted endpoints subscribe through the endpoint lease, settle/identity/loss rules are identical (subscription identity decides placement), remote hints apply conservatively (Directory buffers reobserve, dirty remote documents gain external-change state and are never clobbered, unknown identities never act), and lease loss invalidates + rescans + reestablishes. Because hint timing is inherently racy and hint effects are advisory and untraced, remote subscriptions do not install while the bit-exact full-content tape lane observes (recording or replay): remote freshness there is on demand, exactly as replay runs no worker.",
+          "statement": "Engine reconciliation: a hint reloads a clean buffer, preserves a dirty buffer with external-change state, reobserves an open directory, preserves a removed file's buffer; overflow rescans conservatively; a dead generation never acts; close retires the subscription; worker loss reestablishes with a fresh generation; the client subscription delivers hints and retires; WK07 remote scopes: SSH workspaces on worker-admitted endpoints subscribe through the endpoint lease, settle/identity/loss rules are identical (subscription identity decides placement), remote hints apply conservatively (Directory buffers reobserve, dirty remote documents gain external-change state and are never clobbered, unknown identities never act), and lease loss invalidates + rescans + reestablishes. Because hint timing is inherently racy and hint effects are advisory and untraced, remote subscriptions do not install while the bit-exact full-content tape lane observes (recording or replay): remote freshness there is on demand, exactly as replay runs no worker. A native watch refusal (including unsupported macOS Notify) reaches the visible on-demand status through the same bounded typed queue drain that execution-free replay consumes; an unrecorded wake cannot silently look fresh.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -3610,6 +3619,14 @@
               "tests": [
                 "notify_subscription_delivers_hints_and_retires"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/trace/tests.rs",
+              "tests": [
+                "replay_preserves_rejected_filesystem_notification_status"
+              ],
+              "gate": "test"
             }
           ],
           "migration": {
@@ -3649,14 +3666,14 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/notify.rs": "b9e35d0afc5868f1e8295f2efb680403f41ab939b4db8d2ee25d9139f623d8d1",
+          "crates/strop-engine/src/editor/notify.rs": "29286e611dc1e73dd7c1b1a28b0df60648d5070d24d4655f846c1b7a0a4f59ab",
           "crates/strop-picker/src/source/cache.rs": "a977b8438318c99a462f5dab90be94312f7a1bd6c61792d63d889a37b4e45156",
           "crates/strop-picker/src/source/worker.rs": "1df36bf1a396bf8845d2b4ecaff51af71e9362ce58b17489807845698f5814c1",
           "crates/strop-worker/src/notify/manager.rs": "e1cdaf0b57101dfb89e17504f06c18f03aee1093aa7d76b2ef06bca57f7ff041",
           "crates/strop-worker/src/notify/mod.rs": "cac01cbcc38194729293866ba678d3634c90c025f8e1141f6f01fae57b643838",
           "crates/strop-worker/src/notify/sys.rs": "14f5461b93eb5754aad6faabdaac646baff2b6b99e1cf3edf99520ef901fa98d"
         },
-        "evidence": "43f8e0d2275e21058348b2dff0f0de29279df3b1f4131db7e08e8f171b60b315"
+        "evidence": "322d323ae7e63c830cd375c816f18b796e5dc5ea424ca4bc0adf2f3561714624"
       }
     },
     {
@@ -3817,7 +3834,7 @@
         },
         {
           "id": "WDEP-CONTAINER-PERF",
-          "statement": "One WSL2 x86_64 Docker host executed eight warmups and 64 real cold BusyBox container worker uploads after exact fixture-owned cache resets, 64 warm verified reuses and 64 live direct-worker Welcome journeys. The container-test image compiled the direct provider and preinstalled cache guard. Cold p50/p95/p99/max was 3393.997/3430.478/3452.144/3452.144 ms, reuse 2841.565/2870.218/2899.490/2899.490 ms, and live admission 84.814/90.891/94.059/94.059 ms. Exactly one actual verified object worker ran after every live Welcome. No-init PID 1 retained 892 [cat]/[sh] children after warm probes, including 71 deliberate cache resets outside timing; this is neither a live-worker count nor a bounded retirement high-water. The artifact was the wake-safe 0.36.0 static source candidate; WPERF-FULL remains blocked.",
+          "statement": "One WSL2 x86_64 Docker host executed eight warmups and 64 real cold BusyBox container worker uploads after exact fixture-owned cache resets, 64 warm verified reuses and 64 live direct-worker Welcome journeys. The container-test image compiled the direct provider and preinstalled cache guard. Cold p50/p95/p99/max was 3358.249/3429.784/3519.458/3519.458 ms, reuse 2828.77/3032.088/3605.601/3605.601 ms, and live admission 85.478/90.94/100.464/100.464 ms. Exactly one verified object worker ran after every live Welcome; reused probes left zero live workers. No-init PID 1 retained 889 [cat]/[sh] children after reuse, including 71 deliberate cache resets outside timing; this is neither a live-worker count nor a bounded retirement high-water. The artifact was the exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a; WPERF-FULL remains blocked.",
           "status": "native-tested",
           "evidence": [
             {
@@ -4133,7 +4150,7 @@
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop/Cargo.toml": "5a51ce1ce022b6a464958abd67d214b3d58a008e463746b33ca64677239f28f2"
         },
-        "evidence": "2ee9727acc1cabee462780487e959c2368aaf59acbcad76b82dfcc9fecdb5f9e"
+        "evidence": "141f2f7947e17ca33bdf96ecb2c4664eb349f8c56a9d10ac3234ad0cc2b996ec"
       }
     },
     {
@@ -4284,7 +4301,7 @@
           "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "592e43666e1164ff3dbfeec392e9d06ef502247e8279d481b72a79f7e228e8fa"
+        "evidence": "c14a5e192a937620e91b18cc17e0a09bc56f4881f973c8f6ecc305bd48e80f37"
       }
     },
     {
@@ -4501,7 +4518,7 @@
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4"
         },
-        "evidence": "7361b8ff301409f14442fb3065a8a8d38b66111dd0127871aa85db1030564b92"
+        "evidence": "4f8378b6828cdcc0461d7700b816677655bb548b7f204fd628bd32b6f8b32aac"
       }
     }
   ],

@@ -30,6 +30,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{self, CancelReason, CancelToken, Completion, FailureKind, Outcome};
@@ -50,6 +51,7 @@ const MAX_HINTS: usize = 512;
 
 /// One semantic notify record. Subscription establishment rides the same
 /// queue so application order never depends on a cross-channel race.
+#[derive(Serialize, Deserialize)]
 pub(crate) enum Record {
     /// The subscribe job settled (typed outcome, never a guessed state).
     Settled(Outcome<SubscribedScope>),
@@ -72,7 +74,8 @@ pub(crate) enum Record {
     },
 }
 
-/// The settled subscription outcome (in-memory; never traced).
+/// A settled subscription, recorded only in consented full-content replay.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct SubscribedScope {
     pub subscription: Subscription,
     pub coverage: NotifyCoverage,
@@ -400,7 +403,20 @@ impl Editor {
     /// the job/forwarder threads); hints stamped by a superseded
     /// identity are dropped, never acted on.
     pub(crate) fn handle_notify(&mut self) {
-        let (records, queue_rescan) = self.notify.queue.drain();
+        // The wake is not the observation: the bounded queue may hold a
+        // settled refusal or coalesced overflow. Replay has no worker
+        // thread to refill it, so consume the same typed drain in both
+        // modes rather than guessing from AppEvent::Notify.
+        let (records, queue_rescan) = match self
+            .tape
+            .observe_owned("notify.drain", &(), || self.notify.queue.drain())
+        {
+            Ok(drained) => drained,
+            Err(error) => {
+                self.message = error.to_string();
+                return;
+            }
+        };
         if records.is_empty() && !queue_rescan {
             return;
         }

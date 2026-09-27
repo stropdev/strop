@@ -9,10 +9,10 @@
     "profile": "release-musl-stripped"
   },
   "baseline_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
-  "candidate_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
+  "candidate_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
   "methods": {
     "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
-    "verification/bench_worker.py": "982a8ebc933ff08a0a66d4adb9a118a11a7f48cecc6a1448675d87629f691194",
+    "verification/bench_worker.py": "133c0844428ffaab2c447d291ccc74b1dca5e238e0aef6917888d3bc11ac3c43",
     "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9",
     "verification/bench_ui_input_frame.py": "689ce08d3468b85d8f05cddc38f2971f9d5450233da5142fb0d899ced2339903",
     "crates/strop/tests/terminal_editor.rs": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b"
@@ -21,58 +21,58 @@
   "scope": "native local worker Hello, Health, worker-backed semantic edit, real PTY TUI cell-grid paint and 256-line terminal output load; not cold/warm remote deploy, LSP or retirement high-water",
   "observed": {
     "baseline_handshake_ms": {
-      "max": 1.409,
-      "p50": 0.809,
-      "p95": 1.125,
-      "p99": 1.409
+      "max": 1.245,
+      "p50": 0.738,
+      "p95": 1.027,
+      "p99": 1.245
     },
     "candidate_handshake_ms": {
-      "max": 1.078,
-      "p50": 0.832,
-      "p95": 0.949,
-      "p99": 1.078
+      "max": 1.059,
+      "p50": 0.741,
+      "p95": 0.838,
+      "p99": 1.059
     },
     "candidate_health_ms": {
-      "max": 0.351,
-      "p50": 0.201,
-      "p95": 0.261,
-      "p99": 0.351
+      "max": 0.271,
+      "p50": 0.193,
+      "p95": 0.227,
+      "p99": 0.271
     },
     "baseline_semantic_ms": {
-      "max": 0.494,
-      "p50": 0.276,
-      "p95": 0.42,
-      "p99": 0.494
+      "max": 0.301,
+      "p50": 0.232,
+      "p95": 0.276,
+      "p99": 0.301
     },
     "candidate_semantic_ms": {
-      "max": 0.347,
-      "p50": 0.227,
-      "p95": 0.288,
-      "p99": 0.347
+      "max": 0.464,
+      "p50": 0.225,
+      "p95": 0.273,
+      "p99": 0.464
     },
     "baseline_tui_ms": {
-      "max": 1.755,
-      "p50": 0.939,
-      "p95": 1.51,
-      "p99": 1.755
+      "max": 1.701,
+      "p50": 0.912,
+      "p95": 1.548,
+      "p99": 1.701
     },
     "candidate_tui_ms": {
-      "max": 1.478,
-      "p50": 0.966,
-      "p95": 1.345,
-      "p99": 1.478
+      "max": 1.364,
+      "p50": 0.904,
+      "p95": 1.21,
+      "p99": 1.364
     },
     "baseline_terminal_load_ms": {
-      "max": 5.917,
-      "p50": 4.371,
-      "p95": 5.221,
-      "p99": 5.917
+      "max": 4.988,
+      "p50": 3.607,
+      "p95": 4.116,
+      "p99": 4.988
     },
     "candidate_terminal_load_ms": {
-      "max": 5.965,
-      "p50": 4.887,
-      "p95": 5.482,
-      "p99": 5.965
+      "max": 4.878,
+      "p50": 4.001,
+      "p95": 4.603,
+      "p99": 4.878
     }
   }
 }

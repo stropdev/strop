@@ -62,9 +62,23 @@ def process_state(pid: int) -> tuple[int, int]:
 
 def worker_processes(pid: int) -> list[int]:
     if platform.system() == "Linux":
-        children = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
-        return [int(child) for child in children if b"--worker-stdio" in
-                Path(f"/proc/{child}/cmdline").read_bytes()]
+        # Linux accounts forked children under the creating TID, not only
+        # the process leader. UI admissions run on background threads.
+        workers: set[int] = set()
+        for task in Path(f"/proc/{pid}/task").iterdir():
+            try:
+                children = (task / "children").read_text().split()
+            except FileNotFoundError:
+                # The spawning thread may exit while /proc is enumerated.
+                continue
+            for child in children:
+                try:
+                    argv = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
+                except FileNotFoundError:
+                    continue
+                if b"--worker-stdio" in argv:
+                    workers.add(int(child))
+        return sorted(workers)
     if platform.system() == "Darwin":
         processes = subprocess.check_output(
             ["ps", "-axo", "pid=", "-o", "ppid=", "-o", "command="], text=True

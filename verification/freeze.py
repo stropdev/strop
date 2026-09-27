@@ -102,6 +102,7 @@ WORKER_SOURCES = [
     "crates/strop-worker-deploy/src/provider.rs",
     "crates/strop-engine/src/editor/mod.rs",
     "crates/strop-engine/src/editor/events.rs",
+    "crates/strop-engine/src/editor/notify.rs",
     "crates/strop-engine/src/editor/namespace.rs",
     "crates/strop-engine/src/editor/io/save.rs",
     "crates/strop-engine/src/editor/remote/save.rs",

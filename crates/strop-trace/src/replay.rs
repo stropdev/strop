@@ -459,6 +459,34 @@ impl Tape {
         }
     }
 
+    /// Snapshot editor-owned queued observations at their delivery turn.
+    /// Unlike native `call`, a hermetic recording fixture owns this queue
+    /// and must drain it instead of asking the fixture for an OS response.
+    /// Replay still consumes the captured result without touching the queue.
+    pub fn observe_owned<A: Serialize, R: Serialize + DeserializeOwned>(
+        &self,
+        operation: &str,
+        arguments: &A,
+        observe: impl FnOnce() -> R,
+    ) -> io::Result<R> {
+        #[cfg(feature = "test-support")]
+        if self.has_fixture() {
+            self.healthy()?;
+            if self.finished.get() {
+                return self.fail("recording finished");
+            }
+            let arguments = self.value(arguments)?;
+            let result = observe();
+            self.emit(&Node::Call {
+                operation: operation.into(),
+                arguments,
+                result: self.value(&result)?,
+            });
+            return Ok(result);
+        }
+        self.call(operation, arguments, observe)
+    }
+
     /// Both modes must produce this observation bit-for-bit.
     pub fn check<C: Serialize>(&self, state: &C) -> io::Result<()> {
         self.healthy()?;
@@ -536,17 +564,6 @@ impl Tape {
                         .find(|(field, _)| left.get(field) != right.get(field))
                         .map_or(reason, |(_, reason)| reason);
                         return self.fail(reason);
-                    }
-                    #[cfg(feature = "test-support")]
-                    if reason == "replay status message diverged"
-                        && std::env::var_os("STROP_TEST_REPLAY_DIAG").is_some()
-                    {
-                        eprintln!(
-                            "synthetic fixture at tick {}: captured={:?}, replayed={:?}",
-                            self.now().monotonic_ms,
-                            expected.get("message").and_then(Value::as_str),
-                            value.get("message").and_then(Value::as_str)
-                        );
                     }
                     self.fail(reason)
                 }

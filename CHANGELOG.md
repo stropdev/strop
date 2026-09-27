@@ -57,8 +57,8 @@
   On the exact 0.36.0 static Linux build, all 64 real 17.28 MiB
   UI-open journeys left **zero** workers after editor exit, versus
   64/64 survivors on the original pre-worker baseline. Open→visible
-  p50 was 78.142 ms versus 78.169 ms; worker kernel peak-memory p50
-  increased from 5,040 to 7,264 KiB. Mac/arm and no-init Docker
+  p50 was 78.021 ms versus 78.133 ms; worker kernel peak-memory p50
+  increased from 5,028 to 7,400 KiB. Mac/arm and no-init Docker
   retirement still need their native gates; no universal bound is
   claimed from this one host.
 
@@ -69,6 +69,14 @@
   their absolute failure deadline and never polling input→render.
   The eight-backend real search/shutdown journey passes locally;
   native GNU storm qualification remains open.
+
+- **Unsupported native watches replay honestly on macOS** (0058
+  WK20): the forensic `Notify` action previously recorded a queue
+  wake but not its settled worker refusal. The editor now records the
+  bounded typed drain and its rescan latch in consented full-content
+  traces. Execution-free replay therefore retains the visible
+  on-demand freshness warning instead of silently showing an empty
+  status; ordinary uncaptured input incurs no serialization.
 
 - **Recovered Store refuses acknowledged attempts** (0058 WK18):
   the worker now checks the actual Unconfirmed receipt outcome in
@@ -205,17 +213,17 @@
   `a05d84f` Linux x86_64 pre-worker snapshot retains six raw passing
   gates beside the untouched dirty historical archive. On the same
   WSL2 host, 64 real static-worker handshakes per build measured
-  baseline/current p50 0.809/0.832 ms, p95 1.125/0.949 ms and
-  p99/max 1.409/1.078 ms (pre-worker protocol 1; worker protocol 2),
-  46,226,704/47,316,304-byte artifacts pinned in
+  baseline/current p50 0.738/0.741 ms, p95 1.027/0.838 ms and
+  p99/max 1.245/1.059 ms (pre-worker protocol 1; worker protocol 2),
+  46,226,704/47,390,032-byte artifacts pinned in
   `verification/measurements/`. This is local launch, not cold SSH
   deployment, TUI cell-grid paint or native macOS/aarch64 evidence.
 - **Scoped worker control-frame latency** (0058 WK20, not full
   performance qualification): the stripped static worker on WSL2
   completed eight warmups and 64 serial Health requests through the
-  real framed IPC; write+flush-to-result p50 0.201 ms, p95 0.261 ms,
-  p99/max 0.351 ms for the 47,316,304-byte artifact (sha256
-  0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7)
+  real framed IPC; write+flush-to-result p50 0.193 ms, p95 0.227 ms,
+  p99/max 0.271 ms for the 47,390,032-byte artifact (sha256
+  85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a)
   with raw samples and request bytes pinned in
   `verification/measurements/`. Remote deployment and LSP have
   separate scoped measurements; this is only local control latency.
@@ -224,8 +232,8 @@
   each performed eight warmups plus 64 `--ui-stdio` text edits on the
   same WSL2 host after the editor opened a 10,000-line file through
   one real worker. Every returned frame visibly contains the next
-  edit. Baseline/current write+flush-to-view p50 was 0.276/0.227 ms,
-  p95 0.420/0.288 ms, p99/max 0.494/0.347 ms; raw samples,
+  edit. Baseline/current write+flush-to-view p50 was 0.232/0.225 ms,
+  p95 0.276/0.273 ms, p99/max 0.301/0.464 ms; raw samples,
   artifact hashes, framed bytes and RSS/threads are archived under
   `verification/measurements/`. This scoped local result does not
   qualify TUI paint, SSH/container deployment or LSP on other targets.
@@ -233,15 +241,15 @@
   two static artifacts each completed eight warmups and 64 real
   worker-backed TUI insertions in a 10,000-line file at 120×30.
   Each sample ends only after the PTY's VT100-decoded grid shows
-  the next exact edit. Baseline/current p50 0.939/0.966 ms, p95
-  1.510/1.345 ms, p99/max 1.755/1.478 ms on Linux Docker-on-WSL2.
+  the next exact edit. Baseline/current p50 0.912/0.904 ms, p95
+  1.548/1.210 ms, p99/max 1.701/1.364 ms on the native WSL2 host.
   Raw samples and method digest are archived; SSH/container deployment
   on other native targets, LSP and TUI paint there remain release gates.
 - **Scoped loaded terminal output latency** (0058 WK20): matched static
   artifacts each handled 64 two-key input requests that produced 256
   real worker-PTY shell lines; every timer stopped at the exact final
-  VT100-painted grid marker. Linux Docker-on-WSL2 baseline/0.36.0
-  p50 4.371/4.887 ms, p95 5.221/5.482 ms, p99/max 5.917/5.965 ms.
+  VT100-painted grid marker. WSL2 baseline/0.36.0
+  p50 3.607/4.001 ms, p95 4.116/4.603 ms, p99/max 4.988/4.878 ms.
   The pre-fix worker's p50 256.634 ms regression and current raw
   samples are archived. This does not qualify remote, LSP,
   memory high-water or the other native target profiles.
@@ -249,29 +257,30 @@
   WK20): Linux x86_64 WSL2 ran eight warmups plus 64 each of cold
   verified deployment, warm cache reuse and live worker launch.
   Python-free authenticated TCP-loopback OpenSSH/SFTP cold
-  p50/p95/p99/max was 3646.188/4824.352/5514.402/5514.402 ms,
-  reuse 2214.580/2309.677/2470.987/2470.987 ms and live
-  handshake 120.577/127.774/128.088/128.088 ms. The cold tail
-  includes concurrent Docker-build load; no samples were discarded.
-  Pipe-only SSH timings are not comparable. A selected no-init
-  BusyBox container compiled the direct provider/cache guard and measured
-  cold 3393.997/3430.478/3452.144/3452.144 ms, reuse
-  2841.565/2870.218/2899.490/2899.490 ms and live admission
-  84.814/90.891/94.059/94.059 ms, with one actual worker after
-  each Welcome. The fixture observed 892 unreaped `[cat]`/`[sh]`
+  p50/p95/p99/max was 3524.417/3557.102/3571.072/3571.072 ms,
+  reuse 2115.583/2133.813/2153.723/2153.723 ms and live
+  handshake 124.905/132.819/136.428/136.428 ms. This run
+  measured inside the Python-free SSH image without overlapping a
+  Docker build; pipe-only SSH timings are not comparable. A selected
+  no-init BusyBox container compiled the direct provider/cache guard
+  and measured cold 3358.249/3429.784/3519.458/3519.458 ms, reuse
+  2828.770/3032.088/3605.601/3605.601 ms and live admission
+  85.478/90.940/100.464/100.464 ms, with one actual worker after
+  each Welcome. The fixture observed 889 unreaped `[cat]`/`[sh]`
   children after repeated Docker exec, including 71 deliberate
-  cache resets outside timing. This is neither 892 workers nor a
-  qualified retirement high-water. The 0.36.0 static worker supplied
-  these raw samples; other native targets remain unqualified.
+  cache resets outside timing. This is neither 889 workers nor a
+  qualified no-init PID 1 retirement high-water. The 47,390,032-byte
+  0.36.0 static worker supplied these raw samples; other native
+  targets remain unqualified.
 - **Scoped real-server LSP responsiveness** (0058 WK20): matched
   pre-worker and 0.36.0 static binaries each completed eight
   warmups and 64 actual `rust-analyzer` `gd` requests from the
   product UI to a painted definition on Linux x86_64 WSL2.
   Pre-worker/worker p50/p95/p99/max was
-  25.518/25.661/25.799/25.799 ms versus
-  25.500/25.624/25.704/25.704 ms. A separate edit→`didChange`→
-  `gd`→paint route measured 25.628/25.936/26.110/26.110 ms
-  versus 25.658/25.866/26.087/26.087 ms. The latter is a
+  25.497/25.659/25.747/25.747 ms versus
+  25.468/25.619/25.667/25.667 ms. A separate edit→`didChange`→
+  `gd`→paint route measured 25.664/25.962/26.003/26.003 ms
+  versus 25.701/25.953/26.038/26.038 ms. The latter is a
   combined user-visible sync/request bound, not a standalone
   `didChange` acknowledgment. Other native targets remain
   unqualified.

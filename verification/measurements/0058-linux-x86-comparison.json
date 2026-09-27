@@ -3,14 +3,14 @@
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "measurement": "verification/measurements/0058-linux-x86-preworker.json",
-    "sha256": "e968f9c574c5b5e7f665cadb68e3a6a3eafc2ce5a53e99e23f65b0e15dcea3a0"
+    "sha256": "7473d59e273b6e117e8ad51478088f1c72b253904012ba1fed1b4000e0ed06fb"
   },
   "candidate": {
-    "artifact_sha256": "0253b37012e9efc0dfe8b442fe3c700323b09149edf937ce6af77da3a0aa5fe7",
+    "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
     "commit": null,
     "measurement": "verification/measurements/0058-linux-x86-worker.json",
-    "sha256": "b64707e419eee974e30b23ee80598c9e6e4db4b230360cf076969ea67ffabf7d",
-    "state": "0.36.0 wake-safe static artifact measured with bounded PTY reap fixture; final native-platform and tag qualification pending"
+    "sha256": "86d2eb3bf7bf1e64b256435d923be4d24f5a5e581defc791fc69677ff52d03c7",
+    "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending"
   },
   "method": {
     "excludes": [
@@ -25,22 +25,22 @@
     "measures": "process spawn through decoded Welcome; /proc RSS and threads immediately at welcome",
     "percentile": "nearest rank",
     "samples_per_artifact": 64,
-    "sha256": "982a8ebc933ff08a0a66d4adb9a118a11a7f48cecc6a1448675d87629f691194",
+    "sha256": "133c0844428ffaab2c447d291ccc74b1dca5e238e0aef6917888d3bc11ac3c43",
     "warmup": 8
   },
   "observed": {
     "baseline_bytes": 46226704,
     "baseline_ready_ms": {
-      "max": 1.409,
-      "p50": 0.809,
-      "p95": 1.125,
-      "p99": 1.409
+      "max": 1.245,
+      "p50": 0.738,
+      "p95": 1.027,
+      "p99": 1.245
     },
     "baseline_rss_kib": {
-      "max": 4228,
-      "p50": 4224,
-      "p95": 4228,
-      "p99": 4228
+      "max": 4300,
+      "p50": 4296,
+      "p95": 4300,
+      "p99": 4300
     },
     "baseline_threads": {
       "max": 2,
@@ -48,25 +48,25 @@
       "p95": 2,
       "p99": 2
     },
-    "bytes_delta": 1089600,
-    "candidate_bytes": 47316304,
+    "bytes_delta": 1163328,
+    "candidate_bytes": 47390032,
     "candidate_ready_ms": {
-      "max": 1.078,
-      "p50": 0.832,
-      "p95": 0.949,
-      "p99": 1.078
+      "max": 1.059,
+      "p50": 0.741,
+      "p95": 0.838,
+      "p99": 1.059
     },
     "candidate_rss_kib": {
-      "max": 4736,
-      "p50": 4724,
-      "p95": 4732,
-      "p99": 4736
+      "max": 4956,
+      "p50": 4952,
+      "p95": 4956,
+      "p99": 4956
     },
     "candidate_threads": {
-      "max": 3,
+      "max": 2,
       "p50": 2,
-      "p95": 3,
-      "p99": 3
+      "p95": 2,
+      "p99": 2
     }
   },
   "platform": {
