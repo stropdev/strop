@@ -44,6 +44,12 @@
     "baseline_worker_count_after_open": 1,
     "candidate_editor_rss_kib_after_open": 12868,
     "candidate_worker_rss_kib_after_open": 5224,
-    "candidate_worker_count_after_open": 1
+    "candidate_worker_count_after_open": 1,
+    "baseline_request_bytes": 9984,
+    "baseline_ack_bytes": 6784,
+    "baseline_view_bytes": 132132,
+    "candidate_request_bytes": 9984,
+    "candidate_ack_bytes": 6784,
+    "candidate_view_bytes": 132132
   }
 }
