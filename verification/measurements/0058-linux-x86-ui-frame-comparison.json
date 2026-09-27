@@ -5,14 +5,14 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-ui-frame.json",
-    "sha256": "4542af689d55b7bdac12a283932f75437278c1574a0945bf7a79e54246d88581"
+    "sha256": "148151e4c814e8ad93c4c8ec75d0f581e498776f786cfc26ed128f37b8360343"
   },
   "candidate": {
     "commit": null,
     "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending",
     "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
     "measurement": "verification/measurements/0058-linux-x86-worker-ui-frame.json",
-    "sha256": "95c0b399ba8197fd401f70d905d5a16f8e2d7bd9fb89bee4ad4a50116bd6640a"
+    "sha256": "1aea04d6449b136920c92bee62fdc47f5f21dbc46accd72146d02256a20d474c"
   },
   "method": {
     "harness": "verification/bench_ui_input_frame.py",
@@ -28,21 +28,21 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 0.296,
-      "p50": 0.226,
-      "p95": 0.269,
-      "p99": 0.296
+      "max": 0.478,
+      "p50": 0.223,
+      "p95": 0.275,
+      "p99": 0.478
     },
     "candidate_ms": {
-      "max": 0.311,
-      "p50": 0.228,
-      "p95": 0.284,
-      "p99": 0.311
+      "max": 0.452,
+      "p50": 0.232,
+      "p95": 0.374,
+      "p99": 0.452
     },
     "baseline_editor_rss_kib_after_open": 12696,
-    "candidate_editor_rss_kib_after_open": 12932,
-    "baseline_worker_rss_kib_after_open": 5020,
-    "candidate_worker_rss_kib_after_open": 5216,
+    "candidate_editor_rss_kib_after_open": 12928,
+    "baseline_worker_rss_kib_after_open": 5032,
+    "candidate_worker_rss_kib_after_open": 5224,
     "baseline_worker_count_after_open": 1,
     "candidate_worker_count_after_open": 1,
     "baseline_request_bytes": 9984,

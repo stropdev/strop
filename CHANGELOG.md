@@ -57,8 +57,8 @@
   On the exact 0.36.0 static Linux build, all 64 real 17.28 MiB
   UI-open journeys left **zero** workers after editor exit, versus
   64/64 survivors on the original pre-worker baseline. Open→visible
-  p50 was 78.129 ms versus 78.098 ms; worker kernel peak-memory p50
-  increased from 5,024 to 7,184 KiB. Mac/arm and no-init Docker
+  p50 was 77.996 ms versus 78.191 ms; worker kernel peak-memory p50
+  increased from 5,036 to 7,208 KiB. Mac/arm and no-init Docker
   retirement still need their native gates; no universal bound is
   claimed from this one host.
 
@@ -213,16 +213,16 @@
   `a05d84f` Linux x86_64 pre-worker snapshot retains six raw passing
   gates beside the untouched dirty historical archive. On the same
   WSL2 host, 64 real static-worker handshakes per build measured
-  baseline/current p50 0.735/0.761 ms, p95 1.081/0.823 ms and
-  p99/max 1.248/0.842 ms (pre-worker protocol 1; worker protocol 2),
+  baseline/current p50 0.695/0.741 ms, p95 0.761/0.833 ms and
+  p99/max 1.041/1.129 ms (pre-worker protocol 1; worker protocol 2),
   46,226,704/47,390,032-byte artifacts pinned in
   `verification/measurements/`. This is local launch, not cold SSH
   deployment, TUI cell-grid paint or native macOS/aarch64 evidence.
 - **Scoped worker control-frame latency** (0058 WK20, not full
   performance qualification): the stripped static worker on WSL2
   completed eight warmups and 64 serial Health requests through the
-  real framed IPC; write+flush-to-result p50 0.197 ms, p95 0.251 ms,
-  p99/max 0.313 ms for the 47,390,032-byte artifact (sha256
+  real framed IPC; write+flush-to-result p50 0.194 ms, p95 0.231 ms,
+  p99/max 0.340 ms for the 47,390,032-byte artifact (sha256
   85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a)
   with raw samples and request bytes pinned in
   `verification/measurements/`. Remote deployment and LSP have
@@ -232,8 +232,8 @@
   each performed eight warmups plus 64 `--ui-stdio` text edits on the
   same WSL2 host after the editor opened a 10,000-line file through
   one real worker. Every returned frame visibly contains the next
-  edit. Baseline/current write+flush-to-view p50 was 0.226/0.228 ms,
-  p95 0.269/0.284 ms, p99/max 0.296/0.311 ms; raw samples,
+  edit. Baseline/current write+flush-to-view p50 was 0.223/0.232 ms,
+  p95 0.275/0.374 ms, p99/max 0.478/0.452 ms; raw samples,
   artifact hashes, framed bytes and RSS/threads are archived under
   `verification/measurements/`. This scoped local result does not
   qualify TUI paint, SSH/container deployment or LSP on other targets.
@@ -241,15 +241,15 @@
   two static artifacts each completed eight warmups and 64 real
   worker-backed TUI insertions in a 10,000-line file at 120×30.
   Each sample ends only after the PTY's VT100-decoded grid shows
-  the next exact edit. Baseline/current p50 0.929/0.879 ms, p95
-  1.367/1.118 ms, p99/max 1.684/1.696 ms on the native WSL2 host.
+  the next exact edit. Baseline/current p50 0.916/0.908 ms, p95
+  1.431/1.424 ms, p99/max 1.627/2.270 ms on the native WSL2 host.
   Raw samples and method digest are archived; SSH/container deployment
   on other native targets, LSP and TUI paint there remain release gates.
 - **Scoped loaded terminal output latency** (0058 WK20): matched static
   artifacts each handled 64 two-key input requests that produced 256
   real worker-PTY shell lines; every timer stopped at the exact final
   VT100-painted grid marker. WSL2 baseline/0.36.0
-  p50 3.555/4.106 ms, p95 4.161/4.837 ms, p99/max 4.636/5.010 ms.
+  p50 3.651/4.088 ms, p95 4.153/4.632 ms, p99/max 4.770/4.723 ms.
   The pre-fix worker's p50 256.634 ms regression and current raw
   samples are archived. This does not qualify remote, LSP,
   memory high-water or the other native target profiles.
@@ -277,10 +277,10 @@
   warmups and 64 actual `rust-analyzer` `gd` requests from the
   product UI to a painted definition on Linux x86_64 WSL2.
   Pre-worker/worker p50/p95/p99/max was
-  25.481/25.688/25.750/25.750 ms versus
-  25.493/25.628/25.694/25.694 ms. A separate edit→`didChange`→
-  `gd`→paint route measured 25.636/26.008/26.133/26.133 ms
-  versus 25.669/25.938/26.046/26.046 ms. The latter is a
+  25.551/25.746/25.824/25.824 ms versus
+  25.517/25.637/25.713/25.713 ms. A separate edit→`didChange`→
+  `gd`→paint route measured 25.786/26.012/26.170/26.170 ms
+  versus 25.690/25.910/26.021/26.021 ms. The latter is a
   combined user-visible sync/request bound, not a standalone
   `didChange` acknowledgment. Other native targets remain
   unqualified.

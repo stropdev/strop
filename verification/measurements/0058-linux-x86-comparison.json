@@ -3,13 +3,13 @@
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "measurement": "verification/measurements/0058-linux-x86-preworker.json",
-    "sha256": "511d6f19a1d976a12800e5e933c4f513e91ef5cfc626bff2f654509f01c27f16"
+    "sha256": "9ad272750cf4fec117c98911d6fc6dfd0f8bbaa1c2b8d3947d133cd613327b54"
   },
   "candidate": {
     "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
     "commit": null,
     "measurement": "verification/measurements/0058-linux-x86-worker.json",
-    "sha256": "d03371fd127f8868a5240c7b19f464e5e5d71f5a67150493520fee2da4cf0998",
+    "sha256": "4183d1d2714402d7133eb19f3d382c7b0a175ae013e74b29d57dfb37343e108b",
     "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending"
   },
   "method": {
@@ -25,22 +25,22 @@
     "measures": "process spawn through decoded Welcome; /proc RSS and threads immediately at welcome",
     "percentile": "nearest rank",
     "samples_per_artifact": 64,
-    "sha256": "0c7f0661598dd5e001ad6a2b0c912840e7acfab71b9d8cab0db58255c4a026a7",
+    "sha256": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
     "warmup": 8
   },
   "observed": {
     "baseline_bytes": 46226704,
     "baseline_ready_ms": {
-      "max": 1.248,
-      "p50": 0.735,
-      "p95": 1.081,
-      "p99": 1.248
+      "max": 1.041,
+      "p50": 0.695,
+      "p95": 0.761,
+      "p99": 1.041
     },
     "baseline_rss_kib": {
-      "max": 4300,
-      "p50": 4296,
-      "p95": 4300,
-      "p99": 4300
+      "max": 4308,
+      "p50": 4304,
+      "p95": 4304,
+      "p99": 4308
     },
     "baseline_threads": {
       "max": 2,
@@ -51,21 +51,21 @@
     "bytes_delta": 1163328,
     "candidate_bytes": 47390032,
     "candidate_ready_ms": {
-      "max": 0.842,
-      "p50": 0.761,
-      "p95": 0.823,
-      "p99": 0.842
+      "max": 1.129,
+      "p50": 0.741,
+      "p95": 0.833,
+      "p99": 1.129
     },
     "candidate_rss_kib": {
-      "max": 4812,
-      "p50": 4736,
-      "p95": 4800,
-      "p99": 4812
+      "max": 4816,
+      "p50": 4744,
+      "p95": 4812,
+      "p99": 4816
     },
     "candidate_threads": {
       "max": 3,
       "p50": 2,
-      "p95": 2,
+      "p95": 3,
       "p99": 3
     }
   },

@@ -2246,7 +2246,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "The exact notify-replay-safe 0.36.0 stripped musl x86_64 static artifact 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a passed the full Docker fmt/clippy/test/model/verify/tlaps/core-assurance/container gates and matched nine 64-sample local product journeys. Python-free authenticated TCP OpenSSH and selected no-init BusyBox sessions each passed 64 real cold/warm/live measurements. Native run 36283379416 passed both macOS real terminal full-content execution-free replay journeys plus native SSH and worker binary tests, but macOS product benchmarking stopped before the first sample on an unsupported ps thcount keyword; the measurement method now uses Apple ps -M thread rows and needs native proof. GNU x86_64/aarch64 integration passed worker/TUI journeys but product benchmark still returned zero owned workers after file open despite all-TID enumeration; its failing baseline/candidate executable and actual child/session state are not yet diagnosed. Source-level 301-obligation WorkerSession induction and paired mutants passed locally. No four-target final-source raw benchmark artifacts have passed; WPLAT-NATIVE remains blocked.",
+          "statement": "The exact notify-replay-safe 0.36.0 stripped musl x86_64 static artifact 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a passed the full Docker fmt/clippy/test/model/verify/tlaps/core-assurance/container gates and matched nine 64-sample local product journeys. Python-free authenticated TCP OpenSSH and selected no-init BusyBox sessions each passed 64 real cold/warm/live measurements. Native run 36283379416 passed both macOS real terminal full-content execution-free replay journeys plus native SSH and worker binary tests, but macOS product benchmarking stopped before the first sample on an unsupported ps thcount keyword; the measurement method now uses Apple ps -M implementation (one built-in header plus one selected thread row per kernel thread); the first row-equality attempt failed, and the corrected row count still needs native proof. GNU x86_64/aarch64 integration passed worker/TUI journeys but product benchmark still returned zero owned workers after file open despite all-TID enumeration; its failing baseline/candidate executable and actual child/session state are not yet diagnosed. Source-level 301-obligation WorkerSession induction and paired mutants passed locally. No four-target final-source raw benchmark artifacts have passed; WPLAT-NATIVE remains blocked.",
           "status": "blocked",
           "evidence": [
             {
@@ -2287,7 +2287,7 @@
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "9d34fc69ca0102910d2f2b555bd8f6c181eb34a7f85f20724c089d272165f6fe"
+        "evidence": "55a9a7e5086444422eb9c820f7119820ee837cd67d24130c6b1d36801d8bef09"
       }
     },
     {
@@ -2501,7 +2501,7 @@
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
           "crates/strop/src/terminal.rs": "021a365c9d693c424bc496139ae106f02d923fa12187866fbec62383619379aa"
         },
-        "evidence": "38443ee20a2d0b5b256d3f116e165bd09434124e4ff7d3ec06285f9bf12e1bea"
+        "evidence": "6257b36e2e2a63497939f730b69f7e61e137d90f6be3394191b4a9647e274e93"
       }
     },
     {
@@ -3117,7 +3117,7 @@
         },
         {
           "id": "WS-WARM-HANDSHAKE",
-          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the notify-replay-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.735/0.761 ms, p95 1.081/0.823 ms, p99/max 1.248/0.842 ms; binaries 46,226,704/47,390,032 bytes. Candidate artifact sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a. RSS and threads at Welcome are raw observations, not high-water marks, remote deployment or user-input latency; protocol differences and raw spread preclude a blanket speedup claim.",
+          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the notify-replay-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.695/0.741 ms, p95 0.761/0.833 ms, p99/max 1.041/1.129 ms; binaries 46,226,704/47,390,032 bytes. Candidate artifact sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a. RSS and threads at Welcome are raw observations, not high-water marks, remote deployment or user-input latency; protocol differences and raw spread preclude a blanket speedup claim.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3149,7 +3149,7 @@
         },
         {
           "id": "WS-WARM-CONTROL",
-          "statement": "The stripped static x86_64 musl notify-replay-safe 0.36.0 worker (sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a, 47,390,032 bytes) on WSL2 completed eight warmups and 64 real Hello-bound Health requests. Local write+flush-to-result p50/p95/p99/max 0.197/0.251/0.313/0.313 ms; raw samples, RSS, threads and framed byte counts are archived. This is warm local IPC, not user input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
+          "statement": "The stripped static x86_64 musl notify-replay-safe 0.36.0 worker (sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a, 47,390,032 bytes) on WSL2 completed eight warmups and 64 real Hello-bound Health requests. Local write+flush-to-result p50/p95/p99/max 0.194/0.231/0.34/0.34 ms; raw samples, RSS, threads and framed byte counts are archived. This is warm local IPC, not user input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3270,7 +3270,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "WK20 has 64 matched Linux x86_64 local product launches, worker-backed semantic UI views, real 120x30 TUI cell-grid edits, 256-line terminal floods, and 64 real rust-analyzer request/edit-to-paint journeys per artifact. The exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit, all 64 current workers were absent immediately, and candidate worker VmHWM p50 7,184 KiB versus pre-worker 5,024 KiB. The BusyBox PID 1 retained 889 [cat]/[sh] Docker-exec children after reuse, including 71 private cache resets; this is not a live-worker count, but no bounded no-init PID 1 retirement high-water can be claimed. Both macOS real terminal replay journeys passed in native run 36283379416 but Mac product timing stopped on ps thcount, and GNU native product worker census still returned zero after all-TID enumeration; no four-target metrics are qualified. Same-host SSH is not WAN latency. WPERF-FULL remains blocked pending native artifact performance evidence and an honest external-PID-1 support decision.",
+          "statement": "WK20 has 64 matched Linux x86_64 local product launches, worker-backed semantic UI views, real 120x30 TUI cell-grid edits, 256-line terminal floods, and 64 real rust-analyzer request/edit-to-paint journeys per artifact. The exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit, all 64 current workers were absent immediately, and candidate worker VmHWM p50 7,208 KiB versus pre-worker 5,036 KiB. The BusyBox PID 1 retained 889 [cat]/[sh] Docker-exec children after reuse, including 71 private cache resets; this is not a live-worker count, but no bounded no-init PID 1 retirement high-water can be claimed. Both macOS real terminal replay journeys passed in native run 36283379416 but Mac product timing stopped on ps thcount, and GNU native product worker census still returned zero after all-TID enumeration; no four-target metrics are qualified. Same-host SSH is not WAN latency. WPERF-FULL remains blocked pending native artifact performance evidence and an honest external-PID-1 support decision.",
           "status": "blocked",
           "evidence": [
             {
@@ -3458,10 +3458,10 @@
           "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
           "verification/bench_transfer_ui.py": "d1f5b711804e3f9d581c4f906051581834422a00c8349f4533b4696a21e4bd73",
           "verification/bench_ui_input_frame.py": "9f101ac04c9be6e772533bb4f7e02003a6c6263f6ff1dfd0d1e1c457afc05a9d",
-          "verification/bench_worker.py": "0c7f0661598dd5e001ad6a2b0c912840e7acfab71b9d8cab0db58255c4a026a7",
+          "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "77f8c765fccc1ff52243aec4a74d5e46ffe001774c9037de5e3297a1331cdefc"
+        "evidence": "dbc2a0257a5e11cb12dfdb9b3d3237f7cc71be7f89fc352f845c1152e8a94459"
       }
     },
     {

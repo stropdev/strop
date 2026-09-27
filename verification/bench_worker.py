@@ -55,13 +55,18 @@ def process_state(pid: int) -> tuple[int, int]:
         rss = subprocess.check_output(
             ["ps", "-p", str(pid), "-o", "rss="], text=True
         ).split()
-        # Apple ps has no thcount format keyword. -M emits one
-        # headerless row per thread for the selected process.
-        threads = subprocess.check_output(
-            ["ps", "-M", "-p", str(pid), "-o", "pid="], text=True
+        # Apple ps -M adds its built-in USER/PID/TT thread format even
+        # with -o. It emits one header plus one row per thread of -p pid;
+        # checking each whole row against pid would reject real threads.
+        lines = subprocess.check_output(
+            ["ps", "-M", "-p", str(pid)], text=True
         ).splitlines()
-        if len(rss) == 1 and threads and all(row.strip() == str(pid) for row in threads):
-            return int(rss[0]), len(threads)
+        if len(rss) == 1 and len(lines) > 1 and "PID" in lines[0].split():
+            return int(rss[0]), len(lines) - 1
+        raise RuntimeError(
+            "macOS ps did not observe one process and its thread rows: "
+            f"rss_fields={len(rss)} ps_lines={len(lines)}"
+        )
     raise RuntimeError("worker RSS/thread sampling needs Linux /proc or macOS ps -M")
 
 
