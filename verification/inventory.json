@@ -770,7 +770,7 @@
         },
         {
           "id": "LSP-BOUNDED",
-          "statement": "Unsent change retention is bounded (AR06: MAX_QUEUED_JOBS count, bounded snapshot bytes); superseded unsent changes coalesce only without an intervening barrier (an admitted request or a document close bars coalescing) and reach the wire as the final version; a stopped queue reports closed and drops retained snapshots. Worker-backed stdin retries a blocked send exactly once after queue capacity is restored. Closing a worker stdout pipe publishes EOF before waking its parked async reader, so a server exit never strands the LSP mainloop.",
+          "statement": "Unsent change retention is bounded (AR06: MAX_QUEUED_JOBS count, bounded snapshot bytes); superseded unsent changes coalesce only without an intervening barrier (an admitted request or a document close bars coalescing) and reach the wire as the final version; a stopped queue reports closed and drops retained snapshots. Worker-backed stdin retries a blocked send exactly once after queue capacity is restored. Closing a worker stdout pipe publishes EOF before waking its parked async reader, so a server exit never strands the LSP mainloop. A failed worker stdin write closes the bounded queue and wakes a pending async flush; the poller registers before checking failure or acknowledgment so a server exit cannot strand that flush.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -801,7 +801,8 @@
               "gate": "test",
               "tests": [
                 "full_stdin_queue_retries_one_owned_write_without_duplication",
-                "closing_stdout_wakes_a_parked_reader_after_eof_is_visible"
+                "closing_stdout_wakes_a_parked_reader_after_eof_is_visible",
+                "failed_stdin_write_wakes_a_pending_flush_with_broken_pipe"
               ]
             }
           ],
@@ -856,11 +857,11 @@
           "crates/strop-lsp/src/client/sync.rs": "31942e4ef8a5a3cf1866e5644b3756a48c2e383eb8b785fc13375fae5d77ffc9",
           "crates/strop-lsp/src/client/tests/spawn.rs": "2811d40461eac9fda0d1a8cc7ace459fe9a259f4b93f2cf3b3a8411042a656a2",
           "crates/strop-lsp/src/client/wire.rs": "f64dd60975d074cd52587e888d99a5bcf4300d89772453aac3102382eb36520f",
-          "crates/strop-lsp/src/client/worker_io.rs": "b3af06371022b920d35fc3c3a93c81fd69a38c9ba131f10bb77577edd038d5c6",
+          "crates/strop-lsp/src/client/worker_io.rs": "cb4ac5b40e966b92acfa3fce401da6e669732051f9c79b4b63cf1ed69c21e6b1",
           "crates/strop-lsp/src/convert.rs": "2cce26f33656dc5b2a1c0b0f499c2b68ba3bfc72e7fd72d1c04675a96b26d541",
           "crates/strop-lsp/src/protocol.rs": "a70836bb3894b7bd6e7d7b7bf523d5114a0052b1cbffd1e8dc23c6e32e677a92"
         },
-        "evidence": "3633863d302a958b09951776091b0f7caca2f5aa062963c34ed8ad1f09258dbc"
+        "evidence": "dc674261a2dfc934cd9e828c0bcc6c913001fed74e272ed1ae4c46ecf2a4ef61"
       }
     },
     {
@@ -2246,7 +2247,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "The exact notify-replay-safe 0.36.0 stripped musl x86_64 static artifact 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a passed the full Docker fmt/clippy/test/model/verify/tlaps/core-assurance/container gates and matched nine 64-sample local product journeys. Python-free authenticated TCP OpenSSH and selected no-init BusyBox sessions each passed 64 real cold/warm/live measurements. Native run 36283379416 passed both macOS real terminal full-content execution-free replay journeys plus native SSH and worker binary tests, but macOS product benchmarking stopped before the first sample on an unsupported ps thcount keyword; the measurement method now uses Apple ps -M implementation (one built-in header plus one selected thread row per kernel thread); the first row-equality attempt failed, but run 36288437707 Apple Silicon passed every baseline 64-sample product stage with the corrected row count; its candidate was subsequently replaced by the same Cargo test-support binary (19 editor threads, no child), now isolated in the final matrix. GNU x86_64/aarch64 integration passed worker/TUI journeys, but the candidate target/release/strop was replaced by a cargo test --release test-support build during baseline PTY sampling: the observed editor had 20 threads and no child. A read-only candidate copy outside Cargo target preserved the production binary while the Cargo path changed; a matched local GNU nine-path 64-sample benchmark passed. Hosted native GNU requalification remains required. Source-level 301-obligation WorkerSession induction and paired mutants passed locally. Run 36288774997 Apple Silicon passed all nine 64-sample native product paths plus 64 LSP and 17.28 MiB transfer samples on the isolated 0.36.0 candidate SHA db6e0a7d; GNU ARM stopped earlier with ETXTBSY executing a synthetic cache object seeded directly to its final path, now staged and renamed like production. The test-fixture change requires a new exact-source four-target matrix; WPLAT-NATIVE remains blocked.",
+          "statement": "The 0.36.0 worker now includes notify-replay capture and the deterministic failed-stdin-write/pending-flush wakeup repair. The rebuilt stripped x86_64 musl artifact SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed the full Docker fmt/clippy/test gate, 16 real UI/worker LSP initialize-to-classified-exit journeys, nine matched 64-sample local product paths, 64 real rust-analyzer request/edit-to-paint paths and 64 17.28 MiB file-open/retirement journeys. Hosted pre-wakeup-fix run 36288774997 passed GNU x86 and Apple Silicon full product/LSP/transfer lanes; it did not qualify this new executable. GNU ARM exposed ETXTBSY in test-harness executable installation: a separate child copy now prevents sibling forks inheriting a writable binary descriptor, rather than retrying exec. Full four-target native execution and artifact evidence for this final source remain required; WPLAT-NATIVE stays blocked. The same new artifact passed all 64 Python-free SSH and no-init Docker cold/warm/live deployment measurements; the current full Docker fmt/clippy/test gate passed after both source fixes.",
           "status": "blocked",
           "evidence": [
             {
@@ -2287,7 +2288,7 @@
           "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
           "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
         },
-        "evidence": "a092137538fcc440a075b97f80d17b63130fe78c66213faf160c0722407d5acc"
+        "evidence": "02db7469bf5fbe3f1be89ff1645b1df0dacca771b28241cd17d337473fea8d69"
       }
     },
     {
@@ -2358,7 +2359,7 @@
         },
         {
           "id": "TERM-WAKE-LOAD",
-          "statement": "The worker-backed terminal service drains stale arrival nudges before nonblocking input/output polling and rechecks after every published bounded turn; a burst longer than 32 chunks cannot lose its remaining wake and sleep for the 250 ms recovery timeout. On one Linux Docker-on-WSL2 host, 64 real PTY requests each printed 256 lines and reached the physical 120x30 VT100 grid: baseline/0.36.0 worker p50 4.371/4.887 ms, p95 5.221/5.482 ms, p99/max 5.917/5.965 ms. The earlier worker artifact measured p50 256.634 ms with its drain-after-poll bug. Raw method/binary hashes and exact painted markers are archived; no remote, LSP, high-water or other-native-target qualification follows from this local observation.",
+          "statement": "The worker terminal drains stale arrival nudges before nonblocking input/output polling and rechecks after every bounded turn; a burst exceeding 32 chunks cannot lose its remaining wake and sleep until the 250 ms recovery timer. On the same WSL2 x86_64 static artifacts, 64 real PTY requests printed 256 lines each and reached the physical 120x30 VT100 grid: baseline/candidate p50 3.935/4.308 ms, p95 4.671/4.937 ms, p99 4.766/6.983 ms, max 4.766/6.983 ms. The separately archived earlier worker measured p50 256.634 ms with its drain-after-poll bug; raw current and historical artifacts are distinct. No remote or other-native-target qualification follows from this host.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2501,7 +2502,7 @@
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
           "crates/strop/src/terminal.rs": "021a365c9d693c424bc496139ae106f02d923fa12187866fbec62383619379aa"
         },
-        "evidence": "6257b36e2e2a63497939f730b69f7e61e137d90f6be3394191b4a9647e274e93"
+        "evidence": "2765f3cb2e4eb366044d02da8e7f3e28370737592b07e386f261dd35d6e8e278"
       }
     },
     {
@@ -3117,7 +3118,7 @@
         },
         {
           "id": "WS-WARM-HANDSHAKE",
-          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the notify-replay-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.695/0.741 ms, p95 0.761/0.833 ms, p99/max 1.041/1.129 ms; binaries 46,226,704/47,390,032 bytes. Candidate artifact sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a. RSS and threads at Welcome are raw observations, not high-water marks, remote deployment or user-input latency; protocol differences and raw spread preclude a blanket speedup claim.",
+          "statement": "On one Ryzen 9950X3D / WSL2 x86_64 musl release profile, clean a05d84f pre-worker (protocol 1) and the notify-replay/LSP-write-wakeup-safe 0.36.0 native worker (protocol 2) each completed eight warmups plus 64 real Hello/Welcome launches. Baseline/candidate readiness p50 0.840/0.854 ms, p95 1.227/1.387 ms, p99 1.509/3.533 ms, max 1.509/3.533 ms; binaries 46,226,704/47,390,032 bytes. Candidate SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3. RSS and threads at Welcome are raw observations, not high-water limits. Qualification jobs shared the host; no isolated-host or cross-platform speedup is claimed.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3149,7 +3150,7 @@
         },
         {
           "id": "WS-WARM-CONTROL",
-          "statement": "The stripped static x86_64 musl notify-replay-safe 0.36.0 worker (sha256 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a, 47,390,032 bytes) on WSL2 completed eight warmups and 64 real Hello-bound Health requests. Local write+flush-to-result p50/p95/p99/max 0.194/0.231/0.34/0.34 ms; raw samples, RSS, threads and framed byte counts are archived. This is warm local IPC, not user input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
+          "statement": "The stripped x86_64 musl worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 (47,390,032 bytes) completed eight warmups and 64 real Hello-bound Health requests on WSL2. Local write+flush-to-result p50/p95/p99/max 0.226/0.300/0.361/0.361 ms; raw samples, framed bytes and process state are archived. This is warm local IPC, not input-to-grid, LSP, remote deployment or a pre-worker speedup comparison.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3171,7 +3172,7 @@
         },
         {
           "id": "WS-UI-FRAME",
-          "statement": "On the same WSL2 x86_64 release-musl profile, clean pre-worker and wake-safe 0.36.0 worker artifacts each completed eight warmups and 64 real --ui-stdio committed-text actions after opening a 10,000-line file through one live local worker at 120x40. Every semantic frame contains the next exact visible edit. Baseline/candidate write+flush-to-view p50 0.276/0.227 ms, p95 0.420/0.288 ms, p99/max 0.494/0.347 ms; raw samples, framed bytes and observed RSS/threads are archived. This is not TUI cell-grid paint, SSH/container, LSP or high-water evidence.",
+          "statement": "The same WSL2 x86_64 pre-worker and 0.36.0 static artifacts each completed eight warmups and 64 real --ui-stdio committed-text actions after opening a 10,000-line file through one live local worker at 120x40. Every semantic frame contains the next exact visible edit. Baseline/candidate write+flush-to-view p50 0.244/0.278 ms, p95 0.301/0.359 ms, p99 0.359/0.585 ms, max 0.359/0.585 ms. Raw samples, framed bytes and worker/editor process state are archived; this is not physical TUI paint or cross-platform qualification.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3203,7 +3204,7 @@
         },
         {
           "id": "WS-TUI-FRAME",
-          "statement": "Linux x86_64 Docker-on-WSL2 pre-worker and wake-safe 0.36.0 native worker static artifacts each completed eight warmups and 64 actual 120x30 TUI PTY input journeys after opening a 10,000-line file through the local worker. A VT100-decoded cell grid verifies the exact edited line before every timer stop. Baseline/candidate key-write-to-painted-grid p50 0.939/0.966 ms, p95 1.510/1.345 ms, p99/max 1.755/1.478 ms; raw records, bounded PTY test method and artifact digests are archived. The native product harness also exercised the worker-backed terminal flood, but remote, LSP, high-water and other targets remain separate.",
+          "statement": "The same WSL2 x86_64 static artifacts each completed eight warmups and 64 actual 120x30 TUI PTY input journeys after opening a worker-backed 10,000-line file. A VT100-decoded cell grid verifies the exact edited line before each timer stop. Baseline/candidate key-write-to-painted-grid p50 1.123/1.073 ms, p95 2.042/1.807 ms, p99 2.225/2.846 ms, max 2.225/2.846 ms. Method and executed-artifact digests are archived; no cross-platform inference is made.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3243,7 +3244,7 @@
         },
         {
           "id": "WPERF-LSP-LOCAL",
-          "statement": "On one Linux x86_64 WSL2 host, the matched a05d84f pre-worker and wake-safe 0.36.0 worker static artifacts each admitted 64 real installed rust-analyzer gd requests from a Rust callsite through a 120x40 product UI to the painted definition after eight warmups. Pre-worker/worker p50/p95/p99/max was 25.518/25.661/25.799/25.799 ms and 25.500/25.624/25.704/25.704 ms. A separate 64 edit→didChange→gd→paint path measured 25.628/25.936/26.110/26.110 and 25.658/25.866/26.087/26.087 ms, an end-to-end upper bound, not a standalone didChange acknowledgment. Both paths had exactly one real local worker and waited for eight successful definition landings before timing. Other native targets remain unmeasured.",
+          "statement": "The matched a05d84f and SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 static artifacts each completed 64 real installed rust-analyzer gd requests through the 120x40 UI after eight warmups on WSL2. Baseline/candidate p50/p95/p99/max 25.671/25.849/26.019/26.019 and 25.592/25.765/25.931/25.931 ms. A separate 64 edit-to-didChange-to-gd-to-paint path measured 25.919/26.132/26.395/26.395 and 25.946/26.217/26.436/26.436 ms; that is an end-to-end upper bound, not didChange acknowledgment latency. Each retained exactly one native worker. Samples, server version and method/artifact hashes are bound; other target measurements remain required.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3270,7 +3271,7 @@
         },
         {
           "id": "WPERF-FULL",
-          "statement": "WK20 has 64 matched Linux x86_64 local product launches, worker-backed semantic UI views, real 120x30 TUI cell-grid edits, 256-line terminal floods, and 64 real rust-analyzer request/edit-to-paint journeys per artifact. The exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a completed 64 authenticated Python-free TCP OpenSSH cold deployments, warm reuses and live sessions and 64 selected no-init Docker container cold uploads, warm reuses and live sessions. A separate 17,280,000-byte real UI transfer measured 64 opens per artifact: all 64 original workers survived editor exit, all 64 current workers were absent immediately, and candidate worker VmHWM p50 7,208 KiB versus pre-worker 5,036 KiB. The BusyBox PID 1 retained 889 [cat]/[sh] Docker-exec children after reuse, including 71 private cache resets; this is not a live-worker count, but no bounded no-init PID 1 retirement high-water can be claimed. Both macOS real terminal replay journeys passed in native run 36283379416. The corrected Apple Silicon ps-M census passed the baseline 64-sample product stages in 36288437707; macOS and GNU candidate paths were then replaced by Cargo test-support builds during baseline PTY tests. A read-only isolated copy restored real worker semantics on local GNU; run 36288774997 Apple Silicon passed all 64-run product, LSP and transfer paths after the read-only candidate copy, while GNU ARM halted on a direct-path synthetic cache fixture ETXTBSY before product measurement; the final post-fixture four-target rerun remains pending. Same-host SSH is not WAN latency. WPERF-FULL remains blocked pending native artifact performance evidence and an honest external-PID-1 support decision.",
+          "statement": "The notify-replay/LSP-write-wakeup-safe worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 passed nine matched 64-sample local product paths, 64 real rust-analyzer requests plus 64 edit-to-paint requests per artifact, 64 authenticated Python-free TCP OpenSSH cold/warm/live paths, and 64 selected no-init Docker cold/warm/live paths. Its 17,280,000-byte UI transfer left zero workers after all 64 editor exits versus 64 pre-worker survivors; worker VmHWM p50 7,256 versus 5,036 KiB. All current raw metrics bind this exact artifact. BusyBox PID1 again retained 889 Docker-exec sh/cat zombies after reuse including 71 fixture resets; the user explicitly retained no-init support with this risk documented, qualifying owned live-worker retirement separately from unbounded whole-container process-table growth. Qualification jobs shared the host; these are not idle-host, WAN or cross-platform limits. WPERF-FULL remains blocked until all four final-source native product/LSP/transfer lanes pass.",
           "status": "blocked",
           "evidence": [
             {
@@ -3461,7 +3462,7 @@
           "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "c00830a3076194120bc96d85f400a9561662e5736018df655f5da839458089ef"
+        "evidence": "7d09fbe77b7d926f3cd41a7468f1d827218d3a776549ab1de02ceb8a01518869"
       }
     },
     {
@@ -3834,7 +3835,7 @@
         },
         {
           "id": "WDEP-CONTAINER-PERF",
-          "statement": "One WSL2 x86_64 Docker host executed eight warmups and 64 real cold BusyBox container worker uploads after exact fixture-owned cache resets, 64 warm verified reuses and 64 live direct-worker Welcome journeys. The container-test image compiled the direct provider and preinstalled cache guard. Cold p50/p95/p99/max was 3358.249/3429.784/3519.458/3519.458 ms, reuse 2828.77/3032.088/3605.601/3605.601 ms, and live admission 85.478/90.94/100.464/100.464 ms. Exactly one verified object worker ran after every live Welcome; reused probes left zero live workers. No-init PID 1 retained 889 [cat]/[sh] children after reuse, including 71 deliberate cache resets outside timing; this is neither a live-worker count nor a bounded retirement high-water. The artifact was the exact 0.36.0 static worker 85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a; WPERF-FULL remains blocked.",
+          "statement": "On one WSL2 x86_64 Docker host, the exact worker SHA256 6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3 completed eight warmups and 64 cold BusyBox verified uploads after private unleased-object resets, 64 warm reuses and 64 live direct-worker admissions. Cold p50/p95/p99/max 3698.442/5465.584/6043.959/6043.959 ms, warm reuse 3419.944/4398.859/4603.052/4603.052 ms and live admission 105.263/119.121/131.202/131.202 ms. Every Welcome had exactly one actual worker, with none after shutdown; observed probe worker peak after reuse was zero. Nonreaping PID1 retained 889 sh/cat Docker-exec zombies, including 71 fixture resets. The user retained no-init support with this documented risk; this does not bound the whole container process table. Qualification jobs shared the host; no idle-host or universal-container latency claim.",
           "status": "native-tested",
           "evidence": [
             {
@@ -4150,7 +4151,7 @@
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop/Cargo.toml": "5a51ce1ce022b6a464958abd67d214b3d58a008e463746b33ca64677239f28f2"
         },
-        "evidence": "ee555b76db7e7edf3c7c01827ce64c59924fb4a7dc7ac41343168c3b082718d0"
+        "evidence": "fde365698952152449101de8721a2582d4a8ddb6dd284bec98328d6f4325a2a9"
       }
     },
     {
@@ -4209,7 +4210,7 @@
         },
         {
           "id": "WSTR-CREDITS",
-          "statement": "A 17 MiB worker read, large exec output and a saturated PTY all deliver exact bytes while Health remains live; dropped exec output drains its child rather than buffering unboundedly. A PTY flood exit routed through separate client channels waits until queued VT output has drained.",
+          "statement": "A 17 MiB worker read, large exec output and a saturated PTY all deliver exact bytes while Health remains live; dropped exec output drains its child rather than buffering unboundedly. A PTY flood exit routed through separate client channels waits until queued VT output has drained. The bounded LSP bridge also wakes pending writers/flushes after a failed relayed stdin write; the failure and disconnected queue are visible before wake, and flush polling registers before observing the result.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -4245,6 +4246,16 @@
               "gate": "test",
               "tests": [
                 "terminal_flood_coalesces_without_losing_the_tail"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/worker_io.rs",
+              "gate": "test",
+              "tests": [
+                "failed_stdin_write_wakes_a_pending_flush_with_broken_pipe",
+                "full_stdin_queue_retries_one_owned_write_without_duplication",
+                "closing_stdout_wakes_a_parked_reader_after_eof_is_visible"
               ]
             }
           ],
@@ -4290,7 +4301,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-lsp/src/client/worker_io.rs": "b3af06371022b920d35fc3c3a93c81fd69a38c9ba131f10bb77577edd038d5c6",
+          "crates/strop-lsp/src/client/worker_io.rs": "cb4ac5b40e966b92acfa3fce401da6e669732051f9c79b4b63cf1ed69c21e6b1",
           "crates/strop-terminal/src/client.rs": "19bfcb2858bcbe280bde4a5535880091411e0fda0d0e9b37973daa7bf74d515d",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
           "crates/strop-worker-client/src/connection/reader.rs": "83bfa7c00f07310fae842df2644aaee11ed814d027a6e61f703fa6d94409c6f2",
@@ -4301,7 +4312,7 @@
           "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "c14a5e192a937620e91b18cc17e0a09bc56f4881f973c8f6ecc305bd48e80f37"
+        "evidence": "c3afde2feb481dbce680f4f2beaba09a3c540823149ea9a7b5f760363be12019"
       }
     },
     {

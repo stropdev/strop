@@ -5,14 +5,14 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json",
-    "sha256": "7d40ff4626cce736ea17ef778fcf47fb4e931a0e2a41296fd5eb458bfec57d2e"
+    "sha256": "cfe9593ba5fc844d818c0ae996bab5913fe7d6f121383ee7b049d282b46ca284"
   },
   "candidate": {
     "commit": null,
-    "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending",
-    "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
+    "state": "0.36.0 notify-replay and LSP-write-failure-wakeup-safe static candidate 6c817b00; final native CI and tag pending",
+    "artifact_sha256": "6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3",
     "measurement": "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json",
-    "sha256": "6f50311c321e4963ce98719b926d0fe8798bf9713564cc05afaa4cc9b8f8c13f"
+    "sha256": "c8f83d24ec80a6eb373e1182aebf84f32ce3f20efa08909049b0d7ab1acdf83d"
   },
   "method": {
     "harness": "crates/strop/tests/terminal_editor.rs",
@@ -29,16 +29,16 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 4.77,
-      "p50": 3.651,
-      "p95": 4.153,
-      "p99": 4.77
+      "max": 4.766,
+      "p50": 3.935,
+      "p95": 4.671,
+      "p99": 4.766
     },
     "candidate_ms": {
-      "max": 4.723,
-      "p50": 4.088,
-      "p95": 4.632,
-      "p99": 4.723
+      "max": 6.983,
+      "p50": 4.308,
+      "p95": 4.937,
+      "p99": 6.983
     }
   },
   "regression_archive": "verification/measurements/0058-linux-x86-terminal-load-regression.json"

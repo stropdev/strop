@@ -50,6 +50,14 @@
 
 ### Fixed
 
+- **LSP stdin failure wakes a pending flush** (0058 WK20): a queued
+  worker write could fail while the LSP mainloop waited on a separate
+  flush waker, leaving the server's exit unreported. Writes and flush
+  acknowledgments now share one wake slot; failure closes the queue
+  before waking, and the poller registers before inspecting either
+  success or failure. The deterministic failed-write regression fails
+  before the fix and reports `BrokenPipe` afterward.
+
 - **Editor exit retires its native worker** (0058 WK20): ordinary
   UI/headless/TUI shutdown now closes local, admitted SSH and admitted
   container worker leases even when a background job still holds a
@@ -57,8 +65,8 @@
   On the exact 0.36.0 static Linux build, all 64 real 17.28 MiB
   UI-open journeys left **zero** workers after editor exit, versus
   64/64 survivors on the original pre-worker baseline. Open→visible
-  p50 was 77.996 ms versus 78.191 ms; worker kernel peak-memory p50
-  increased from 5,036 to 7,208 KiB. Mac/arm retirement still needs
+  p50 was 78.258 ms versus 78.392 ms; worker kernel peak-memory p50
+  increased from 5,036 to 7,256 KiB. Mac/arm retirement still needs
   native qualification. In a separate 64-session no-init BusyBox
   container measurement, PID 1 retained 889 Docker-exec bootstrap
   `sh`/`cat` zombies (including fixture resets); no bound on an

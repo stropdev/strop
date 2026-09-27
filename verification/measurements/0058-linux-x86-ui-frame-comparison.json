@@ -5,14 +5,14 @@
     "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
     "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
     "measurement": "verification/measurements/0058-linux-x86-preworker-ui-frame.json",
-    "sha256": "148151e4c814e8ad93c4c8ec75d0f581e498776f786cfc26ed128f37b8360343"
+    "sha256": "ab4f1eeb50c88bf3ae4d4bfd9dfc2d35c1fdf8d82990be7f6a903eddb4644ec4"
   },
   "candidate": {
     "commit": null,
-    "state": "0.36.0 exact notify-replay static candidate 85ceab78; final native CI and tag qualification pending",
-    "artifact_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
+    "state": "0.36.0 notify-replay and LSP-write-failure-wakeup-safe static candidate 6c817b00; final native CI and tag pending",
+    "artifact_sha256": "6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3",
     "measurement": "verification/measurements/0058-linux-x86-worker-ui-frame.json",
-    "sha256": "1aea04d6449b136920c92bee62fdc47f5f21dbc46accd72146d02256a20d474c"
+    "sha256": "7a2fb209f661a853b55179d1929c6c17fcf563d6ec1b90fbb23e65c4ced7d0d3"
   },
   "method": {
     "harness": "verification/bench_ui_input_frame.py",
@@ -28,26 +28,22 @@
   },
   "observed": {
     "baseline_ms": {
-      "max": 0.478,
-      "p50": 0.223,
-      "p95": 0.275,
-      "p99": 0.478
+      "max": 0.359,
+      "p50": 0.244,
+      "p95": 0.301,
+      "p99": 0.359
     },
     "candidate_ms": {
-      "max": 0.452,
-      "p50": 0.232,
-      "p95": 0.374,
-      "p99": 0.452
+      "max": 0.585,
+      "p50": 0.278,
+      "p95": 0.359,
+      "p99": 0.585
     },
-    "baseline_editor_rss_kib_after_open": 12696,
-    "candidate_editor_rss_kib_after_open": 12928,
-    "baseline_worker_rss_kib_after_open": 5032,
-    "candidate_worker_rss_kib_after_open": 5224,
+    "baseline_editor_rss_kib_after_open": 12688,
+    "baseline_worker_rss_kib_after_open": 5036,
     "baseline_worker_count_after_open": 1,
-    "candidate_worker_count_after_open": 1,
-    "baseline_request_bytes": 9984,
-    "candidate_request_bytes": 9984,
-    "baseline_view_bytes": 132132,
-    "candidate_view_bytes": 132132
+    "candidate_editor_rss_kib_after_open": 12868,
+    "candidate_worker_rss_kib_after_open": 5224,
+    "candidate_worker_count_after_open": 1
   }
 }

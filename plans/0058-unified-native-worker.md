@@ -501,6 +501,18 @@ verify actual worker processes by executable path and mode, and do
 not claim universal PID 1 reaping. The selected-context, worker
 teardown and shellless/preinstalled tests must still pass.
 
+Worker 0.36 support decision: the user chose **keep no-init worker
+support and document this risk**, rather than require an init or claim
+the nonreaping PID 1 can retire adopted children. WK20 qualifies
+bounded owned **live-worker** leases separately from the BusyBox
+process-table growth (889 `sh`/`cat` zombies after warm reuse in the
+64-sample selected-context run, including 71 fixture cache resets).
+Document the limitation and recommend `--init` for sustained sessions;
+do not require init for admission or turn an unbounded whole-container
+resource count into a passing metric. [0028](0028-roadmap-and-review.md)
+records the impact and re-entry condition. This support choice does not
+relax the native four-target artifact, worker-retirement or proof gates.
+
 `ShellPolicy` remains a cache/bootstrap capability boundary:
 `Absent` permits read-only preinstalled-object verification and
 direct native worker execution, but refuses provider cache writes
@@ -1254,15 +1266,17 @@ do not establish OS lock behavior or native macOS/arm execution.
 
 On the WSL2 Ryzen 9950X3D, clean pre-worker `a05d84f` and the
 stripped 47,390,032-byte x86_64 musl 0.36.0 worker (`sha256
-85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a`)
+6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3`)
 each ran eight warmups and 64 real Hello/Welcome launches (pre-worker
 protocol 1; native worker protocol 2). Baseline/current readiness p50
-was 0.695/0.741 ms, p95 0.761/0.833 ms, p99/max 1.041/1.129 ms;
+was 0.840/0.854 ms, p95 1.227/1.387 ms, p99/max 1.509/3.533 ms;
 the binaries were 46,226,704/47,390,032 bytes. The native worker
 completed eight warmups and 64 serial Health requests through real
-framed IPC: write+flush to result p50 0.194 ms, p95 0.231 ms,
-p99/max 0.340 ms. Neither protocol-different warm launches nor these
+framed IPC: write+flush to result p50 0.226 ms, p95 0.300 ms,
+p99/max 0.361 ms. Neither protocol-different warm launches nor these
 samples establish a speedup.
+Other qualification jobs shared this host during sampling; these are
+observed same-fixture measurements, not isolated-host performance limits.
 `verification/bench_worker.py` and
 `verification/bench_worker_roundtrip.py` pin raw samples, artifact
 digests, RSS/threads and request bytes in `verification/measurements/`.
@@ -1272,8 +1286,8 @@ warmups and 64 real `--ui-stdio` committed-text actions after the
 editor opened a 10,000-line file through one live worker at 120×40.
 `verification/bench_ui_input_frame.py` checks that each complete
 semantic-view frame visibly contains the next edit on line 5000.
-Baseline/current write+flush→view p50 was 0.223/0.232 ms, p95
-0.275/0.374 ms, p99/max 0.478/0.452 ms. This local comparison is
+Baseline/current write+flush→view p50 was 0.244/0.278 ms, p95
+0.301/0.359 ms, p99/max 0.359/0.585 ms. This local comparison is
 not a platform-wide no-regression result. Raw samples, framed
 bytes and observed worker/editor RSS and thread counts are archived.
 
@@ -1282,11 +1296,11 @@ On the same two static artifacts, the real 120×30 TUI opened the
 single-character edits. The opt-in
 `terminal_editor::native_terminal_input_to_painted_frame_samples`
 waits until the VT100-decoded **cell grid** displays each exact edit:
-baseline/current key-write→paint p50 0.916/0.908 ms, p95
-1.431/1.424 ms, p99/max 1.627/2.270 ms. The matched nine-path
+baseline/current key-write→paint p50 1.123/1.073 ms, p95
+2.042/1.807 ms, p99/max 2.225/2.846 ms. The matched nine-path
 `verification/bench_native_product.py` also records 256-line loaded
-PTY output→paint p50 3.651/4.088 ms, p95 4.153/4.632 ms,
-p99/max 4.770/4.723 ms, with raw samples and artifact/source
+PTY output→paint p50 3.935/4.308 ms, p95 4.671/4.937 ms,
+p99/max 4.766/6.983 ms, with raw samples and artifact/source
 digests in `verification/measurements/`.
 
 The PR native matrix now builds both releases on each GNU x86_64/
@@ -1306,27 +1320,30 @@ whatever tip a baseline name later points to.
 The same WSL2 host also ran eight warmups and 64 cold and 64 warm
 real Python-free authenticated TCP-loopback OpenSSH/SFTP worker
 deployments, plus 64 live SSH handshakes. Cold discovery→verified
-probe p50/p95/p99/max was 3524.417/3557.102/3571.072/3571.072
-ms; warm reuse was 2115.583/2133.813/2153.723/2153.723 ms;
-live handshakes were 124.905/132.819/136.428/136.428 ms.
+probe p50/p95/p99/max was 3922.989/5446.717/5831.842/5831.842
+ms; warm reuse was 2407.608/2931.573/3225.117/3225.117 ms;
+live handshakes were 138.370/159.036/168.080/168.080 ms.
 Each live session recorded exactly one lease; a private fixture
 removed only its unleased object and receipt outside each cold
-measurement. This requalification ran inside the pinned Python-free
-SSH test image without a concurrent Docker build during timed samples.
+measurement. This requalification used the pinned Python-free
+SSH image; concurrent qualification jobs mean these are not idle-host timings.
 Earlier pipe-only `sshd -i` timings are a **different fixture**, not
 comparable to these scoped real TCP daemons. The `worker_ssh`
 suite retains its Python-free real SSH parity gate.
 
 A second scoped native target, a no-init BusyBox container, completed
 eight warmups and 64 real cold uploads (p50/p95/p99/max
-3358.249/3429.784/3519.458/3519.458 ms), 64 warm cache reuses
-(2828.770/3032.088/3605.601/3605.601 ms) and 64 live worker
-handshakes (85.478/90.940/100.464/100.464 ms) with exactly one
+3698.442/5465.584/6043.959/6043.959 ms), 64 warm cache reuses
+(3419.944/4398.859/4603.052/4603.052 ms) and 64 live worker
+handshakes (105.263/119.121/131.202/131.202 ms) with exactly one
 actual worker process after each Welcome. The deliberately nonreaping
 PID 1 retained 889 `[cat]`/`[sh]` children after the reuse phase,
 including 71 private fixture resets outside timing. This is not
-889 live workers or universal container behavior, but it prevents
-claiming a bounded retirement high-water on no-init containers.
+889 live workers or universal container behavior. The user explicitly
+retained no-init support with this documented risk; it does not establish
+a bounded total-container process table. Owned live-worker retirement
+remains a separate checked requirement. Qualification jobs shared the
+host, so these are not isolated-host latency measurements.
 The container-test image compiled the direct provider and preinstalled
 cache guard; method/worker digests and raw samples for the exact
 0.36.0 static worker live under `verification/measurements/`.
@@ -1335,11 +1352,11 @@ The same host measured eight warmups and 64 real installed
 `rust-analyzer` definition replies through `strop --ui-stdio` on
 matched static pre-worker and worker artifacts. Input `gd` to the
 painted definition measured p50/p95/p99/max
-25.551/25.746/25.824/25.824 ms before and
-25.517/25.637/25.713/25.713 ms after. A separate 64-sample
+25.671/25.849/26.019/26.019 ms before and
+25.592/25.765/25.931/25.931 ms after. A separate 64-sample
 trailing-space edit→`didChange`→`gd`→paint route measured
-25.786/26.012/26.170/26.170 ms before and
-25.690/25.910/26.021/26.021 ms after. That second path is an
+25.919/26.132/26.395/26.395 ms before and
+25.946/26.217/26.436/26.436 ms after. That second path is an
 end-to-end sync/request upper bound, **not** a standalone
 `didChange` acknowledgment or a claimed speedup. Both targets
 retained one actual local worker; server readiness alone was not
@@ -1363,7 +1380,7 @@ The editor's universal Drop cancelled jobs and stopped LSP clients
 but left local/SSH/container worker retirement to the last clone,
 which background jobs could retain beyond backend exit.
 
-The 0.36.0 notify-replay-safe static candidate (`85ceab78`) permanently closes the
+The 0.36.0 notify-replay/LSP-wakeup-safe static candidate (`6c817b00`) closes the
 editor-owned local lease and every admitted SSH/container lease at
 the shutdown boundary, outside input→render. `Worker::close` serializes
 against connection creation and returns `ClientError::Closed` to
@@ -1371,10 +1388,10 @@ outstanding clones; shared admission tables reject or retire a
 publication racing closure. A matched 64-run release-binary transfer
 now observed **zero surviving workers after editor exit in every
 candidate run** versus 64/64 survivors from the original baseline.
-Open→visible p50/p95/max was 78.191/78.794/79.410 ms baseline and
-77.996/78.558/78.765 ms candidate. Worker kernel `VmHWM` p50
-increased from 5,036 to 7,208 KiB; editor `VmHWM` p50 changed from
-34,284 to 34,524 KiB. These exact bytes and raw 64-per-artifact
+Open→visible p50/p95/max was 78.392/78.956/103.349 ms baseline and
+78.258/78.696/80.146 ms candidate. Worker kernel `VmHWM` p50
+increased from 5,036 to 7,256 KiB; editor `VmHWM` p50 changed from
+34,284 to 34,460 KiB. These exact bytes and raw 64-per-artifact
 samples are in `verification/measurements/0058-linux-x86-*-transfer-ui.json`.
 This proves local Linux shutdown after the 17 MiB journey, **not**
 remote transfer, macOS retirement or a universal bounded-memory claim.
@@ -1617,16 +1634,36 @@ matrix before claiming a native release target.
 The first `442f66f` matrix passed **all** Apple Silicon nine-path,
 LSP and 17.28 MiB transfer measurements with one real worker after
 open and no current worker after editor exit (64 runs). Its GNU ARM
-integration stopped earlier: `cache_gc_holds_the_worker_lease_lock_
-through_retirement` received Linux `ETXTBSY` when executing a
-synthetic content-addressed cache object copied directly to its
-final path. Production deployment first copies into private
-`staging/`, sets executable mode, then publishes via rename; the
-test fixture now does the same rather than exposing a writable final
-object while installing. The affected real-binary test passes
-locally. GNU ARM must pass that native test and the entire product
-matrix again; do not conflate this fixture failure with production
-worker admission or mark the target qualified yet.
+integration stopped earlier: the cache-retirement lock test received
+Linux `ETXTBSY` when executing a synthetic cache object. Moving its
+in-process copy into staging was insufficient as a correctness
+argument: a controlled Linux fork probe still refused exec **after**
+the writer closed and the stage was renamed, while a forked child
+retained the inherited writable descriptor. The same inode executed
+after that child released it. CLOEXEC closes at exec, not fork.
+The fixture now copies both real binary variants in a dedicated
+copy child and waits for it to exit before chmod/rename/publication.
+Sibling test-process forks therefore cannot inherit an executable's
+writable descriptor. Production SSH/container transfer already owns
+its file handles outside the multithreaded test harness. GNU ARM must
+pass the native cache tests and product matrix; no blanket ETXTBSY
+retry, serialization of the whole suite or ignored failure is added.
+
+Run [`36291286595`](https://github.com/stropdev/strop/actions/runs/36291286595)
+then timed out waiting for the fake LSP server's post-initialize exit
+event in the full Docker suite. Investigation found a real liveness
+gap in `worker_io`: the stdin pump published a write error and dropped
+its receiver without waking; `poll_flush` was parked on a different
+acknowledgment waker. A deterministic regression queued a request
+and flush, failed the actual pump's write, and observed no wake before
+the fix. The bridge now uses one wake slot for queue pressure, flush
+acknowledgment and failure; it publishes the error and closes the
+queue before waking, while the poller registers before observing
+the outcome. The regression and real worker-leased Python server
+handshake/classified-exit journey pass after the change. This proves
+the wakeup repair, not that every possible CI stall has that cause.
+Rebuild/re-measure the changed production binary and run the native
+matrix; do not reuse earlier executable digests as final evidence.
 
 The same-source proofs do not verify OS effects, exact receipt
 provenance, a global liveness oracle or platform performance.

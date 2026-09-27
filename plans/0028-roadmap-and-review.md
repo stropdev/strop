@@ -313,6 +313,21 @@ at the single event-delivery drain, not separate per-platform paths.
 Do not disrupt 0.36.0's exact-source 64-sample/native qualification
 with an unrelated source-only move; rebind the evidence when splitting.
 
+Worker 0.36 container resource boundary (explicit user choice):
+**retain no-init worker support with a documented nonreaping-PID-1
+limitation**. The 64-sample selected BusyBox run had exactly one live
+worker after each Welcome and no live worker after each shutdown, but
+its unrelated nonreaping PID 1 retained 889 Strop-triggered Docker-exec
+`sh`/`cat` zombies after reuse, including 71 fixture resets. Do not
+advertise bounded whole-container process-table usage. Users needing
+sustained sessions without that accumulation should start their container
+with a reaping init; Strop does not install or require one for worker
+admission. Re-entry: an owned/reaping PID 1 or a provider/OS contract
+that can actually reap processes it adopts, followed by repeated
+no-init process-table and worker-retirement evidence. This preserves
+the no-init functionality and its native tests; it does not waive the
+four-platform worker gates or owned-live-worker retirement bound.
+
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,
 platform or evidence ledger is silently removed by inserting the worker.

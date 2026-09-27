@@ -9,7 +9,7 @@
     "profile": "release-musl-stripped"
   },
   "baseline_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
-  "candidate_sha256": "85ceab786062cf1b5c4867db6ad655591ec24ec01e9ac991f69aefa2ac0eca9a",
+  "candidate_sha256": "6c817b001834d7879f973cfbc842f791b1071a2b2ac67f13b3ff4e2445c7e6e3",
   "methods": {
     "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
     "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
@@ -21,58 +21,58 @@
   "scope": "native local worker Hello, Health, worker-backed semantic edit, real PTY TUI cell-grid paint and 256-line terminal output load; not cold/warm remote deploy, LSP or retirement high-water",
   "observed": {
     "baseline_handshake_ms": {
-      "max": 1.041,
-      "p50": 0.695,
-      "p95": 0.761,
-      "p99": 1.041
+      "max": 1.509,
+      "p50": 0.84,
+      "p95": 1.227,
+      "p99": 1.509
     },
     "candidate_handshake_ms": {
-      "max": 1.129,
-      "p50": 0.741,
-      "p95": 0.833,
-      "p99": 1.129
+      "max": 3.533,
+      "p50": 0.854,
+      "p95": 1.387,
+      "p99": 3.533
     },
     "candidate_health_ms": {
-      "max": 0.34,
-      "p50": 0.194,
-      "p95": 0.231,
-      "p99": 0.34
+      "max": 0.361,
+      "p50": 0.226,
+      "p95": 0.3,
+      "p99": 0.361
     },
     "baseline_semantic_ms": {
-      "max": 0.478,
-      "p50": 0.223,
-      "p95": 0.275,
-      "p99": 0.478
+      "max": 0.359,
+      "p50": 0.244,
+      "p95": 0.301,
+      "p99": 0.359
     },
     "candidate_semantic_ms": {
-      "max": 0.452,
-      "p50": 0.232,
-      "p95": 0.374,
-      "p99": 0.452
+      "max": 0.585,
+      "p50": 0.278,
+      "p95": 0.359,
+      "p99": 0.585
     },
     "baseline_tui_ms": {
-      "max": 1.627,
-      "p50": 0.916,
-      "p95": 1.431,
-      "p99": 1.627
+      "max": 2.225,
+      "p50": 1.123,
+      "p95": 2.042,
+      "p99": 2.225
     },
     "candidate_tui_ms": {
-      "max": 2.27,
-      "p50": 0.908,
-      "p95": 1.424,
-      "p99": 2.27
+      "max": 2.846,
+      "p50": 1.073,
+      "p95": 1.807,
+      "p99": 2.846
     },
     "baseline_terminal_load_ms": {
-      "max": 4.77,
-      "p50": 3.651,
-      "p95": 4.153,
-      "p99": 4.77
+      "max": 4.766,
+      "p50": 3.935,
+      "p95": 4.671,
+      "p99": 4.766
     },
     "candidate_terminal_load_ms": {
-      "max": 4.723,
-      "p50": 4.088,
-      "p95": 4.632,
-      "p99": 4.723
+      "max": 6.983,
+      "p50": 4.308,
+      "p95": 4.937,
+      "p99": 6.983
     }
   }
 }

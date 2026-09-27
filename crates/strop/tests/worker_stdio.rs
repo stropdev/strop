@@ -83,10 +83,7 @@ const CACHE_TEST_CONTEXT: &str = "local-test-cache";
 fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     use std::os::unix::fs::PermissionsExt;
 
-    use sha2::{Digest, Sha256};
-    use strop_core::worker::cache_record::{
-        CacheReceipt, CACHE_DIR_NAME, LEASES_DIR, OBJECTS_DIR, RECEIPTS_DIR, RECEIPT_SCHEMA,
-    };
+    use strop_core::worker::cache_record::{CACHE_DIR_NAME, LEASES_DIR, OBJECTS_DIR, RECEIPTS_DIR};
 
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join(CACHE_DIR_NAME);
@@ -98,7 +95,19 @@ fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::
         std::fs::create_dir(path).unwrap();
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
     }
-    let binary = env!("CARGO_BIN_EXE_strop");
+    let object = seed_cache_binary(&root, Path::new(env!("CARGO_BIN_EXE_strop")));
+    (directory, object, root)
+}
+
+#[cfg(target_os = "linux")]
+fn seed_cache_binary(root: &Path, binary: &Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    use sha2::{Digest, Sha256};
+    use strop_core::worker::cache_record::{
+        CacheReceipt, OBJECTS_DIR, RECEIPTS_DIR, RECEIPT_SCHEMA,
+    };
+
     let mut source = std::fs::File::open(binary).unwrap();
     let mut hash = Sha256::new();
     let mut chunk = [0u8; 64 * 1024];
@@ -114,11 +123,18 @@ fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let object = objects.join(&sha);
-    // Publish only after staging closes and mode is final, matching the
-    // real cache. The old direct-path fixture saw ETXTBSY on hosted ARM.
-    let staged = staging.join(&sha);
-    std::fs::copy(binary, &staged).unwrap();
+    let object = root.join(OBJECTS_DIR).join(&sha);
+    let staged = root.join("staging").join(&sha);
+    // Keep the executable's writable descriptor out of this multithreaded
+    // test process: concurrent forks can inherit it even with CLOEXEC,
+    // briefly preventing exec with ETXTBSY after our own handle closes.
+    // The copy child exits before publication and owns the only writer.
+    assert!(std::process::Command::new("cp")
+        .arg(binary)
+        .arg(&staged)
+        .status()
+        .unwrap()
+        .success());
     std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o500)).unwrap();
     std::fs::rename(&staged, &object).unwrap();
     // SAFETY: std has no effective-uid getter; geteuid takes no pointers.
@@ -133,10 +149,10 @@ fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::
         object_bytes: std::fs::metadata(&object).unwrap().len(),
         tarball_sha256: "c".repeat(64),
     };
-    let receipt_path = receipts.join(format!("{sha}.json"));
+    let receipt_path = root.join(RECEIPTS_DIR).join(format!("{sha}.json"));
     std::fs::write(&receipt_path, serde_json::to_vec(&receipt).unwrap()).unwrap();
     std::fs::set_permissions(&receipt_path, std::fs::Permissions::from_mode(0o600)).unwrap();
-    (directory, object, root)
+    object
 }
 
 #[cfg(target_os = "linux")]
@@ -375,7 +391,7 @@ fn cache_gc_keeps_foreign_live_lease_until_its_record_is_released() {
 fn cache_gc_preserves_another_actual_worker_process_and_build() {
     use std::process::Command;
 
-    use strop_core::worker::cache_record::{LEASES_DIR, OBJECTS_DIR};
+    use strop_core::worker::cache_record::LEASES_DIR;
 
     let (_directory, object, root) = cached_worker_binary();
     let second_build = tempfile::tempdir().unwrap();
@@ -387,13 +403,7 @@ fn cache_gc_preserves_another_actual_worker_process_and_build() {
         .status()
         .unwrap()
         .success());
-    let other_sha = seed_cache_object(
-        &root,
-        &std::fs::read(stripped).unwrap(),
-        CACHE_TEST_CONTEXT,
-        env!("CARGO_PKG_VERSION"),
-    );
-    let other_path = root.join(OBJECTS_DIR).join(&other_sha);
+    let other_path = seed_cache_binary(&root, &stripped);
     assert_ne!(
         other_path, object,
         "the two executables have distinct addresses"

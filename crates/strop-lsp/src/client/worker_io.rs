@@ -147,7 +147,38 @@ enum Queued {
 /// queue drained onto the wire, then wakes the poller.
 struct FlushAck {
     done: std::sync::atomic::AtomicBool,
-    wake: Wake,
+}
+
+fn pump_stdin(
+    receiver: Receiver<StdinMsg>,
+    wake: &Wake,
+    broken: &Mutex<Option<String>>,
+    mut write: impl FnMut(&[u8], bool) -> Result<(), strop_worker_client::ClientError>,
+) {
+    loop {
+        match receiver.recv() {
+            Ok(StdinMsg::Bytes(bytes)) => {
+                if let Err(failure) = write(&bytes, false) {
+                    *broken.lock() = Some(failure.to_string());
+                    // Publish failure and close the queue before the
+                    // wake: both a full writer and a pending flush
+                    // must observe terminal state when they repoll.
+                    drop(receiver);
+                    wake.wake();
+                    return;
+                }
+            }
+            Ok(StdinMsg::Flush(ack)) => {
+                ack.done.store(true, std::sync::atomic::Ordering::Release);
+            }
+            Ok(StdinMsg::Close) | Err(_) => {
+                // Half-close or every sender dropped: EOF, not revocation.
+                let _ = write(&[], true);
+                return;
+            }
+        }
+        wake.wake();
+    }
 }
 
 /// The server stdin as an async writer over the relayed stream.
@@ -232,6 +263,9 @@ impl AsyncWrite for WorkerStdin {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // One wake slot covers queue pressure, successful acknowledgments
+        // and pump failure. Register before inspecting either outcome.
+        self.wake.store(context.waker());
         if let Some(reason) = self.broken_reason() {
             return Poll::Ready(Err(io::Error::new(io::ErrorKind::BrokenPipe, reason)));
         }
@@ -240,9 +274,6 @@ impl AsyncWrite for WorkerStdin {
             .get_or_insert_with(|| {
                 Arc::new(FlushAck {
                     done: std::sync::atomic::AtomicBool::new(false),
-                    wake: Wake {
-                        waker: Mutex::new(None),
-                    },
                 })
             })
             .clone();
@@ -253,7 +284,6 @@ impl AsyncWrite for WorkerStdin {
                 Queued::Gone => return Poll::Ready(Err(Self::gone())),
             }
         }
-        ack.wake.store(context.waker());
         if ack.done.load(std::sync::atomic::Ordering::Acquire) {
             self.pending_flush = None;
             self.flush_queued = false;
@@ -383,27 +413,9 @@ pub(super) fn start(handle: ExecHandle, worker: Worker, tail_cap: usize) -> Work
         let broken = stdin_broken.clone();
         std::thread::spawn(move || {
             let mut stdin: ExecStdin = stdin;
-            loop {
-                match stdin_receiver.recv() {
-                    Ok(StdinMsg::Bytes(bytes)) => {
-                        if let Err(failure) = stdin.write(&bytes, false) {
-                            *broken.lock() = Some(failure.to_string());
-                            return;
-                        }
-                    }
-                    Ok(StdinMsg::Flush(ack)) => {
-                        ack.done.store(true, std::sync::atomic::Ordering::Release);
-                        ack.wake.wake();
-                    }
-                    Ok(StdinMsg::Close) | Err(_) => {
-                        // Explicit half-close or every sender dropped:
-                        // EOF to the server, then the pump retires.
-                        let _ = stdin.write(&[], true);
-                        return;
-                    }
-                }
-                wake.wake();
-            }
+            pump_stdin(stdin_receiver, &wake, &broken, |bytes, last| {
+                stdin.write(bytes, last)
+            });
         });
     }
 
@@ -498,6 +510,55 @@ mod tests {
         };
         assert_eq!(second, b"retry-me");
         assert!(receiver.try_recv().is_err(), "a pending write ran twice");
+    }
+
+    #[test]
+    fn failed_stdin_write_wakes_a_pending_flush_with_broken_pipe() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::task::Wake as TaskWake;
+
+        struct Awoken(AtomicBool);
+        impl TaskWake for Awoken {
+            fn wake(self: Arc<Self>) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel(2);
+        let wake = Arc::new(Wake {
+            waker: Mutex::new(None),
+        });
+        let broken = Arc::new(Mutex::new(None));
+        let mut stdin = WorkerStdin {
+            sender,
+            wake: wake.clone(),
+            broken: broken.clone(),
+            pending_write: None,
+            pending_flush: None,
+            flush_queued: false,
+        };
+        let awoken = Arc::new(Awoken(AtomicBool::new(false)));
+        let waker = Waker::from(awoken.clone());
+        let mut context = Context::from_waker(&waker);
+        assert!(matches!(
+            Pin::new(&mut stdin).poll_write(&mut context, b"request"),
+            Poll::Ready(Ok(7))
+        ));
+        assert!(Pin::new(&mut stdin).poll_flush(&mut context).is_pending());
+
+        pump_stdin(receiver, &wake, &broken, |_, _| {
+            Err(strop_worker_client::ClientError::WorkerLost(
+                "worker closed before the queued request".into(),
+            ))
+        });
+        assert!(
+            awoken.0.load(Ordering::Acquire),
+            "the pending flush must be woken when its preceding write fails"
+        );
+        let Poll::Ready(Err(error)) = Pin::new(&mut stdin).poll_flush(&mut context) else {
+            panic!("a failed writer must report its broken pipe, not park or succeed");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[test]
