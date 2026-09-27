@@ -16,7 +16,18 @@ use std::{
 use strop_core::worker::{
     self, CancelHandle, CancelReason, CancelToken, Failure, FailureKind, Outcome, PreparedWork,
 };
+use strop_remote::worker_transport::RemoteWorker;
 use strop_workspace::{Filesystem, ResourceLocation};
+
+pub type WorkerAdmission = Box<dyn FnOnce(&CancelToken) -> Result<RemoteWorker, Failure> + Send>;
+
+/// Authority for a remote search. The admission callback runs on the
+/// picker source thread, never on input→render; browsing alone does not
+/// deploy a worker. Once admitted, subsequent queries reuse the lease.
+pub enum SearchWorker {
+    Admitted(RemoteWorker),
+    Admit(WorkerAdmission),
+}
 
 type Work = Box<dyn FnOnce(CancelToken) -> Outcome<()> + Send>;
 struct Pending {
@@ -185,6 +196,7 @@ impl SourceWorker {
         policy: SelectionPolicy,
         root: ResourceLocation,
         snapshots: Vec<SourceSnapshot>,
+        lease: Option<SearchWorker>,
         sender: impl Into<SourceSink>,
     ) -> CancelHandle {
         let cache = Arc::clone(&self.shared.cache);
@@ -193,7 +205,20 @@ impl SourceWorker {
                 super::grep::run(query, policy, root.path, snapshots, cache, tx, token)
             }
             Filesystem::Remote(_) => {
-                super::remote::run_search(query, policy, root, snapshots, tx, token)
+                let admitted = match lease {
+                    Some(SearchWorker::Admitted(worker)) => Some(worker),
+                    Some(SearchWorker::Admit(admit)) => match admit(&token) {
+                        Ok(worker) => Some(worker),
+                        Err(failure) => {
+                            return Outcome::Failed {
+                                failure,
+                                partial: None,
+                            }
+                        }
+                    },
+                    None => None,
+                };
+                super::remote::run_search(query, policy, root, snapshots, admitted, tx, token)
             }
             Filesystem::Container(_) => Outcome::failed(
                 FailureKind::Unavailable,

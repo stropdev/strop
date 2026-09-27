@@ -8,21 +8,25 @@
 //! stream fails typed, and the next caller respawns through the connector
 //! (a fresh incarnation — stale prepared authority fails closed there).
 
+mod reader;
+
+use reader::read_loop;
+
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver, Sender, SyncSender};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use parking_lot::Mutex;
-use strop_worker_protocol::codec::{self, Incoming, StreamChunk};
-use strop_worker_protocol::frame::{self, FrameDecoder};
+use strop_worker_protocol::codec::{self, StreamChunk};
 use strop_worker_protocol::{
     Capabilities, ClientMessage, EndpointInfo, Event, ExecId, LeaseId, Limits, NamespaceIdentity,
-    ProtocolError, RequestId, Session, ShutdownReason, StreamId, WorkerMessage, PROTOCOL_VERSION,
+    ProtocolError, Refusal, RequestClass, RequestId, Session, ShutdownReason, StreamId,
+    WorkerMessage, PROTOCOL_VERSION,
 };
 
 use crate::error::ClientError;
@@ -125,7 +129,7 @@ pub fn spawn_worker(program: &std::path::Path) -> Result<Transport, ClientError>
 #[derive(Default)]
 pub(crate) struct Attachments {
     pub streams: Vec<(StreamId, Receiver<StreamEvent>)>,
-    pub exits: Vec<(ExecId, Receiver<ExitEvent>)>,
+    pub exits: Vec<(ExecId, Receiver<ExecEvent>)>,
 }
 
 /// The reply routed to one waiting request.
@@ -137,15 +141,73 @@ pub(crate) enum Reply {
     Protocol(ProtocolError),
     Lost(String),
 }
-/// One inbound stream's events (worker → client payloads).
-pub(crate) enum StreamEvent {
+/// One inbound stream's events (worker → client payloads). `Resized`
+/// is the PTY ordered geometry boundary (0058 WK12): it rides the
+/// exec's output stream in exact wire order, so a terminal parser
+/// flips geometry exactly between the pre- and post-resize bytes.
+pub enum StreamEvent {
     Chunk(StreamChunk),
+    Resized,
     Failed(String),
 }
 
-enum Pending {
-    Plain(Sender<Reply>),
-    Streaming(Sender<Reply>),
+/// One exec's routed lifecycle (0058 WK12): delivered-input
+/// acknowledgments and the terminal status, on one channel in wire
+/// order.
+pub enum ExecEvent {
+    Input { sequence: u64 },
+    Exit(strop_worker_protocol::ExitStatus),
+}
+
+/// One waiting request's routing entry. `streaming` replies attach
+/// payload sinks; `class` is the WK11 scheduling class the pending
+/// budget counts against. `pty_resize` names the exec whose output
+/// stream receives the ordered [`StreamEvent::Resized`] marker when
+/// the reply is `done` (WK12).
+pub(crate) struct Pending {
+    sender: Sender<Reply>,
+    streaming: bool,
+    class: RequestClass,
+    pty_resize: Option<ExecId>,
+}
+
+impl Pending {
+    pub(crate) fn new(sender: Sender<Reply>, streaming: bool, class: RequestClass) -> Self {
+        Pending {
+            sender,
+            streaming,
+            class,
+            pty_resize: None,
+        }
+    }
+
+    /// A PTY resize request: control-class, and its `done` reply is the
+    /// ordered geometry boundary on the exec's output stream.
+    pub(crate) fn pty_resize(sender: Sender<Reply>, exec: ExecId) -> Self {
+        Pending {
+            sender,
+            streaming: false,
+            class: RequestClass::Control,
+            pty_resize: Some(exec),
+        }
+    }
+}
+
+/// One inbound stream's routing slot (WK11).
+enum StreamSlot {
+    /// Actively routed. A read payload's owning request id lets
+    /// backpressure cancel the stream at its source; exec pipes carry
+    /// `None` (an abandoned exec payload never revokes the lease —
+    /// dropping the handle is not cancellation).
+    Live {
+        sender: SyncSender<StreamEvent>,
+        request: Option<RequestId>,
+    },
+    /// Abandoned (consumer dropped or exceeded the inbound budget):
+    /// chunks are dropped, but the registration stays until the terminal
+    /// chunk so routing stays exact and a late chunk is never misread as
+    /// corruption.
+    Abandoned,
 }
 
 struct Handshake {
@@ -171,8 +233,14 @@ pub(crate) struct Conn {
     next_stream: AtomicU64,
     writer: Mutex<Box<dyn Write + Send>>,
     pending: Mutex<HashMap<RequestId, Pending>>,
-    streams: Mutex<HashMap<StreamId, Sender<StreamEvent>>>,
-    execs: Mutex<HashMap<ExecId, Sender<ExitEvent>>>,
+    streams: Mutex<HashMap<StreamId, StreamSlot>>,
+    execs: Mutex<HashMap<ExecId, Sender<ExecEvent>>>,
+    /// Exec → its stdout stream, for routing the ordered resize
+    /// boundary marker (WK12).
+    exec_streams: Mutex<HashMap<ExecId, StreamId>>,
+    /// Stream-arrival hook (WK12): the terminal service's wake nudge,
+    /// fired after a chunk is routed. One per lease.
+    stream_notifier: Mutex<Option<crate::StreamNotifier>>,
     events: Mutex<Option<Sender<Event>>>,
     handshake: Arc<Handshake>,
     bye: Mutex<Option<Sender<ShutdownReason>>>,
@@ -208,6 +276,9 @@ fn placeholder_state() -> SessionState {
             max_subscriptions: 0,
             max_streams: 0,
             max_exec_processes: 0,
+            max_concurrent_reads: 0,
+            control_reserve: 0,
+            max_queued_data_chunks: 0,
         },
         namespace: NamespaceIdentity {
             identity: String::new(),
@@ -215,8 +286,6 @@ fn placeholder_state() -> SessionState {
         },
     }
 }
-/// An exec's terminal status routed from the event stream.
-pub(crate) struct ExitEvent(pub strop_worker_protocol::ExitStatus);
 
 impl Conn {
     /// Establish one connection: handshake on the fresh transport, then
@@ -247,6 +316,8 @@ impl Conn {
             pending: Mutex::new(HashMap::new()),
             streams: Mutex::new(HashMap::new()),
             execs: Mutex::new(HashMap::new()),
+            exec_streams: Mutex::new(HashMap::new()),
+            stream_notifier: Mutex::new(None),
             events: Mutex::new(None),
             handshake: Arc::clone(&handshake),
             bye: Mutex::new(None),
@@ -302,9 +373,7 @@ impl Conn {
                 };
                 Ok(conn)
             }
-            Ok(Ok(WorkerMessage::Error { error, .. })) => {
-                Err(ClientError::Handshake(format!("refused: {error}")))
-            }
+            Ok(Ok(WorkerMessage::Error { error, .. })) => Err(ClientError::Protocol(error)),
             Ok(Ok(_)) => Err(ClientError::Handshake(
                 "the first worker message was not a welcome".into(),
             )),
@@ -365,6 +434,9 @@ impl Conn {
     }
 
     pub(crate) fn write_chunk(&self, chunk: &StreamChunk) -> Result<(), ClientError> {
+        if !self.alive() {
+            return Err(ClientError::WorkerLost(self.death_detail()));
+        }
         codec::write_chunk(&mut *self.writer.lock(), chunk)
             .map_err(|error| ClientError::WorkerLost(format!("write: {error}")))
     }
@@ -373,12 +445,45 @@ impl Conn {
         self.child.lock().as_ref().map(|child| child.id())
     }
 
-    pub(crate) fn register_plain(&self, id: RequestId, sender: Sender<Reply>) {
-        self.pending.lock().insert(id, Pending::Plain(sender));
-    }
-
-    pub(crate) fn register_streaming(&self, id: RequestId, sender: Sender<Reply>) {
-        self.pending.lock().insert(id, Pending::Streaming(sender));
+    /// Admit one request into the pending registry under the negotiated
+    /// inbound budgets (WK11): the client mirrors the worker's admission
+    /// bounds — control-class requests draw from the reserved slots, bulk
+    /// reads additionally from the read budget — so overload fails typed
+    /// at the caller instead of queueing behind bulk on the wire.
+    pub(crate) fn admit(&self, id: RequestId, pending: Pending) -> Result<(), ClientError> {
+        if !self.alive() {
+            return Err(ClientError::WorkerLost(self.death_detail()));
+        }
+        let limits = self.limits();
+        let mut registry = self.pending.lock();
+        let total = registry.len();
+        let admitted = match pending.class {
+            RequestClass::Control => total < limits.max_pending_requests,
+            RequestClass::Standard => {
+                total
+                    < limits
+                        .max_pending_requests
+                        .saturating_sub(limits.control_reserve)
+            }
+            RequestClass::Bulk => {
+                total
+                    < limits
+                        .max_pending_requests
+                        .saturating_sub(limits.control_reserve)
+                    && registry
+                        .values()
+                        .filter(|entry| entry.class == RequestClass::Bulk)
+                        .count()
+                        < limits.max_concurrent_reads
+            }
+        };
+        if !admitted {
+            return Err(ClientError::Refused(Refusal::Busy {
+                message: format!("{:?} inbound budget reached", pending.class),
+            }));
+        }
+        registry.insert(id, pending);
+        Ok(())
     }
 
     pub(crate) fn retract(&self, id: RequestId) {
@@ -387,6 +492,13 @@ impl Conn {
 
     pub(crate) fn set_events(&self, sender: Option<Sender<Event>>) {
         *self.events.lock() = sender;
+    }
+
+    /// The stream-arrival hook (WK12): fired by the reader thread after
+    /// a chunk is routed, so fd-polling consumers (the terminal
+    /// service) wake on output instead of their poll timeout.
+    pub(crate) fn set_stream_notifier(&self, notifier: crate::StreamNotifier) {
+        *self.stream_notifier.lock() = Some(notifier);
     }
 
     /// Terminate: every pending request and open stream fails typed, the
@@ -398,15 +510,14 @@ impl Conn {
         let reason = reason.into();
         *self.death.lock() = Some(reason.clone());
         for (_, pending) in self.pending.lock().drain() {
-            let sender = match pending {
-                Pending::Plain(sender) => sender,
-                Pending::Streaming(sender) => sender,
-            };
-            let _ = sender.send(Reply::Lost(reason.clone()));
+            let _ = pending.sender.send(Reply::Lost(reason.clone()));
         }
         for (_, stream) in self.streams.lock().drain() {
-            let _ = stream.send(StreamEvent::Failed(reason.clone()));
+            if let StreamSlot::Live { sender, .. } = stream {
+                let _ = sender.send(StreamEvent::Failed(reason.clone()));
+            }
         }
+        self.exec_streams.lock().clear();
         if let Some(mut child) = self.child.lock().take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -454,137 +565,5 @@ impl Conn {
 
     pub(crate) fn namespace(&self) -> NamespaceIdentity {
         self.state.lock().namespace.clone()
-    }
-}
-
-/// The reader thread: decode frames, route results/events/chunks, and on
-/// EOF or corruption terminate the connection so every waiter fails typed.
-fn read_loop(conn: Arc<Conn>, reader: &mut impl Read) {
-    let mut decoder = FrameDecoder::default();
-    loop {
-        let body = match frame::read_frame(reader, &mut decoder) {
-            Ok(Some(body)) => body,
-            Ok(None) => {
-                conn.terminate("worker closed the protocol stream".to_owned());
-                return;
-            }
-            Err(error) => {
-                conn.terminate(format!("protocol stream failed: {error}"));
-                return;
-            }
-        };
-        match codec::decode_body::<WorkerMessage>(&body) {
-            Ok(Incoming::Envelope(message)) => route_envelope(&conn, message),
-            Ok(Incoming::Chunk(chunk)) => route_chunk(&conn, chunk),
-            Err(error) => {
-                conn.terminate(format!("undecodable worker frame: {error}"));
-                return;
-            }
-        }
-        if !conn.alive() {
-            return;
-        }
-    }
-}
-
-fn route_envelope(conn: &Arc<Conn>, message: WorkerMessage) {
-    match message {
-        WorkerMessage::Welcome { .. } => {
-            if let Some(sender) = conn.handshake.sender.lock().take() {
-                let _ = sender.send(Ok(message));
-            }
-        }
-        WorkerMessage::Result { id, outcome } => {
-            let pending = conn.pending.lock().remove(&id);
-            match pending {
-                Some(Pending::Plain(sender)) => {
-                    let _ = sender.send(Reply::Outcome {
-                        outcome,
-                        attachments: Attachments::default(),
-                    });
-                }
-                Some(Pending::Streaming(sender)) => {
-                    let mut attachments = Attachments::default();
-                    match &outcome {
-                        strop_worker_protocol::ResultOutcome::ReadOpened { stream, .. } => {
-                            let (tx, rx) = channel();
-                            conn.streams.lock().insert(*stream, tx);
-                            attachments.streams.push((*stream, rx));
-                        }
-                        strop_worker_protocol::ResultOutcome::ExecStarted {
-                            exec,
-                            stdout,
-                            stderr,
-                            ..
-                        } => {
-                            for stream in [stdout, stderr] {
-                                let (tx, rx) = channel();
-                                conn.streams.lock().insert(*stream, tx);
-                                attachments.streams.push((*stream, rx));
-                            }
-                            let (tx, rx) = channel();
-                            conn.execs.lock().insert(*exec, tx);
-                            attachments.exits.push((*exec, rx));
-                        }
-                        _ => {}
-                    }
-                    let _ = sender.send(Reply::Outcome {
-                        outcome,
-                        attachments,
-                    });
-                }
-                None => {}
-            }
-        }
-        WorkerMessage::Event { event } => {
-            if let Event::ExecExit { exec, status } = event {
-                if let Some(sender) = conn.execs.lock().remove(&exec) {
-                    let _ = sender.send(ExitEvent(status));
-                    return;
-                }
-            }
-            if let Some(sender) = conn.events.lock().as_ref() {
-                let _ = sender.send(event);
-            }
-        }
-        WorkerMessage::Error { id, error } => match id {
-            Some(id) => {
-                if let Some(pending) = conn.pending.lock().remove(&id) {
-                    let sender = match pending {
-                        Pending::Plain(sender) => sender,
-                        Pending::Streaming(sender) => sender,
-                    };
-                    let _ = sender.send(Reply::Protocol(error));
-                }
-            }
-            None => conn.terminate(format!("worker reported a session failure: {error}")),
-        },
-        WorkerMessage::Bye { reason } => {
-            if let Some(waiter) = conn.bye.lock().take() {
-                let _ = waiter.send(reason);
-            }
-            conn.terminate(format!("worker exited ({reason:?})"));
-        }
-    }
-}
-
-fn route_chunk(conn: &Arc<Conn>, chunk: StreamChunk) {
-    let sender = conn.streams.lock().get(&chunk.stream).cloned();
-    match sender {
-        Some(sender) => {
-            let last = chunk.last;
-            let stream = chunk.stream;
-            // A consumer that abandoned its payload leaves the stream
-            // registered until its last chunk, so routing stays exact.
-            let _ = sender.send(StreamEvent::Chunk(chunk));
-            if last {
-                conn.streams.lock().remove(&stream);
-            }
-        }
-        None => {
-            // A chunk for an unknown stream: the worker violated the
-            // session. This is corruption, not data.
-            conn.terminate(format!("chunk on unknown stream {}", chunk.stream.0));
-        }
     }
 }

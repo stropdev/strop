@@ -358,6 +358,7 @@ fn remote_subscription_identity_comes_from_the_settle_record() {
         outcome: Outcome::Success(SubscribedScope {
             subscription: identity,
             coverage: strop_worker_protocol::NotifyCoverage::Native,
+            owned_trace: None,
         }),
     });
     editor.drain_notify();
@@ -370,4 +371,44 @@ fn remote_subscription_identity_comes_from_the_settle_record() {
     );
     editor.drain_notify();
     assert!(editor.cur().external_change, "the settled identity acts");
+}
+
+#[test]
+fn trace_owned_hints_do_not_wake_the_editor_but_other_files_still_do() {
+    let directory = tempfile::tempdir().unwrap();
+    let trace = strop_trace::start(
+        &directory.path().join("capture.jsonl"),
+        strop_trace::TraceOptions::default(),
+    )
+    .unwrap();
+    let subscription = Subscription {
+        id: 1,
+        generation: 1,
+    };
+    let queue = NotifyQueue {
+        state: Mutex::new(QueueState::default()),
+    };
+    queue.set_owned_trace(Some((subscription, b"capture.jsonl".to_vec())));
+    let hint = |path: &[u8]| NotifyHint {
+        path: path.to_vec(),
+        kind: NotifyKind::Modified,
+    };
+    assert!(!queue.push_event(Event::Notify {
+        subscription,
+        sequence: 1,
+        hints: vec![hint(b"capture.jsonl")],
+    }));
+    assert!(queue.drain().0.is_empty(), "no self-triggered wake");
+    assert!(queue.push_event(Event::Notify {
+        subscription,
+        sequence: 2,
+        hints: vec![hint(b"capture.jsonl"), hint(b"user.txt")],
+    }));
+    let (records, rescan) = queue.drain();
+    assert!(!rescan);
+    assert!(matches!(
+        records.as_slice(),
+        [Record::Hints { hints, .. }] if hints.len() == 1 && hints[0].path == b"user.txt"
+    ));
+    trace.finish().unwrap();
 }

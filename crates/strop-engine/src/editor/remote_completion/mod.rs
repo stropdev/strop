@@ -20,6 +20,8 @@ use super::pending::{PendingEvent, PromptContext};
 use super::Editor;
 
 mod directory;
+mod run;
+use run::run_completion;
 #[cfg(test)]
 mod tests;
 
@@ -421,6 +423,13 @@ impl Editor {
         let client = self.remote_client();
         let worker = self.filesystem.worker().clone();
         let remote = self.remote.workers.clone();
+        let container_worker = match &query {
+            RemoteCompletionQuery::Directory {
+                container: Some(identity),
+                ..
+            } => self.containers.workers.get(identity),
+            _ => None,
+        };
         let tx = self.remote_completion.tx.clone();
         let handle = worker::spawn(
             "strop-remote-complete",
@@ -437,6 +446,7 @@ impl Editor {
                     client,
                     worker,
                     remote,
+                    container_worker,
                 };
                 run_completion(job, cancel)
             },
@@ -650,115 +660,7 @@ struct CompletionJob {
     client: RemoteClient,
     worker: strop_worker_client::Worker,
     remote: crate::editor::remote::workers::RemoteWorkers,
-}
-
-fn run_completion(
-    job: CompletionJob,
-    cancel: worker::CancelToken,
-) -> Outcome<RemoteCompletionResult> {
-    let CompletionJob {
-        query,
-        directory,
-        fallback,
-        sources,
-        history,
-        client,
-        worker,
-        remote,
-    } = job;
-    if cancel.is_cancelled() {
-        return Outcome::Cancelled(CancelReason::OwnerClosed);
-    }
-    match query {
-        RemoteCompletionQuery::Directory {
-            location,
-            segment,
-            container,
-        } => directory::run(
-            location,
-            &segment,
-            container.as_ref(),
-            &client,
-            &worker,
-            &remote,
-            &cancel,
-        ),
-        RemoteCompletionQuery::Hosts { partial } => {
-            let enumeration = strop_remote::enumerate_hosts(&sources, &history);
-            let items = enumeration
-                .complete(&partial)
-                .into_iter()
-                .map(|token| RemoteCandidate {
-                    uri: format!("ssh://{token}"),
-                    directory: false,
-                })
-                .collect();
-            Outcome::Success(RemoteCompletionResult::Candidates {
-                items,
-                source: CandidateSource::Config,
-                notes: enumeration.notes().to_vec(),
-                listed_directory: None,
-            })
-        }
-        RemoteCompletionQuery::Path { segment, .. } => {
-            let Some(dir) = directory else {
-                return Outcome::failed(
-                    FailureKind::Protocol,
-                    "path completion without a listing target",
-                );
-            };
-            let prefix = lenient_percent_decode(&segment);
-            match client.list_connected(&dir, &cancel) {
-                Ok(entries) => {
-                    let mut items: Vec<RemoteCandidate> = entries
-                        .into_iter()
-                        .filter_map(|entry| {
-                            // `.`/`..` have no file_name; browsing owns
-                            // parent navigation, completion owns names.
-                            let name = entry.file.path().file_name()?;
-                            if !name.as_encoded_bytes().starts_with(&prefix) {
-                                return None;
-                            }
-                            let directory = matches!(entry.kind, RemoteEntryKind::Directory);
-                            let mut uri = entry.file.to_string();
-                            if directory && !uri.ends_with('/') {
-                                uri.push('/');
-                            }
-                            Some(RemoteCandidate { uri, directory })
-                        })
-                        .collect();
-                    items.sort_by(|a, b| {
-                        b.directory
-                            .cmp(&a.directory)
-                            .then_with(|| a.uri.cmp(&b.uri))
-                    });
-                    let listed = dir.to_string();
-                    Outcome::Success(RemoteCompletionResult::Candidates {
-                        items,
-                        source: CandidateSource::Connection,
-                        notes: Vec::new(),
-                        listed_directory: Some(listed),
-                    })
-                }
-                Err(_not_connected) => {
-                    if cancel.is_cancelled() {
-                        return Outcome::Cancelled(CancelReason::OwnerClosed);
-                    }
-                    if let Some(cached) = fallback {
-                        return Outcome::Success(RemoteCompletionResult::Candidates {
-                            items: cached,
-                            source: CandidateSource::Cache,
-                            notes: Vec::new(),
-                            listed_directory: None,
-                        });
-                    }
-                    Outcome::Success(RemoteCompletionResult::ConnectRequired {
-                        endpoint: endpoint_display(&dir),
-                    })
-                }
-            }
-        }
-    }
+    container_worker: Option<std::sync::Arc<crate::editor::containers::BoundWorker>>,
 }
 
 /// The authority region of a canonical URI, for the connect

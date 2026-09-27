@@ -6,8 +6,8 @@
 use strop_worker_protocol::codec::{self, Incoming};
 use strop_worker_protocol::frame::{self, FrameDecoder};
 use strop_worker_protocol::{
-    ClientMessage, EndpointInfo, ProtocolError, Refusal, Request, RequestId, WorkerMessage,
-    PROTOCOL_VERSION,
+    ClientMessage, EndpointInfo, ProtocolError, Refusal, Request, RequestId, StreamId,
+    WorkerMessage, PROTOCOL_VERSION,
 };
 
 fn endpoint() -> EndpointInfo {
@@ -214,6 +214,18 @@ fn a_stale_incarnation_is_a_typed_refusal() {
             ..
         }
     ));
+    scripted.finish();
+}
+
+#[test]
+fn zero_stream_credit_poisoned_as_a_stream_violation() {
+    let (mut scripted, session) = Scripted::start().welcome();
+    scripted.send(&ClientMessage::StreamCredit {
+        session,
+        stream: StreamId(0),
+        chunks: 0,
+    });
+    scripted.recv_error_is(|error| matches!(error, ProtocolError::Stream { .. }));
     scripted.finish();
 }
 

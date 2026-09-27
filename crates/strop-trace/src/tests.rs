@@ -117,6 +117,7 @@ fn in_budget_burst_is_complete_when_the_writer_runs_after_producers() {
         failure: Arc::clone(&failure),
         started: Instant::now(),
         max_record: limits.record_bytes,
+        path: None,
     };
     for value in 0..256 {
         record_to(
@@ -160,6 +161,7 @@ fn delayed_writer_still_reports_the_real_capture_byte_limit() {
         failure: Arc::clone(&failure),
         started: Instant::now(),
         max_record: limits.record_bytes,
+        path: None,
     };
     let fields = serde_json::json!({"payload": "x".repeat(512)});
     for _ in 0..1000 {
@@ -665,6 +667,20 @@ fn tape_divergences_are_sticky_and_never_reach_native() {
         value: serde_json::json!({"mode":"NORMAL"}),
     }]);
     assert!(tape.check(&serde_json::json!({"mode":"INSERT"})).is_err());
+    let private = "private-captured-document";
+    let tape = replay::Tape::replay(vec![replay::Node::Check {
+        value: serde_json::json!({"documents": [private]}),
+    }]);
+    let error = tape.check(&serde_json::json!({"documents": ["different"]}));
+    assert!(!error.unwrap_err().to_string().contains(private));
+    let private = "private-captured-register";
+    let tape = replay::Tape::replay(vec![replay::Node::Check {
+        value: serde_json::json!({"headless": serde_json::json!({"register": private}).to_string()}),
+    }]);
+    let error = tape.check(
+        &serde_json::json!({"headless": serde_json::json!({"register": "different"}).to_string()}),
+    );
+    assert!(!error.unwrap_err().to_string().contains(private));
 
     // A stale unconsumed observation before the next action fails.
     let tape = replay::Tape::replay(vec![replay::Node::Call {

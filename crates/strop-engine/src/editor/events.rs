@@ -21,6 +21,13 @@ pub use channel::{
     EVENTS_PER_TURN, MAX_QUEUED_PASTE_BYTES, MAX_SEMANTIC_EVENTS, TURN_BUDGET,
 };
 
+/// Shutdown and headless jobs barriers also observe physical source
+/// threads. Their final `is_finished` transition has no corresponding
+/// app event: after consuming the last result, recheck quiescence at
+/// this bounded interval instead of parking until the entire deadline.
+/// This is not used on the input→render path.
+pub const QUIESCENCE_POLL: std::time::Duration = std::time::Duration::from_millis(16);
+
 use super::{Editor, Key, ShellResult};
 
 /// External input retains its physical facts until the engine selects an owner.
@@ -136,9 +143,13 @@ impl Editor {
         }
         if let Some(rx) = self.notify.take_rx() {
             let queue = std::sync::Arc::clone(&self.notify.queue);
-            forward(rx, tx.clone(), move |event| {
-                queue.push_event(event);
-                AppEvent::Notify
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                while let Ok(event) = rx.recv() {
+                    if queue.push_event(event) && tx.send_blocking(AppEvent::Notify).is_err() {
+                        break;
+                    }
+                }
             });
         }
         self.connect_picker_stream(&tx);

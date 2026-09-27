@@ -5,15 +5,10 @@
 //! (endpoint, file, location, address errors) live in `strop-workspace` (0042);
 //! this crate is the transport and behavior over them.
 pub mod bootstrap;
-#[cfg(all(test, unix))]
-mod bundle_digests;
 mod client;
 pub mod deploy_provider;
-mod exec;
-pub mod filesystem;
 mod hosts;
 mod pool;
-pub mod save;
 mod selection;
 mod ssh;
 #[cfg(test)]
@@ -23,11 +18,6 @@ pub mod worker_transport;
 pub use client::{
     ConnectionLease, PermissionBitsError, RemoteClient, RemoteDirectorySnapshot, RemoteEntry,
     RemoteEntryKind, RemotePermissions, RemoteResource, RemoteSnapshot,
-};
-pub use exec::{
-    command, command_supervised, run, run_with_input, stream, CommandOutput, RemoteCommand,
-    RemoteCommandError, RemoteExitStatus, RemoteProgram, RemoteStreamError, RemoteStreamOutput,
-    StdinMode, SupervisionKey, SupervisionOutcome,
 };
 pub use hosts::{enumerate_hosts, CandidateOrigin, HostCandidate, HostEnumeration, HostSources};
 pub use selection::{

@@ -1,28 +1,30 @@
-//! The worker's serving loop (0058 WK04): one client session over one
-//! bounded transport. Frames arrive from `reader` (stdin in
-//! `strop --worker-stdio`, a socketpair in tests), admitted requests are
-//! dispatched to the strop-fs kernel, the exec supervisor and the notify
-//! backend, and outcomes leave on `writer` (stdout in production —
-//! protocol bytes only). Diagnostics are private and bounded; they are
-//! never protocol authority.
+//! The worker's serving loop (0058 WK04; WK11 scheduling): one client
+//! session over one bounded transport. Frames arrive from `reader`
+//! (stdin in `strop --worker-stdio`, a socketpair in tests), admitted
+//! requests are dispatched to the strop-fs kernel, the exec supervisor
+//! and the notify backend, and outcomes leave through the session
+//! scheduler's writer thread (stdout in production — protocol bytes
+//! only). Diagnostics are private and bounded; they are never protocol
+//! authority.
 //!
-//! ## Threading
+//! ## Threading and scheduling (WK11)
 //!
 //! ```text
 //! main thread      blocking frame read → admission → dispatch
-//! request threads  one per admitted request (bounded by max_pending_requests)
-//! notify pump      25 ms poll tick, events through the shared writer
-//! exec pumps       per-exec stdout/stderr/stdin/stream supervisors
+//! writer thread    drains the control lane before the data lane
+//! request threads  one per admitted request (bounded by the budget registry)
+//! notify pump      25 ms poll tick, events through the control lane
+//! exec pumps       per-exec stdout/stderr/stdin supervisors
 //! ```
 //!
-//! Every outbound frame crosses one writer mutex, so chunks of different
-//! streams interleave freely but never tear. Cancellation arrives as the
-//! protocol `cancel` (a per-request [`CancelToken`] pair) or as lease
-//! teardown (EOF/shutdown revokes every admitted exec before exit).
-//!
-//! Stream ids are session-scoped and partitioned by allocator: the client
-//! mints odd ids (upload content streams), the worker mints even ids
-//! (read payloads, exec pipes). Neither side ever guesses the other's.
+//! The budget registry and the two-lane outbound scheduler live in
+//! [`schedule`]: control frames (outcomes, errors, events, `bye`) never
+//! queue behind bulk stream data, cancellation wakes lane-blocked
+//! producers, and every admitted request settles exactly once — an
+//! outcome, a typed refusal, or session death. Stream ids are
+//! session-scoped and partitioned by allocator: the client mints odd
+//! ids (upload content streams), the worker mints even ids (read
+//! payloads, exec pipes). Neither side ever guesses the other's.
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -32,21 +34,34 @@ use std::thread;
 use std::time::Duration;
 
 use parking_lot::Mutex;
-use strop_core::worker::{CancelHandle, CancelReason, CancelToken};
+use strop_core::worker::{CancelReason, CancelToken};
 use strop_fs::Environment;
 use strop_fs::ExecutionContext;
 use strop_worker_protocol::codec::{self, Incoming, StreamChunk};
 use strop_worker_protocol::frame::{self, FrameDecoder};
 use strop_worker_protocol::{
-    Authority, Capabilities, ClientMessage, EndpointInfo, Limits, NamespaceIdentity,
-    NotifyCoverage, ProtocolError, Refusal, Request, RequestId, ResultOutcome, Session,
-    ShutdownReason, StreamId, WorkerMessage, PROTOCOL_VERSION,
+    Authority, ClientMessage, Limits, NamespaceIdentity, ProtocolError, Refusal, Request,
+    RequestId, ResultOutcome, Session, ShutdownReason, StreamId, WorkerMessage,
 };
 use strop_workspace::operation::{FsFailure, FsFailureKind};
-use strop_workspace::ResourceLocation;
 
+#[cfg(unix)]
+mod cache_gc;
+#[cfg(unix)]
+mod cache_lease;
 mod fs;
+mod handshake;
+mod notify;
 mod process;
+mod schedule;
+mod stream_window;
+
+#[cfg(unix)]
+type CacheGuard = Option<cache_lease::CacheLeaseGuard>;
+#[cfg(not(unix))]
+type CacheGuard = ();
+use handshake::{handshake, limits};
+pub(crate) use schedule::{Budgets, Outbound, PushChunk, Scheduler};
 
 pub(crate) fn failure(kind: FsFailureKind, detail: impl Into<String>) -> FsFailure {
     FsFailure::new(kind, detail)
@@ -80,14 +95,9 @@ const DIAG_TEXT_LIMIT: usize = 1024;
 
 /// Grace for admitted work to drain after an authorized shutdown.
 const DRAIN_WAIT: Duration = Duration::from_secs(2);
-/// Notify pump cadence: subscription commands and hint batches are both
-/// advisory, so a short poll tick bounds their latency without a
-/// self-pipe. Requests never wait on it (they ride the blocking reader).
-#[cfg(target_os = "linux")]
-const NOTIFY_TICK: Duration = Duration::from_millis(25);
 
-/// One uploaded content stream still accumulating (client → worker), or a
-/// relayed exec stdin sink.
+/// One uploaded content stream still accumulating (client → worker), a
+/// relayed exec stdin sink, or a PTY's ordered input queue.
 enum Inbound {
     Content {
         bytes: Vec<u8>,
@@ -97,6 +107,12 @@ enum Inbound {
     ExecStdin {
         sender: std::sync::mpsc::SyncSender<StreamChunk>,
         next_sequence: u64,
+    },
+    /// PTY input (WK12): chunks ride the exec's ordered control queue.
+    PtyStdin {
+        sender: std::sync::mpsc::SyncSender<process::PtyControl>,
+        next_sequence: u64,
+        closed: bool,
     },
 }
 
@@ -121,16 +137,25 @@ impl Diag {
 /// One client session's shared state. The `Authority` itself is mutated
 /// only under its mutex (quiesce from a request thread, close at
 /// teardown); every other table keys on the admitted session, so a
-/// rejected frame never reaches a handle.
-pub(crate) struct SessionState<W> {
+/// rejected frame never reaches a handle. Outbound frames never touch
+/// the transport here: they cross the [`Scheduler`], whose writer thread
+/// alone owns the writer.
+pub(crate) struct SessionState {
     authority: Mutex<Authority>,
-    writer: Mutex<W>,
+    /// Held by every admitted request's shared session until its last
+    /// effect settles, even if the bounded shutdown drain expires.
+    cache_lease: CacheGuard,
+    /// Admission budgets and the two-lane outbound scheduler (WK11).
+    pub(crate) scheduler: Scheduler,
     diagnostics: Mutex<Diag>,
     context: ExecutionContext,
+    namespace: NamespaceIdentity,
     environment: Environment,
     limits: Limits,
-    requests: Mutex<HashMap<RequestId, CancelHandle>>,
     inbound: Mutex<HashMap<StreamId, Inbound>>,
+    /// File-read and exec-output credits, bounded by the admitted
+    /// read count plus two output streams per live exec.
+    stream_windows: Mutex<HashMap<StreamId, Arc<stream_window::StreamWindow>>>,
     execs: Mutex<HashMap<strop_worker_protocol::ExecId, process::ExecEntry>>,
     /// Even stream ids; the client owns odd ones.
     next_stream: AtomicU64,
@@ -140,31 +165,47 @@ pub(crate) struct SessionState<W> {
     notify: Arc<Mutex<crate::notify::NotifyManager>>,
 }
 
-impl<W: Write> SessionState<W> {
-    pub(crate) fn send(&self, message: &WorkerMessage) {
-        if let Err(error) = codec::write_envelope(&mut *self.writer.lock(), message) {
-            self.stop.store(true, Ordering::Release);
-            self.diagnostics
-                .lock()
-                .note(format_args!("write failed: {error}"));
-        }
+impl SessionState {
+    /// One control frame (outcome, error, event, `bye`). Dropped only
+    /// once the session has halted — session death is then the terminal
+    /// disposition for everything in flight.
+    pub(crate) fn send(&self, message: WorkerMessage) {
+        self.scheduler.push_control(message);
     }
 
-    pub(crate) fn send_chunk(&self, chunk: &StreamChunk) {
-        if let Err(error) = codec::write_chunk(&mut *self.writer.lock(), chunk) {
-            self.stop.store(true, Ordering::Release);
-            self.diagnostics
-                .lock()
-                .note(format_args!("write failed: {error}"));
-        }
+    /// One data-lane chunk, blocking (cancel-aware) while the lane is
+    /// full; see [`Scheduler::push_chunk`].
+    pub(crate) fn push_chunk(&self, chunk: StreamChunk, token: Option<&CancelToken>) -> PushChunk {
+        self.scheduler.push_chunk(chunk, token)
+    }
+
+    /// A stream's terminal marker: the empty `last` chunk. Bypasses a
+    /// full data lane — EOF never queues behind data.
+    pub(crate) fn end_stream(&self, stream: StreamId, sequence: u64) {
+        self.scheduler.push_chunk(
+            StreamChunk {
+                stream,
+                sequence,
+                last: true,
+                bytes: Vec::new(),
+            },
+            None,
+        );
     }
 
     fn send_error(&self, id: Option<RequestId>, error: ProtocolError) {
-        self.send(&WorkerMessage::Error { id, error });
+        self.send(WorkerMessage::Error { id, error });
     }
 
     fn note(&self, message: impl std::fmt::Display) {
         self.diagnostics.lock().note(message);
+    }
+
+    /// Stop the session: flag producers/pumps and halt the scheduler so
+    /// every lane-blocked waiter wakes and settles.
+    fn halt(&self) {
+        self.stop.store(true, Ordering::Release);
+        self.scheduler.halt();
     }
 
     /// The next worker-minted stream id (even; the client owns odd ids).
@@ -184,84 +225,39 @@ impl<W: Write> SessionState<W> {
     }
 }
 
-fn mint(error_stage: &'static str) -> Result<u64, ServeError> {
-    let mut bytes = [0_u8; 8];
-    getrandom::fill(&mut bytes)
-        .map_err(|error| ServeError::Random(format!("{error_stage}: {error}")))?;
-    Ok(u64::from_le_bytes(bytes))
-}
-
-/// The native boot observation for the namespace identity: Linux's boot
-/// id, honestly "unattested" elsewhere rather than a display hostname.
-fn namespace_identity() -> NamespaceIdentity {
-    #[cfg(target_os = "linux")]
-    let identity = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
-        .map(|id| id.trim().to_owned())
-        .unwrap_or_else(|_| "unattested".into());
-    #[cfg(not(target_os = "linux"))]
-    let identity = "unattested".to_owned();
-    #[cfg(unix)]
-    let principal = Some(unsafe { libc::geteuid() });
-    #[cfg(not(unix))]
-    let principal = None;
-    NamespaceIdentity {
-        identity,
-        principal,
-    }
-}
-
-fn capabilities() -> Capabilities {
-    let native_fs = cfg!(any(target_os = "linux", target_os = "macos"));
-    Capabilities {
-        observe: true,
-        list: true,
-        read: true,
-        write: native_fs,
-        trash: native_fs,
-        notify: if cfg!(target_os = "linux") {
-            NotifyCoverage::Native
-        } else {
-            NotifyCoverage::Unsupported
-        },
-        exec_finite: cfg!(unix),
-        exec_service: cfg!(unix),
-        // Local PTY ownership is WK12's terminal integration; until then a
-        // pty request is a typed capability refusal, never a silent pipe.
-        pty: false,
-    }
-}
-
-fn limits() -> Limits {
-    Limits {
-        max_frame_bytes: strop_worker_protocol::MAX_BODY_BYTES,
-        max_chunk_bytes: strop_worker_protocol::MAX_CHUNK_BYTES,
-        max_pending_requests: 64,
-        max_batch_steps: strop_fs::batch::STEP_LIMIT,
-        max_listing_entries: 100_000,
-        max_subscriptions: 64,
-        max_streams: 64,
-        max_exec_processes: 32,
-    }
-}
-
 /// Serve one client session until authorized shutdown or disconnect. The
 /// first frame must complete the handshake; the writer carries frames
 /// only.
-pub fn run(reader: impl Read, mut writer: impl Write + Send + 'static) -> Result<(), ServeError> {
+pub fn run(reader: impl Read, writer: impl Write + Send + 'static) -> Result<(), ServeError> {
+    run_with_limits(reader, writer, limits())
+}
+
+/// As [`run`], with explicit negotiated bounds: the binary serves the
+/// built-in defaults; tests tighten them to reach the budget edges
+/// without filling the production registries.
+pub fn run_with_limits(
+    reader: impl Read,
+    mut writer: impl Write + Send + 'static,
+    limits: Limits,
+) -> Result<(), ServeError> {
     let mut reader = reader;
     let mut decoder = FrameDecoder::default();
-    let Some(session) = handshake(&mut reader, &mut decoder, &mut writer)? else {
+    let Some((session, namespace, cache_lease)) =
+        handshake(&mut reader, &mut decoder, &mut writer, &limits)?
+    else {
         return Ok(());
     };
     let shared = Arc::new(SessionState {
         authority: Mutex::new(Authority::new(session)),
-        writer: Mutex::new(writer),
+        cache_lease,
+        scheduler: Scheduler::new(Budgets::from_limits(&limits)),
         diagnostics: Mutex::new(Diag { lines: 0 }),
         context: ExecutionContext::native(),
+        namespace,
         environment: Environment::capture(),
-        limits: limits(),
-        requests: Mutex::new(HashMap::new()),
+        limits,
         inbound: Mutex::new(HashMap::new()),
+        stream_windows: Mutex::new(HashMap::new()),
         execs: Mutex::new(HashMap::new()),
         next_stream: AtomicU64::new(0),
         next_exec: AtomicU64::new(0),
@@ -271,102 +267,56 @@ pub fn run(reader: impl Read, mut writer: impl Write + Send + 'static) -> Result
             crate::notify::NotifyConfig::default(),
         ))),
     });
+    let writing = {
+        let shared = Arc::clone(&shared);
+        thread::spawn(move || write_loop(&shared, writer))
+    };
     #[cfg(target_os = "linux")]
-    let pump = start_notify_pump(&shared);
+    let pump = notify::start_notify_pump(&shared);
     let reason = read_loop(&shared, &mut reader, &mut decoder);
     shared.stop.store(true, Ordering::Release);
+    // Wake lane-blocked producers so the drain observes their tokens
+    // promptly instead of waiting out the lane.
+    shared.scheduler.wake_producers();
     #[cfg(target_os = "linux")]
     let _ = pump.join();
     teardown(&shared, reason);
+    // Drain, then halt: the writer publishes the queued `bye` (and any
+    // settled outcomes) before observing the halt and exiting.
+    shared.scheduler.halt();
+    let _ = writing.join();
     Ok(())
 }
 
-/// The handshake: exactly one `hello`, answered by `welcome` with the
-/// fresh session authority. Anything else — or a version this build does
-/// not speak — is a typed in-band failure and a clean close, never a
-/// guessed downgrade.
-fn handshake(
-    reader: &mut impl Read,
-    decoder: &mut FrameDecoder,
-    writer: &mut impl Write,
-) -> Result<Option<Session>, ServeError> {
-    let first = frame::read_frame(reader, decoder)?;
-    let Some(body) = first else {
-        return Ok(None);
-    };
-    let hello = match codec::decode_body::<ClientMessage>(&body) {
-        Ok(Incoming::Envelope(ClientMessage::Hello { protocol, .. })) => protocol,
-        Ok(_) => {
-            codec::write_envelope(
-                &mut *writer,
-                &WorkerMessage::Error {
-                    id: None,
-                    error: ProtocolError::Unexpected {
-                        message: "the first message must be hello".into(),
-                    },
-                },
-            )?;
-            return Ok(None);
+/// The one writer thread: drains the control lane before the data lane
+/// (WK11 priority), so a health/quiesce outcome or a `cancel` effect
+/// never queues behind bulk stream bytes. A write failure halts the
+/// session — lane-blocked producers wake and settle by session death.
+fn write_loop<W: Write>(shared: &Arc<SessionState>, mut writer: W) {
+    while let Some(frame) = shared.scheduler.pop() {
+        let written = match &frame {
+            Outbound::Control(message) => codec::write_envelope(&mut writer, message),
+            Outbound::Chunk(chunk) => {
+                let result = codec::write_chunk(&mut writer, chunk);
+                if result.is_ok() {
+                    shared.scheduler.chunk_written();
+                }
+                result
+            }
+        };
+        if let Err(error) = written {
+            shared.note(format_args!("write failed: {error}"));
+            shared.halt();
         }
-        Err(error) => {
-            codec::write_envelope(
-                &mut *writer,
-                &WorkerMessage::Error {
-                    id: None,
-                    error: ProtocolError::Decode {
-                        message: error.to_string(),
-                    },
-                },
-            )?;
-            return Ok(None);
-        }
-    };
-    if hello != PROTOCOL_VERSION {
-        codec::write_envelope(
-            &mut *writer,
-            &WorkerMessage::Error {
-                id: None,
-                error: ProtocolError::Version {
-                    supported: PROTOCOL_VERSION,
-                    offered: hello,
-                },
-            },
-        )?;
-        codec::write_envelope(
-            &mut *writer,
-            &WorkerMessage::Bye {
-                reason: ShutdownReason::ProtocolViolation,
-            },
-        )?;
-        return Ok(None);
     }
-    let session = Session {
-        incarnation: mint("incarnation")?,
-        lease: strop_worker_protocol::LeaseId(mint("lease")?),
-    };
-    codec::write_envelope(
-        writer,
-        &WorkerMessage::Welcome {
-            protocol: PROTOCOL_VERSION,
-            worker: EndpointInfo {
-                name: "strop".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-                build: None,
-                target: strop_worker_protocol::TARGET_TRIPLE.into(),
-            },
-            session,
-            namespace: namespace_identity(),
-            limits: limits(),
-            capabilities: capabilities(),
-        },
-    )?;
-    Ok(Some(session))
 }
 
 /// The post-handshake frame loop. Returns why the session ended; exec
-/// revocation and the drain happen in [`teardown`].
-fn read_loop<W: Write + Send + 'static>(
-    shared: &Arc<SessionState<W>>,
+/// revocation and the drain happen in [`teardown`]. Cancellation is
+/// handled inline here — a `cancel` frame never queues behind requests
+/// or stream chunks beyond its own transport position.
+fn read_loop(
+    shared: &Arc<SessionState>,
     reader: &mut impl Read,
     decoder: &mut FrameDecoder,
 ) -> ShutdownReason {
@@ -413,9 +363,41 @@ fn read_loop<W: Write + Send + 'static>(
                 }
                 ClientMessage::Cancel { session, id } => {
                     if shared.authority.lock().admit(&session).is_ok() {
-                        if let Some(handle) = shared.requests.lock().remove(&id) {
-                            handle.cancel(CancelReason::Dismissed);
-                        }
+                        shared.scheduler.cancel(id);
+                    }
+                }
+                ClientMessage::StreamCredit {
+                    session,
+                    stream,
+                    chunks,
+                } => {
+                    if shared.authority.lock().admit(&session).is_err() {
+                        continue;
+                    }
+                    if chunks == 0
+                        || usize::from(chunks) > strop_worker_protocol::STREAM_WINDOW_CHUNKS
+                    {
+                        shared.send_error(
+                            None,
+                            ProtocolError::Stream {
+                                message: "stream credit outside the negotiated window".into(),
+                            },
+                        );
+                        return ShutdownReason::ProtocolViolation;
+                    }
+                    // A consumed chunk may race the worker's final
+                    // marker/removal; a late credit is a no-op, never
+                    // authority for a different stream.
+                    if let Some(window) = shared.stream_windows.lock().get(&stream).cloned() {
+                        window.grant(usize::from(chunks));
+                    }
+                }
+                ClientMessage::StreamAbandon { session, stream } => {
+                    if shared.authority.lock().admit(&session).is_err() {
+                        continue;
+                    }
+                    if let Some(window) = shared.stream_windows.lock().get(&stream).cloned() {
+                        window.abandon();
                     }
                 }
                 ClientMessage::Shutdown { session } => {
@@ -429,20 +411,20 @@ fn read_loop<W: Write + Send + 'static>(
     }
 }
 
-/// Admission happens on the read loop before a thread is spawned: session
-/// freshness, mutation retirement and the pending bound are decided here,
-/// so a refused request never reaches a handle table.
-fn admit_request<W: Write + Send + 'static>(
-    shared: &Arc<SessionState<W>>,
-    stamped: Session,
-    id: RequestId,
-    body: Request,
-) {
+/// Admission happens on the read loop before a thread is spawned:
+/// session freshness, mutation retirement and the per-class budgets are
+/// decided here, so a refused request never reaches a handle table.
+/// Settlement is exactly once: the spawned thread publishes the outcome
+/// (or its stream's terminal chunk) and settles the registry slot.
+fn admit_request(shared: &Arc<SessionState>, stamped: Session, id: RequestId, body: Request) {
     let admitted = {
         let authority = shared.authority.lock();
         let mutation = matches!(
             body,
-            Request::Prepare { .. } | Request::Apply { .. } | Request::Exec { .. }
+            Request::Prepare { .. }
+                | Request::Apply { .. }
+                | Request::Exec { .. }
+                | Request::CollectCache { .. }
         );
         if mutation {
             authority.admit_mutation(&stamped)
@@ -451,37 +433,26 @@ fn admit_request<W: Write + Send + 'static>(
         }
     };
     if let Err(refusal) = admitted {
-        shared.send(&SessionState::<W>::refuse(id, refusal));
-        return;
-    }
-    if shared.requests.lock().len() >= shared.limits.max_pending_requests {
-        shared.send(&SessionState::<W>::refuse(
-            id,
-            Refusal::Busy {
-                message: "admitted request bound reached".into(),
-            },
-        ));
+        shared.send(SessionState::refuse(id, refusal));
         return;
     }
     let (token, handle) = CancelToken::standalone();
-    shared.requests.lock().insert(id, handle);
+    if let Err(refusal) = shared.scheduler.admit(id, body.class(), handle) {
+        shared.send(SessionState::refuse(id, refusal));
+        return;
+    }
     let worker = Arc::clone(shared);
     thread::spawn(move || {
         run_request(&worker, id, &token, body);
         token.clear_cancel_resource();
-        worker.requests.lock().remove(&id);
+        worker.scheduler.settle(id);
     });
 }
 
 /// One admitted request on its own thread. `read` writes its own reply
 /// (the `ReadOpened` envelope must precede its chunks on the wire); every
 /// other family resolves to one outcome envelope.
-fn run_request<W: Write + Send + 'static>(
-    shared: &Arc<SessionState<W>>,
-    id: RequestId,
-    token: &CancelToken,
-    body: Request,
-) {
+fn run_request(shared: &Arc<SessionState>, id: RequestId, token: &CancelToken, body: Request) {
     let outcome = match body {
         Request::Observe { locations } => fs::observe(shared, token, &locations),
         Request::List { location, cursor } => fs::list(shared, token, location, cursor),
@@ -503,6 +474,11 @@ fn run_request<W: Write + Send + 'static>(
             content,
             binding,
         } => fs::apply(shared, token, steps, content, binding),
+        Request::VerifyRecovered {
+            attempt,
+            namespace,
+            binding,
+        } => fs::verify_recovered(shared, token, &attempt, &namespace, binding),
         Request::Verify { attempt, binding } => fs::verify(shared, token, &attempt, binding),
         Request::Exec { spec } => {
             // The `ExecStarted` reply must precede any pump chunk on the
@@ -512,107 +488,40 @@ fn run_request<W: Write + Send + 'static>(
         }
         Request::ExecHalfClose { exec } => process::half_close(shared, exec),
         Request::ExecCancel { exec } => process::cancel(shared, exec),
-        Request::Subscribe { scope, recursive } => subscribe(shared, &scope, recursive),
-        Request::Unsubscribe { subscription } => unsubscribe(shared, subscription),
+        Request::ExecResize { exec, geometry } => {
+            // The resize reply is the ordered geometry boundary, so the
+            // PTY input thread owns it; nothing more is sent here.
+            process::enqueue_resize(shared, id, exec, geometry);
+            return;
+        }
+        Request::Subscribe { scope, recursive } => notify::subscribe(shared, &scope, recursive),
+        Request::Unsubscribe { subscription } => notify::unsubscribe(shared, subscription),
+        Request::CollectCache { context } => {
+            #[cfg(unix)]
+            {
+                cache_gc::collect(shared, token, &context)
+            }
+            #[cfg(not(unix))]
+            {
+                ResultOutcome::Failed {
+                    failure: failure(FsFailureKind::Unsupported, "no native worker cache here"),
+                }
+            }
+        }
         Request::Health => ResultOutcome::Healthy,
         Request::Quiesce => {
             shared.authority.lock().quiesce();
             ResultOutcome::Quiesced
         }
     };
-    shared.send(&WorkerMessage::Result { id, outcome });
-}
-
-#[cfg(target_os = "linux")]
-fn subscribe<W: Write>(
-    shared: &Arc<SessionState<W>>,
-    scope: &ResourceLocation,
-    recursive: bool,
-) -> ResultOutcome {
-    match shared.notify.lock().subscribe(scope, recursive) {
-        Ok(subscribed) => ResultOutcome::Subscribed {
-            subscription: subscribed.subscription,
-            coverage: subscribed.coverage,
-        },
-        Err(error) => ResultOutcome::Refused {
-            refusal: error.refusal(),
-        },
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn subscribe<W: Write>(
-    _shared: &Arc<SessionState<W>>,
-    _scope: &ResourceLocation,
-    _recursive: bool,
-) -> ResultOutcome {
-    ResultOutcome::Refused {
-        refusal: Refusal::Capability {
-            capability: strop_worker_protocol::Capability::Notify,
-        },
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn unsubscribe<W: Write>(
-    shared: &Arc<SessionState<W>>,
-    subscription: strop_worker_protocol::Subscription,
-) -> ResultOutcome {
-    match shared.notify.lock().unsubscribe(subscription) {
-        Ok(()) => ResultOutcome::Done,
-        Err(error) => ResultOutcome::Refused {
-            refusal: error.refusal(),
-        },
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn unsubscribe<W: Write>(
-    _shared: &Arc<SessionState<W>>,
-    _subscription: strop_worker_protocol::Subscription,
-) -> ResultOutcome {
-    ResultOutcome::Refused {
-        refusal: Refusal::Capability {
-            capability: strop_worker_protocol::Capability::Notify,
-        },
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn start_notify_pump<W: Write + Send + 'static>(
-    shared: &Arc<SessionState<W>>,
-) -> thread::JoinHandle<()> {
-    let worker = Arc::clone(shared);
-    let manager = Arc::clone(&shared.notify);
-    thread::spawn(move || {
-        while !worker.stop.load(Ordering::Acquire) {
-            let drained = {
-                let mut manager = manager.lock();
-                match manager.poll(Some(NOTIFY_TICK)) {
-                    Ok(_) => manager.drain(),
-                    Err(error) => {
-                        worker.note(format_args!("notify poll: {error}"));
-                        Ok(Vec::new())
-                    }
-                }
-            };
-            match drained {
-                Ok(events) => {
-                    for event in events {
-                        worker.send(&WorkerMessage::Event { event });
-                    }
-                }
-                Err(error) => worker.note(format_args!("notify drain: {error}")),
-            }
-        }
-    })
+    shared.send(WorkerMessage::Result { id, outcome });
 }
 
 /// Client → worker chunk routing: upload streams accumulate in order,
 /// exec stdin relays to its pump. Ordering violations, unknown streams,
 /// post-close chunks and size violations poison the session — they are
 /// protocol, never data.
-fn route_chunk<W: Write>(shared: &Arc<SessionState<W>>, chunk: StreamChunk) -> Result<(), String> {
+fn route_chunk(shared: &Arc<SessionState>, chunk: StreamChunk) -> Result<(), String> {
     let stream = chunk.stream;
     let mut inbound = shared.inbound.lock();
     if !inbound.contains_key(&stream) {
@@ -679,9 +588,9 @@ fn route_chunk<W: Write>(shared: &Arc<SessionState<W>>, chunk: StreamChunk) -> R
             if failed {
                 // The child is not draining fast enough; its lease is
                 // revoked rather than letting protocol control wait behind
-                // a full data queue (WK11 owns fair scheduling). The
-                // session itself is not poisoned — this is flow pressure,
-                // not corruption.
+                // a full data queue (WK11 fair scheduling). The session
+                // itself is not poisoned — this is flow pressure, not
+                // corruption.
                 if let Some(exec) = process::exec_for_stream(shared, stream) {
                     process::revoke(shared, exec);
                 }
@@ -691,23 +600,56 @@ fn route_chunk<W: Write>(shared: &Arc<SessionState<W>>, chunk: StreamChunk) -> R
             }
             Ok(())
         }
+        Inbound::PtyStdin {
+            sender,
+            next_sequence,
+            closed,
+        } => {
+            if *closed {
+                return Err(format!("chunk on closed stream {}", stream.0));
+            }
+            if chunk.sequence != *next_sequence {
+                return Err(format!(
+                    "stream {} sequence {} out of order",
+                    stream.0, chunk.sequence
+                ));
+            }
+            *next_sequence += 1;
+            let last = chunk.last;
+            // Same flow-pressure rule as piped stdin: a terminal that is
+            // not draining loses its lease rather than stalling control.
+            let failed = sender.try_send(process::PtyControl::Input(chunk)).is_err();
+            if failed {
+                if let Some(exec) = process::exec_for_stream(shared, stream) {
+                    process::revoke(shared, exec);
+                }
+            }
+            *closed = last;
+            if failed || last {
+                inbound.remove(&stream);
+            }
+            Ok(())
+        }
     }
 }
 
 /// Authorized retirement or disconnect: revoke every admitted exec, drain
-/// in-flight requests, and publish `bye` only when the client is still
-/// there to read it.
-fn teardown<W: Write>(shared: &Arc<SessionState<W>>, reason: ShutdownReason) {
+/// in-flight requests (each settles its own outcome or terminal chunk),
+/// and publish `bye` only when the client is still there to read it.
+/// The scheduler halt that ends the writer happens in [`run_with_limits`]
+/// after this drain.
+fn teardown(shared: &Arc<SessionState>, reason: ShutdownReason) {
     shared.authority.lock().quiesce();
     {
         let mut execs = shared.execs.lock();
         for (_, entry) in execs.drain() {
             entry.cancel.cancel(CancelReason::Shutdown);
+            shared.scheduler.release_exec();
         }
     }
     let deadline = std::time::Instant::now() + DRAIN_WAIT;
     loop {
-        if shared.requests.lock().is_empty() {
+        if shared.scheduler.outstanding() == 0 {
             break;
         }
         if std::time::Instant::now() >= deadline {
@@ -717,7 +659,7 @@ fn teardown<W: Write>(shared: &Arc<SessionState<W>>, reason: ShutdownReason) {
         thread::sleep(Duration::from_millis(10));
     }
     if reason == ShutdownReason::Requested {
-        shared.send(&WorkerMessage::Bye { reason });
+        shared.send(WorkerMessage::Bye { reason });
     }
     shared.authority.lock().close();
 }

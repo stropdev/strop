@@ -306,7 +306,7 @@ fn unopened_file_preview_loads_and_highlights_through_preparation() {
         (0..30).any(|y| (0..100).any(|x| first[(x, y)].symbol() == "l")),
         "first frame still loading"
     );
-    editor.drain_picker();
+    editor.wait_previews();
     let grid = draw(&mut editor, 100, 30);
     let rendered: String = (0..30)
         .flat_map(|y| (0..100).map(move |x| (x, y)))

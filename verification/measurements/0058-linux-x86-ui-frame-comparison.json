@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "scope": "Linux x86_64 release-musl-stripped, actual local-worker-backed --ui-stdio committed-text action to complete semantic view frame; not TUI cell-grid paint, SSH/container deployment, LSP or terminal load",
+  "baseline": {
+    "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+    "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+    "measurement": "verification/measurements/0058-linux-x86-preworker-ui-frame.json",
+    "sha256": "e49e0ff124c458d0a836f2de2fa2ac06bd99b6cbe23ea150248017c9ba1b2e38"
+  },
+  "candidate": {
+    "commit": null,
+    "state": "0.36.0 Linux/Apple-Silicon worker after Intel removal; static candidate 5a9f826f; retained-target CI and tag pending",
+    "artifact_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
+    "measurement": "verification/measurements/0058-linux-x86-worker-ui-frame.json",
+    "sha256": "ee7488fc12b5f6ee64489e05993532d82de8a1be3f00a19ccbcbdbea7d3b1944"
+  },
+  "method": {
+    "harness": "verification/bench_ui_input_frame.py",
+    "sha256": "9f101ac04c9be6e772533bb4f7e02003a6c6263f6ff1dfd0d1e1c457afc05a9d",
+    "warmup": 8,
+    "samples_per_artifact": 64,
+    "fixture_lines": 10000,
+    "geometry": [
+      120,
+      40
+    ],
+    "timing": "framed UI admitted input write+flush through complete semantic view frame"
+  },
+  "observed": {
+    "baseline_ms": {
+      "max": 0.626,
+      "p50": 0.236,
+      "p95": 0.293,
+      "p99": 0.626
+    },
+    "candidate_ms": {
+      "max": 0.542,
+      "p50": 0.244,
+      "p95": 0.283,
+      "p99": 0.542
+    },
+    "baseline_editor_rss_kib_after_open": 12688,
+    "baseline_worker_rss_kib_after_open": 5040,
+    "baseline_worker_count_after_open": 1,
+    "baseline_request_bytes": 9984,
+    "baseline_ack_bytes": 6784,
+    "baseline_view_bytes": 132132,
+    "candidate_editor_rss_kib_after_open": 12868,
+    "candidate_worker_rss_kib_after_open": 5100,
+    "candidate_worker_count_after_open": 1,
+    "candidate_request_bytes": 9984,
+    "candidate_ack_bytes": 6784,
+    "candidate_view_bytes": 132132
+  }
+}

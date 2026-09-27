@@ -10,6 +10,10 @@ pub enum OperationKind {
     Trash,
     Remove,
     Restore,
+    /// Protected document save (0058 WK09): frozen content bytes replace
+    /// (or create) the destination atomically under a baseline-mtime
+    /// conflict contract, preserving the destination's metadata.
+    Store,
 }
 impl OperationKind {
     pub const fn label(self) -> &'static str {
@@ -21,11 +25,42 @@ impl OperationKind {
             Self::Trash => "Trash",
             Self::Remove => "delete permanently",
             Self::Restore => "restore",
+            Self::Store => "save",
         }
     }
     pub const fn destructive(self) -> bool {
         matches!(self, Self::Trash | Self::Remove)
     }
+}
+
+/// The conditional policy of a [`OperationKind::Store`] intent
+/// (0058 WK09): the baseline is the editor's last observed destination
+/// mtime (`None` = the editor knows the name was absent), never an
+/// executor-invented observation. Conflict semantics match the local
+/// `:w` behavior exactly: without `force` a moved baseline (or an
+/// occupied new name) refuses; `force` (`:w!`) overwrites.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StorePolicy {
+    /// Baseline destination mtime; `None` when the editor knows the
+    /// destination was absent at load/last save.
+    pub baseline: Option<crate::FileTime>,
+    /// Protected save's captured object identity. A replaced inode
+    /// cannot borrow the old mtime/content and gain write authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_object: Option<crate::ObjectId>,
+    /// Digest of the complete bounded xattr set at edit admission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_attributes: Option<[u8; 32]>,
+    /// `:w!`: overwrite despite a moved baseline or an occupied new name.
+    pub force: bool,
+    /// Save-as (`:w {path}`): the destination is a new name, so an
+    /// occupied destination is a conflict unless `force` is set.
+    pub expect_absent: bool,
+    /// Exact prior content digest. `:remote edit` checks the displayed
+    /// snapshot at admission; protected saves check the retained
+    /// baseline again before publication, including same-mtime edits.
+    /// Ordinary local saves may omit this and use mtime policy only.
+    pub displayed: Option<[u8; 32]>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CopyVersion {
@@ -40,8 +75,15 @@ pub struct OperationIntent {
     pub source: Option<ResourceLocation>,
     pub destination: Option<ResourceLocation>,
     pub copy_version: CopyVersion,
-    /// A receipt-derived condition, never an observation invented by the executor.
+    /// A receipt-derived condition, never an observation invented by the
+    /// executor. For `Store` it is REQUIRED at apply time: the digest of
+    /// the frozen content bytes, so a lost receipt can still be verified.
     pub expected_content: Option<[u8; 32]>,
+    /// The conditional policy of a `Store` intent; absent for every other
+    /// kind. Serde-skipped when absent so the wire shape of non-Store
+    /// intents is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store: Option<StorePolicy>,
 }
 impl OperationIntent {
     pub fn location(&self) -> Option<&ResourceLocation> {

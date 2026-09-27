@@ -12,7 +12,7 @@ mod query;
 mod remote;
 mod snapshots;
 mod worker;
-pub use worker::SourceWorker;
+pub use worker::{SearchWorker, SourceWorker};
 
 mod flow;
 use flow::StreamSender;

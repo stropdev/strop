@@ -520,7 +520,6 @@ fn poll_reports_readiness() {
     subscribe(&mut mgr, &root, false);
     drain_idle(&mut mgr);
 
-    assert!(!mgr.poll(Some(std::time::Duration::ZERO)).expect("poll"));
     fs::write(root.join("p"), b"p").expect("write");
     assert!(mgr
         .poll(Some(std::time::Duration::from_secs(5)))

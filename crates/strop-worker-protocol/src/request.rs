@@ -7,12 +7,17 @@
 //! - mutation: prepare/apply/verify with frozen byte streams and typed
 //!   receipts (protected save included);
 //! - exec: admitted finite commands and services with stream stdin,
-//!   half-close, output streams, exit and cancel;
+//!   half-close, output streams, exit and cancel — and the WK12 PTY
+//!   family: spawn with geometry ([`ExecSpec::pty`]), stream input with
+//!   delivered acknowledgments ([`Event::ExecInput`]), a bounded output
+//!   stream, ordered resize ([`Request::ExecResize`]) and the typed
+//!   exit;
 //! - notify: first-class subscribe/unsubscribe/event/overflow/
 //!   reconcile-boundary (the 2026-09-14/16 amendments);
 //! - lifecycle: lease health, quiesce, shutdown.
 
 use serde::{Deserialize, Serialize};
+use strop_core::worker::cache_record::CacheGcReport;
 use strop_workspace::operation::{
     FsFailure, LocatedObservation, OperationIntent, OperationRefusal, PreparedOperation,
     StepReceipt, VerifiedOutcome,
@@ -23,7 +28,8 @@ use crate::id::{
     DocumentStamp, ExecId, NamespaceIdentity, RequestId, Session, StreamId, Subscription,
 };
 use crate::message::{
-    Capabilities, EndpointInfo, Limits, NotifyCoverage, ProtocolError, Refusal, ShutdownReason,
+    Capabilities, EndpointInfo, Limits, NotifyCoverage, ProtocolError, Refusal, RequestClass,
+    ShutdownReason,
 };
 
 /// Native argv/environment entry: byte-exact, never lossy UTF-8. Control
@@ -68,6 +74,10 @@ pub struct StreamRef {
     pub bytes: u64,
     pub digest: [u8; 32],
 }
+
+/// Initial finite-file/process-output chunk window. Fewer than the
+/// client's 64 retained slots; consumption returns `stream_credit`.
+pub const STREAM_WINDOW_CHUNKS: usize = 32;
 
 /// A client session's trash-root environment override for `prepare`:
 /// native byte-exact paths, never lossy (WK04 amendment). Absent fields
@@ -127,12 +137,29 @@ pub enum Request {
         attempt: Box<StepReceipt>,
         binding: Option<DocumentStamp>,
     },
+    /// Read-only reconciliation after the issuing worker died. The
+    /// frozen prepared attempt belongs to an older session and cannot
+    /// be replayed as a write; exact boot/mount/principal identity must
+    /// match before the fresh worker may verify observed state.
+    VerifyRecovered {
+        attempt: Box<StepReceipt>,
+        namespace: NamespaceIdentity,
+        binding: Option<DocumentStamp>,
+    },
     /// Spawn an admitted finite command or leased service.
     Exec { spec: ExecSpec },
     /// Half-close the child's stdin: distinct from revoking its lease.
     ExecHalfClose { exec: ExecId },
     /// Cancel: revoke the lease with the established supervision order.
     ExecCancel { exec: ExecId },
+    /// Resize one admitted PTY exec (0058 WK12). The worker applies
+    /// `TIOCSWINSZ` in the exec's input order — every input chunk
+    /// admitted before this request reaches the terminal first — and
+    /// the `done` reply is the ordered resize boundary: output chunks
+    /// read after it are under the new geometry. Refused with
+    /// `unknown_handle` when the exec is unknown, `limit` when it has
+    /// no PTY. PTY input has no half-close.
+    ExecResize { exec: ExecId, geometry: PtyGeometry },
     /// Install a notify subscription over one logical scope. The result
     /// carries the fresh subscription identity and honest coverage.
     Subscribe {
@@ -141,10 +168,33 @@ pub enum Request {
     },
     /// Retire one subscription by its full identity.
     Unsubscribe { subscription: Subscription },
+    /// Scoped maintenance of this worker principal's private cache.
+    /// The client supplies its selected endpoint context; the worker
+    /// holds the same OS lock used before every cached Welcome.
+    CollectCache { context: String },
     /// Lease health: liveness without side effects.
     Health,
     /// Begin retirement: refuse new mutations, drain admitted work.
     Quiesce,
+}
+
+impl Request {
+    /// The scheduling class (WK11): control requests draw from the
+    /// reserved admission slots and their outcomes are scheduled ahead of
+    /// bulk stream data; bulk reads are the bounded data producers.
+    /// Cancellation of a specific exec is control; launching one is work.
+    pub fn class(&self) -> RequestClass {
+        match self {
+            Request::Health
+            | Request::Quiesce
+            | Request::ExecCancel { .. }
+            | Request::ExecHalfClose { .. }
+            | Request::ExecResize { .. }
+            | Request::Unsubscribe { .. } => RequestClass::Control,
+            Request::Read { .. } => RequestClass::Bulk,
+            _ => RequestClass::Standard,
+        }
+    }
 }
 
 /// The outcome of one admitted request. `Refused` carries the typed
@@ -195,6 +245,12 @@ pub enum ResultOutcome {
     Subscribed {
         subscription: Subscription,
         coverage: NotifyCoverage,
+    },
+    /// A bounded pass reports every committed deletion, even when a
+    /// later OS failure or cancellation leaves the pass incomplete.
+    CacheCollected {
+        report: CacheGcReport,
+        failure: Option<FsFailure>,
     },
     Healthy,
     Quiesced,
@@ -270,6 +326,13 @@ pub enum Event {
     },
     /// An admitted exec reached its terminal status.
     ExecExit { exec: ExecId, status: ExitStatus },
+    /// One PTY input chunk was delivered to the terminal (0058 WK12):
+    /// the acknowledgment that bounds the client's retained-input
+    /// budget. `sequence` is the chunk's sequence on the exec's stdin
+    /// stream; chunks are written in order, so an acknowledgment covers
+    /// every earlier sequence too. Advisory accounting only — never a
+    /// mutation receipt.
+    ExecInput { exec: ExecId, sequence: u64 },
 }
 
 /// Client → worker.
@@ -287,6 +350,20 @@ pub enum ClientMessage {
     /// Cancel one in-flight request; cancellation is fair and never
     /// coalesces accepted mutations or outcomes.
     Cancel { session: Session, id: RequestId },
+    /// A finite file or process-output chunk was consumed by the
+    /// client. Grants slots back to that session's named bounded
+    /// stream; already-finished streams ignore harmless late credits.
+    /// Control-class so data cannot starve the producer's credits.
+    StreamCredit {
+        session: Session,
+        stream: StreamId,
+        chunks: u16,
+    },
+    /// The client dropped an unfinished exec output receiver. The
+    /// worker keeps draining that child pipe without publishing more
+    /// bytes, so process settlement cannot hang behind absent credits.
+    /// File reads instead cancel their owning request.
+    StreamAbandon { session: Session, stream: StreamId },
     /// Authorized orderly shutdown: quiesce, drain, publish `bye`.
     Shutdown { session: Session },
 }
@@ -327,6 +404,7 @@ mod tests {
     use super::*;
     use crate::id::LeaseId;
     use crate::message::Capability;
+    use strop_workspace::operation::FsFailureKind;
 
     fn session() -> Session {
         Session {
@@ -347,12 +425,47 @@ mod tests {
     #[test]
     fn hello_wire_shape_is_pinned() {
         let hello = ClientMessage::Hello {
-            protocol: 1,
+            protocol: crate::PROTOCOL_VERSION,
             client: endpoint(),
         };
         assert_eq!(
             serde_json::to_string(&hello).unwrap(),
-            r#"{"type":"hello","protocol":1,"client":{"name":"strop","version":"0.35.0","build":"locked","target":"x86_64-unknown-linux-musl"}}"#
+            r#"{"type":"hello","protocol":2,"client":{"name":"strop","version":"0.35.0","build":"locked","target":"x86_64-unknown-linux-musl"}}"#
+        );
+    }
+
+    #[test]
+    fn stream_credit_is_a_stamped_control_envelope() {
+        let credit = ClientMessage::StreamCredit {
+            session: session(),
+            stream: StreamId(4),
+            chunks: 1,
+        };
+        let json = serde_json::to_string(&credit).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"stream_credit","session":{"incarnation":11,"lease":2},"stream":4,"chunks":1}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<ClientMessage>(&json).unwrap(),
+            credit
+        );
+    }
+
+    #[test]
+    fn stream_abandon_remains_bound_to_the_admitting_session() {
+        let abandon = ClientMessage::StreamAbandon {
+            session: session(),
+            stream: StreamId(6),
+        };
+        let json = serde_json::to_string(&abandon).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"stream_abandon","session":{"incarnation":11,"lease":2},"stream":6}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<ClientMessage>(&json).unwrap(),
+            abandon
         );
     }
 
@@ -370,6 +483,45 @@ mod tests {
         );
         let back: ClientMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(back, request);
+    }
+
+    #[test]
+    fn cache_collect_wire_preserves_scope_and_partial_retirements() {
+        let request = ClientMessage::Request {
+            session: session(),
+            id: RequestId(7),
+            body: Box::new(Request::CollectCache {
+                context: "ssh://selected-host".into(),
+            }),
+        };
+        assert_eq!(
+            serde_json::to_string(&request).unwrap(),
+            r#"{"type":"request","session":{"incarnation":11,"lease":2},"id":7,"body":{"op":"collect_cache","context":"ssh://selected-host"}}"#
+        );
+        let report = CacheGcReport {
+            removed_objects: vec!["a".repeat(64)],
+            removed_receipts: 0,
+            kept_objects: 2,
+        };
+        let response = WorkerMessage::Result {
+            id: RequestId(7),
+            outcome: ResultOutcome::CacheCollected {
+                report,
+                failure: Some(FsFailure::new(
+                    FsFailureKind::Incomplete,
+                    "receipt unlink failed",
+                )),
+            },
+        };
+        let encoded = serde_json::to_value(response).unwrap();
+        assert_eq!(encoded["type"], "result");
+        assert_eq!(encoded["outcome"]["outcome"], "cache_collected");
+        assert_eq!(
+            encoded["outcome"]["report"]["removed_objects"][0],
+            "a".repeat(64)
+        );
+        assert_eq!(encoded["outcome"]["report"]["kept_objects"], 2);
+        assert_eq!(encoded["outcome"]["failure"]["kind"], "Incomplete");
     }
 
     #[test]
@@ -427,5 +579,36 @@ mod tests {
             serde_json::to_string(&ExitStatus::Signal(9)).unwrap(),
             r#"{"signal":9}"#
         );
+    }
+    #[test]
+    fn exec_resize_wire_shape_is_pinned() {
+        let request = Request::ExecResize {
+            exec: ExecId(7),
+            geometry: PtyGeometry {
+                columns: 120,
+                rows: 40,
+            },
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert_eq!(
+            json,
+            r#"{"op":"exec_resize","exec":7,"geometry":{"columns":120,"rows":40}}"#
+        );
+        let back: Request = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, request);
+        // The resize rides the control class: it never queues behind bulk.
+        assert!(matches!(request.class(), RequestClass::Control));
+    }
+
+    #[test]
+    fn exec_input_ack_wire_shape_is_pinned() {
+        let event = Event::ExecInput {
+            exec: ExecId(7),
+            sequence: 41,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert_eq!(json, r#"{"event":"exec_input","exec":7,"sequence":41}"#);
+        let back: Event = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, event);
     }
 }

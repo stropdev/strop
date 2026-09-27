@@ -1,17 +1,7 @@
-//! The read-oriented container Git backend (0037 DC1b): the same
-//! bounded `git` queries as the remote backend, executed inside a
-//! running container through the local engine's `docker exec`
-//! ([`GitExec::Container`]) and parsed by the *same* wire parsers —
-//! discovery and context are the exec-generic cores shared with
-//! [`crate::remote`], so no parsing or exit-code mapping is duplicated
-//! here. Like the remote path, no mutation verbs exist: container
-//! repositories are read-only.
-//!
-//! The returned workdir is a path *inside* the container — never a
-//! local path, and no libgit2 handle may be opened against it. The
-//! container boundary carries argv as UTF-8 text and caps retained
-//! output; both surface as typed refusals from the exec layer, and a
-//! truncated stream can never pose as a complete record set.
+//! Read-only Git queries in an admitted container worker namespace.
+//! The shared remote parsers consume byte-exact Git records; a container
+//! without a worker remains browsable but does not acquire a shell Git
+//! fallback or an analogous local path.
 
 use std::path::{Path, PathBuf};
 
@@ -31,10 +21,14 @@ use crate::GitContext;
 pub fn discover(
     id: &ContainerId,
     from: &Path,
+    lease: Option<&strop_worker_client::Worker>,
     cancel: &CancelToken,
 ) -> Result<Option<PathBuf>, RemoteGitError> {
-    let exec = GitExec::Container {
-        container: id.clone(),
+    let worker = lease.ok_or_else(|| {
+        RemoteGitError::Capability(format!("container {id} Git requires an admitted worker"))
+    })?;
+    let exec = GitExec::Worker {
+        worker: worker.clone(),
         workdir: from,
     };
     discover_with(&exec, cancel)
@@ -49,10 +43,14 @@ pub fn discover(
 pub fn context(
     id: &ContainerId,
     workdir: &Path,
+    lease: Option<&strop_worker_client::Worker>,
     cancel: &CancelToken,
 ) -> Result<GitContext, RemoteGitError> {
-    let exec = GitExec::Container {
-        container: id.clone(),
+    let worker = lease.ok_or_else(|| {
+        RemoteGitError::Capability("container Git requires an admitted worker".into())
+    })?;
+    let exec = GitExec::Worker {
+        worker: worker.clone(),
         workdir,
     };
     let repo = RepoTarget::Container {

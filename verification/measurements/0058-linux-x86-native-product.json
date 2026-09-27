@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "target": "x86_64-unknown-linux-musl",
+  "profile": "release-musl-stripped",
+  "host": {
+    "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "profile": "release-musl-stripped"
+  },
+  "baseline_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+  "candidate_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
+  "methods": {
+    "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
+    "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
+    "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9",
+    "verification/bench_ui_input_frame.py": "9f101ac04c9be6e772533bb4f7e02003a6c6263f6ff1dfd0d1e1c457afc05a9d",
+    "crates/strop/tests/terminal_editor.rs": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b"
+  },
+  "samples_per_artifact": 64,
+  "scope": "native local worker Hello, Health, worker-backed semantic edit, real PTY TUI cell-grid paint and 256-line terminal output load; not cold/warm remote deploy, LSP or retirement high-water",
+  "observed": {
+    "baseline_handshake_ms": {
+      "max": 0.986,
+      "p50": 0.724,
+      "p95": 0.828,
+      "p99": 0.986
+    },
+    "candidate_handshake_ms": {
+      "max": 0.925,
+      "p50": 0.747,
+      "p95": 0.86,
+      "p99": 0.925
+    },
+    "candidate_health_ms": {
+      "max": 0.369,
+      "p50": 0.197,
+      "p95": 0.247,
+      "p99": 0.369
+    },
+    "baseline_semantic_ms": {
+      "max": 0.626,
+      "p50": 0.236,
+      "p95": 0.293,
+      "p99": 0.626
+    },
+    "candidate_semantic_ms": {
+      "max": 0.542,
+      "p50": 0.244,
+      "p95": 0.283,
+      "p99": 0.542
+    },
+    "baseline_tui_ms": {
+      "max": 2.142,
+      "p50": 0.972,
+      "p95": 1.575,
+      "p99": 2.142
+    },
+    "candidate_tui_ms": {
+      "max": 1.782,
+      "p50": 0.915,
+      "p95": 1.337,
+      "p99": 1.782
+    },
+    "baseline_terminal_load_ms": {
+      "max": 4.799,
+      "p50": 3.697,
+      "p95": 4.432,
+      "p99": 4.799
+    },
+    "candidate_terminal_load_ms": {
+      "max": 4.703,
+      "p50": 4.114,
+      "p95": 4.546,
+      "p99": 4.703
+    }
+  }
+}

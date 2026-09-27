@@ -6,6 +6,8 @@ mod prepare;
 mod reconcile;
 mod recovery;
 mod render;
+#[cfg(test)]
+mod session_tests;
 mod shutdown;
 #[cfg(test)]
 mod tests;
@@ -235,6 +237,7 @@ impl Editor {
                     .as_ref()
                     .map(|destination| destination.location.clone()),
                 expected_content: step.intent.expected_content,
+                store: step.intent.store,
             })
             .collect();
         if let Err(error) = self.filesystem_admission(

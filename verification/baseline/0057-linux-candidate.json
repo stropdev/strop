@@ -1,0 +1,64 @@
+{
+  "cargo_lock_sha256": "36a41f260b06d64538cf19f7d0a1f418ab689e6ecfe60ff66b80650f2fb3e4b6",
+  "checksum_pinned_downloads": {
+    "TLAPS_SHA256": {
+      "sha256": "ebb7a3f271bdb564f74cb0a2767ef7b9ff7045621a9be7c50d363a03c2e6f08a",
+      "url": "https://github.com/tlaplus/tlapm/releases/download/202210041448/tlaps-1.5.0-x86_64-linux-gnu-inst.bin"
+    },
+    "TLA_TOOLS_SHA256": {
+      "sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "url": "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
+    },
+    "VERUS_SHA256": {
+      "sha256": "13d01e134c0620c3b29770874707d16c33b3d227c843a489c8ceb744d43c0a16",
+      "url": "https://github.com/verus-lang/verus/releases/download/release/0.2026.09.06.8dea4a2/verus-0.2026.09.06.8dea4a2-x86-linux.zip"
+    },
+    "Z3_SHA256": {
+      "sha256": "7288c49a5bd6dbafd7b0b0d1f65956b91672da24b08f09242919af159be3418e",
+      "url": "https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip"
+    }
+  },
+  "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+  "commit_date": "2026-09-25T20:29:33+01:00",
+  "dirty": [],
+  "dockerfile_sha256": "66ce563d22ae60e4416096c33ebe6010733ad89f6f5945a401d7f4f391c606f6",
+  "dockerfile_stages": {
+    "builder": "rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d",
+    "model": "eclipse-temurin:21-jre@sha256:6cbdfc89c9657478bc5abea638030310f6c0267404e98a5808097bb1925932f1",
+    "tlaps": "debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+    "verify": "rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27"
+  },
+  "helper_sources": {
+    "crates/strop-remote/src/exec/python.rs": "312f537769cfb2cfe2a0108d08ac407b370f6e8ca7ae107436b13c1bbe9826ee",
+    "crates/strop-remote/src/exec/supervisor.rs": "8466a2415bfb227316c36502fb4b67347dede088344b43b04e08fd017e254d9d",
+    "crates/strop-remote/src/filesystem/cleanup.py": "0f1cce62ca3816cfbe54d612d706c6a17ff4b6e9b4b21536b5c9937f3fa414be",
+    "crates/strop-remote/src/filesystem/main.py": "d5e57d023e43337afe562b82f6754bb6e5944eb078691238565fc3acfac2e7f6",
+    "crates/strop-remote/src/filesystem/mutate.py": "61b88ec4ece017a6e90898db070267f1755c675d9f2368bbc82186235a3662f2",
+    "crates/strop-remote/src/filesystem/observe.py": "81de0d2469b9ec215777ebcdc4d96803492aec28c12ae23a6f7cb2c582baeac6",
+    "crates/strop-remote/src/protected.py": "981432f2439bb6ec68d0ba1f3b76a19aedab7d8e99f8dcbc61b024ad80c01bd5",
+    "crates/strop-remote/src/save/helper.py": "22bde5f8f63cfe737a0c2edfc845e2087aba81fe0490fc94e2036014d18b1efd"
+  },
+  "install_transaction": {
+    ".github/scripts/release-catalog.py": "ff7fca5cd53ce4daf38b90a6335757d29334baa2b6cbf6162a153c1dc44eed1d",
+    "crates/strop/src/update.rs": "4a39aa2c289d81e2269a9cb4a80ef1c04f2cfc3339e115c05c6839d6c37f8449",
+    "install.sh": "40825278f51d0db939115886b754c85f7f61316d52c250b75ffc1ef2f073b2b8"
+  },
+  "inventory_sha256": "5bd0ad567a28e8562edaa4d5f12879a8b68f07af6b25d2c18c91ac83a8adde61",
+  "plan": "plans/0057-core-verification-and-assurance.md",
+  "release": "0057",
+  "schema": 1,
+  "tree": "3ac5fdd501d42dc300915ad05b84b0004ce9ab78",
+  "verus_crate_pins": {
+    "verus_builtin": "=0.0.0-2026-09-06-0133",
+    "verus_builtin_macros": "=0.0.0-2026-09-06-0133"
+  },
+  "zig_bootstrap": {
+    "digests": {
+      "aarch64-linux": "ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17",
+      "aarch64-macos": "b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489",
+      "x86_64-linux": "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00",
+      "x86_64-macos": "0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7"
+    },
+    "version": "0.16.0"
+  }
+}

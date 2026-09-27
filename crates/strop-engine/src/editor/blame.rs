@@ -116,6 +116,9 @@ impl Editor {
             })
         });
         let args = ticket.clone();
+        let workers = self.remote.workers.clone();
+        let containers = self.containers.workers.clone();
+        let container_started = self.git_container_started(&repo);
         self.launch_git_job(
             "git-blame-file",
             "git.blame_gutter",
@@ -126,7 +129,21 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let exec = strop_git::GitExec::for_target(&repo);
+                let lease = super::git_memory::repo_lease(
+                    &workers,
+                    &containers,
+                    container_started.as_deref(),
+                    &repo,
+                );
+                let exec = match strop_git::GitExec::for_target_routed(&repo, lease.as_ref()) {
+                    Ok(exec) => exec,
+                    Err(error) => {
+                        return Outcome::failed(
+                            strop_core::worker::FailureKind::Unavailable,
+                            error.to_string(),
+                        );
+                    }
+                };
                 match strop_git::memory::blame_file(&exec, &cancel, &rel) {
                     Ok(lines) => Outcome::Success(lines),
                     Err(message) => Outcome::failed(strop_core::worker::FailureKind::Exit, message),
@@ -292,6 +309,9 @@ impl Editor {
         rel: PathBuf,
         line: usize,
     ) {
+        let workers = self.remote.workers.clone();
+        let containers = self.containers.workers.clone();
+        let container_started = self.git_container_started(&repo);
         let args = ticket.clone();
         self.launch_git_job(
             "git-blame-line",
@@ -303,7 +323,21 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let exec = strop_git::GitExec::for_target(&repo);
+                let lease = super::git_memory::repo_lease(
+                    &workers,
+                    &containers,
+                    container_started.as_deref(),
+                    &repo,
+                );
+                let exec = match strop_git::GitExec::for_target_routed(&repo, lease.as_ref()) {
+                    Ok(exec) => exec,
+                    Err(error) => {
+                        return Outcome::failed(
+                            strop_core::worker::FailureKind::Unavailable,
+                            error.to_string(),
+                        );
+                    }
+                };
                 match strop_git::memory::blame_line(&exec, &cancel, &rel, line) {
                     Ok(card) => Outcome::Success(Box::new(card)),
                     Err(message) => Outcome::failed(strop_core::worker::FailureKind::Exit, message),

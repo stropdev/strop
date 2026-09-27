@@ -1,0 +1,718 @@
+ Image strop-preworker-6c4491b-container-test Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 606B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 7.67kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.4s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#4 resolve docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32 0.0s done
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d
+#5 DONE 0.0s
+
+#6 [builder 1/9] FROM docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d
+#6 resolve docker.io/library/rust:alpine@sha256:1716b3aa042d735f4566d14dc54e8037de9d69556e2d5dd58131d93a613d173d 0.1s done
+#6 DONE 0.1s
+
+#7 [internal] load .dockerignore
+#7 transferring context: 2B done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 10.63MB 0.1s done
+#8 DONE 0.2s
+
+#9 [builder 5/9] WORKDIR /app
+#9 CACHED
+
+#10 [builder 9/9] COPY verification ./verification
+#10 CACHED
+
+#11 [builder 9/9] COPY verification ./verification
+#11 CACHED
+
+#12 [builder 5/9] WORKDIR /app
+#12 CACHED
+
+#13 [builder 3/9] COPY .github/scripts/install-zig.sh /tmp/install-zig.sh
+#13 CACHED
+
+#14 [builder 4/9] RUN sh /tmp/install-zig.sh /opt/strop-zig && rm /tmp/install-zig.sh
+#14 CACHED
+
+#15 [builder 6/9] COPY Cargo.toml Cargo.lock ./
+#15 CACHED
+
+#16 [builder 7/9] COPY crates ./crates
+#16 CACHED
+
+#17 [builder 8/9] COPY docs ./docs
+#17 CACHED
+
+#18 [builder 2/9] RUN apk add --no-cache build-base git ripgrep neovim less curl ca-certificates xz     && rustup component add clippy rustfmt
+#18 CACHED
+
+#19 [bin 1/1] RUN cargo build --locked -p strop-editor
+#19 0.319     Updating crates.io index
+#19 2.076  Downloading crates ...
+#19 2.195   Downloaded yoke-derive v0.8.2
+#19 2.208   Downloaded zerofrom-derive v0.1.7
+#19 2.213   Downloaded crypto-common v0.1.7
+#19 2.217   Downloaded convert_case v0.4.0
+#19 2.226   Downloaded xattr v1.6.1
+#19 2.241   Downloaded block-buffer v0.10.4
+#19 2.251   Downloaded cfg-if v1.0.4
+#19 2.260   Downloaded cpufeatures v0.2.17
+#19 2.265   Downloaded bitflags v1.3.2
+#19 2.278   Downloaded same-file v1.0.6
+#19 2.283   Downloaded strsim v0.11.1
+#19 2.289   Downloaded archery v1.2.3
+#19 2.304   Downloaded cassowary v0.3.0
+#19 2.323   Downloaded rustix-openpty v0.2.0
+#19 2.326   Downloaded scopeguard v1.2.0
+#19 2.332   Downloaded serde_spanned v0.6.9
+#19 2.337   Downloaded zerofrom v0.1.8
+#19 2.341   Downloaded adler2 v2.0.1
+#19 2.348   Downloaded async-lsp v0.2.4
+#19 2.358   Downloaded bitflags v2.13.1
+#19 2.380   Downloaded generic-array v0.14.7
+#19 2.392   Downloaded crossbeam-deque v0.8.7
+#19 2.401   Downloaded allocator-api2 v0.2.21
+#19 2.416   Downloaded base64 v0.22.1
+#19 2.431   Downloaded bytes v1.12.1
+#19 2.443   Downloaded console v0.15.11
+#19 2.456   Downloaded serde_repr v0.1.21
+#19 2.466   Downloaded cc v1.2.67
+#19 2.479   Downloaded bytemuck v1.25.2
+#19 2.490   Downloaded darling_core v0.24.1
+#19 2.512   Downloaded signal-hook-mio v0.2.5
+#19 2.521   Downloaded bitmaps v3.2.1
+#19 2.528   Downloaded tower-layer v0.3.3
+#19 2.531   Downloaded toml_write v0.1.2
+#19 2.536   Downloaded compact_str v0.8.2
+#19 2.547   Downloaded darling v0.24.1
+#19 2.568   Downloaded darling_macro v0.24.1
+#19 2.574   Downloaded lru v0.12.5
+#19 2.579   Downloaded shlex v2.0.1
+#19 2.584   Downloaded toml_datetime v0.6.11
+#19 2.588   Downloaded crossbeam-utils v0.8.22
+#19 2.598   Downloaded tower-service v0.3.3
+#19 2.601   Downloaded crossbeam-epoch v0.9.20
+#19 2.607   Downloaded crossterm v0.28.1
+#19 2.629   Downloaded tree-sitter-language v0.1.8
+#19 2.636   Downloaded futures v0.3.34
+#19 2.650   Downloaded crc32fast v1.5.2
+#19 2.657   Downloaded futures-macro v0.3.34
+#19 2.662   Downloaded form_urlencoded v1.2.2
+#19 2.667   Downloaded strum v0.26.3
+#19 2.672   Downloaded tinyvec_macros v0.1.1
+#19 2.676   Downloaded equivalent v1.0.2
+#19 2.682   Downloaded futures-sink v0.3.34
+#19 2.685   Downloaded tree-sitter-json v0.24.8
+#19 2.692   Downloaded errno v0.3.14
+#19 2.699   Downloaded number_prefix v0.4.0
+#19 2.705   Downloaded percent-encoding v2.3.2
+#19 2.708   Downloaded itoa v1.0.18
+#19 2.719   Downloaded stable_deref_trait v1.2.1
+#19 2.722   Downloaded potential_utf v0.1.6
+#19 2.725   Downloaded rustversion v1.0.23
+#19 2.734   Downloaded zmij v1.0.23
+#19 2.741   Downloaded futures-task v0.3.34
+#19 2.745   Downloaded sha2 v0.10.9
+#19 2.758   Downloaded futures-io v0.3.34
+#19 2.761   Downloaded thiserror v2.0.20
+#19 2.792   Downloaded ident_case v1.0.1
+#19 2.796   Downloaded castaway v0.2.4
+#19 2.800   Downloaded paste v1.0.15
+#19 2.809   Downloaded signal-hook-registry v1.4.8
+#19 2.813   Downloaded rand_xoshiro v0.7.0
+#19 2.819   Downloaded writeable v0.6.4
+#19 2.833   Downloaded pkg-config v0.3.34
+#19 2.839   Downloaded quote v1.0.47
+#19 2.848   Downloaded rand_core v0.9.5
+#19 2.853   Downloaded yoke v0.8.3
+#19 2.859   Downloaded futures-core v0.3.34
+#19 2.865   Downloaded heck v0.5.0
+#19 2.874   Downloaded idna_adapter v1.2.2
+#19 2.882   Downloaded instability v0.3.13
+#19 2.892   Downloaded verus_builtin v0.0.0-2026-09-06-0133
+#19 2.900   Downloaded waitpid-any v0.3.0
+#19 2.904   Downloaded tree-sitter-html v0.23.2
+#19 2.910   Downloaded unicode-truncate v1.1.0
+#19 2.917   Downloaded version_check v0.9.5
+#19 2.922   Downloaded synstructure v0.13.2
+#19 2.925   Downloaded pin-project-lite v0.2.17
+#19 2.944   Downloaded tree-sitter-toml-ng v0.7.0
+#19 2.950   Downloaded strum_macros v0.26.4
+#19 2.957   Downloaded thiserror-impl v2.0.20
+#19 2.961   Downloaded globset v0.4.20
+#19 2.968   Downloaded displaydoc v0.2.7
+#19 2.973   Downloaded slab v0.4.12
+#19 2.980   Downloaded str_indices v0.4.4
+#19 2.986   Downloaded streaming-iterator v0.1.9
+#19 2.991   Downloaded filetime v0.2.29
+#19 3.001   Downloaded tinystr v0.8.4
+#19 3.011   Downloaded digest v0.10.7
+#19 3.018   Downloaded parking_lot_core v0.9.12
+#19 3.024   Downloaded foldhash v0.1.5
+#19 3.028   Downloaded simd-adler32 v0.3.10
+#19 3.036   Downloaded utf8_iter v1.0.4
+#19 3.039   Downloaded aho-corasick v1.1.5
+#19 3.056   Downloaded jobserver v0.1.35
+#19 3.062   Downloaded lock_api v0.4.14
+#19 3.068   Downloaded find-msvc-tools v0.1.11
+#19 3.072   Downloaded toml v0.8.23
+#19 3.081   Downloaded zerovec-derive v0.11.6
+#19 3.093   Downloaded either v1.18.0
+#19 3.098   Downloaded proc-macro2 v1.0.107
+#19 3.116   Downloaded litemap v0.8.3
+#19 3.124   Downloaded tree-sitter-fish v3.6.0
+#19 3.131   Downloaded once_cell v1.21.4
+#19 3.139   Downloaded futures-channel v0.3.34
+#19 3.145   Downloaded smallvec v1.16.0
+#19 3.150   Downloaded static_assertions v1.1.0
+#19 3.155   Downloaded fastrand v2.5.0
+#19 3.161   Downloaded tree-sitter-lua v0.5.0
+#19 3.170   Downloaded tracing-attributes v0.1.31
+#19 3.181   Downloaded indoc v2.0.7
+#19 3.192   Downloaded tempfile v3.27.0
+#19 3.201   Downloaded ryu v1.0.23
+#19 3.212   Downloaded signal-hook v0.3.18
+#19 3.222   Downloaded getrandom v0.4.3
+#19 3.233   Downloaded imbl-sized-chunks v0.1.3
+#19 3.244   Downloaded parking_lot v0.12.5
+#19 3.251   Downloaded serde_core v1.0.229
+#19 3.260   Downloaded nucleo-matcher v0.3.1
+#19 3.267   Downloaded walkdir v2.5.0
+#19 3.274   Downloaded tree-sitter-css v0.25.0
+#19 3.284   Downloaded log v0.4.34
+#19 3.292   Downloaded miniz_oxide v0.9.1
+#19 3.301   Downloaded tree-sitter-cmake v0.7.4
+#19 3.309   Downloaded icu_locale_core v2.3.0
+#19 3.333   Downloaded icu_provider v2.3.1
+#19 3.344   Downloaded indicatif v0.17.11
+#19 3.357   Downloaded unicode-ident v1.0.24
+#19 3.367   Downloaded ignore v0.4.33
+#19 3.376   Downloaded indexmap v2.14.1
+#19 3.389   Downloaded tinyvec v1.13.2
+#19 3.403   Downloaded lsp-types v0.95.1
+#19 3.414   Downloaded flate2 v1.1.10
+#19 3.430   Downloaded tar v0.4.46
+#19 3.439   Downloaded safe_arch v0.7.4
+#19 3.451   Downloaded serde_derive v1.0.229
+#19 3.462   Downloaded icu_collections v2.3.0
+#19 3.489   Downloaded mio v1.2.2
+#19 3.508   Downloaded toml_edit v0.22.27
+#19 3.520   Downloaded tracing-core v0.1.36
+#19 3.529   Downloaded icu_normalizer_data v2.3.0
+#19 3.535   Downloaded socket2 v0.6.5
+#19 3.541   Downloaded verus_state_machines_macros v0.0.0-2026-09-06-0133
+#19 3.550   Downloaded icu_properties v2.3.0
+#19 3.561   Downloaded memchr v2.8.3
+#19 3.590   Downloaded serde v1.0.229
+#19 3.605   Downloaded zerotrie v0.2.5
+#19 3.620   Downloaded verus_prettyplease v0.0.0-2026-09-06-0133
+#19 3.633   Downloaded url v2.5.8
+#19 3.639   Downloaded idna v1.1.0
+#19 3.647   Downloaded itertools v0.13.0
+#19 3.666   Downloaded imbl v7.0.1
+#19 3.681   Downloaded hashbrown v0.15.5
+#19 3.698   Downloaded wide v0.7.33
+#19 3.711   Downloaded hashbrown v0.17.1
+#19 3.726   Downloaded icu_properties_data v2.3.0
+#19 3.747   Downloaded tree-sitter-yaml v0.7.2
+#19 3.758   Downloaded bstr v1.13.1
+#19 3.772   Downloaded futures-util v0.3.34
+#19 3.804   Downloaded tree-sitter-go v0.25.0
+#19 3.812   Downloaded typenum v1.20.1
+#19 3.822   Downloaded portable-atomic v1.15.0
+#19 3.840   Downloaded unicode-segmentation v1.13.3
+#19 3.847   Downloaded git2 v0.20.4
+#19 3.863   Downloaded ropey v1.6.1
+#19 3.875   Downloaded vcpkg v0.2.15
+#19 3.996   Downloaded zerovec v0.11.8
+#19 4.011   Downloaded unicode-normalization v0.1.25
+#19 4.019   Downloaded unicode-width v0.2.0
+#19 4.028   Downloaded tokio-util v0.7.19
+#19 4.051   Downloaded tree-sitter-javascript v0.25.0
+#19 4.062   Downloaded verus_builtin_macros v0.0.0-2026-09-06-0133
+#19 4.069   Downloaded serde_json v1.0.151
+#19 4.087   Downloaded tree-sitter-java v0.23.5
+#19 4.098   Downloaded regex v1.13.1
+#19 4.111   Downloaded winnow v0.7.15
+#19 4.145   Downloaded verus_syn v0.0.0-2026-09-06-0133
+#19 4.171   Downloaded tree-sitter-python v0.25.0
+#19 4.184   Downloaded tree-sitter v0.25.10
+#19 4.201   Downloaded zlib-rs v0.6.7
+#19 4.217   Downloaded icu_normalizer v2.3.0
+#19 4.236   Downloaded tree-sitter-c v0.24.2
+#19 4.248   Downloaded libc v0.2.189
+#19 4.424   Downloaded libz-sys v1.1.29
+#19 4.468   Downloaded unicode-width v0.1.14
+#19 4.478   Downloaded syn v3.0.4
+#19 4.501   Downloaded tree-sitter-md v0.5.3
+#19 4.519   Downloaded syn v2.0.119
+#19 4.542   Downloaded vstd v0.0.0-2026-09-06-0133
+#19 4.564   Downloaded rustix v0.38.44
+#19 4.643   Downloaded regex-syntax v0.8.11
+#19 4.656   Downloaded tree-sitter-rust v0.24.2
+#19 4.673   Downloaded rustix v1.1.4
+#19 4.755   Downloaded tree-sitter-bash v0.25.1
+#19 4.777   Downloaded libgit2-sys v0.18.8+1.9.7
+#19 4.887   Downloaded tracing v0.1.44
+#19 4.912   Downloaded tree-sitter-ruby v0.23.1
+#19 4.939   Downloaded ratatui v0.29.0
+#19 4.983   Downloaded linux-raw-sys v0.4.15
+#19 5.053   Downloaded regex-automata v0.4.18
+#19 5.086   Downloaded tree-sitter-php v0.24.2
+#19 5.117   Downloaded linux-raw-sys v0.12.1
+#19 5.209   Downloaded tokio v1.53.1
+#19 5.320   Downloaded tree-sitter-sequel v0.3.11
+#19 5.351   Downloaded tree-sitter-typescript v0.23.2
+#19 5.396   Downloaded tree-sitter-cpp v0.23.4
+#19 5.428   Downloaded tree-sitter-c-sharp v0.23.5
+#19 5.951    Compiling libc v0.2.189
+#19 5.952    Compiling find-msvc-tools v0.1.11
+#19 5.952    Compiling shlex v2.0.1
+#19 5.959    Compiling proc-macro2 v1.0.107
+#19 5.965    Compiling unicode-ident v1.0.24
+#19 5.965    Compiling quote v1.0.47
+#19 5.965    Compiling tree-sitter-language v0.1.8
+#19 5.966    Compiling equivalent v1.0.2
+#19 5.966    Compiling memchr v2.8.3
+#19 5.968    Compiling cfg-if v1.0.4
+#19 5.968    Compiling serde_core v1.0.229
+#19 5.995    Compiling bitflags v2.13.1
+#19 5.995    Compiling smallvec v1.16.0
+#19 5.995    Compiling zmij v1.0.23
+#19 5.995    Compiling itoa v1.0.18
+#19 5.995    Compiling hashbrown v0.17.1
+#19 6.005    Compiling serde v1.0.229
+#19 6.009    Compiling version_check v0.9.5
+#19 6.025    Compiling once_cell v1.21.4
+#19 6.036    Compiling rustix v1.1.4
+#19 6.048    Compiling parking_lot_core v0.9.12
+#19 6.049    Compiling typenum v1.20.1
+#19 6.049    Compiling serde_json v1.0.151
+#19 6.049    Compiling linux-raw-sys v0.12.1
+#19 6.049    Compiling scopeguard v1.2.0
+#19 6.049    Compiling thiserror v2.0.20
+#19 6.049    Compiling verus_prettyplease v0.0.0-2026-09-06-0133
+#19 6.049    Compiling stable_deref_trait v1.2.1
+#19 6.050    Compiling unicode-width v0.2.0
+#19 6.050    Compiling getrandom v0.4.3
+#19 6.050    Compiling unicode-segmentation v1.13.3
+#19 6.050    Compiling cpufeatures v0.2.17
+#19 6.244    Compiling convert_case v0.4.0
+#19 6.289    Compiling vstd v0.0.0-2026-09-06-0133
+#19 6.413    Compiling str_indices v0.4.4
+#19 6.435    Compiling verus_builtin v0.0.0-2026-09-06-0133
+#19 6.448    Compiling fastrand v2.5.0
+#19 6.678    Compiling lock_api v0.4.14
+#19 6.688    Compiling log v0.4.34
+#19 6.707    Compiling writeable v0.6.4
+#19 6.797    Compiling ropey v1.6.1
+#19 6.798    Compiling litemap v0.8.3
+#19 6.838    Compiling icu_normalizer_data v2.3.0
+#19 6.909    Compiling icu_properties_data v2.3.0
+#19 6.977    Compiling utf8_iter v1.0.4
+#19 7.180    Compiling pin-project-lite v0.2.17
+#19 7.185    Compiling strop-worker-protocol v0.35.0 (/app/crates/strop-worker-protocol)
+#19 7.252    Compiling regex-syntax v0.8.11
+#19 7.265    Compiling pkg-config v0.3.34
+#19 7.397    Compiling vcpkg v0.2.15
+#19 7.428    Compiling percent-encoding v2.3.2
+#19 7.481    Compiling crc32fast v1.5.2
+#19 7.514    Compiling crossbeam-utils v0.8.22
+#19 7.558    Compiling futures-sink v0.3.34
+#19 7.683    Compiling generic-array v0.14.7
+#19 7.684    Compiling bytemuck v1.25.2
+#19 7.685    Compiling bytes v1.12.1
+#19 7.841    Compiling aho-corasick v1.1.5
+#19 7.843    Compiling form_urlencoded v1.2.2
+#19 7.855    Compiling futures-core v0.3.34
+#19 7.872    Compiling rustversion v1.0.23
+#19 8.001    Compiling adler2 v2.0.1
+#19 8.317    Compiling bitmaps v3.2.1
+#19 8.329    Compiling rand_core v0.9.5
+#19 8.333    Compiling futures-io v0.3.34
+#19 8.437    Compiling simd-adler32 v0.3.10
+#19 8.444    Compiling crossbeam-epoch v0.9.20
+#19 8.598    Compiling futures-channel v0.3.34
+#19 8.600    Compiling futures-task v0.3.34
+#19 8.732    Compiling archery v1.2.3
+#19 8.908    Compiling safe_arch v0.7.4
+#19 8.935    Compiling miniz_oxide v0.9.1
+#19 9.013    Compiling rand_xoshiro v0.7.0
+#19 9.040    Compiling indexmap v2.14.1
+#19 9.180    Compiling streaming-iterator v0.1.9
+#19 9.228    Compiling crossbeam-deque v0.8.7
+#19 9.229    Compiling tinyvec_macros v0.1.1
+#19 9.307    Compiling slab v0.4.12
+#19 9.421    Compiling tinyvec v1.13.2
+#19 9.525    Compiling bstr v1.13.1
+#19 9.548    Compiling tracing-core v0.1.36
+#19 9.564    Compiling toml_write v0.1.2
+#19 9.630    Compiling winnow v0.7.15
+#19 9.866    Compiling imbl-sized-chunks v0.1.3
+#19 9.917    Compiling signal-hook v0.3.18
+#19 9.976    Compiling strsim v0.11.1
+#19 9.985    Compiling ident_case v1.0.1
+#19 10.02    Compiling same-file v1.0.6
+#19 10.12    Compiling syn v3.0.4
+#19 10.17    Compiling syn v2.0.119
+#19 10.25    Compiling verus_syn v0.0.0-2026-09-06-0133
+#19 10.41    Compiling bitflags v1.3.2
+#19 10.48    Compiling walkdir v2.5.0
+#19 10.48    Compiling tower-service v0.3.3
+#19 10.55    Compiling tower-layer v0.3.3
+#19 10.59    Compiling rustix v0.38.44
+#19 10.64    Compiling nucleo-matcher v0.3.1
+#19 10.72    Compiling linux-raw-sys v0.4.15
+#19 10.77    Compiling flate2 v1.1.10
+#19 10.84    Compiling instability v0.3.13
+#19 10.88    Compiling heck v0.5.0
+#19 10.98    Compiling foldhash v0.1.5
+#19 11.29    Compiling wide v0.7.33
+#19 11.31    Compiling either v1.18.0
+#19 11.36    Compiling portable-atomic v1.15.0
+#19 11.42    Compiling paste v1.0.15
+#19 11.50    Compiling base64 v0.22.1
+#19 11.62    Compiling allocator-api2 v0.2.21
+#19 11.68    Compiling unicode-width v0.1.14
+#19 11.78    Compiling itertools v0.13.0
+#19 11.78    Compiling indoc v2.0.7
+#19 11.82    Compiling ryu v1.0.23
+#19 11.93    Compiling static_assertions v1.1.0
+#19 12.08    Compiling number_prefix v0.4.0
+#19 12.17    Compiling jobserver v0.1.35
+#19 12.22    Compiling errno v0.3.14
+#19 12.23    Compiling mio v1.2.2
+#19 12.23    Compiling filetime v0.2.29
+#19 12.39    Compiling crypto-common v0.1.7
+#19 12.49    Compiling block-buffer v0.10.4
+#19 12.53    Compiling unicode-normalization v0.1.25
+#19 12.65    Compiling signal-hook-registry v1.4.8
+#19 12.70    Compiling digest v0.10.7
+#19 12.70    Compiling console v0.15.11
+#19 12.76    Compiling cc v1.2.67
+#19 12.83    Compiling cassowary v0.3.0
+#19 12.91    Compiling parking_lot v0.12.5
+#19 13.09    Compiling castaway v0.2.4
+#19 13.13    Compiling hashbrown v0.15.5
+#19 13.53    Compiling compact_str v0.8.2
+#19 13.73    Compiling sha2 v0.10.9
+#19 14.06    Compiling tokio v1.53.1
+#19 14.26    Compiling signal-hook-mio v0.2.5
+#19 14.84    Compiling crossterm v0.28.1
+#19 15.39    Compiling indicatif v0.17.11
+#19 16.65    Compiling lru v0.12.5
+#19 17.18    Compiling libz-sys v1.1.29
+#19 17.20    Compiling tree-sitter-md v0.5.3
+#19 17.20    Compiling tree-sitter-toml-ng v0.7.0
+#19 17.20    Compiling tree-sitter-fish v3.6.0
+#19 17.20    Compiling libgit2-sys v0.18.8+1.9.7
+#19 17.20    Compiling tree-sitter-sequel v0.3.11
+#19 17.20    Compiling tree-sitter-javascript v0.25.0
+#19 17.20    Compiling tree-sitter-cmake v0.7.4
+#19 17.20    Compiling tree-sitter-bash v0.25.1
+#19 17.20    Compiling tree-sitter-typescript v0.23.2
+#19 17.20    Compiling tree-sitter-yaml v0.7.2
+#19 17.20    Compiling tree-sitter-c v0.24.2
+#19 17.20    Compiling tree-sitter-go v0.25.0
+#19 17.20    Compiling tree-sitter-c-sharp v0.23.5
+#19 17.21    Compiling tree-sitter-ruby v0.23.1
+#19 17.21    Compiling tree-sitter-python v0.25.0
+#19 17.21    Compiling tree-sitter-php v0.24.2
+#19 17.21    Compiling tree-sitter-css v0.25.0
+#19 17.23    Compiling tree-sitter-java v0.23.5
+#19 18.03    Compiling regex-automata v0.4.18
+#19 18.04    Compiling tree-sitter-lua v0.5.0
+#19 18.13    Compiling xattr v1.6.1
+#19 18.18    Compiling tree-sitter-json v0.24.8
+#19 18.20    Compiling tree-sitter-html v0.23.2
+#19 18.28    Compiling tree-sitter-cpp v0.23.4
+#19 18.28    Compiling tree-sitter-rust v0.24.2
+#19 18.36    Compiling imbl v7.0.1
+#19 18.65    Compiling tar v0.4.46
+#19 19.97    Compiling unicode-truncate v1.1.0
+#19 20.42    Compiling darling_core v0.24.1
+#19 22.00    Compiling strop-terminal v0.35.0 (/app/crates/strop-terminal)
+#19 22.21    Compiling tree-sitter v0.25.10
+#19 24.08    Compiling synstructure v0.13.2
+#19 24.34    Compiling serde_derive v1.0.229
+#19 24.37    Compiling thiserror-impl v2.0.20
+#19 24.56    Compiling zerovec-derive v0.11.6
+#19 24.67    Compiling displaydoc v0.2.7
+#19 24.91    Compiling futures-macro v0.3.34
+#19 25.22    Compiling serde_repr v0.1.21
+#19 25.61    Compiling tokio-util v0.7.19
+#19 26.57    Compiling regex v1.13.1
+#19 26.59    Compiling globset v0.4.20
+#19 27.25    Compiling futures-util v0.3.34
+#19 27.66    Compiling zerofrom-derive v0.1.7
+#19 27.66    Compiling yoke-derive v0.8.2
+#19 27.66    Compiling tracing-attributes v0.1.31
+#19 27.71    Compiling ignore v0.4.33
+#19 27.89    Compiling strum_macros v0.26.4
+#19 29.83    Compiling darling_macro v0.24.1
+#19 30.82    Compiling darling v0.24.1
+#19 31.01    Compiling tracing v0.1.44
+#19 31.58    Compiling tempfile v3.27.0
+#19 31.71    Compiling waitpid-any v0.3.0
+#19 31.85    Compiling rustix-openpty v0.2.0
+#19 32.45    Compiling zerofrom v0.1.8
+#19 32.78    Compiling yoke v0.8.3
+#19 33.54    Compiling zerovec v0.11.8
+#19 33.57    Compiling zerotrie v0.2.5
+#19 33.92    Compiling verus_builtin_macros v0.0.0-2026-09-06-0133
+#19 33.95    Compiling verus_state_machines_macros v0.0.0-2026-09-06-0133
+#19 34.28    Compiling strum v0.26.3
+#19 34.48    Compiling ratatui v0.29.0
+#19 35.20    Compiling tinystr v0.8.4
+#19 35.20    Compiling potential_utf v0.1.6
+#19 35.34    Compiling icu_collections v2.3.0
+#19 35.49    Compiling icu_locale_core v2.3.0
+#19 35.61    Compiling strop-trace v0.35.0 (/app/crates/strop-trace)
+#19 35.61    Compiling toml_datetime v0.6.11
+#19 35.61    Compiling serde_spanned v0.6.9
+#19 35.87    Compiling toml_edit v0.22.27
+#19 37.28    Compiling icu_provider v2.3.1
+#19 37.72    Compiling icu_properties v2.3.0
+#19 37.72    Compiling icu_normalizer v2.3.0
+#19 37.81    Compiling futures v0.3.34
+#19 39.73    Compiling toml v0.8.23
+#19 40.15    Compiling idna_adapter v1.2.2
+#19 40.26    Compiling idna v1.1.0
+#19 40.86    Compiling url v2.5.8
+#19 42.47    Compiling lsp-types v0.95.1
+#19 42.48    Compiling git2 v0.20.4
+#19 51.78    Compiling strop-core v0.35.0 (/app/crates/strop-core)
+#19 55.14    Compiling strop-workspace v0.35.0 (/app/crates/strop-workspace)
+#19 55.14    Compiling strop-syntax v0.35.0 (/app/crates/strop-syntax)
+#19 55.14    Compiling strop-grammar v0.35.0 (/app/crates/strop-grammar)
+#19 57.13    Compiling strop-containers v0.35.0 (/app/crates/strop-containers)
+#19 57.13    Compiling strop-fs v0.35.0 (/app/crates/strop-fs)
+#19 59.02    Compiling async-lsp v0.2.4
+#19 64.48    Compiling strop-worker-client v0.35.0 (/app/crates/strop-worker-client)
+#19 64.62    Compiling strop-worker v0.35.0 (/app/crates/strop-worker)
+#19 67.43    Compiling strop-worker-deploy v0.35.0 (/app/crates/strop-worker-deploy)
+#19 71.53    Compiling strop-remote v0.35.0 (/app/crates/strop-remote)
+#19 77.17    Compiling strop-lsp v0.35.0 (/app/crates/strop-lsp)
+#19 77.17    Compiling strop-git v0.35.0 (/app/crates/strop-git)
+#19 77.17    Compiling strop-picker v0.35.0 (/app/crates/strop-picker)
+#19 133.8    Compiling strop-engine v0.35.0 (/app/crates/strop-engine)
+#19 150.2    Compiling strop-ui-protocol v0.35.0 (/app/crates/strop-ui-protocol)
+#19 177.7    Compiling strop-editor v0.35.0 (/app/crates/strop)
+#19 197.7     Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 18s
+#19 DONE 197.9s
+
+#20 [container-test 1/1] RUN apk add --no-cache docker-cli
+#20 1.198 (1/1) Installing docker-cli (29.5.3-r1)
+#20 1.700 Executing busybox-1.37.0-r31.trigger
+#20 1.711 OK: 347.3 MiB in 75 packages
+#20 DONE 1.8s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 81.8s done
+#21 exporting manifest sha256:69bb0acf4b7df9311dcc4e82a79b2901025f1a17096f5079d5265e76158aa29f 0.0s done
+#21 exporting config sha256:5e118c700f9cac510e4c7e42ffdc0fe1638df6ab7876c8ca7b9c66d0e36cc225 0.0s done
+#21 exporting attestation manifest sha256:1b6ab26393e845b43605a6ecb5d6bb49a35a6e9c5bb694720c04e9dc87f65a99 0.0s done
+#21 exporting manifest list sha256:623ac5bdaf113d2d9e0e945665fb9291c76d6abd4611287260c714f8151afba5 0.0s done
+#21 naming to docker.io/library/strop-preworker-6c4491b-container-test:latest done
+#21 unpacking to docker.io/library/strop-preworker-6c4491b-container-test:latest
+#21 unpacking to docker.io/library/strop-preworker-6c4491b-container-test:latest 18.0s done
+#21 DONE 99.9s
+
+#22 resolving provenance for metadata file
+#22 DONE 0.0s
+ Image strop-preworker-6c4491b-container-test Built 
+ Container strop-preworker-6c4491b-container-test-run-b55fdfe02f91 Creating 
+ Container strop-preworker-6c4491b-container-test-run-b55fdfe02f91 Created 
+   Compiling serde_core v1.0.229
+   Compiling smallvec v1.16.0
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.17.1
+   Compiling rustix v1.1.4
+   Compiling memchr v2.8.3
+   Compiling linux-raw-sys v0.12.1
+   Compiling once_cell v1.21.4
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling parking_lot_core v0.9.12
+   Compiling ropey v1.6.1
+   Compiling parking_lot v0.12.5
+   Compiling indexmap v2.14.1
+   Compiling verus_state_machines_macros v0.0.0-2026-09-06-0133
+   Compiling tempfile v3.27.0
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.20
+   Compiling serde_json v1.0.151
+   Compiling thiserror v2.0.20
+   Compiling synstructure v0.13.2
+   Compiling verus_builtin_macros v0.0.0-2026-09-06-0133
+   Compiling serde v1.0.229
+   Compiling strop-trace v0.35.0 (/app/crates/strop-trace)
+   Compiling vstd v0.0.0-2026-09-06-0133
+   Compiling strop-core v0.35.0 (/app/crates/strop-core)
+   Compiling strop-workspace v0.35.0 (/app/crates/strop-workspace)
+   Compiling strop-containers v0.35.0 (/app/crates/strop-containers)
+   Compiling strop-worker-protocol v0.35.0 (/app/crates/strop-worker-protocol)
+   Compiling strop-worker-client v0.35.0 (/app/crates/strop-worker-client)
+   Compiling strop-worker-deploy v0.35.0 (/app/crates/strop-worker-deploy)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.28s
+     Running unittests src/lib.rs (target/debug/deps/strop_containers-51917589ef19c504)
+
+running 38 tests
+test engine::tests::inspect_json_decodes_to_identity ... ok
+test engine::tests::non_canonical_ids_are_protocol_violations ... ok
+test engine::tests::missing_object_and_daemon_errors_classify ... ok
+test engine::tests::stderr_tail_is_bounded_and_single_line ... ok
+test exec::tests::capture_mode_selects_the_null_lease ... ok
+test exec::tests::command_is_pinned_argv_only_supervised_stdio ... ok
+test exec::tests::nonces_are_unique_per_session ... ok
+test exec::tests::records_parse_only_this_sessions_marked_lines ... ok
+test exec::tests::retain_keeps_head_plus_tail_and_counts_the_middle ... ok
+test exec::tests::spec_validation_refuses_unsafe_shape_before_any_engine ... ok
+test exec::tests::worker_command_runs_the_worker_directly_without_a_shell ... ok
+test identity::tests::names_are_validated_before_the_engine_sees_them ... ok
+test identity::tests::references_carry_only_canonical_ids ... ok
+test read::tests::a_file_answer_is_a_refusal_and_escapes_are_protocol_errors ... ok
+test read::tests::a_streamed_symlink_answer_resolves_one_hop ... ok
+test read::tests::a_symlink_archive_offers_its_target_once ... ok
+test read::tests::a_truncated_stream_is_a_protocol_error_at_finish ... ok
+test read::tests::direct_children_only_with_sizes_on_files ... ok
+test stat::tests::a_symlink_is_reported_never_followed ... ok
+test read::tests::root_components_are_normalized ... ok
+test stat::tests::split_delivery_across_the_header_still_parses ... ok
+test read::tests::symlink_targets_resolve_posix_style ... ok
+test stat::tests::the_first_header_carries_lstat_facts ... ok
+test tar::tests::gnu_longname_overrides_the_header_field ... ok
+test tar::tests::a_truncated_capture_keeps_the_final_entries_prefix_only ... ok
+test tar::tests::parses_kinds_and_content_offsets ... ok
+test stat::tests::the_abort_never_reads_past_the_first_header ... ok
+test tar::tests::pax_path_overrides_the_header_field ... ok
+test tar::tests::stream_parser_rejects_structural_garbage ... ok
+test tar::tests::stream_parser_reports_truncation ... ok
+test tar::tests::structural_garbage_is_an_error ... ok
+test write::tests::oversized_or_slash_carrying_names_are_refused ... ok
+test write::tests::the_header_carries_principal_ownership_and_mode ... ok
+test write::tests::the_header_round_trips_through_the_strict_reader ... ok
+test tar::tests::streaming_parses_all_entry_shapes_across_chunkings ... ok
+test tar::tests::subtree_content_streams_without_shaping_headers ... ok
+test read::tests::retention_overflow_is_output_too_large ... ok
+test read::tests::subtree_bulk_streams_through_without_retention ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/docker.rs (target/debug/deps/docker-bf1200df84cb951d)
+
+running 8 tests
+test missing_paths_and_capability_mismatches_are_typed ... ok
+test inspect_resolves_names_prefixes_and_ids_to_canonical_identities ... ok
+test listings_and_reads_roundtrip_through_the_engine ... ok
+test supervised_capture_classifies_launch_and_exit_codes ... ok
+test listing_streams_subtree_bulk_without_retaining_it ... ok
+test admission_refuses_stale_and_unknown_incarnations ... ok
+test lease_close_and_client_kill_reap_the_whole_group ... ok
+test restart_and_recreation_are_stale_identity_refusals ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.40s
+
+     Running tests/incarnation.rs (target/debug/deps/incarnation-e2a51e2f3548fec0)
+
+running 4 tests
+test a_changed_default_context_cannot_retarget_a_pinned_engine ... ok
+test a_stopped_container_is_a_typed_refusal_not_stale_bytes ... ok
+test the_launched_record_pid_is_namespace_local ... ok
+test exec_user_and_workdir_bind_the_selected_namespace ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.84s
+
+     Running unittests src/lib.rs (target/debug/deps/strop_worker_deploy-77d0efa03a9c8e65)
+
+running 10 tests
+test container::tests::cache_location_prefers_xdg_then_home_then_passwd ... ok
+test container::tests::engine_failures_map_to_provider_taxonomy ... ok
+test container::tests::op_failures_classify_truthfully ... ok
+test cache::tests::native_spelling_policy ... ok
+test container::tests::passwd_entries_resolve_names_to_numeric_principals ... ok
+test manifest::tests::compatibility_binds_exact_release_protocol_and_target ... ok
+test manifest::tests::wire_shape_parses_exactly ... ok
+test manifest::tests::missing_worker_section_is_a_truthful_refusal ... ok
+test manifest::tests::mistyped_worker_facts_are_rejected ... ok
+test container::tests::platform_maps_to_the_musl_catalog_targets ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/container.rs (target/debug/deps/container-6aae7e7f2d05f842)
+
+running 5 tests
+test read_only_container_refuses_truthfully ... ok
+test stale_incarnation_is_refused ... ok
+test shellless_deploy_is_a_typed_refusal ... ok
+test preinstalled_shellless_worker_needs_no_deploy ... ok
+test deploy_then_read_write_notify_and_lease_reap ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.37s
+
+     Running tests/deploy.rs (target/debug/deps/deploy-6b8db64b913fb2de)
+
+running 12 tests
+test endpoint_without_worker_artifact_falls_back_honestly ... ok
+test offline_without_artifact_is_a_truthful_refusal ... ok
+test invalid_preinstalled_override_never_chooses_another_file ... ok
+test handshake_identity_mismatch_is_refusal_not_downgrade ... ok
+test online_without_local_artifact_refuses_and_points_at_the_pipeline ... ok
+test preinstalled_validates_and_activates_in_place ... ok
+test corrupt_cache_object_is_retired_and_redeployed ... ok
+test exact_verified_cache_hit_is_reused_without_upload ... ok
+test first_deploy_without_consent_refuses_with_precise_reason ... ok
+test consent_gated_first_deploy_publishes_and_activates ... ok
+test oversized_local_artifact_is_refused_before_any_upload ... ok
+test previously_authorized_endpoint_reuses_authorization_quietly ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/gc.rs (target/debug/deps/gc-b4e14f1d93ae0044)
+
+running 2 tests
+test gc_retires_only_unreferenced_objects ... ok
+test live_lease_artifact_is_never_retired_even_when_not_current ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/interrupted.rs (target/debug/deps/interrupted-38de663a00720331)
+
+running 6 tests
+test corrupt_transfer_never_publishes ... ok
+test handshake_failure_is_published_not_ready ... ok
+test rename_failure_retains_old_entry_and_drops_staging ... ok
+test receipt_failure_publishes_but_never_claims_ready ... ok
+test upload_failure_leaves_no_trace ... ok
+test lease_registration_failure_is_published_not_ready ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests strop_containers
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests strop_worker_deploy
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+[Showing lines 1-716 of 717. Use :717 to continue]

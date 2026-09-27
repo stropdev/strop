@@ -1,23 +1,25 @@
-//! Real-engine integration test for the container Git backend (0037
-//! DC1b). Gated exactly like strop-containers' docker gate: runs only
-//! when `STROP_CONTAINER_TESTS=1` *and* `docker info` succeeds, and
-//! skips loudly otherwise — a docker-less host stays green.
-//!
-//! The fixture is one uniquely-labelled disposable busybox container
-//! (`strop-test-run=<tag>`), removed by id in cleanup including on
-//! failure (the guard is `Drop`). Nothing unlabelled is ever touched.
-//! busybox carries no `git`, so no real Git execution is attempted —
-//! the test asserts the missing-executable refusal surfaces as a typed
-//! failure promptly, never a hang.
+//! Real Docker Git journey through the verified container worker.
+//! Busybox intentionally has no Git: admission and the missing-tool
+//! refusal must be typed inside its own namespace, never through an
+//! old shell supervisor or an analogous local Git process.
+//! STROP_CONTAINER_TESTS=1 is the required native lane.
 #![cfg(unix)]
 
 use std::ffi::OsStr;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sha2::{Digest, Sha256};
+use strop_containers::{engine, inspect};
 use strop_core::worker::CancelToken;
-use strop_git::{GitExec, GitExecError};
-use strop_workspace::ContainerId;
+use strop_git::{GitExec, GitExecError, RepoTarget};
+use strop_worker_client::ClientError;
+use strop_worker_deploy::container::{ContainerProvider, ShellPolicy};
+use strop_worker_deploy::deploy::{deploy, ArtifactSupply, Consent, DeployOutcome, DeployRequest};
+use strop_worker_deploy::provider::DeployProvider;
+use strop_worker_deploy::{ReleaseCatalog, MAX_WORKER_BYTES};
+use strop_workspace::{operation::FsFailureKind, ContainerId};
 
 fn required() -> bool {
     std::env::var_os("STROP_CONTAINER_TESTS").as_deref() == Some(OsStr::new("1"))
@@ -36,10 +38,10 @@ fn gate(test: &str) -> bool {
         eprintln!("skipping {test}: STROP_CONTAINER_TESTS is not 1");
         return false;
     }
-    if !engine_available() {
-        eprintln!("skipping {test}: STROP_CONTAINER_TESTS=1 but the docker engine is unreachable");
-        return false;
-    }
+    assert!(
+        engine_available(),
+        "{test}: STROP_CONTAINER_TESTS=1 requires an accessible Docker engine"
+    );
     true
 }
 
@@ -116,55 +118,108 @@ impl Drop for Fixture {
     }
 }
 
-/// `git` does not exist in busybox: the run must surface the missing
-/// executable promptly and typed — as an engine-boundary error or as a
-/// failed run whose code is data — never a hang and never a fake
-/// success.
-#[test]
-fn missing_git_in_container_fails_typed_never_hangs() {
-    if !gate("missing_git_in_container_fails_typed_never_hangs") {
-        return;
-    }
-    let tag = tag();
-    let name = format!("strop-dc1b-git-{tag}");
-    let fixture = Fixture::launch(&tag, &name);
-    let id = ContainerId::canonical(fixture.id.clone()).expect("run printed the canonical id");
-    let workdir = std::path::PathBuf::from("/");
-    let exec = GitExec::Container {
-        container: id,
-        workdir: &workdir,
-    };
-    let argv: Vec<std::ffi::OsString> = vec!["status".into()];
-    match with_token(|token| exec.run(&argv, &token)) {
-        Err(GitExecError::Container(error)) => {
-            eprintln!("missing git surfaced as a boundary error: {error}");
-        }
-        Ok(run) => {
-            assert!(!run.success, "busybox has no git: {run:?}");
-            assert_ne!(run.code, Some(0));
-        }
-        Err(other) => panic!("unexpected backend error: {other}"),
-    }
+fn worker_binary(artifacts: &Path) -> PathBuf {
+    let original = std::env::var_os("STROP_WORKER_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let executable = std::env::current_exe().unwrap();
+            let root = executable
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::parent)
+                .unwrap();
+            let musl = root.join("x86_64-unknown-linux-musl/debug/strop");
+            if musl.exists() {
+                musl
+            } else {
+                root.join("debug/strop")
+            }
+        });
+    assert!(original.is_file(), "matching worker artifact is required");
+    let binary = artifacts.join("strop-worker");
+    std::fs::copy(&original, &binary).expect("stage test worker in private artifacts");
+    let stripped = Command::new("strip")
+        .arg(&binary)
+        .status()
+        .expect("native container test requires strip");
+    assert!(stripped.success(), "private test worker must be stripped");
+    assert!(std::fs::metadata(&binary).unwrap().len() <= MAX_WORKER_BYTES);
+    binary
 }
 
-/// The container discovery path surfaces busybox's missing `git` as a
-/// typed refusal — an engine-boundary error or git's own nonzero exit
-/// — promptly: never a hang, and never `Ok(None)` off a transport lie
-/// (`None` is reserved for git's own not-a-repository fatal).
+fn catalog(binary: &Path, target: &str) -> ReleaseCatalog {
+    let mut file = std::fs::File::open(binary).unwrap();
+    let mut digest = Sha256::new();
+    let mut bytes = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).unwrap();
+        if read == 0 {
+            break;
+        }
+        bytes += read as u64;
+        digest.update(&buffer[..read]);
+    }
+    let version = env!("CARGO_PKG_VERSION");
+    let body = serde_json::json!({
+        "schema": 1, "product": "strop", "version": version,
+        "tag": format!("v{version}"), "published_at": "1970-01-01T00:00:00Z",
+        "artifacts": [{"target": target, "name": format!("strop-{version}-{target}.tar.gz"),
+            "sha256": format!("{:x}", digest.finalize()), "bytes": bytes, "url": ""}],
+        "worker": {"protocol": strop_worker_protocol::PROTOCOL_VERSION,
+            "min_editor": strop_worker_deploy::MIN_EDITOR_VERSION, "targets": [target]}
+    });
+    ReleaseCatalog::parse(body.to_string().as_bytes()).unwrap()
+}
+
 #[test]
-fn discover_without_git_fails_typed_never_hangs() {
-    if !gate("discover_without_git_fails_typed_never_hangs") {
+fn missing_git_in_container_is_typed_through_its_verified_worker() {
+    if !gate("missing_git_in_container_is_typed_through_its_verified_worker") {
         return;
     }
     let tag = tag();
-    let name = format!("strop-dc1b-discover-{tag}");
-    let fixture = Fixture::launch(&tag, &name);
-    let id = ContainerId::canonical(fixture.id.clone()).expect("run printed the canonical id");
-    let from = std::path::PathBuf::from("/");
-    match with_token(|token| strop_git::container::discover(&id, &from, &token)) {
-        Err(error) => {
-            eprintln!("missing git surfaced as a typed refusal: {error}");
-        }
-        Ok(found) => panic!("busybox has no git: {found:?}"),
+    let fixture = Fixture::launch(&tag, &format!("strop-wk10-git-{tag}"));
+    let artifacts = tempfile::tempdir().unwrap();
+    let binary = worker_binary(artifacts.path());
+    let (worker, id) = with_token(|token| {
+        let engine = engine(&token).unwrap();
+        let identity = inspect(&engine, &fixture.id, &token).unwrap();
+        let id = ContainerId::canonical(identity.id.clone()).unwrap();
+        let provider =
+            ContainerProvider::capture(&engine, &identity, ShellPolicy::Required, &token).unwrap();
+        let target = &provider.endpoint().target;
+        let report = deploy(
+            &provider,
+            &DeployRequest {
+                catalog: catalog(&binary, target),
+                editor_version: env!("CARGO_PKG_VERSION").into(),
+                consent: Consent::Granted {
+                    action: "container Git integration test".into(),
+                },
+                supply: ArtifactSupply::LocalBinary { path: binary },
+                online: false,
+            },
+        );
+        let DeployOutcome::Probed(ready) = report.outcome else {
+            panic!("container deployment probe failed: {:?}", report.outcome);
+        };
+        (provider.worker(&ready.object.path), id)
+    });
+    let target = RepoTarget::Container {
+        container: id.clone(),
+        workdir: PathBuf::from("/"),
+    };
+    let exec = GitExec::for_target_routed(&target, Some(&worker)).unwrap();
+    let argv: Vec<std::ffi::OsString> = vec!["status".into()];
+    match with_token(|token| exec.run(&argv, &token)) {
+        Err(GitExecError::Worker(strop_git::exec::WorkerGitError::Client(
+            ClientError::Domain(failure),
+        ))) => assert_eq!(failure.kind, FsFailureKind::Io),
+        other => panic!("busybox's missing Git must fail inside its worker: {other:?}"),
     }
+    assert!(with_token(|token| {
+        strop_git::container::discover(&id, Path::new("/"), Some(&worker), &token)
+    })
+    .is_err());
+    worker.shutdown().unwrap();
 }

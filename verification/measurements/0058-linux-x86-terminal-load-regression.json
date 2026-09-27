@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "scope": "Linux x86_64 Docker on WSL2, 120x30 real TUI worker-leased PTY, two-key request triggers 256 shell output lines before verified final VT100 grid marker; regression diagnosis before wake fix, not final worker qualification",
+  "baseline": {
+    "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+    "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+    "measurement": "verification/measurements/0058-linux-x86-preworker-terminal-load.json",
+    "sha256": "7101b4f976a6916e17af6bb62b0aa343d5c0a20db99d4ec0dfc737e00e8f3ab7"
+  },
+  "pre_fix_candidate": {
+    "commit": "e17c4686a3b894622ebbec15e9e3ea5044a1f6c7",
+    "artifact_sha256": "67f7e15dec483ddc4926808b4352824b75fb7d470969f022a5ada2a98c86b130",
+    "measurement": "verification/measurements/0058-linux-x86-worker-before-wake-fix-terminal-load.json",
+    "sha256": "416b57de347f0ec2a91da2cb8d7c549a6c92019fe91b7cb1a47bb675579fa2e3"
+  },
+  "method": {
+    "harness": "crates/strop/tests/terminal_editor.rs",
+    "test": "native_terminal_output_under_load_samples",
+    "sha256": "eea94aca9008f6cc711c1b149d2b0dd32bf82f3910d59ba127a470bae9963dba",
+    "warmup": 8,
+    "samples_per_artifact": 64,
+    "output_lines_per_request": 256,
+    "geometry": [
+      120,
+      30
+    ],
+    "timing": "two-key PTY input through 256 output lines to VT100 decoded and verified final grid marker"
+  },
+  "observed": {
+    "baseline_ms": {
+      "max": 6.194,
+      "p50": 4.515,
+      "p95": 5.17,
+      "p99": 6.194
+    },
+    "pre_fix_candidate_ms": {
+      "max": 258.303,
+      "p50": 256.634,
+      "p95": 257.837,
+      "p99": 258.303
+    }
+  }
+}

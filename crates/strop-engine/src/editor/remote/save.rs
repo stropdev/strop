@@ -7,17 +7,50 @@ use crate::editor::Editor;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{self, CancelReason, Completion, Outcome, Ticket, WorkerId};
-use strop_remote::save::{
-    self as transport, RemoteSaveError, RemoteSaveReceipt, RemoteVersion, Verification,
-};
-use strop_workspace::RemoteFile;
+use strop_worker_protocol::NamespaceIdentity;
+use strop_workspace::operation::{PreparedOperation, StepOutcome, StepReceipt};
+use strop_workspace::{FileTime, ObjectId, RemoteFile};
+
+mod error;
+pub(crate) mod store;
+
+pub use error::{RefusalKind, RemoteSaveError};
+
+/// One admitted remote document's worker Store baseline. Relocation
+/// retains identity and stored-byte evidence but never transfers a
+/// write permit to a new name without fresh admission.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WriteVersion {
+    file: RemoteFile,
+    modified: FileTime,
+    attributes: Option<[u8; 32]>,
+    size: u64,
+    identity: Option<ObjectId>,
+    content: [u8; 32],
+}
+
+impl WriteVersion {
+    fn file(&self) -> &RemoteFile {
+        &self.file
+    }
+    fn size(&self) -> strop_remote::RemoteSize {
+        strop_remote::RemoteSize::new(self.size)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VerifiedWrite {
+    Committed(WriteVersion),
+    Unchanged,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct WritePermit {
     id: WorkerId,
-    version: RemoteVersion,
+    version: WriteVersion,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum WriteAction {
@@ -36,39 +69,56 @@ pub struct RemoteWriteKey {
 }
 #[derive(Serialize, Deserialize)]
 pub enum RemoteWriteResult {
-    Enabled(RemoteVersion),
-    Saved(RemoteSaveReceipt),
-    Verified(Verification),
+    Enabled(WriteVersion),
+    Saved(WriteVersion),
+    /// A worker-routed save whose outcome is unconfirmed; the frozen
+    /// receipt crosses so the attempt retains its verify evidence.
+    StoreUncertain {
+        detail: String,
+        receipt: Box<StepReceipt>,
+    },
+    Verified(VerifiedWrite),
     Refused(RemoteSaveError),
 }
+
+/// The worker publishes the prepared read-only verification evidence
+/// before apply; the editor retains it even if its reply is lost.
+type FrozenStore = Arc<parking_lot::Mutex<Option<(NamespaceIdentity, PreparedOperation)>>>;
 #[derive(Default)]
 pub(crate) struct WriteState {
     pending: HashMap<DocumentId, Ticket<RemoteWriteKey>>,
     attempts: HashMap<DocumentId, Attempt>,
     /// Stored-byte evidence retained after relocation; never an active permit.
-    relocations: HashMap<DocumentId, RemoteVersion>,
+    relocations: HashMap<DocumentId, WriteVersion>,
 }
 struct Attempt {
     permit: WorkerId,
     revision: BufferRevision,
-    before: RemoteVersion,
+    before: WriteVersion,
     contents: Rope,
     unconfirmed: bool,
+    /// A worker-routed attempt's frozen receipt for `:remote verify`.
+    store: Option<Box<StepReceipt>>,
+    namespace: Option<NamespaceIdentity>,
+    prepared: FrozenStore,
 }
 enum Work {
     Enable {
         file: RemoteFile,
         contents: Rope,
-        baseline: Option<RemoteVersion>,
+        baseline: Option<WriteVersion>,
     },
     Save {
-        before: RemoteVersion,
+        before: WriteVersion,
         contents: Rope,
         close: bool,
+        prepared: FrozenStore,
     },
     Verify {
-        before: RemoteVersion,
+        before: WriteVersion,
         contents: Rope,
+        store: Option<Box<StepReceipt>>,
+        namespace: Option<NamespaceIdentity>,
     },
 }
 impl Work {
@@ -85,7 +135,7 @@ impl Work {
             Self::Save { before, .. } | Self::Verify { before, .. } => before.file(),
         }
     }
-    fn before(&self) -> Option<&RemoteVersion> {
+    fn before(&self) -> Option<&WriteVersion> {
         match self {
             Self::Enable { baseline, .. } => baseline.as_ref(),
             Self::Save { before, .. } | Self::Verify { before, .. } => Some(before),
@@ -98,28 +148,86 @@ impl Work {
             | Self::Verify { contents, .. } => contents,
         }
     }
-    fn execute(self, token: &worker::CancelToken) -> RemoteWriteResult {
-        let result = match self {
+    fn execute(
+        self,
+        workers: &super::workers::RemoteWorkers,
+        token: &worker::CancelToken,
+    ) -> RemoteWriteResult {
+        match self {
             Self::Enable {
                 file,
                 contents,
                 baseline,
-            } => match baseline {
-                Some(before) => transport::prepare_relocated_edit(&file, &before, token)
-                    .map(RemoteWriteResult::Enabled),
-                None => {
-                    transport::prepare_edit(&file, &contents, token).map(RemoteWriteResult::Enabled)
-                }
-            },
+            } => enable(file, contents, baseline, workers, token),
             Self::Save {
-                before, contents, ..
-            } => transport::save(&before, &contents, token).map(RemoteWriteResult::Saved),
-            Self::Verify { before, contents } => {
-                transport::verify(&before, &contents, token).map(RemoteWriteResult::Verified)
+                before,
+                contents,
+                prepared,
+                ..
+            } => {
+                let Some(lease) = workers.get(before.file().endpoint()) else {
+                    return RemoteWriteResult::Refused(RemoteSaveError::Refused {
+                        kind: RefusalKind::Io,
+                        detail:
+                            "the admitted worker lease is gone; never retried through another path"
+                                .into(),
+                    });
+                };
+                match store::save(&lease, &before, &contents, &prepared, token) {
+                    Ok(store::WorkerSave::Saved(version)) => RemoteWriteResult::Saved(version),
+                    Ok(store::WorkerSave::Unconfirmed { detail, receipt }) => {
+                        RemoteWriteResult::StoreUncertain { detail, receipt }
+                    }
+                    Err(error) => RemoteWriteResult::Refused(error),
+                }
             }
-        };
-        result.unwrap_or_else(RemoteWriteResult::Refused)
+            Self::Verify {
+                before,
+                store,
+                namespace,
+                ..
+            } => {
+                let Some(lease) = workers.get(before.file().endpoint()) else {
+                    return RemoteWriteResult::Refused(RemoteSaveError::Unconfirmed {
+                        detail: "the admitted worker lease is gone; outcome stays unconfirmed"
+                            .into(),
+                    });
+                };
+                let (Some(receipt), Some(namespace)) = (store, namespace) else {
+                    return RemoteWriteResult::Refused(RemoteSaveError::Unconfirmed {
+                        detail: "no frozen store attempt or namespace to verify".into(),
+                    });
+                };
+                match store::verify(&lease, &before, *receipt, namespace, token) {
+                    Ok(store::WorkerVerification::Committed(version)) => {
+                        RemoteWriteResult::Verified(VerifiedWrite::Committed(version))
+                    }
+                    Ok(store::WorkerVerification::Unchanged) => {
+                        RemoteWriteResult::Verified(VerifiedWrite::Unchanged)
+                    }
+                    Err(error) => RemoteWriteResult::Refused(error),
+                }
+            }
+        }
     }
+}
+
+/// Edit admission: the user's `:remote edit` authorizes the worker
+/// deployment and a fresh Store baseline. A restricted/SFTP-only host
+/// remains read-only; no Python, SFTP or local write fallback exists.
+fn enable(
+    file: RemoteFile,
+    contents: Rope,
+    baseline: Option<WriteVersion>,
+    workers: &super::workers::RemoteWorkers,
+    token: &worker::CancelToken,
+) -> RemoteWriteResult {
+    workers
+        .admit(file.endpoint(), "remote document save", token)
+        .map_err(store::map_failure)
+        .and_then(|lease| store::prepare_edit(&lease, &file, &contents, baseline.as_ref(), token))
+        .map(RemoteWriteResult::Enabled)
+        .unwrap_or_else(RemoteWriteResult::Refused)
 }
 impl WriteState {
     pub(super) fn pending(&self) -> bool {
@@ -226,6 +334,7 @@ impl Editor {
         let before = permit.version.clone();
         let contents = doc.buf.snapshot();
         let revision = doc.buf.revision();
+        let prepared = FrozenStore::default();
         self.remote.writes.attempts.insert(
             document,
             Attempt {
@@ -234,6 +343,9 @@ impl Editor {
                 before: before.clone(),
                 contents: contents.clone(),
                 unconfirmed: false,
+                store: None,
+                namespace: None,
+                prepared: Arc::clone(&prepared),
             },
         );
         let result = self.start_remote_write(
@@ -244,6 +356,7 @@ impl Editor {
                 before,
                 contents,
                 close,
+                prepared,
             },
         );
         if result.is_err() {
@@ -275,6 +388,8 @@ impl Editor {
         let work = Work::Verify {
             before: attempt.before.clone(),
             contents: attempt.contents.clone(),
+            store: attempt.store.clone(),
+            namespace: attempt.namespace.clone(),
         };
         self.start_remote_write(document, attempt.revision, Some(attempt.permit), work)
     }
@@ -317,6 +432,7 @@ impl Editor {
             }
         }
         let sender = self.io.tx.clone();
+        let workers = self.remote.workers.clone();
         let handle = worker::spawn(
             "remote-write",
             move |outcome| {
@@ -325,7 +441,7 @@ impl Editor {
                     outcome,
                 }))));
             },
-            move |token| Outcome::Success(work.execute(&token)),
+            move |token| Outcome::Success(work.execute(&workers, &token)),
         );
         self.worker_handles.insert(request, handle);
         Ok(())
@@ -377,6 +493,30 @@ impl Editor {
             }
             return;
         }
+        if matches!(key.action, WriteAction::Save { .. }) {
+            if let Some(attempt) = self.remote.writes.attempts.get_mut(&document) {
+                if let Some((namespace, operation)) = attempt.prepared.lock().take() {
+                    attempt.namespace = Some(namespace);
+                    if !matches!(
+                        &completion.outcome,
+                        Outcome::Success(
+                            RemoteWriteResult::Saved(_) | RemoteWriteResult::StoreUncertain { .. }
+                        )
+                    ) {
+                        attempt.store = Some(Box::new(StepReceipt {
+                            step: 0,
+                            operation,
+                            outcome: StepOutcome::Unconfirmed {
+                                detail: "store reply lost after preparation".into(),
+                                observed_destination: None,
+                                recovery: None,
+                                publication: None,
+                            },
+                        }));
+                    }
+                }
+            }
+        }
         match completion.outcome {
             Outcome::Success(RemoteWriteResult::Enabled(version))
                 if key.action == WriteAction::Enable && version.file() == &key.file =>
@@ -396,28 +536,29 @@ impl Editor {
                     "remote editing enabled (cooperative locks; other programs can still race)"
                         .into();
             }
-            Outcome::Success(RemoteWriteResult::Saved(receipt))
+            Outcome::Success(RemoteWriteResult::Saved(version))
                 if matches!(key.action, WriteAction::Save { .. }) =>
             {
-                return self.accept_remote_receipt(key, receipt);
+                return self.accept_remote_receipt(key, version);
             }
-            Outcome::Success(RemoteWriteResult::Verified(Verification::Written(receipt)))
-                if key.action == WriteAction::Verify =>
+            Outcome::Success(RemoteWriteResult::StoreUncertain { detail, receipt })
+                if matches!(key.action, WriteAction::Save { .. }) =>
             {
-                return self.accept_remote_receipt(key, receipt);
-            }
-            Outcome::Success(RemoteWriteResult::Verified(Verification::Unchanged(version)))
-                if key.action == WriteAction::Verify =>
-            {
-                if let Some(attempt) = self.remote.writes.attempts.get(&document) {
-                    if attempt.before != version {
-                        self.remote_write_uncertain(
-                            document,
-                            "verification baseline differs".into(),
-                        );
-                        return;
-                    }
+                // Frozen verify evidence crosses with the uncertain
+                // outcome; dirty text is preserved either way.
+                if let Some(attempt) = self.remote.writes.attempts.get_mut(&document) {
+                    attempt.store = Some(receipt);
                 }
+                self.remote_write_uncertain(document, detail);
+            }
+            Outcome::Success(RemoteWriteResult::Verified(VerifiedWrite::Committed(version)))
+                if key.action == WriteAction::Verify =>
+            {
+                return self.accept_remote_receipt(key, version);
+            }
+            Outcome::Success(RemoteWriteResult::Verified(VerifiedWrite::Unchanged))
+                if key.action == WriteAction::Verify =>
+            {
                 self.remote.writes.attempts.remove(&document);
                 self.message = "remote original is unchanged; local edits remain unsaved".into();
             }
@@ -429,7 +570,7 @@ impl Editor {
                         || matches!(
                             &error,
                             RemoteSaveError::Refused {
-                                kind: transport::RefusalKind::Conflict,
+                                kind: RefusalKind::Conflict,
                                 ..
                             }
                         )
@@ -475,8 +616,7 @@ impl Editor {
         self.finish_save_feedback(document);
         self.collection_save_progress(document, false);
     }
-    fn accept_remote_receipt(&mut self, key: RemoteWriteKey, receipt: RemoteSaveReceipt) {
-        let version = receipt.into_version();
+    fn accept_remote_receipt(&mut self, key: RemoteWriteKey, version: WriteVersion) {
         if version.file() != &key.file {
             self.remote_write_uncertain(
                 key.document,

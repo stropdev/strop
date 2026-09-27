@@ -57,6 +57,7 @@ pub(crate) fn stat(path: &Path) -> Result<Option<Observation>, FsFailure> {
 pub fn observe(
     path: &Path,
     digest: bool,
+    attributes: bool,
     token: &CancelToken,
 ) -> Result<Option<Observation>, FsFailure> {
     if token.is_cancelled() {
@@ -68,7 +69,7 @@ pub fn observe(
         Err(error) => return Err(io_failure(error)),
     };
     let mut result = metadata(&before);
-    if digest && before.is_file() {
+    if (digest || attributes) && before.is_file() {
         let mut file = open_read(path)?;
         let descriptor_before = metadata(&file.metadata().map_err(io_failure)?);
         if descriptor_before != result {
@@ -77,17 +78,11 @@ pub fn observe(
                 "source changed before inspection",
             ));
         }
-        let mut hash = Sha256::new();
-        let mut chunk = [0_u8; 64 * 1024];
-        loop {
-            if token.is_cancelled() {
-                return Err(failure(FsFailureKind::Cancelled, "inspection cancelled"));
-            }
-            let count = file.read(&mut chunk).map_err(io_failure)?;
-            if count == 0 {
-                break;
-            }
-            hash.update(&chunk[..count]);
+        if digest {
+            result.digest = Some(digest_descriptor(&mut file, token)?);
+        }
+        if attributes {
+            result.attributes = Some(crate::attributes::digest(&file)?);
         }
         if metadata(&file.metadata().map_err(io_failure)?) != descriptor_before {
             return Err(failure(
@@ -95,9 +90,30 @@ pub fn observe(
                 "source changed during inspection",
             ));
         }
-        result.digest = Some(hash.finalize().into());
     }
     Ok(Some(result))
+}
+
+/// Hash one newly opened descriptor from offset zero. Its owner must
+/// compare metadata before and after; this function never reopens a
+/// path and therefore cannot retarget a validated destination.
+pub(crate) fn digest_descriptor(
+    file: &mut std::fs::File,
+    token: &CancelToken,
+) -> Result<[u8; 32], FsFailure> {
+    let mut hash = Sha256::new();
+    let mut chunk = [0_u8; 64 * 1024];
+    loop {
+        if token.is_cancelled() {
+            return Err(failure(FsFailureKind::Cancelled, "inspection cancelled"));
+        }
+        let count = file.read(&mut chunk).map_err(io_failure)?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&chunk[..count]);
+    }
+    Ok(hash.finalize().into())
 }
 
 pub(crate) fn open_read(path: &Path) -> Result<std::fs::File, FsFailure> {

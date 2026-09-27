@@ -443,6 +443,7 @@ impl Editor {
             "explain" => self.open_explain(),
             "recover" => self.run_recovery_ex(arg),
             "containers" => self.request_containers(),
+            "container-worker" => self.request_container_worker(),
             "format" => self.lsp_format(),
             "rename" => {
                 if arg.is_empty() {

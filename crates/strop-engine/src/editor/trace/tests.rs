@@ -5,7 +5,7 @@
 use std::io;
 use std::rc::Rc;
 
-use strop_core::worker::{Completion, Outcome};
+use strop_core::worker::{Completion, FailureKind, Outcome};
 use strop_trace::replay::Tape;
 
 use crate::editor::events::AppEvent;
@@ -323,4 +323,25 @@ fn recording_after_finish_is_refused() {
     let mut tick = editor.tape.now();
     tick.monotonic_ms += 1;
     assert!(editor.recorded_action(Action::Finish, tick).is_err());
+}
+
+/// A rejected native watch is a queued result, not the Notify wake itself.
+/// Replaying the same refusal must retain its visible on-demand fallback
+/// without launching a worker or inventing a second notification.
+#[test]
+fn replay_preserves_rejected_filesystem_notification_status() {
+    use crate::editor::notify::{Record, SubscribedScope};
+
+    let mut editor = fixture();
+    editor
+        .notify
+        .queue
+        .push_record(Record::Settled(Outcome::<SubscribedScope>::failed(
+            FailureKind::Unavailable,
+            "worker refused: capability not admitted here: Notify",
+        )));
+    action(&mut editor, AppEvent::Notify);
+    assert!(editor.message.contains("freshness is on demand"));
+    let replayed = replay_fixture(&editor);
+    assert_eq!(replayed.message, editor.message);
 }

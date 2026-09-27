@@ -206,14 +206,24 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
         editor::trace::drive::Action::Finish,
         editor.tape().sample_tick(),
     )?;
+    let settle_deadline = std::time::Instant::now() + Duration::from_secs(30);
     while editor.async_pending() {
-        let event = receiver
-            .recv_timeout(Duration::from_secs(30))
-            .map_err(io::Error::other)?;
-        editor.recorded_action(
-            editor::trace::drive::Action::Event(event),
-            editor.tape().sample_tick(),
-        )?;
+        let remaining = settle_deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "editor jobs did not settle",
+            ));
+        }
+        match receiver.recv_timeout(remaining.min(editor::events::QUIESCENCE_POLL)) {
+            Ok(event) => editor.recorded_action(
+                editor::trace::drive::Action::Event(event),
+                editor.tape().sample_tick(),
+            )?,
+            // Physical source completion can follow its last event.
+            Err(editor::events::RecvTimeoutError::Timeout) => {}
+            Err(error) => return Err(io::Error::other(error)),
+        }
     }
     editor.tape().finish()?;
     if let Some(error) = editor.take_shutdown_error() {

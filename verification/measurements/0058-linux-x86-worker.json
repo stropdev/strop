@@ -1,0 +1,359 @@
+{
+  "binary_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
+  "bytes": 47390032,
+  "first_observed": {
+    "ready_ms": 1.477,
+    "rss_kib": 4684,
+    "threads": 2
+  },
+  "platform": {
+    "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "profile": "release-musl-stripped"
+  },
+  "protocol": 2,
+  "ready_ms": {
+    "max": 0.925,
+    "p50": 0.747,
+    "p95": 0.86,
+    "p99": 0.925
+  },
+  "rss_kib": {
+    "max": 4692,
+    "p50": 4616,
+    "p95": 4684,
+    "p99": 4692
+  },
+  "target": "x86_64-unknown-linux-musl",
+  "threads": {
+    "max": 3,
+    "p50": 2,
+    "p95": 2,
+    "p99": 3
+  },
+  "version": "0.36.0",
+  "warm_runs": [
+    {
+      "ready_ms": 0.727,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.806,
+      "rss_kib": 4680,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.747,
+      "rss_kib": 4680,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.734,
+      "rss_kib": 4684,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.754,
+      "rss_kib": 4676,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.925,
+      "rss_kib": 4616,
+      "threads": 1
+    },
+    {
+      "ready_ms": 0.801,
+      "rss_kib": 4616,
+      "threads": 1
+    },
+    {
+      "ready_ms": 0.849,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.809,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.747,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.754,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.791,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.726,
+      "rss_kib": 4612,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.826,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.768,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.728,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.752,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.872,
+      "rss_kib": 4680,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.761,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.721,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.73,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.879,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.76,
+      "rss_kib": 4684,
+      "threads": 3
+    },
+    {
+      "ready_ms": 0.768,
+      "rss_kib": 4612,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.713,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.725,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.749,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.713,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.72,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.778,
+      "rss_kib": 4684,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.86,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.755,
+      "rss_kib": 4684,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.713,
+      "rss_kib": 4612,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.778,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.708,
+      "rss_kib": 4612,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.779,
+      "rss_kib": 4680,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.752,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.745,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.716,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.708,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.695,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.737,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.736,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.767,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.718,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.713,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.705,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.766,
+      "rss_kib": 4680,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.767,
+      "rss_kib": 4612,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.768,
+      "rss_kib": 4612,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.745,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.737,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.775,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.707,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.716,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.767,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.779,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.746,
+      "rss_kib": 4620,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.726,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.714,
+      "rss_kib": 4612,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.775,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.755,
+      "rss_kib": 4692,
+      "threads": 3
+    },
+    {
+      "ready_ms": 0.722,
+      "rss_kib": 4616,
+      "threads": 2
+    },
+    {
+      "ready_ms": 0.712,
+      "rss_kib": 4616,
+      "threads": 2
+    }
+  ],
+  "warmup_runs": 8
+}

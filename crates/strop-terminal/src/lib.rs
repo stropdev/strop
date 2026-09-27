@@ -1,13 +1,12 @@
-//! Owned local terminal emulation, transport and immutable text/cell projections.
-//! Native execution belongs to workers; frontend state never owns child handles.
+//! Owned terminal emulation, transport and immutable text/cell projections.
+//! PTY execution belongs to the namespace's admitted worker (0058 WK12);
+//! frontend state never owns child handles — spawn/feed/resize/terminate
+//! ride the worker client and emulation stays here.
 #[cfg(unix)]
 pub mod client;
-#[cfg(unix)]
-pub mod helper;
 pub mod launch;
 pub mod model;
 mod projection;
-mod protocol;
 #[cfg(unix)]
 pub mod service;
 mod vt;

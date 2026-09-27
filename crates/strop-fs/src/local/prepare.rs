@@ -23,32 +23,128 @@ pub fn prepare(
     }
     let digest =
         intent.expected_content.is_some() || (intent.kind == OperationKind::Copy && !buffer_copy);
+    // Edit admission (Store with a displayed-snapshot condition) digests
+    // the destination: admission must prove the edited bytes ARE the
+    // stored ones, never trust a name.
+    let destination_digest = intent.kind == OperationKind::Store
+        && intent
+            .store
+            .as_ref()
+            .is_some_and(|policy| policy.displayed.is_some());
     let source = source
         .map(|location| {
-            observation::observe(&location.path, digest, token)
+            observation::observe(&location.path, digest, false, token)
                 .map(|value| LocatedObservation { location, value })
         })
         .transpose()?;
     let destination = destination
         .map(|location| {
-            observation::observe(&location.path, false, token)
-                .map(|value| LocatedObservation { location, value })
+            observation::observe(
+                &location.path,
+                destination_digest,
+                intent.kind == OperationKind::Store,
+                token,
+            )
+            .map(|value| LocatedObservation { location, value })
         })
         .transpose()?;
-    if let Some(expected) = intent.expected_content {
-        if source
-            .as_ref()
-            .and_then(|source| source.value.as_ref())
-            .and_then(|value| value.digest)
-            != Some(expected)
-        {
-            return Err(failure(
-                FsFailureKind::Conflict,
-                "source content no longer matches the receipt's intended bytes",
-            ));
+    // Store's expected_content names the intended DESTINATION bytes (the
+    // frozen save content), verified at effect time — it has no source.
+    if intent.kind != OperationKind::Store {
+        if let Some(expected) = intent.expected_content {
+            if source
+                .as_ref()
+                .and_then(|source| source.value.as_ref())
+                .and_then(|value| value.digest)
+                != Some(expected)
+            {
+                return Err(failure(
+                    FsFailureKind::Conflict,
+                    "source content no longer matches the receipt's intended bytes",
+                ));
+            }
         }
     }
     match intent.kind {
+        OperationKind::Store => {
+            let policy = intent.store.ok_or_else(|| {
+                failure(
+                    FsFailureKind::Protocol,
+                    "store intent carries no conditional policy",
+                )
+            })?;
+            if policy.displayed.is_none() && intent.expected_content.is_none() {
+                return Err(failure(
+                    FsFailureKind::Protocol,
+                    "store requires a displayed baseline or intended content",
+                ));
+            }
+            if source.is_some() || destination.is_none() {
+                return Err(failure(
+                    FsFailureKind::InvalidPath,
+                    "store requires exactly one destination and no source",
+                ));
+            }
+            let observed = destination
+                .as_ref()
+                .and_then(|destination| destination.value.as_ref());
+            if let Some(observation) = observed {
+                if observation.kind != EntryKind::File {
+                    return Err(failure(
+                        FsFailureKind::Unsupported,
+                        "store replaces only regular files",
+                    ));
+                }
+                if observation.links != Some(1) {
+                    return Err(failure(
+                        FsFailureKind::Unsupported,
+                        "hard-linked file mutation requires explicit alias handling",
+                    ));
+                }
+            }
+            if policy.baseline_object.is_some()
+                && observed.and_then(|value| value.identity) != policy.baseline_object
+            {
+                return Err(failure(
+                    FsFailureKind::Conflict,
+                    "stored file identity changed since edit admission",
+                ));
+            }
+            if policy.baseline_attributes.is_some()
+                && observed.and_then(|value| value.attributes) != policy.baseline_attributes
+            {
+                return Err(failure(
+                    FsFailureKind::Conflict,
+                    "stored file attributes changed since edit admission",
+                ));
+            }
+            if let Some(displayed) = policy.displayed {
+                if observed.and_then(|value| value.digest) != Some(displayed) {
+                    return Err(failure(
+                        FsFailureKind::Conflict,
+                        "displayed snapshot differs from the stored content; refresh before editing",
+                    ));
+                }
+            }
+            // Admission checks only the displayed bytes; an actual save
+            // also retains the prior mtime, even when its content digest
+            // is checked independently.
+            if !policy.force && intent.expected_content.is_some() {
+                if policy.expect_absent {
+                    if observed.is_some() {
+                        return Err(failure(
+                            FsFailureKind::Conflict,
+                            "file exists — :w! to overwrite",
+                        ));
+                    }
+                } else if observed.and_then(|value| value.modified) != policy.baseline {
+                    return Err(failure(
+                        FsFailureKind::Conflict,
+                        "file changed on disk — :w! to force",
+                    ));
+                }
+            }
+        }
         OperationKind::CreateFile | OperationKind::CreateDirectory => {
             if source.is_some() || destination.is_none() {
                 return Err(failure(
@@ -116,10 +212,13 @@ pub fn prepare(
             "removal does not accept a destination",
         ));
     }
+    // A Store's occupied destination is its own baseline contract (checked
+    // above); the vacancy refusal protects the create/rename family.
     if destination
         .as_ref()
         .is_some_and(|destination| destination.value.is_some())
         && !allow_occupied
+        && intent.kind != OperationKind::Store
     {
         return Err(failure(
             FsFailureKind::Conflict,
@@ -174,7 +273,7 @@ pub fn prepare(
         {
             continue;
         }
-        let value = observation::observe(path, false, token)?;
+        let value = observation::observe(path, false, false, token)?;
         if value
             .as_ref()
             .is_some_and(|value| value.kind != EntryKind::Directory)
@@ -194,8 +293,38 @@ pub fn prepare(
         if !parents.iter().any(|parent| parent.location == *root) {
             parents.push(LocatedObservation {
                 location: root.clone(),
-                value: observation::observe(&root.path, false, token)?,
+                value: observation::observe(&root.path, false, false, token)?,
             });
+        }
+    }
+    if intent.kind == OperationKind::Store {
+        // Document saves never synthesize parents (no silent mkdir -p —
+        // the local writer's ENOENT), so batch orchestration never sees a
+        // store with a missing parent to synthesize.
+        if parents.iter().any(|parent| parent.value.is_none()) {
+            return Err(failure(
+                FsFailureKind::Io,
+                "destination's parent directory does not exist",
+            ));
+        }
+        // Edit admission keeps the helper's ownership posture: the file
+        // being armed for editing is owned by the worker's principal.
+        if intent
+            .store
+            .as_ref()
+            .is_some_and(|policy| policy.displayed.is_some())
+        {
+            let owned = destination
+                .as_ref()
+                .and_then(|destination| destination.value.as_ref())
+                .and_then(|value| value.uid);
+            let principal = context.capability()?.principal;
+            if owned.is_none() || principal.is_none() || owned != principal {
+                return Err(failure(
+                    FsFailureKind::Permission,
+                    "saving requires a file owned by the authenticated user",
+                ));
+            }
         }
     }
     let mut capability = context.capability()?;

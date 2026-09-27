@@ -3,6 +3,7 @@ mod copy;
 mod execute;
 mod outcome;
 mod prepare;
+mod store;
 mod verify;
 use crate::guard::{self, NameLock, Parent};
 use crate::{failure, io_failure, observation, stage};
@@ -11,10 +12,12 @@ use outcome::{committed, uncertain};
 pub use prepare::prepare;
 use std::fs::File;
 use std::os::unix::fs::MetadataExt;
+#[cfg(test)]
+pub(crate) use store::test_support;
 use strop_core::worker::CancelToken;
 use strop_workspace::operation::*;
 use strop_workspace::{EntryKind, Observation, ResourceLocation};
-pub use verify::verify;
+pub use verify::{verify, verify_recovered};
 pub(super) fn rename_error(error: rustix::io::Errno) -> FsFailure {
     if error == rustix::io::Errno::XDEV {
         return failure(

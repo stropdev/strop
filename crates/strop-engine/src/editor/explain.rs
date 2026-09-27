@@ -33,6 +33,84 @@ impl Editor {
             );
         }
 
+        text.push_str("\n[workers]\n");
+        for (_, context) in self.workspaces.iter() {
+            match &context.filesystem {
+                strop_workspace::Filesystem::Local => {
+                    let state = match self.filesystem.worker().session() {
+                        Some(session) => format!("ready (incarnation {})", session.incarnation),
+                        None => "configured; not connected or worker lost".into(),
+                    };
+                    let _ = writeln!(text, "  local       {state}");
+                }
+                strop_workspace::Filesystem::Remote(endpoint) => {
+                    let state = match self.remote.workers.get_ready(endpoint) {
+                        Some(ready) => {
+                            let connection = match ready.worker.worker().session() {
+                                Some(session) => {
+                                    format!("connected (incarnation {})", session.incarnation)
+                                }
+                                None => "artifact verified; service not connected".into(),
+                            };
+                            format!(
+                                "{connection}; {} / {} / sha256:{} at {}",
+                                env!("CARGO_PKG_VERSION"),
+                                ready.target,
+                                ready.artifact.sha256,
+                                strop_core::layout::printable_text(&ready.artifact.path)
+                            )
+                        }
+                        None if self.remote.worker_requested(endpoint) => {
+                            "worker admission requested; SFTP browsing remains available".into()
+                        }
+                        None if self.remote.workers.admitting(endpoint) => {
+                            "worker deployment in progress; SFTP browsing remains available".into()
+                        }
+                        None => "SFTP browsing only; :remote worker [URI] for services".into(),
+                    };
+                    let _ = writeln!(text, "  {endpoint}  {state}");
+                }
+                strop_workspace::Filesystem::Container(id) => {
+                    let admitted = self
+                        .containers
+                        .attached
+                        .get(id.as_str())
+                        .and_then(|identity| self.containers.workers.get(identity));
+                    match admitted {
+                        Some(lease) => {
+                            let state = match lease.worker().session() {
+                                Some(session) => {
+                                    format!("connected (incarnation {})", session.incarnation)
+                                }
+                                None => "artifact verified; service not connected".into(),
+                            };
+                            let _ = writeln!(text, "  container {}  {state}", id);
+                            let _ = writeln!(
+                                text,
+                                "    target {} / {}",
+                                env!("CARGO_PKG_VERSION"),
+                                lease.target()
+                            );
+                            let _ =
+                                writeln!(text, "    artifact sha256:{}", lease.artifact_sha256());
+                            let _ = writeln!(
+                                text,
+                                "    path {}",
+                                strop_core::layout::printable_text(lease.artifact_path())
+                            );
+                        }
+                        None => {
+                            let _ = writeln!(
+                                text,
+                                "  container {}  read-only browse; :container-worker for services",
+                                id
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         text.push_str("\n[current document]\n");
         match self.lsp_current_doc_path() {
             Some(resource) => {
@@ -404,6 +482,7 @@ mod tests {
     fn explain_names_remote_readonly_source_and_ssh_target() {
         use crate::editor::document::RemoteDocument;
         let file = strop_workspace::RemoteFile::parse("ssh://fixture/work/file.txt").unwrap();
+        let endpoint = file.endpoint().clone();
         let selection = strop_remote::ReadSelection::Full;
         let mut e = Editor::new(Buffer::from_text("local\n"));
         let document = e
@@ -423,6 +502,9 @@ mod tests {
                 },
             ))
             .unwrap();
+        e.workspaces
+            .bind(strop_workspace::Filesystem::Remote(endpoint), None)
+            .unwrap();
         e.switch_to(document);
         e.open_explain();
         let text = e.buf().text().to_string();
@@ -431,6 +513,10 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("target        ssh"), "{text}");
+        assert!(
+            text.contains("SFTP browsing only; :remote worker [URI] for services"),
+            "{text}"
+        );
         assert!(
             text.contains("remote drafts not persisted without :recover consent remote"),
             "{text}"

@@ -72,10 +72,11 @@ fn execute_checked(
     }
     let buffer_copy = operation.intent.kind == OperationKind::Copy
         && operation.intent.copy_version == CopyVersion::Buffer;
-    if buffer_copy != contents.is_some() {
+    let stores = operation.intent.kind == OperationKind::Store;
+    if (buffer_copy || stores) != contents.is_some() {
         return Err(failure(
             FsFailureKind::Protocol,
-            "copy snapshot does not match the approved content version",
+            "snapshot does not match the approved content version",
         ));
     }
     let current = context.capability()?;
@@ -179,6 +180,10 @@ fn execute_checked(
                 .value
                 .as_ref()
                 .is_some_and(|value| value.digest.is_some()),
+            source
+                .value
+                .as_ref()
+                .is_some_and(|value| value.attributes.is_some()),
             token,
         )?;
         if actual != source.value {
@@ -198,31 +203,36 @@ fn execute_checked(
         }
     }
     if let Some(destination) = &operation.destination {
-        if observation::stat(&destination.location.path)?.is_some() {
-            return Err(failure(
-                FsFailureKind::Conflict,
-                "destination is occupied; no overwrite",
-            ));
-        }
-        if let Some(expected) = &destination.value {
-            let vacated = operation.dependencies.iter().any(|step| {
-                receipts.iter().any(|receipt| {
-                    receipt.step == *step
-                        && receipt.outcome.is_committed()
-                        && receipt.operation.source.as_ref().is_some_and(|source| {
-                            source.location == destination.location
-                                && source
-                                    .value
-                                    .as_ref()
-                                    .is_some_and(|source| source.same_object(expected))
-                        })
-                })
-            });
-            if !vacated {
+        // A Store's occupation/baseline contract is its own (the document
+        // save semantics); the review batch's vacancy rule is for the
+        // create/rename family it protects.
+        if operation.intent.kind != OperationKind::Store {
+            if observation::stat(&destination.location.path)?.is_some() {
                 return Err(failure(
                     FsFailureKind::Conflict,
-                    "destination vacancy was not established by this plan",
+                    "destination is occupied; no overwrite",
                 ));
+            }
+            if let Some(expected) = &destination.value {
+                let vacated = operation.dependencies.iter().any(|step| {
+                    receipts.iter().any(|receipt| {
+                        receipt.step == *step
+                            && receipt.outcome.is_committed()
+                            && receipt.operation.source.as_ref().is_some_and(|source| {
+                                source.location == destination.location
+                                    && source
+                                        .value
+                                        .as_ref()
+                                        .is_some_and(|source| source.same_object(expected))
+                            })
+                    })
+                });
+                if !vacated {
+                    return Err(failure(
+                        FsFailureKind::Conflict,
+                        "destination vacancy was not established by this plan",
+                    ));
+                }
             }
         }
     }
@@ -413,6 +423,17 @@ fn execute_checked(
             }
         }
         OperationKind::Trash => return crate::trash::execute(operation, token),
+        OperationKind::Store => {
+            let destination = destination
+                .ok_or_else(|| failure(FsFailureKind::Protocol, "missing store destination"))?;
+            return store::store(
+                operation,
+                contents,
+                destination,
+                parent_of(destination)?,
+                token,
+            );
+        }
     }
     for parent in &parents {
         if let Err(error) = parent

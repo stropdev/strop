@@ -61,7 +61,38 @@ pub(crate) fn repo_or_unavailable(workdir: &Path) -> Result<strop_git::Repo, Fai
     })
 }
 
+/// The already-admitted worker for exactly this repository namespace.
+/// Local Git stays in-process; a missing SSH/container lease refuses
+/// typed at GitExec admission. A container's StartedAt is captured
+/// before launching this job, never selected from a later attachment.
+pub(crate) fn repo_lease(
+    remote: &crate::editor::remote::workers::RemoteWorkers,
+    containers: &crate::editor::containers::ContainerWorkers,
+    container_started: Option<&str>,
+    repo: &RepoTarget,
+) -> Option<strop_worker_client::Worker> {
+    match repo {
+        RepoTarget::Remote { endpoint, .. } => {
+            remote.get(endpoint).map(|worker| worker.worker().clone())
+        }
+        RepoTarget::Container { container, .. } => container_started
+            .and_then(|started| containers.get_for(container, started))
+            .map(|worker| worker.worker().clone()),
+        RepoTarget::Local { .. } => None,
+    }
+}
+
 impl Editor {
+    pub(crate) fn git_container_started(&self, repo: &RepoTarget) -> Option<String> {
+        let RepoTarget::Container { container, .. } = repo else {
+            return None;
+        };
+        self.containers
+            .attached
+            .get(container.as_str())
+            .map(|identity| identity.started_at.clone())
+    }
+
     /// Allocate a request ticket for a git job. Identity exhaustion is
     /// reported, never unwrapped.
     pub(crate) fn git_ticket<K>(&mut self, key: K) -> Option<Ticket<K>> {

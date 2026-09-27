@@ -47,6 +47,15 @@ impl Default for RemoteState {
         }
     }
 }
+
+impl RemoteState {
+    pub(super) fn worker_requested(&self, endpoint: &RemoteEndpoint) -> bool {
+        self.controls.values().any(|key| {
+            matches!(&key.operation, RemoteControl::AdmitWorker(selected) if selected == endpoint)
+        })
+    }
+}
+
 struct FollowOwner {
     ticket: Ticket<FollowKey>,
     read: Option<WorkerId>,
@@ -79,6 +88,9 @@ pub enum FollowUpdate {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RemoteControl {
     Connect(RemoteEndpoint),
+    /// Explicitly admit a verified worker without granting a file's
+    /// write permit. Git/LSP can then use it independently of :remote edit.
+    AdmitWorker(RemoteEndpoint),
     Disconnect(RemoteEndpoint),
     DisconnectAll,
     Connections,
@@ -96,6 +108,7 @@ pub enum ControlResult {
         #[serde(skip)]
         lease: Option<ConnectionLease>,
     },
+    WorkerReady(RemoteEndpoint),
     Disconnected,
     Listing(String),
 }

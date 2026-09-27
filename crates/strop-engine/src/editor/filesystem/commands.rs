@@ -243,6 +243,7 @@ impl Editor {
                     destination: Some(destination),
                     copy_version: CopyVersion::Stored,
                     expected_content: None,
+                    store: None,
                 }],
                 None,
             );
@@ -324,6 +325,7 @@ impl Editor {
                 destination,
                 copy_version: version,
                 expected_content: None,
+                store: None,
             });
         }
         self.prepare_filesystem(intents, None)

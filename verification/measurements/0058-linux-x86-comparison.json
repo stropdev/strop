@@ -1,0 +1,80 @@
+{
+  "baseline": {
+    "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+    "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+    "measurement": "verification/measurements/0058-linux-x86-preworker.json",
+    "sha256": "80f81f53c02b94e74e9fec0ed2f6868dae1554a253fcbf3bf71b6b32254ea69e"
+  },
+  "candidate": {
+    "artifact_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
+    "commit": null,
+    "measurement": "verification/measurements/0058-linux-x86-worker.json",
+    "sha256": "d0d893db6eaaab001b7c6d0b800291467ee25dcbfe93a376d2a672c46b428f64",
+    "state": "0.36.0 Linux/Apple-Silicon worker after Intel removal; static candidate 5a9f826f; retained-target CI and tag pending"
+  },
+  "method": {
+    "excludes": [
+      "SSH/container cold deployment or cache reuse",
+      "input to frame",
+      "LSP request and sync under load",
+      "terminal sustained throughput",
+      "transport bytes and retirement high-water marks",
+      "macOS and aarch64 native targets"
+    ],
+    "harness": "verification/bench_worker.py",
+    "measures": "process spawn through decoded Welcome; /proc RSS and threads immediately at welcome",
+    "percentile": "nearest rank",
+    "samples_per_artifact": 64,
+    "sha256": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
+    "warmup": 8
+  },
+  "observed": {
+    "baseline_bytes": 46226704,
+    "baseline_ready_ms": {
+      "max": 0.986,
+      "p50": 0.724,
+      "p95": 0.828,
+      "p99": 0.986
+    },
+    "baseline_rss_kib": {
+      "max": 4312,
+      "p50": 4308,
+      "p95": 4312,
+      "p99": 4312
+    },
+    "baseline_threads": {
+      "max": 2,
+      "p50": 2,
+      "p95": 2,
+      "p99": 2
+    },
+    "candidate_bytes": 47390032,
+    "candidate_ready_ms": {
+      "max": 0.925,
+      "p50": 0.747,
+      "p95": 0.86,
+      "p99": 0.925
+    },
+    "candidate_rss_kib": {
+      "max": 4692,
+      "p50": 4616,
+      "p95": 4684,
+      "p99": 4692
+    },
+    "candidate_threads": {
+      "max": 3,
+      "p50": 2,
+      "p95": 2,
+      "p99": 3
+    },
+    "bytes_delta": 1163328
+  },
+  "platform": {
+    "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "profile": "release-musl-stripped"
+  },
+  "schema": 1,
+  "scope": "local x86_64-unknown-linux-musl worker handshake only; not a full WK20 latency or deployment comparison"
+}

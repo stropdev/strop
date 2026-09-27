@@ -10,6 +10,7 @@
 
 use crate::id::{Session, Subscription};
 use crate::message::Refusal;
+use strop_core::worker::session::{classify_session, Admission};
 
 /// The freshness decisions for one live worker session.
 #[derive(Debug, Clone)]
@@ -40,28 +41,33 @@ impl Authority {
     /// current one so a reconnected client can re-handshake; it never
     /// falls through to lease comparison with foreign state.
     pub fn admit(&self, stamped: &Session) -> Result<(), Refusal> {
-        if stamped.incarnation != self.session.incarnation {
-            return Err(Refusal::WrongIncarnation {
-                current: self.session.incarnation,
-            });
-        }
-        if stamped.lease != self.session.lease {
-            return Err(Refusal::WrongLease);
-        }
-        if self.closed {
-            return Err(Refusal::Closed);
-        }
-        Ok(())
+        self.check(stamped, false)
     }
 
     /// Admit a mutation-class request: after `quiesce` the worker drains
     /// admitted work but prepares/applies nothing new.
     pub fn admit_mutation(&self, stamped: &Session) -> Result<(), Refusal> {
-        self.admit(stamped)?;
-        if self.retiring {
-            return Err(Refusal::Retiring);
+        self.check(stamped, true)
+    }
+
+    fn check(&self, stamped: &Session, mutation: bool) -> Result<(), Refusal> {
+        match classify_session(
+            self.session.incarnation,
+            stamped.incarnation,
+            self.session.lease.0,
+            stamped.lease.0,
+            self.closed,
+            self.retiring,
+            mutation,
+        ) {
+            Admission::Live => Ok(()),
+            Admission::WrongIncarnation => Err(Refusal::WrongIncarnation {
+                current: self.session.incarnation,
+            }),
+            Admission::WrongLease => Err(Refusal::WrongLease),
+            Admission::Closed => Err(Refusal::Closed),
+            Admission::Retiring => Err(Refusal::Retiring),
         }
-        Ok(())
     }
 
     /// Admit a subscription identity against its current generation.

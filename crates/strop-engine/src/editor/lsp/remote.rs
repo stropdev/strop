@@ -1,23 +1,18 @@
-//! Remote LSP discovery and lifecycle (0036 RW8). The remote project
-//! layer is fetched over the owned connection, the server runs on the
-//! endpoint inside the remote root, and every identity stays
-//! endpoint-scoped: the editor's local project layer, local probes and
-//! local paths never participate. Runs entirely on the discovery
-//! worker; the editor sees only the serializable record (and, on
-//! success, the side-table transport).
+//! Remote LSP discovery over read-only SFTP metadata plus an admitted
+//! endpoint worker for Git root and service execution. The editor's
+//! local filesystem, local project layer and Python supervisor never
+//! stand in for remote authority. All I/O is on the discovery job.
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 
 use strop_core::worker::CancelToken;
-use strop_remote::{
-    ReadFailureKind, ReadLimit, ReadSelection, RemoteClient, RemoteCommand, RemoteCommandError,
-    RemoteOffset,
-};
+use strop_remote::worker_transport::RemoteWorker;
+use strop_remote::{ReadFailureKind, ReadLimit, ReadSelection, RemoteClient, RemoteOffset};
 use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 use super::attach::{AttachDecision, AttachRecord, DiscoverInput, LiveTransport};
 use strop_lsp::languages::{Languages, LayerDiagnostic, RemoteLayer};
-use strop_lsp::registry::{self, ServerSpec};
+use strop_lsp::registry;
 use strop_lsp::{Client, ServerId, Workspace};
 
 /// Bounded read for one candidate config file: languages.toml is
@@ -136,81 +131,23 @@ fn find_project_layer(
     }
 }
 
-/// The remote workspace root, mirroring local semantics: the dir
-/// holding a project layer, else the remote git toplevel (a bounded,
-/// cancellable, read-only query through the shared command policy),
-/// else the trigger file's own directory. Git absence or failure is a
-/// graceful fallback, never a refusal — same as local.
-fn workspace_root(endpoint: &RemoteEndpoint, parent: &Path, token: &CancelToken) -> PathBuf {
-    let Ok(command) = RemoteCommand::new(
-        "git",
-        vec!["rev-parse".into(), "--show-toplevel".into()],
-        parent,
-    ) else {
-        return parent.to_path_buf();
-    };
-    match strop_remote::run(endpoint, &command, token) {
-        Ok(output) if output.status.success() => {
-            let text = String::from_utf8_lossy(&output.stdout);
-            let first = text
-                .lines()
-                .next()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .map(PathBuf::from)
-                .filter(|path| path.is_absolute());
-            first.unwrap_or_else(|| parent.to_path_buf())
-        }
-        _ => parent.to_path_buf(),
-    }
-}
-
-/// Remote executability settled the way the spawn itself will resolve
-/// it: through the remote login shell, with the command as inert argv
-/// — `sh -c 'command -v -- "$1"' sh CMD` for bare PATH names, `sh -c
-/// 'test -x -- "$1"' sh CMD` for slash-bearing paths against the
-/// remote cwd. No local stat ever guesses about a remote disk.
-enum Executability {
-    Executable,
-    Refused { reason: String },
-    Cancelled,
-    Failed(String),
-}
-
-fn remote_executable(
+/// A trusted project layer owns its root. Without one, only an
+/// already-admitted endpoint worker may query Git; no Python probe
+/// or guessed local repository path. Git's own no-repository result
+/// falls back to the trigger directory, while transport loss stays
+/// a typed discovery failure.
+fn workspace_root(
     endpoint: &RemoteEndpoint,
-    spec: &ServerSpec<'_>,
-    root: &Path,
+    parent: &Path,
+    worker: Option<&RemoteWorker>,
     token: &CancelToken,
-) -> Executability {
-    let probe = if spec.command.contains('/') {
-        "test -x \"$1\""
-    } else {
-        "command -v -- \"$1\""
+) -> Result<PathBuf, String> {
+    let Some(worker) = worker else {
+        return Ok(parent.to_path_buf());
     };
-    let Ok(command) = RemoteCommand::new(
-        "sh",
-        vec!["-c".into(), probe.into(), "sh".into(), spec.command.into()],
-        root,
-    ) else {
-        return Executability::Refused {
-            reason: "empty command".into(),
-        };
-    };
-    match strop_remote::run(endpoint, &command, token) {
-        Ok(output) if output.status.success() => Executability::Executable,
-        Ok(output) => {
-            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let reason = if detail.is_empty() {
-                "not found on the remote host".to_string()
-            } else {
-                detail
-            };
-            Executability::Refused { reason }
-        }
-        Err(RemoteCommandError::Cancelled { .. }) => Executability::Cancelled,
-        Err(error) => Executability::Failed(error.to_string()),
-    }
+    strop_git::remote::discover(endpoint, parent, Some(worker), token)
+        .map(|found| found.unwrap_or_else(|| parent.to_path_buf()))
+        .map_err(|error| error.to_string())
 }
 
 /// Remote attach discovery: fetch the remote project layer → resolve
@@ -222,6 +159,7 @@ pub(super) fn discover(
     input: &DiscoverInput,
     file: &RemoteFile,
     client: &RemoteClient,
+    worker: &Option<RemoteWorker>,
     token: &CancelToken,
 ) -> Option<AttachRecord> {
     let DiscoverInput {
@@ -294,7 +232,19 @@ pub(super) fn discover(
             .and_then(Path::parent)
             .map(Path::to_path_buf)
             .unwrap_or_else(|| parent.clone()),
-        None => workspace_root(&endpoint, &parent, token),
+        None => match workspace_root(&endpoint, &parent, worker.as_ref(), token) {
+            Ok(root) => root,
+            Err(_) if token.is_cancelled() => return None,
+            Err(reason) => {
+                return Some(record(
+                    None,
+                    language.to_string(),
+                    parent,
+                    AttachDecision::RemoteIo { reason },
+                    layers,
+                ))
+            }
+        },
     };
     // 4. Resolve the server through the merged layers.
     let Some(spec) = registry::for_extension(ext, &languages) else {
@@ -337,34 +287,27 @@ pub(super) fn discover(
             }
         }
     }
-    // 6. Remote executability through the remote login shell.
-    match remote_executable(&endpoint, &spec, &root, token) {
-        Executability::Executable => {}
-        Executability::Cancelled => return None,
-        Executability::Failed(reason) => {
-            return Some(record(
-                None,
-                name,
-                root,
-                AttachDecision::RemoteIo { reason },
-                layers,
-            ))
-        }
-        Executability::Refused { reason } => {
-            return Some(record(
-                None,
-                name,
-                root,
-                AttachDecision::NotExecutable {
-                    command: spec.command.to_string(),
-                    reason,
-                    hint: super::attach::install_hint(&spec),
-                },
-                layers,
-            ))
-        }
+    // 6. The worker owns actual server launch/readiness. An unadmitted
+    // host refuses at Client::spawn; a missing program is classified by
+    // the worker's real exec attempt, never by a shell or local probe.
+    if worker
+        .as_ref()
+        .is_some_and(|lease| lease.endpoint() != &endpoint)
+    {
+        return Some(record(
+            None,
+            name,
+            root,
+            AttachDecision::RemoteIo {
+                reason: "remote LSP lease belongs to a different endpoint".into(),
+            },
+            layers,
+        ));
     }
-    // 7. Spawn on the endpoint, inside the remote root.
+    if token.is_cancelled() {
+        return None;
+    }
+    // 7. Spawn in the endpoint's namespace with the bound lease.
     let (tx, rx) = channel();
     match Client::spawn(
         &spec,
@@ -373,7 +316,7 @@ pub(super) fn discover(
             root: root.clone(),
         },
         tx,
-        token,
+        worker.as_ref().map(|lease| lease.worker().clone()),
     ) {
         Ok(client) => {
             let server = client.id();

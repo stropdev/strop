@@ -6,17 +6,25 @@
 //! its honest read-only SFTP behavior with a typed refusal for anything
 //! more, and an interrupted deploy leaves no partial activation.
 //!
-//! Like remote_ssh.rs, there is no network: `sshd -i` speaks the real
-//! SSH protocol over a ProxyCommand pipe. Gated by
-//! STROP_REQUIRE_SSH_TESTS=1 (the compose test stage runs sshd).
+//! Loopback TCP carries the real SSH protocol to two scoped OpenSSH daemons
+//! (ordinary and SFTP-only). Gated by STROP_REQUIRE_SSH_TESTS=1.
 #![cfg(unix)]
+#[path = "worker_ssh/journeys.rs"]
+mod journeys;
+#[path = "worker_ssh/perf.rs"]
+mod perf;
+#[path = "worker_ssh/refusals.rs"]
+mod refusals;
 
 use std::io::Read as _;
-use std::os::unix::fs::PermissionsExt;
+use std::net::{TcpListener, TcpStream};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
+use strop_core::worker::cache_record::CACHE_LOCK_FILE;
 use strop_remote::bootstrap::{self, BootstrapError, EndpointFacts};
 use strop_remote::deploy_provider::SftpDeployProvider;
 use strop_remote::worker_transport;
@@ -30,24 +38,28 @@ use strop_worker_deploy::MAX_WORKER_BYTES;
 use strop_workspace::operation::{OperationIntent, OperationKind};
 use strop_workspace::{RemoteEndpoint, ResourceLocation};
 
-/// Tests in this binary share one sshd fixture and one remote cache;
-/// deployments mutate both, so they run strictly serially.
+/// Every test owns its private sshd listeners, cache and PATH wrapper.
+/// The lock keeps process-global PATH scoped until the daemons are reaped.
 static SERIAL: Mutex<()> = Mutex::new(());
-static FIXTURE: LazyLock<Fixture> = LazyLock::new(Fixture::new);
+
+struct ScopedFixture {
+    fixture: Fixture,
+    _serial: MutexGuard<'static, ()>,
+}
 
 fn required() -> bool {
     std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() == Some(std::ffi::OsStr::new("1"))
 }
 
-fn serial() -> Option<MutexGuard<'static, ()>> {
+fn serial() -> Option<ScopedFixture> {
     if !required() {
         return None;
     }
-    Some(SERIAL.lock().unwrap_or_else(|error| error.into_inner()))
-}
-
-fn fixture() -> &'static Fixture {
-    &FIXTURE
+    let serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    Some(ScopedFixture {
+        fixture: Fixture::new(),
+        _serial: serial,
+    })
 }
 
 fn quoted(path: &Path) -> String {
@@ -64,12 +76,71 @@ fn successful(command: &mut Command) -> Output {
     output
 }
 
+struct Sshd {
+    child: Option<Child>,
+    port: u16,
+}
+
+impl Sshd {
+    fn start(root: &Path, config: &Path, name: &str) -> Self {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let log = root.join(format!("{name}.sshd.log"));
+        let stderr = std::fs::File::create(&log).unwrap();
+        let child = Command::new("/usr/sbin/sshd")
+            .args(["-D", "-e", "-f"])
+            .arg(config)
+            .args(["-p", &port.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .unwrap();
+        let mut daemon = Self {
+            child: Some(child),
+            port,
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                return daemon;
+            }
+            if daemon.child.as_mut().unwrap().try_wait().unwrap().is_some()
+                || Instant::now() >= deadline
+            {
+                panic!(
+                    "scoped {name} sshd did not bind loopback: {}",
+                    std::fs::read_to_string(&log).unwrap_or_default()
+                );
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn stop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+impl Drop for Sshd {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 struct Fixture {
     directory: tempfile::TempDir,
     /// The deployable worker artifact: the real binary, stripped under
     /// the stage's byte bound.
     artifact: PathBuf,
     artifact_sha256: String,
+    sshd: Sshd,
+    sftp_sshd: Sshd,
+    original_path: std::ffi::OsString,
 }
 
 impl Fixture {
@@ -78,6 +149,7 @@ impl Fixture {
             .tempdir_in(std::fs::canonicalize(std::env::temp_dir()).unwrap())
             .unwrap();
         let root = directory.path();
+        let original_path = std::env::var_os("PATH").unwrap();
         std::fs::create_dir(root.join("bin")).unwrap();
         std::fs::create_dir(root.join("home")).unwrap();
         std::fs::create_dir(root.join("cache")).unwrap();
@@ -93,7 +165,7 @@ impl Fixture {
         std::fs::copy(root.join("client.pub"), root.join("authorized_keys")).unwrap();
         let username = String::from_utf8(successful(Command::new("id").arg("-un")).stdout).unwrap();
         let base = format!(
-            "HostKey {}\nAuthorizedKeysFile {}\nStrictModes no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin yes\nLogLevel ERROR\nSubsystem sftp internal-sftp\n",
+            "ListenAddress 127.0.0.1\nHostKey {}\nAuthorizedKeysFile {}\nStrictModes no\nUsePAM no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin yes\nLogLevel ERROR\nSubsystem sftp internal-sftp\n",
             root.join("host").display(),
             root.join("authorized_keys").display()
         );
@@ -101,31 +173,29 @@ impl Fixture {
         // config-owned channel that pins the remote cache base inside
         // the fixture for both sshd configurations.
         let set_env = format!("SetEnv XDG_CACHE_HOME={}\n", quoted(&root.join("cache")));
-        let server = root.join("sshd_config");
-        std::fs::write(&server, format!("{base}{set_env}")).unwrap();
-        let sftp_only = root.join("sshd_sftp_only_config");
+        let server_config = root.join("sshd_config");
+        std::fs::write(&server_config, format!("{base}{set_env}")).unwrap();
+        let sftp_config = root.join("sshd_sftp_only_config");
         std::fs::write(
-            &sftp_only,
+            &sftp_config,
             format!("{base}{set_env}ForceCommand internal-sftp\n"),
         )
         .unwrap();
-        // First matching block wins: the restricted alias gets its own
-        // sshd (ForceCommand internal-sftp), every other alias the
-        // full shell + subsystem sshd.
+        // A real peer socket reaches macOS BSM audit admission; `sshd -i`
+        // on a ProxyCommand pipe supplies UNKNOWN and fails before auth.
+        let sshd = Sshd::start(root, &server_config, "full");
+        let sftp_sshd = Sshd::start(root, &sftp_config, "restricted");
         let config = root.join("ssh_config");
         std::fs::write(&config, format!(
-            "Host sftponly\n ProxyCommand /usr/sbin/sshd -i -e -f {}\nHost *\n IdentityFile {}\n HostName 127.0.0.1\n User {}\n IdentitiesOnly yes\n IdentityAgent none\n HostKeyAlias fixture\n UserKnownHostsFile {}\n GlobalKnownHostsFile /dev/null\n ProxyCommand /usr/sbin/sshd -i -e -f {}\n StrictHostKeyChecking no\n",
-            quoted(&sftp_only),
+            "Host sftponly\n HostName 127.0.0.1\n Port {}\nHost *\n IdentityFile {}\n HostName 127.0.0.1\n Port {}\n User {}\n IdentitiesOnly yes\n IdentityAgent none\n HostKeyAlias fixture\n UserKnownHostsFile {}\n GlobalKnownHostsFile /dev/null\n StrictHostKeyChecking no\n",
+            sftp_sshd.port,
             root.join("client").display(),
+            sshd.port,
             username.trim(),
             root.join("known_hosts").display(),
-            quoted(&server)
         )).unwrap();
-        // The wrapper selects the private config AND pins the remote
-        // cache base: the ssh client's environment is inherited by the
-        // ProxyCommand sshd and hence by every remote shell, so the
-        // audited discovery line resolves $HOME/$XDG_CACHE_HOME inside
-        // the fixture — never the developer's real cache.
+        // The wrapper selects the private config and cache base; server
+        // SetEnv pins the remote side without touching the real $HOME.
         let wrapper = root.join("bin/ssh");
         std::fs::write(
             &wrapper,
@@ -139,30 +209,38 @@ impl Fixture {
         .unwrap();
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
         let mut paths = vec![root.join("bin")];
-        paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
-        // Process-global by design: the provider and bootstrap spawn
-        // `ssh` by name, and this binary's tests all share the fixture.
+        paths.extend(std::env::split_paths(&original_path));
         std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
 
         let artifact = root.join("strop-worker");
-        std::fs::copy(env!("CARGO_BIN_EXE_strop"), &artifact).unwrap();
-        // Debug binaries exceed the stage bound with symbols; strip a
-        // copy (the deployed bytes' digest is computed after stripping).
-        let stripped = Command::new("strip").arg(&artifact).status();
-        match stripped {
-            Ok(status) if status.success() => {}
-            _ => eprintln!("strip unavailable; deploying the unstripped binary"),
+        let provided = std::env::var_os("STROP_WORKER_BINARY");
+        let source = provided
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_strop")));
+        std::fs::copy(&source, &artifact).unwrap();
+        // A supplied release artifact stays byte-identical. Only the
+        // debug test binary needs stripping to satisfy the deploy bound.
+        if provided.is_none() {
+            let stripped = Command::new("strip").arg(&artifact).status();
+            match stripped {
+                Ok(status) if status.success() => {}
+                _ => eprintln!("strip unavailable; deploying the unstripped binary"),
+            }
         }
         let bytes = std::fs::metadata(&artifact).unwrap().len();
         assert!(
             bytes <= MAX_WORKER_BYTES,
             "worker artifact is {bytes} bytes, over the {MAX_WORKER_BYTES}-byte bound"
         );
-        let artifact_sha256 = sha256(&std::fs::read(&artifact).unwrap());
+        let artifact_sha256 = sha256_file(&artifact);
         Self {
             directory,
             artifact,
             artifact_sha256,
+            sshd,
+            sftp_sshd,
+            original_path,
         }
     }
 
@@ -171,10 +249,53 @@ impl Fixture {
     }
 }
 
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.sshd.stop();
+        self.sftp_sshd.stop();
+        std::env::set_var("PATH", &self.original_path);
+    }
+}
+
+#[test]
+fn scoped_loopback_ssh_daemons_are_reaped_after_each_fixture() {
+    let Some(scope) = serial() else { return };
+    let pids = [
+        scope.fixture.sshd.child.as_ref().unwrap().id(),
+        scope.fixture.sftp_sshd.child.as_ref().unwrap().id(),
+    ];
+    drop(scope);
+    for pid in pids {
+        // SAFETY: signal 0 only observes the PID; the owning Child was
+        // killed and waited by this fixture's Drop before this check.
+        let alive = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        assert_eq!(alive, -1, "this fixture left an sshd child alive");
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH),
+            "the exact child PID must have been reaped"
+        );
+    }
+}
+
 fn sha256(bytes: &[u8]) -> String {
-    use sha2::Digest;
-    let digest: [u8; 32] = sha2::Sha256::digest(bytes).into();
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    use sha2::Digest as _;
+    format!("{:x}", sha2::Sha256::digest(bytes))
+}
+
+fn sha256_file(path: &Path) -> String {
+    use sha2::Digest as _;
+    let mut file = std::fs::File::open(path).unwrap();
+    let mut digest = sha2::Sha256::new();
+    let mut bytes = [0_u8; 65_536];
+    loop {
+        let count = file.read(&mut bytes).unwrap();
+        if count == 0 {
+            break;
+        }
+        digest.update(&bytes[..count]);
+    }
+    format!("{:x}", digest.finalize())
 }
 
 fn endpoint(alias: &str) -> RemoteEndpoint {
@@ -196,6 +317,7 @@ fn token() -> (
 /// requires of its supply).
 fn catalog(target: &str, sha256: &str, bytes: u64) -> ReleaseCatalog {
     let version = env!("CARGO_PKG_VERSION");
+    let protocol = strop_worker_protocol::PROTOCOL_VERSION;
     let body = format!(
         r#"{{
   "schema": 1,
@@ -213,7 +335,7 @@ fn catalog(target: &str, sha256: &str, bytes: u64) -> ReleaseCatalog {
     }}
   ],
   "worker": {{
-    "protocol": 1,
+    "protocol": {protocol},
     "min_editor": "0.35.0",
     "targets": ["{target}"]
   }}
@@ -252,22 +374,23 @@ fn provider(
 
 /// One full deployment of the fixture artifact to `alias`.
 fn deploy_worker(
+    fixture: &Fixture,
     alias: &RemoteEndpoint,
     facts: &EndpointFacts,
     consent: Consent,
     token: &strop_core::worker::CancelToken,
 ) -> (
     SftpDeployProvider,
-    strop_worker_deploy::deploy::ReadyDeployment,
+    strop_worker_deploy::deploy::ProbedDeployment,
 ) {
-    let size = std::fs::metadata(&fixture().artifact).unwrap().len();
+    let size = std::fs::metadata(&fixture.artifact).unwrap().len();
     deploy_worker_with(
         alias,
         facts,
         consent,
         token,
-        &fixture().artifact,
-        &fixture().artifact_sha256,
+        &fixture.artifact,
+        &fixture.artifact_sha256,
         size,
     )
 }
@@ -284,10 +407,10 @@ fn deploy_worker_with(
     size: u64,
 ) -> (
     SftpDeployProvider,
-    strop_worker_deploy::deploy::ReadyDeployment,
+    strop_worker_deploy::deploy::ProbedDeployment,
 ) {
     let provider = provider(alias, facts, token);
-    let target = facts.local_binary_target().expect("same-platform fixture");
+    let target = facts.target.as_str();
     let report = deploy(
         &provider,
         &request(
@@ -301,363 +424,288 @@ fn deploy_worker_with(
         ),
     );
     match report.outcome {
-        DeployOutcome::Ready(ready) => (provider, ready),
+        DeployOutcome::Probed(ready) => (provider, ready),
         other => panic!(
-            "deployment must be ready, got {other:?} (trace {:?})",
+            "deployment probe must be accepted, got {other:?} (trace {:?})",
             report.trace
         ),
     }
 }
 
 #[test]
-fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
-    let Some(_serial) = serial() else { return };
-    let _ = fixture();
+fn concurrent_real_sftp_installers_accept_only_owned_private_cache_components() {
+    let Some(_host_fixture) = serial() else {
+        return;
+    };
+    let alias = endpoint("fixture");
+    let (setup_token, _owner) = token();
+    let facts = bootstrap::discover(&alias, &setup_token).unwrap();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let mut installers = Vec::new();
+    for _ in 0..2 {
+        let barrier = std::sync::Arc::clone(&barrier);
+        let endpoint = alias.clone();
+        let facts = facts.clone();
+        installers.push(std::thread::spawn(move || {
+            let (token, _owner) = token();
+            let provider = provider(&endpoint, &facts, &token);
+            barrier.wait();
+            strop_worker_deploy::cache::resolve(&provider).unwrap()
+        }));
+    }
+    barrier.wait();
+    let roots: Vec<_> = installers
+        .into_iter()
+        .map(|installer| installer.join().unwrap().root().to_owned())
+        .collect();
+    assert_eq!(roots[0], roots[1]);
+    let provider = provider(&alias, &facts, &setup_token);
+    let stat = provider.lstat(&roots[0]).unwrap().unwrap();
+    assert_eq!(stat.kind, strop_worker_deploy::provider::RemoteKind::Dir);
+    assert_eq!(stat.mode & 0o7777, 0o700);
+    assert_eq!(stat.owner, facts.principal);
+}
+
+/// WK09: protected document save (the Store intent) through the deployed
+/// worker over real sshd — baseline-mtime conflict, permission
+/// preservation, same-size content change and uncertainty→verify parity.
+#[test]
+fn store_save_parity_over_real_sshd() {
+    use sha2::Digest as _;
+    use strop_workspace::operation::{FsFailureKind, StepOutcome, StorePolicy, VerifiedOutcome};
+    let Some(host_fixture) = serial() else { return };
+    let fixture = &host_fixture.fixture;
     let host = endpoint("fixture");
     let (token, _handle) = token();
     let facts = discover(&host, &token);
-    assert_eq!(facts.principal, {
-        String::from_utf8(successful(Command::new("id").arg("-u")).stdout)
-            .unwrap()
-            .trim()
-            .to_string()
-    });
     let (_provider, ready) = deploy_worker(
+        fixture,
         &host,
         &facts,
         Consent::Granted {
-            action: "ssh-parity-test".into(),
+            action: "ssh-save-parity-test".into(),
         },
         &token,
     );
-    assert_eq!(ready.handshake.worker.version, env!("CARGO_PKG_VERSION"));
-    assert_eq!(
-        ready.handshake.worker.target,
-        facts.local_binary_target().unwrap()
-    );
-
-    let worker: Worker = worker_transport::worker(
-        &host,
-        &ready.object.path,
-        facts.local_binary_target().unwrap(),
-    );
-    let capabilities = worker.capabilities().unwrap();
-    assert!(capabilities.read && capabilities.write && capabilities.list);
-    let first = worker.session().expect("handshake captured the lease");
-
-    // Write parity: a frozen content stream applied by the remote
-    // worker lands exactly on the remote filesystem (== this
-    // filesystem through localhost sshd). Buffer-copy is the protocol's
-    // content-carrying write; CreateFile alone creates empty.
-    let scope = tempfile::tempdir_in(fixture().root()).unwrap();
-    let source_file = scope.path().join("source.txt");
-    std::fs::write(&source_file, "seed\n").unwrap();
-    let written = scope.path().join("worker-written.txt");
-    let intents = vec![OperationIntent {
-        kind: OperationKind::Copy,
-        source: Some(ResourceLocation::local(source_file.clone())),
-        destination: Some(ResourceLocation::local(written.clone())),
-        copy_version: strop_workspace::operation::CopyVersion::Buffer,
-        expected_content: None,
-    }];
-    let (steps, refused) = worker.prepare(&token, intents, None).unwrap();
-    assert!(refused.is_empty());
-    assert_eq!(steps.len(), 1);
-    let receipts = worker
-        .apply(&token, steps, Some(b"through the ssh worker\n"))
-        .unwrap();
-    assert_eq!(receipts.len(), 1);
-    assert!(
-        receipts
-            .iter()
-            .all(|receipt| receipt.outcome.is_committed()),
-        "the remote write commits: {receipts:?}"
-    );
-    assert_eq!(
-        std::fs::read(&written).unwrap(),
-        b"through the ssh worker\n"
-    );
-    // Verify parity: the same receipt verifies against fresh evidence.
-    let verified = worker.verify(&token, receipts[0].clone()).unwrap();
-    assert!(matches!(
-        verified,
-        strop_workspace::operation::VerifiedOutcome::Committed(_)
-            | strop_workspace::operation::VerifiedOutcome::Unchanged
-    ));
-
-    // Read/observe/list parity against the same files.
-    let mut payload = worker
-        .read(&token, ResourceLocation::local(written.clone()), 0, None)
-        .unwrap();
-    let mut bytes = Vec::new();
-    payload.read_to_end(&mut bytes).unwrap();
-    assert_eq!(bytes, b"through the ssh worker\n");
-    let observations = worker
-        .observe(&token, vec![ResourceLocation::local(written.clone())])
-        .unwrap();
-    assert_eq!(observations.len(), 1);
-    assert_eq!(
-        observations[0].value.as_ref().map(|value| value.kind),
-        Some(strop_workspace::EntryKind::File)
-    );
-    let snapshot = worker
-        .list(&token, ResourceLocation::local(scope.path().to_path_buf()))
-        .unwrap();
-    assert!(snapshot
-        .entries
-        .iter()
-        .any(|entry| entry.name.as_path() == Path::new("worker-written.txt")));
-
-    // Notify parity: a subscription through the ssh worker reports the
-    // remote-side change as a hint on the client's sink.
-    let (events, hints) = std::sync::mpsc::channel();
-    worker.set_event_sink(events);
-    let (subscription, coverage) = worker
-        .subscribe(
-            &token,
-            ResourceLocation::local(scope.path().to_path_buf()),
-            true,
-        )
-        .unwrap();
-    assert_eq!(coverage, strop_worker_protocol::NotifyCoverage::Native);
-    std::fs::write(scope.path().join("hinted.txt"), "watch me\n").unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    let hinted = loop {
-        match hints.recv_timeout(std::time::Duration::from_millis(250)) {
-            Ok(strop_worker_protocol::Event::Notify {
-                subscription: seen,
-                hints: batch,
-                ..
-            }) if seen == subscription
-                && batch.iter().any(|hint| {
-                    hint.path == b"hinted.txt"
-                        || hint.path == b".".as_slice()
-                        || hint.path.is_empty()
-                }) =>
-            {
-                break true
-            }
-            Ok(_) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break false,
-        }
-        if std::time::Instant::now() > deadline {
-            break false;
+    let worker: Worker = worker_transport::worker(&host, &ready.object.path, &facts.target);
+    let scope = tempfile::tempdir_in(fixture.root()).unwrap();
+    let file = scope.path().join("note.txt");
+    std::fs::write(&file, "before\n").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let mtime = |path: &Path| -> strop_workspace::FileTime {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::symlink_metadata(path).unwrap();
+        strop_workspace::FileTime {
+            seconds: metadata.mtime(),
+            nanos: metadata.mtime_nsec() as u32,
         }
     };
-    assert!(
-        hinted,
-        "the ssh worker relayed a notify hint for hinted.txt"
-    );
-    worker.unsubscribe(&token, subscription).unwrap();
-
-    // Reconnect re-handshakes fresh: kill the worker, then the next
-    // request spawns a new incarnation (old handles die with the old).
-    let pid = worker.worker_pid().expect("ssh transport carries a child");
-    unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    loop {
-        match worker.session() {
-            None => break,
-            _ if std::time::Instant::now() > deadline => {
-                panic!("the dead incarnation never retired")
-            }
-            _ => std::thread::sleep(std::time::Duration::from_millis(50)),
+    let store = |path: &Path,
+                 baseline: Option<strop_workspace::FileTime>,
+                 force: bool,
+                 expect_absent: bool,
+                 content: &[u8]| {
+        OperationIntent {
+            kind: OperationKind::Store,
+            source: None,
+            destination: Some(ResourceLocation::local(path.to_path_buf())),
+            copy_version: strop_workspace::operation::CopyVersion::Stored,
+            expected_content: Some(sha2::Sha256::digest(content).into()),
+            store: Some(StorePolicy {
+                baseline,
+                baseline_object: None,
+                baseline_attributes: None,
+                force,
+                expect_absent,
+                displayed: None,
+            }),
         }
-    }
-    worker
-        .observe(&token, vec![ResourceLocation::local(written.clone())])
+    };
+
+    // Save-as create: an absent destination with an absent baseline.
+    let created = scope.path().join("created.txt");
+    let (steps, refused, session) = worker
+        .prepare(
+            &token,
+            vec![store(&created, None, false, false, b"created\n")],
+            None,
+        )
         .unwrap();
-    let second = worker.session().expect("a fresh incarnation handshook");
-    assert_ne!(
-        first.incarnation, second.incarnation,
-        "reconnect re-handshakes a fresh incarnation"
+    assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
+    let receipts = worker
+        .apply(&token, session, steps, Some(b"created\n"))
+        .unwrap();
+    assert!(receipts[0].outcome.is_committed(), "{receipts:?}");
+    assert_eq!(std::fs::read(&created).unwrap(), b"created\n");
+
+    // Conflict: the baseline moved under the save (another writer's
+    // mtime). The refusal is typed and the occupant is preserved.
+    let baseline = mtime(&file);
+    std::fs::write(&file, "theirs\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_times(
+            std::fs::FileTimes::new()
+                .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(42)),
+        )
+        .unwrap();
+    let (steps, refused, _session) = worker
+        .prepare(
+            &token,
+            vec![store(&file, Some(baseline), false, false, b"mine\n")],
+            None,
+        )
+        .unwrap();
+    assert!(steps.is_empty());
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].failure.kind, FsFailureKind::Conflict);
+    assert!(
+        refused[0].failure.detail.contains("file changed on disk"),
+        "{:?}",
+        refused[0].failure
+    );
+    assert_eq!(std::fs::read(&file).unwrap(), b"theirs\n");
+
+    // Forced save-as over an occupied name commits, preserving the
+    // occupant's permissions on the replaced file.
+    let (steps, refused, session) = worker
+        .prepare(
+            &token,
+            vec![store(&file, Some(baseline), true, false, b"mine\n")],
+            None,
+        )
+        .unwrap();
+    assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
+    let receipts = worker
+        .apply(&token, session, steps, Some(b"mine\n"))
+        .unwrap();
+    assert!(receipts[0].outcome.is_committed(), "{receipts:?}");
+    assert_eq!(std::fs::read(&file).unwrap(), b"mine\n");
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o7777,
+        0o640,
+        "the save preserved the file's permissions"
+    );
+
+    // Same-size content change: the committed witness's digest separates
+    // it from the overwritten bytes, and a receipt lost before its
+    // witness arrived still verifies Committed by the intended digest.
+    let baseline = mtime(&file);
+    let (steps, refused, session) = worker
+        .prepare(
+            &token,
+            vec![store(&file, Some(baseline), false, false, b"yours")],
+            None,
+        )
+        .unwrap();
+    assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
+    let operation = steps.into_iter().next().unwrap();
+    let receipts = worker
+        .apply(&token, session, vec![operation.clone()], Some(b"yours"))
+        .unwrap();
+    assert!(receipts[0].outcome.is_committed(), "{receipts:?}");
+    assert_eq!(std::fs::read(&file).unwrap(), b"yours");
+    let lost = strop_workspace::operation::StepReceipt {
+        step: 0,
+        operation,
+        outcome: StepOutcome::Unconfirmed {
+            detail: "simulated lost acknowledgment".into(),
+            observed_destination: None,
+            recovery: None,
+            publication: None,
+        },
+    };
+    let verified = worker.verify(&token, lost.clone()).unwrap();
+    assert!(
+        matches!(verified, VerifiedOutcome::Committed(_)),
+        "the landed same-size write verifies committed: {verified:?}"
+    );
+    // A receipt whose apply never ran verifies Unchanged, and a foreign
+    // state is Unknown — never a guessed reconciliation.
+    std::fs::write(&file, "zzzzz\n").unwrap();
+    let baseline = mtime(&file);
+    let (steps, refused, _session) = worker
+        .prepare(
+            &token,
+            vec![store(&file, Some(baseline), false, false, b"fresh\n")],
+            None,
+        )
+        .unwrap();
+    assert!(refused.is_empty() && steps.len() == 1, "{refused:?}");
+    let never_applied = strop_workspace::operation::StepReceipt {
+        step: 0,
+        operation: steps.into_iter().next().unwrap(),
+        outcome: StepOutcome::Unconfirmed {
+            detail: "transport lost before apply".into(),
+            observed_destination: None,
+            recovery: None,
+            publication: None,
+        },
+    };
+    let verified = worker.verify(&token, never_applied.clone()).unwrap();
+    assert!(
+        matches!(verified, VerifiedOutcome::Unchanged),
+        "the write that never ran verifies unchanged: {verified:?}"
+    );
+    std::fs::write(&file, "foreign").unwrap();
+    let verified = worker.verify(&token, never_applied).unwrap();
+    assert!(
+        matches!(verified, VerifiedOutcome::Unknown { .. }),
+        "a foreign state is never reconciled as ours: {verified:?}"
     );
     worker.shutdown().unwrap();
 }
 
+/// WK09: read/list parity through the deployed worker for native
+/// (non-UTF8) name bytes and ranged read windows.
 #[test]
-fn first_deploy_is_consent_gated_then_quietly_reused() {
-    let Some(_serial) = serial() else { return };
-    // A distinct context (same sshd, new alias) is a virgin endpoint:
-    // no receipt authorizes it yet.
-    let _ = fixture();
-    let host = endpoint("virgin");
+fn read_list_native_bytes_and_windows_over_real_sshd() {
+    let Some(host_fixture) = serial() else { return };
+    let fixture = &host_fixture.fixture;
+    let host = endpoint("fixture");
     let (token, _handle) = token();
     let facts = discover(&host, &token);
-    let provider2 = provider(&host, &facts, &token);
-    let target = facts.local_binary_target().unwrap();
-    // A distinct content address (trailing bytes do not disturb ELF
-    // execution): the cache legitimately reuses an already-present
-    // object without fresh consent, so the consent proof needs an
-    // object that is absent.
-    let virgin_artifact = fixture().root().join("strop-worker-virgin");
-    let mut bytes = std::fs::read(&fixture().artifact).unwrap();
-    bytes.extend_from_slice(b"\0\0");
-    std::fs::write(&virgin_artifact, &bytes).unwrap();
-    let sha = sha256(&bytes);
-    let size = bytes.len() as u64;
-    let supply = || ArtifactSupply::LocalBinary {
-        path: virgin_artifact.clone(),
-    };
-
-    let report = deploy(
-        &provider2,
-        &request(target, Consent::Absent, supply(), &sha, size),
-    );
-    match &report.outcome {
-        DeployOutcome::Refused(DeployRefusal::ConsentRequired {
-            context,
-            version,
-            target: refused_target,
-            destination,
-            ..
-        }) => {
-            assert_eq!(context, "ssh://virgin");
-            assert_eq!(version, env!("CARGO_PKG_VERSION"));
-            assert_eq!(refused_target, target);
-            // The precise destination travels in the refusal (0058 §5).
-            assert!(destination.contains("strop-worker/objects/"));
-        }
-        other => panic!("a virgin endpoint must require consent, got {other:?}"),
-    }
-
-    let (_provider, ready) = deploy_worker_with(
+    let (_provider, ready) = deploy_worker(
+        fixture,
         &host,
         &facts,
         Consent::Granted {
-            action: "consent-test".into(),
+            action: "ssh-read-parity-test".into(),
         },
         &token,
-        &virgin_artifact,
-        &sha,
-        size,
     );
-    assert_eq!(ready.origin, DeployOrigin::Uploaded);
-
-    // Previously authorized deployment quietly reuses the verified
-    // cache — no fresh consent, no upload.
-    let provider = provider(&host, &facts, &token);
-    let report = deploy(
-        &provider,
-        &request(target, Consent::Absent, supply(), &sha, size),
-    );
-    match report.outcome {
-        DeployOutcome::Ready(ready) => assert_eq!(ready.origin, DeployOrigin::Reused),
-        other => panic!("an authorized endpoint quietly reuses, got {other:?}"),
-    }
-}
-
-#[test]
-fn interrupted_deploy_leaves_no_partial_activation() {
-    let Some(_serial) = serial() else { return };
-    let _ = fixture();
-    let host = endpoint("blocked");
-    let (token, _handle) = token();
-    let facts = discover(&host, &token);
-    let provider = provider(&host, &facts, &token);
-    let target = facts.local_binary_target().unwrap();
-
-    // A distinct "worker" (the real binary plus one trailing byte: ELF
-    // execution is unaffected, the content address differs) so this
-    // test's cache entries never alias another test's.
-    let altered = fixture().root().join("strop-worker-altered");
-    let mut bytes = std::fs::read(&fixture().artifact).unwrap();
-    bytes.push(0);
-    std::fs::write(&altered, &bytes).unwrap();
-    let sha = sha256(&bytes);
-    let size = bytes.len() as u64;
-    let supply = || ArtifactSupply::LocalBinary {
-        path: altered.clone(),
-    };
-    let consent = || Consent::Granted {
-        action: "interruption-test".into(),
-    };
-
-    // Resolve (and thereby create) the cache layout, then loosen the
-    // staging directory's privacy: the machine must refuse at cache
-    // resolution, before a single upload byte.
-    let layout = strop_worker_deploy::cache::resolve(&provider).expect("cache resolves");
-    provider.set_mode(&layout.staging_dir(), 0o555).unwrap();
-    let report = deploy(&provider, &request(target, consent(), supply(), &sha, size));
-    match &report.outcome {
-        DeployOutcome::Refused(DeployRefusal::Cache(
-            strop_worker_deploy::cache::CacheError::NotPrivate { .. },
-        )) => {}
-        other => panic!("a loosened staging component must refuse, got {other:?}"),
-    }
-    // No partial activation: no object, no receipt, no staging residue.
-    let object = layout.object(&sha);
-    assert!(provider.lstat(&object).unwrap().is_none());
-    assert!(provider.list(&layout.staging_dir()).unwrap().is_empty());
-    assert!(provider.lstat(&layout.receipt(&sha)).unwrap().is_none());
-
-    // Restore privacy, then seed a positively identified CORRUPT object
-    // at the content address: the machine retires exactly that entry
-    // and redeploys to Ready — never a partial activation retained.
-    provider.set_mode(&layout.staging_dir(), 0o700).unwrap();
-    provider.write(&object, b"corrupt").unwrap();
-    let (_provider, ready) =
-        deploy_worker_with(&host, &facts, consent(), &token, &altered, &sha, size);
-    assert_eq!(ready.origin, DeployOrigin::Uploaded);
-    assert_eq!(ready.object.sha256, sha);
-}
-
-#[test]
-fn sftp_only_host_keeps_read_only_with_a_typed_refusal() {
-    let Some(_serial) = serial() else { return };
-    let _ = fixture();
-    let host = endpoint("sftponly");
-    let (token, _handle) = token();
-    // The restricted account refuses the exec channel: discovery is the
-    // typed refusal, and nothing was uploaded or executed.
-    match bootstrap::discover(&host, &token) {
-        Err(BootstrapError::Transport(detail)) => {
-            assert!(!detail.is_empty(), "the refusal names the cause");
-            assert!(
-                !detail.contains("resolve hostname"),
-                "the refusal is not a DNS artifact: {detail}"
-            );
-        }
-        other => panic!("an SFTP-only host refuses discovery, got {other:?}"),
-    }
-    // No receipt may name the restricted context (receipts for other
-    // contexts from this binary's other tests are legitimate).
-    let receipts = fixture().root().join("cache/strop-worker/receipts");
-    if receipts.exists() {
-        for entry in std::fs::read_dir(receipts).unwrap() {
-            let body = std::fs::read_to_string(entry.unwrap().path()).unwrap();
-            assert!(
-                !body.contains("ssh://sftponly"),
-                "a receipt appeared for the restricted host: {body}"
-            );
-        }
-    }
-
-    // The read-only SFTP path behaves exactly as it always has.
-    let client = strop_remote::RemoteClient::new();
-    let scope = tempfile::tempdir_in(fixture().root()).unwrap();
-    std::fs::write(scope.path().join("readable.txt"), "read only\n").unwrap();
-    let location =
-        strop_workspace::RemoteFile::from_path(host.clone(), scope.path().to_path_buf()).unwrap();
-    let listed = client.list(&location.into(), &token).unwrap();
-    assert!(listed
-        .entries
-        .iter()
-        .any(|entry| entry.file.path() == scope.path().join("readable.txt")));
-    let snapshot = client
-        .read(
-            &strop_workspace::RemoteFile::from_path(
-                host.clone(),
-                scope.path().join("readable.txt"),
-            )
-            .unwrap()
-            .into(),
-            strop_remote::ReadSelection::Full,
-            &token,
-        )
+    let worker: Worker = worker_transport::worker(&host, &ready.object.path, &facts.target);
+    let scope = tempfile::tempdir_in(fixture.root()).unwrap();
+    // A native byte name that is not valid UTF-8 round-trips exactly.
+    use std::os::unix::ffi::OsStrExt;
+    let raw = std::ffi::OsStr::from_bytes(b"native-\xFF-name.txt");
+    let path = scope.path().join(raw);
+    std::fs::write(&path, b"0123456789abcdef").unwrap();
+    let snapshot = worker
+        .list(&token, ResourceLocation::local(scope.path().to_path_buf()))
         .unwrap();
-    let text = snapshot.buffer.text().to_string();
-    assert_eq!(text, "read only\n");
-    client.disconnect(&host).unwrap();
+    assert!(
+        snapshot
+            .entries
+            .iter()
+            .any(|entry| entry.name.as_path().as_os_str().as_bytes() == b"native-\xFF-name.txt"),
+        "the listing carries the exact native name bytes"
+    );
+    // A ranged read delivers exactly the window's bytes.
+    let mut payload = worker
+        .read(&token, ResourceLocation::local(path.clone()), 4, Some(8))
+        .unwrap();
+    let mut bytes = Vec::new();
+    payload.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"456789ab", "the window is byte-exact");
+    // A window past EOF announces only what remains.
+    let mut payload = worker
+        .read(&token, ResourceLocation::local(path), 12, Some(64))
+        .unwrap();
+    let mut bytes = Vec::new();
+    payload.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"cdef");
+    worker.shutdown().unwrap();
 }

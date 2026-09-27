@@ -2,7 +2,7 @@
 use super::picker::PickerEvent;
 use super::{trace, Editor};
 use std::sync::mpsc::TryRecvError;
-use strop_core::worker::{FailureKind, Outcome};
+use strop_core::worker::{FailureKind, Load, Outcome};
 use strop_picker::PickerMsg;
 
 impl Editor {
@@ -189,6 +189,25 @@ impl Editor {
             self.handle_picker_ranking(event);
         }
         self.drain_previews();
+    }
+
+    /// Block on the real preview reader only when this picker has an
+    /// outstanding read. Its completion, not elapsed time, is the
+    /// fixture's publication barrier.
+    pub fn wait_previews(&mut self) {
+        while self
+            .preview_loads
+            .values()
+            .any(|load| matches!(load, Load::Running(_)))
+        {
+            let result = self
+                .preview_rx
+                .as_ref()
+                .expect("fixture retains the preview channel")
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("preview read settled");
+            self.handle_preview(result);
+        }
     }
 
     /// Drain preview worker results (file reads happen off the render

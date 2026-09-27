@@ -81,6 +81,10 @@ pub enum ProviderError {
     /// evaded, always reported.
     #[error("launch refused: {0}")]
     NoExec(String),
+    /// A lease or receipt we own is malformed: continuing could retire
+    /// a running worker's artifact, so cache maintenance fails closed.
+    #[error("corrupt cache evidence: {0}")]
+    CorruptCache(String),
     /// The process ran but the protocol handshake did not complete or
     /// failed to decode. Shell/interpreter diagnostics can never
     /// impersonate a worker Welcome through this channel.

@@ -9,7 +9,6 @@ use std::path::Path;
 use std::sync::mpsc::Sender;
 
 mod api;
-mod process;
 mod queue;
 mod spawn;
 mod sync;
@@ -18,6 +17,7 @@ mod tests;
 
 mod trace_io;
 mod wire;
+mod worker_io;
 
 pub use spawn::SpawnError;
 

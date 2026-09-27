@@ -11,6 +11,8 @@
 #![cfg(unix)]
 
 mod common;
+#[path = "container/perf.rs"]
+mod perf;
 
 use std::ffi::OsStr;
 use std::io::Read;
@@ -18,14 +20,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use common::catalog;
+use common::{catalog, sha256_hex};
 use strop_containers::{engine, inspect, ContainerIdentity, EngineRef};
-use strop_core::worker::CancelToken;
+use strop_core::worker::{cache_record::CACHE_LOCK_FILE, CancelToken};
 use strop_worker_deploy::container::{ContainerProvider, ShellPolicy};
 use strop_worker_deploy::deploy::{
     deploy, ArtifactSupply, Consent, DeployOrigin, DeployOutcome, DeployRequest,
 };
-use strop_worker_deploy::provider::DeployProvider;
+use strop_worker_deploy::provider::{DeployProvider, RemoteKind};
 use strop_worker_deploy::MAX_WORKER_BYTES;
 use strop_workspace::operation::{CopyVersion, OperationIntent, OperationKind, StepOutcome};
 use strop_workspace::ResourceLocation;
@@ -161,12 +163,16 @@ impl Fixture {
     /// Launch busybox without seeding (a read-only rootfs cannot take
     /// the seed write; refusal tests use this).
     fn busybox_raw(tag: &str, extra: &[&str]) -> Fixture {
+        Self::busybox_raw_for(tag, extra, "300")
+    }
+
+    fn busybox_raw_for(tag: &str, extra: &[&str], lifetime_seconds: &str) -> Fixture {
         let name = format!("strop-wk08-{tag}");
         let mut args = vec!["run", "-d", "--label"];
         let label = format!("strop-test-run={tag}");
         args.push(&label);
         args.extend_from_slice(extra);
-        args.extend_from_slice(&["--name", &name, "busybox", "sleep", "300"]);
+        args.extend_from_slice(&["--name", &name, "busybox", "sleep", lifetime_seconds]);
         let id = run_docker(&args);
         Fixture { id, image: None }
     }
@@ -232,10 +238,14 @@ impl Fixture {
     fn assert_workers_reaped(&self, within: Duration) {
         let deadline = Instant::now() + within;
         loop {
-            if !self.processes().contains("worker-stdio") {
+            let processes = self.processes();
+            if !processes.contains("worker-stdio") {
                 return;
             }
-            assert!(Instant::now() < deadline, "worker survived lease close");
+            assert!(
+                Instant::now() < deadline,
+                "worker survived lease close:\n{processes}"
+            );
             std::thread::sleep(Duration::from_millis(200));
         }
     }
@@ -262,10 +272,10 @@ fn request(supply: ArtifactSupply) -> DeployRequest {
     }
 }
 
-fn ready(outcome: DeployOutcome) -> strop_worker_deploy::deploy::ReadyDeployment {
+fn probed(outcome: DeployOutcome) -> strop_worker_deploy::deploy::ProbedDeployment {
     match outcome {
-        DeployOutcome::Ready(ready) => ready,
-        other => panic!("expected Ready, got {other:?}"),
+        DeployOutcome::Probed(ready) => ready,
+        other => panic!("expected a verified probe, got {other:?}"),
     }
 }
 
@@ -295,7 +305,7 @@ fn deploy_then_read_write_notify_and_lease_reap() {
         &provider,
         &request(ArtifactSupply::LocalBinary { path: binary }),
     );
-    let deployed = ready(report.outcome);
+    let deployed = probed(report.outcome);
     assert_eq!(deployed.origin, DeployOrigin::Uploaded);
     assert!(deployed.object.path.contains("/strop-worker/objects/"));
 
@@ -312,6 +322,11 @@ fn deploy_then_read_write_notify_and_lease_reap() {
     ]);
     assert_eq!(stat, "0 500", "principal-owned 0500 object");
     fixture.assert_workers_reaped(Duration::from_secs(10)); // activation's handshake left nothing
+    let layout = strop_worker_deploy::cache::resolve(&provider).unwrap();
+    assert!(
+        provider.list(&layout.leases_dir()).unwrap().is_empty(),
+        "the stopped container deployment probe cannot hold a live cache lease"
+    );
 
     // The workspace lease: read, write and notify inside the container.
     let worker = provider.worker(&deployed.object.path);
@@ -327,8 +342,54 @@ fn deploy_then_read_write_notify_and_lease_reap() {
     let mut bytes = Vec::new();
     payload.read_to_end(&mut bytes).unwrap();
     assert_eq!(bytes, b"hello strop\n");
+    let active = worker
+        .session()
+        .expect("the live container worker handshook");
+    assert!(
+        provider
+            .lstat(&layout.lease(active.lease.0))
+            .unwrap()
+            .is_some(),
+        "the container worker registers its own session before serving"
+    );
+    let lock_path = format!("{}/{}", layout.root(), CACHE_LOCK_FILE);
+    let lock = provider.lstat(&lock_path).unwrap().unwrap();
+    assert_eq!(lock.kind, RemoteKind::File);
+    assert_eq!(lock.owner, provider.endpoint().principal);
+    assert_eq!(lock.mode & 0o077, 0, "cache lock is private");
 
-    let (steps, refused) = worker
+    // Real in-container retirement: only the unleased receipt for
+    // this selected endpoint is removed, not the executing object.
+    let old_bytes = b"old container worker";
+    let old_sha = sha256_hex(old_bytes);
+    provider.write(&layout.object(&old_sha), old_bytes).unwrap();
+    provider.set_mode(&layout.object(&old_sha), 0o500).unwrap();
+    let old_receipt = strop_core::worker::cache_record::CacheReceipt {
+        schema: strop_core::worker::cache_record::RECEIPT_SCHEMA,
+        context: provider.endpoint().context.clone(),
+        principal: provider.endpoint().principal.clone(),
+        version: "0.34.0".into(),
+        target: provider.endpoint().target.clone(),
+        object_sha256: old_sha.clone(),
+        object_bytes: old_bytes.len() as u64,
+        tarball_sha256: "b".repeat(64),
+    };
+    provider
+        .write(
+            &layout.receipt(&old_sha),
+            &serde_json::to_vec(&old_receipt).unwrap(),
+        )
+        .unwrap();
+    let maintenance = worker
+        .collect_cache(&cancel, &provider.endpoint().context)
+        .unwrap();
+    assert!(maintenance.failure.is_none(), "{:?}", maintenance.failure);
+    assert!(maintenance.report.removed_objects.contains(&old_sha));
+    assert!(provider.lstat(&layout.object(&old_sha)).unwrap().is_none());
+    assert!(provider.lstat(&layout.receipt(&old_sha)).unwrap().is_none());
+    assert!(provider.lstat(&deployed.object.path).unwrap().is_some());
+
+    let (steps, refused, session) = worker
         .prepare(
             &cancel,
             vec![OperationIntent {
@@ -339,12 +400,15 @@ fn deploy_then_read_write_notify_and_lease_reap() {
                 ))),
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
+                store: None,
             }],
             None,
         )
         .expect("prepare rides the worker");
     assert!(refused.is_empty());
-    let receipts = worker.apply(&cancel, steps, None).expect("apply commits");
+    let receipts = worker
+        .apply(&cancel, session, steps, None)
+        .expect("apply commits");
     assert!(
         receipts
             .iter()
@@ -392,6 +456,17 @@ fn deploy_then_read_write_notify_and_lease_reap() {
 
     drop(worker);
     fixture.assert_workers_reaped(Duration::from_secs(15));
+    assert!(
+        provider
+            .lstat(&layout.lease(active.lease.0))
+            .unwrap()
+            .is_none(),
+        "orderly container worker retirement releases its own cache lease"
+    );
+    assert!(
+        provider.lstat(&lock_path).unwrap().is_some(),
+        "orderly retirement must keep the shared lock inode"
+    );
 }
 
 /// A restarted container is a different endpoint: the pinned provider
@@ -457,7 +532,7 @@ fn preinstalled_shellless_worker_needs_no_deploy() {
             path: "/worker/strop".to_string(),
         }),
     );
-    let deployed = ready(report.outcome);
+    let deployed = probed(report.outcome);
     assert_eq!(deployed.origin, DeployOrigin::Preinstalled);
     assert_eq!(deployed.object.path, "/worker/strop");
     assert_eq!(
@@ -532,6 +607,39 @@ fn shellless_deploy_is_a_typed_refusal() {
         }
         other => panic!("expected Refused, got {other:?}"),
     }
+}
+
+/// A preinstalled-only selection is a policy, not a guess from whether
+/// Docker's daemon can tar-write a path. Even on a writable image with
+/// POSIX sh, it must not create cache bytes through the provider.
+#[test]
+fn preinstalled_policy_refuses_daemon_tar_writes_before_staging() {
+    if !gate("preinstalled_policy_refuses_daemon_tar_writes_before_staging") {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("supply");
+    std::fs::write(&source, b"must not land").unwrap();
+    let fixture = Fixture::busybox(&tag(), &[]);
+    let (cancel, _guard) = token();
+    let engine_ref = engine(&cancel).expect("engine probes");
+    let identity = fixture.identity(&engine_ref, &cancel);
+    let provider = ContainerProvider::capture(&engine_ref, &identity, ShellPolicy::Absent, &cancel)
+        .expect("preinstalled policy admits read-only context");
+    let upload = "/data/absent-policy-upload";
+    let receipt = "/data/absent-policy-receipt";
+    assert!(matches!(
+        provider.upload(&source, upload),
+        Err(strop_worker_deploy::provider::ProviderError::NoExec(reason))
+            if reason.contains("POSIX sh")
+    ));
+    assert!(matches!(
+        provider.write(receipt, b"fake receipt"),
+        Err(strop_worker_deploy::provider::ProviderError::NoExec(reason))
+            if reason.contains("POSIX sh")
+    ));
+    assert!(provider.lstat(upload).unwrap().is_none());
+    assert!(provider.lstat(receipt).unwrap().is_none());
 }
 
 /// A read-only container filesystem classifies truthfully: the cache

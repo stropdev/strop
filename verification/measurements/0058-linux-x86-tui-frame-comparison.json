@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "scope": "Linux x86_64 WSL2 native host (matched Cargo release PTY tests), stripped musl static binaries, real local-worker-backed terminal editor input through decoded 120x30 VT100 cell-grid paint; not SSH/container, LSP, terminal-output load or native macOS/aarch64",
+  "baseline": {
+    "commit": "a05d84f823d268259ca4c4c3358313c902f6189d",
+    "artifact_sha256": "ea416fe99a8b951eaef8978a67e37e0d9c77e7d036e950ef4ef0c82410e5881e",
+    "measurement": "verification/measurements/0058-linux-x86-preworker-tui-frame.json",
+    "sha256": "383d5a667ca43c8ea30e1300e482aae8a47879293dd64740403a74847f9a0138"
+  },
+  "candidate": {
+    "commit": null,
+    "state": "0.36.0 Linux/Apple-Silicon worker after Intel removal; static candidate 5a9f826f; retained-target CI and tag pending",
+    "artifact_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
+    "measurement": "verification/measurements/0058-linux-x86-worker-tui-frame.json",
+    "sha256": "87a4b130a60e640db7c4accd71a2b081c50baaff711a26072d37d171afca9eb7"
+  },
+  "method": {
+    "harness": "crates/strop/tests/terminal_editor.rs",
+    "test": "native_terminal_input_to_painted_frame_samples",
+    "sha256": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b",
+    "warmup": 8,
+    "samples_per_artifact": 64,
+    "fixture_lines": 10000,
+    "geometry": [
+      120,
+      30
+    ],
+    "timing": "PTY key write through VT100 decoded and verified TUI cell-grid paint"
+  },
+  "observed": {
+    "baseline_ms": {
+      "max": 2.142,
+      "p50": 0.972,
+      "p95": 1.575,
+      "p99": 2.142
+    },
+    "candidate_ms": {
+      "max": 1.782,
+      "p50": 0.915,
+      "p95": 1.337,
+      "p99": 1.782
+    }
+  }
+}

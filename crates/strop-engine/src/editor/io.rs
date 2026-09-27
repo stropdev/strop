@@ -9,6 +9,8 @@ mod remote_tests;
 mod save;
 mod session;
 #[cfg(test)]
+mod store_tests;
+#[cfg(test)]
 mod worker_tests;
 use super::{Document, Editor};
 use crate::files::FileTarget;
@@ -96,10 +98,49 @@ pub struct SaveKey {
     pub force: bool,
 }
 
+/// A frozen unconfirmed document store (0058 WK09): the prepared
+/// operation and its unconfirmed receipt, retained so the next `:w`
+/// verifies against fresh evidence instead of rewriting blindly. An
+/// uncertain outcome preserves dirty text and never grants an automatic
+/// retry or rollback.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StoreAttempt {
+    pub revision: BufferRevision,
+    #[serde(with = "strop_core::path_serde::option")]
+    pub origin: Option<PathBuf>,
+    #[serde(with = "strop_core::path_serde")]
+    pub target: PathBuf,
+    /// The destination as the kernel wrote it (plain `:w` resolves the
+    /// canonical spelling; save-as keeps the given name).
+    #[serde(with = "strop_core::path_serde")]
+    pub write_target: PathBuf,
+    pub close: bool,
+    pub force: bool,
+    pub focus: u64,
+    pub namespace: strop_worker_protocol::NamespaceIdentity,
+    pub receipt: strop_workspace::operation::StepReceipt,
+}
+
+/// The save completion payload (0058 WK09): a committed receipt as
+/// before, an unconfirmed outcome with its frozen attempt, or a
+/// verification result for a previously unconfirmed store.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum SaveOutcome {
+    Written(SaveReceipt),
+    Unconfirmed {
+        detail: String,
+        attempt: Box<StoreAttempt>,
+    },
+    Verified {
+        attempt: Box<StoreAttempt>,
+        verified: strop_workspace::operation::VerifiedOutcome,
+    },
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum IoEvent {
     Open(Box<Completion<OpenKey, Opened>>),
-    Save(Box<Completion<SaveKey, SaveReceipt>>),
+    Save(Box<Completion<SaveKey, SaveOutcome>>),
     Native(Box<Completion<native::NativeKey, native::NativeResult>>),
     Remote(super::remote::RemoteEvent),
     DirectoryFilter(Box<Completion<super::directory::FilterKey, Opened>>),
@@ -132,6 +173,9 @@ pub struct IoState {
     pub rx: Option<Receiver<IoEvent>>,
     pub open: HashMap<WorkerId, OpenKey>,
     navigation: Option<WorkerId>,
+    /// Frozen unconfirmed document stores (0058 WK09): a document with an
+    /// entry here verifies on its next `:w` before any rewrite.
+    store_attempts: HashMap<DocumentId, StoreAttempt>,
     saves: HashMap<DocumentId, Ticket<SaveKey>>,
     session: Option<WorkerId>,
     queued_session: Option<crate::session::SaveRequest>,
@@ -148,6 +192,7 @@ impl Default for IoState {
             rx: Some(rx),
             open: HashMap::new(),
             navigation: None,
+            store_attempts: HashMap::new(),
             saves: HashMap::new(),
             session: None,
             queued_session: None,
@@ -286,15 +331,20 @@ impl Editor {
                 return;
             }
         }
+        let container = match &path {
+            FileTarget::Container { container, .. } => {
+                self.containers.attached.get(container.as_str()).cloned()
+            }
+            _ => None,
+        };
+        let container_worker = container
+            .as_ref()
+            .and_then(|identity| self.containers.workers.get(identity));
         let work = open::OpenRead {
             worker: self.filesystem.worker().clone(),
             remote: self.remote.workers.clone(),
-            container: match &path {
-                FileTarget::Container { container, .. } => {
-                    self.containers.attached.get(container.as_str()).cloned()
-                }
-                _ => None,
-            },
+            container,
+            container_worker,
             previous_directories: {
                 let mut previous: Vec<_> = self
                     .docs
@@ -587,45 +637,20 @@ impl Editor {
                 self.io.saves.remove(&key.document);
                 self.worker_handles.remove(&request);
                 match completion.outcome {
-                    Outcome::Success(receipt) => {
-                        let Some(document) = self.docs.get_mut(key.document) else {
-                            self.message = "snapshot written; source buffer closed".into();
-                            self.finish_save_feedback(key.document);
-                            self.collection_save_progress(key.document, false);
-                            return;
-                        };
-                        let previous_path = document.buf.path.clone();
-                        let saved = document.buf.accept_save(receipt);
-                        if saved {
-                            // A confirmed save IS the fresh observation:
-                            // external-change state clears only here or on
-                            // a guarded reload, never on a stale one.
-                            document.external_change = false;
-                        }
-                        let renamed = previous_path != document.buf.path;
-                        if renamed {
-                            self.lsp_close_document(key.document);
-                            if !self.docs.is_empty() && self.current() == key.document {
-                                self.lsp_maybe_attach();
-                            }
-                        }
-                        self.message = if saved {
-                            "written"
-                        } else {
-                            "snapshot written; newer edits remain unsaved"
-                        }
-                        .into();
-                        self.request_session_save();
-                        self.recovery_note_saved();
-                        self.collection_save_progress(key.document, saved);
-                        if saved
-                            && key.close
-                            && !self.docs.is_empty()
-                            && self.current() == key.document
-                            && self.focus_epoch == key.focus
-                        {
-                            self.close_pane_or_buffer(false);
-                        }
+                    Outcome::Success(SaveOutcome::Written(receipt)) => {
+                        self.accept_store_receipt(&key, receipt);
+                    }
+                    Outcome::Success(SaveOutcome::Unconfirmed { detail, attempt }) => {
+                        // Frozen evidence, dirty text preserved; the next
+                        // :w verifies against fresh evidence (0058 WK09).
+                        self.collection_save_progress(key.document, false);
+                        self.io.store_attempts.insert(key.document, *attempt);
+                        self.message = format!(
+                            "write outcome unconfirmed: {detail}; :w verifies before any rewrite"
+                        );
+                    }
+                    Outcome::Success(SaveOutcome::Verified { attempt, verified }) => {
+                        self.store_verified(&key, *attempt, verified);
                     }
                     Outcome::Failed { failure, .. } => {
                         self.collection_save_progress(key.document, false);
@@ -702,6 +727,13 @@ impl Editor {
 impl IoState {
     pub(crate) fn save_pending_for(&self, document: DocumentId) -> bool {
         self.saves.contains_key(&document)
+    }
+    /// Frozen unconfirmed document stores (0058 WK09), for the shutdown
+    /// report — in-memory save evidence is not persisted either.
+    pub(crate) fn store_attempts(&self) -> impl Iterator<Item = (DocumentId, &StoreAttempt)> {
+        self.store_attempts
+            .iter()
+            .map(|(document, attempt)| (*document, attempt))
     }
     /// In-flight native tickets — tests answer a tape-suppressed
     /// launch by feeding `handle_io` a crafted completion.

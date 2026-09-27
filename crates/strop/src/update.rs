@@ -192,11 +192,10 @@ pub fn is_newer(latest: &str) -> bool {
     }
 }
 
-fn target_triple() -> Result<&'static str, String> {
-    Ok(match (std::env::consts::OS, std::env::consts::ARCH) {
+fn target_triple(os: &str, arch: &str) -> Result<&'static str, String> {
+    Ok(match (os, arch) {
         ("linux", "x86_64") => "x86_64-unknown-linux-musl",
         ("linux", "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos", "x86_64") => "x86_64-apple-darwin",
         ("macos", "aarch64") => "aarch64-apple-darwin",
         (os, arch) => return Err(format!("no prebuilt binary for {os}/{arch}")),
     })
@@ -286,6 +285,7 @@ pub fn update(check_only: bool) -> Result<(), String> {
         Channel::Tarball => {}
     }
 
+    let triple = target_triple(std::env::consts::OS, std::env::consts::ARCH)?;
     let pb = stage("resolving release catalog…");
     let body = curl(&[CATALOG_URL])?;
     let catalog = Catalog::parse(&body)?;
@@ -303,7 +303,6 @@ pub fn update(check_only: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    let triple = target_triple()?;
     let artifact = catalog
         .artifact(triple)
         .ok_or_else(|| format!("release catalog has no artifact for {triple}"))?;
@@ -417,8 +416,17 @@ fn version_ordering() {
 
 #[cfg(test)]
 #[test]
-fn triples_cover_the_matrix() {
-    assert!(target_triple().is_ok());
+fn update_targets_retain_linux_and_apple_silicon_but_refuse_intel_macos() {
+    for (os, arch, expected) in [
+        ("linux", "x86_64", "x86_64-unknown-linux-musl"),
+        ("linux", "aarch64", "aarch64-unknown-linux-musl"),
+        ("macos", "aarch64", "aarch64-apple-darwin"),
+    ] {
+        assert_eq!(target_triple(os, arch).unwrap(), expected);
+    }
+    for arch in ["x86_64", "amd64"] {
+        assert!(target_triple("macos", arch).is_err());
+    }
 }
 
 #[cfg(test)]

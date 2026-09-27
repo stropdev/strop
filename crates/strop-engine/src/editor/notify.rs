@@ -27,7 +27,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{self, CancelReason, CancelToken, Completion, FailureKind, Outcome};
@@ -48,6 +51,7 @@ const MAX_HINTS: usize = 512;
 
 /// One semantic notify record. Subscription establishment rides the same
 /// queue so application order never depends on a cross-channel race.
+#[derive(Serialize, Deserialize)]
 pub(crate) enum Record {
     /// The subscribe job settled (typed outcome, never a guessed state).
     Settled(Outcome<SubscribedScope>),
@@ -70,10 +74,14 @@ pub(crate) enum Record {
     },
 }
 
-/// The settled subscription outcome (in-memory; never traced).
+/// A settled subscription, recorded only in consented full-content replay.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct SubscribedScope {
     pub subscription: Subscription,
     pub coverage: NotifyCoverage,
+    /// Relative native path of this process's own trace output, if it
+    /// lives below this watched root. Never suppress unrelated files.
+    pub owned_trace: Option<Vec<u8>>,
 }
 
 #[derive(Default)]
@@ -81,6 +89,7 @@ struct QueueState {
     records: VecDeque<Record>,
     /// The queue itself overflowed: conservative rescan obligation.
     rescan: bool,
+    owned_trace: Option<(Subscription, Vec<u8>)>,
 }
 
 /// The bounded landing zone between the worker's reader thread (via the
@@ -91,9 +100,15 @@ pub(crate) struct NotifyQueue {
 }
 
 impl NotifyQueue {
-    /// Record one worker event. Exec exits route through their own
-    /// waiters; an orphan exit is not notify state.
-    pub(crate) fn push_event(&self, event: Event) {
+    /// Ignore only this capture's own writes: tracing a notification
+    /// would otherwise write another notification, forming an
+    /// unbounded event/trace loop. Other hints remain untouched.
+    pub(crate) fn set_owned_trace(&self, owned: Option<(Subscription, Vec<u8>)>) {
+        self.state.lock().owned_trace = owned;
+    }
+
+    /// True when a meaningful record was queued and needs an app wake.
+    pub(crate) fn push_event(&self, event: Event) -> bool {
         match event {
             Event::Notify {
                 subscription,
@@ -101,17 +116,33 @@ impl NotifyQueue {
                 ..
             } => self.push_hints(subscription, hints),
             Event::NotifyOverflow { subscription, .. } => {
-                self.push_record(Record::Overflow { subscription })
+                self.push_record(Record::Overflow { subscription });
+                true
             }
             Event::ReconcileBoundary { subscription, .. } => {
-                self.push_record(Record::Boundary { subscription })
+                self.push_record(Record::Boundary { subscription });
+                true
             }
-            Event::ExecExit { .. } => {}
+            Event::ExecExit { .. } | Event::ExecInput { .. } => false,
         }
     }
 
-    pub(crate) fn push_hints(&self, subscription: Subscription, mut hints: Vec<NotifyHint>) {
-        let mut state = lock(&self.state);
+    pub(crate) fn push_hints(
+        &self,
+        subscription: Subscription,
+        mut hints: Vec<NotifyHint>,
+    ) -> bool {
+        let mut state = self.state.lock();
+        if strop_trace::enabled() {
+            if let Some((owner, path)) = &state.owned_trace {
+                if *owner == subscription {
+                    hints.retain(|hint| hint.path.as_slice() != path.as_slice());
+                }
+            }
+        }
+        if hints.is_empty() {
+            return false;
+        }
         if let Some(Record::Hints {
             subscription: tail_subscription,
             hints: tail,
@@ -119,26 +150,26 @@ impl NotifyQueue {
         {
             if *tail_subscription == subscription && tail.len() + hints.len() <= MAX_HINTS {
                 tail.append(&mut hints);
-                return;
+                return true;
             }
         }
         if hints.len() > MAX_HINTS {
-            // A storm beyond the hint bound IS a rescan obligation.
             state.records.push_back(Record::Overflow { subscription });
-            return;
+            return true;
         }
         if state.records.len() >= MAX_RECORDS {
             state.rescan = true;
-            return;
+            return true;
         }
         state.records.push_back(Record::Hints {
             subscription,
             hints,
         });
+        true
     }
 
     pub(crate) fn push_record(&self, record: Record) {
-        let mut state = lock(&self.state);
+        let mut state = self.state.lock();
         if state.records.len() >= MAX_RECORDS {
             state.rescan = true;
             return;
@@ -149,7 +180,7 @@ impl NotifyQueue {
     /// Requeue deferred records at the front (a pending subscribe must
     /// see the hints that raced it, in order).
     fn requeue_front(&self, records: Vec<Record>) {
-        let mut state = lock(&self.state);
+        let mut state = self.state.lock();
         let room = MAX_RECORDS.saturating_sub(state.records.len());
         if records.len() > room {
             state.rescan = true;
@@ -161,18 +192,12 @@ impl NotifyQueue {
 
     /// Drain everything recorded so far plus the rescan latch.
     pub(crate) fn drain(&self) -> (Vec<Record>, bool) {
-        let mut state = lock(&self.state);
+        let mut state = self.state.lock();
         (
             state.records.drain(..).collect(),
             std::mem::take(&mut state.rescan),
         )
     }
-}
-
-fn lock(queue: &Mutex<QueueState>) -> std::sync::MutexGuard<'_, QueueState> {
-    queue
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A guarded clean-buffer reload's identity (0058 §2 publication rule).
@@ -350,15 +375,25 @@ impl Editor {
                     let _ = wake.send(super::events::AppEvent::Notify);
                 }
             },
-            move |cancel| match worker.subscribe(&cancel, scope, true) {
-                Ok((subscription, coverage)) => Outcome::Success(SubscribedScope {
-                    subscription,
-                    coverage,
-                }),
-                Err(error) if error.is_cancellation() => {
-                    Outcome::Cancelled(CancelReason::OwnerClosed)
+            move |cancel| {
+                let owned_trace = strop_trace::active_path().and_then(|path| {
+                    std::fs::canonicalize(&scope.path).ok().and_then(|root| {
+                        path.strip_prefix(root).ok().map(|relative| {
+                            strop_workspace::addr::uri::path_bytes(relative).to_vec()
+                        })
+                    })
+                });
+                match worker.subscribe(&cancel, scope, true) {
+                    Ok((subscription, coverage)) => Outcome::Success(SubscribedScope {
+                        subscription,
+                        coverage,
+                        owned_trace,
+                    }),
+                    Err(error) if error.is_cancellation() => {
+                        Outcome::Cancelled(CancelReason::OwnerClosed)
+                    }
+                    Err(error) => Outcome::failed(FailureKind::Unavailable, error.to_string()),
                 }
-                Err(error) => Outcome::failed(FailureKind::Unavailable, error.to_string()),
             },
         );
         self.notify.subscribe_handle = Some(handle);
@@ -368,7 +403,20 @@ impl Editor {
     /// the job/forwarder threads); hints stamped by a superseded
     /// identity are dropped, never acted on.
     pub(crate) fn handle_notify(&mut self) {
-        let (records, queue_rescan) = self.notify.queue.drain();
+        // The wake is not the observation: the bounded queue may hold a
+        // settled refusal or coalesced overflow. Replay has no worker
+        // thread to refill it, so consume the same typed drain in both
+        // modes rather than guessing from AppEvent::Notify.
+        let (records, queue_rescan) = match self
+            .tape
+            .observe_owned("notify.drain", &(), || self.notify.queue.drain())
+        {
+            Ok(drained) => drained,
+            Err(error) => {
+                self.message = error.to_string();
+                return;
+            }
+        };
         if records.is_empty() && !queue_rescan {
             return;
         }
@@ -467,6 +515,9 @@ impl Editor {
         match outcome {
             Outcome::Success(settled) => {
                 self.notify.subscription = Some(settled.subscription);
+                self.notify
+                    .queue
+                    .set_owned_trace(settled.owned_trace.map(|path| (settled.subscription, path)));
                 self.notify.session = self.filesystem.worker().session();
                 self.notify.coverage = Some(settled.coverage);
                 if matches!(
@@ -612,6 +663,7 @@ impl Editor {
                     Ok((subscription, coverage)) => Outcome::Success(SubscribedScope {
                         subscription,
                         coverage,
+                        owned_trace: None,
                     }),
                     Err(error) if error.is_cancellation() => {
                         Outcome::Cancelled(CancelReason::OwnerClosed)
@@ -756,6 +808,7 @@ impl Editor {
             return;
         }
         self.notify.subscription = None;
+        self.notify.queue.set_owned_trace(None);
         self.notify.session = None;
         self.notify.coverage = None;
         if let Some(source) = self.picker_source.as_ref() {

@@ -1381,7 +1381,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-containers"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1392,7 +1392,7 @@ dependencies = [
 
 [[package]]
 name = "strop-core"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "libc",
  "parking_lot",
@@ -1411,7 +1411,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "crossterm",
  "indicatif",
@@ -1420,6 +1420,7 @@ dependencies = [
  "ropey",
  "serde_json",
  "sha2",
+ "strop-containers",
  "strop-core",
  "strop-engine",
  "strop-git",
@@ -1443,10 +1444,11 @@ dependencies = [
 
 [[package]]
 name = "strop-engine"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "imbl",
  "loom",
+ "parking_lot",
  "ratatui",
  "regex",
  "ropey",
@@ -1478,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "strop-fs"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "getrandom",
  "libc",
@@ -1488,6 +1490,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "strop-core",
+ "strop-worker-protocol",
  "strop-workspace",
  "tempfile",
  "thiserror",
@@ -1496,21 +1499,26 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "git2",
  "serde",
  "serde_json",
+ "sha2",
  "strop-containers",
  "strop-core",
  "strop-remote",
+ "strop-worker",
+ "strop-worker-client",
+ "strop-worker-deploy",
+ "strop-worker-protocol",
  "strop-workspace",
  "tempfile",
 ]
 
 [[package]]
 name = "strop-grammar"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "ropey",
  "serde",
@@ -1519,7 +1527,7 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "async-lsp",
  "libc",
@@ -1528,10 +1536,11 @@ dependencies = [
  "ropey",
  "serde",
  "serde_json",
- "strop-containers",
  "strop-core",
- "strop-remote",
  "strop-trace",
+ "strop-worker",
+ "strop-worker-client",
+ "strop-worker-protocol",
  "strop-workspace",
  "tempfile",
  "tokio",
@@ -1541,7 +1550,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "base64",
  "globset",
@@ -1556,6 +1565,9 @@ dependencies = [
  "strop-core",
  "strop-remote",
  "strop-syntax",
+ "strop-worker",
+ "strop-worker-client",
+ "strop-worker-protocol",
  "strop-workspace",
  "tempfile",
  "thiserror",
@@ -1563,13 +1575,11 @@ dependencies = [
 
 [[package]]
 name = "strop-remote"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "parking_lot",
- "ropey",
  "serde",
  "serde_json",
- "sha2",
  "strop-core",
  "strop-worker-client",
  "strop-worker-deploy",
@@ -1582,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "strop-syntax"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "imbl",
  "ropey",
@@ -1616,7 +1626,7 @@ dependencies = [
 
 [[package]]
 name = "strop-terminal"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "cc",
  "flate2",
@@ -1624,11 +1634,11 @@ dependencies = [
  "libc",
  "parking_lot",
  "ropey",
- "rustix 1.1.4",
- "rustix-openpty",
  "serde",
  "serde_json",
  "strop-core",
+ "strop-worker-client",
+ "strop-worker-protocol",
  "tar",
  "tempfile",
  "thiserror",
@@ -1636,7 +1646,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "parking_lot",
  "serde",
@@ -1648,7 +1658,7 @@ dependencies = [
 
 [[package]]
 name = "strop-ui-protocol"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1659,13 +1669,16 @@ dependencies = [
 
 [[package]]
 name = "strop-worker"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "getrandom",
  "libc",
+ "loom",
  "parking_lot",
  "ropey",
  "rustix 1.1.4",
+ "rustix-openpty",
+ "serde_json",
  "sha2",
  "strop-core",
  "strop-fs",
@@ -1677,7 +1690,7 @@ dependencies = [
 
 [[package]]
 name = "strop-worker-client"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "parking_lot",
  "sha2",
@@ -1691,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "strop-worker-deploy"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "getrandom",
  "serde",
@@ -1708,7 +1721,7 @@ dependencies = [
 
 [[package]]
 name = "strop-worker-protocol"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1719,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "strop-workspace"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "serde",
  "serde_json",

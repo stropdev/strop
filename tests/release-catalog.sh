@@ -105,6 +105,24 @@ fi
 cp "$WORK/sidecar-good" "$SIDECAR"
 ok "tampered sidecar rejected"
 
+# --- retired artifact targets must never enter the current catalog --------
+mkdir -p "$WORK/retired-dist"
+retired="strop-$VERSION-x86_64-apple-darwin.tar.gz"
+printf 'retired Intel macOS artifact\n' > "$WORK/retired-dist/$retired"
+python3 - "$WORK/retired-dist/$retired" <<'SIDECAR'
+import hashlib, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+digest = hashlib.sha256(path.read_bytes()).hexdigest()
+path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n")
+SIDECAR
+if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/retired-dist" \
+    --worker-protocol 1 --worker-min-editor "9.0.0" \
+    --out "$WORK/retired.json" >/dev/null 2>&1; then
+    fail "Intel macOS was advertised in the current release catalog"
+fi
+[ ! -e "$WORK/retired.json" ] || fail "retired target published a catalog"
+ok "retired Intel macOS artifact refused"
+
 # --- verify: match passes, divergence fails ---------------------------------
 gen "$WORK/local.json"
 cp "$WORK/local.json" "$WORK/public.json"

@@ -290,6 +290,59 @@ migration, Python-helper removal, assurance migration). 0058's full
 ledger and 0057's remainder continue after 0.35.0; nothing already
 gated is weakened.
 
+Amendment (2026-09-26): the user returned the deferred product tail to
+the delivery sequence: release the verified 0.36.0 worker alone, then
+land/release 0059 completion, then begin 0061 native Windows/WSL GUI.
+0060 debugger no longer blocks **beginning** GUI implementation; 0061
+UI10 still requires the debugger before claiming complete GUI parity
+unless the user explicitly changes that release requirement. Retain
+0057/0058 proof and native gates; this is an ordering change, not a
+waiver. The real-PTY `crates/strop/tests/terminal_editor.rs` harness
+has reached 778 lines after bounded exit diagnostics. Before the next
+substantial test journey pushes it past the ~800-line ceiling, split
+the existing harness, product journey and benchmark cases into
+`terminal_editor/{mod,harness,journeys,perf}.rs`; keep their real
+worker/PTY path and measurement-method digests together.
+
+The native replay cutover also touches the pre-existing over-ceiling
+`crates/strop-engine/src/editor/notify.rs` (now 1,109 lines). Before its
+next behavior change, split by owner into `notify/{mod,queue,subscribe,
+reconcile}.rs`: typed bounded queue/coalescing; local/remote subscribe
+and lease identity; guarded reload/rescan. Keep `Tape::observe_owned`
+at the single event-delivery drain, not separate per-platform paths.
+Do not disrupt 0.36.0's exact-source 64-sample/native qualification
+with an unrelated source-only move; rebind the evidence when splitting.
+
+Worker 0.36 container resource boundary (explicit user choice):
+**retain no-init worker support with a documented nonreaping-PID-1
+limitation**. The 64-sample selected BusyBox run had exactly one live
+worker after each Welcome and no live worker after each shutdown, but
+its unrelated nonreaping PID 1 retained 889 Strop-triggered Docker-exec
+`sh`/`cat` zombies after reuse, including 71 fixture resets. Do not
+advertise bounded whole-container process-table usage. Users needing
+sustained sessions without that accumulation should start their container
+with a reaping init; Strop does not install or require one for worker
+admission. Re-entry: an owned/reaping PID 1 or a provider/OS contract
+that can actually reap processes it adopts, followed by repeated
+no-init process-table and worker-retirement evidence. This preserves
+the no-init functionality and its native tests; it does not waive the
+retained-platform worker gates or owned-live-worker retirement bound.
+
+Worker 0.36 platform amendment (explicit user choice): **drop Intel
+macOS support end to end**. Retain Linux x86_64/aarch64 (GNU native
+profiles and static musl artifacts) and macOS aarch64/Apple Silicon.
+Remove the Intel CI/release lane, executable/build-host selectors,
+installer/update route and Homebrew/catalog artifact requirements.
+An Intel target is unsupported, never an alias for ARM; SSH hosts
+without an admitted worker keep their read-only SFTP behavior.
+Existing historical Intel releases/evidence remain historical, not
+requirements or qualification for 0.36. Re-entry requires explicit
+user demand, an owned native Intel qualification host, and restored
+native worker/SSH/PTY/product/LSP/retirement plus artifact/install
+evidence before readvertising support. This is a product-scope
+decision, not a claim about Apple's support lifecycle and not a waiver
+of the retained three-target native gates.
+
 [0062](0062-distribution-and-wsl-onboarding.md) supports GUI packaging/onboarding
 and channels; it is not another editor feature arc afterward. No earlier behavior,
 platform or evidence ledger is silently removed by inserting the worker.

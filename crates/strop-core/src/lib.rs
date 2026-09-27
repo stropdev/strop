@@ -23,8 +23,8 @@ pub mod worker;
 
 pub use buffer::{
     Buffer, BufferSeed, Change, ChangeOrigin, EditError, HistoryMove, InputEdit,
-    PreparedReplacements, ReadonlyReason, Replacement, SaveReceipt, SaveRequest, SystemEdit,
-    UserEdit,
+    PreparedReplacements, ReadonlyReason, Replacement, SavePlan, SaveReceipt, SaveRequest,
+    SystemEdit, UserEdit,
 };
 pub use range::{MotionShape, Range};
 

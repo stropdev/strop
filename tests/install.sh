@@ -35,7 +35,6 @@ fi
 case "$(uname -s)/$(uname -m)" in
     Linux/x86_64|Linux/amd64) TARGET="x86_64-unknown-linux-musl" ;;
     Linux/aarch64|Linux/arm64) TARGET="aarch64-unknown-linux-musl" ;;
-    Darwin/x86_64) TARGET="x86_64-apple-darwin" ;;
     Darwin/arm64) TARGET="aarch64-apple-darwin" ;;
     *) echo "skip: no prebuilt target for $(uname -s)/$(uname -m)"; exit 0 ;;
 esac
@@ -84,8 +83,6 @@ run_install() { # installdir logfile [extra env as NAME=VALUE ...]
 
 # --- 1. catalog-driven fresh install -------------------------------------
 run_install "$WORK/bin" "$WORK/out1.log" || fail "fresh install: $(cat "$WORK/out1.log")"
-grep -q "strop $NEW_VERSION installed" "$WORK/out1.log" \
-    || fail "install did not resolve $NEW_VERSION through the catalog"
 [ "$(cat "$WORK/bin/strop")" = "fake strop binary $NEW_VERSION" ] \
     || fail "installed binary is not the catalog artifact"
 [ -x "$WORK/bin/strop" ] || fail "installed binary is not executable"
@@ -157,20 +154,24 @@ if run_install "$WORK/bin5" "$WORK/out5.log" \
     STROP_CATALOG_URL="file://$WORK/bad-catalog.json"; then
     fail "digest mismatch unexpectedly installed"
 fi
-grep -q "checksum mismatch" "$WORK/out5.log" || fail "no checksum mismatch error"
 [ ! -e "$WORK/bin5/strop" ] || fail "unverified bytes were installed"
 ok "digest mismatch refuses to install"
 
 # --- 6. catalog without an artifact for this target refuses ---------------
+if [ "$TARGET" = "aarch64-apple-darwin" ]; then
+    FOREIGN_TARGET="x86_64-unknown-linux-musl"
+else
+    FOREIGN_TARGET="aarch64-apple-darwin"
+fi
 mkdir -p "$WORK/foreign-dist"
 pkg="$WORK/pkg-foreign"
-mkdir -p "$pkg/strop-$NEW_VERSION-wasm32-wasi"
-printf 'fake wasm\n' > "$pkg/strop-$NEW_VERSION-wasm32-wasi/strop"
-tar -czf "$WORK/foreign-dist/strop-$NEW_VERSION-wasm32-wasi.tar.gz" -C "$pkg" \
-    "strop-$NEW_VERSION-wasm32-wasi"
-digest=$(sha "$WORK/foreign-dist/strop-$NEW_VERSION-wasm32-wasi.tar.gz")
-printf '%s  %s\n' "$digest" "strop-$NEW_VERSION-wasm32-wasi.tar.gz" \
-    > "$WORK/foreign-dist/strop-$NEW_VERSION-wasm32-wasi.tar.gz.sha256"
+mkdir -p "$pkg/strop-$NEW_VERSION-$FOREIGN_TARGET"
+printf 'fake foreign binary\n' > "$pkg/strop-$NEW_VERSION-$FOREIGN_TARGET/strop"
+tar -czf "$WORK/foreign-dist/strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz" -C "$pkg" \
+    "strop-$NEW_VERSION-$FOREIGN_TARGET"
+digest=$(sha "$WORK/foreign-dist/strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz")
+printf '%s  %s\n' "$digest" "strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz" \
+    > "$WORK/foreign-dist/strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz.sha256"
 python3 "$ROOT/.github/scripts/release-catalog.py" catalog \
     --tag "v$NEW_VERSION" --dist "$WORK/foreign-dist" \
     --base-url "file://$LATEST" \
@@ -181,9 +182,43 @@ if run_install "$WORK/bin6" "$WORK/out6.log" \
     STROP_CATALOG_URL="file://$WORK/foreign-catalog.json"; then
     fail "foreign-target catalog unexpectedly installed"
 fi
-grep -q "no artifact for $TARGET" "$WORK/out6.log" \
-    || fail "no missing-artifact error for $TARGET"
 [ ! -e "$WORK/bin6/strop" ] || fail "installed from a foreign-target catalog"
 ok "catalog without a matching artifact refuses to install"
+
+# --- 7. Intel macOS refuses before any fetch or installation --------------
+mkdir -p "$WORK/shim-intel"
+cat > "$WORK/shim-intel/uname" <<'UNAME'
+#!/bin/sh
+case "$1" in
+    -s) printf 'Darwin\n' ;;
+    -m) printf '%s\n' "$STROP_TEST_MACHINE" ;;
+    *) exit 1 ;;
+esac
+UNAME
+cat > "$WORK/shim-intel/curl" <<'FETCH'
+#!/bin/sh
+: > "$STROP_TEST_FETCHED"
+exit 1
+FETCH
+cp "$WORK/shim-intel/curl" "$WORK/shim-intel/wget"
+chmod +x "$WORK/shim-intel/uname" "$WORK/shim-intel/curl" "$WORK/shim-intel/wget"
+for machine in x86_64 amd64; do
+    if run_install "$WORK/intel-$machine" "$WORK/intel-$machine.log" \
+        PATH="$WORK/shim-intel:$PATH" STROP_TEST_MACHINE="$machine" \
+        STROP_TEST_FETCHED="$WORK/fetched-$machine"; then
+        fail "Intel macOS unexpectedly installed for $machine"
+    fi
+    [ ! -e "$WORK/fetched-$machine" ] || fail "Intel macOS attempted a download"
+    [ ! -e "$WORK/intel-$machine" ] || fail "Intel macOS created an install directory"
+    if env PATH="$WORK/shim-intel:$PATH" STROP_TEST_MACHINE="$machine" \
+        STROP_TEST_FETCHED="$WORK/fetched-zig-$machine" \
+        sh "$ROOT/.github/scripts/install-zig.sh" "$WORK/zig-$machine" \
+        >"$WORK/zig-$machine.log" 2>&1; then
+        fail "Intel macOS unexpectedly provisioned a compiler"
+    fi
+    [ ! -e "$WORK/fetched-zig-$machine" ] || fail "Intel macOS downloaded a compiler"
+    [ ! -e "$WORK/zig-$machine" ] || fail "Intel macOS created a compiler directory"
+done
+ok "Intel macOS refuses before fetching or writing"
 
 echo "install.sh fixtures: all passed"

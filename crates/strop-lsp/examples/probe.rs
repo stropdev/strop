@@ -10,29 +10,18 @@ fn main() {
         return;
     };
     let root = std::path::Path::new("/tmp/lsp-proj");
-    // Client::spawn takes the caller's cancellation token; the example
-    // has no worker, so one is scoped in purely to issue the token.
-    let client = std::thread::scope(|scope| {
-        let (tokens, issued) = channel();
-        let _handle = strop_core::worker::spawn_scoped(
-            scope,
-            "probe-token",
-            |_| {},
-            move |token| {
-                let _ = tokens.send(token);
-                strop_core::worker::Outcome::Success(())
-            },
-        );
-        let token = issued.recv().expect("worker issued token");
-        strop_lsp::Client::spawn(
-            &spec,
-            strop_lsp::Workspace::Local {
-                root: root.to_path_buf(),
-            },
-            tx,
-            &token,
-        )
-    });
+    let Some(binary) = std::env::var_os("STROP_WORKER_BINARY") else {
+        eprintln!("set STROP_WORKER_BINARY to the matching strop executable");
+        return;
+    };
+    let client = strop_lsp::Client::spawn(
+        &spec,
+        strop_lsp::Workspace::Local {
+            root: root.to_path_buf(),
+        },
+        tx,
+        Some(strop_worker_client::Worker::spawn_program(binary)),
+    );
     let client = match client {
         Ok(client) => client,
         Err(error) => {

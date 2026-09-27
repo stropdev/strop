@@ -17,7 +17,8 @@ pub use line_edit::LineEdit;
 
 pub use score::fuzzy_score;
 pub use source::{
-    display_path, PickerMsg, SelectionPolicy, SourceSink, SourceSnapshot, SourceWorker,
+    display_path, PickerMsg, SearchWorker, SelectionPolicy, SourceSink, SourceSnapshot,
+    SourceWorker,
 };
 
 use std::path::PathBuf;

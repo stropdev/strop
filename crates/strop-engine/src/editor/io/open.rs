@@ -1,5 +1,6 @@
 //! Worker-only resource inspection and opening. Directories never enter a file reader.
 use super::{Document, FileTarget, Opened};
+use std::io::Read as _;
 use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 use strop_core::Buffer;
 use strop_workspace::{Filesystem, ResourceLocation};
@@ -11,6 +12,9 @@ pub(super) struct OpenRead {
     pub selection: strop_remote::ReadSelection,
     pub client: strop_remote::RemoteClient,
     pub container: Option<strop_containers::ContainerIdentity>,
+    /// Already-admitted worker for this exact container incarnation,
+    /// selected before the job starts. No deployment during browsing.
+    pub container_worker: Option<std::sync::Arc<crate::editor::containers::BoundWorker>>,
     /// The session's local worker lease (0058 WK04): local reads,
     /// observations and listings ride it — no in-process twin.
     pub worker: strop_worker_client::Worker,
@@ -195,6 +199,9 @@ impl OpenRead {
                         "attach the container before opening its resources",
                     );
                 };
+                if let Some(worker) = &self.container_worker {
+                    return self.open_container_worker(worker, identity, container, path, cancel);
+                }
                 let Some(path_text) = path.to_str() else {
                     return Outcome::failed(
                         FailureKind::InvalidInput,
@@ -308,6 +315,103 @@ impl OpenRead {
         })
     }
 
+    fn open_container_worker(
+        &self,
+        worker: &crate::editor::containers::BoundWorker,
+        identity: &strop_containers::ContainerIdentity,
+        container: &strop_workspace::ContainerId,
+        path: &std::path::Path,
+        cancel: &CancelToken,
+    ) -> Outcome<Opened> {
+        if !worker.matches(identity) {
+            return Outcome::failed(
+                FailureKind::Protocol,
+                "container worker lease belongs to a stale incarnation",
+            );
+        }
+        let location = ResourceLocation {
+            filesystem: Filesystem::Container(container.clone()),
+            path: path.to_path_buf(),
+        };
+        let observed = match worker.observe(cancel, &location) {
+            Ok(Some(observation)) => observation,
+            Ok(None) => {
+                return Outcome::failed(FailureKind::InvalidInput, "container file does not exist")
+            }
+            Err(error) if error.is_cancellation() => {
+                return Outcome::Cancelled(CancelReason::OwnerClosed)
+            }
+            Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+        };
+        match observed.kind {
+            strop_workspace::EntryKind::Directory => {
+                if self.requires_file {
+                    return file_required();
+                }
+                let snapshot = match worker.list(cancel, &location) {
+                    Ok(snapshot) => snapshot,
+                    Err(error) if error.is_cancellation() => {
+                        return Outcome::Cancelled(CancelReason::OwnerClosed)
+                    }
+                    Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+                };
+                directory_opened(
+                    super::super::namespace::Listed {
+                        directory: strop_fs::ListedDirectory { snapshot },
+                        connection: None,
+                    },
+                    &self.previous_directories,
+                    self.reveal.as_ref(),
+                    cancel,
+                )
+            }
+            strop_workspace::EntryKind::File if !self.browse => {
+                const LIMIT: u64 = 4 * 1024 * 1024;
+                if observed.size.is_some_and(|size| size > LIMIT) {
+                    return Outcome::failed(
+                        FailureKind::InvalidInput,
+                        "container file exceeds the 4 MiB view limit",
+                    );
+                }
+                let mut payload = match worker.read(cancel, &location, LIMIT + 1) {
+                    Ok(payload) => payload,
+                    Err(error) if error.is_cancellation() => {
+                        return Outcome::Cancelled(CancelReason::OwnerClosed)
+                    }
+                    Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+                };
+                let mut bytes = Vec::new();
+                if let Err(error) = payload.read_to_end(&mut bytes) {
+                    return Outcome::failed(FailureKind::Io, error.to_string());
+                }
+                if bytes.len() as u64 > LIMIT {
+                    return Outcome::failed(
+                        FailureKind::InvalidInput,
+                        "container file exceeds the 4 MiB view limit",
+                    );
+                }
+                match String::from_utf8(bytes) {
+                    Ok(text) => Outcome::Success(Opened {
+                        document: Document::container_file(
+                            Buffer::from_text(&text),
+                            container.clone(),
+                            path.to_path_buf(),
+                        ),
+                        canonical: self.target.clone(),
+                    }),
+                    Err(_) => Outcome::failed(
+                        FailureKind::InvalidInput,
+                        "container file is not UTF-8 text",
+                    ),
+                }
+            }
+            _ => Outcome::failed(
+                FailureKind::InvalidInput,
+                "only regular files and directories can be opened in a container",
+            ),
+        }
+    }
+
     fn list(&self, location: ResourceLocation, cancel: &CancelToken) -> Outcome<Opened> {
         match super::super::namespace::list(
             &self.worker,
@@ -315,6 +419,7 @@ impl OpenRead {
             &location,
             &self.client,
             self.container.as_ref(),
+            self.container_worker.as_deref(),
             cancel,
         ) {
             Ok(listed) => directory_opened(
@@ -405,5 +510,30 @@ pub(crate) fn filetime_to_systemtime(stamp: strop_workspace::FileTime) -> std::t
     } else {
         (epoch - std::time::Duration::new(stamp.seconds.unsigned_abs(), 0))
             + std::time::Duration::new(0, stamp.nanos)
+    }
+}
+
+/// The exact inverse of [`filetime_to_systemtime`]: the editor's mtime
+/// baseline crosses into the Store intent as kernel evidence (0058 WK09).
+/// Nanoseconds stay a positive offset from the seconds floor, matching
+/// the kernel's timespec encoding.
+pub(crate) fn systemtime_to_filetime(stamp: std::time::SystemTime) -> strop_workspace::FileTime {
+    match stamp.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => strop_workspace::FileTime {
+            seconds: duration.as_secs() as i64,
+            nanos: duration.subsec_nanos(),
+        },
+        Err(error) => {
+            let duration = error.duration();
+            let (seconds, nanos) = if duration.subsec_nanos() == 0 {
+                (-(duration.as_secs() as i64), 0)
+            } else {
+                (
+                    -(duration.as_secs() as i64) - 1,
+                    1_000_000_000 - duration.subsec_nanos(),
+                )
+            };
+            strop_workspace::FileTime { seconds, nanos }
+        }
     }
 }

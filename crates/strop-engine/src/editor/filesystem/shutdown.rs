@@ -15,7 +15,8 @@ impl FsState {
 }
 impl Editor {
     pub(crate) fn filesystem_shutdown_error(&self) -> Option<String> {
-        if self.filesystem.unconfirmed() == 0 {
+        let stores = self.io.store_attempts().count();
+        if self.filesystem.unconfirmed() == 0 && stores == 0 {
             return None;
         }
         let mut text = String::from(
@@ -44,6 +45,15 @@ impl Editor {
                     text.push_str(&location.label());
                 }
             }
+        }
+        // Unconfirmed document stores hold the same in-memory-only
+        // evidence (0058 WK09): report them rather than dying silently.
+        for (_document, attempt) in self.io.store_attempts() {
+            text.push_str(&format!(
+                "\n  document save: {} — {}",
+                attempt.receipt.operation.intent.kind.label(),
+                strop_workspace::ResourceLocation::local(attempt.write_target.clone()).label()
+            ));
         }
         Some(text)
     }

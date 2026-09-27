@@ -18,6 +18,8 @@ use strop_core::worker::{CancelToken, FailureKind};
 pub enum EffectiveHostError {
     /// The host text cannot be a hostname or alias — never spawned.
     InvalidHost,
+    /// No admitted worker, or a lease from the wrong SSH endpoint.
+    Unavailable(String),
     /// The ssh program could not run.
     Spawn(String),
     /// `ssh -G` exited non-zero; carries its stderr.
@@ -34,6 +36,7 @@ impl std::fmt::Display for EffectiveHostError {
             EffectiveHostError::InvalidHost => {
                 write!(f, "not a valid hostname or alias")
             }
+            EffectiveHostError::Unavailable(detail) => write!(f, "{detail}"),
             EffectiveHostError::Spawn(message) => write!(f, "cannot run ssh: {message}"),
             EffectiveHostError::Failed(message) => write!(f, "ssh -G failed: {message}"),
             EffectiveHostError::NoHostname => write!(f, "ssh -G reported no hostname"),

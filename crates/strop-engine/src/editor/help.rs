@@ -50,7 +50,8 @@ impl Editor {
             "  Space o / :remote       Choose an SSH destination or add a host; Enter connects\n",
             "  - / Backspace           Visit parent directory and retain the selected child\n",
             "  :remote root / home     Browse remote root or negotiated home directory\n",
-            "  :remote edit             Verify a full file snapshot and explicitly enable editing\n",
+            "  :remote worker [URI]    Explicit worker consent for Git/LSP/search; no edit permit\n",
+            "  :remote edit            Admit worker, verify full snapshot and enable editing\n",
             "  :w / :wq                 Save an authorized remote file; no conflict bypass via !\n",
             "  :remote verify           Reconcile an unconfirmed save without blind overwrite\n",
             "  :tail [BYTES] [URI]     Read a bounded tail (URI defaults to current file)\n",
@@ -120,6 +121,7 @@ impl Editor {
             "\n[documentation]\n",
             "  Enter on hover          Open full searchable documentation; Ctrl-O returns\n",
             "  :containers               Attach to a running container (read-only browse)\n",
+            "  :container-worker        Authorize a verified worker for the attached container; may write its private cache\n",
         ));
         text.push_str("\nSupported language filters:\n  ");
         for (index, language) in strop_core::languages::language_names().enumerate() {

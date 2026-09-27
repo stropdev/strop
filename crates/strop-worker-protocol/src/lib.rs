@@ -42,11 +42,11 @@ pub use id::{
 };
 pub use message::{
     Capabilities, Capability, EndpointInfo, Limits, NotifyCoverage, ProtocolError, Refusal,
-    ShutdownReason, PROTOCOL_VERSION,
+    RequestClass, ShutdownReason, PROTOCOL_VERSION,
 };
 pub use request::{
     ClientMessage, Event, ExecSpec, ExitStatus, NotifyHint, NotifyKind, PtyGeometry, Request,
-    ResultOutcome, StreamRef, WorkerMessage,
+    ResultOutcome, StreamRef, WorkerMessage, STREAM_WINDOW_CHUNKS,
 };
 
 /// The exact compile-time target triple of this build (0058 WK05): what

@@ -1,14 +1,10 @@
-//! Server process spawn, initialize handshake and runtime mainloop
-//! wiring. The wire queue worker starts here, one per connection.
-//! A local server runs in the workspace root; a remote server runs on
-//! its endpoint inside the remote root through strop-remote's single
-//! process policy (0036 RW8): one owned SSH client whose stdin/stdout
-//! carry the protocol, with a bounded teardown that never leaks the
-//! local ssh process.
+//! LSP process admission and protocol runtime. Every server executes
+//! through the already-admitted worker in its actual namespace; neither
+//! local nor remote launches bypass worker supervision.
+
 use std::future::Future;
 use std::ops::ControlFlow;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::path::Path;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
@@ -26,6 +22,8 @@ use crate::convert::diag_from_lsp;
 use crate::protocol::*;
 use crate::registry;
 use crate::target::Workspace;
+use strop_worker_client::Worker;
+
 pub(crate) struct ClientState {
     tx: Sender<LspEvent>,
     id: ServerId,
@@ -47,6 +45,8 @@ pub enum SpawnError {
     /// The runtime, client thread or wire worker could not start; the
     /// message names which.
     Startup(String),
+    /// The selected workspace did not supply its required native worker.
+    Unavailable(String),
 }
 
 impl std::fmt::Display for SpawnError {
@@ -54,100 +54,72 @@ impl std::fmt::Display for SpawnError {
         match self {
             Self::RootUri => write!(f, "the workspace root is not an absolute path"),
             Self::Startup(message) => write!(f, "{message}"),
+            Self::Unavailable(namespace) => {
+                write!(f, "LSP on {namespace} requires an admitted worker")
+            }
         }
     }
 }
 
 impl std::error::Error for SpawnError {}
 
-/// What the runtime thread spawns: a local process described by the
-/// spec, the supervised SSH client of a remote server command, or the
-/// supervised docker-exec client of an admitted container exec.
-enum Launch {
-    Local {
-        cmd: String,
-        args: Vec<String>,
-        cwd: PathBuf,
-    },
-    /// A server inside a running container (0037 DC1b, 0056 AR07): an
-    /// admitted, incarnation-pinned exec request. `docker exec -i`
-    /// carries stdio through a fixed in-container supervisor whose stdin
-    /// is the lifetime lease — the local client's death ends the whole
-    /// in-container session group, no SSH and nothing left behind.
-    Container(strop_containers::AdmittedExec),
-    Remote(RemoteLaunch),
+/// A leased service spawn through the worker (0058 WK10): the lease and
+/// the wire exec spec. `service: true` admits the relayed stdin the
+/// protocol channel rides; no PTY, no env overlay — the server's context
+/// is its supervised cwd, exactly like the supervised launches.
+struct WorkerLaunch {
+    worker: Worker,
+    spec: strop_worker_protocol::ExecSpec,
 }
 
-/// How long the remote teardown waits for the local ssh to follow the
-/// server out before killing it. The server sees stdin EOF when the
-/// mainloop drops the write half, exits, and the supervisor reaps the
-/// remote group — the kill is a backstop, never the primary mechanism.
-const REMOTE_EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
-
-/// Bounded stderr retained for a remote failure hint.
-const STDERR_TAIL_CAP: usize = 8192;
-
-/// The supervised remote launch through strop-remote's ONE process
-/// policy: a checked [`strop_remote::RemoteCommand`] (program, inert
-/// argv, absolute remote cwd) plus the ssh argv the policy builds —
-/// safety options, destination, remote supervision encoding and
-/// relayed server stdin. The key turns the supervisor's nonce-marked
-/// stderr records into typed outcomes; nothing here restates the
-/// policy.
-struct RemoteLaunch {
-    command: std::process::Command,
-    supervision: strop_remote::SupervisionKey,
-}
-
-fn remote_launch(
-    endpoint: &strop_workspace::RemoteEndpoint,
+fn worker_launch(
+    worker: Worker,
     spec: &registry::ServerSpec<'_>,
     root: &Path,
-) -> Result<RemoteLaunch, SpawnError> {
-    let args: Vec<std::ffi::OsString> = spec
-        .args
-        .iter()
-        .map(|arg| std::ffi::OsString::from(arg.as_str()))
-        .collect();
-    let command = strop_remote::RemoteCommand::new(spec.command, args, root).map_err(|error| {
-        SpawnError::Startup(format!("remote command rejected for {endpoint}: {error}"))
+) -> Result<WorkerLaunch, SpawnError> {
+    let cwd = os_bytes(root.as_os_str()).ok_or_else(|| {
+        SpawnError::Startup(format!(
+            "workspace root {:?} is not representable as native wire bytes",
+            root
+        ))
     })?;
-    // Relayed stdin: the protocol channel to the remote server; the
-    // lifetime lease is this client's stdin writer.
-    let (mut ssh, supervision) =
-        strop_remote::command_supervised(endpoint, &command, strop_remote::StdinMode::Relayed)
-            .map_err(|error| SpawnError::Startup(format!("ssh for {endpoint}: {error}")))?;
-    // A private process group: ProxyCommand children and any other
-    // local descendants die with the group, matching the shared
-    // policy's supervision contract for owned stdio clients.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        ssh.process_group(0);
-    }
-    Ok(RemoteLaunch {
-        command: ssh,
-        supervision,
+    Ok(WorkerLaunch {
+        worker,
+        spec: strop_worker_protocol::ExecSpec {
+            program: spec.command.as_bytes().to_vec(),
+            argv: spec
+                .args
+                .iter()
+                .map(|arg| arg.as_bytes().to_vec())
+                .collect(),
+            cwd,
+            env: Vec::new(),
+            service: true,
+            pty: None,
+        },
     })
 }
 
-/// The admitted container launch: probe the selected engine, resolve the
-/// workspace's canonical id to its current incarnation, freeze the exec
-/// request (program, argv, in-container cwd) and admit it — the engine
-/// re-checks id + `StartedAt` before the command is built, so a recycled
-/// container is a typed refusal here, not a server spawned in the wrong
-/// namespace. Runs on the discovery worker; `token` is its cancellation.
-fn container_launch(
-    id: &strop_workspace::ContainerId,
-    spec: &registry::ServerSpec<'_>,
-    root: &Path,
-    token: &strop_core::worker::CancelToken,
-) -> Result<strop_containers::AdmittedExec, SpawnError> {
-    let engine = strop_containers::engine(token)
-        .map_err(|error| SpawnError::Startup(format!("container engine: {error}")))?;
-    strop_containers::ExecSpec::resolve(&engine, id, spec.command, spec.args, root, token)
-        .map_err(|error| SpawnError::Startup(format!("container exec admission: {error}")))
+/// Native wire bytes for a path: Unix keeps arbitrary non-NUL bytes;
+/// other platforms require UTF-8 rather than a lossy stand-in.
+fn os_bytes(value: &std::ffi::OsStr) -> Option<Vec<u8>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        Some(value.as_bytes().to_vec())
+    }
+    #[cfg(not(unix))]
+    {
+        value.to_str().map(|text| text.as_bytes().to_vec())
+    }
 }
+
+/// Grace for a worker-owned service to follow its stdin EOF out before
+/// explicit revocation; the worker attests the exit classification.
+const REMOTE_EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Bounded stderr retained for a worker service's failure hint.
+const STDERR_TAIL_CAP: usize = 8192;
 
 /// The production client router: diagnostics, server messages, and a
 /// tolerant catch-all. A free function (not a closure inline in
@@ -251,45 +223,22 @@ pub(crate) fn client_router(
 }
 
 impl Client {
-    /// Spawn the configured server on the given workspace — locally,
-    /// or on the remote endpoint inside the remote root — and start
-    /// its runtime, wire queue and initialize handshake. Nothing is
-    /// executed before this call; executability was settled by
-    /// discovery's checks. The spec is only borrowed for the duration
-    /// of the call. `token` is the discovery worker's cancellation: a
-    /// container workspace is *admitted* here — engine probe, incarnation
-    /// revalidation — so a recycled container or a changed engine context
-    /// is a typed spawn refusal, never a silent exec elsewhere.
+    /// Spawn a configured server through this workspace's admitted
+    /// native worker. The spec is borrowed only for this call; absence
+    /// refuses typed instead of launching another process supervisor.
     pub fn spawn(
         spec: &registry::ServerSpec<'_>,
         workspace: Workspace,
         tx: Sender<LspEvent>,
-        token: &strop_core::worker::CancelToken,
+        lease: Option<Worker>,
     ) -> Result<Self, SpawnError> {
         let root_uri = workspace.uri(workspace.root()).ok_or(SpawnError::RootUri)?;
-        let launch = match &workspace {
-            Workspace::Local { root } => Launch::Local {
-                cmd: spec.command.to_string(),
-                args: spec.args.to_vec(),
-                cwd: root.clone(),
-            },
-            Workspace::Remote { endpoint, root } => {
-                Launch::Remote(remote_launch(endpoint, spec, root)?)
-            }
-            Workspace::Container { container, root } => {
-                Launch::Container(container_launch(container, spec, root, token)?)
-            }
-        };
-        let remote = workspace.endpoint().is_some();
-        let in_container = matches!(workspace, Workspace::Container { .. });
         let label_workspace = workspace.label();
+        let worker = lease.ok_or_else(|| SpawnError::Unavailable(label_workspace.clone()))?;
+        let launch = worker_launch(worker, spec, workspace.root())?;
         // The thread is 'static: it gets owned copies, never borrows
         // into the spawning scope.
         let endpoint_display = workspace.endpoint().map(|e| e.to_string());
-        let supervision = match &launch {
-            Launch::Remote(remote) => Some(remote.supervision.clone()),
-            Launch::Local { .. } | Launch::Container(_) => None,
-        };
         let id = ServerId::allocate();
         let self_caps = ServerCaps::default();
         let sync = Arc::new(parking_lot::Mutex::new(sync::SyncState::default()));
@@ -326,9 +275,6 @@ impl Client {
         // Set once the mainloop ends: the wire worker stops framing.
         let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let closed_mainloop = closed.clone();
-        // Remote failures carry the ssh stderr tail: "connection
-        // refused", "command not found" — the user's actionable fact.
-        let stderr_tail = Arc::new(parking_lot::Mutex::new(Vec::new()));
         // The wire worker shares the same synchronized open-document
         // table, socket and runtime as the handle. Starting it before
         // the runtime thread means a failure below leaks no thread, no
@@ -354,169 +300,19 @@ impl Client {
             .spawn(move || {
                 let name = name_loop;
                 let hint = hint_loop;
-                rt.block_on(async move {
-                    let mut command = match launch {
-                        Launch::Local { cmd, args, cwd } => {
-                            let mut command = tokio::process::Command::new(&cmd);
-                            command.args(&args).current_dir(&cwd);
-                            command
-                        }
-                        // kill_on_drop: even a panicking runtime thread
-                        // cannot leak the local ssh client; the remote
-                        // server group is reaped by the supervisor on
-                        // stdin EOF.
-                        Launch::Remote(remote) => {
-                            let mut command = tokio::process::Command::from(remote.command);
-                            command.kill_on_drop(true);
-                            command
-                        }
-                        // kill_on_drop: a dropped runtime kills the local
-                        // docker client; the daemon then closes the exec
-                        // session's stdin and the in-container supervisor
-                        // TERM/KILLs the whole session group.
-                        Launch::Container(exec) => {
-                            let mut command =
-                                tokio::process::Command::from(exec.command());
-                            command.kill_on_drop(true);
-                            command
-                        }
-                    };
-                    command
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped());
-                    command.kill_on_drop(true);
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::process::CommandExt;
-                        command.as_std_mut().process_group(0);
-                    }
-                    match command.spawn() {
-                        Ok(child) => {
-                            let mut c = super::process::ServerProcess::new(child);
-                            let Ok((stdout, stdin, mut stderr)) = c.take_io() else {
-                                let _ = tx_fail.send(LspEvent::Failed {
-                                    server: id, name: name.clone(), hint: hint.clone(),
-                                });
-                                return;
-                            };
-                            let stderr_drain = {
-                                let name_stderr = name.clone();
-                                let tail = stderr_tail.clone();
-                                tokio::spawn(async move {
-                                    use tokio::io::AsyncReadExt;
-                                    let mut chunk = [0; 4096];
-                                    loop {
-                                        match stderr.read(&mut chunk).await {
-                                            Ok(0) => break,
-                                            Ok(bytes) => {
-                                                let mut guard = tail.lock();
-                                                guard.extend_from_slice(&chunk[..bytes]);
-                                                let overflow = guard.len().saturating_sub(STDERR_TAIL_CAP);
-                                                if overflow > 0 {
-                                                    guard.drain(..overflow);
-                                                }
-                                                strop_trace::record_with(strop_trace::EventKind::Error, || serde_json::json!({
-                                                    "source":"lsp_stderr", "server":name_stderr, "bytes":bytes,
-                                                    "message":strop_trace::preview(&String::from_utf8_lossy(&chunk[..bytes])),
-                                                }));
-                                            }
-                                            Err(error) => {
-                                                strop_trace::record_with(strop_trace::EventKind::Error, || serde_json::json!({
-                                                    "source":"lsp_stderr_read", "server":name_stderr,"message":error.to_string(),
-                                                }));
-                                                break;
-                                            }
-                                        }
-                                    }
-                                })
-                            };
-                            let label = format!("{name}@{label_workspace}");
-                            strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-                                let mut event = serde_json::json!({"service":"lsp","server":label,"pid":c.id()});
-                                if let Some(endpoint) = &endpoint_display {
-                                    event["remote"] = serde_json::json!(endpoint);
-                                }
-                                event
-                            });
-                            let result = {
-                                let mut run = std::pin::pin!(mainloop.run_buffered(
-                                    Observed::new(stdout, &label, Direction::Rx).compat(),
-                                    Observed::new(stdin, &label, Direction::Tx).compat_write(),
-                                ));
-                                let mut stopping = std::pin::pin!(stopping);
-                                std::future::poll_fn(|context| {
-                                    if stopping.as_mut().poll(context).is_ready() {
-                                        return std::task::Poll::Ready(Ok(()));
-                                    }
-                                    run.as_mut().poll(context)
-                                }).await
-                            };
-                            closed_mainloop.store(true, std::sync::atomic::Ordering::Relaxed);
-                            strop_trace::record_with(strop_trace::EventKind::JobFinished, || serde_json::json!({
-                                "service":"lsp","server":label,"error":result.as_ref().err().map(ToString::to_string),
-                            }));
-                            let grace = if remote { REMOTE_EXIT_GRACE } else { std::time::Duration::ZERO };
-                            if let Err(error) = c.finish(Some(stderr_drain), grace).await {
-                                strop_trace::record_with(strop_trace::EventKind::Error, || serde_json::json!({
-                                    "source":"lsp_process_cleanup", "server":label, "message":error.to_string(),
-                                }));
-                            }
-                            if !quitting_mainloop.load(std::sync::atomic::Ordering::Relaxed) {
-                                // The mainloop's own error is the primary
-                                // cause (protocol break, server closed the
-                                // connection); stderr and supervision
-                                // records add the process-level truth. The
-                                // generic install hint alone would mask
-                                // the real reason.
-                                let mut detail = match &result {
-                                    Err(error) => format!(": {error}"),
-                                    Ok(()) => String::new(),
-                                };
-                                {
-                                    let guard = stderr_tail.lock();
-                                    let text = String::from_utf8_lossy(&guard).trim().to_string();
-                                    if !text.is_empty() {
-                                        detail = format!("{detail}; stderr: {text}");
-                                    }
-                                    // Typed supervision records name the
-                                    // remote exit truthfully (signaled,
-                                    // launch failure, supervisor error).
-                                    if let Some(key) = &supervision {
-                                        if let Some(outcome) =
-                                            key.records(&guard).last().map(|o| format!("{o:?}"))
-                                        {
-                                            detail = format!(" ({outcome}){detail}");
-                                        }
-                                    }
-                                }
-                                let hint = format!("{name} exited unexpectedly{detail} — {hint}");
-                                let _ = tx_fail.send(LspEvent::Failed {
-                                    server: id,
-                                    name: name.clone(),
-                                    hint,
-                                });
-                            }
-                        }
-                        Err(error) => {
-                            // The spawn failure names the command and the
-                            // io error — silence or a bare "failed" is not
-                            // a report (0033 §3).
-                            let where_ = if remote || in_container {
-                                format!(" on {label_workspace}")
-                            } else {
-                                String::new()
-                            };
-                            let reason = format!("cannot run `{cmd}`{where_}: {error}");
-                            strop_trace::record_with(strop_trace::EventKind::Error, || serde_json::json!({
-                                "source":"lsp_spawn","server":name,"command":&cmd,"message":error.to_string(),
-                            }));
-                            let _ = tx_fail.send(LspEvent::Failed {
-                                server: id, name: name.clone(), hint: format!("{reason} — {hint}"),
-                            });
-                        }
-                    }
-                });
+                rt.block_on(run_worker_launch(
+                    launch,
+                    mainloop,
+                    stopping,
+                    tx_fail,
+                    id,
+                    name,
+                    hint,
+                    label_workspace,
+                    endpoint_display,
+                    quitting_mainloop,
+                    closed_mainloop,
+                ));
             })
             .map_err(|error| {
                 SpawnError::Startup(format!("cannot start the LSP client thread: {error}"))
@@ -640,5 +436,111 @@ impl Client {
             }
         });
         Ok(client)
+    }
+}
+
+/// Run one worker-leased server to its settlement (0058 WK10): the exec
+/// rides the lease's supervised process — the worker beside the files
+/// owns spawn, pipes, wait and teardown. Spawn/admission failures are
+/// the client's typed error in the failure event; the exit is the
+/// worker's classified terminal status (code, signal, `Lost`), never a
+/// guessed code. Teardown order matches the supervised launches: the
+/// mainloop's dropped write half delivers stdin EOF, the grace waits,
+/// then [`super::worker_io::WorkerLease::settle`] revokes.
+#[allow(clippy::too_many_arguments)]
+async fn run_worker_launch(
+    wlaunch: WorkerLaunch,
+    mainloop: async_lsp::MainLoop<Router<ClientState>>,
+    stopping: tokio::sync::oneshot::Receiver<()>,
+    tx_fail: Sender<LspEvent>,
+    id: ServerId,
+    name: String,
+    hint: String,
+    label_workspace: String,
+    endpoint_display: Option<String>,
+    quitting: Arc<std::sync::atomic::AtomicBool>,
+    closed: Arc<std::sync::atomic::AtomicBool>,
+) {
+    let cmd = String::from_utf8_lossy(&wlaunch.spec.program).into_owned();
+    // The exec request's own token: admission only — the admitted exec
+    // lives under its own lease on the worker side.
+    let (request_token, _hold) = strop_core::worker::CancelToken::standalone();
+    let handle = match wlaunch.worker.exec(&request_token, wlaunch.spec) {
+        Ok(handle) => handle,
+        Err(error) => {
+            strop_trace::record_with(strop_trace::EventKind::Error, || {
+                serde_json::json!({
+                    "source":"lsp_spawn","server":name,"command":&cmd,"message":error.to_string(),
+                })
+            });
+            let reason = format!("cannot run `{cmd}` on {label_workspace}: {error}");
+            let _ = tx_fail.send(LspEvent::Failed {
+                server: id,
+                name,
+                hint: format!("{reason} — {hint}"),
+            });
+            return;
+        }
+    };
+    let io = super::worker_io::start(handle, wlaunch.worker.clone(), STDERR_TAIL_CAP);
+    let super::worker_io::WorkerIo {
+        stdout,
+        stdin,
+        stderr_tail,
+        lease,
+    } = io;
+    let label = format!("{name}@{label_workspace}");
+    strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
+        let mut event = serde_json::json!({"service":"lsp","server":label,"worker":true});
+        if let Some(endpoint) = &endpoint_display {
+            event["remote"] = serde_json::json!(endpoint);
+        }
+        event
+    });
+    let result = {
+        let mut run = std::pin::pin!(mainloop.run_buffered(
+            Observed::new(stdout, &label, Direction::Rx).compat(),
+            Observed::new(stdin, &label, Direction::Tx).compat_write(),
+        ));
+        let mut stopping = std::pin::pin!(stopping);
+        std::future::poll_fn(|context| {
+            if stopping.as_mut().poll(context).is_ready() {
+                return std::task::Poll::Ready(Ok(()));
+            }
+            run.as_mut().poll(context)
+        })
+        .await
+    };
+    closed.store(true, std::sync::atomic::Ordering::Relaxed);
+    strop_trace::record_with(strop_trace::EventKind::JobFinished, || {
+        serde_json::json!({
+            "service":"lsp","server":label,"error":result.as_ref().err().map(ToString::to_string),
+        })
+    });
+    // Teardown: the dropped write half already delivered stdin EOF;
+    // settle waits the grace, then revokes the lease (TERM/grace/KILL
+    // on the worker side) and collects the classified exit.
+    lease.settle(REMOTE_EXIT_GRACE);
+    if !quitting.load(std::sync::atomic::Ordering::Relaxed) {
+        let mut detail = match &result {
+            Err(error) => format!(": {error}"),
+            Ok(()) => String::new(),
+        };
+        {
+            let guard = stderr_tail.lock();
+            let text = String::from_utf8_lossy(&guard).trim().to_string();
+            if !text.is_empty() {
+                detail = format!("{detail}; stderr: {text}");
+            }
+            if let Some(status) = lease.status() {
+                detail = format!(" ({status:?}){detail}");
+            }
+        }
+        let hint = format!("{name} exited unexpectedly{detail} — {hint}");
+        let _ = tx_fail.send(LspEvent::Failed {
+            server: id,
+            name,
+            hint,
+        });
     }
 }

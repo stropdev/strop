@@ -302,15 +302,13 @@ impl AdmittedExec {
         self.build(Mode::Relay)
     }
 
-    /// The strop worker's own exec channel for images without a POSIX
-    /// sh (0058 WK08, the shellless preinstalled case): the verified
-    /// worker binary IS the supervisor — it serves the protocol on
-    /// stdin/stdout and its own session teardown reaps what it
-    /// launches, so the fixed sh supervisor adds nothing it needs.
-    /// All three pipes are piped; stdin is the lifetime lease exactly
-    /// as in [`Self::command`]. Only the worker takes this path:
-    /// ordinary programs keep the typed distroless [`ContainerError::ExecLaunch`]
-    /// refusal, never an unsupervised fallback.
+    /// The native worker's direct exec channel (0058 WK08): its binary
+    /// IS the supervisor on both provisioned and preinstalled paths.
+    /// No POSIX sh, `cat` relay or Python interpreter is needed for
+    /// the worker mode itself. All three pipes are piped; stdin is the
+    /// lifetime lease exactly as in [`Self::command`]. Only the worker
+    /// takes this path: ordinary programs retain their supervised
+    /// execution/refusal semantics.
     pub fn worker_command(&self) -> Command {
         let mut command = self.exec_prefix();
         command

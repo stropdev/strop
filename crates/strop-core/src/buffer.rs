@@ -2,7 +2,7 @@
 //! No UI, no modes, no grammar — the thing everything else edits.
 
 mod io;
-pub use io::{SaveReceipt, SaveRequest};
+pub use io::{SavePlan, SaveReceipt, SaveRequest};
 mod seed;
 pub use seed::BufferSeed;
 mod layout_cache;

@@ -53,19 +53,33 @@ pub(super) fn classify(
     })
 }
 
+/// All namespace authorities captured at one prompt moment. A
+/// container lease is paired with its inspected incarnation; missing
+/// authority stays on the established read-only tar/SFTP path.
+pub(super) struct Sources<'a> {
+    pub client: &'a RemoteClient,
+    pub worker: &'a strop_worker_client::Worker,
+    pub remote: &'a crate::editor::remote::workers::RemoteWorkers,
+    pub container: Option<&'a strop_containers::ContainerIdentity>,
+    pub container_worker: Option<&'a crate::editor::containers::BoundWorker>,
+}
+
 pub(super) fn run(
     location: ResourceLocation,
     segment: &[u8],
-    container: Option<&strop_containers::ContainerIdentity>,
-    client: &RemoteClient,
-    worker: &strop_worker_client::Worker,
-    remote: &crate::editor::remote::workers::RemoteWorkers,
+    sources: Sources<'_>,
     cancel: &worker::CancelToken,
 ) -> Outcome<RemoteCompletionResult> {
-    // Completion never authenticates: namespace::list only rides an
-    // already-live admitted lease, and otherwise the SFTP path serves.
+    // Completion never authenticates: a bound lease is reused, or the
+    // read-only SFTP/tar path serves without provisioning.
     let listed = match crate::editor::namespace::list(
-        worker, remote, &location, client, container, cancel,
+        sources.worker,
+        sources.remote,
+        &location,
+        sources.client,
+        sources.container,
+        sources.container_worker,
+        cancel,
     ) {
         Ok(listed) => listed,
         Err(error) if error.kind == strop_workspace::operation::FsFailureKind::Cancelled => {

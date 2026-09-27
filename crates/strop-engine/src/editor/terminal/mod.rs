@@ -1,5 +1,6 @@
-//! Editor ownership of local terminals. Native handles remain on strop-terminal's
-//! worker; this state holds bounded service handles and immutable publications.
+//! Editor ownership of terminal sessions. PTY handles live on the namespace's
+//! admitted worker (0058 WK12); this state holds bounded service handles and
+//! immutable publications, and emulation/presentation stay engine-owned.
 mod input;
 mod lifecycle;
 mod presentation;

@@ -1,4 +1,6 @@
 use super::*;
+use std::time::{Duration, Instant};
+
 use crate::editor::{Document, DocumentSource, Key, Mode};
 use strop_core::Buffer;
 use strop_terminal::model::{Color, Style, Update};
@@ -11,6 +13,149 @@ fn retained_terminal(editor: &mut Editor) -> DocumentId {
             signal: None,
         },
     )
+}
+
+/// Drive the real service loop (worker PTY over the in-process codec)
+/// until `condition` holds; failure to converge is a test failure with
+/// the editor state attached, never a hang.
+fn drain_until(editor: &mut Editor, condition: impl Fn(&Editor) -> bool, what: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        editor.drain_terminals();
+        if condition(editor) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        condition(editor),
+        "terminal never reached {what}: {}",
+        editor.message
+    );
+}
+
+fn live_text(editor: &Editor, document: DocumentId) -> String {
+    editor
+        .terminal_frame(document, true)
+        .map(|frame| frame.projection.to_string())
+        .unwrap_or_default()
+}
+
+/// 0058 WK12: the modal terminal's lifecycle rides the namespace's
+/// worker end to end — spawn with geometry, fed input, bounded output,
+/// an ordered resize the child's own `stty` attests, and a truthful
+/// exit — with emulation and presentation still engine-owned.
+#[test]
+fn terminal_journey_runs_through_the_namespace_worker() {
+    use strop_core::frontend_input::Input;
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    editor.feed_text(":terminal\r");
+    let document = editor.current();
+    assert!(matches!(
+        editor.doc(document).source,
+        DocumentSource::Terminal(_)
+    ));
+    drain_until(
+        &mut editor,
+        |editor| matches!(editor.terminal_phase(document), Some(Phase::Running)),
+        "the worker-admitted shell",
+    );
+    editor.feed_terminal(Input::Text("printf 'HI:%s\\n' x\n".into()));
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("HI:x"),
+        "the fed command's output",
+    );
+    // The ordered resize boundary: after it, the child itself reports
+    // the new winsize, and the projection keeps parsing truthfully.
+    editor.prepare_terminal_geometry(document, 100, 30);
+    drain_until(
+        &mut editor,
+        |editor| {
+            editor
+                .terminal_frame(document, true)
+                .is_some_and(|frame| frame.geometry.columns == 100 && frame.geometry.rows == 30)
+        },
+        "the applied resize",
+    );
+    editor.feed_terminal(Input::Text("stty size\n".into()));
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("30 100"),
+        "the child's attestation of the new geometry",
+    );
+    editor.feed_terminal(Input::Text("exit 3\n".into()));
+    drain_until(
+        &mut editor,
+        |editor| {
+            matches!(
+                editor.terminal_phase(document),
+                Some(Phase::Exited {
+                    code: Some(3),
+                    signal: None
+                })
+            )
+        },
+        "the truthful exit status",
+    );
+}
+
+/// 0058 WK12 regression: a tiny-write flood (`yes` writes 2 bytes per
+/// syscall) coalesces at the worker's pump instead of drowning the
+/// bounded stream in per-write chunks — the tail always lands.
+#[test]
+fn terminal_flood_coalesces_without_losing_the_tail() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    editor.feed_text(":terminal yes | head -c 16384; printf 'FLOOD-DONE\\n'; exit 0\r");
+    let document = editor.current();
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("FLOOD-DONE"),
+        "the flood completing",
+    );
+    drain_until(
+        &mut editor,
+        |editor| {
+            matches!(
+                editor.terminal_phase(document),
+                Some(Phase::Exited { code: Some(0), .. })
+            )
+        },
+        "exit",
+    );
+}
+
+/// 0058 WK12: a one-shot command through the worker pins its final
+/// frame into the terminal document with its exit status.
+#[test]
+fn terminal_command_exit_pins_the_final_frame() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    editor.feed_text(":terminal printf 'DONE\\n'; exit 5\r");
+    let document = editor.current();
+    drain_until(
+        &mut editor,
+        |editor| {
+            matches!(
+                editor.terminal_phase(document),
+                Some(Phase::Exited {
+                    code: Some(5),
+                    signal: None
+                })
+            )
+        },
+        "the command's exit",
+    );
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("DONE"),
+        "the final published frame",
+    );
+    // The exited terminal is a snapshot, never relaunchable.
+    assert!(!editor.terminal_input_active());
 }
 
 #[test]

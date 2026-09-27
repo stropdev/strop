@@ -40,6 +40,9 @@ fn limits() -> Limits {
         max_subscriptions: 64,
         max_streams: 128,
         max_exec_processes: 32,
+        max_concurrent_reads: 16,
+        control_reserve: 8,
+        max_queued_data_chunks: 256,
     }
 }
 

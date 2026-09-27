@@ -28,27 +28,12 @@ fn main() -> ExitCode {
 
 fn launch() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
-    #[cfg(unix)]
-    if arguments
-        .first()
-        .is_some_and(|argument| argument == "--terminal-helper")
-    {
-        if arguments.len() != 2 {
-            return Err("terminal helper requires exactly one inherited descriptor".into());
-        }
-        let fd = arguments[1]
-            .to_str()
-            .ok_or("invalid helper descriptor")?
-            .parse::<i32>()?;
-        // SAFETY: this early process entrypoint precedes threads, tracing and
-        // editor setup. The launching worker transferred this inherited fd.
-        unsafe { strop_terminal::helper::run_inherited(fd)? };
-        return Ok(());
-    }
-    // `strop --worker-stdio` (0058 WK04): the unified native worker. Like
-    // the terminal helper this entry precedes CLI parsing, TUI setup,
-    // session restoration, tracing and config: stdout is protocol frames
-    // from the first byte, diagnostics stay on bounded private stderr.
+    // `strop --worker-stdio` (0058 WK04): the unified native worker.
+    // This entry precedes CLI parsing, TUI setup, session restoration,
+    // tracing and config: stdout is protocol frames from the first
+    // byte, diagnostics stay on private bounded stderr. (The separate
+    // `--terminal-helper` process is gone in WK12: PTYs are the
+    // worker's own exec family now.)
     #[cfg(unix)]
     if arguments
         .first()

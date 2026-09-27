@@ -1,7 +1,6 @@
 use super::*;
 use crate::editor::document::RemoteDocument;
 use crate::editor::{Document, Key};
-use serde_json::json;
 use strop_core::Buffer;
 use strop_remote::{ReadLimit, ReadSelection, RemoteSize, RemoteWindow};
 
@@ -30,29 +29,111 @@ fn fixture(selection: ReadSelection) -> Editor {
     editor.switch_to(document);
     editor
 }
-fn version(file: &RemoteFile, length: usize) -> RemoteVersion {
-    let digest = [0u8; 32];
-    serde_json::from_value(json!({"file": file, "stamp": {
-        "device": 1, "inode": 1, "size": length, "mtime_ns": 1, "ctime_ns": 1,
-        "mode": 416, "uid": 1, "gid": 1, "content": digest, "attributes": digest
-    }}))
-    .unwrap()
+fn version(file: &RemoteFile, contents: &Rope) -> WriteVersion {
+    WriteVersion {
+        file: file.clone(),
+        modified: FileTime {
+            seconds: 1,
+            nanos: 0,
+        },
+        size: contents.len_bytes() as u64,
+        identity: Some(ObjectId {
+            device: 1,
+            inode: 1,
+        }),
+        attributes: None,
+        content: store::digest_of(contents),
+    }
 }
 fn enable(editor: &mut Editor) {
     editor.enable_remote_edit().unwrap();
     let ticket = editor.remote.writes.pending[&editor.current()].clone();
-    let version = version(&ticket.key.file, editor.buf().len_bytes());
+    let version = version(&ticket.key.file, &editor.buf().snapshot());
     editor.remote_write_done(Completion {
         ticket,
         outcome: Outcome::Success(RemoteWriteResult::Enabled(version)),
     });
     assert!(!editor.buf().readonly);
 }
-fn receipt(editor: &Editor, ticket: &Ticket<RemoteWriteKey>) -> RemoteSaveReceipt {
-    let length = editor.remote.writes.attempts[&ticket.key.document]
-        .contents
-        .len_bytes();
-    serde_json::from_value(json!({"version": version(&ticket.key.file, length)})).unwrap()
+fn receipt(editor: &Editor, ticket: &Ticket<RemoteWriteKey>) -> WriteVersion {
+    version(
+        &ticket.key.file,
+        &editor.remote.writes.attempts[&ticket.key.document].contents,
+    )
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn lost_store_reply_reconciles_over_a_restarted_real_worker() {
+    use strop_worker_client::{Transport, Worker};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("save.txt");
+    std::fs::write(&path, b"before\n").unwrap();
+    let file = RemoteFile::parse(&format!("ssh://fixture{}", path.display())).unwrap();
+    let endpoint = file.endpoint().clone();
+    let worker = Worker::connect_with(|| {
+        let (client_read, worker_write) = std::io::pipe()?;
+        let (worker_read, client_write) = std::io::pipe()?;
+        std::thread::spawn(move || strop_worker::serve::run(worker_read, worker_write).unwrap());
+        Ok(Transport {
+            reader: Box::new(client_read),
+            writer: Box::new(client_write),
+            child: None,
+            stderr: None,
+        })
+    });
+    let lease = strop_remote::worker_transport::RemoteWorker::for_test(&endpoint, worker.clone());
+    let (token, _owner) = strop_core::worker::CancelToken::standalone();
+    let baseline =
+        store::prepare_edit(&lease, &file, &Rope::from_str("before\n"), None, &token).unwrap();
+    let prepared = FrozenStore::default();
+    let saved = match store::save(
+        &lease,
+        &baseline,
+        &Rope::from_str("after\n"),
+        &prepared,
+        &token,
+    )
+    .unwrap()
+    {
+        store::WorkerSave::Saved(saved) => saved,
+        store::WorkerSave::Unconfirmed { detail, .. } => {
+            panic!("store unexpectedly uncertain: {detail}")
+        }
+    };
+    assert_eq!(std::fs::read(&path).unwrap(), b"after\n");
+    assert_eq!(saved.modified, baseline.modified);
+    let (namespace, operation) = prepared.lock().take().unwrap();
+    let receipt = StepReceipt {
+        step: 0,
+        operation,
+        outcome: StepOutcome::Unconfirmed {
+            detail: "lost reply".into(),
+            observed_destination: None,
+            recovery: None,
+            publication: None,
+        },
+    };
+    worker.shutdown().unwrap();
+    let verified = store::verify(
+        &lease,
+        &baseline,
+        receipt.clone(),
+        namespace.clone(),
+        &token,
+    )
+    .unwrap();
+    let store::WorkerVerification::Committed(recovered) = verified else {
+        panic!("committed bytes must reconcile");
+    };
+    assert_eq!(
+        recovered.content,
+        store::digest_of(&Rope::from_str("after\n"))
+    );
+    std::fs::write(&path, b"foreign\n").unwrap();
+    assert!(store::verify(&lease, &baseline, receipt, namespace, &token).is_err());
+    worker.shutdown().unwrap();
 }
 
 #[test]
@@ -60,7 +141,7 @@ fn cancelled_admission_cannot_publish_a_queued_write_grant() {
     let mut editor = fixture(ReadSelection::Full);
     editor.enable_remote_edit().unwrap();
     let ticket = editor.remote.writes.pending[&editor.current()].clone();
-    let ready = version(&ticket.key.file, editor.buf().len_bytes());
+    let ready = version(&ticket.key.file, &editor.buf().snapshot());
     editor.feed(Key::Esc);
     editor.remote_write_done(Completion {
         ticket,
@@ -86,7 +167,7 @@ fn pending_edit_admission_and_follow_cannot_share_a_document() {
         !editor.remote_following(document),
         "pending write authority excludes automatic replacement"
     );
-    let ready = version(&ticket.key.file, editor.buf().len_bytes());
+    let ready = version(&ticket.key.file, &editor.buf().snapshot());
     editor.remote_write_done(Completion {
         ticket,
         outcome: Outcome::Success(RemoteWriteResult::Enabled(ready)),
@@ -95,6 +176,38 @@ fn pending_edit_admission_and_follow_cannot_share_a_document() {
     assert!(editor.buf().dirty);
     assert!(!editor.remote_following(document));
     assert_eq!(editor.buf().text(), "before draft\n");
+}
+
+#[test]
+fn lost_worker_reply_keeps_dirty_attempt_until_explicit_verification() {
+    let mut editor = fixture(ReadSelection::Full);
+    enable(&mut editor);
+    editor.feed_text("A draft<esc>");
+    let document = editor.current();
+    editor.request_save(None, false, false);
+    let ticket = editor.remote.writes.pending[&document].clone();
+    editor.remote_write_done(Completion {
+        ticket,
+        outcome: Outcome::failed(
+            strop_core::worker::FailureKind::Io,
+            "worker connection lost after store submission",
+        ),
+    });
+    assert!(editor.buf().dirty);
+    assert!(editor.remote.writes.attempts[&document].unconfirmed);
+    assert!(editor.message.contains("unconfirmed"));
+    editor.feed_text(":w<cr>");
+    assert!(editor.message.contains(":remote verify"));
+    assert!(!editor.remote.writes.pending.contains_key(&document));
+    editor.verify_remote_save().unwrap();
+    let ticket = editor.remote.writes.pending[&document].clone();
+    editor.remote_write_done(Completion {
+        ticket,
+        outcome: Outcome::Success(RemoteWriteResult::Verified(VerifiedWrite::Unchanged)),
+    });
+    assert!(editor.buf().dirty);
+    assert!(!editor.remote.writes.attempts.contains_key(&document));
+    assert!(editor.message.contains("local edits remain unsaved"));
 }
 
 #[test]

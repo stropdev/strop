@@ -461,6 +461,7 @@ mod tests {
             },
             strop_workspace::ResourceLocation::local(cwd.to_path_buf()),
             Vec::new(),
+            None,
             tx,
         );
         (worker, request)
@@ -484,6 +485,7 @@ mod tests {
             },
             strop_workspace::ResourceLocation::local(directory.path().to_path_buf()),
             Vec::new(),
+            None,
             tx,
         );
         let mut received = 0;

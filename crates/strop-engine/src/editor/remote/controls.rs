@@ -51,7 +51,11 @@ impl Editor {
             key: key.clone(),
         };
         self.remote.controls.insert(request, key);
-        self.message = "remote connection command pending".into();
+        self.message = if matches!(&operation, RemoteControl::AdmitWorker(_)) {
+            "admitting verified remote worker".into()
+        } else {
+            "remote connection command pending".into()
+        };
         match self.tape.request("remote.control", &ticket) {
             Ok(false) => return,
             Ok(true) => {}
@@ -64,6 +68,7 @@ impl Editor {
             }
         }
         let client = self.remote_client();
+        let workers = self.remote.workers.clone();
         let tx = self.io.tx.clone();
         let handle = worker::spawn(
             "remote-control",
@@ -75,6 +80,20 @@ impl Editor {
             },
             move |token| {
                 let result = match operation {
+                    RemoteControl::AdmitWorker(endpoint) => {
+                        return match workers.admit(&endpoint, "remote worker enable", &token) {
+                            Ok(_) => Outcome::Success(ControlResult::WorkerReady(endpoint)),
+                            Err(error)
+                                if error.kind
+                                    == strop_workspace::operation::FsFailureKind::Cancelled =>
+                            {
+                                Outcome::Cancelled(worker::CancelReason::Dismissed)
+                            }
+                            Err(error) => {
+                                Outcome::failed(FailureKind::Unavailable, error.to_string())
+                            }
+                        };
+                    }
                     RemoteControl::Connect(endpoint) => {
                         client
                             .connect(&endpoint, &token)
@@ -145,6 +164,18 @@ impl Editor {
                 if focused {
                     self.message = "remote connection held".into();
                 }
+            }
+            Outcome::Success(ControlResult::WorkerReady(endpoint)) if focused => {
+                self.message = match self.remote.workers.get_ready(&endpoint) {
+                    Some(ready) => format!(
+                        "verified remote worker {} ready for {} ({}) at {}",
+                        env!("CARGO_PKG_VERSION"),
+                        endpoint,
+                        ready.target,
+                        strop_core::layout::printable_text(&ready.artifact.path)
+                    ),
+                    None => format!("remote worker for {endpoint} retired before readiness"),
+                };
             }
             Outcome::Success(ControlResult::Disconnected) => {
                 match &key.operation {

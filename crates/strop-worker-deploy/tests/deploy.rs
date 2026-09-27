@@ -5,7 +5,8 @@
 mod common;
 
 use common::{catalog, local_binary, sha256_hex, Entry, FakeProvider};
-use strop_worker_deploy::cache::{CacheLayout, RECEIPT_SCHEMA};
+use strop_core::worker::cache_record::RECEIPT_SCHEMA;
+use strop_worker_deploy::cache::{CacheError, CacheLayout};
 use strop_worker_deploy::deploy::{
     deploy, ArtifactSupply, Consent, DeployOrigin, DeployOutcome, DeployRefusal, DeployRequest,
 };
@@ -35,11 +36,28 @@ fn layout(provider: &FakeProvider) -> CacheLayout {
     strop_worker_deploy::cache::resolve(provider).expect("cache resolves")
 }
 
-fn ready(outcome: DeployOutcome) -> (DeployOrigin, String) {
+fn probed(outcome: DeployOutcome) -> (DeployOrigin, String) {
     match outcome {
-        DeployOutcome::Ready(ready) => (ready.origin, ready.object.sha256),
-        other => panic!("expected Ready, got {other:?}"),
+        DeployOutcome::Probed(ready) => (ready.origin, ready.object.sha256),
+        other => panic!("expected a verified probe, got {other:?}"),
     }
+}
+
+#[test]
+fn concurrent_private_cache_creation_reuses_only_the_other_installers_owned_directory() {
+    let root = "/home/alice/.cache/strop-worker".to_string();
+    let accepted = FakeProvider::new(FakeProvider::handshake_ok(VERSION));
+    accepted.failures.borrow_mut().mkdir_race = Some((root.clone(), Entry::dir(0o700, "alice")));
+    let layout = strop_worker_deploy::cache::resolve(&accepted).unwrap();
+    assert_eq!(layout.root(), root);
+    assert!(accepted.entry(&layout.objects_dir()).is_some());
+
+    let foreign = FakeProvider::new(FakeProvider::handshake_ok(VERSION));
+    foreign.failures.borrow_mut().mkdir_race = Some((root.clone(), Entry::dir(0o755, "alice")));
+    assert!(matches!(
+        strop_worker_deploy::cache::resolve(&foreign),
+        Err(CacheError::NotPrivate { path, .. }) if path == root
+    ));
 }
 
 #[test]
@@ -53,13 +71,13 @@ fn consent_gated_first_deploy_publishes_and_activates() {
         &provider,
         &request(ArtifactSupply::LocalBinary { path: local }, granted()),
     );
-    let (origin, object_sha) = ready(report.outcome);
+    let (origin, object_sha) = probed(report.outcome);
     assert_eq!(origin, DeployOrigin::Uploaded);
     assert_eq!(object_sha, sha);
 
     // The published object is content-addressed, private and executable;
-    // the receipt binds provenance; the lease is registered; staging is
-    // empty.
+    // the receipt binds provenance. The stopped probe's lease is retired;
+    // the actual worker will publish its own session after connecting.
     let layout = layout(&provider);
     let object = provider.entry(&layout.object(&sha)).expect("object");
     assert_eq!(object.mode, 0o500);
@@ -72,9 +90,9 @@ fn consent_gated_first_deploy_publishes_and_activates() {
     assert_eq!(receipt["version"], VERSION);
     assert_eq!(receipt["tarball_sha256"], "cccc");
     assert_eq!(provider.names(&layout.staging_dir()), Vec::<String>::new());
-    assert_eq!(
-        provider.names(&layout.leases_dir()),
-        vec!["7.json".to_string()]
+    assert!(
+        provider.names(&layout.leases_dir()).is_empty(),
+        "a stopped deployment probe is not a live cache lease"
     );
 }
 
@@ -126,7 +144,7 @@ fn previously_authorized_endpoint_reuses_authorization_quietly() {
             granted(),
         ),
     );
-    assert!(matches!(first.outcome, DeployOutcome::Ready(_)));
+    assert!(matches!(first.outcome, DeployOutcome::Probed(_)));
 
     // A new version deploys without fresh consent: the receipt authorizes.
     let provider = FakeProvider::new(FakeProvider::handshake_ok(VERSION));
@@ -141,7 +159,7 @@ fn previously_authorized_endpoint_reuses_authorization_quietly() {
         &provider,
         &request(ArtifactSupply::LocalBinary { path: local }, Consent::Absent),
     );
-    assert_eq!(ready(report.outcome).0, DeployOrigin::Uploaded);
+    assert_eq!(probed(report.outcome).0, DeployOrigin::Uploaded);
 }
 
 #[test]
@@ -160,7 +178,7 @@ fn exact_verified_cache_hit_is_reused_without_upload() {
         &provider,
         &request(ArtifactSupply::LocalBinary { path: local }, Consent::Absent),
     );
-    let (origin, object_sha) = ready(report.outcome);
+    let (origin, object_sha) = probed(report.outcome);
     assert_eq!(origin, DeployOrigin::Reused);
     assert_eq!(object_sha, sha);
     assert_eq!(provider.counts.borrow().upload, 0);
@@ -184,7 +202,7 @@ fn corrupt_cache_object_is_retired_and_redeployed() {
         &provider,
         &request(ArtifactSupply::LocalBinary { path: local }, granted()),
     );
-    let (origin, object_sha) = ready(report.outcome);
+    let (origin, object_sha) = probed(report.outcome);
     assert_eq!(origin, DeployOrigin::Uploaded);
     assert_eq!(object_sha, sha);
     let object = provider.entry(&layout.object(&sha)).expect("object");
@@ -261,7 +279,7 @@ fn preinstalled_validates_and_activates_in_place() {
             Consent::Absent,
         ),
     );
-    assert_eq!(ready(report.outcome).0, DeployOrigin::Preinstalled);
+    assert_eq!(probed(report.outcome).0, DeployOrigin::Preinstalled);
     // No cache writes at all: the override never manufactures a cache.
     assert!(provider.entry("/home/alice/.cache/strop-worker").is_none());
 }

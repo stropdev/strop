@@ -35,6 +35,7 @@ fn pending_save_as_blocks_a_move_from_an_unrelated_document() {
             destination: Some(ResourceLocation::local(destination.clone())),
             copy_version: CopyVersion::Stored,
             expected_content: None,
+            store: None,
         }],
         None,
     );
@@ -366,6 +367,7 @@ fn directory_move_keeps_dirty_descendants_and_their_document_ids() {
                 destination: Some(ResourceLocation::local(destination.clone())),
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
+                store: None,
             }],
             None,
         )
@@ -458,6 +460,7 @@ fn mixed_copy_versions_use_the_reviewed_snapshot_for_each_destination() {
         destination: Some(ResourceLocation::local(root.path().join(name))),
         copy_version: version,
         expected_content: None,
+        store: None,
     };
     editor
         .prepare_filesystem(
@@ -646,6 +649,7 @@ fn committed_move_retires_alias_spelled_preview_state() {
                 destination: Some(ResourceLocation::local(renamed.clone())),
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
+                store: None,
             }],
             None,
         )
@@ -774,6 +778,7 @@ fn an_unconfirmed_outcome_blocks_conflicting_authority_until_verified() {
             destination: Some(ResourceLocation::local(root.path().join("other.txt"))),
             copy_version: CopyVersion::Stored,
             expected_content: None,
+            store: None,
         }],
         None,
     );
@@ -808,6 +813,7 @@ fn an_unconfirmed_outcome_blocks_conflicting_authority_until_verified() {
                 destination: Some(ResourceLocation::local(root.path().join("other.txt"))),
                 copy_version: CopyVersion::Stored,
                 expected_content: None,
+                store: None,
             }],
             None,
         )

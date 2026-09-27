@@ -41,6 +41,7 @@ pub(super) fn intent(
         destination: destination.map(|path| ResourceLocation::local(path.to_path_buf())),
         copy_version: CopyVersion::Stored,
         expected_content: None,
+        store: None,
     }
 }
 fn prepare(
@@ -392,3 +393,5 @@ fn trash_is_recoverable_and_restore_refuses_occupied_names() {
         assert_eq!(std::fs::read_to_string(source).unwrap(), "recover me\n");
     });
 }
+
+mod store;
