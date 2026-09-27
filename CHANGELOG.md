@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Crate publication respects versioned test dependencies**: the publication
+  graph now places workspace dev-dependencies before their consumers because
+  Cargo needs their registry versions when packaging the lockfile. Path-only
+  local test helpers remain excluded. This fixes the ordering that stalled the
+  initial 0.36.0 publication without changing its qualified tag or binaries.
+
 
 ## 0.36.0 — 2026-09-27
 

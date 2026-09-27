@@ -143,6 +143,20 @@ Trigger: `push` on tags `v*`. `concurrency.group: release`, `cancel-in-progress:
   `HOMEBREW_TAP_TOKEN`; `gh release create`; best-effort site redeploy dispatch
   (`continue-on-error`, `SITE_REPO_TOKEN`) once strop.dev has a site.
 
+Publication ordering includes **versioned workspace dev-dependencies**:
+Cargo resolves them while generating the packaged lockfile even though the
+library verification build does not compile its tests. Path-only dev-dependencies
+are stripped from the published manifest. `.github/scripts/publish-order.py`
+orders these prerequisites; `sh tests/publish-order.sh` covers the ordering,
+private prerequisites and cycles.
+
+The 0.36.0 publication exposed this distinction: `strop-worker-client` was
+attempted before its versioned `strop-worker` test dependency existed. The
+worker subsequently published, allowing the original publication job to resume
+without rebuilding or moving `v0.36.0` from `a858e8891135`. The permanent
+ordering correction is a post-tag tooling change for subsequent releases;
+already published crate versions and the qualified tag remain immutable.
+
 ## 6. Deferred
 
 - **Native Windows workspace/process targets** remain later work. The Windows GUI

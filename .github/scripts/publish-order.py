@@ -12,9 +12,12 @@ def publication_order(metadata):
     for name, package in packages.items():
         if package.get("publish") == []:
             continue
+        # Packaging resolves versioned dev-dependencies into Cargo.lock too.
+        # Only path-only dev-dependencies (metadata req="*") are stripped.
         dependencies = {
             dependency["name"] for dependency in package["dependencies"]
-            if dependency["kind"] != "dev" and dependency.get("path") is not None
+            if dependency.get("path") is not None
+            and (dependency["kind"] != "dev" or dependency["req"] != "*")
             and dependency["name"] in packages
         }
         private = [dependency for dependency in dependencies

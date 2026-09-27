@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Publication dependency ordering
+        run: sh tests/publish-order.sh
       - name: Protocol release gate
         run: docker compose run --build --rm model
       - name: Locked workspace, native Store and real SSH gate

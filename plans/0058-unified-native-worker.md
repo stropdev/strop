@@ -1,6 +1,6 @@
 # 0058 — Unified native worker: local first, the same protocol remotely
 
-Status: **release-qualified for 0.36.0; tag-owned publication pending**.
+Status: **released and verified as 0.36.0 (`a858e8891135`)**.
 Local/SSH/container worker routes, protected Store, credited streams,
 PTY and retirement have real execution evidence. GNU Linux
 x86_64/aarch64, Apple Silicon and the complete combined assurance
@@ -1728,4 +1728,38 @@ local readers; no dirty-tree exemption or ignored-source workaround is
 introduced. The user approved repairing the unpublished `v0.36.0` tag
 with this tooling-only fix. Worker code and the measured artifact inputs
 are unchanged.
+
+### Public 0.36.0 verification (2026-09-27)
+
+[Release run 36319871385, attempt 2](https://github.com/stropdev/strop/actions/runs/36319871385/attempts/2)
+completed successfully; [v0.36.0](https://github.com/stropdev/strop/releases/tag/v0.36.0)
+is public on GitHub and `strop-editor` 0.36.0 is published on crates.io.
+The tag remains at `a858e889113507ef50302286117193d9d4e99573`.
+All three supported tarballs, checksum sidecars, worker catalog and exact-source
+candidate record are public. The downloaded candidate record is byte-identical
+to the qualified workflow artifact. GitHub CLI attestation verification accepts
+the public Linux x86_64 tarball and binds its digest to that exact tag commit.
+
+The public latest-version installer resolved 0.36.0, verified its checksum and
+installed into a private temporary directory. Its binary SHA-256 is
+`5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494`,
+identical to the qualified Linux x86_64 static binary. The installed binary
+passed three semantic input/frame edits, three real 17.28 MiB opens with one
+worker while open and zero after every editor exit, and an interactive TUI
+insert → undo → redo → save/quit journey with the saved bytes checked.
+These are public-artifact smoke checks, not new latency-comparison samples.
+
+The formula and Apple Silicon cask both publish 0.36.0. Homebrew installation
+was not exercised on this Linux host. The promotion ledger records successful
+crate/tap/GitHub/site handoffs; its immediate static HTML probe remained pending.
+A later real-browser check saw the catalog-backed `v0.36.0` version; the older
+`v0.32.4 — embedded local terminals` feature-announcement banner remains.
+
+The first publication attempt ignored versioned dev-dependencies, so it tried
+`strop-worker-client` before `strop-worker` existed in the registry. The worker
+published later in that same attempt. Resuming only the publication job then
+completed against the unchanged tag and build artifacts. The permanent
+dependency-order fix and failing-before/passing-after regression fixtures live
+after the tag; they change subsequent release tooling, not the published worker.
+No published crate or qualified tag was replaced to recover publication.
 
