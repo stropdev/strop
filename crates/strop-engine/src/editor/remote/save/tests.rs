@@ -7,6 +7,7 @@ use strop_remote::{ReadLimit, ReadSelection, RemoteSize, RemoteWindow};
 fn fixture(selection: ReadSelection) -> Editor {
     let file = RemoteFile::parse("ssh://fixture/work/file.txt").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin\n"), "/isolated".into());
+    editor.config.completion.enabled = false; // This fixture owns save services only.
     editor.tape = std::rc::Rc::new(strop_trace::replay::Tape::fixture(|_, _| {
         Err(std::io::Error::other(
             "native observation forbidden in ownership fixture",

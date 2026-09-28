@@ -346,7 +346,7 @@ impl Editor {
         self.filesystem_picker_changed();
         if !self.docs.is_empty() && documents.contains(&self.current()) {
             self.discover_git();
-            self.lsp_maybe_attach();
+            self.lsp_attach_document(self.current());
         }
     }
 }

@@ -95,7 +95,7 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
 #[test]
 fn attach_skips_unknown_languages_without_discovery() {
     let mut e = editor("plain text\n");
-    e.lsp_maybe_attach();
+    e.lsp_attach_document(e.current());
     assert!(e.lsp_state.attach.pending.is_empty());
     assert!(e.lsp_servers.is_empty());
 }

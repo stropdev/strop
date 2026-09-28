@@ -111,7 +111,7 @@ fn object_class(buf: &Buffer, pos: usize, big: bool) -> u8 {
     if character.is_whitespace() {
         return BLANK;
     }
-    if big || character.is_alphanumeric() || character == '_' {
+    if big || super::is_keyword(character) {
         WORD
     } else {
         PUNCT

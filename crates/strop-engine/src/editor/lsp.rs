@@ -51,15 +51,23 @@ impl Editor {
 }
 
 impl Editor {
-    /// The current document's path identity: a local absolute path, or
+    /// A source document's path identity: a local absolute path, or
     /// the canonical remote file's endpoint-scoped path. Remote
     /// windows must be complete for language services (0036 RW8) —
     /// partial/follow windows refuse, they never pretend.
-    pub(super) fn lsp_current_doc_path(&self) -> Option<ResourceLocation> {
-        if self.cur().remote_metadata().is_some() && !self.remote_window_complete() {
+    pub(super) fn lsp_document_location(
+        &self,
+        document: strop_core::id::DocumentId,
+    ) -> Option<ResourceLocation> {
+        if self
+            .docs
+            .get(document)?
+            .remote_metadata()
+            .is_some_and(|source| !source.window.is_complete() || self.remote_following(document))
+        {
             return None;
         }
-        self.lsp_doc_path(self.current())
+        self.lsp_doc_path(document)
     }
 
     fn lsp_doc_path(&self, document: strop_core::id::DocumentId) -> Option<ResourceLocation> {

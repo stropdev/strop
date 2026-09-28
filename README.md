@@ -73,6 +73,38 @@ The modeline keeps filenames, live status and position legible at narrow widths.
 Git history uses quieter metadata, clear file hierarchy and native-path-safe
 navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
 
+## Code completion
+
+Insert mode offers language-server candidates and incremental words from the
+current editable source. Word suggestions remain usable without a language
+server, and collections use their owning source rather than unrelated excerpt
+text. The menu shows kind, source and detail; selected language items can show
+documentation without changing the buffer.
+
+- `Ctrl-Space`: request both providers; `Ctrl-X Ctrl-O`: language completion.
+- `Ctrl-N` / `Ctrl-P`: choose a candidate; `Ctrl-Y`: accept it.
+- Enter and Tab accept only after deliberate selection; otherwise they keep
+  their ordinary Insert behavior.
+- `Ctrl-E`: dismiss without editing. Escape dismisses and leaves Insert mode.
+
+Primary edits and represented imports are validated together and share the
+Insert undo group. Stale, overlapping or invalid edits are refused as a whole;
+unsupported snippets and commands are not approximated by a label insertion.
+Read-only and partial sources do not gain write authority through completion.
+
+Automatic popup starts at a two-character keyword prefix or an advertised
+language-server trigger. Global/project configuration uses:
+
+```toml
+[completion]
+enabled = true
+auto_popup = true
+```
+
+Set `auto_popup = false` for manual-only completion; an opened manual session
+still follows typing. `enabled = false` also disables manual invocation and
+retires completion-only work. Query-field suggestions are a separate feature.
+
 ## Workspace search and source editing
 
 `Space f`, `Space /`, and the Find field of `Space R` share one query language.

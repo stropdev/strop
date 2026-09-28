@@ -129,6 +129,31 @@ impl ServerCaps {
         }
     }
 
+    pub fn completion(&self) -> bool {
+        self.flag(|caps| caps.completion_provider.is_some())
+    }
+
+    pub fn completion_resolve(&self) -> bool {
+        self.flag(|caps| {
+            caps.completion_provider
+                .as_ref()
+                .is_some_and(|provider| provider.resolve_provider == Some(true))
+        })
+    }
+
+    pub fn completion_trigger(&self, character: char) -> bool {
+        self.flag(|caps| {
+            caps.completion_provider
+                .as_ref()
+                .and_then(|provider| provider.trigger_characters.as_ref())
+                .is_some_and(|triggers| {
+                    triggers
+                        .iter()
+                        .any(|trigger| trigger.chars().eq(std::iter::once(character)))
+                })
+        })
+    }
+
     /// Does the negotiated capability set admit this request kind?
     /// Unknown capabilities (pre-initialize) count as no — requests
     /// never race server startup.
@@ -147,6 +172,8 @@ impl ServerCaps {
             RequestKind::CodeAction => self.code_action(),
             RequestKind::DocumentSymbols => self.document_symbols(),
             RequestKind::WorkspaceSymbols => self.workspace_symbols(),
+            RequestKind::Completion => self.completion(),
+            RequestKind::CompletionResolve => self.completion_resolve(),
         }
     }
 }

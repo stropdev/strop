@@ -17,6 +17,7 @@ mod changes;
 pub use changes::review::ReviewRow;
 pub use dispatch::InputOwner;
 pub mod collections;
+mod completion;
 mod containers;
 mod cursor;
 mod diagnostics;
@@ -71,6 +72,9 @@ mod worker_catalog;
 mod workspaces;
 
 pub use collections::{CollectionRow, CollectionRowInfo};
+pub use completion::{
+    CompletionDocumentation, CompletionMenu, CompletionProviderStatus, CompletionRow,
+};
 pub use document::Document;
 pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};
@@ -139,6 +143,11 @@ pub enum Key {
     CtrlO,
     /// ctrl-space: query suggestions in a query field (0051 R02).
     CtrlSpace,
+    /// Insert completion selection/acceptance; fields retain their own keys.
+    CtrlN,
+    CtrlP,
+    CtrlY,
+    CtrlE,
     CtrlW,
     /// Replace picker: exclude/include the selected match (0007 §2).
     CtrlX,
@@ -179,6 +188,7 @@ pub struct Editor {
     pub(crate) notify: notify::NotifyState,
     pub(crate) io: io::IoState,
     pub(crate) remote_completion: remote_completion::RemoteCompletionState,
+    pub(crate) completion: completion::CompletionState,
     pub(crate) worker_ids: strop_core::worker::WorkerIds,
     pub(crate) worker_handles:
         HashMap<strop_core::worker::WorkerId, strop_core::worker::CancelHandle>,
@@ -427,6 +437,7 @@ impl Editor {
             directories: directory::DirectoryState::default(),
             filesystem: filesystem::FsState::default(),
             remote_completion: remote_completion::RemoteCompletionState::default(),
+            completion: completion::CompletionState::default(),
             notify: notify::NotifyState::default(),
             picker_ranking: picker::ranking::State::default(),
             analysis: analysis::AnalysisState::default(),
@@ -582,6 +593,7 @@ impl Editor {
     }
 
     fn feed_inner(&mut self, key: Key) {
+        let key = self.completion_normalize_key(key);
         self.lsp_state.hover = None;
         if let Some(build) = self.collection_build.as_mut() {
             build.focus_on_ready = false;
@@ -750,6 +762,7 @@ pub fn state_json(editor: &Editor) -> String {
         "register": editor.register(None).text,
         "dirty": editor.buf().dirty,
         "terminal":editor.terminal_status(editor.current()),
+        "completion": editor.completion_snapshot(true),
     })
     .to_string()
 }

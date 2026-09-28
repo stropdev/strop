@@ -71,7 +71,7 @@ jobs:
           sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
           echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
       - name: Install native test dependencies
-        run: sudo apt-get update && sudo apt-get install -y neovim openssh-server
+        run: sudo apt-get update && sudo apt-get install -y neovim openssh-server clangd
       - name: Build native static worker for same-host OpenSSH
         run: |
           docker compose run --build --rm -v "$RUNNER_TEMP:/native-artifacts" release \
@@ -88,34 +88,38 @@ jobs:
           cargo test --locked -p strop-editor --test terminal_editor
       - name: Benchmark matched native product artifacts
         run: |
-          # The clean historical source is reachable on the dedicated
-          # verification/preworker-0057 ref; checkout fetch-depth 0
-          # makes that exact object available on every native runner.
-          git worktree add --detach "$RUNNER_TEMP/strop-preworker" a05d84f823d268259ca4c4c3358313c902f6189d
-          CARGO_TARGET_DIR="$RUNNER_TEMP/strop-preworker-target" cargo build --release --locked \
-            --manifest-path "$RUNNER_TEMP/strop-preworker/Cargo.toml" -p strop-editor
+          # Compare completion with the exact published native-worker release.
+          git worktree add --detach "$RUNNER_TEMP/strop-baseline" a858e889113507ef50302286117193d9d4e99573
+          CARGO_TARGET_DIR="$RUNNER_TEMP/strop-baseline-target" cargo build --release --locked \
+            --manifest-path "$RUNNER_TEMP/strop-baseline/Cargo.toml" -p strop-editor
           cargo build --release --locked -p strop-editor
           # Cargo PTY tests build a test-support binary into target/release/strop.
           # Keep the production candidate outside Cargo's output tree so
           # baseline tests cannot replace its native worker with the in-process seam.
           install -m555 target/release/strop "$RUNNER_TEMP/strop-product-candidate"
           python3 -B verification/bench_native_product.py \
-            --baseline "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --baseline "$RUNNER_TEMP/strop-baseline-target/release/strop" \
             --candidate "$RUNNER_TEMP/strop-product-candidate" --target "${{ matrix.target }}" \
             --out "$RUNNER_TEMP/strop-native-measurements"
           rustup component add rust-analyzer
           python3 -B verification/bench_lsp_ui.py \
-            --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --binary "$RUNNER_TEMP/strop-baseline-target/release/strop" \
             --profile release-gnu-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-lsp.json"
           python3 -B verification/bench_lsp_ui.py \
             --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-gnu-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-lsp.json"
           python3 -B verification/bench_transfer_ui.py \
-            --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --binary "$RUNNER_TEMP/strop-baseline-target/release/strop" \
             --profile release-gnu-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-transfer.json"
           python3 -B verification/bench_transfer_ui.py \
             --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-gnu-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-transfer.json"
+          python3 -B verification/qualify_completion.py \
+            --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-gnu-native \
+            --build "cargo build --release --locked -p strop-editor; native ${{ matrix.target }}" \
+            --out "$RUNNER_TEMP/strop-native-measurements/completion.json"
+          STROP_BENCH_BINARY="$RUNNER_TEMP/strop-product-candidate" cargo test --release --locked \
+            -p strop-editor --test terminal_editor completion:: -- --include-ignored --nocapture
       - uses: actions/upload-artifact@v7
         with:
           name: native-product-${{ matrix.target }}
@@ -134,8 +138,10 @@ jobs:
         run: |
           sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
           echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
-      - name: Install nested-editor test dependency
-        run: brew install neovim
+      - name: Install real editor and language-server dependencies
+        run: |
+          brew install neovim llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
       - name: Exercise native Store protocol and VT kernel
         timeout-minutes: 20
         run: |
@@ -155,30 +161,36 @@ jobs:
         run: cargo test --locked -p strop-editor --test terminal_editor
       - name: Benchmark matched native product artifacts
         run: |
-          git worktree add --detach "$RUNNER_TEMP/strop-preworker" a05d84f823d268259ca4c4c3358313c902f6189d
-          CARGO_TARGET_DIR="$RUNNER_TEMP/strop-preworker-target" cargo build --release --locked \
-            --manifest-path "$RUNNER_TEMP/strop-preworker/Cargo.toml" -p strop-editor
+          git worktree add --detach "$RUNNER_TEMP/strop-baseline" a858e889113507ef50302286117193d9d4e99573
+          CARGO_TARGET_DIR="$RUNNER_TEMP/strop-baseline-target" cargo build --release --locked \
+            --manifest-path "$RUNNER_TEMP/strop-baseline/Cargo.toml" -p strop-editor
           cargo build --release --locked -p strop-editor
           # The candidate's producer is cargo build; subsequent release
           # PTY tests may write a test-support binary to target/release/strop.
           install -m555 target/release/strop "$RUNNER_TEMP/strop-product-candidate"
           python3 -B verification/bench_native_product.py \
-            --baseline "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --baseline "$RUNNER_TEMP/strop-baseline-target/release/strop" \
             --candidate "$RUNNER_TEMP/strop-product-candidate" --target aarch64-apple-darwin \
             --out "$RUNNER_TEMP/strop-native-measurements"
           rustup component add rust-analyzer
           python3 -B verification/bench_lsp_ui.py \
-            --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --binary "$RUNNER_TEMP/strop-baseline-target/release/strop" \
             --profile release-macos-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-lsp.json"
           python3 -B verification/bench_lsp_ui.py \
             --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-macos-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-lsp.json"
           python3 -B verification/bench_transfer_ui.py \
-            --binary "$RUNNER_TEMP/strop-preworker-target/release/strop" \
+            --binary "$RUNNER_TEMP/strop-baseline-target/release/strop" \
             --profile release-macos-native --out "$RUNNER_TEMP/strop-native-measurements/baseline-transfer.json"
           python3 -B verification/bench_transfer_ui.py \
             --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-macos-native \
             --out "$RUNNER_TEMP/strop-native-measurements/candidate-transfer.json"
+          python3 -B verification/qualify_completion.py \
+            --binary "$RUNNER_TEMP/strop-product-candidate" --profile release-macos-native \
+            --build "cargo build --release --locked -p strop-editor; native aarch64-apple-darwin" \
+            --out "$RUNNER_TEMP/strop-native-measurements/completion.json"
+          STROP_BENCH_BINARY="$RUNNER_TEMP/strop-product-candidate" cargo test --release --locked \
+            -p strop-editor --test terminal_editor completion:: -- --include-ignored --nocapture
       - uses: actions/upload-artifact@v7
         with:
           name: native-product-aarch64-apple-darwin

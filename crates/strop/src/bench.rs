@@ -16,6 +16,8 @@
 //!   handlers, `async_pending` as the settle barrier — no competing
 //!   editor loop, no sleeps for correctness.
 
+mod completion;
+
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -26,7 +28,7 @@ use strop_core::Buffer;
 use strop_picker::Kind;
 
 use crate::editor::events::{
-    AppEvent, EventReceiver, RecvTimeoutError, EVENTS_PER_TURN, TURN_BUDGET,
+    AppEvent, EventReceiver, EventSender, RecvTimeoutError, EVENTS_PER_TURN, TURN_BUDGET,
 };
 use crate::editor::io::OpenIntent;
 use crate::editor::{Editor, Key};
@@ -134,17 +136,19 @@ struct Drive {
     editor: Editor,
     terminal: Terminal<TestBackend>,
     events: EventReceiver,
+    sender: EventSender,
 }
 
 impl Drive {
     fn new(mut editor: Editor, cols: u16, rows: u16) -> io::Result<Self> {
         editor.set_session_policy(crate::session::SessionPolicy::Disabled);
         let (tx, events) = crate::editor::events::channel();
-        editor.connect_events(tx);
+        editor.connect_events(tx.clone());
         let mut drive = Self {
             editor,
             terminal: Terminal::new(TestBackend::new(cols, rows))?,
             events,
+            sender: tx,
         };
         drive.draw()?;
         Ok(drive)
@@ -174,6 +178,9 @@ impl Drive {
             if started.elapsed() >= TURN_BUDGET {
                 break;
             }
+        }
+        if self.editor.completion_retiring() {
+            self.editor.handle_app_event(AppEvent::Completion);
         }
     }
 
@@ -218,8 +225,16 @@ impl Drive {
                     "editor jobs did not settle",
                 ));
             }
-            match self.events.recv_timeout(remaining) {
+            let wait = if self.editor.completion_retiring() {
+                remaining.min(crate::editor::events::QUIESCENCE_POLL)
+            } else {
+                remaining
+            };
+            match self.events.recv_timeout(wait) {
                 Ok(event) => self.editor.handle_app_event(event),
+                Err(RecvTimeoutError::Timeout) if self.editor.completion_retiring() => {
+                    self.editor.handle_app_event(AppEvent::Completion)
+                }
                 Err(RecvTimeoutError::Timeout) => {
                     return Err(io::Error::new(
                         io::ErrorKind::TimedOut,
@@ -641,6 +656,9 @@ pub fn run(which: &str) -> io::Result<()> {
     }
     if all || which == "drop_stale" {
         bench_drop_stale()?;
+    }
+    if all || which == "completion" {
+        completion::run()?;
     }
     Ok(())
 }

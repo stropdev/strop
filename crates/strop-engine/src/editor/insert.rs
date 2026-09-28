@@ -128,6 +128,14 @@ impl Editor {
     }
 
     pub(crate) fn feed_insert(&mut self, key: Key) {
+        use super::completion::KeyDisposition;
+        match self.completion_key(key) {
+            KeyDisposition::Requested
+            | KeyDisposition::Navigated
+            | KeyDisposition::Accepted
+            | KeyDisposition::Dismissed => return,
+            KeyDisposition::DismissAndForward | KeyDisposition::PassThrough => {}
+        }
         // gi's memory: where the insert session is (Esc leaves the
         // final position behind)
         self.last_insert_pos = Some(self.head());
@@ -257,6 +265,10 @@ impl Editor {
             | Key::CtrlB
             | Key::CtrlCaret
             | Key::CtrlV
+            | Key::CtrlN
+            | Key::CtrlP
+            | Key::CtrlY
+            | Key::CtrlE
             | Key::Backtab => {}
             Key::Tab => {
                 // vim: Tab inserts the indent unit — a tab or the

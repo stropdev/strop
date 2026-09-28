@@ -212,11 +212,11 @@ impl Editor {
         match completion.outcome {
             Outcome::Success(NativeResult::Trusted(root)) => {
                 self.message = format!("trusted {}", root.display());
-                self.lsp_maybe_attach();
+                self.lsp_attach_document(self.current());
             }
             Outcome::Success(NativeResult::TrustedRemote(root)) => {
                 self.message = format!("trusted {root}");
-                self.lsp_maybe_attach();
+                self.lsp_attach_document(self.current());
             }
             Outcome::Success(NativeResult::BrowserRequested) => {
                 self.message = "browser launch requested".into()

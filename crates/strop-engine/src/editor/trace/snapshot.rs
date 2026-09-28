@@ -95,6 +95,7 @@ impl Editor {
                     "items":glue.picker.items.len(),"streaming":glue.picker.streaming})),
                 "config":self.config,
                 "terminal":self.panes.get(self.active_pane).and_then(|pane| self.terminal_status(pane.doc)),
+                "completion":self.completion_snapshot(capture_content()),
             }),
         );
     }

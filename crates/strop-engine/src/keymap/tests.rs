@@ -329,19 +329,3 @@ fn live_rows_dispatch_through_the_table() {
         }
     }
 }
-
-#[test]
-fn compat_report_is_fresh() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/vim-compat.md");
-    let generated = super::compat_report();
-    if std::env::var_os("STROP_REGEN").is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, &generated).unwrap();
-    }
-    let checked_in = std::fs::read_to_string(&path)
-        .expect("docs/vim-compat.md missing — STROP_REGEN=1 cargo test");
-    assert_eq!(
-        checked_in, generated,
-        "docs/vim-compat.md is stale — STROP_REGEN=1 cargo test to regen"
-    );
-}

@@ -337,7 +337,7 @@ impl Editor {
             }
             Outcome::Failed { failure, .. } => Err(failure.message),
             Outcome::Cancelled(_) => {
-                self.resume_resolution_input();
+                self.resume_deferred_input();
                 return;
             }
         };
@@ -360,14 +360,17 @@ impl Editor {
             });
             self.macro_depth = saved_depth;
         }
-        self.resume_resolution_input();
+        self.resume_deferred_input();
     }
 
-    pub(crate) fn resume_resolution_input(&mut self) {
+    pub(crate) fn resume_deferred_input(&mut self) {
         self.resolution.resume_scheduled = false;
         // Exactly one queued input per delivery keeps replay independent of
         // host timing. The outer event loop owns the render/time budget.
-        if !self.resolution.blocked() && !self.should_quit {
+        if !self.resolution.blocked()
+            && !self.completion.blocks_deferred_input()
+            && !self.should_quit
+        {
             if let Some(input) = self.resolution.queue.pop_front() {
                 self.run_input_action(|editor| {
                     match input {
@@ -403,7 +406,7 @@ impl Editor {
                 });
             }
         }
-        self.schedule_resolution_input();
+        self.schedule_deferred_input();
     }
 }
 
@@ -417,7 +420,8 @@ impl Editor {
             while let Some(input) = self.resolution.staged.pop_back() {
                 self.resolution.queue.push_front(input);
             }
-            self.schedule_resolution_input();
+            self.completion_after_action();
+            self.schedule_deferred_input();
             // Collections write back at normal-mode action boundaries
             // (0044); the revision gate keeps this free for motions.
             if self.mode == super::Mode::Normal {
@@ -449,10 +453,11 @@ impl Editor {
                 depth: self.macro_depth,
             });
         }
-        self.schedule_resolution_input();
+        self.schedule_deferred_input();
     }
-    fn schedule_resolution_input(&mut self) {
+    pub(super) fn schedule_deferred_input(&mut self) {
         if !self.resolution.blocked()
+            && !self.completion.blocks_deferred_input()
             && !self.resolution.queue.is_empty()
             && !self.resolution.resume_scheduled
         {
@@ -474,7 +479,7 @@ impl Editor {
             repetitions,
             depth,
         });
-        self.schedule_resolution_input();
+        self.schedule_deferred_input();
     }
     fn run_macro_step(
         &mut self,

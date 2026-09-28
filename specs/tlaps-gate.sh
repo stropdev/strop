@@ -184,4 +184,39 @@ if grep -qE 'Could not parse|Semantic errors|Unexpected|Expression not supported
     exit 1
 fi
 grep -E 'obligations failed' "$WORK/cache-mutant.log"
-echo "tlaps gate: search, worker-session, deploy and conditional cache safety proved; paired mutants rejected"
+
+for proof in CompletionOwnershipProofs CompletionOwnership_CleanProofs; do
+    echo "[tlaps gate] $proof: expect completion ownership proof"
+    if ! (cd specs && "$TLAPM" -I . --cleanfp "$proof.tla") \
+            >"$WORK/$proof.log" 2>&1; then
+        echo "FAIL: completion ownership proof did not verify"
+        cat "$WORK/$proof.log"
+        exit 1
+    fi
+    if grep -qE '\[ERROR\]|Could not parse|Expression not supported' "$WORK/$proof.log" \
+            || ! grep -q 'obligations proved' "$WORK/$proof.log"; then
+        echo "FAIL: completion proof run was not a clean verification"
+        cat "$WORK/$proof.log"
+        exit 1
+    fi
+    grep -E 'All [0-9]+ obligations proved' "$WORK/$proof.log"
+done
+
+echo "[tlaps gate] completion stale acceptance: expect independent freshness failure"
+if (cd specs && "$TLAPM" -I . --cleanfp CompletionOwnership_MutantProofs.tla) \
+        >"$WORK/completion-mutant.log" 2>&1; then
+    echo "FAIL: TLAPS verified the stale completion acceptance mutant"
+    cat "$WORK/completion-mutant.log"
+    exit 1
+fi
+if grep -qE 'Could not parse|Semantic errors|Unexpected|Expression not supported' "$WORK/completion-mutant.log" \
+        || ! grep -q 'obligations failed' "$WORK/completion-mutant.log" \
+        || ! grep -q 'Could not prove or check' "$WORK/completion-mutant.log" \
+        || ! grep -q 'staleApply' "$WORK/completion-mutant.log" \
+        || ! grep -q 'Unguarded' "$WORK/completion-mutant.log"; then
+    echo "FAIL: completion mutant was not rejected on its ownership obligation"
+    cat "$WORK/completion-mutant.log"
+    exit 1
+fi
+grep -E 'obligations failed' "$WORK/completion-mutant.log"
+echo "tlaps gate: search, worker-session, deploy, cache and completion freshness proved; paired mutants rejected"

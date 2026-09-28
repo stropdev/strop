@@ -60,6 +60,9 @@ impl Driver<'_> {
                 break;
             }
         }
+        if self.editor.completion_retiring() {
+            self.apply(Action::Event(AppEvent::Completion))?;
+        }
         Ok(())
     }
     fn draw(&mut self) -> io::Result<()> {

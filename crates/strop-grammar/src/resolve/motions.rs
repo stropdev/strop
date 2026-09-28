@@ -3,8 +3,9 @@
 
 use strop_core::Buffer;
 
-pub(crate) fn is_word(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+/// The keyword class shared by motions, text objects and buffer completion.
+pub fn is_keyword(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
 }
 
 /// Word-class of a byte: WORD motions (big) only split on whitespace.
@@ -12,7 +13,7 @@ pub(crate) fn class_of(b: u8, big: bool) -> u8 {
     if big {
         u8::from(!b.is_ascii_whitespace())
     } else {
-        u8::from(is_word(b))
+        u8::from(b.is_ascii() && is_keyword(char::from(b)))
     }
 }
 
@@ -30,7 +31,7 @@ pub(crate) fn class_at(buf: &Buffer, pos: usize, big: bool) -> u8 {
     if big {
         u8::from(!character.is_whitespace())
     } else {
-        u8::from(character.is_alphanumeric() || character == '_')
+        u8::from(is_keyword(character))
     }
 }
 

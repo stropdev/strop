@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure matched pre-worker/current native binaries through live worker and UI paths.
+"""Measure matched previous/current releases through live worker and UI paths.
 
 Run on the same native host, release build profile, and fixture for both
 artifacts. All nine sampled journeys must succeed before any result is written. This
@@ -129,7 +129,7 @@ def main() -> None:
         parser.error("both native release artifacts must exist and be executable")
     profile = native_profile(args.target)
     try:
-        base = sample(baseline, args.target, profile, protocol=1)
+        base = sample(baseline, args.target, profile, protocol=2)
         current = sample(candidate, args.target, profile, protocol=2)
         control = json.loads(execute([
             sys.executable, "-B", "verification/bench_worker_roundtrip.py",
@@ -153,7 +153,7 @@ def main() -> None:
             raise RuntimeError("control frame summary differs from its raw 64 responses")
         if (base["handshake"]["platform"] != current["handshake"]["platform"]
                 or base["handshake"]["target"] != current["handshake"]["target"]):
-            raise RuntimeError("pre-worker and worker targets/hosts differ")
+            raise RuntimeError("baseline and candidate targets/hosts differ")
         records = {
             "baseline-handshake": base["handshake"],
             "candidate-handshake": current["handshake"],

@@ -1,19 +1,49 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://strop.dev/verification/inventory.schema.json",
-  "title": "0057 VF01 whole-core boundary/claim inventory",
+  "title": "0059 whole-core, worker and completion boundary/claim inventory",
   "description": "One row per mutating/authority/IO boundary. verification/check.py is the enforcing validator; this schema is the readable contract. Statuses per plans/0057 §2 are not interchangeable. Pins bind sha256 of owning sources plus a digest over claim text and evidence CONTENT (named Rust fn bodies, whole TLA+/cfg/script files) — never mtimes.",
   "type": "object",
-  "required": ["schema", "release", "plan", "boundaries"],
+  "required": [
+    "schema",
+    "release",
+    "plan",
+    "boundaries",
+    "baseline"
+  ],
   "additionalProperties": false,
   "properties": {
-    "schema": { "const": 1 },
-    "release": { "const": "0057" },
-    "plan": { "type": "string" },
+    "schema": {
+      "const": 2
+    },
+    "release": {
+      "const": "0059"
+    },
+    "plan": {
+      "type": "string"
+    },
     "boundaries": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/boundary" }
+      "items": {
+        "$ref": "#/$defs/boundary"
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "required": [
+        "inventory",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "inventory": {
+          "const": "verification/baseline/0058-inventory.json"
+        },
+        "sha256": {
+          "const": "3821a4407801b63b322888f2e86f390d50e7db9c6b1f0fff233b532a88f27954"
+        }
+      }
     }
   },
   "$defs": {
@@ -49,7 +79,9 @@
             "lifecycle"
           ]
         },
-        "title": { "type": "string" },
+        "title": {
+          "type": "string"
+        },
         "promise": {
           "type": "string",
           "description": "the observable promise this boundary makes"
@@ -65,19 +97,25 @@
         "trusted": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "parser/observer/executor/foreign-runtime trust assumptions"
         },
         "files": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "owning production sources, repo-relative; content-pinned under pins.sources"
         },
         "claims": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/claim" }
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
         },
         "gates": {
           "type": "array",
@@ -89,14 +127,22 @@
               "verify",
               "tlaps",
               "container-test",
+              "ssh-pythonfree",
+              "core-assurance",
               "install-fixture",
+              "benchmark",
+              "platform-test",
+              "ci",
               "release"
             ]
           }
         },
         "pins": {
           "type": "object",
-          "required": ["sources", "evidence"],
+          "required": [
+            "sources",
+            "evidence"
+          ],
           "additionalProperties": false,
           "description": "written by `check.py --stamp`; check mode fails on any drift",
           "properties": {
@@ -119,11 +165,22 @@
     },
     "claim": {
       "type": "object",
-      "required": ["id", "statement", "status", "evidence"],
+      "required": [
+        "id",
+        "statement",
+        "status",
+        "evidence",
+        "migration"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9-]*$" },
-        "statement": { "type": "string" },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z0-9][A-Z0-9-]*$"
+        },
+        "statement": {
+          "type": "string"
+        },
         "status": {
           "enum": [
             "specified",
@@ -139,16 +196,63 @@
         "evidence": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/evidence" }
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "migration": {
+          "type": "object",
+          "required": [
+            "from",
+            "classification",
+            "basis"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "classification": {
+              "enum": [
+                "unchanged",
+                "strengthened",
+                "transferred",
+                "retired-implementation",
+                "new"
+              ]
+            },
+            "basis": {
+              "type": "string",
+              "minLength": 1
+            },
+            "successor": {
+              "type": "string"
+            }
+          }
         }
       }
     },
     "evidence": {
       "type": "object",
-      "required": ["kind", "path", "gate"],
+      "required": [
+        "kind",
+        "path",
+        "gate"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["test", "proof", "model", "script"] },
+        "kind": {
+          "enum": [
+            "test",
+            "proof",
+            "model",
+            "script",
+            "measurement"
+          ]
+        },
         "path": {
           "type": "string",
           "description": "repo-relative file the checker resolves and content-binds"
@@ -160,20 +264,29 @@
             "verify",
             "tlaps",
             "container-test",
+            "ssh-pythonfree",
+            "core-assurance",
             "install-fixture",
+            "benchmark",
+            "platform-test",
+            "ci",
             "release"
           ]
         },
         "tests": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "kind=test: Rust test fn names; the checker binds their bodies"
         },
         "symbols": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "kind=proof on .rs: proved fn names; the checker binds their bodies"
         },
         "config": {

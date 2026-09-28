@@ -204,6 +204,8 @@ pub enum RequestKind {
     /// All symbols in the workspace matching a query string —
     /// document-free (0063 §2).
     WorkspaceSymbols,
+    Completion,
+    CompletionResolve,
 }
 
 impl RequestKind {
@@ -218,6 +220,8 @@ impl RequestKind {
             Self::CodeAction => "code action",
             Self::DocumentSymbols => "document symbols",
             Self::WorkspaceSymbols => "workspace symbols",
+            Self::Completion => "completion",
+            Self::CompletionResolve => "completion item resolve",
         }
     }
 }
@@ -239,6 +243,10 @@ pub enum RequestRefusal {
     /// The bounded wire queue is full — the connection is not
     /// draining (0056 AR06). Visible refusal, never a silent drop.
     Overloaded,
+    /// Payload/coordinate shape does not match the typed request method.
+    InvalidInput,
+    /// One captured request exceeds its retained byte budget.
+    Oversized,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

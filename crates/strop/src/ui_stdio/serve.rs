@@ -550,6 +550,13 @@ impl Session {
                 break;
             }
         }
+        if editor.completion_retiring() {
+            self.pending_observations = true;
+            editor.recorded_action(
+                Action::Event(AppEvent::Completion),
+                editor.tape().sample_tick(),
+            )?;
+        }
         Ok(())
     }
 

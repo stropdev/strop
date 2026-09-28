@@ -1,6 +1,7 @@
 //! strop-lsp: the LSP client. async-lsp transport (0009 §2.1), tokio on
 //! a worker thread, the editor sees a channel of typed events — never an
 //! async type, never an await in the input path (0001 §5.6).
+pub mod completion;
 pub mod languages;
 pub mod target;
 
@@ -9,6 +10,8 @@ mod client;
 mod convert;
 mod frozen_line;
 pub use frozen_line::{to_byte_col_slice, to_server_col_slice, FrozenLine};
+mod positions;
+pub use positions::{checked_byte_offset, PositionError};
 pub mod protocol;
 pub mod registry;
 

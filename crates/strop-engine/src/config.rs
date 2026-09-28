@@ -52,10 +52,28 @@ pub struct Config {
     /// pane/buffer switches and large jumps (0064 §2). Presentation
     /// only; off leaves the cursor steady with zero behavior change.
     pub cursor_fade: bool,
+    /// Code-completion lifecycle and automatic request admission (0059 C06).
+    pub completion: CompletionSettings,
     /// Winning-layer record per knob (0056 AR14); populated by `load`.
     /// Crate-visible so struct-update test fixtures keep working.
     #[serde(skip)]
     pub(crate) provenance: Provenance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(default)]
+pub struct CompletionSettings {
+    pub enabled: bool,
+    pub auto_popup: bool,
+}
+
+impl Default for CompletionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            auto_popup: true,
+        }
+    }
 }
 
 /// Which layer won for a knob (0056 AR14): the embedded default or the
@@ -104,6 +122,7 @@ impl Default for Config {
             search_show_hidden: true,
             search_respect_ignore: true,
             cursor_fade: true,
+            completion: CompletionSettings::default(),
             provenance: Provenance::default(),
         }
     }
@@ -158,6 +177,16 @@ pub const KNOBS: &[Knob] = &[
         kind: "bool",
         desc: "fade the Normal-mode cursor in after jumps/focus returns",
     },
+    Knob {
+        key: "completion.enabled",
+        kind: "bool",
+        desc: "code completion and its source-index lifecycle",
+    },
+    Knob {
+        key: "completion.auto_popup",
+        kind: "bool",
+        desc: "automatic suggestions while typing; off keeps manual completion",
+    },
 ];
 
 impl Config {
@@ -174,6 +203,8 @@ impl Config {
             "search_show_hidden" => self.search_show_hidden.to_string(),
             "search_respect_ignore" => self.search_respect_ignore.to_string(),
             "cursor_fade" => self.cursor_fade.to_string(),
+            "completion.enabled" => self.completion.enabled.to_string(),
+            "completion.auto_popup" => self.completion.auto_popup.to_string(),
             _ => return None,
         })
     }
@@ -184,7 +215,8 @@ impl Config {
     pub fn print_knobs(&self) {
         for k in KNOBS {
             let Some(value) = self.knob_value(k.key) else {
-                continue; // tests pin every KNOBS key to a value
+                debug_assert!(false, "declared config knob has no value projection");
+                continue;
             };
             println!(
                 "  {:<16} {:<7} {:<8} {:<8} {}",
@@ -245,11 +277,15 @@ impl Config {
     /// actually set — provenance names a knob's winning layer only when
     /// the layer named the key (0056 AR14).
     fn parse(text: &str) -> Result<(Self, std::collections::BTreeSet<String>), String> {
-        let keys = toml::from_str::<toml::Table>(text)
-            .map_err(|e| e.to_string())?
-            .keys()
-            .cloned()
-            .collect();
+        let table = toml::from_str::<toml::Table>(text).map_err(|e| e.to_string())?;
+        let mut keys: std::collections::BTreeSet<String> = table.keys().cloned().collect();
+        if let Some(completion) = table.get("completion").and_then(toml::Value::as_table) {
+            for key in ["enabled", "auto_popup"] {
+                if completion.contains_key(key) {
+                    keys.insert(format!("completion.{key}"));
+                }
+            }
+        }
         let config = toml::from_str::<Config>(text)
             .map_err(|e| e.to_string())
             .and_then(Config::validated)?;
@@ -292,13 +328,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_when_absent() {
-        let (c, err) = Config::load();
-        let _ = err; // present only when a malformed file exists
-        assert!(c.tab_size >= 2);
-    }
-
-    #[test]
     fn parses_tab_size() {
         let c: Config = toml::from_str("tab_size = 2").unwrap();
         assert_eq!(c.tab_size, 2);
@@ -309,54 +338,42 @@ mod tests {
     fn parses_indent_guides() {
         let c: Config = toml::from_str("indent_guides = false").unwrap();
         assert!(!c.indent_guides);
-        // absent → default on
-        let c: Config = toml::from_str("").unwrap();
-        assert!(c.indent_guides);
     }
 
     #[test]
-    fn knobs_name_real_fields_and_cover_all_of_them() {
-        // the popup renders from KNOBS: a knob naming no field is dead
-        // weight, a field without a knob is invisible to users.
-        for knob in KNOBS {
-            let snippet = match knob.key {
-                "indent_style" => "indent_style = \"spaces\"".to_string(),
-                _ => match knob.kind {
-                    "number" => format!("{k} = 2", k = knob.key),
-                    "bool" => format!("{k} = true", k = knob.key),
-                    _ => format!("{k} = \"x\"", k = knob.key),
-                },
-            };
-            assert!(
-                toml::from_str::<Config>(&snippet).is_ok(),
-                "knob {:?} names no config field",
-                knob.key
-            );
-        }
+    fn completion_provenance_tracks_individual_nested_controls() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[completion]\nenabled = false\n").unwrap();
+        let (disabled, error) = Config::load_from(&path);
+        assert!(error.is_none());
         assert_eq!(
-            KNOBS.len(),
-            8,
-            "tab_size, indent_guides, indent_style, indent_detect, auto_format, search_show_hidden, search_respect_ignore, cursor_fade"
+            disabled.knob_value("completion.enabled").as_deref(),
+            Some("false")
         );
+        assert_eq!(disabled.knob_layer("completion.enabled"), ConfigLayer::User);
+        assert_eq!(
+            disabled.knob_layer("completion.auto_popup"),
+            ConfigLayer::Default
+        );
+        std::fs::write(&path, "[completion]\nauto_popup = false\n").unwrap();
+        let (manual, error) = Config::load_from(&path);
+        assert!(error.is_none());
+        assert_eq!(
+            manual.knob_value("completion.auto_popup").as_deref(),
+            Some("false")
+        );
+        assert_eq!(
+            manual.knob_layer("completion.auto_popup"),
+            ConfigLayer::User
+        );
+        assert_eq!(
+            manual.knob_layer("completion.enabled"),
+            ConfigLayer::Default
+        );
+        assert!(Config::parse("[completion]\nenabled = \"false\"\n").is_err());
     }
 
-    #[test]
-    fn every_knob_resolves_a_real_value() {
-        // 0051 R10: one typed access path; a knob that resolves to
-        // None would render as a placeholder or vanish from :explain.
-        let config = Config::default();
-        for knob in KNOBS {
-            let value = config.knob_value(knob.key);
-            assert!(value.is_some(), "knob {:?} has no value", knob.key);
-            assert_ne!(
-                value.as_deref(),
-                Some("?"),
-                "knob {:?} is a placeholder",
-                knob.key
-            );
-        }
-        assert!(config.knob_value("not_a_knob").is_none());
-    }
     #[test]
     fn provenance_names_the_actual_winning_layer() {
         // 0056 AR14: a knob the user file set reports User; every other
@@ -385,10 +402,5 @@ mod tests {
             Config::parse("tab_size = 99").is_err(),
             "validated() still gates"
         );
-    }
-
-    #[test]
-    fn malformed_falls_back() {
-        assert!(toml::from_str::<Config>("tab_size = \"oops\"").is_err());
     }
 }

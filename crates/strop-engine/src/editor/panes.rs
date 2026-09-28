@@ -115,7 +115,7 @@ impl Editor {
         self.active_pane = self.panes.len() - 1;
         self.focus_epoch += 1;
         self.discover_git();
-        self.lsp_maybe_attach();
+        self.lsp_attach_document(self.current());
     }
 
     /// `:q` closes the pane; the last pane's close is document close.

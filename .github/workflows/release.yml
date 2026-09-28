@@ -38,7 +38,7 @@ jobs:
         run: docker compose run --build --rm core-assurance
       - name: Selected-context container worker gate
         run: docker compose run --build --rm container-test
-      - name: Freeze exact committed worker candidate
+      - name: Freeze exact committed completion candidate
         run: |
           python3 verification/check.py --release
           python3 verification/freeze.py
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: dist-source
-          path: dist/worker-candidate.json
+          path: dist/completion-candidate.json
 
   # Execute native GNU workers on both architectures; musl artifact
   # jobs below separately qualify static release binaries.
@@ -187,6 +187,18 @@ jobs:
           # deterministic clean shutdown, so this returns immediately).
           "$bin" --worker-stdio </dev/null
 
+      - name: Qualify completion on the actual shipping artifact
+        run: |
+          pkg="strop-${GITHUB_REF_NAME#v}-${{ matrix.target }}"
+          mkdir -p "$RUNNER_TEMP/completion-artifact"
+          tar -xzf "dist/$pkg.tar.gz" -C "$RUNNER_TEMP/completion-artifact"
+          profile=release-macos-native
+          if [ "${{ matrix.docker }}" = true ]; then profile=release-musl-stripped; fi
+          python3 -B verification/qualify_completion.py \
+            --binary "$RUNNER_TEMP/completion-artifact/$pkg/strop" --profile "$profile" \
+            --build "release workflow production artifact; ${{ matrix.target }}" \
+            --out "dist/completion-${{ matrix.target }}.json"
+
       - uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.target }}
@@ -209,7 +221,7 @@ jobs:
           merge-multiple: true
 
       - name: Revalidate source candidate after artifact merge
-        run: python3 verification/freeze.py --check --out dist/worker-candidate.json
+        run: python3 verification/freeze.py --check --out dist/completion-candidate.json
 
       - name: Verify all three platform tarballs are present
         run: |

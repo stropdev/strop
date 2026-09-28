@@ -11,7 +11,7 @@
 use std::collections::VecDeque;
 
 use strop_core::id::{BufferRevision, DocumentId};
-use strop_lsp::{PositionEncoding, ServerEdit, ServerPosition};
+use strop_lsp::{PositionEncoding, ServerEdit};
 use strop_workspace::ResourceLocation;
 
 use super::Editor;
@@ -196,15 +196,8 @@ impl Editor {
         encoding: PositionEncoding,
     ) -> Option<strop_core::Replacement> {
         let buf = &self.docs.get(document)?.buf;
-        let offset = |position: &ServerPosition| {
-            let last = buf.len_lines().saturating_sub(1);
-            let line = position.line.get().min(last);
-            let line_start = buf.line_start(line);
-            let text = buf.line_text(strop_core::id::LineIndex::new(line));
-            let col = strop_lsp::to_byte_col(&text, position.column, encoding);
-            line_start + col.get()
-        };
-        let (start, end) = (offset(&edit.start), offset(&edit.end));
+        let start = strop_lsp::checked_byte_offset(buf.text(), edit.start, encoding).ok()?;
+        let end = strop_lsp::checked_byte_offset(buf.text(), edit.end, encoding).ok()?;
         if start > end {
             return None;
         }

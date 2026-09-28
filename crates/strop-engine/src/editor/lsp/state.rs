@@ -93,7 +93,7 @@ impl Default for LspState {
 }
 
 impl Editor {
-    pub(super) fn lsp_live_client(&self, server: ServerId) -> Option<Client> {
+    pub(in crate::editor) fn lsp_live_client(&self, server: ServerId) -> Option<Client> {
         self.lsp_servers
             .iter()
             .find(|s| s.id == server)
@@ -114,9 +114,8 @@ impl Editor {
         super::lsp_language(path).map(str::to_string)
     }
 
-    pub(super) fn lsp_did_open_current(&mut self) {
-        let document = self.current();
-        let Some(doc) = self.lsp_current_doc_path() else {
+    pub(in crate::editor) fn lsp_did_open_document(&mut self, document: DocumentId) {
+        let Some(doc) = self.lsp_document_location(document) else {
             return;
         };
         let Some(language) = self.lsp_doc_language(document, &doc.path) else {
@@ -136,8 +135,11 @@ impl Editor {
             }
             self.lsp_close_document(document);
         }
-        let revision = self.buf().revision();
-        let text = self.buf().snapshot();
+        let Some(source) = self.docs.get(document) else {
+            return;
+        };
+        let revision = source.buf.revision();
+        let text = source.buf.snapshot();
         let args = SyncArgs {
             server,
             document,
@@ -342,7 +344,7 @@ impl Editor {
             self.lsp_state.navigation = None;
             self.cancel_open(strop_core::worker::CancelReason::Superseded);
         }
-        let Some(doc) = self.lsp_current_doc_path() else {
+        let Some(doc) = self.lsp_document_location(self.current()) else {
             self.message =
                 "language services require a complete file buffer, not a partial/follow view"
                     .into();
@@ -384,9 +386,9 @@ impl Editor {
             };
             return;
         };
-        self.lsp_did_open_current();
+        self.lsp_did_open_document(self.current());
         self.lsp_sync_changed();
-        let Some(doc) = self.lsp_current_doc_path() else {
+        let Some(doc) = self.lsp_document_location(self.current()) else {
             return;
         };
         let line = self.buf().line_of(self.head());
@@ -471,6 +473,12 @@ impl Editor {
                     RequestRefusal::NotReady => "lsp: the server is still initializing".into(),
                     RequestRefusal::Overloaded => {
                         "lsp: the server is not draining its queue — try again".into()
+                    }
+                    RequestRefusal::InvalidInput => {
+                        "lsp: invalid request payload or position".into()
+                    }
+                    RequestRefusal::Oversized => {
+                        "lsp: request exceeds its retained data bound".into()
                     }
                 };
             }

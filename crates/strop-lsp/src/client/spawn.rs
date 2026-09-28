@@ -275,6 +275,9 @@ impl Client {
         // Set once the mainloop ends: the wire worker stops framing.
         let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let closed_mainloop = closed.clone();
+        let outbound = Arc::new(super::outbound::Outbound::default());
+        let outbound_mainloop = outbound.clone();
+        let completion_registry = Arc::new(super::completion::Registry::default());
         // The wire worker shares the same synchronized open-document
         // table, socket and runtime as the handle. Starting it before
         // the runtime thread means a failure below leaks no thread, no
@@ -291,9 +294,24 @@ impl Client {
             sync: sync.clone(),
             quitting: quitting.clone(),
             closed,
+            outbound: outbound.clone(),
+            completion: completion_registry.clone(),
         };
         let queue = queue::start(env)
             .ok_or_else(|| SpawnError::Startup("cannot start the LSP wire worker".into()))?;
+        let completion = Arc::new(super::completion::CompletionClient::new(
+            completion_registry,
+            super::completion::Environment {
+                server: id,
+                socket: socket.clone(),
+                handle: handle.clone(),
+                caps: self_caps.clone(),
+                sync: sync.clone(),
+                workspace: workspace.clone(),
+                outbound,
+                queue: queue.control(),
+            },
+        ));
         let (stop_signal, stopping) = tokio::sync::oneshot::channel();
         let thread = std::thread::Builder::new()
             .name("strop-lsp-client".into())
@@ -312,6 +330,7 @@ impl Client {
                     endpoint_display,
                     quitting_mainloop,
                     closed_mainloop,
+                    outbound_mainloop,
                 ));
             })
             .map_err(|error| {
@@ -334,6 +353,7 @@ impl Client {
             caps: self_caps,
             quitting,
             queue,
+            completion,
             stop: Arc::new(super::ServiceStop(parking_lot::Mutex::new(Some(
                 stop_signal,
             )))),
@@ -355,6 +375,7 @@ impl Client {
                     publish_diagnostics: Some(Default::default()),
                     hover: Some(Default::default()),
                     definition: Some(Default::default()),
+                    completion: Some(crate::completion::client_capabilities()),
                     ..Default::default()
                 }),
                 // Servers that read settings pull them via
@@ -460,6 +481,7 @@ async fn run_worker_launch(
     endpoint_display: Option<String>,
     quitting: Arc<std::sync::atomic::AtomicBool>,
     closed: Arc<std::sync::atomic::AtomicBool>,
+    outbound: Arc<super::outbound::Outbound>,
 ) {
     let cmd = String::from_utf8_lossy(&wlaunch.spec.program).into_owned();
     // The exec request's own token: admission only — the admitted exec
@@ -468,6 +490,8 @@ async fn run_worker_launch(
     let handle = match wlaunch.worker.exec(&request_token, wlaunch.spec) {
         Ok(handle) => handle,
         Err(error) => {
+            closed.store(true, std::sync::atomic::Ordering::Relaxed);
+            outbound.close();
             strop_trace::record_with(strop_trace::EventKind::Error, || {
                 serde_json::json!({
                     "source":"lsp_spawn","server":name,"command":&cmd,"message":error.to_string(),
@@ -499,8 +523,18 @@ async fn run_worker_launch(
     });
     let result = {
         let mut run = std::pin::pin!(mainloop.run_buffered(
-            Observed::new(stdout, &label, Direction::Rx).compat(),
-            Observed::new(stdin, &label, Direction::Tx).compat_write(),
+            Observed::new(
+                super::frame_limits::BoundedFrames::new(stdout),
+                &label,
+                Direction::Rx
+            )
+            .compat(),
+            Observed::new(
+                super::outbound::FramedWriter::new(stdin, outbound),
+                &label,
+                Direction::Tx
+            )
+            .compat_write(),
         ));
         let mut stopping = std::pin::pin!(stopping);
         std::future::poll_fn(|context| {

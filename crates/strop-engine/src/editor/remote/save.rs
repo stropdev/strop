@@ -52,6 +52,11 @@ pub(crate) struct WritePermit {
     id: WorkerId,
     version: WriteVersion,
 }
+impl WritePermit {
+    pub(crate) fn owns(&self, file: &RemoteFile) -> bool {
+        self.version.file() == file
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum WriteAction {
     Enable,
@@ -327,7 +332,7 @@ impl Editor {
         if !source.window.is_complete() || self.remote_following(document) {
             return Err("partial/following remote windows cannot be saved".into());
         }
-        if permit.version.file() != &source.file {
+        if !permit.owns(&source.file) {
             return Err("remote write permit belongs to another file".into());
         }
         let id = permit.id;

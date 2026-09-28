@@ -112,7 +112,7 @@ impl Editor {
         }
 
         text.push_str("\n[current document]\n");
-        match self.lsp_current_doc_path() {
+        match self.lsp_document_location(self.current()) {
             Some(resource) => {
                 let _ = writeln!(text, "  resource  {}", resource.label());
             }

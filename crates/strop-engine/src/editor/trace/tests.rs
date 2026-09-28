@@ -22,6 +22,7 @@ fn fixture() -> Editor {
 
 fn fixture_with(text: &str) -> Editor {
     let mut editor = Editor::new_in(strop_core::Buffer::from_text(text), "/recorded".into());
+    editor.config.completion.enabled = false; // Completion has its own recorded service journey.
     editor.tape = Rc::new(Tape::fixture(|operation, _| match operation {
         "analysis.start" => Ok(serde_json::json!({"Ok": null})),
         _ => Err(io::Error::other("unexpected native observation")),

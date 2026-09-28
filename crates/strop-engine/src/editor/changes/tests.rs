@@ -68,6 +68,27 @@ fn file_editor(dir: &tempfile::TempDir, name: &str, text: &str) -> (Editor, Docu
 }
 
 #[test]
+fn invalid_mutation_coordinates_do_not_clamp_into_valid_text() {
+    let cases = [
+        (PositionEncoding::Utf8, edit(99, 0, 99, 1, "wrong line")),
+        (PositionEncoding::Utf16, edit(0, 999, 0, 1000, "past line")),
+        (PositionEncoding::Utf16, edit(0, 2, 0, 3, "half surrogate")),
+    ];
+    for (encoding, replacement) in cases {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut editor, document) = file_editor(&directory, "coordinates.txt", "a😀z");
+        let mut context = arm(&mut editor, document, 1, RequestKind::Format);
+        context.encoding = encoding;
+        editor.handle_app_event(AppEvent::Lsp(LspEvent::Edits {
+            context,
+            edits: vec![replacement],
+        }));
+        assert_eq!(editor.doc(document).buf.text().to_string(), "a😀z");
+        assert!(!editor.doc(document).buf.dirty);
+    }
+}
+
+#[test]
 fn auto_format_chains_the_save_after_formatting() {
     // config auto_format: the format reply runs the waiting save —
     // formatting happens, then the write (helix's auto-format).

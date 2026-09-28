@@ -185,8 +185,16 @@ impl Editor {
         // then consumed: the write-back diff must never see it.
         {
             let doc = self.docs.get_mut(id).unwrap();
-            let changes: Vec<_> = doc.buf.changes().to_vec();
-            self.analysis.edits(id, &changes);
+            self.analysis.edits(id, doc.buf.changes());
+            if let Err(error) = self.completion.edits(
+                &self.tape,
+                id,
+                doc.buf.revision(),
+                doc.buf.text(),
+                doc.buf.changes(),
+            ) {
+                self.message = error;
+            }
             doc.buf.clear_changes();
         }
         let byte_delta = body.len() as isize - (view_end - view_start) as isize;
@@ -365,5 +373,44 @@ impl Editor {
                 .buf
                 .clamp_boundary(offset.min(source.buf.len_bytes())),
         ))
+    }
+
+    /// Strict insertion coordinates for source edits. Unlike navigation this
+    /// never clamps an invalid byte, and admits an excerpt's source EOF only
+    /// when the same verified write-back predicate owns that insertion.
+    pub(crate) fn source_edit_position(
+        &self,
+        document: DocumentId,
+        byte: usize,
+    ) -> Option<(DocumentId, usize)> {
+        let view = self.docs.get(document)?;
+        let character = view.buf.text().try_byte_to_char(byte).ok()?;
+        if view.buf.text().char_to_byte(character) != byte {
+            return None;
+        }
+        let Some(collection) = self.collections.get(&document) else {
+            return Some((document, byte));
+        };
+        if collection.revision != view.buf.revision() {
+            return None;
+        }
+        let after = collection
+            .excerpts
+            .partition_point(|excerpt| excerpt.view_start <= byte);
+        let excerpt = collection.excerpts.get(after.checked_sub(1)?)?;
+        let body_end = excerpt.view_start + excerpt.end - excerpt.start;
+        if !strop_core::projectguard::span_owns_edit(
+            byte,
+            byte,
+            excerpt.view_start,
+            body_end,
+            excerpt.view_end,
+        ) {
+            return None;
+        }
+        let source = self.docs.get(excerpt.source)?;
+        let offset = excerpt.start + byte - excerpt.view_start;
+        let character = source.buf.text().try_byte_to_char(offset).ok()?;
+        (source.buf.text().char_to_byte(character) == offset).then_some((excerpt.source, offset))
     }
 }

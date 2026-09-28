@@ -10,6 +10,7 @@ use crate::types::*;
 mod find;
 mod motions;
 pub use find::find_character;
+pub use motions::is_keyword;
 mod objects;
 mod pairs;
 pub use pairs::{delimiter_pair, matching_delimiter_at, MatchCancelled};

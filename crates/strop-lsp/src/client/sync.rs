@@ -43,6 +43,13 @@ pub(super) struct OpenDocument {
 }
 
 impl SyncState {
+    pub(super) fn owns(&self, server: ServerId, stamp: &RequestStamp, path: &Path) -> bool {
+        stamp.server == server
+            && self.documents.get(path).is_some_and(|open| {
+                open.document == stamp.document && open.revision == stamp.revision
+            })
+    }
+
     fn next_version(&mut self) -> Option<WireVersion> {
         let current = self.next_version.unwrap_or(WireVersion::new(0));
         let next = current.next()?;
@@ -76,13 +83,7 @@ impl SyncState {
 
 /// Whether `stamp` still names the live open incarnation of its path.
 pub(super) fn owns(env: &WireEnv, stamp: &RequestStamp, path: &Path) -> bool {
-    stamp.server == env.id
-        && env
-            .sync
-            .lock()
-            .documents
-            .get(path)
-            .is_some_and(|open| open.document == stamp.document && open.revision == stamp.revision)
+    env.sync.lock().owns(env.id, stamp, path)
 }
 
 /// The wire version this connection last sent for `path` — the only
@@ -287,7 +288,7 @@ impl Client {
                 encoding: self.caps.encoding(),
                 kind: request.input.kind,
             };
-            if !owns_state(&state, self.id, &request) {
+            if !state.owns(self.id, &request.stamp, &request.input.path) {
                 let _ = self.tx.send(LspEvent::Note {
                     context,
                     text: "cancelled — the document changed or closed during startup".into(),
@@ -302,16 +303,6 @@ impl Client {
         state.ready = true;
         Ok(())
     }
-}
-
-fn owns_state(state: &SyncState, server: ServerId, request: &PendingRequest) -> bool {
-    request.stamp.server == server
-        && state
-            .documents
-            .get(&request.input.path)
-            .is_some_and(|open| {
-                open.document == request.stamp.document && open.revision == request.stamp.revision
-            })
 }
 
 /// Why the post-initialize flush could not complete.

@@ -1,7 +1,7 @@
 {
   "schema": 2,
-  "release": "0058",
-  "plan": "plans/0058-unified-native-worker.md",
+  "release": "0059",
+  "plan": "plans/0059-nonblocking-code-completion.md",
   "boundaries": [
     {
       "id": "mutation-gateway",
@@ -40,9 +40,9 @@
             }
           ],
           "migration": {
-            "from": "0057/MUT-GEOMETRY",
+            "from": "0058/MUT-GEOMETRY",
             "classification": "unchanged",
-            "basis": "Editor batch geometry and mutation source are unchanged; worker receipts enter the same admitted save-ack owner, requalified under worker-recovery."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -64,9 +64,9 @@
             }
           ],
           "migration": {
-            "from": "0057/MUT-BATCH-ORDER",
+            "from": "0058/MUT-BATCH-ORDER",
             "classification": "unchanged",
-            "basis": "Editor batch geometry and mutation source are unchanged; worker receipts enter the same admitted save-ack owner, requalified under worker-recovery."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -86,9 +86,9 @@
             }
           ],
           "migration": {
-            "from": "0057/MUT-REJECTION-ATOMICITY",
+            "from": "0058/MUT-REJECTION-ATOMICITY",
             "classification": "unchanged",
-            "basis": "Editor batch geometry and mutation source are unchanged; worker receipts enter the same admitted save-ack owner, requalified under worker-recovery."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -109,9 +109,9 @@
             }
           ],
           "migration": {
-            "from": "0057/MUT-STREAM-CONFORMANCE",
+            "from": "0058/MUT-STREAM-CONFORMANCE",
             "classification": "unchanged",
-            "basis": "Editor batch geometry and mutation source are unchanged; worker receipts enter the same admitted save-ack owner, requalified under worker-recovery."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -132,9 +132,9 @@
             }
           ],
           "migration": {
-            "from": "0057/MUT-ADMISSION-KERNEL",
+            "from": "0058/MUT-ADMISSION-KERNEL",
             "classification": "unchanged",
-            "basis": "Editor batch geometry and mutation source are unchanged; worker receipts enter the same admitted save-ack owner, requalified under worker-recovery."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -154,9 +154,9 @@
             }
           ],
           "migration": {
-            "from": "0057/MUT-SAVE-ADMISSION",
+            "from": "0058/MUT-SAVE-ADMISSION",
             "classification": "unchanged",
-            "basis": "Editor batch geometry and mutation source are unchanged; worker receipts enter the same admitted save-ack owner, requalified under worker-recovery."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -177,9 +177,9 @@
             }
           ],
           "migration": {
-            "from": "0057/MUT-BATCH-COMPOSITION",
+            "from": "0058/MUT-BATCH-COMPOSITION",
             "classification": "unchanged",
-            "basis": "Editor batch geometry and mutation source are unchanged; worker receipts enter the same admitted save-ack owner, requalified under worker-recovery."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -238,9 +238,9 @@
             }
           ],
           "migration": {
-            "from": "0057/ADM-READONLY-EXPLAIN",
-            "classification": "strengthened",
-            "basis": "Readonly and worker consent are independently represented; explain and explicit worker-command regressions cover the new authority distinction."
+            "from": "0058/ADM-READONLY-EXPLAIN",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -259,9 +259,9 @@
             }
           ],
           "migration": {
-            "from": "0057/ADM-STALE-REFUSAL",
-            "classification": "strengthened",
-            "basis": "Readonly and worker consent are independently represented; explain and explicit worker-command regressions cover the new authority distinction."
+            "from": "0058/ADM-STALE-REFUSAL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -280,9 +280,9 @@
             }
           ],
           "migration": {
-            "from": "0057/ADM-STALE-KERNEL",
-            "classification": "strengthened",
-            "basis": "Readonly and worker consent are independently represented; explain and explicit worker-command regressions cover the new authority distinction."
+            "from": "0058/ADM-STALE-KERNEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -338,9 +338,9 @@
             }
           ],
           "migration": {
-            "from": "0057/COL-RECEIPT",
-            "classification": "transferred",
-            "basis": "Collection receipts still bind source revisions; remote Store settlement now crosses worker-recovery before acknowledging a collection."
+            "from": "0058/COL-RECEIPT",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -357,12 +357,28 @@
                 "a_source_closed_since_the_proposal_is_refused_by_name",
                 "a_newer_proposal_supersedes_the_older_buffer_visibly"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/changes/tests.rs",
+              "gate": "test",
+              "tests": [
+                "invalid_mutation_coordinates_do_not_clamp_into_valid_text"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests/sources.rs",
+              "gate": "test",
+              "tests": [
+                "collection_semantic_acceptance_maps_caret_and_undo_with_an_import_outside_the_excerpt"
+              ]
             }
           ],
           "migration": {
-            "from": "0057/COL-STALE-SOURCE",
-            "classification": "transferred",
-            "basis": "Collection receipts still bind source revisions; remote Store settlement now crosses worker-recovery before acknowledging a collection."
+            "from": "0058/COL-STALE-SOURCE",
+            "classification": "strengthened",
+            "basis": "0059 rejects invalid server mutation coordinates and carries represented completion imports through source projection and grouped undo, including imports outside the excerpt."
           }
         },
         {
@@ -382,9 +398,9 @@
             }
           ],
           "migration": {
-            "from": "0057/COL-SPAN-KERNEL",
-            "classification": "transferred",
-            "basis": "Collection receipts still bind source revisions; remote Store settlement now crosses worker-recovery before acknowledging a collection."
+            "from": "0058/COL-SPAN-KERNEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -395,13 +411,13 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/projectguard.rs": "6dc7e5835cb5a3e2b90bc8dc03285e428aef07eb11c8219c1c7a538178d34298",
-          "crates/strop-engine/src/editor/changes/mod.rs": "5706da205dd88a1f0381326b5cdb9709774009a55da58d7429321f7a71b2a0ee",
+          "crates/strop-engine/src/editor/changes/mod.rs": "0fec28890033d3cdb17fc979a44e23f6260b7a58de42f8ea679260467634a34b",
           "crates/strop-engine/src/editor/changes/review.rs": "ddc4936b40959af85476641b00f6a160494d7b35ccc0767d768c4b6cd08fd71e",
           "crates/strop-engine/src/editor/changes/review/prepare.rs": "d63080e00ec3c68f762d575b5d9ef4038cb97ee4e5399d43e14e87e0c69da6fb",
           "crates/strop-engine/src/editor/changes/review/save.rs": "23794e6d49c5a25e371077b33da018a0af87d37b2ffef45dabc9ad7c3043b6d9",
           "crates/strop-engine/src/editor/collections/mod.rs": "4b081a3186bc8fb2f345fb91594ac49bc288e43f3f558f971db9a96124b7f6cd"
         },
-        "evidence": "1237d74a77b0e0307fc895652ebece29dd5293599dbf99617f1af241d0cabbee"
+        "evidence": "d7c664851d4a112b5441e1ba1064898a0a39c875ea117df169f03521af115fd4"
       }
     },
     {
@@ -441,9 +457,9 @@
             }
           ],
           "migration": {
-            "from": "0057/REC-COHORT",
-            "classification": "transferred",
-            "basis": "Checkpoint evidence remains editor-owned; a worker cache object or process lease is not a restored document write permit."
+            "from": "0058/REC-COHORT",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -464,9 +480,9 @@
             }
           ],
           "migration": {
-            "from": "0057/REC-FAILCLOSED",
-            "classification": "transferred",
-            "basis": "Checkpoint evidence remains editor-owned; a worker cache object or process lease is not a restored document write permit."
+            "from": "0058/REC-FAILCLOSED",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -488,9 +504,9 @@
             }
           ],
           "migration": {
-            "from": "0057/REC-AUTHORITY",
-            "classification": "transferred",
-            "basis": "Checkpoint evidence remains editor-owned; a worker cache object or process lease is not a restored document write permit."
+            "from": "0058/REC-AUTHORITY",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -513,9 +529,9 @@
             }
           ],
           "migration": {
-            "from": "0057/REC-KERNEL",
-            "classification": "transferred",
-            "basis": "Checkpoint evidence remains editor-owned; a worker cache object or process lease is not a restored document write permit."
+            "from": "0058/REC-KERNEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -566,9 +582,9 @@
             }
           ],
           "migration": {
-            "from": "0057/PRIV-SCOPE",
-            "classification": "strengthened",
-            "basis": "Worker bootstrap, frame and terminal bytes join the existing target/privacy classification without granting trace payload authority."
+            "from": "0058/PRIV-SCOPE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -587,9 +603,9 @@
             }
           ],
           "migration": {
-            "from": "0057/PRIV-TARGET",
-            "classification": "strengthened",
-            "basis": "Worker bootstrap, frame and terminal bytes join the existing target/privacy classification without granting trace payload authority."
+            "from": "0058/PRIV-TARGET",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -660,12 +676,20 @@
               "tests": [
                 "trace_owned_hints_do_not_wake_the_editor_but_other_files_still_do"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/mailbox/tests.rs",
+              "gate": "test",
+              "tests": [
+                "cancellation_crosses_a_full_retirement_budget_without_waiting_for_ui_leases"
+              ]
             }
           ],
           "migration": {
-            "from": "0057/EVT-BOUNDED",
+            "from": "0058/EVT-BOUNDED",
             "classification": "strengthened",
-            "basis": "Stream/terminal jobs now feed the existing bounded event transport; credit and shutdown campaigns exercise saturation."
+            "basis": "0059 adds a coalesced completion wake backed by independent bounded native publication and retirement, not data in the event lane."
           }
         },
         {
@@ -694,12 +718,21 @@
               "tests": [
                 "replay_preserves_rejected_filesystem_notification_status"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/tracing.rs",
+              "gate": "test",
+              "tests": [
+                "completion_payloads_obey_privacy_and_full_replay_needs_no_provider",
+                "asynchronous_completion_macros_keep_vim_order_in_native_free_replay"
+              ]
             }
           ],
           "migration": {
-            "from": "0057/EVT-RECORD",
+            "from": "0058/EVT-RECORD",
             "classification": "strengthened",
-            "basis": "Stream/terminal jobs now feed the existing bounded event transport; credit and shutdown campaigns exercise saturation."
+            "basis": "Completion provider/acceptance decisions and macro continuation cross the existing recorded event boundary; native-free replay checks actual logical states and styled cells."
           }
         }
       ],
@@ -708,8 +741,8 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/events.rs": "411e92f14c42f643ea499ffcb83a67fae6a127a70662c6615dc659d2dfb7f338",
-          "crates/strop-engine/src/editor/events/channel.rs": "ce65976c13db7525ec93b5899cb7815d83977e1664d1fbaa2376df8d50764d53",
+          "crates/strop-engine/src/editor/events.rs": "83f88f623a514196a2d187481167600c8e3027ad964ce7a8e2ef6a36372d0124",
+          "crates/strop-engine/src/editor/events/channel.rs": "be75e74dd7c188ccee3e1867e76e9a60342defa8d44b0b38a3be69b9524d5cc5",
           "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
           "crates/strop-trace/src/event.rs": "8863ed01aa88c21609f137fd201a22e7db1be8b76adf6111f600f24399d9e963",
@@ -717,7 +750,7 @@
           "crates/strop-trace/src/replay.rs": "b106a0e4fe78e1e944e22f4aa1047e308eb16a3ea17d634ab5f81013943cfe37",
           "crates/strop-trace/src/writer.rs": "20ea24a24dcf8f88321e8d4cb2ef9fb40c6fb7ede89ed9ec69c0fdbab2923591"
         },
-        "evidence": "e834ce33625a3115d2d39c0e9e053efdb0c2dd9431e14509bf53f376bdf59488"
+        "evidence": "72af6203a14e855d67c95feafa6e1f812de58097d36957e9e6c53dd513568821"
       }
     },
     {
@@ -760,12 +793,20 @@
                 "old_server_reply_is_not_accepted_by_replacement_binding",
                 "older_hover_cannot_overwrite_newer_reply_at_revision_zero"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests/language.rs",
+              "gate": "test",
+              "tests": [
+                "prepared_completion_does_not_apply_after_language_service_rebinding"
+              ]
             }
           ],
           "migration": {
-            "from": "0057/LSP-IDENTITY",
+            "from": "0058/LSP-IDENTITY",
             "classification": "strengthened",
-            "basis": "Every local/SSH/container LSP process uses a worker lease; request ordering and sync ownership stay in the LSP queue."
+            "basis": "Completion captures the exact service server/path/root/language/namespace and independently revalidates prepared results before applying them."
           }
         },
         {
@@ -775,7 +816,7 @@
           "evidence": [
             {
               "kind": "test",
-              "path": "crates/strop-lsp/src/client/queue.rs",
+              "path": "crates/strop-lsp/src/client/queue/tests.rs",
               "gate": "test",
               "tests": [
                 "superseded_unsent_changes_coalesce_without_a_barrier",
@@ -784,7 +825,7 @@
                 "the_job_count_bound_refuses_visibly",
                 "the_snapshot_byte_bound_refuses_changes_but_not_lifecycle",
                 "coalescing_tracks_bytes_so_the_bound_reflects_what_is_retained",
-                "a_stopped_queue_reports_closed_and_drops_retained_snapshots"
+                "repeated_coalescing_is_bounded_until_worker_retirement_returns_capacity"
               ]
             },
             {
@@ -804,12 +845,27 @@
                 "closing_stdout_wakes_a_parked_reader_after_eof_is_visible",
                 "failed_stdin_write_wakes_a_pending_flush_with_broken_pipe"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/tests/completion.rs",
+              "gate": "test",
+              "tests": [
+                "ignored_cancellation_retains_physical_slots_until_late_responses",
+                "captured_line_bytes_backpressure_before_the_physical_count_limit"
+              ]
+            },
+            {
+              "kind": "model",
+              "path": "specs/CompletionWire.tla",
+              "config": "specs/cfg/completion-wire.cfg",
+              "gate": "model"
             }
           ],
           "migration": {
-            "from": "0057/LSP-BOUNDED",
+            "from": "0058/LSP-BOUNDED",
             "classification": "strengthened",
-            "basis": "Every local/SSH/container LSP process uses a worker lease; request ordering and sync ownership stay in the LSP queue."
+            "basis": "Logical cancellation no longer implies physical settlement for completion; actual notification flush receipts and bounded two-request physical ownership prevent hidden downstream backlog."
           }
         },
         {
@@ -835,33 +891,43 @@
                 "worker_leased_spawn_handshakes_and_classifies_exit",
                 "lsp_without_worker_refuses_before_launch_in_every_namespace"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/tests/completion.rs",
+              "gate": "test",
+              "tests": [
+                "query_and_resolve_preserve_negotiated_positions_and_opaque_item_identity",
+                "newer_document_revision_revokes_queued_request_and_orders_its_successor"
+              ]
             }
           ],
           "migration": {
-            "from": "0057/LSP-ADMISSION",
+            "from": "0058/LSP-ADMISSION",
             "classification": "strengthened",
-            "basis": "Every local/SSH/container LSP process uses a worker lease; request ordering and sync ownership stay in the LSP queue."
+            "basis": "Completion and resolve use stamped capability-aware admission, bounded immutable items, negotiated coordinates and the same ordered synchronization barrier."
           }
         }
       ],
       "gates": [
-        "test"
+        "test",
+        "model"
       ],
       "pins": {
         "sources": {
           "crates/strop-engine/src/editor/lsp/routing.rs": "e651b494cd481713411e5a1ad64247ede9e6246cc13e85f2073c5b2c7cbc30f9",
-          "crates/strop-engine/src/editor/lsp/state.rs": "9de05c89014dd92277cb80ba1a6760dda0efd49af1f6e4586a133082ed564e46",
-          "crates/strop-lsp/src/client/api.rs": "c55a3d01288fedc49de12e72f3d131bd5fda290e2f2bd17832905a4e745563a1",
-          "crates/strop-lsp/src/client/queue.rs": "061150903bcd991d31dd7f20e13500605dd50e9752d9a9928c1ed762174140a2",
-          "crates/strop-lsp/src/client/spawn.rs": "e2c4afc732b210b367a6d1339c4a34178cafa81a9cb38e7d549e96a53fd69915",
-          "crates/strop-lsp/src/client/sync.rs": "31942e4ef8a5a3cf1866e5644b3756a48c2e383eb8b785fc13375fae5d77ffc9",
+          "crates/strop-engine/src/editor/lsp/state.rs": "20a6d3fa9bc2d7e438a7c4501b279019a9363d15635deb49998aac8e4ae51ee3",
+          "crates/strop-lsp/src/client/api.rs": "2078d1b94e692eaf00f36e10553a94a147fd736a94e084c6437a20840edb4de1",
+          "crates/strop-lsp/src/client/queue.rs": "efbe0672ae97f6d1d2b3361238f9680a938b8301fd36ead339580848e26ea4b1",
+          "crates/strop-lsp/src/client/spawn.rs": "a7fd290dd3fc34dc8889f5577cd662935b0b2e8fd6c8a312781b4422f249dbaa",
+          "crates/strop-lsp/src/client/sync.rs": "735ebcf752bf481a6c4933ed9b13c34929d70835961f5a8d391d90be73904b2c",
           "crates/strop-lsp/src/client/tests/spawn.rs": "2811d40461eac9fda0d1a8cc7ace459fe9a259f4b93f2cf3b3a8411042a656a2",
           "crates/strop-lsp/src/client/wire.rs": "f64dd60975d074cd52587e888d99a5bcf4300d89772453aac3102382eb36520f",
           "crates/strop-lsp/src/client/worker_io.rs": "cb4ac5b40e966b92acfa3fce401da6e669732051f9c79b4b63cf1ed69c21e6b1",
           "crates/strop-lsp/src/convert.rs": "2cce26f33656dc5b2a1c0b0f499c2b68ba3bfc72e7fd72d1c04675a96b26d541",
-          "crates/strop-lsp/src/protocol.rs": "a70836bb3894b7bd6e7d7b7bf523d5114a0052b1cbffd1e8dc23c6e32e677a92"
+          "crates/strop-lsp/src/protocol.rs": "e80b69e59806049b99dee47ab6381da184999cffbbf20c0d8568bf2cc8de4e6f"
         },
-        "evidence": "dc674261a2dfc934cd9e828c0bcc6c913001fed74e272ed1ae4c46ecf2a4ef61"
+        "evidence": "ad1654df41fa533478e2b6766655cd405cb328ca7c1fe42c92bcf7376d0a1243"
       }
     },
     {
@@ -920,9 +986,9 @@
             }
           ],
           "migration": {
-            "from": "0057/CON-ADMIT",
-            "classification": "strengthened",
-            "basis": "Selected EngineRef, canonical id and StartedAt now also bind verified worker deployment and Git/LSP service authority."
+            "from": "0058/CON-ADMIT",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -943,9 +1009,9 @@
             }
           ],
           "migration": {
-            "from": "0057/CON-LEASE",
-            "classification": "strengthened",
-            "basis": "Selected EngineRef, canonical id and StartedAt now also bind verified worker deployment and Git/LSP service authority."
+            "from": "0058/CON-LEASE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -982,9 +1048,9 @@
             }
           ],
           "migration": {
-            "from": "0057/CON-INCARNATION",
-            "classification": "strengthened",
-            "basis": "Selected EngineRef, canonical id and StartedAt now also bind verified worker deployment and Git/LSP service authority."
+            "from": "0058/CON-INCARNATION",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -1071,9 +1137,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SFTP-FRAMING",
-            "classification": "strengthened",
-            "basis": "SFTP-only read capability remains; worker admission adds verified bootstrap/cache and no write fallback."
+            "from": "0058/SFTP-FRAMING",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1094,9 +1160,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SFTP-SNAPSHOT",
-            "classification": "strengthened",
-            "basis": "SFTP-only read capability remains; worker admission adds verified bootstrap/cache and no write fallback."
+            "from": "0058/SFTP-SNAPSHOT",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1142,9 +1208,9 @@
             }
           ],
           "migration": {
-            "from": "0057/REM-READ-WORKSPACE",
-            "classification": "strengthened",
-            "basis": "SFTP-only read capability remains; worker admission adds verified bootstrap/cache and no write fallback."
+            "from": "0058/REM-READ-WORKSPACE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1163,9 +1229,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SSH-NATIVE",
-            "classification": "strengthened",
-            "basis": "SFTP-only read capability remains; worker admission adds verified bootstrap/cache and no write fallback."
+            "from": "0058/SSH-NATIVE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1193,9 +1259,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SSH-MODEL-FLEET",
-            "classification": "strengthened",
-            "basis": "SFTP-only read capability remains; worker admission adds verified bootstrap/cache and no write fallback."
+            "from": "0058/SSH-MODEL-FLEET",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1263,9 +1329,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SSH-WORKER-DEPLOY",
-            "classification": "strengthened",
-            "basis": "SFTP-only read capability remains; worker admission adds verified bootstrap/cache and no write fallback."
+            "from": "0058/SSH-WORKER-DEPLOY",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -1349,9 +1415,9 @@
             }
           ],
           "migration": {
-            "from": "0057/RSAVE-MODEL",
-            "classification": "transferred",
-            "basis": "Native Store replaces Python helper while retaining conflict, private-stage, metadata and unconfirmed-recovery promises."
+            "from": "0058/RSAVE-MODEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1386,12 +1452,20 @@
               "tests": [
                 "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/context/tests.rs",
+              "gate": "test",
+              "tests": [
+                "namespace_write_policy_and_full_windows_are_independent_of_the_readonly_flag"
+              ]
             }
           ],
           "migration": {
-            "from": "0057/RSAVE-AUTHORITY",
+            "from": "0058/RSAVE-AUTHORITY",
             "classification": "strengthened",
-            "basis": "Native Store replaces Python helper while retaining conflict, private-stage, metadata and unconfirmed-recovery promises."
+            "basis": "The unchanged remote permit identity predicate is shared with completion; partial windows, revoked/foreign permits and read-only namespaces cannot gain edit authority from a buffer flag."
           }
         },
         {
@@ -1445,9 +1519,9 @@
             }
           ],
           "migration": {
-            "from": "0057/RSAVE-CRASH",
-            "classification": "strengthened",
-            "basis": "Native Store replaces Python helper while retaining conflict, private-stage, metadata and unconfirmed-recovery promises."
+            "from": "0058/RSAVE-CRASH",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1476,9 +1550,9 @@
             }
           ],
           "migration": {
-            "from": "0057/RFS-EFFECTS",
-            "classification": "strengthened",
-            "basis": "Native Store replaces Python helper while retaining conflict, private-stage, metadata and unconfirmed-recovery promises."
+            "from": "0058/RFS-EFFECTS",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1522,10 +1596,9 @@
             }
           ],
           "migration": {
-            "from": "0057/RSAVE-REPLY",
-            "classification": "retired-implementation",
-            "successor": "WP-CODEC",
-            "basis": "The Python helper status decoder is deleted; bounded worker frames plus the editor unconfirmed receipt guard carry the same refusal promise."
+            "from": "0058/RSAVE-REPLY",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1553,10 +1626,9 @@
             }
           ],
           "migration": {
-            "from": "0057/RSAVE-DIGEST",
-            "classification": "retired-implementation",
-            "successor": "WDEP-ACTIVATE",
-            "basis": "Python bundle byte pins are historical only; digest-verified worker object and executed artifact identity replace that implementation claim."
+            "from": "0058/RSAVE-DIGEST",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1577,9 +1649,9 @@
             }
           ],
           "migration": {
-            "from": "0057/RSAVE-FAULTS",
-            "classification": "strengthened",
-            "basis": "Native Store replaces Python helper while retaining conflict, private-stage, metadata and unconfirmed-recovery promises."
+            "from": "0058/RSAVE-FAULTS",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -1590,7 +1662,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/remote/save.rs": "b548ed478153246baab80c12f98cfc5468f182a55b95e3da07e74e9e7c5d5053",
+          "crates/strop-engine/src/editor/remote/save.rs": "27b7a5e7fd9c69670c1928d1d4bd5d5b474d7e4642ff4922556f2c64e6fa0caf",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/local/store.rs": "9d864432d233582bf5e84619966fa83df9e7702ca7d5e8221f75feb13f418981",
@@ -1599,7 +1671,7 @@
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-workspace/src/operation.rs": "24fc4391fb73d5ca824051d354e5e4a94d16cd38940633e05f657dcf9088cc7b"
         },
-        "evidence": "e7439a2c1fa7c0b9c4753f7ff7798c6706c500cd6baf3e07f5fbd93724354b7e"
+        "evidence": "65fae51073503946e2e9058e945851fe79490022b44cb7453a561851c7fd50b0"
       }
     },
     {
@@ -1657,9 +1729,9 @@
             }
           ],
           "migration": {
-            "from": "0057/EXEC-LEASE",
-            "classification": "strengthened",
-            "basis": "Worker-owned process groups and typed exec streams replace Python status/nonce supervision."
+            "from": "0058/EXEC-LEASE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1687,9 +1759,9 @@
             }
           ],
           "migration": {
-            "from": "0057/EXEC-ENCODING",
-            "classification": "strengthened",
-            "basis": "Worker-owned process groups and typed exec streams replace Python status/nonce supervision."
+            "from": "0058/EXEC-ENCODING",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1717,10 +1789,9 @@
             }
           ],
           "migration": {
-            "from": "0057/EXEC-MODEL",
-            "classification": "retired-implementation",
-            "successor": "WSTR-MODEL",
-            "basis": "The Python anchor/GO topology is not the Rust process topology; worker session/exit and native group cleanup are requalified separately."
+            "from": "0058/EXEC-MODEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1739,9 +1810,9 @@
             }
           ],
           "migration": {
-            "from": "0057/WORKER-EFFECT",
+            "from": "0058/WORKER-EFFECT",
             "classification": "unchanged",
-            "basis": "Worker-owned process groups and typed exec streams replace Python status/nonce supervision."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1767,9 +1838,9 @@
             }
           ],
           "migration": {
-            "from": "0057/WORKER-EXEC-NATIVE",
-            "classification": "strengthened",
-            "basis": "Worker-owned process groups and typed exec streams replace Python status/nonce supervision."
+            "from": "0058/WORKER-EXEC-NATIVE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1803,10 +1874,9 @@
             }
           ],
           "migration": {
-            "from": "0057/EXEC-SPEC-DECODE",
-            "classification": "retired-implementation",
-            "successor": "WP-CODEC",
-            "basis": "Python spec blobs and nonce lines are deleted; strict worker codec and inert child-output streams supersede that decoder."
+            "from": "0058/EXEC-SPEC-DECODE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1834,10 +1904,9 @@
             }
           ],
           "migration": {
-            "from": "0057/EXEC-SUPERVISOR-DIGEST",
-            "classification": "retired-implementation",
-            "successor": "WDEP-ACTIVATE",
-            "basis": "Embedded Python supervisor source pin is retired; verified binary digest/protocol and native process tests carry the successor promise."
+            "from": "0058/EXEC-SUPERVISOR-DIGEST",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -1856,9 +1925,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new same-source kernel consumed by this boundary (0058 WK18/WK19 verification cutover)"
+            "from": "0058/WORKER-EFFECT-KERNEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -1940,9 +2009,9 @@
             }
           ],
           "migration": {
-            "from": "0057/FS-NOCLOBBER",
-            "classification": "strengthened",
-            "basis": "Shared native Store adds frozen content/inode/xattr checks and recovered read-only verification."
+            "from": "0058/FS-NOCLOBBER",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -1960,9 +2029,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "native kernel plan remains pure and session-less while worker-backed editor reviews carry their authentic session into pre-effect admission"
+            "from": "0058/FS-SESSION-BOUNDARY",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -1982,9 +2051,9 @@
             }
           ],
           "migration": {
-            "from": "0057/FS-LIFECYCLE",
-            "classification": "strengthened",
-            "basis": "Shared native Store adds frozen content/inode/xattr checks and recovered read-only verification."
+            "from": "0058/FS-LIFECYCLE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -2011,9 +2080,9 @@
             }
           ],
           "migration": {
-            "from": "0057/FS-ADVERSARIAL",
-            "classification": "strengthened",
-            "basis": "Shared native Store adds frozen content/inode/xattr checks and recovered read-only verification."
+            "from": "0058/FS-ADVERSARIAL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -2039,9 +2108,9 @@
             }
           ],
           "migration": {
-            "from": "0057/FS-STORE",
-            "classification": "strengthened",
-            "basis": "Shared native Store adds frozen content/inode/xattr checks and recovered read-only verification."
+            "from": "0058/FS-STORE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         }
       ],
@@ -2050,7 +2119,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "319933176bf67f6a223d0c8d5a9974e65d44317e25b6f9d240bf206a496ebda7",
+          "crates/strop-fs/Cargo.toml": "00f42b966166bea7311af869824022de64c609400537ed4f4fa781de0e3c3025",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -2111,9 +2180,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SES-ROUNDTRIP",
+            "from": "0058/SES-ROUNDTRIP",
             "classification": "unchanged",
-            "basis": "Persisted session data still cannot create a worker lease or write permit; actual Store attempts remain session-owned."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2131,9 +2200,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SES-TRUST",
+            "from": "0058/SES-TRUST",
             "classification": "unchanged",
-            "basis": "Persisted session data still cannot create a worker lease or write permit; actual Store attempts remain session-owned."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -2193,9 +2262,9 @@
             }
           ],
           "migration": {
-            "from": "0057/INS-IDENTITY",
-            "classification": "strengthened",
-            "basis": "Release artifact identity now also supplies verified worker objects and version/protocol/target admission."
+            "from": "0058/INS-IDENTITY",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2215,9 +2284,9 @@
             }
           ],
           "migration": {
-            "from": "0057/INS-TRANSACTION",
-            "classification": "strengthened",
-            "basis": "Release artifact identity now also supplies verified worker objects and version/protocol/target admission."
+            "from": "0058/INS-TRANSACTION",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2232,9 +2301,9 @@
             }
           ],
           "migration": {
-            "from": "0057/REL-CATALOG",
-            "classification": "strengthened",
-            "basis": "Release artifact identity now also supplies verified worker objects and version/protocol/target admission."
+            "from": "0058/REL-CATALOG",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2254,14 +2323,14 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new PR/tag gate and exact candidate publication contract"
+            "from": "0058/REL-ASSURANCE-GATES",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "User-approved supported native profiles are GNU Linux x86_64/aarch64 and Apple Silicon; both Linux musl workers also execute over real authenticated SSH. All three retained native jobs passed in run 36301459526 from runtime source bf978405a38bcac1895f88d3c93600caa45550be. Each produced 64 matched Hello/Health/semantic-UI/physical-TUI/loaded-terminal, real rust-analyzer and 17.28 MiB transfer observations; every candidate retained one worker after open and zero after all 64 editor exits. Full raw reports bind each native executable digest, benchmark source, workspace/lock, pinned compiler selector, native workflow and 67 worker source hashes. Current installers, updater, bootstrap, source-build guards, Homebrew and catalog refuse retired Intel macOS rather than downloading ARM. No Intel qualification is required.",
+          "statement": "Historical 0058 release evidence, not a current-source 0059 timing claim: User-approved supported native profiles are GNU Linux x86_64/aarch64 and Apple Silicon; both Linux musl workers also execute over real authenticated SSH. All three retained native jobs passed in run 36301459526 from runtime source bf978405a38bcac1895f88d3c93600caa45550be. Each produced 64 matched Hello/Health/semantic-UI/physical-TUI/loaded-terminal, real rust-analyzer and 17.28 MiB transfer observations; every candidate retained one worker after open and zero after all 64 editor exits. Full raw reports bind each native executable digest, benchmark source, workspace/lock, pinned compiler selector, native workflow and 67 worker source hashes. Current installers, updater, bootstrap, source-build guards, Homebrew and catalog refuse retired Intel macOS rather than downloading ARM. No Intel qualification is required.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2286,14 +2355,14 @@
             },
             {
               "kind": "script",
-              "path": "verification/native_evidence.py",
-              "gate": "benchmark"
+              "path": "verification/freeze.py",
+              "gate": "release"
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new actual cross-platform execution proof; matrix wiring is not execution evidence"
+            "from": "0058/WPLAT-NATIVE",
+            "classification": "transferred",
+            "basis": "Preserve the released 0058 raw measurements under the immutable archive hash; replace obsolete live-source 0058 readers with the archive validator. Current native product/LSP/transfer journeys run again in the exact-source CI/release lanes; completion measurements have their own source and artifact binding."
           }
         }
       ],
@@ -2309,13 +2378,13 @@
         "sources": {
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
           ".github/scripts/release-catalog.py": "c96e67b8021d13b68e3bf7eef6527b200f37ca0d6fe50600d00dccdc959ac0ca",
-          ".github/workflows/ci.yml": "3d0e7477be2407b8a673fda0bf24c218d791883d68b8e56dd8305a8dd0c7d6f2",
-          ".github/workflows/release.yml": "ae41307f894fa3df9bf07a47d92f68d34285075a63f47b2a0a90e3ad071d369f",
+          ".github/workflows/ci.yml": "6f031fd9ba8c5bac7be8d279cdd7b85a1e812ced2e9afce15b21ed322eaa192d",
+          ".github/workflows/release.yml": "476a3ba3334940861dee2973c61e64d056c2f6f0250bdbbb2daa96621c8cc825",
           "crates/strop-terminal/build.rs": "b9c2bf1ff6f4412eabdf2314ec10b542d7a430fc9c5f8a58b8a2603f608237b2",
           "crates/strop/src/update.rs": "1bfede018d097ae69d56c5074cb89ab5aaf7b0c06983688849011df2db73300f",
           "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
         },
-        "evidence": "111546c28b8b4637a26889e3205f9fc403bce52833a2820043bb57ac56dae6c5"
+        "evidence": "7b064bd35257e0a60314ddc8d0bffaccd048177a42620e6eec0ff4c1bb0bf0a3"
       }
     },
     {
@@ -2379,9 +2448,9 @@
             }
           ],
           "migration": {
-            "from": "0057/TERM-PROTOCOL",
-            "classification": "strengthened",
-            "basis": "The local PTY is worker-owned and its VT bytes return credits; engine presentation and input consent remain separate."
+            "from": "0058/TERM-PROTOCOL",
+            "classification": "unchanged",
+            "basis": "Only the outer TUI idle/shutdown loop observes completion retirement; the PTY input/output/stop owner and terminal kernel are unchanged. Existing terminal journeys passed in the full workspace gate; reviewed boundary-local no-op for source stamping."
           }
         },
         {
@@ -2419,9 +2488,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "actual worker-leased terminal burst paints after bounded wake-order repair; no latency claim outside measured Linux host"
+            "from": "0058/TERM-WAKE-LOAD",
+            "classification": "unchanged",
+            "basis": "Only the outer TUI idle/shutdown loop observes completion retirement; the PTY input/output/stop owner and terminal kernel are unchanged. Existing terminal journeys passed in the full workspace gate; reviewed boundary-local no-op for source stamping."
           }
         },
         {
@@ -2442,9 +2511,9 @@
             }
           ],
           "migration": {
-            "from": "0057/TERM-WIRE",
-            "classification": "strengthened",
-            "basis": "The local PTY is worker-owned and its VT bytes return credits; engine presentation and input consent remain separate."
+            "from": "0058/TERM-WIRE",
+            "classification": "unchanged",
+            "basis": "Only the outer TUI idle/shutdown loop observes completion retirement; the PTY input/output/stop owner and terminal kernel are unchanged. Existing terminal journeys passed in the full workspace gate; reviewed boundary-local no-op for source stamping."
           }
         },
         {
@@ -2471,9 +2540,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "cross-platform key-encoder contract from real macOS native failure; a clean rerun remains required"
+            "from": "0058/TERM-ALT-INPUT",
+            "classification": "unchanged",
+            "basis": "Only the outer TUI idle/shutdown loop observes completion retirement; the PTY input/output/stop owner and terminal kernel are unchanged. Existing terminal journeys passed in the full workspace gate; reviewed boundary-local no-op for source stamping."
           }
         },
         {
@@ -2501,9 +2570,9 @@
             }
           ],
           "migration": {
-            "from": "0057/TERM-OWNERSHIP",
-            "classification": "strengthened",
-            "basis": "The local PTY is worker-owned and its VT bytes return credits; engine presentation and input consent remain separate."
+            "from": "0058/TERM-OWNERSHIP",
+            "classification": "unchanged",
+            "basis": "Only the outer TUI idle/shutdown loop observes completion retirement; the PTY input/output/stop owner and terminal kernel are unchanged. Existing terminal journeys passed in the full workspace gate; reviewed boundary-local no-op for source stamping."
           }
         }
       ],
@@ -2527,7 +2596,7 @@
           "crates/strop-terminal/src/vt/input.rs": "15bdef918d1fd1ac162d9be4b1b527f9bc33d45be241a88a54c99f35f7612bb2",
           "crates/strop-terminal/src/vt/mod.rs": "fe40a77f280f36c96769f9195d2c752151ad3e25871ba3947e7367dfd84a79d8",
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
-          "crates/strop/src/terminal.rs": "021a365c9d693c424bc496139ae106f02d923fa12187866fbec62383619379aa"
+          "crates/strop/src/terminal.rs": "323d4bc78a53c17c4a0db334d56618a5dc9e586b7dce9f6f2b40ddb61710c81e"
         },
         "evidence": "472938c1d682eaa20154f963976c7847e1a2feff556a6b9e1b3967e8ad6c8509"
       }
@@ -2565,9 +2634,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SRCH-INDUCTIVE-SAFETY",
-            "classification": "strengthened",
-            "basis": "Remote search explicitly admits a bound worker off input; local search query grammar and picker lifecycle remain editor-owned."
+            "from": "0058/SRCH-INDUCTIVE-SAFETY",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2589,9 +2658,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SRCH-MODEL",
-            "classification": "strengthened",
-            "basis": "Remote search explicitly admits a bound worker off input; local search query grammar and picker lifecycle remain editor-owned."
+            "from": "0058/SRCH-MODEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2620,9 +2689,9 @@
             }
           ],
           "migration": {
-            "from": "0057/SRCH-GUARD",
-            "classification": "strengthened",
-            "basis": "Remote search explicitly admits a bound worker off input; local search query grammar and picker lifecycle remain editor-owned."
+            "from": "0058/SRCH-GUARD",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -2687,9 +2756,9 @@
             }
           ],
           "migration": {
-            "from": "0057/UI-FRESHNESS",
-            "classification": "strengthened",
-            "basis": "The one UI-stdio engine now owns nested worker service results under the same bounded presentation protocol."
+            "from": "0058/UI-FRESHNESS",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2706,12 +2775,28 @@
                 "recorded_reordered_shell_outputs_keep_both_but_only_newest_focus",
                 "replay_preserves_rejected_filesystem_notification_status"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/tracing.rs",
+              "gate": "test",
+              "tests": [
+                "asynchronous_completion_macros_keep_vim_order_in_native_free_replay"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/ui_stdio/main.rs",
+              "gate": "test",
+              "tests": [
+                "protocol_states_match_the_headless_driver"
+              ]
             }
           ],
           "migration": {
-            "from": "0057/UI-REPLAY",
+            "from": "0058/UI-REPLAY",
             "classification": "strengthened",
-            "basis": "The one UI-stdio engine now owns nested worker service results under the same bounded presentation protocol."
+            "basis": "Completion controls are normalized when consumed; generated macro keys share the outer action boundary. Independent runs compare editing state, not schedule-dependent retirement counters; full replay checks its recorded deliveries."
           }
         },
         {
@@ -2742,12 +2827,21 @@
               "tests": [
                 "real_terminal_input_consent_quit_and_execution_free_replay"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests.rs",
+              "gate": "test",
+              "tests": [
+                "disable_revokes_queued_acceptance_and_reenable_does_not_restore_it",
+                "escape_revokes_a_cold_query_without_a_second_escape_or_text_change"
+              ]
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "A native GNU x86 UI shutdown exposed a silent physical source-thread completion after the last semantic event; shared bounded shutdown waiters now recheck that state without affecting input/render."
+            "from": "0058/UI-SHUTDOWN-LIVENESS",
+            "classification": "strengthened",
+            "basis": "The existing bounded retirement poll now also observes completion CPU thread exit after the terminal publication; input never joins the worker."
           }
         }
       ],
@@ -2758,14 +2852,14 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/frontend_input.rs": "2902349ea09990f0a4f85e0c6106e16e7ab29d7e2af59a4c4ee23bd21871ca27",
-          "crates/strop-engine/src/editor/events.rs": "411e92f14c42f643ea499ffcb83a67fae6a127a70662c6615dc659d2dfb7f338",
-          "crates/strop-engine/src/editor/input/frontend.rs": "12037bcb1c08fec236591d6bf36aa9ae449d3e6cf9465884deac106bef46c8fa",
+          "crates/strop-engine/src/editor/events.rs": "83f88f623a514196a2d187481167600c8e3027ad964ce7a8e2ef6a36372d0124",
+          "crates/strop-engine/src/editor/input/frontend.rs": "6365258a685914cb32b63eeedd2450b454044b3c102abc38ef718a889e55449f",
           "crates/strop/src/headless/directives.rs": "818a64a5998954089141b9829753b959d1b0cbd3ac4f647ed05259387f7720b5",
-          "crates/strop/src/headless/driver.rs": "b22e0d366bcdb6397ca442c038df1226c7be87b5be7eeef1143e5efe83173fb0",
+          "crates/strop/src/headless/driver.rs": "5287a2d3574a7ce7b1b0742ed226215a3fd34aec8b4fa7cb8cb4dd0d360df019",
           "crates/strop/src/replay.rs": "87b0acfb0525b1827389f80b31fa1979c7c6a08d89b6c35b62250659bec9c5e9",
-          "crates/strop/src/ui_stdio/serve.rs": "5f845cd95487a47e9c1f556dd4cf76f4733d6d6ad9a75009b8f03d195624ff68"
+          "crates/strop/src/ui_stdio/serve.rs": "f07d1fc71661cc6ee8837ac6534319308ccd4dfb29f025d5d5f1770a9b343107"
         },
-        "evidence": "a568497a5cc6fd4753c655505458ab16a94bf3604abadbb913c7004bc2e2a3d8"
+        "evidence": "931edaddbcaedce1fb591aa723ab82578d6680c0769e0e5375b23473d156cc27"
       }
     },
     {
@@ -2800,9 +2894,9 @@
             }
           ],
           "migration": {
-            "from": "0057/ID-EXHAUSTION",
+            "from": "0058/ID-EXHAUSTION",
             "classification": "unchanged",
-            "basis": "Existing editor generational IDs and exhaustion refusal still gate worker request IDs; new session IDs are checked by worker-protocol."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2821,9 +2915,9 @@
             }
           ],
           "migration": {
-            "from": "0057/ID-SEED",
+            "from": "0058/ID-SEED",
             "classification": "unchanged",
-            "basis": "Existing editor generational IDs and exhaustion refusal still gate worker request IDs; new session IDs are checked by worker-protocol."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2844,9 +2938,9 @@
             }
           ],
           "migration": {
-            "from": "0057/ID-KERNEL",
+            "from": "0058/ID-KERNEL",
             "classification": "unchanged",
-            "basis": "Existing editor generational IDs and exhaustion refusal still gate worker request IDs; new session IDs are checked by worker-protocol."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -2930,9 +3024,9 @@
             }
           ],
           "migration": {
-            "from": "0057/WP-CODEC",
-            "classification": "strengthened",
-            "basis": "Protocol v2 binds finite and PTY stream credits, abandon, and read-only cross-session Store verification."
+            "from": "0058/WP-CODEC",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2964,9 +3058,9 @@
             }
           ],
           "migration": {
-            "from": "0057/WP-GUARD",
-            "classification": "strengthened",
-            "basis": "Protocol v2 binds finite and PTY stream credits, abandon, and read-only cross-session Store verification."
+            "from": "0058/WP-GUARD",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -2990,9 +3084,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new same-source kernel consumed by this boundary (0058 WK18/WK19 verification cutover)"
+            "from": "0058/WP-FRAME-KERNEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -3073,9 +3167,9 @@
             }
           ],
           "migration": {
-            "from": "0057/WS-SERVE",
-            "classification": "strengthened",
-            "basis": "Scheduler and process pumps now preserve output-before-exit and keep control responsive under credit stalls."
+            "from": "0058/WS-SERVE",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
@@ -3101,9 +3195,9 @@
             }
           ],
           "migration": {
-            "from": "0057/WS-CLIENT",
-            "classification": "strengthened",
-            "basis": "Scheduler and process pumps now preserve output-before-exit and keep control responsive under credit stalls."
+            "from": "0058/WS-CLIENT",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
@@ -3138,9 +3232,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "real OS kill and editor acceptance exposed a prepare/apply session-boundary gap hidden by timing; same-source core classifier now gates the client before mutation"
+            "from": "0058/WS-PREPARED-SESSION",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
@@ -3170,9 +3264,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new matched warm-launch artifact and memory observations without extrapolating speedups"
+            "from": "0058/WS-WARM-HANDSHAKE",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
@@ -3192,9 +3286,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new scoped real worker control input-to-frame sample; not a full WK20 performance qualification"
+            "from": "0058/WS-WARM-CONTROL",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
@@ -3224,9 +3318,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "scoped visible-editor semantic-frame measurement through one actual worker-backed file; not TUI paint or the full performance gate"
+            "from": "0058/WS-UI-FRAME",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
@@ -3264,14 +3358,14 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "scoped exact-visible-cell PTY paint benchmark on actual product and two pinned artifacts; full WK20 performance still open"
+            "from": "0058/WS-TUI-FRAME",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
           "id": "WPERF-LSP-LOCAL",
-          "statement": "Matched a05d84f and post-Intel-removal worker SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 each completed 64 real rust-analyzer gd requests through a 120x40 UI after eight warmups on WSL2. Baseline/candidate p50/p95/p99/max 25.780/26.121/26.366/26.366 and 25.666/25.924/27.481/27.481 ms. 64 edit-to-didChange-to-gd-to-paint requests measured 26.055/27.789/29.141/29.141 and 26.017/26.354/26.780/26.780 ms. This combined route is not didChange acknowledgment latency. Each retained one real worker; raw samples/server version and method/artifact hashes are bound. Qualification jobs shared the host; no idle-host guarantee.",
+          "statement": "Historical 0058 release evidence, not a current-source 0059 timing claim: Matched a05d84f and post-Intel-removal worker SHA256 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 each completed 64 real rust-analyzer gd requests through a 120x40 UI after eight warmups on WSL2. Baseline/candidate p50/p95/p99/max 25.780/26.121/26.366/26.366 and 25.666/25.924/27.481/27.481 ms. 64 edit-to-didChange-to-gd-to-paint requests measured 26.055/27.789/29.141/29.141 and 26.017/26.354/26.780/26.780 ms. This combined route is not didChange acknowledgment latency. Each retained one real worker; raw samples/server version and method/artifact hashes are bound. Qualification jobs shared the host; no idle-host guarantee.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3280,25 +3374,25 @@
               "gate": "benchmark"
             },
             {
-              "kind": "script",
-              "path": "verification/lsp_evidence.py",
-              "gate": "benchmark"
-            },
-            {
               "kind": "measurement",
               "path": "verification/measurements/0058-linux-x86-lsp-ui.json",
               "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/freeze.py",
+              "gate": "release"
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "real installed rust-analyzer product requests and edit-to-reply upper bound, same-host preworker/current artifacts only"
+            "from": "0058/WPERF-LSP-LOCAL",
+            "classification": "transferred",
+            "basis": "Preserve the released 0058 raw measurements under the immutable archive hash; replace obsolete live-source 0058 readers with the archive validator. Current native product/LSP/transfer journeys run again in the exact-source CI/release lanes; completion measurements have their own source and artifact binding."
           }
         },
         {
           "id": "WPERF-FULL",
-          "statement": "Exact static worker 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 passed nine matched 64-sample local product paths, 64 real rust-analyzer request/edit-to-paint paths per artifact,64 Python-free authenticated TCP SSH cold/warm/live paths and 64 no-init Docker cold/warm/live paths. The 17,280,000-byte transfer left zero workers after all 64 current editor exits versus 64 pre-worker survivors; worker VmHWM p50 was 7,232 versus 5,036 KiB. Local open-to-visible p50 was 104.601 versus 78.876 ms with concurrent qualification-host work, not an isolated comparison. Retained GNU x86_64/aarch64 and Apple Silicon each independently passed 64-sample native product/LSP/transfer qualification in run 36301459526, also with zero current workers after exit. Raw summaries, exact artifacts and source/method inputs are mechanically checked. Nonreaping BusyBox PID 1 retained 894 external sh/cat zombies including 71 fixture resets; user explicitly kept no-init support with this caveat, not a whole-container process-table bound. Intel macOS was explicitly retired. These scoped observations do not establish universal latency, memory or WAN bounds.",
+          "statement": "Historical 0058 release evidence, not a current-source 0059 timing claim: Exact static worker 5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494 passed nine matched 64-sample local product paths, 64 real rust-analyzer request/edit-to-paint paths per artifact,64 Python-free authenticated TCP SSH cold/warm/live paths and 64 no-init Docker cold/warm/live paths. The 17,280,000-byte transfer left zero workers after all 64 current editor exits versus 64 pre-worker survivors; worker VmHWM p50 was 7,232 versus 5,036 KiB. Local open-to-visible p50 was 104.601 versus 78.876 ms with concurrent qualification-host work, not an isolated comparison. Retained GNU x86_64/aarch64 and Apple Silicon each independently passed 64-sample native product/LSP/transfer qualification in run 36301459526, also with zero current workers after exit. Raw summaries, exact artifacts and source/method inputs are mechanically checked. Nonreaping BusyBox PID 1 retained 894 external sh/cat zombies including 71 fixture resets; user explicitly kept no-init support with this caveat, not a whole-container process-table bound. Intel macOS was explicitly retired. These scoped observations do not establish universal latency, memory or WAN bounds.",
           "status": "native-tested",
           "evidence": [
             {
@@ -3362,25 +3456,20 @@
               "gate": "benchmark"
             },
             {
-              "kind": "script",
-              "path": "verification/transfer_evidence.py",
-              "gate": "benchmark"
-            },
-            {
               "kind": "measurement",
               "path": "verification/measurements/0058-retained-native-platforms.json",
               "gate": "benchmark"
             },
             {
               "kind": "script",
-              "path": "verification/native_evidence.py",
-              "gate": "benchmark"
+              "path": "verification/freeze.py",
+              "gate": "release"
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new full product-performance qualification boundary explicitly outside local welcome measurement"
+            "from": "0058/WPERF-FULL",
+            "classification": "transferred",
+            "basis": "Preserve the released 0058 raw measurements under the immutable archive hash; replace obsolete live-source 0058 readers with the archive validator. Current native product/LSP/transfer journeys run again in the exact-source CI/release lanes; completion measurements have their own source and artifact binding."
           }
         },
         {
@@ -3408,9 +3497,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new same-source kernel consumed by this boundary (0058 WK18/WK19 verification cutover)"
+            "from": "0058/WS-RECOVERY-KERNEL",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         },
         {
@@ -3458,9 +3547,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "worker-owned session records replace the deployment probe's stale lease as the live cache authority"
+            "from": "0058/WS-ACTIVE-LEASE",
+            "classification": "unchanged",
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
           }
         }
       ],
@@ -3469,7 +3558,8 @@
         "benchmark",
         "verify",
         "ssh-pythonfree",
-        "container-test"
+        "container-test",
+        "release"
       ],
       "pins": {
         "sources": {
@@ -3477,7 +3567,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "b9df6a96a00edd766c2ea653ab6b3a96e36aad19a10abf0436281ec39aeaec1a",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "319933176bf67f6a223d0c8d5a9974e65d44317e25b6f9d240bf206a496ebda7",
+          "crates/strop-fs/Cargo.toml": "00f42b966166bea7311af869824022de64c609400537ed4f4fa781de0e3c3025",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -3485,21 +3575,21 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "dcfb9421e65710f749e2080673bc1a88747e715bf60faeaae71fdef1ce70a5df",
+          "crates/strop-worker/Cargo.toml": "0c64cbdf376ee0856b42fe8539b91e2ba261f7e33a9d3b25449bb31947784bdb",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
-          "crates/strop/tests/terminal_editor.rs": "67f9bc566bf397807fecb37295165143130da3db5d91dadad8182b197b8d562b",
-          "verification/bench_native_product.py": "b6e300e470c8f4f0ea4ca55c593195ebc89f4f48bb747bd835ff2cfc990d6878",
+          "crates/strop/tests/terminal_editor.rs": "7d0d6836299c75cf244d2d4de09689ae2a0b5820fb7901f5a44094aa8c8a1234",
+          "verification/bench_native_product.py": "50ee0914d6e5f7285bc9fa693bc62b0bac84a90b5dd052e1ee88b7b420dded29",
           "verification/bench_transfer_ui.py": "d1f5b711804e3f9d581c4f906051581834422a00c8349f4533b4696a21e4bd73",
           "verification/bench_ui_input_frame.py": "9f101ac04c9be6e772533bb4f7e02003a6c6263f6ff1dfd0d1e1c457afc05a9d",
           "verification/bench_worker.py": "bbd7106fb0e89ca3b702cf958e03c9947a5ba2eabe76fd1be217b65182dc1583",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "cb3498dcdd4d6d2574dd72131e122c22521f763e4b484e3b69eaca2b9ea647c3"
+        "evidence": "f192d94088343fb5d4c1dd88350654b32807a0fec2391b69b755d6e6e005bdd7"
       }
     },
     {
@@ -3589,9 +3679,9 @@
             }
           ],
           "migration": {
-            "from": "0057/NOTIFY-MODEL",
-            "classification": "strengthened",
-            "basis": "Trace-owned hints are filtered before editor wake; worker subscriptions retain generation and overflow semantics."
+            "from": "0058/NOTIFY-MODEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -3622,9 +3712,9 @@
             }
           ],
           "migration": {
-            "from": "0057/NOTIFY-KERNEL",
-            "classification": "strengthened",
-            "basis": "Trace-owned hints are filtered before editor wake; worker subscriptions retain generation and overflow semantics."
+            "from": "0058/NOTIFY-KERNEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -3668,9 +3758,9 @@
             }
           ],
           "migration": {
-            "from": "0057/NOTIFY-ENGINE",
-            "classification": "strengthened",
-            "basis": "Trace-owned hints are filtered before editor wake; worker subscriptions retain generation and overflow semantics."
+            "from": "0058/NOTIFY-ENGINE",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -3692,9 +3782,9 @@
             }
           ],
           "migration": {
-            "from": "0057/NOTIFY-PICKER",
-            "classification": "strengthened",
-            "basis": "Trace-owned hints are filtered before editor wake; worker subscriptions retain generation and overflow semantics."
+            "from": "0058/NOTIFY-PICKER",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -3768,9 +3858,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new deployment/cache model"
+            "from": "0058/WDEP-MODEL",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -3827,9 +3917,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new verified-object admission boundary"
+            "from": "0058/WDEP-ACTIVATE",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -3865,9 +3955,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new selected-container worker admission"
+            "from": "0058/WDEP-CONTEXT",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -3901,9 +3991,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "real selected-container deployment and direct native-worker measurements scoped to Linux x86_64; PID 1 reaping remains an explicit boundary"
+            "from": "0058/WDEP-CONTAINER-PERF",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -3995,9 +4085,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "worker-native scoped GC with shared OS exclusion, real multi-worker/SSH/container correspondence, bounded model and generalized lock/snapshot/retire TLAPS induction; native macOS/arm release evidence remains a separate WPLAT-NATIVE blocker"
+            "from": "0058/WDEP-GC",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -4033,9 +4123,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "generalized activation/cache-retirement theorem discharged by TLAPS over the TLC transition relation with a matched cross-context negative control"
+            "from": "0058/WDEP-TLAPS",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -4089,9 +4179,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "same-source admission/cleanup kernels proved against the pinned Verus toolchain and consumed by the shipped deploy and GC code"
+            "from": "0058/WDEP-VERUS",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -4117,9 +4207,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new concurrent verified cache creation path independent of later retirement"
+            "from": "0058/WDEP-CACHE-CONCURRENT",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         },
         {
@@ -4150,9 +4240,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new native Python-free target portability condition, discharged by a dedicated OpenSSH gate"
+            "from": "0058/WDEP-SSH-PYTHONFREE",
+            "classification": "unchanged",
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
           }
         }
       ],
@@ -4171,7 +4261,7 @@
           "crates/strop-core/src/worker/cache_record.rs": "3030cb87bc678044938ad67758f10d8d0ab06c7b59f0b05c329cf25cebc77292",
           "crates/strop-core/src/worker/deploy_policy.rs": "b07466797094af38dd676c242b4cd93754c2b4be64cead12190f6d666d5eaf63",
           "crates/strop-engine/src/editor/containers/container_worker.rs": "c4a44070ced71e7ee7272a4dda8c8be9de6736a14f10fb2912c0cc3a9f8adf5e",
-          "crates/strop-engine/src/editor/explain.rs": "06d50bc1af2abffb46dbde57aca49cbcb3dc80078b14b6f0369cbc13a6cd6644",
+          "crates/strop-engine/src/editor/explain.rs": "1036ba9aa8dba0054bcb9990c774f1293c543fa654c10b355408f3965346ba7a",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/workers.rs": "b887d7b9a7fcfccbdcacdd6a6cfd27c0f161f555207fec06e77fac741582b5a6",
           "crates/strop-remote/src/deploy_provider.rs": "8f47f3e3b11e3bb2aed7fe5c0a095c20e270fb461cf1d9a0d731cdb3d59a52a3",
@@ -4182,11 +4272,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "dcfb9421e65710f749e2080673bc1a88747e715bf60faeaae71fdef1ce70a5df",
+          "crates/strop-worker/Cargo.toml": "0c64cbdf376ee0856b42fe8539b91e2ba261f7e33a9d3b25449bb31947784bdb",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "5a51ce1ce022b6a464958abd67d214b3d58a008e463746b33ca64677239f28f2"
+          "crates/strop/Cargo.toml": "838cf8a58bbb957634c6e742a52af4995845be00f9187580e26255781b495a90"
         },
         "evidence": "fa003ee1d52f4ff796cd0935cfa4329c45f3f91080a345f71296423408cc3a4a"
       }
@@ -4240,9 +4330,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new session/stream correspondence model"
+            "from": "0058/WSTR-MODEL",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -4297,9 +4387,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new bounded real-stream flow control"
+            "from": "0058/WSTR-CREDITS",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         },
         {
@@ -4326,9 +4416,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new child/wire isolation and exact exec ownership"
+            "from": "0058/WSTR-ISOLATION",
+            "classification": "unchanged",
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
         }
       ],
@@ -4393,9 +4483,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new post-loss session/effect model"
+            "from": "0058/WREC-MODEL",
+            "classification": "unchanged",
+            "basis": "Remote save uses an extracted identical permit/file equality predicate, and local save opens the same explicit current LSP document. Store receipts, uncertainty, reconciliation and recovery decisions are unchanged; reviewed predicate/call-site-only migration."
           }
         },
         {
@@ -4425,9 +4515,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new native recovery observer and effect correspondence"
+            "from": "0058/WREC-NATIVE",
+            "classification": "unchanged",
+            "basis": "Remote save uses an extracted identical permit/file equality predicate, and local save opens the same explicit current LSP document. Store receipts, uncertainty, reconciliation and recovery decisions are unchanged; reviewed predicate/call-site-only migration."
           }
         },
         {
@@ -4455,9 +4545,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new editor source/receipt authority transfer"
+            "from": "0058/WREC-EDITOR",
+            "classification": "unchanged",
+            "basis": "Remote save uses an extracted identical permit/file equality predicate, and local save opens the same explicit current LSP document. Store receipts, uncertainty, reconciliation and recovery decisions are unchanged; reviewed predicate/call-site-only migration."
           }
         },
         {
@@ -4487,9 +4577,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "new generalized session/recovery model theorem discharged by TLAPS over the TLC transition relation with a matched stale-commit negative control"
+            "from": "0058/WREC-TLAPS",
+            "classification": "unchanged",
+            "basis": "Remote save uses an extracted identical permit/file equality predicate, and local save opens the same explicit current LSP document. Store receipts, uncertainty, reconciliation and recovery decisions are unchanged; reviewed predicate/call-site-only migration."
           }
         },
         {
@@ -4544,9 +4634,9 @@
             }
           ],
           "migration": {
-            "from": null,
-            "classification": "new",
-            "basis": "framing, recovery and terminal kernels proved same-source and consumed by the wire codec, recovered verifier and effect resolver"
+            "from": "0058/WREC-VERUS",
+            "classification": "unchanged",
+            "basis": "Remote save uses an extracted identical permit/file equality predicate, and local save opens the same explicit current LSP document. Store receipts, uncertainty, reconciliation and recovery decisions are unchanged; reviewed predicate/call-site-only migration."
           }
         }
       ],
@@ -4559,8 +4649,8 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/worker/recovery_policy.rs": "07f72ace1b5d56ca63fd95e7fee64b18aca23849a76efd6d7c90192c1574c7ba",
-          "crates/strop-engine/src/editor/io/save.rs": "ac146535292965bef545a9dab66a1fd00eff35afd43c1e08ee95d390f09b5613",
-          "crates/strop-engine/src/editor/remote/save.rs": "b548ed478153246baab80c12f98cfc5468f182a55b95e3da07e74e9e7c5d5053",
+          "crates/strop-engine/src/editor/io/save.rs": "d8c74f11094fed3ce9b2116bb9556bccba7e247774cb081b987b4674781a5980",
+          "crates/strop-engine/src/editor/remote/save.rs": "27b7a5e7fd9c69670c1928d1d4bd5d5b474d7e4642ff4922556f2c64e6fa0caf",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/src/local/verify.rs": "7a40cb78d0203882accbb5bbfdfbffe16d055d6efeb468b1e2202ec20010c8fe",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
@@ -4568,10 +4658,590 @@
         },
         "evidence": "4f8378b6828cdcc0461d7700b816677655bb548b7f204fd628bd32b6f8b32aac"
       }
+    },
+    {
+      "id": "completion-lifecycle",
+      "kind": "lifecycle",
+      "title": "Source-owned completion query, index, presentation and acceptance (0059)",
+      "promise": "Explicit and automatic completion consume the same bounded native providers; obsolete source/view/service/selection/settings owners cannot publish or apply, represented imports join one Insert undo group, and final large candidate destruction remains native.",
+      "exclusions": "No snippets, server-command execution, heterogeneous semantic multicursor edits, or unbounded source/metadata support. Timing and sampled RSS observations are not universal latency guarantees. Generalized TLAPS proves freshness/error-flag preservation, not Rust atomics, rope internals or OS fairness.",
+      "authoritative_state": "CompletionContext/LanguageContext and exact source projections; Session query/selection/preparation tickets; persistent Worker source maintenance; CompletionMailbox native owners and transferred acceptance plan.",
+      "trusted": [
+        "Ropey storage and indexed UTF-8/UTF-16 coordinates",
+        "OS scheduling and allocation within explicitly bounded work",
+        "Shared validated mutation/projectguard kernels and the existing language-service placement registry"
+      ],
+      "files": [
+        "crates/strop-engine/src/editor/completion/mod.rs",
+        "crates/strop-engine/src/editor/completion/context.rs",
+        "crates/strop-engine/src/editor/completion/model.rs",
+        "crates/strop-engine/src/editor/completion/session.rs",
+        "crates/strop-engine/src/editor/completion/admission.rs",
+        "crates/strop-engine/src/editor/completion/lifecycle.rs",
+        "crates/strop-engine/src/editor/completion/provider.rs",
+        "crates/strop-engine/src/editor/completion/delivery.rs",
+        "crates/strop-engine/src/editor/completion/interaction.rs",
+        "crates/strop-engine/src/editor/completion/acceptance.rs",
+        "crates/strop-engine/src/editor/completion/apply.rs",
+        "crates/strop-engine/src/editor/completion/mailbox.rs",
+        "crates/strop-engine/src/editor/completion/mailbox/prepared.rs",
+        "crates/strop-engine/src/editor/completion/worker/mod.rs",
+        "crates/strop-engine/src/editor/completion/worker/drive.rs",
+        "crates/strop-engine/src/editor/completion/worker/work.rs",
+        "crates/strop-engine/src/editor/completion/words/mod.rs",
+        "crates/strop-engine/src/editor/completion/words/scan.rs",
+        "crates/strop-engine/src/editor/completion/words/windows.rs",
+        "crates/strop-engine/src/editor/completion/words/journal.rs",
+        "crates/strop-engine/src/editor/completion/presentation.rs",
+        "crates/strop-engine/src/editor/resolution/mod.rs",
+        "crates/strop-engine/src/editor/trace/seed.rs",
+        "crates/strop-engine/src/editor/trace/snapshot.rs",
+        "crates/strop-engine/src/config.rs",
+        "crates/strop/src/render/completion.rs"
+      ],
+      "gates": [
+        "test",
+        "model",
+        "tlaps",
+        "benchmark",
+        "core-assurance"
+      ],
+      "claims": [
+        {
+          "id": "CMP-OWNERSHIP-MODEL",
+          "statement": "Latest query admission does not restart source index maintenance; presentation and acceptance independently check epoch/selection freshness; bounded native retention never transfers final snapshot destruction to a UI lease. Finite-state checks include seven targeted faults and reached apply/retire/cancel witnesses.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/CompletionOwnership.tla",
+              "config": "specs/cfg/completion-ownership.cfg",
+              "gate": "model"
+            },
+            {
+              "kind": "script",
+              "path": "specs/completion-gate.sh",
+              "gate": "model"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New completion ownership/retirement transitions extend, rather than inherit, 0058 guarantees."
+          }
+        },
+        {
+          "id": "CMP-FRESH-TLAPS",
+          "statement": "For arbitrary generation and slot domains, honest CompletionOwnership transitions preserve exact false stale-publication/stale-presentation/stale-acceptance/index-restart flags. The independent apply-time guard has a matched positive and deliberately unprovable negative control. No generalized byte-budget or liveness theorem is claimed.",
+          "status": "proved-theorem",
+          "evidence": [
+            {
+              "kind": "proof",
+              "path": "specs/CompletionOwnershipProofs.tla",
+              "gate": "tlaps"
+            },
+            {
+              "kind": "proof",
+              "path": "specs/CompletionOwnership_CleanProofs.tla",
+              "gate": "tlaps"
+            },
+            {
+              "kind": "script",
+              "path": "specs/tlaps-gate.sh",
+              "gate": "tlaps"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New generalized freshness induction on the same transition relation used by TLC, with explicit-record representation supported by the pinned prover."
+          }
+        },
+        {
+          "id": "CMP-WORD-INDEX",
+          "statement": "Incremental pre-edit journal windows preserve the independently computed word counts across Unicode/CRLF changes, bounded long lines, missed revisions, cancellation and sustained coalesced typing; count/text/query bounds are independent.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/words/tests.rs",
+              "gate": "test",
+              "tests": [
+                "sequential_interacting_journals_match_an_independent_full_index",
+                "distant_cursor_edits_do_not_rescan_the_intervening_megabyte_line",
+                "sustained_typing_compacts_geometry_without_restarting_a_busy_index",
+                "retained_word_count_and_text_bytes_have_independent_bounds",
+                "interrupted_maintenance_never_publishes_partially_updated_counts"
+              ]
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0059-linux-x86-completion.json",
+              "gate": "benchmark"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New incremental current-source index and compact journal use the existing mutation publication feed."
+          }
+        },
+        {
+          "id": "CMP-ACCEPTANCE",
+          "statement": "Primary edits and represented imports validate as one operation; invalid coordinates/overlap/unsupported effects refuse; source projection, service placement and selection remain authoritative; macro continuation cannot let Escape overtake asynchronous acceptance.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/acceptance/tests.rs",
+              "gate": "test",
+              "tests": [
+                "text_edit_wins_over_insert_text_and_label_and_imports_undo_with_it",
+                "required_resolve_keeps_text_unchanged_until_the_import_is_available",
+                "invalid_ranges_overlapping_imports_and_unsupported_effects_refuse_whole_items",
+                "mirrored_primary_edits_apply_the_document_import_once"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests/language.rs",
+              "gate": "test",
+              "tests": [
+                "prepared_completion_does_not_apply_after_language_service_rebinding"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests/sources.rs",
+              "gate": "test",
+              "tests": [
+                "collection_semantic_acceptance_maps_caret_and_undo_with_an_import_outside_the_excerpt",
+                "collection_words_come_from_primary_source_and_apply_to_compatible_sources"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests.rs",
+              "gate": "test",
+              "tests": [
+                "macro_completion_waits_for_its_query_and_acceptance_without_overtaking_escape"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "Completion plans use the existing mutation gateway and source receipt rather than direct rope mutation or discarded imports."
+          }
+        },
+        {
+          "id": "CMP-LIFECYCLE-CONTROLS",
+          "statement": "Disabled completion retires its own worker and revokes pending acceptance; manual-only mode never initiates automatic queries but updates an active manual session; startup failures latch instead of spawning once per key.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests.rs",
+              "gate": "test",
+              "tests": [
+                "manual_only_stays_idle_until_requested_then_keeps_up_with_typing",
+                "disable_revokes_queued_acceptance_and_reenable_does_not_restore_it",
+                "failed_worker_start_does_not_retry_on_every_keystroke"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/context/tests.rs",
+              "gate": "test",
+              "tests": [
+                "namespace_write_policy_and_full_windows_are_independent_of_the_readonly_flag"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New settings/source-capability lifecycle is independent of ordinary shared language servers and syntax services."
+          }
+        },
+        {
+          "id": "CMP-NATIVE-RETIREMENT",
+          "statement": "A stale or last UI lease cannot destroy a large candidate snapshot; obsolete producers cannot erase unseen newer publication; cancellation crosses a full retirement budget without waiting for UI leases.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/mailbox/tests.rs",
+              "gate": "test",
+              "tests": [
+                "ui_releasing_a_large_candidate_snapshot_is_not_its_final_owner",
+                "an_obsolete_producer_cannot_remove_an_unobserved_newest_snapshot",
+                "cancellation_crosses_a_full_retirement_budget_without_waiting_for_ui_leases"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New bounded publication ledger and native final owners replace synchronous UI snapshot reclamation."
+          }
+        },
+        {
+          "id": "CMP-PRESENTATION",
+          "statement": "Selected prefix/kind/source hierarchy uses styled cells and actual caret geometry, including wide text, tabs, narrow panes, split isolation and bottom-edge placement; documentation shares syntax styles and does not cover the caret.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/completion/tests.rs",
+              "gate": "test",
+              "tests": [
+                "selected_word_cells_keep_prefix_hierarchy_and_real_unicode_anchor",
+                "narrow_split_and_bottom_edge_keep_card_inside_owning_pane_off_caret",
+                "documentation_uses_shared_syntax_styles_and_never_reclaims_the_caret_row"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor/completion.rs",
+              "gate": "test",
+              "tests": [
+                "completion_physical_word_keys_resize_accept_escape_and_undo"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New borrowed completion presentation is painted through the real TUI renderer and physical key route."
+          }
+        },
+        {
+          "id": "CMP-REPLAY-PRIVACY",
+          "statement": "Full recorded provider/acceptance/macro journeys replay without native providers; metadata capture excludes candidate and opaque protocol contents. A complete capture, not extracted keystrokes, is the replay authority.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/tracing.rs",
+              "gate": "test",
+              "tests": [
+                "completion_payloads_obey_privacy_and_full_replay_needs_no_provider",
+                "asynchronous_completion_macros_keep_vim_order_in_native_free_replay"
+              ]
+            },
+            {
+              "kind": "script",
+              "path": "verification/completion_capture.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0059-linux-x86-completion.json",
+              "gate": "benchmark"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "Completion operations cross the existing content-classified tape, not unrestricted debug logs."
+          }
+        },
+        {
+          "id": "CMP-PRESSURE-JOURNEYS",
+          "statement": "Actual backend and TUI scenarios exercise cold/warm source indexing, large/unique/megabyte-line sources, disabled/manual/automatic modes, ignoring/oversized/lazy LSP responses, stable late-source selection, coherent imports, repeated source replacement and owned-worker exit. Stage timings and OS RSS are explicitly distinguished from guarantees.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "script",
+              "path": "verification/bench_completion.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/completion_driver.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/completion_server.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "crates/strop/src/bench/completion.rs",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor/completion.rs",
+              "gate": "benchmark",
+              "tests": [
+                "completion_real_clangd_docs_narrow_split_and_acceptance",
+                "completion_held_language_keeps_physical_typing_resize_and_split_live"
+              ]
+            },
+            {
+              "kind": "script",
+              "path": "verification/qualify_completion.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "script",
+              "path": "verification/completion_evidence.py",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0059-linux-x86-completion.json",
+              "gate": "benchmark"
+            },
+            {
+              "kind": "measurement",
+              "path": "verification/measurements/0059-linux-x86-typing-before.json",
+              "gate": "benchmark"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New actual-program pressure methods qualify completion separately from archived worker timings."
+          }
+        }
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-engine/src/config.rs": "898c641c384708a3552f29e9b6f5070df336f681447ee9a8e6cc9a4fa3a6f505",
+          "crates/strop-engine/src/editor/completion/acceptance.rs": "b8497a7323a6eecd5ae7693dd7aec5eac8782a4a1f2f6a2ce3c8c1d988d09301",
+          "crates/strop-engine/src/editor/completion/admission.rs": "582113243eaf44c56ad8c58d4158d4d7d30936cbbf61e99b7ab23b922fc71718",
+          "crates/strop-engine/src/editor/completion/apply.rs": "89213e5d5bd3a4924ba2a1df7d773de368a375135e3462d412c0db89b30a110b",
+          "crates/strop-engine/src/editor/completion/context.rs": "237e44539330ae14e05cd1a280347a187d1ca377e4d53b5c6c433550348b65bc",
+          "crates/strop-engine/src/editor/completion/delivery.rs": "05c080d04504f1b9259eefea642c3f0a3e2479be6cc927b8a623fdc8dc02da7f",
+          "crates/strop-engine/src/editor/completion/interaction.rs": "b6b1c90dbc8ec67c1061b0547ef1ef508394e0a0d494867d354ac584fe6e70a8",
+          "crates/strop-engine/src/editor/completion/lifecycle.rs": "0db670889a5953e848395693237f4c0e871412e2d39ed44da5debe8d9161beb6",
+          "crates/strop-engine/src/editor/completion/mailbox.rs": "2b1d2bcbbf651238ce4b1d25129a1594310bebc2629f48ab0f18693134dc4e28",
+          "crates/strop-engine/src/editor/completion/mailbox/prepared.rs": "9683efa9cc77a41ae5cb1d1f731f6401bbe281b5d51767f3d7538d98afb9d599",
+          "crates/strop-engine/src/editor/completion/mod.rs": "c4dcd67c1dde91962da72298aef90caf380527410a5791ee28d75f6ea5fb4a55",
+          "crates/strop-engine/src/editor/completion/model.rs": "d9947a545cb7f812121290b798adf23295867905ae8239e345f121be38383153",
+          "crates/strop-engine/src/editor/completion/presentation.rs": "4f60684024cc0411f9b6d0a7d0491f83b8d91fb9c64e47b378532d3c70ed275f",
+          "crates/strop-engine/src/editor/completion/provider.rs": "3dc623e8a745ad84ad4fe89d1387e791cf84eb40a10f85678868d1e29fc0b900",
+          "crates/strop-engine/src/editor/completion/session.rs": "2f41df6fd87594f70d89c9fc4a3f449c62705bf4595c0cba9116a38ce0f959b2",
+          "crates/strop-engine/src/editor/completion/words/journal.rs": "82efbdad10c1287f68a83687dc0b8fa6ccec9f96972ad8bd8bf006d38e33e286",
+          "crates/strop-engine/src/editor/completion/words/mod.rs": "2c776bf79e8c0289b35d9e1e32ad7c5f76b02fc9a74407ee312d08445887010a",
+          "crates/strop-engine/src/editor/completion/words/scan.rs": "97315abc4d7b1c44f6ff60b4ff8a395dc20cc97c09ac1bcba6a9d64bc2aa2395",
+          "crates/strop-engine/src/editor/completion/words/windows.rs": "c507f81cc14a7d00582cf3258eb16e0edb89af61c9c42ce97c4f3518bcb2a6fc",
+          "crates/strop-engine/src/editor/completion/worker/drive.rs": "9e270f88b3e6c94536b9bcc7e099a95e3f631a2d10c19fec359a5b6bce4d1155",
+          "crates/strop-engine/src/editor/completion/worker/mod.rs": "edb377ec3a5022b0897d11851d13717ace9350dbd303e5592563eb43a84a6bd1",
+          "crates/strop-engine/src/editor/completion/worker/work.rs": "0de0702c6e0112ea1659e3926733e32548005d3ca29ab3a78140724860d98566",
+          "crates/strop-engine/src/editor/resolution/mod.rs": "1f025d605b58636bb67402fb8839d91856bb4a4ccf66fddec02763c0cfc4d2ae",
+          "crates/strop-engine/src/editor/trace/seed.rs": "39b9b6ca5a14d1df879eb10ccdbca51d98cd7646362c9838a8f20b723b439c8c",
+          "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
+          "crates/strop/src/render/completion.rs": "39a346d746437d5a6a761c0387e3e1a90faa3e0d9ca39adaaa734fb69ab32984"
+        },
+        "evidence": "657406982d426035e762b5b4b2096e0514bddc0c42364405ba097bda2a4afe25"
+      }
+    },
+    {
+      "id": "completion-transport",
+      "kind": "transport",
+      "title": "Completion synchronization, physical requests and bounded protocol values (0059)",
+      "promise": "Completion query/resolve preserve exact stamped coordinates and represented item identity, share a bounded two-request physical registry, retain sent slots after logical cancellation, and cannot cross an unflushed synchronization barrier or allocate unbounded incoming frames/items.",
+      "exclusions": "A malicious or ignoring peer need not answer cancellation; it can occupy its bounded physical slots until close. JSON/Ropey/runtime internals and peer semantic correctness are not proved. Native counter/memory bounds are conservative charges, not total process RSS.",
+      "authoritative_state": "Client completion Registry request controls, actual encoded RPC identities, Outbound notification flush receipts, ordered WireQueue and immutable bounded completion DTOs.",
+      "trusted": [
+        "async-lsp runtime after the always-on incoming framing guard",
+        "OS pipes, native worker transport and executor scheduling",
+        "Ropey indexed coordinate conversions"
+      ],
+      "files": [
+        "crates/strop-lsp/src/completion/mod.rs",
+        "crates/strop-lsp/src/completion/decode.rs",
+        "crates/strop-lsp/src/completion/filter.rs",
+        "crates/strop-lsp/src/positions.rs",
+        "crates/strop-lsp/src/client/completion/mod.rs",
+        "crates/strop-lsp/src/client/completion/registry.rs",
+        "crates/strop-lsp/src/client/completion/run.rs",
+        "crates/strop-lsp/src/client/frame_limits.rs",
+        "crates/strop-lsp/src/client/outbound.rs",
+        "crates/strop-lsp/src/client/outbound/prefix.rs",
+        "crates/strop-lsp/src/client/queue.rs",
+        "crates/strop-lsp/src/client/wire.rs",
+        "crates/strop-lsp/src/client/spawn.rs"
+      ],
+      "gates": [
+        "test",
+        "model",
+        "benchmark",
+        "core-assurance"
+      ],
+      "claims": [
+        {
+          "id": "CMP-PHYSICAL-MODEL",
+          "statement": "Logical terminal settlement, retained physical sent slots, ordered physical sync flush, slot admission and connection-close settlement satisfy the finite model. Five independently calibrated faults are rejected and reply/cancelled-sent/flush witnesses are reached.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/CompletionWire.tla",
+              "config": "specs/cfg/completion-wire.cfg",
+              "gate": "model"
+            },
+            {
+              "kind": "script",
+              "path": "specs/completion-gate.sh",
+              "gate": "model"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New completion transport semantics extend the historical LspWire model; its dispatch/terminal abstraction did not establish physical request ownership."
+          }
+        },
+        {
+          "id": "CMP-PHYSICAL-REGISTRY",
+          "statement": "Ignoring cancellation cannot admit a third physical completion request; deadlines settle logical ownership without freeing unanswered work; capture bytes backpressure separately; queued obsolete requests disappear before send; a new owner receives capacity without reviving an old owner.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/tests/completion.rs",
+              "gate": "test",
+              "tests": [
+                "ignored_cancellation_retains_physical_slots_until_late_responses",
+                "deadline_settles_logical_ownership_without_freeing_an_unanswered_request",
+                "captured_line_bytes_backpressure_before_the_physical_count_limit",
+                "cancellation_before_task_poll_releases_without_sending_an_obsolete_request",
+                "a_new_owner_waiting_on_old_requests_gets_capacity_without_reviving_a_dropped_owner",
+                "connection_close_settles_sent_owners_and_refuses_resurrection"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New bounded physical registry and weak latest-owner capacity wake are exercised over the real codec/runtime."
+          }
+        },
+        {
+          "id": "CMP-SYNC-FLUSH",
+          "statement": "A notification retains physical ownership until its own frame flushes; unrelated frames, closure and abort cannot attest it; advisory cancellation uses the encoded RPC identity and retirement remains live while the writer is blocked.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/outbound/tests.rs",
+              "gate": "test",
+              "tests": [
+                "another_frame_and_unflushed_bytes_cannot_release_notification_ownership",
+                "closing_or_aborting_never_attests_an_unwritten_notification",
+                "a_split_numeric_identity_is_not_confused_with_the_logical_request_stamp",
+                "reordered_mapping_refuses_instead_of_cancelling_another_request",
+                "retirement_wakes_while_the_native_writer_is_still_blocked"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/tests/completion.rs",
+              "gate": "test",
+              "tests": [
+                "newer_document_revision_revokes_queued_request_and_orders_its_successor"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "The new actual-writer flush receipt closes async-lsp internal-queue ambiguity instead of treating notify enqueue as physical progress."
+          }
+        },
+        {
+          "id": "CMP-PROTOCOL-VALUES",
+          "statement": "Filtering precedes bounded retention; incompleteness differs from truncation; same labels retain different operation identity; opaque data cannot be stripped; resolve cannot change primary edits or introduce commands; direct construction preserves payload limits.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/completion/tests.rs",
+              "gate": "test",
+              "tests": [
+                "filtering_precedes_the_window_limit_and_late_priority_is_respected",
+                "null_is_empty_and_server_incompleteness_is_not_client_truncation",
+                "identical_labels_with_different_operations_keep_distinct_identity",
+                "oversize_data_is_not_stripped_from_an_otherwise_accepted_item",
+                "resolve_cannot_replace_the_chosen_operation_or_introduce_a_command",
+                "direct_item_construction_cannot_bypass_resolve_payload_bounds",
+                "cancelled_decoding_stops_before_an_unvisited_malformed_tail"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/tests/completion.rs",
+              "gate": "test",
+              "tests": [
+                "query_and_resolve_preserve_negotiated_positions_and_opaque_item_identity"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "New capability-accurate immutable completion DTOs preserve represented operations through bounded decode and resolve."
+          }
+        },
+        {
+          "id": "CMP-INPUT-BOUNDS",
+          "statement": "Incoming headers/body/tree structure are bounded before upstream allocation; duplicate lengths and structural floods fail closed while quoted text does not consume structure tokens. Edit coordinates reject invalid line/UTF boundaries instead of clamping, including nonzero rope line origins.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/client/frame_limits.rs",
+              "gate": "test",
+              "tests": [
+                "duplicate_lengths_cannot_bypass_the_allocation_bound",
+                "structural_floods_are_rejected_but_quoted_protocol_text_is_not_a_tree"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/positions.rs",
+              "gate": "test",
+              "tests": [
+                "edits_reject_half_characters_and_columns_inside_crlf",
+                "utf16_edits_remain_exact_across_rope_chunks_and_nonzero_line_origins"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "The always-on guard and indexed strict coordinate conversion cover new completion-frequency trust boundaries."
+          }
+        }
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-lsp/src/client/completion/mod.rs": "a72baa6adb59cacf32a0977bfab6792c380d139fc67a67d609a0b4377bb19210",
+          "crates/strop-lsp/src/client/completion/registry.rs": "e3f4c27e84dabd381411802a6287f1be3d8532272d6f45ee5eeb921d51bff57e",
+          "crates/strop-lsp/src/client/completion/run.rs": "a053122b9f7e28b54e93101e14f681ac70a6558a8fc533a4694f28266ed52b33",
+          "crates/strop-lsp/src/client/frame_limits.rs": "f01c98c20328e6a844228cae004e106fe6ad8955f5e8fb6f03c0719947a8e1b5",
+          "crates/strop-lsp/src/client/outbound.rs": "769c7c2541244a751a8cc232f5a7c19a9594569b36ddb324264363301ad93bac",
+          "crates/strop-lsp/src/client/outbound/prefix.rs": "29eeb8877c5f0ee587f8f3f71443c85de253cf4631433a08a8eec72fc95d77f2",
+          "crates/strop-lsp/src/client/queue.rs": "efbe0672ae97f6d1d2b3361238f9680a938b8301fd36ead339580848e26ea4b1",
+          "crates/strop-lsp/src/client/spawn.rs": "a7fd290dd3fc34dc8889f5577cd662935b0b2e8fd6c8a312781b4422f249dbaa",
+          "crates/strop-lsp/src/client/wire.rs": "f64dd60975d074cd52587e888d99a5bcf4300d89772453aac3102382eb36520f",
+          "crates/strop-lsp/src/completion/decode.rs": "34acbb8629689af8b1136e69bd1a533d092d83b6a6a40a9c93c9bff10ec3be82",
+          "crates/strop-lsp/src/completion/filter.rs": "935b4ab870d508665bdfa7c48f36e0ff93647ef957b43782703cd0d04c85d481",
+          "crates/strop-lsp/src/completion/mod.rs": "86f30281ff98bd267a49afcaf3438bf9ca4bfdacd8cc5a546e5ca2016ea5b490",
+          "crates/strop-lsp/src/positions.rs": "6489085f04d1f71f2009a3cc7462954a058a3547c162001cbda5d26de5f3048c"
+        },
+        "evidence": "5e77d7f5360666cb78e613a8652b91a4de3d75910ddbcee7a303f073a9669357"
+      }
     }
   ],
   "baseline": {
-    "inventory": "verification/baseline/0057-inventory.json",
-    "sha256": "40c0b816e9b91cdc8f2357d88a7cdfab1c26982884088d2166e589711fc1b798"
+    "inventory": "verification/baseline/0058-inventory.json",
+    "sha256": "3821a4407801b63b322888f2e86f390d50e7db9c6b1f0fff233b532a88f27954"
   }
 }

@@ -197,6 +197,13 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             animation_due = std::time::Instant::now() + Duration::from_millis(16);
         }
         if processed == 0 {
+            if editor.completion_retiring() {
+                editor.recorded_action(
+                    editor::trace::drive::Action::Event(AppEvent::Completion),
+                    editor.tape().sample_tick(),
+                )?;
+                redraw = true;
+            }
             // A retained unpark token closes the queue-empty/park race. The
             // timeout also notices terminal-reader shutdown and flash expiry.
             std::thread::park_timeout(Duration::from_millis(16));
@@ -221,7 +228,14 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
                 editor.tape().sample_tick(),
             )?,
             // Physical source completion can follow its last event.
-            Err(editor::events::RecvTimeoutError::Timeout) => {}
+            Err(editor::events::RecvTimeoutError::Timeout) => {
+                if editor.completion_retiring() {
+                    editor.recorded_action(
+                        editor::trace::drive::Action::Event(AppEvent::Completion),
+                        editor.tape().sample_tick(),
+                    )?;
+                }
+            }
             Err(error) => return Err(io::Error::other(error)),
         }
     }

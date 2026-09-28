@@ -19,6 +19,26 @@ impl Client {
     /// `Ok` carries the owning stamp and captured input; `Err` means
     /// nothing was sent and nothing will arrive.
     pub fn prepare_request(&self, input: RequestInput) -> Result<PendingRequest, RequestRefusal> {
+        if matches!(
+            input.kind,
+            RequestKind::WorkspaceSymbols
+                | RequestKind::Completion
+                | RequestKind::CompletionResolve
+        ) {
+            return Err(RequestRefusal::InvalidInput);
+        }
+        let stamp = self.capture_request_stamp(&input)?;
+        Ok(PendingRequest {
+            stamp,
+            input,
+            tab_width: None,
+        })
+    }
+
+    pub(super) fn capture_request_stamp(
+        &self,
+        input: &RequestInput,
+    ) -> Result<RequestStamp, RequestRefusal> {
         let state = self.sync.lock();
         let Some(open) = state.documents.get(&input.path) else {
             return Err(RequestRefusal::NotOpen);
@@ -37,16 +57,11 @@ impl Client {
             Ok(value) => value,
             Err(_) => return Err(RequestRefusal::IdentityExhausted),
         };
-        let stamp = RequestStamp {
+        Ok(RequestStamp {
             request: RequestId::new(request),
             server: self.id,
             document: input.document,
             revision: input.revision,
-        };
-        Ok(PendingRequest {
-            stamp,
-            input,
-            tab_width: None,
         })
     }
 
@@ -157,6 +172,23 @@ impl Client {
     }
 }
 
+pub(super) fn request_position(
+    workspace: &crate::target::Workspace,
+    encoding: PositionEncoding,
+    input: &RequestInput,
+) -> Result<lt::TextDocumentPositionParams, &'static str> {
+    let uri = workspace
+        .uri(&input.path)
+        .ok_or("cannot map the document path onto a file URI")?;
+    let line = u32::try_from(input.line.get()).map_err(|_| "line is out of protocol range")?;
+    let column = crate::to_server_col_slice(input.line_text.as_slice(), input.byte_col, encoding);
+    let character = u32::try_from(column.get()).map_err(|_| "column is out of protocol range")?;
+    Ok(lt::TextDocumentPositionParams {
+        text_document: lt::TextDocumentIdentifier { uri },
+        position: lt::Position { line, character },
+    })
+}
+
 /// Launch one admitted request on the wire worker. Called in admission
 /// order, so every earlier frame is already on the wire.
 pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
@@ -176,27 +208,9 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
             format!("{} is not supported by this language server", kind.label()),
         );
     }
-    let Some(uri) = env.workspace.uri(&request.input.path) else {
-        return note(
-            env,
-            context,
-            "cannot map the document path onto a file URI".into(),
-        );
-    };
-    let Ok(line) = u32::try_from(request.input.line.get()) else {
-        return note(env, context, "line is out of protocol range".into());
-    };
-    let server_col = crate::to_server_col_slice(
-        request.input.line_text.as_slice(),
-        request.input.byte_col,
-        encoding,
-    );
-    let Ok(character) = u32::try_from(server_col.get()) else {
-        return note(env, context, "column is out of protocol range".into());
-    };
-    let tdp = lt::TextDocumentPositionParams {
-        text_document: lt::TextDocumentIdentifier { uri },
-        position: lt::Position { line, character },
+    let tdp = match request_position(&env.workspace, encoding, &request.input) {
+        Ok(position) => position,
+        Err(reason) => return note(env, context, reason.into()),
     };
     let tab_width = request.tab_width;
     let rename_to = request.input.rename_to.clone();
@@ -237,10 +251,15 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
             RequestKind::DocumentSymbols => {
                 document_symbols(env, tdp.text_document, context, path).await
             }
-            // Workspace queries take their own document-free lane
-            // (`Client::workspace_symbols`); they can never arrive
-            // through the position-bearing launcher.
-            RequestKind::WorkspaceSymbols => {}
+            RequestKind::WorkspaceSymbols
+            | RequestKind::Completion
+            | RequestKind::CompletionResolve => {
+                note(
+                    &env,
+                    context,
+                    "request requires its typed admission method".into(),
+                );
+            }
         }
     });
 }

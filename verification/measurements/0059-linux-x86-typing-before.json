@@ -1,0 +1,39 @@
+{
+  "qualified_source_commit": "a858e889113507ef50302286117193d9d4e99573",
+  "binary_bytes": 47390032,
+  "binary_sha256": "5a9f826f889f2ce7a76b1a7f90cb3951ab7d8bede57cdc5b5033aa0d74247494",
+  "binary_version": "0.36.0",
+  "method": "framed UI admitted input write+flush through complete semantic view frame",
+  "platform": {
+    "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "profile": "release-musl-stripped"
+  },
+  "fixture": {
+    "editor_rss_kib_after_open": 12872,
+    "editor_threads_after_open": 18,
+    "geometry": [120, 40],
+    "input": "one committed text character",
+    "lines": 10000,
+    "worker_count_after_open": 1,
+    "worker_rss_kib_after_open": 5100,
+    "worker_threads_after_open": 3
+  },
+  "warmup_requests": 8,
+  "measured_requests": 64,
+  "request_bytes": 9984,
+  "ack_bytes": 6784,
+  "view_bytes": 132132,
+  "input_to_view_ms": {"max": 0.53, "p50": 0.226, "p95": 0.316, "p99": 0.53},
+  "raw_ms": [
+    0.217, 0.218, 0.211, 0.219, 0.21, 0.231, 0.205, 0.216,
+    0.228, 0.208, 0.224, 0.218, 0.208, 0.215, 0.211, 0.483,
+    0.265, 0.214, 0.208, 0.215, 0.23, 0.231, 0.208, 0.207,
+    0.218, 0.207, 0.205, 0.205, 0.219, 0.26, 0.227, 0.273,
+    0.217, 0.21, 0.209, 0.211, 0.227, 0.225, 0.21, 0.273,
+    0.28, 0.316, 0.236, 0.262, 0.232, 0.271, 0.503, 0.53,
+    0.273, 0.27, 0.284, 0.24, 0.286, 0.278, 0.226, 0.275,
+    0.23, 0.213, 0.296, 0.274, 0.287, 0.236, 0.227, 0.215
+  ]
+}

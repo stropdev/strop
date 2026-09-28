@@ -275,7 +275,7 @@ impl Editor {
         if renamed {
             self.lsp_close_document(key.document);
             if !self.docs.is_empty() && self.current() == key.document {
-                self.lsp_maybe_attach();
+                self.lsp_attach_document(self.current());
             }
         }
         self.message = if saved {

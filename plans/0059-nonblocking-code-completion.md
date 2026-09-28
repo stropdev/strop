@@ -1,15 +1,15 @@
 # 0059 — Nonblocking, precise code completion
 
-Status: **unimplemented; deferred until the native worker and its assurance cutover**.
-The user has dispatched [0056 architecture](0056-architecture-prerequisites.md) and
-[0057 core verification](0057-core-verification-and-assurance.md). The authorized
-[0058 native worker](0058-unified-native-worker.md) release follows both; only after
-WK01–WK20 completes does this release start, before 0060 debugger and 0061 GUI.
+Status: **C01–C08 implemented and locally qualified; 0.37.0 C09/release gates running**.
+0056 AR01–AR16, 0057 VF01–VF20 and 0058 WK01–WK20 are complete.
+The prerequisite release is the immutable `v0.36.0` commit
+`a858e889113507ef50302286117193d9d4e99573`, published and verified in
+run `36319871385`. Completion follows it, before debugger and GUI work.
 C01–C09 remain required; a popup or one provider does not complete this plan.
 
 Research baseline: Strop 0.28.0,
-`c7a5ac6c9089cff654365a0376f6cf87d746db95`. No completion implementation,
-benchmark result or passed completion gate is claimed by this document.
+`c7a5ac6c9089cff654365a0376f6cf87d746db95`. Incremental implementation
+evidence is recorded in §11; it is not an exact-candidate release qualification.
 
 ## 1. Release contract
 
@@ -83,6 +83,60 @@ Existing seams to consume, not alternate infrastructure to recreate:
 Completion request kinds, result/resolve decoding, buffer word indexing,
 insert-mode menu ownership and completion settings are new work. Do not claim
 those exist merely because LSP navigation and a popup renderer exist.
+
+Implementation ownership after the cutover:
+
+- The editor now lives in `crates/strop-engine/src/editor/`; the TUI remains
+  in `crates/strop/src/render/`. Completion session, source ownership,
+  acceptance and settings lifecycle belong to the engine, not the renderer.
+- A dedicated completion protocol/decoder module in `strop-lsp` extends the
+  existing stamped admission and ordered wire. Completion and item resolve
+  have their own ownership, cancellation and physical-outstanding bounds;
+  neither borrows the hover/navigation owner slot.
+- One persistent completion worker owns the current source's word-count
+  index. It retains the previous frozen rope and consumes the existing
+  pre-edit `Change` journal plus the new frozen rope. Incremental updates
+  subtract/add tokens in merged, word-expanded old/new dirty ranges; they
+  do not shift an occurrence record for every later word or rescan the
+  entire document for an ordinary insertion. Maintenance cancellation is
+  source/disable/shutdown-owned, separate from query supersession.
+- Provider results, merge/ranking work and documentation are bounded before
+  delivery to input/render. Replaced index/result owners retire off that
+  path. The engine supplies a prepared, borrowed presentation; the TUI
+  uses existing cell geometry, palette and documentation conventions.
+- Language-service eligibility, attachment and document opening take the owning
+  `DocumentId`, rather than assuming the active view is the source. Existing
+  ordinary-buffer callers pass their current document; completion passes the
+  editable excerpt's source. Full-window checks, namespace/root placement and
+  trust/discovery stay in the shared LSP path.
+- Native LSP responses publish independently of the word index. The completion
+  CPU worker services selected documentation, acceptance and safe cached-list
+  refiltering between index scan quanta, so a cold index cannot withhold semantic
+  results. Complete-list reuse is deliberately limited to self-contained plain
+  insertions after proven prefix-only growth; explicit ranges/imports, lazy
+  resolution and truncated/incomplete universes require a fresh server query.
+- Candidate snapshots retain a native final owner. Acceptance instead transfers
+  one validated owned plan through the recorded boundary, avoiding copies of
+  replacement strings on the input thread.
+- Acceptance prepares current-source replacements and imports through
+  `transact::apply`; source/projection/selection/revision/settings identity
+  is rechecked independently of transport cancellation. Collection headers
+  and input fields never become code-completion sources.
+
+C05 transport audit adds two explicit boundaries to the historical outer-queue
+claim. In async-lsp 0.2.4, `ServerSocket::notify` queues onto an unbounded internal
+channel; returning from it does not attest a written frame. The ordered worker
+must therefore retain physical ownership until its notification has actually
+flushed, rather than moving a full-document backlog into that inner channel.
+Completion requests separately retain bounded physical slots until the server
+answers or the connection closes, even after logical cancellation.
+
+The same upstream reader allocates `Content-Length` bytes before reading a
+body. The always-on reader boundary caps headers at 8 KiB, raw frames at 32 MiB,
+and structural JSON tokens at 256 Ki entries before upstream body/tree
+allocation. Candidate windows, item data and documentation have smaller,
+independent delivery bounds. These new checks and correspondence obligations
+belong to C05/C09; the 0.36.0 archive does not prove these additional boundaries.
 
 ## 4. “Typing cancels completion” — the precise contract
 
@@ -284,6 +338,16 @@ If preparation/resolve is required at acceptance, register an owned acceptance
 intent and return to the event loop. Further typing, moving, Escape, a setting
 change or a source revision change revokes it. **No late surprise insertion.**
 
+Macro replay uses the existing ordered deferred-input queue, not a synchronous
+completion scan or a second key interpreter. An explicit query/choice may yield
+the macro until its admitted provider work produces a usable result or settles;
+an admitted acceptance yields until that operation settles. The next recorded
+Escape cannot overtake either stage. Input/render still never awaits, and the
+existing Ctrl-C interruption revokes the pending completion as well as the
+remaining macro. Backpressured, unadmitted LSP work is not a reason to stall a
+macro indefinitely. Completion admission runs at the same outer action boundary
+for physical keys and generated macro keys.
+
 **Never accept without required additional edits because resolve timed out.**
 A documentation-only failure need not block an otherwise complete edit; missing
 required edit data must keep acceptance unavailable or fail visibly while
@@ -484,7 +548,95 @@ Run the Compose quality gate plus the applicable 0057/0058 `model`, `verify`, `t
 completion query/index/resolve/acceptance extensions and update affected worker/core
 claims, models, production proofs and correspondence; neither baseline proves new code.
 Record exact checks, limitations and C01–C09 acceptance in this plan and roadmap.
+
+The 0059 freeze binds every crate source/resource and manifest, `Cargo.lock`,
+the measured artifact, benchmark methods, raw completion/typing observations
+and capture/replay outcomes. Its source digest excludes verification evidence
+and top-level documentation to avoid a self-referential measurement commit.
+The final candidate requires a clean, exact commit/tree and the applicable native/Compose gates.
+0057 and released 0058 inventories and measurements remain hash-pinned historical
+archives; their timings are not silently re-stamped against completion source.
+Native CI repeats the current product journeys on Linux x86/ARM and Apple
+Silicon, with completion pressure/capture observations alongside the existing
+worker and real-server journeys.
 No release is complete with only a renderer, fake provider or unbounded “async” work.
+
+### 0.37.0 candidate qualification
+
+The local static, stripped Linux x86_64 artifact is 48,381,232 bytes, SHA-256
+`eceaa62068484f1c7cbd7dbc7a4e1f6a6e7b3841aff37d0b82de930bdd74fada`.
+`verification/measurements/0059-linux-x86-completion.json` binds 700 crate/build
+inputs, the lockfile, measurement methods, raw observations and this executable.
+The independent before artifact is the published 0.36.0 binary, retained in
+`verification/measurements/0059-linux-x86-typing-before.json`.
+
+- Rust: formatting, Clippy with warnings denied, and 1,747 tests passed
+  (56 suites, seven opt-in/ignored journeys). The engine has 742 tests and the
+  tracing integration suite has five. Regressions failed before their fixes
+  for invalid mutation coordinates, repeated failed thread startup, acceptance
+  after service rebinding, partial remote windows, and asynchronous macro
+  continuation overtaken by Escape.
+- Styled grids: three `render::completion` TestBackend regressions cover
+  selection/prefix/kind/source hierarchy, wide Unicode/tabs, narrow/split
+  clipping, edge placement and shared documentation syntax styles.
+- Actual shipping-artifact PTY: all three `terminal_editor completion::`
+  journeys passed with `--include-ignored` and `STROP_BENCH_BINARY` pointing
+  outside Cargo's test-support output. Real clangd supplies member candidates
+  and documentation; its initial AST is witnessed first. Words, held language
+  responses, physical typing/backspace, late-provider stable selection,
+  acceptance and undo work at 120×30, 26×12, 60×18 and vertical splits.
+- Replay/privacy: resolved LSP acceptance/import/undo captures replay with no
+  native executables in `PATH`, after deleting the original source and fixture
+  executable. Opaque data, detail, documentation and import text are absent
+  from metadata capture and present in full capture. Macro replay uses the
+  same deferred input ownership rather than a completion-specific interpreter.
+- Native pressure: all 13 scenarios passed. Disabled mode starts no completion
+  thread, manual mode stays idle until requested, source edits update one
+  persistent index, and 90,000 unique words stop at the 65,536-word bound.
+  The 16.8 MB source scanned 16,800,323 bytes over its initial build plus 64
+  incremental edits, not a full scan per key. Slow/ignoring servers retained
+  exactly two unanswered physical requests while words and navigation remained
+  usable. All 13 owned worker processes exited.
+- Assurance: both completion state models and all twelve calibrated mutants
+  passed; the generalized freshness proof discharged 92 obligations, with
+  matched positive/negative controls. Four completion/LSP Loom campaigns passed.
+  Full Compose `test`, `verify`, `tlaps` and `model` lanes passed. The generalized
+  proof does not claim unbounded byte-budget or liveness verification.
+
+Same-machine/profile external input-to-semantic-view observations, milliseconds:
+
+| Fixture | p50 | p95 | p99 / max |
+| --- | ---: | ---: | ---: |
+| 0.36.0 before, 64 inputs | 0.226 | 0.316 | 0.530 |
+| 0.37.0 after, same 64-input fixture | 0.420 | 0.610 | 0.717 |
+| Completion disabled | 0.246 | 0.287 | 0.448 |
+| Automatic words | 0.391 | 0.614 | 0.684 |
+| Ignoring language server | 0.565 | 0.821 | 1.070 |
+| 16.8 MB source, warm incremental typing | 0.403 | 0.501 | 1.026 |
+| 1 MiB line | 7.525 | 8.118 | 8.561 |
+| 90,000 words on a 1.17 MB line | 8.371 | 9.114 | 10.028 |
+
+These external observations include semantic-line serialization and transport;
+they are not terminal paint timings. The separate 128-input stage observations
+record enqueue→consume and consume→TUI-frame independently. Their worst
+consume→frame p99 was 0.594 ms during cold 16.8 MB indexing; the largest observed
+frame was 0.744 ms. The latest-query fields measure the remaining wait after
+the typing burst. First useful cold words took 76.950 ms for the 16.8 MB source
+(one startup observation); single-shot startup/cancellation values are not
+percentile distributions. Logical dismissal reached the semantic view in
+0.179–1.271 ms across the measured active word/slow-server cases. LSP cancellation
+is advisory and has no protocol reply; server-observed cancellation counts and
+retained physical ownership are reported separately.
+
+Maximum observed charged candidate retention was 10,510,336 bytes against the
+24 MiB bound. Sampled editor RSS peaked at 51,040 KiB; this is not a kernel peak
+or a universal memory guarantee. Every stage observation ended with its
+completion worker idle and zero charged publication bytes. Timings complement
+the deterministic ownership/work bounds; they are not flaky CI thresholds.
+
+The final source freeze, current-source service/core-assurance lanes, retained
+native CI and public tag publication remain required before this candidate is
+declared released.
 
 ## 12. Authorized extensions after this bounded release
 

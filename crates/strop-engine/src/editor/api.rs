@@ -21,7 +21,10 @@ impl Editor {
 
     /// Replace the user config (startup load, settings reload).
     pub fn set_config(&mut self, config: crate::config::Config) {
+        let completion = self.config.completion;
         self.config = config;
+        self.completion_settings_changed(completion);
+        self.completion_after_action();
     }
 
     /// The shared state root for trust/session/recovery, when enabled.

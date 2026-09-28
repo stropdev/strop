@@ -64,6 +64,9 @@ pub enum AppEvent {
     /// (0058 S7): a pure wake hint — the records ARE the state, so
     /// coalescing is legal (AR06).
     Notify,
+    /// Completion owns bounded provider-state slots; this event only wakes a
+    /// tape-recorded drain of those slots, so duplicate wakes may coalesce.
+    Completion,
     Clipboard(super::ClipboardResult),
 }
 
@@ -159,6 +162,7 @@ impl Editor {
         }
         let rx = self.lsp_state.attach.take_rx();
         forward(rx, tx.clone(), AppEvent::LspAttach);
+        self.completion.connect_events(tx.clone());
         self.app_tx = Some(tx);
         // 0058 S7: the local scope subscription starts with the event
         // loop, never at construction (pure seeding) — readiness is the
@@ -169,6 +173,13 @@ impl Editor {
     /// Route one event to its handler (the per-event halves of the old
     /// drain loops; the drains call these in a try_recv loop).
     pub fn handle_app_event(&mut self, ev: AppEvent) {
+        let completion_handled = matches!(
+            &ev,
+            AppEvent::Input(_)
+                | AppEvent::EditorKey(_)
+                | AppEvent::Completion
+                | AppEvent::ResumeInput
+        );
         match ev {
             AppEvent::Input(input) => self.handle_frontend_input(input),
             AppEvent::TerminalUpdate(session) => self.handle_terminal_update(session),
@@ -197,6 +208,7 @@ impl Editor {
                 self.paste_bracketed(&text);
             }
             AppEvent::Notify => self.handle_notify(),
+            AppEvent::Completion => self.handle_completion(),
             AppEvent::QuitIntent => {
                 strop_trace::record_with(
                     strop_trace::EventKind::Input,
@@ -204,12 +216,25 @@ impl Editor {
                 );
                 self.resolution.cancel();
                 self.resolution.queue.clear();
+                self.completion_close(strop_core::worker::CancelReason::Dismissed);
                 if self.ctrl_c_quit() {
                     self.should_quit = true;
                 }
             }
-            AppEvent::Lsp(event) => self.handle_lsp_event(event),
-            AppEvent::LspAttach(record) => self.handle_lsp_attach(record),
+            AppEvent::Lsp(event) => {
+                let readiness = matches!(
+                    &event,
+                    strop_lsp::LspEvent::Ready { .. } | strop_lsp::LspEvent::Failed { .. }
+                );
+                self.handle_lsp_event(event);
+                if readiness {
+                    self.completion_language_changed();
+                }
+            }
+            AppEvent::LspAttach(record) => {
+                self.handle_lsp_attach(record);
+                self.completion_language_changed();
+            }
             AppEvent::Shell(r) => self.handle_shell_result(r),
             AppEvent::Io(event) => self.handle_io(event),
             AppEvent::RemoteCompletion(event) => self.handle_remote_completion(*event),
@@ -219,10 +244,14 @@ impl Editor {
             AppEvent::PickerRanking(event) => self.handle_picker_ranking(event),
             AppEvent::Analysis(event) => self.handle_analysis(event),
             AppEvent::Resolution(event) => self.handle_resolution(event),
-            AppEvent::ResumeInput => self.resume_resolution_input(),
+            AppEvent::ResumeInput => self.resume_deferred_input(),
             AppEvent::Preview(result) => self.handle_preview(result),
             AppEvent::Clipboard(content) => self.handle_clipboard(content),
         }
+        if !completion_handled {
+            self.completion_after_action();
+        }
+        self.schedule_deferred_input();
         // 0058 S7: a worker restart kills the subscription with its
         // session; observe the lease (cheap, no I/O) before staleness.
         self.notify_observe_lease();
@@ -279,6 +308,7 @@ impl Editor {
                 .as_ref()
                 .is_some_and(strop_picker::SourceWorker::busy)
             || self.analysis.pending()
+            || self.completion.pending()
             || self.resolution.pending()
             || self
                 .preview_loads
@@ -326,6 +356,7 @@ impl Editor {
         }
         self.cancel_review_preparation();
         self.analysis.stop();
+        self.stop_completion();
         self.resolution.stop();
         self.git_mutations.clear();
         self.request_session_save();

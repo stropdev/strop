@@ -15,6 +15,8 @@ use tokio::io::{
 };
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
+mod completion;
+
 type Documents = Arena<DocumentKind, ()>;
 
 struct Wire {
@@ -70,11 +72,50 @@ impl Wire {
         });
         let (client_io, peer_io) = tokio::io::duplex(65536);
         let (input, output) = tokio::io::split(client_io);
+        let outbound = Arc::new(super::outbound::Outbound::default());
+        let outbound_writer = outbound.clone();
         let task = tokio::spawn(async move {
             let _ = mainloop
-                .run_buffered(input.compat(), output.compat_write())
+                .run_buffered(
+                    super::frame_limits::BoundedFrames::new(input).compat(),
+                    super::outbound::FramedWriter::new(output, outbound_writer).compat_write(),
+                )
                 .await;
         });
+        let completion_registry = Arc::new(super::completion::Registry::default());
+        let queue = queue::start(queue::WireEnv {
+            id,
+            name: "in-memory".into(),
+            hint: String::new(),
+            socket: socket.clone(),
+            handle: tokio::runtime::Handle::current(),
+            tx: tx.clone(),
+            caps: caps.clone(),
+            workspace: crate::target::Workspace::Local {
+                root: PathBuf::from("/workspace"),
+            },
+            sync: sync.clone(),
+            quitting: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            outbound: outbound.clone(),
+            completion: completion_registry.clone(),
+        })
+        .expect("wire worker");
+        let completion = Arc::new(super::completion::CompletionClient::new(
+            completion_registry,
+            super::completion::Environment {
+                server: id,
+                socket: socket.clone(),
+                handle: tokio::runtime::Handle::current(),
+                caps: caps.clone(),
+                sync: sync.clone(),
+                workspace: crate::target::Workspace::Local {
+                    root: PathBuf::from("/workspace"),
+                },
+                outbound,
+                queue: queue.control(),
+            },
+        ));
         let client = Client {
             id,
             next_request: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -89,22 +130,8 @@ impl Wire {
             quitting: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             thread: Arc::new(std::sync::Mutex::new(None)),
             stop: Arc::new(ServiceStop(parking_lot::Mutex::new(None))),
-            queue: queue::start(queue::WireEnv {
-                id,
-                name: "in-memory".into(),
-                hint: String::new(),
-                socket,
-                handle: tokio::runtime::Handle::current(),
-                tx,
-                caps,
-                workspace: crate::target::Workspace::Local {
-                    root: PathBuf::from("/workspace"),
-                },
-                sync,
-                quitting: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            })
-            .expect("wire worker"),
+            queue,
+            completion,
         };
         let (reader, writer) = tokio::io::split(peer_io);
         (

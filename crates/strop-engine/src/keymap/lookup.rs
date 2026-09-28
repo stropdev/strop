@@ -37,7 +37,7 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
                 i = end;
                 continue;
             }
-            "ctrl-w" | "ctrl-\\" | "ctrl-4" => {
+            "ctrl-w" | "ctrl-x" | "ctrl-\\" | "ctrl-4" => {
                 if let Some(k) = toks.get(i + 1) {
                     seqs.push(vec![toks[i], k]);
                     i += 2;
@@ -109,6 +109,9 @@ pub(crate) const NAMED: &[&str] = &[
     "ctrl-space",
     "ctrl-\\",
     "ctrl-n",
+    "ctrl-p",
+    "ctrl-y",
+    "ctrl-e",
     "ctrl-4",
 ];
 
@@ -323,8 +326,8 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
 /// The vim-compatibility report, generated from the single binding table.
 pub fn compat_report() -> String {
     let mut out = String::from(
-        "# Vim compatibility\n\nGenerated from the command table (`cargo test` pins freshness; \
-         STROP_REGEN=1 rewrites).\n`✓` ships exactly; `(soon)` is a planned slot.\n",
+        "# Vim compatibility\n\nGenerated from the command table (`strop --dump-compat`).\n\
+         `✓` ships exactly; `(soon)` is a planned slot.\n",
     );
     for section in SECTIONS {
         out.push_str(&format!("\n## {section}\n\n"));

@@ -9,6 +9,9 @@ use std::path::Path;
 use std::sync::mpsc::Sender;
 
 mod api;
+mod completion;
+mod frame_limits;
+mod outbound;
 mod queue;
 mod spawn;
 mod sync;
@@ -43,6 +46,7 @@ pub struct Client {
     thread: std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
     /// The ordered wire queue (R6): admission order == wire order.
     queue: queue::WireTx,
+    completion: std::sync::Arc<completion::CompletionClient>,
     stop: std::sync::Arc<ServiceStop>,
 }
 

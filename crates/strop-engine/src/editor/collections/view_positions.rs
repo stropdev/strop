@@ -67,6 +67,15 @@ impl Editor {
             return;
         }
         self.analysis.edits(document, doc.buf.changes());
+        if let Err(error) = self.completion.edits(
+            &self.tape,
+            document,
+            doc.buf.revision(),
+            doc.buf.text(),
+            doc.buf.changes(),
+        ) {
+            self.message = error;
+        }
         doc.buf.clear_changes();
         doc.buf.dirty = false;
         collection.revision = doc.buf.revision();

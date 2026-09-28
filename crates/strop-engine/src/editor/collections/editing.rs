@@ -17,6 +17,15 @@ impl Editor {
         let changes = document.buf.changes().to_vec();
         let edits = super::journal::replacements(&document.buf, &changes);
         self.analysis.edits(id, &changes);
+        if let Err(error) = self.completion.edits(
+            &self.tape,
+            id,
+            document.buf.revision(),
+            document.buf.text(),
+            &changes,
+        ) {
+            self.message = error;
+        }
         document.buf.clear_changes();
         self.sync_collection_anchors(id, map_active, position, &changes);
 

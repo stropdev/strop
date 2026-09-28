@@ -42,7 +42,7 @@ impl Editor {
         }
         self.push_jump();
         self.jump_land(document, head);
-        self.lsp_maybe_attach();
+        self.lsp_attach_document(self.current());
     }
 }
 

@@ -235,6 +235,19 @@ fn terminal_journey() {
 /// through the protocol must publish the same logical states.
 #[test]
 fn protocol_states_match_the_headless_driver() {
+    fn logical(mut state: serde_json::Value) -> serde_json::Value {
+        if let Some(completion) = state
+            .get_mut("completion")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            // Independent runs can coalesce different obsolete native results.
+            // Their counters are pressure evidence, not editing-state parity;
+            // full replay still compares them against its recorded deliveries.
+            completion.remove("publication");
+            completion.remove("work");
+        }
+        state
+    }
     let fixture = fixture();
     let steps = [":e notes.txt<cr>", "odelta one<esc>", "u", "gg", "G", "0w"];
     // Headless: the scripted driver prints `─── state {json}` per step.
@@ -289,8 +302,8 @@ fn protocol_states_match_the_headless_driver() {
                 .unwrap();
         }
         assert_eq!(
-            state(&driver),
-            expected,
+            logical(state(&driver).clone()),
+            logical(expected.clone()),
             "protocol state diverges from headless after {keys:?}"
         );
     }

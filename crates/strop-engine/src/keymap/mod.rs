@@ -21,6 +21,8 @@
 //!   several (`h j k l`), and a leading bare `/` is the search-forward
 //!   key (`/ ?`).
 
+pub mod completion;
+
 /// How a sequence dispatches (0008 stage 2). The walker consults these;
 /// `?`/which-key read the same row — the table is the single source.
 #[derive(Clone, Copy)]
@@ -700,9 +702,16 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| e.clipboard_yank_pub()),
     },
     // insert
+    completion::REQUEST,
+    completion::LANGUAGE,
+    completion::WORDS,
+    completion::ARROWS,
+    completion::ACCEPT,
+    completion::DISMISS,
+    completion::TAB,
     Binding {
         keys: "esc",
-        desc: "normal mode (session = one undo unit)",
+        desc: "dismiss completion and enter Normal mode in one event (one undo unit)",
         sections: &["insert"],
         live: true,
         id: "insert-esc",
@@ -718,7 +727,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "enter",
-        desc: "new line (auto-indent)",
+        desc: "new line (auto-indent); accept completion only after deliberate selection",
         sections: &["insert"],
         live: true,
         id: "insert-enter",

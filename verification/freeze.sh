@@ -1,7 +1,7 @@
 #!/bin/sh
-# Freeze the committed worker candidate and its exact source, lock,
+# Freeze the committed completion candidate and its exact source, lock,
 # inventory, baseline archive and pinned tool identities. The output
-# lives in ignored dist/worker-candidate.json, not inside the commit
+# lives in ignored dist/completion-candidate.json, not inside the commit
 # whose hash it records.
 #
 #   sh verification/freeze.sh                 # write candidate artifact

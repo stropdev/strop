@@ -18,35 +18,40 @@ impl Editor {
     /// The LSP half of the startup "start services" action: enable
     /// attach, then attach for the current buffer. A pure state
     /// transition performed identically live and replayed — the tape
-    /// gates the native discovery inside `lsp_maybe_attach`.
+    /// gates native discovery inside `lsp_attach_document`.
     pub fn lsp_start_services(&mut self) {
         self.lsp_state.attach.enabled = true;
-        self.lsp_maybe_attach();
+        self.lsp_attach_document(self.current());
     }
 
-    pub(crate) fn lsp_maybe_attach(&mut self) {
+    pub(crate) fn lsp_attach_document(&mut self, document: DocumentId) {
         if !self.lsp_state.attach.enabled {
             return;
         }
-        if self.cur().remote_metadata().is_some() && !self.remote_window_complete() {
+        if self
+            .docs
+            .get(document)
+            .and_then(|document| document.remote_metadata())
+            .is_some_and(|source| !source.window.is_complete() || self.remote_following(document))
+        {
             // Typed refusal, never silence: a partial/follow window is
             // not a document a server can be told about.
             self.message = "lsp unavailable — partial remote window".into();
             return;
         }
-        let Some(doc) = self.lsp_current_doc_path() else {
+        let Some(doc) = self.lsp_document_location(document) else {
             return;
         };
         // Extensionless/ambiguous headers keep a navigation-bound
         // context (0049 §4.4); without one there is nothing to attach.
-        let Some(language) = self.lsp_doc_language(self.current(), &doc.path) else {
+        let Some(language) = self.lsp_doc_language(document, &doc.path) else {
             return;
         };
         if self
-            .lsp_server_for(self.current(), &doc.path, &language, &doc.filesystem)
+            .lsp_server_for(document, &doc.path, &language, &doc.filesystem)
             .is_some()
         {
-            self.lsp_did_open_current();
+            self.lsp_did_open_document(document);
             return;
         }
         // Discovery runs only for an unambiguous extension — never
@@ -223,7 +228,7 @@ impl Editor {
 impl Editor {
     pub(crate) fn remote_trust_target(&self) -> Result<strop_workspace::RemoteFile, String> {
         let doc = self
-            .lsp_current_doc_path()
+            .lsp_document_location(self.current())
             .ok_or("trust requires a file buffer")?;
         let Filesystem::Remote(endpoint) = doc.filesystem else {
             return Err("not a remote workspace".into());

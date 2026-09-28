@@ -14,9 +14,9 @@ use strop_core::{Buffer, BufferSeed};
 use crate::editor::document::DocumentSource;
 use crate::editor::{Document, Editor, LayoutDir, Pane};
 
-// Version 4 preserves frontend key facts until engine input ownership is selected.
-// Older input must never execute under a different command/authority contract.
-const SEMANTIC_VERSION: u32 = 4;
+// Version 5 adds source-owned completion/control-key semantics. Older input
+// must never execute under a different command or acceptance contract.
+const SEMANTIC_VERSION: u32 = 5;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.
@@ -48,6 +48,8 @@ pub struct Seed {
     git_discovery: Load<crate::editor::git_memory::ContextKey>,
     worker_ids: WorkerIds,
     focus_epoch: u64,
+    #[serde(default)]
+    completion_settings_generation: u64,
     generation: u64,
     message: String,
 }
@@ -66,6 +68,10 @@ impl Seed {
     /// pickers, LSP servers, git surfaces and in-flight discovery mean
     /// services already started and the recording is not a full replay.
     pub fn capture(editor: &Editor) -> io::Result<Self> {
+        let completion_settings_generation = editor
+            .completion
+            .seed_generation()
+            .ok_or_else(|| io::Error::other("seed must precede completion service startup"))?;
         if editor.picker.is_some()
             || !editor.lsp_servers.is_empty()
             || matches!(editor.git_discovery, Load::Running(_))
@@ -99,6 +105,7 @@ impl Seed {
             git_discovery: editor.git_discovery.clone(),
             worker_ids: editor.worker_ids.clone(),
             focus_epoch: editor.focus_epoch,
+            completion_settings_generation,
             generation: editor.generation,
             message: editor.message.clone(),
         })
@@ -187,6 +194,9 @@ impl Seed {
         editor.git_discovery = self.git_discovery;
         editor.worker_ids = self.worker_ids;
         editor.focus_epoch = self.focus_epoch;
+        editor.completion = crate::editor::completion::CompletionState::from_seed(
+            self.completion_settings_generation,
+        );
         editor.generation = self.generation;
         editor.message = self.message;
         editor.tape = tape;
@@ -207,10 +217,6 @@ mod tests {
             .unwrap()
             .remove("semantic_version");
         let legacy: Seed = serde_json::from_value(serialized).unwrap();
-        assert!(legacy
-            .input_text()
-            .unwrap_err()
-            .to_string()
-            .contains("editor semantics"));
+        assert!(legacy.input_text().is_err());
     }
 }

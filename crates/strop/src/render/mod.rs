@@ -14,6 +14,7 @@ use crate::editor::{Editor, Mode};
 mod blame_card;
 mod buffer;
 mod cmd_card;
+mod completion;
 pub(crate) mod diff;
 pub(crate) mod frame_capture;
 #[cfg(test)]
@@ -155,13 +156,16 @@ pub fn render(editor: &Editor, frame: &mut Frame) {
     let pane_area = buffer::render_panes(editor, frame, area);
     statusline::render(editor, frame, area);
     cmd_card::render_cmd_card(editor, frame);
-    if !cmd_card_active(editor) && !editor.terminal_input_active() {
-        place_cursor(editor, frame, pane_area);
-    }
+    let caret = if !cmd_card_active(editor) && !editor.terminal_input_active() {
+        place_cursor(editor, frame, pane_area)
+    } else {
+        None
+    };
     render_welcome(editor, frame);
     picker::render_picker(editor, frame);
     blame_card::render_blame_card(editor, frame);
     hover_card::render_hover_card(editor, frame);
+    completion::render(editor, frame, pane_area, caret);
     which_key::render_which_key(editor, frame);
     // Every widget can display external text (paths, LSP messages, shell output).
     // Enforce the printable-cell invariant at the final emission boundary too.
@@ -208,19 +212,17 @@ pub(crate) fn dim_color(c: Color) -> Color {
     }
 }
 
-fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
+fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) -> Option<(u16, u16)> {
     // one projection shared with every painted caret: vertical top +
     // horizontal origin + fixed inset, checked, narrowed once
-    let Some(at) = buffer::caret_position(
+    let at = buffer::caret_position(
         editor,
         area,
         editor.current(),
         editor.head(),
         editor.view_top(),
         editor.view().hscroll,
-    ) else {
-        return;
-    };
+    )?;
     // 0064 §2: while the fade-in runs, the Normal-mode block is
     // software-painted toward its final appearance and the native
     // cursor stays hidden; when the window closes the final frame is
@@ -234,10 +236,11 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) {
             let fg = cell.fg;
             cell.set_bg(fade_mix(BASE, TEXT, progress));
             cell.set_fg(fade_mix(fg, BASE, progress));
-            return;
+            return Some(at);
         }
     }
     crate::render::frame_capture::place_cursor(frame, at);
+    Some(at)
 }
 
 /// Linear RGB ramp for the cursor fade (0064 §2). Terminal-palette

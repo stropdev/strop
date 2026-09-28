@@ -11,6 +11,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "terminal_editor/completion.rs"]
+mod completion;
+
 struct Tui {
     child: Child,
     master: File,
@@ -161,9 +164,10 @@ impl Tui {
         };
         assert!(
             ready > 0 || io::Error::last_os_error().kind() == io::ErrorKind::Interrupted,
-            "terminal poll timed out:\n{}\nrecent trace:\n{}",
+            "terminal poll timed out:\n{}\nrecent trace:\n{}\nrecent input:\n{}",
             self.screen.screen().contents(),
-            self.recent_trace()
+            self.recent_trace(),
+            self.recent_input_trace()
         );
     }
     /// Soft poll: false on deadline instead of asserting (retry loops).

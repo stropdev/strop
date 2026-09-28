@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "release": "0058",
+  "release_commit": "a858e889113507ef50302286117193d9d4e99573",
+  "inventory_sha256": "3821a4407801b63b322888f2e86f390d50e7db9c6b1f0fff233b532a88f27954",
+  "scope": "Immutable historical worker evidence, not qualification of changed completion sources",
+  "measurements": {
+    "verification/measurements/0058-linux-wsl2-native.log": "939a3dd98a0d332b2622ebd8e07a0ceb7e73a2334d26fe46c47f6e0783c33017",
+    "verification/measurements/0058-retained-native-platforms.json": "b3d5fad13a008791b3d4d5d137dbf3663b59682b45813ad472212ffa91ea46de",
+    "verification/measurements/0058-linux-x86-preworker-terminal-load-after-fix.json": "0523a62508f8a7f9446fb2287270c0c00850d3e0361a096ffe738cb3f6921cf2",
+    "verification/measurements/0058-linux-x86-worker-terminal-load-after-fix.json": "c91e3fb91c03a901fd1211d7f5478039dd4d82e7d68a45e5075d1c016e161692",
+    "verification/measurements/0058-linux-x86-terminal-load-after-fix-comparison.json": "cea1bb93ee884ec895454c684a29ef6212236ffca347a0f9ab9ed305f03bf94b",
+    "verification/measurements/0058-linux-x86-terminal-load-regression.json": "043b52e23e08c4201eb8b724af38b0943ef188682b0d6f6042302c1b927a90ee",
+    "verification/measurements/0058-linux-x86-preworker.json": "80f81f53c02b94e74e9fec0ed2f6868dae1554a253fcbf3bf71b6b32254ea69e",
+    "verification/measurements/0058-linux-x86-worker.json": "d0d893db6eaaab001b7c6d0b800291467ee25dcbfe93a376d2a672c46b428f64",
+    "verification/measurements/0058-linux-x86-comparison.json": "4d75faa55d84e33d95a50c412e86cc87eae0cda620d40084457edf0daa99fb8f",
+    "verification/measurements/0058-linux-x86-worker-roundtrip.json": "74901721e9d2392850ececb239c086f43e4f9630cc4e64de77677a0d4145557e",
+    "verification/measurements/0058-linux-x86-preworker-ui-frame.json": "e49e0ff124c458d0a836f2de2fa2ac06bd99b6cbe23ea150248017c9ba1b2e38",
+    "verification/measurements/0058-linux-x86-worker-ui-frame.json": "ee7488fc12b5f6ee64489e05993532d82de8a1be3f00a19ccbcbdbea7d3b1944",
+    "verification/measurements/0058-linux-x86-ui-frame-comparison.json": "857f652b8bf26ce1d2b5c8f2ddf5fccc0817daaa323be46242fd0b9b65883813",
+    "verification/measurements/0058-linux-x86-preworker-tui-frame.json": "383d5a667ca43c8ea30e1300e482aae8a47879293dd64740403a74847f9a0138",
+    "verification/measurements/0058-linux-x86-worker-tui-frame.json": "87a4b130a60e640db7c4accd71a2b081c50baaff711a26072d37d171afca9eb7",
+    "verification/measurements/0058-linux-x86-tui-frame-comparison.json": "06dd2ea4cfde76abdfae446a449e0d38ab374eb02a6d4bea36c29d28faa1d63e",
+    "verification/measurements/0058-linux-x86-lsp-ui.json": "68fcfadf5960ce07f3d5d8fe347b062ed66cd4a02cfb992edabc2a83a9575f09",
+    "verification/measurements/0058-linux-x86-native-product.json": "745895faba28d20869795704e6ad2fbc27329e9f5c45feccb83755fe084142a7",
+    "verification/measurements/0058-linux-x86-container-deploy.json": "f0fc718a6d5e26e996ad516adb044e18acafc51f928e1b6f6e4f1cd0f3a117e5",
+    "verification/measurements/0058-linux-x86-ssh-deploy.json": "23dc68309e6f784a19f72d569137de4709b1a2d4bff6f40141a8f9e8d0081da9",
+    "verification/measurements/0058-linux-x86-preworker-transfer-ui.json": "c644c18e795ba309b761e8797e7759a95f1d1f2b31285bc79056c6ad4c56d2aa",
+    "verification/measurements/0058-linux-x86-worker-transfer-ui.json": "8fc3cfabb58db4cb8948202d499b231e93fe8e4de95d084356d5958c9763b173"
+  }
+}

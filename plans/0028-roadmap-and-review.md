@@ -149,7 +149,7 @@ is assigned. They are not unimplemented parts of the 0051 release contract.
 
 | ID | Deferred scope / reason | Re-entry condition and destination |
 | --- | --- | --- |
-| D01 | Code completion remains unimplemented and deferred through architecture, core verification and native-worker unification | [0059](0059-nonblocking-code-completion.md) C01–C09 starts after 0056 AR01–AR16, 0057 VF01–VF20 and [0058](0058-unified-native-worker.md) WK01–WK20. Architecture/verification are already dispatched; the worker follows without interrupting them. Query suggestions remain part of 0051. |
+| D01 | Code completion is implemented on the 0059 branch after the separately released and verified 0.36.0 worker; exact-candidate completion qualification is in progress | [0059](0059-nonblocking-code-completion.md) retains every C01–C09 acceptance gate. The 0057/0058 evidence is immutable history, not proof of new completion code. Completion must be released and publicly verified before GUI implementation begins. Query suggestions remain part of 0051. |
 | D02 | Full Boolean/GitHub-style query language, semantic symbol predicates, arbitrary provider qualifiers: unnecessary for the bounded uniform filters | A concrete unmet workflow after 0051's grammar, highlighting and filter-parity corpus are stable; amend/write the query plan before implementation. Do not advertise these forms meanwhile. |
 | D03 | Clickable modeline/general mouse interaction: needs coherent terminal capture and hit-region ownership | A tested pointer contract that does not swallow unrelated mouse input. Keyboard `:tab-size`, its selector and visible effective setting ship in 0051 regardless. |
 | D04 | Theme/typography and additional provisioning remain gated; GUI is the final parity arc after architecture, core verification, native worker, completion and debugger | 0056 closes shared gaps, 0057 verifies the baseline and 0058 unifies/requalifies native services before [0061](0061-gui-windows-and-wsl.md) consumes them for Windows presentation over WSL. |
@@ -303,6 +303,15 @@ substantial test journey pushes it past the ~800-line ceiling, split
 the existing harness, product journey and benchmark cases into
 `terminal_editor/{mod,harness,journeys,perf}.rs`; keep their real
 worker/PTY path and measurement-method digests together.
+
+0059 qualification now includes an incremental current-source index, real LSP
+items/resolve/imports, independent source/service/selection acceptance guards,
+bounded physical requests and native snapshot retirement, collection/multicursor
+policy, completion-aware macro continuation, styled grids and real-PTY journeys.
+The static 0.37.0 candidate must pass the full Compose/native lanes and bind raw
+typing/pressure/stage/capture measurements to its source and artifact. The 0.36.0
+worker tag is unchanged. Native CI compares against that released worker and
+adds completion pressure/replay and real/held-language TUI journeys.
 
 The native replay cutover also touches the pre-existing over-ceiling
 `crates/strop-engine/src/editor/notify.rs` (now 1,109 lines). Before its

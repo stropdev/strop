@@ -1,6 +1,6 @@
 # Vim compatibility
 
-Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rewrites).
+Generated from the command table (`strop --dump-compat`).
 `✓` ships exactly; `(soon)` is a planned slot.
 
 ## normal
@@ -81,9 +81,16 @@ Generated from the command table (`cargo test` pins freshness; STROP_REGEN=1 rew
 
 ## insert
 
-- `✓ esc` — normal mode (session = one undo unit)
+- `✓ ctrl-space` — code completion: language service + current source words
+- `✓ ctrl-x ctrl-o` — language-service completion
+- `✓ ctrl-n ctrl-p` — source words; choose next/previous completion
+- `✓ up down` — choose completion when open; otherwise move the caret
+- `✓ ctrl-y` — accept choice
+- `✓ ctrl-e` — dismiss
+- `✓ tab` — indent; accept completion only after deliberate selection
+- `✓ esc` — dismiss completion and enter Normal mode in one event (one undo unit)
 - `✓ backspace` — delete back
-- `✓ enter` — new line (auto-indent)
+- `✓ enter` — new line (auto-indent); accept completion only after deliberate selection
 - `✓ } ] )` — closer on indent-only line dedents
 
 ## leader

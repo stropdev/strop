@@ -546,6 +546,10 @@ fn key_token(key: Key) -> String {
         Key::Char(' ') => "space".into(), // the table's leader token
         Key::Char(c) => c.to_string(),
         Key::CtrlSpace => "ctrl-space".into(),
+        Key::CtrlN => "ctrl-n".into(),
+        Key::CtrlP => "ctrl-p".into(),
+        Key::CtrlY => "ctrl-y".into(),
+        Key::CtrlE => "ctrl-e".into(),
         Key::Esc => "esc".into(),
         Key::Enter => "enter".into(),
         Key::Backspace => "backspace".into(),

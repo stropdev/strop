@@ -58,7 +58,7 @@ impl Editor {
                         && attachment.target == target
                 }) {
                     self.retire_superseded_transport(Some(server));
-                    self.lsp_did_open_current();
+                    self.lsp_did_open_document(self.current());
                     return;
                 }
                 self.lsp_state
@@ -126,7 +126,7 @@ impl Editor {
                         });
                     }
                 }
-                self.lsp_did_open_current();
+                self.lsp_did_open_document(self.current());
             }
             decision => {
                 if warm {

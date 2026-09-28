@@ -185,3 +185,107 @@ fn deferred_grammar_keeps_typeahead_repeat_and_macro_order_in_full_replay() {
     // it does not merely feed the extracted keys through another driver.
     successful(run(root, &["--replay".as_ref(), trace.as_os_str()]));
 }
+
+#[test]
+fn completion_payloads_obey_privacy_and_full_replay_needs_no_provider() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let secret = "privatecompletion7c3a80";
+    let script = root.join("completion.keys");
+    std::fs::write(
+        &script,
+        format!(
+            "buffer \"{secret}\\n\\n\"\nkeys Gipri<c-n>\nsettle 5000\nframe\n\
+         keys <c-y>\nsettle 5000\nframe\nkeys <esc>u\nstate\nframe\n"
+        ),
+    )
+    .unwrap();
+    let metadata = root.join("metadata.jsonl");
+    successful(run(
+        root,
+        &[
+            "--headless".as_ref(),
+            script.as_os_str(),
+            "--log-file".as_ref(),
+            metadata.as_os_str(),
+        ],
+    ));
+    assert!(
+        !std::fs::read_to_string(&metadata).unwrap().contains(secret),
+        "candidate text must not leak through metadata observations or retirement"
+    );
+    let trace = root.join("full.jsonl");
+    let output = successful(run(
+        root,
+        &[
+            "--headless".as_ref(),
+            script.as_os_str(),
+            "--log-file".as_ref(),
+            trace.as_os_str(),
+            "--log-content".as_ref(),
+        ],
+    ));
+    assert!(output
+        .lines()
+        .any(|line| line.contains("2 privatecompletion7c3a80")));
+    let replayed = successful(
+        Command::new(env!("CARGO_BIN_EXE_strop"))
+            .current_dir(root)
+            .env("PATH", root.join("no-native-executables"))
+            .env("HOME", root.join("replay-home"))
+            .env("XDG_CONFIG_HOME", root.join("replay-config"))
+            .env("XDG_STATE_HOME", root.join("replay-state"))
+            .env_remove("STROP_LOG")
+            .arg("--replay")
+            .arg(&trace)
+            .output()
+            .unwrap(),
+    );
+    let state: Value = serde_json::from_str(&replayed).unwrap();
+    assert_eq!(state["mode"], "NORMAL");
+    assert_eq!(state["cursor"], secret.len() + 1);
+    assert_eq!(state["completion"]["worker"], "idle");
+    assert_eq!(state["completion"]["publication"]["charged_bytes"], 0);
+}
+
+#[test]
+fn asynchronous_completion_macros_keep_vim_order_in_native_free_replay() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let script = root.join("macro.keys");
+    let trace = root.join("macro.jsonl");
+    std::fs::write(
+        &script,
+        "buffer \"result\\n\\n\\n\"\nkeys 2Gqaire<c-n>\nsettle 5000\n\
+         keys <c-y>\nsettle 5000\nkeys <esc>qj0@a\nsettle 5000\nframe\nstate\n",
+    )
+    .unwrap();
+    let output = successful(run(
+        root,
+        &[
+            "--headless".as_ref(),
+            script.as_os_str(),
+            "--log-file".as_ref(),
+            trace.as_os_str(),
+            "--log-content".as_ref(),
+        ],
+    ));
+    assert!(output.lines().any(|line| line.contains("3 result")));
+    let replayed = successful(
+        Command::new(env!("CARGO_BIN_EXE_strop"))
+            .current_dir(root)
+            .env("PATH", root.join("no-native-executables"))
+            .env("HOME", root.join("replay-home"))
+            .env("XDG_CONFIG_HOME", root.join("replay-config"))
+            .env("XDG_STATE_HOME", root.join("replay-state"))
+            .env_remove("STROP_LOG")
+            .arg("--replay")
+            .arg(&trace)
+            .output()
+            .unwrap(),
+    );
+    let state: Value = serde_json::from_str(&replayed).unwrap();
+    assert_eq!(state["cursor"], 19);
+    assert_eq!(state["mode"], "NORMAL");
+    assert_eq!(state["completion"]["worker"], "idle");
+}

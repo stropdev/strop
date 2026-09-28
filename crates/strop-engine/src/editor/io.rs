@@ -419,7 +419,7 @@ impl Editor {
                 };
                 self.jump_land(document, range.start.get());
                 self.discover_git();
-                self.lsp_maybe_attach();
+                self.lsp_attach_document(self.current());
             }
             OpenIntent::LspLocation { context, position } => {
                 self.finish_lsp_jump(document, position, context)
@@ -489,7 +489,7 @@ impl Editor {
                 self.remember_directory_view();
                 self.remember_remote_destination();
                 self.discover_git();
-                self.lsp_maybe_attach();
+                self.lsp_attach_document(self.current());
             }
         }
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""0058 whole-core boundary and worker-claim inventory checker.
+"""0059 whole-core, worker and completion-claim inventory checker.
 
-The 0057 inventory is byte-pinned under verification/baseline. Every old
+The 0058 inventory is byte-pinned under verification/baseline. Every old
 claim must name its disposition and any retired implementation's successor;
 new claims must identify the boundary they add.
 
@@ -11,7 +11,7 @@ new claims must identify the boundary they add.
   * liveness: every evidence pointer resolves — test and proof symbols
     must name functions that exist in the referenced file, models must
     exist together with their TLC configs, scripts must exist;
-  * completeness: the original 0057 claim set and the 0058 worker families
+  * completeness: the 0057/0058 claim set and the 0059 completion families
     are all present, with a classified migration for every claim;
   * hash binding: each row pins the sha256 of its owning source files
     and a digest over its claims+evidence content (named Rust test/proof
@@ -118,17 +118,20 @@ REQUIRED_BOUNDARIES = {
     "worker-deployment",
     "worker-streams",
     "worker-recovery",
+    "completion-lifecycle",
+    "completion-transport",
 }
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
-BASELINE_INVENTORY = "verification/baseline/0057-inventory.json"
-BASELINE_SHA256 = "40c0b816e9b91cdc8f2357d88a7cdfab1c26982884088d2166e589711fc1b798"
+BASELINE_INVENTORY = "verification/baseline/0058-inventory.json"
+BASELINE_SHA256 = "3821a4407801b63b322888f2e86f390d50e7db9c6b1f0fff233b532a88f27954"
 MIGRATIONS = {"unchanged", "strengthened", "transferred", "retired-implementation"}
 RELEASE_PROOFS = {
     "WREC-TLAPS": ("proved-theorem", "tlaps"),
     "WDEP-TLAPS": ("proved-theorem", "tlaps"),
     "WREC-VERUS": ("proved-kernel", "verify"),
     "WDEP-VERUS": ("proved-kernel", "verify"),
+    "CMP-FRESH-TLAPS": ("proved-theorem", "tlaps"),
 }
 
 
@@ -391,26 +394,25 @@ def validate_row(row: dict, errors: list) -> None:
 
 
 def validate_migration(inv: dict, errors: list) -> None:
-    if inv.get("release") != "0058":
-        errors.append("release must be 0058")
-    if inv.get("plan") != "plans/0058-unified-native-worker.md":
-        errors.append("release plan must be 0058-unified-native-worker")
+    if inv.get("release") != "0059":
+        errors.append("release must be 0059")
+    if inv.get("plan") != "plans/0059-nonblocking-code-completion.md":
+        errors.append("release plan must be 0059-nonblocking-code-completion")
     if inv.get("baseline") != {
         "inventory": BASELINE_INVENTORY, "sha256": BASELINE_SHA256
     }:
-        errors.append("0057 baseline inventory must be pinned by its fixed digest")
+        errors.append("0058 baseline inventory must be pinned by its fixed digest")
     try:
         baseline_bytes = read_file(BASELINE_INVENTORY)
         if sha256_bytes(baseline_bytes) != BASELINE_SHA256:
-            errors.append("archived 0057 inventory digest changed")
+            errors.append("archived 0058 inventory digest changed")
         baseline = json.loads(baseline_bytes)
     except (Failure, ValueError) as exc:
-        errors.append(f"cannot validate archived 0057 inventory: {exc}")
+        errors.append(f"cannot validate archived 0058 inventory: {exc}")
         return
     try:
         candidate_freeze.baseline_hashes()
-        candidate_freeze.linux_measurements()
-        candidate_freeze.retained_native_evidence()
+        candidate_freeze.worker_baseline_hashes()
         linux = json.loads(read_file("verification/baseline/0057-linux-inventory.json"))
     except (Failure, OSError, ValueError, KeyError, IndexError, TypeError, SystemExit) as exc:
         errors.append(f"cannot validate scoped baseline and worker measurements: {exc}")
@@ -444,17 +446,17 @@ def validate_migration(inv: dict, errors: list) -> None:
             if not isinstance(migration.get("basis"), str) or not migration["basis"].strip():
                 errors.append(f"{key}: migration must explain the evidence transfer")
             if key in old:
-                if migration.get("from") != f"0057/{claim['id']}":
-                    errors.append(f"{key}: old claim must point to its 0057 id")
+                if migration.get("from") != f"0058/{claim['id']}":
+                    errors.append(f"{key}: old claim must point to its 0058 id")
                 if migration.get("classification") not in MIGRATIONS:
                     errors.append(f"{key}: old claim needs an explicit classification")
                 if migration.get("classification") == "retired-implementation":
                     if migration.get("successor") not in claim_ids - {claim["id"]}:
                         errors.append(f"{key}: retired implementation has no live successor")
             elif migration.get("classification") != "new" or migration.get("from") is not None:
-                errors.append(f"{key}: new claim must be classified new without a 0057 id")
+                errors.append(f"{key}: new claim must be classified new without a 0058 id")
     for key in sorted(old - current):
-        errors.append(f"{key}: archived 0057 claim lacks an explicit disposition")
+        errors.append(f"{key}: archived 0058 claim lacks an explicit disposition")
 
 
 def validate_inventory(inv: dict) -> list:

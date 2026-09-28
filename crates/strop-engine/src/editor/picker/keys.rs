@@ -106,8 +106,9 @@ impl Editor {
             Key::CtrlR if search => self.toggle_search_replacement(),
             Key::CtrlR | Key::CtrlW => {}
             Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
-            Key::Up => glue.picker.move_by(-1),
-            Key::Down => glue.picker.move_by(1),
+            Key::CtrlY | Key::CtrlE => {}
+            Key::Up | Key::CtrlP => glue.picker.move_by(-1),
+            Key::Down | Key::CtrlN => glue.picker.move_by(1),
             Key::Tab => glue.picker.move_by(1),
             Key::Backtab => glue.picker.move_by(-1),
             Key::Left => glue.picker.caret_left(),

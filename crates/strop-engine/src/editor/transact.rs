@@ -187,6 +187,15 @@ impl super::Editor {
             }
         }
         self.analysis.edits(id, document.buf.changes());
+        if let Err(error) = self.completion.edits(
+            &self.tape,
+            id,
+            document.buf.revision(),
+            document.buf.text(),
+            document.buf.changes(),
+        ) {
+            self.message = error;
+        }
         document.buf.clear_changes();
         self.publish_collection_updates(collection_updates);
     }

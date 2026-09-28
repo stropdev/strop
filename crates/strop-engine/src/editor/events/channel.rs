@@ -120,6 +120,7 @@ fn classify(event: &AppEvent) -> (Class, &'static str, usize) {
         AppEvent::QuitIntent => semantic("quit intent"),
         AppEvent::Lsp(_) => semantic("lsp"),
         AppEvent::Notify => (Class::Hint, "notify wake", 0),
+        AppEvent::Completion => (Class::Hint, "completion wake", 0),
         AppEvent::LspAttach(_) => semantic("lsp attach"),
         AppEvent::Shell(_) => semantic("shell"),
         AppEvent::Io(_) => semantic("io"),
@@ -145,6 +146,7 @@ struct State {
     focus: Option<bool>,
     resume_input: bool,
     notify: bool,
+    completion: bool,
     /// Lane alternation: under sustained load of both classes, pops
     /// alternate so neither input nor terminal output starves.
     semantic_turn: bool,
@@ -160,6 +162,7 @@ impl State {
             || self.focus.is_some()
             || self.resume_input
             || self.notify
+            || self.completion
     }
 
     fn pop_hint(&mut self) -> Option<AppEvent> {
@@ -180,6 +183,10 @@ impl State {
         if self.notify {
             self.notify = false;
             return Some(AppEvent::Notify);
+        }
+        if self.completion {
+            self.completion = false;
+            return Some(AppEvent::Completion);
         }
         None
     }
@@ -256,6 +263,7 @@ fn insert(state: &mut State, event: AppEvent) {
         AppEvent::Focus(focused) => state.focus = Some(focused),
         AppEvent::ResumeInput => state.resume_input = true,
         AppEvent::Notify => state.notify = true,
+        AppEvent::Completion => state.completion = true,
         event => {
             if let AppEvent::Paste(text) = &event {
                 state.paste_bytes = state.paste_bytes.saturating_add(text.len());

@@ -150,7 +150,7 @@ impl Editor {
             }
         }
         self.scroll_to_cursor(self.view_rows());
-        self.lsp_maybe_attach();
+        self.lsp_attach_document(self.current());
     }
 
     /// A local picker hit with a live LSP request context: the server
