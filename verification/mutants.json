@@ -964,6 +964,118 @@
           ]
         }
       ]
+    },
+    {
+      "id": "completion-ownership",
+      "boundary": "completion-lifecycle",
+      "lane": "model",
+      "gate": "specs/completion-gate.sh",
+      "mutants": [
+        {
+          "name": "completion-query-backlog",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-ownership-mutant-1.cfg",
+          "killed_by": [
+            "LatestOnly"
+          ]
+        },
+        {
+          "name": "completion-index-restart",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-ownership-mutant-2.cfg",
+          "killed_by": [
+            "IndexNotRestartedByQuery"
+          ]
+        },
+        {
+          "name": "completion-stale-publication",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-ownership-mutant-3.cfg",
+          "killed_by": [
+            "NativePublicationOwned"
+          ]
+        },
+        {
+          "name": "completion-stale-presentation",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-ownership-mutant-4.cfg",
+          "killed_by": [
+            "NoStalePresentationOrApply"
+          ]
+        },
+        {
+          "name": "completion-ui-destructor",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-ownership-mutant-5.cfg",
+          "killed_by": [
+            "NativeFinalDestruction"
+          ]
+        },
+        {
+          "name": "completion-unbounded-retention",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-ownership-mutant-6.cfg",
+          "killed_by": [
+            "BoundedRetention"
+          ]
+        },
+        {
+          "name": "completion-stale-acceptance",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-ownership-mutant-7.cfg",
+          "killed_by": [
+            "NoStalePresentationOrApply"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "completion-wire",
+      "boundary": "completion-transport",
+      "lane": "model",
+      "gate": "specs/completion-gate.sh",
+      "mutants": [
+        {
+          "name": "completion-cancel-releases-slot",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-wire-mutant-1.cfg",
+          "killed_by": [
+            "PhysicalSlotsRetained"
+          ]
+        },
+        {
+          "name": "completion-crosses-flush",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-wire-mutant-2.cfg",
+          "killed_by": [
+            "WireSnapshotOrdered"
+          ]
+        },
+        {
+          "name": "completion-double-terminal",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-wire-mutant-3.cfg",
+          "killed_by": [
+            "TerminalOnce"
+          ]
+        },
+        {
+          "name": "completion-unbounded-physical",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-wire-mutant-4.cfg",
+          "killed_by": [
+            "PhysicalOutstandingBounded"
+          ]
+        },
+        {
+          "name": "completion-close-loses-request",
+          "kind": "tla-fault",
+          "config": "specs/cfg/completion-wire-mutant-5.cfg",
+          "killed_by": [
+            "ClosedSettlesAll"
+          ]
+        }
+      ]
     }
   ]
 }

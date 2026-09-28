@@ -608,35 +608,41 @@ Same-machine/profile external input-to-semantic-view observations, milliseconds:
 | Fixture | p50 | p95 | p99 / max |
 | --- | ---: | ---: | ---: |
 | 0.36.0 before, 64 inputs | 0.226 | 0.316 | 0.530 |
-| 0.37.0 after, same 64-input fixture | 0.420 | 0.610 | 0.717 |
-| Completion disabled | 0.246 | 0.287 | 0.448 |
-| Automatic words | 0.391 | 0.614 | 0.684 |
-| Ignoring language server | 0.565 | 0.821 | 1.070 |
-| 16.8 MB source, warm incremental typing | 0.403 | 0.501 | 1.026 |
-| 1 MiB line | 7.525 | 8.118 | 8.561 |
-| 90,000 words on a 1.17 MB line | 8.371 | 9.114 | 10.028 |
+| 0.37.0 after, same 64-input fixture | 0.453 | 0.653 | 0.791 |
+| Completion disabled | 0.244 | 0.337 | 0.638 |
+| Automatic words | 0.402 | 0.500 | 0.816 |
+| Ignoring language server | 0.515 | 0.755 | 1.060 |
+| 16.8 MB source, warm incremental typing | 0.396 | 0.503 | 0.548 |
+| 1 MiB line | 7.459 | 8.230 | 8.632 |
+| 90,000 words on a 1.17 MB line | 8.315 | 8.949 | 9.396 |
 
 These external observations include semantic-line serialization and transport;
 they are not terminal paint timings. The separate 128-input stage observations
 record enqueue→consume and consume→TUI-frame independently. Their worst
-consume→frame p99 was 0.594 ms during cold 16.8 MB indexing; the largest observed
-frame was 0.744 ms. The latest-query fields measure the remaining wait after
-the typing burst. First useful cold words took 76.950 ms for the 16.8 MB source
+consume→frame p99 was 0.565 ms; the largest observed frame was 0.612 ms.
+The latest-query fields measure the remaining wait after the typing burst.
+First useful cold words took 76.964 ms for the 16.8 MB source
 (one startup observation); single-shot startup/cancellation values are not
 percentile distributions. Logical dismissal reached the semantic view in
-0.179–1.271 ms across the measured active word/slow-server cases. LSP cancellation
+0.201–1.293 ms across the measured active word/slow-server cases. LSP cancellation
 is advisory and has no protocol reply; server-observed cancellation counts and
 retained physical ownership are reported separately.
 
 Maximum observed charged candidate retention was 10,510,336 bytes against the
-24 MiB bound. Sampled editor RSS peaked at 51,040 KiB; this is not a kernel peak
+24 MiB bound. Sampled editor RSS peaked at 40,412 KiB; this is not a kernel peak
 or a universal memory guarantee. Every stage observation ended with its
 completion worker idle and zero charged publication bytes. Timings complement
 the deterministic ownership/work bounds; they are not flaky CI thresholds.
 
-The final source freeze, current-source service/core-assurance lanes, retained
-native CI and public tag publication remain required before this candidate is
-declared released.
+The clean source freeze passed for the first candidate. Local current-source
+SSH/Python-free and container lanes passed. Both native Linux architectures
+passed CI run `36428427115`, including completion pressure/capture/physical TUI.
+That run exposed missing central registration of the twelve calibrated mutants
+and a macOS capture-fixture failure. The registry now lists all twelve; a long
+temporary-path reproduction exposed the control socket's kernel pathname bound,
+and the private short-root fix passes the same failing-before capture journey.
+The recorded measurements above use the corrected fixture. Full core-assurance,
+retained native CI and public tag publication remain release requirements.
 
 ## 12. Authorized extensions after this bounded release
 

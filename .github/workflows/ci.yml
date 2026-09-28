@@ -121,6 +121,7 @@ jobs:
           STROP_BENCH_BINARY="$RUNNER_TEMP/strop-product-candidate" cargo test --release --locked \
             -p strop-editor --test terminal_editor completion:: -- --include-ignored --nocapture
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: native-product-${{ matrix.target }}
           path: ${{ runner.temp }}/strop-native-measurements/
@@ -192,6 +193,7 @@ jobs:
           STROP_BENCH_BINARY="$RUNNER_TEMP/strop-product-candidate" cargo test --release --locked \
             -p strop-editor --test terminal_editor completion:: -- --include-ignored --nocapture
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: native-product-aarch64-apple-darwin
           path: ${{ runner.temp }}/strop-native-measurements/

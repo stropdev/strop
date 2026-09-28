@@ -25,7 +25,8 @@ class CompletionEditor:
     def __init__(self, binary: Path, text: str, *, enabled: bool = True,
                  automatic: bool = True, server: str | None = None,
                  geometry: tuple[int, int] = (120, 40)):
-        self.directory = tempfile.TemporaryDirectory(prefix="strop-completion-")
+        # The native control socket must fit macOS's 104-byte sockaddr_un.
+        self.directory = tempfile.TemporaryDirectory(prefix="strop-completion-", dir="/tmp")
         self.root = Path(self.directory.name)
         self.socket = None
         self.control_input = bytearray()

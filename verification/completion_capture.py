@@ -35,7 +35,9 @@ def check(binary: Path) -> dict:
     source = "// fixture\nresponse result\nre\n"
     fixture = Path(__file__).with_name("completion_server.py").resolve()
     captures = {}
-    with tempfile.TemporaryDirectory(prefix="strop-completion-capture-") as directory:
+    # AF_UNIX names have a small kernel byte bound (104 bytes on macOS).
+    # Keep the private fixture root short regardless of the caller's TMPDIR.
+    with tempfile.TemporaryDirectory(prefix="strop-capture-", dir="/tmp") as directory:
         base = Path(directory)
         for content in (False, True):
             root = base / ("full" if content else "metadata")
@@ -62,7 +64,7 @@ def check(binary: Path) -> dict:
             if result.returncode:
                 raise RuntimeError(f"completion capture failed: {result.stderr}")
             if "// represented completion import" not in result.stdout:
-                raise RuntimeError("the capture never applied the resolved completion import")
+                raise RuntimeError(f"the capture never applied the resolved completion import:\n{result.stdout}\n{result.stderr}")
             if "response" not in result.stdout or "NORMAL" not in result.stdout:
                 raise RuntimeError("the capture did not finish its acceptance/undo journey")
             captured = trace.read_text()

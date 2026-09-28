@@ -2378,13 +2378,13 @@
         "sources": {
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
           ".github/scripts/release-catalog.py": "c96e67b8021d13b68e3bf7eef6527b200f37ca0d6fe50600d00dccdc959ac0ca",
-          ".github/workflows/ci.yml": "6f031fd9ba8c5bac7be8d279cdd7b85a1e812ced2e9afce15b21ed322eaa192d",
+          ".github/workflows/ci.yml": "a9d0c88391ec5baf787ac19316ef919739dcaf24b3bc023b13027e205b21781c",
           ".github/workflows/release.yml": "476a3ba3334940861dee2973c61e64d056c2f6f0250bdbbb2daa96621c8cc825",
           "crates/strop-terminal/build.rs": "b9c2bf1ff6f4412eabdf2314ec10b542d7a430fc9c5f8a58b8a2603f608237b2",
           "crates/strop/src/update.rs": "1bfede018d097ae69d56c5074cb89ab5aaf7b0c06983688849011df2db73300f",
           "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
         },
-        "evidence": "7b064bd35257e0a60314ddc8d0bffaccd048177a42620e6eec0ff4c1bb0bf0a3"
+        "evidence": "83efc7d84bcfe2e1201b0b60afa42fdf31cbc1f70fc84ae54723d017d9c221e3"
       }
     },
     {
@@ -4278,7 +4278,7 @@
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
           "crates/strop/Cargo.toml": "838cf8a58bbb957634c6e742a52af4995845be00f9187580e26255781b495a90"
         },
-        "evidence": "fa003ee1d52f4ff796cd0935cfa4329c45f3f91080a345f71296423408cc3a4a"
+        "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }
     },
     {
@@ -5038,7 +5038,7 @@
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "39a346d746437d5a6a761c0387e3e1a90faa3e0d9ca39adaaa734fb69ab32984"
         },
-        "evidence": "657406982d426035e762b5b4b2096e0514bddc0c42364405ba097bda2a4afe25"
+        "evidence": "6ad4b838411504c0c5bd51e2d8fc9ec090ade4010307704b47f3f1754be6301e"
       }
     },
     {
