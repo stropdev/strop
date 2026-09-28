@@ -563,19 +563,19 @@ No release is complete with only a renderer, fake provider or unbounded “async
 
 ### 0.37.0 candidate qualification
 
-The local static, stripped Linux x86_64 artifact is 48,381,232 bytes, SHA-256
-`eceaa62068484f1c7cbd7dbc7a4e1f6a6e7b3841aff37d0b82de930bdd74fada`.
+The local static, stripped Linux x86_64 artifact is 48,385,328 bytes, SHA-256
+`e4acdfd91ad857e4ded243ce345cd619f58ffe2aa0a9c167a1ff095aa8a930e8`.
 `verification/measurements/0059-linux-x86-completion.json` binds 700 crate/build
 inputs, the lockfile, measurement methods, raw observations and this executable.
 The independent before artifact is the published 0.36.0 binary, retained in
 `verification/measurements/0059-linux-x86-typing-before.json`.
 
-- Rust: formatting, Clippy with warnings denied, and 1,747 tests passed
+- Rust: formatting, Clippy with warnings denied, and 1,749 tests passed
   (56 suites, seven opt-in/ignored journeys). The engine has 742 tests and the
   tracing integration suite has five. Regressions failed before their fixes
   for invalid mutation coordinates, repeated failed thread startup, acceptance
-  after service rebinding, partial remote windows, and asynchronous macro
-  continuation overtaken by Escape.
+  after service rebinding, partial remote windows, asynchronous macro
+  continuation overtaken by Escape, and unrelated/symlinked workspace roots.
 - Styled grids: three `render::completion` TestBackend regressions cover
   selection/prefix/kind/source hierarchy, wide Unicode/tabs, narrow/split
   clipping, edge placement and shared documentation syntax styles.
@@ -588,8 +588,10 @@ The independent before artifact is the published 0.36.0 binary, retained in
 - Replay/privacy: resolved LSP acceptance/import/undo captures replay with no
   native executables in `PATH`, after deleting the original source and fixture
   executable. Opaque data, detail, documentation and import text are absent
-  from metadata capture and present in full capture. Macro replay uses the
-  same deferred input ownership rather than a completion-specific interpreter.
+  from metadata capture and present in full capture. Capture journeys cover
+  symlinked source spelling, an unrelated Git cwd, and explicit project consent
+  for a nested source. Macro replay uses the same deferred input ownership
+  rather than a completion-specific interpreter.
 - Native pressure: all 13 scenarios passed. Disabled mode starts no completion
   thread, manual mode stays idle until requested, source edits update one
   persistent index, and 90,000 unique words stop at the 65,536-word bound.
@@ -608,41 +610,46 @@ Same-machine/profile external input-to-semantic-view observations, milliseconds:
 | Fixture | p50 | p95 | p99 / max |
 | --- | ---: | ---: | ---: |
 | 0.36.0 before, 64 inputs | 0.226 | 0.316 | 0.530 |
-| 0.37.0 after, same 64-input fixture | 0.453 | 0.653 | 0.791 |
-| Completion disabled | 0.244 | 0.337 | 0.638 |
-| Automatic words | 0.402 | 0.500 | 0.816 |
-| Ignoring language server | 0.515 | 0.755 | 1.060 |
-| 16.8 MB source, warm incremental typing | 0.396 | 0.503 | 0.548 |
-| 1 MiB line | 7.459 | 8.230 | 8.632 |
-| 90,000 words on a 1.17 MB line | 8.315 | 8.949 | 9.396 |
+| 0.37.0 after, same 64-input fixture | 0.447 | 0.698 | 0.788 |
+| Completion disabled | 0.249 | 0.304 | 0.519 |
+| Automatic words | 0.405 | 0.553 | 0.771 |
+| Ignoring language server | 0.505 | 0.693 | 0.864 |
+| 16.8 MB source, warm incremental typing | 0.441 | 0.564 | 0.675 |
+| 1 MiB line | 7.693 | 8.598 | 9.078 |
+| 90,000 words on a 1.17 MB line | 8.482 | 9.325 | 9.436 |
 
 These external observations include semantic-line serialization and transport;
 they are not terminal paint timings. The separate 128-input stage observations
 record enqueue→consume and consume→TUI-frame independently. Their worst
-consume→frame p99 was 0.565 ms; the largest observed frame was 0.612 ms.
+consume→frame p99 was 0.658 ms; the largest observed frame was 0.745 ms.
 The latest-query fields measure the remaining wait after the typing burst.
-First useful cold words took 76.964 ms for the 16.8 MB source
+First useful cold words took 77.128 ms for the 16.8 MB source
 (one startup observation); single-shot startup/cancellation values are not
 percentile distributions. Logical dismissal reached the semantic view in
-0.201–1.293 ms across the measured active word/slow-server cases. LSP cancellation
+0.203–1.340 ms across the measured active word/slow-server cases. LSP cancellation
 is advisory and has no protocol reply; server-observed cancellation counts and
 retained physical ownership are reported separately.
 
 Maximum observed charged candidate retention was 10,510,336 bytes against the
-24 MiB bound. Sampled editor RSS peaked at 40,412 KiB; this is not a kernel peak
+24 MiB bound. Sampled editor RSS peaked at 40,288 KiB; this is not a kernel peak
 or a universal memory guarantee. Every stage observation ended with its
 completion worker idle and zero charged publication bytes. Timings complement
 the deterministic ownership/work bounds; they are not flaky CI thresholds.
 
-The clean source freeze passed for the first candidate. Local current-source
-SSH/Python-free and container lanes passed. Both native Linux architectures
-passed CI run `36428427115`, including completion pressure/capture/physical TUI.
-That run exposed missing central registration of the twelve calibrated mutants
-and a macOS capture-fixture failure. The registry now lists all twelve; a long
-temporary-path reproduction exposed the control socket's kernel pathname bound,
-and the private short-root fix passes the same failing-before capture journey.
-The recorded measurements above use the corrected fixture. Full core-assurance,
-retained native CI and public tag publication remain release requirements.
+CI run `36435442582` passed the full Compose/core/service gate and both native
+Linux lanes. macOS passed its worker, SSH, product, real-LSP and transfer
+journeys but exposed an unbound completion source. Native traces reproduced
+the failure on Linux: a symlinked source lay outside the fallback cwd root,
+so its ready server never received didOpen. An unrelated current Git root
+caused the same refusal. Discovery now preserves the source namespace and
+file-directory fallback; the affected explicit-trust caller also uses the
+owning project language layer for nested files. The failed-before root and
+consent journeys pass after the fixes without weakening stale-owner checks.
+
+The measurements above bind that corrected production source and all three
+capture layouts, not the earlier candidates. The central registry includes
+all twelve completion faults (22 seams, 111 kill obligations overall).
+Final retained-platform CI and public tag publication remain release gates.
 
 ## 12. Authorized extensions after this bounded release
 

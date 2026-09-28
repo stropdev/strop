@@ -34,6 +34,11 @@
   selection and owned acceptance before consuming the next generated key;
   Escape cannot overtake a pending completion in a replayed macro. Repaint
   (`Ctrl-L`) preserves the current query and deliberate selection.
+- **Language services follow the source's workspace**: a file opened through a
+  symlinked directory or outside the editor's current repository no longer
+  loses its language-server binding. Discovery falls back to the file's own
+  directory and refuses an unrelated current Git root. Explicit `:trust` uses
+  the owning project language layer even when the source is in a nested folder.
 
 
 ## 0.36.0 — 2026-09-27

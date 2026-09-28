@@ -255,19 +255,28 @@ fn server_by_name<'a>(cfg: &'a Languages, name: &str) -> Option<ServerSpec<'a>> 
 
 /// Workspace root for a buffer: the git root, else the file's directory.
 pub fn workspace_root(path: &Path, cwd: &Path) -> std::path::PathBuf {
-    let mut dir = if path.is_absolute() {
-        path.parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| cwd.to_path_buf())
+    let joined;
+    let path = if path.is_absolute() {
+        path
     } else {
-        cwd.to_path_buf()
+        joined = cwd.join(path);
+        &joined
     };
+    let directory = path.parent().unwrap_or(cwd);
+    let mut probe = std::path::PathBuf::with_capacity(directory.as_os_str().len() + 5);
+    probe.push(directory);
     loop {
-        if dir.join(".git").exists() {
-            return dir;
+        probe.push(".git");
+        let repository = probe.exists();
+        probe.pop();
+        if repository {
+            return probe;
         }
-        if !dir.pop() {
-            return cwd.to_path_buf();
+        if !probe.pop() {
+            // A fallback must cover the source's spelling, including symlink
+            // aliases; an unrelated or canonicalized cwd cannot own it.
+            probe.push(directory);
+            return probe;
         }
     }
 }
@@ -382,12 +391,40 @@ mod tests {
 
     #[test]
     fn root_walks_to_git() {
-        let dir = std::env::temp_dir().join("strop-lsp-root");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("src/deep")).unwrap();
-        std::fs::create_dir_all(dir.join(".git")).unwrap();
-        let root = workspace_root(&dir.join("src/deep/f.rs"), &dir);
-        assert_eq!(root, dir);
-        let _ = std::fs::remove_dir_all(&dir);
+        let fixture = tempfile::tempdir().unwrap();
+        let outer = fixture.path();
+        let inner = outer.join("nested");
+        std::fs::create_dir_all(inner.join("src/deep")).unwrap();
+        std::fs::create_dir_all(outer.join(".git")).unwrap();
+        std::fs::write(inner.join(".git"), "gitdir: elsewhere\n").unwrap();
+        assert_eq!(workspace_root(&inner.join("src/deep/f.rs"), outer), inner);
+    }
+
+    #[test]
+    fn root_without_repository_follows_the_file_not_cwd() {
+        let fixture = tempfile::tempdir().unwrap();
+        let source = fixture.path().join("source/deep");
+        let cwd = fixture.path().join("unrelated");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&cwd).unwrap();
+        assert_eq!(workspace_root(&source.join("new.c"), &cwd), source);
+        assert_eq!(
+            workspace_root(Path::new("source/deep/new.c"), fixture.path()),
+            source
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn root_keeps_the_documents_symlink_namespace() {
+        let fixture = tempfile::tempdir().unwrap();
+        let physical = fixture.path().join("physical");
+        let alias = fixture.path().join("alias");
+        std::fs::create_dir_all(&physical).unwrap();
+        std::os::unix::fs::symlink(&physical, &alias).unwrap();
+        let document = alias.join("new.c");
+        let root = workspace_root(&document, &physical);
+        assert_eq!(root, alias);
+        assert!(document.starts_with(root));
     }
 }

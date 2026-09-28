@@ -307,7 +307,7 @@ fn discover_local(
     let name = spec.name.to_string();
     let root = match languages.project_root.as_deref() {
         Some(root) => root.to_path_buf(),
-        None => match git_workdir {
+        None => match git_workdir.filter(|workdir| abs.starts_with(workdir)) {
             Some(workdir) => workdir.to_path_buf(),
             None => registry::workspace_root(abs, cwd),
         },

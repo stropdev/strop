@@ -774,12 +774,16 @@
         "crates/strop-lsp/src/convert.rs",
         "crates/strop-lsp/src/protocol.rs",
         "crates/strop-lsp/src/client/worker_io.rs",
-        "crates/strop-lsp/src/client/tests/spawn.rs"
+        "crates/strop-lsp/src/client/tests/spawn.rs",
+        "crates/strop-lsp/src/registry.rs",
+        "crates/strop-engine/src/editor/lsp/attach.rs",
+        "crates/strop-engine/src/editor/lsp/lifecycle/mod.rs",
+        "crates/strop-engine/src/editor/io/native.rs"
       ],
       "claims": [
         {
           "id": "LSP-IDENTITY",
-          "statement": "Revision zero is valid but does not bypass edit rejection; equal-revision documents do not share reply ownership; close/reopen and binding replacement reject the old incarnation's replies; an older hover cannot overwrite a newer reply.",
+          "statement": "Revision zero is valid but does not bypass edit rejection; equal-revision documents do not share reply ownership; close/reopen and binding replacement reject the old incarnation's replies; an older hover cannot overwrite a newer reply. Initial local discovery preserves the source path namespace: without a repository marker its file directory is the root, and an unrelated editor Git workdir is not reused. Explicit local trust resolves the same nearest project language layer before repository/file-directory fallback, including nested source files.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -801,12 +805,27 @@
               "tests": [
                 "prepared_completion_does_not_apply_after_language_service_rebinding"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-lsp/src/registry.rs",
+              "gate": "test",
+              "tests": [
+                "root_without_repository_follows_the_file_not_cwd",
+                "root_keeps_the_documents_symlink_namespace",
+                "root_walks_to_git"
+              ]
+            },
+            {
+              "kind": "script",
+              "path": "verification/completion_capture.py",
+              "gate": "benchmark"
             }
           ],
           "migration": {
             "from": "0058/LSP-IDENTITY",
             "classification": "strengthened",
-            "basis": "Completion captures the exact service server/path/root/language/namespace and independently revalidates prepared results before applying them."
+            "basis": "Completion captures the exact service server/path/root/language/namespace and independently revalidates prepared results before applying them. Native completion qualification exposed unbound symlinked/external startup sources. Root discovery now covers the requested source instead of falling back to an unrelated cwd/repository; the two failing-before root regressions and actual alias/foreign-repository import captures pass after the fix. The affected trust caller now honors the discovered project layer rather than trusting only the nested file directory; the permanent native capture includes explicit consent followed by resolved import acceptance and native-free replay."
           }
         },
         {
@@ -911,10 +930,14 @@
       ],
       "gates": [
         "test",
-        "model"
+        "model",
+        "benchmark"
       ],
       "pins": {
         "sources": {
+          "crates/strop-engine/src/editor/io/native.rs": "7ffd02585a6a35f136a7ab1b4a507f739e8d39c342be28238e3fcc046021e716",
+          "crates/strop-engine/src/editor/lsp/attach.rs": "761800acd8af8197d487cc581f937db5240758615c97d282e6b1b1e1788c5811",
+          "crates/strop-engine/src/editor/lsp/lifecycle/mod.rs": "e48cb13c9cdc9c6b13d8b6f87f7f2627efe8098b57587339edf00de82552ec50",
           "crates/strop-engine/src/editor/lsp/routing.rs": "e651b494cd481713411e5a1ad64247ede9e6246cc13e85f2073c5b2c7cbc30f9",
           "crates/strop-engine/src/editor/lsp/state.rs": "20a6d3fa9bc2d7e438a7c4501b279019a9363d15635deb49998aac8e4ae51ee3",
           "crates/strop-lsp/src/client/api.rs": "2078d1b94e692eaf00f36e10553a94a147fd736a94e084c6437a20840edb4de1",
@@ -925,9 +948,10 @@
           "crates/strop-lsp/src/client/wire.rs": "f64dd60975d074cd52587e888d99a5bcf4300d89772453aac3102382eb36520f",
           "crates/strop-lsp/src/client/worker_io.rs": "cb4ac5b40e966b92acfa3fce401da6e669732051f9c79b4b63cf1ed69c21e6b1",
           "crates/strop-lsp/src/convert.rs": "2cce26f33656dc5b2a1c0b0f499c2b68ba3bfc72e7fd72d1c04675a96b26d541",
-          "crates/strop-lsp/src/protocol.rs": "e80b69e59806049b99dee47ab6381da184999cffbbf20c0d8568bf2cc8de4e6f"
+          "crates/strop-lsp/src/protocol.rs": "e80b69e59806049b99dee47ab6381da184999cffbbf20c0d8568bf2cc8de4e6f",
+          "crates/strop-lsp/src/registry.rs": "b1d36df4df39c46d5c4f0f04caa796062e79afa4a025bb87b5f45f77de577a87"
         },
-        "evidence": "ad1654df41fa533478e2b6766655cd405cb328ca7c1fe42c92bcf7376d0a1243"
+        "evidence": "d56d9bdc652aae0023ec2c96d72f29b214d4124cced6615b7ac6e8372d88c386"
       }
     },
     {
@@ -5038,7 +5062,7 @@
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "39a346d746437d5a6a761c0387e3e1a90faa3e0d9ca39adaaa734fb69ab32984"
         },
-        "evidence": "6ad4b838411504c0c5bd51e2d8fc9ec090ade4010307704b47f3f1754be6301e"
+        "evidence": "4bfee36d21f738adef6593fa65ed51bd5fc86f309aeeafa57a9bae7e73253f07"
       }
     },
     {

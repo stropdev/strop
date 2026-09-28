@@ -142,8 +142,12 @@ def validate_report(report: dict, root: Path = ROOT) -> None:
     payloads = ("opaque_data", "detail", "documentation", "import")
     if (capture["binary_sha256"] != report["binary_sha256"]
             or not captured["native_free_full_replay"]
+            or captured["metadata"]["startup_layout"] != "symlinked-source"
+            or captured["full"]["startup_layout"] != "unrelated-git-cwd"
+            or captured["project"]["startup_layout"] != "nested-project-consent"
             or captured["metadata"]["payloads_present"] != dict.fromkeys(payloads, False)
-            or captured["full"]["payloads_present"] != dict.fromkeys(payloads, True)):
+            or captured["full"]["payloads_present"] != dict.fromkeys(payloads, True)
+            or captured["project"]["payloads_present"] != dict.fromkeys(payloads, True)):
         raise SystemExit("completion capture privacy or native-free replay was not established")
 
 

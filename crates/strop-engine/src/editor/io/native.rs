@@ -1,6 +1,6 @@
 //! Owned native side effects. Admission is pure and replay never invokes work.
 use super::{Editor, IoEvent};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use strop_core::id::DocumentId;
 use strop_core::worker::{self, Completion, FailureKind, Outcome, Ticket};
 
@@ -145,7 +145,9 @@ impl Editor {
                         cwd,
                         state_dir,
                     } => {
-                        let root = strop_lsp::registry::workspace_root(&probe, &cwd);
+                        let root = strop_lsp::languages::project_path(&probe)
+                            .and_then(|layer| layer.parent()?.parent().map(Path::to_path_buf))
+                            .unwrap_or_else(|| strop_lsp::registry::workspace_root(&probe, &cwd));
                         match crate::session::trust(state_dir.as_deref(), &root) {
                             Ok(()) => Outcome::Success(NativeResult::Trusted(root)),
                             Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),

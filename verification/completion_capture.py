@@ -39,28 +39,48 @@ def check(binary: Path) -> dict:
     # Keep the private fixture root short regardless of the caller's TMPDIR.
     with tempfile.TemporaryDirectory(prefix="strop-capture-", dir="/tmp") as directory:
         base = Path(directory)
-        for content in (False, True):
-            root = base / ("full" if content else "metadata")
+        layouts = (("metadata", "symlinked-source", False),
+                   ("full", "unrelated-git-cwd", True),
+                   ("project", "nested-project-consent", True))
+        for name, layout, content in layouts:
+            root = base / name
+            root.mkdir()
+            if not content:
+                alias = base / "source-alias"
+                alias.symlink_to(root, target_is_directory=True)
+                root = alias
             for folder in ("bin", "home", "config", "state", "cache"):
                 (root / folder).mkdir(parents=True)
-            file = root / "input.c"
+            file = root / ("src/input.c" if name == "project" else "input.c")
+            file.parent.mkdir(exist_ok=True)
             file.write_text(source)
             script = root / "journey.strop"
-            script.write_text(SCRIPT)
+            script.write_text(("settle 10000\nkeys :trust<enter>\n" if name == "project" else "") + SCRIPT)
             trace = root / "capture.jsonl"
             executable = root / "bin/clangd"
             executable.write_text(f"#!{sys.executable}\nimport runpy, sys\n"
                 f"sys.argv = [{str(fixture)!r}, '--mode', 'import', '--control', {str(root / 'control.sock')!r}]\n"
                 f"runpy.run_path({str(fixture)!r}, run_name='__main__')\n")
             executable.chmod(0o700)
+            if name == "project":
+                (root / ".strop").mkdir()
+                (root / ".strop/languages.toml").write_text(
+                    "[language-server.clangd]\ncommand = " + json.dumps(str(executable)) + "\n")
             environment = dict(os.environ, HOME=str(root / "home"),
                 XDG_CONFIG_HOME=str(root / "config"), XDG_STATE_HOME=str(root / "state"),
                 XDG_CACHE_HOME=str(root / "cache"), STROP_LOG="",
                 PATH=str(root / "bin") + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin"))
+            launch_cwd = root
+            if name == "full":
+                launch_cwd = base / "unrelated-repository"
+                launch_cwd.mkdir()
+                subprocess.run(["git", "-c", "init.templateDir=", "-c", "init.defaultBranch=main",
+                    "init", "--quiet", str(launch_cwd)], env=environment, check=True,
+                    capture_output=True, text=True, timeout=10)
             command = [str(binary), "--headless", str(script), str(file), "--log-file", str(trace)]
             if content:
                 command.append("--log-content")
-            result = subprocess.run(command, cwd=root, env=environment, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(command, cwd=launch_cwd, env=environment, capture_output=True, text=True, timeout=30)
             if result.returncode:
                 raise RuntimeError(f"completion capture failed: {result.stderr}")
             if "// represented completion import" not in result.stdout:
@@ -89,7 +109,7 @@ def check(binary: Path) -> dict:
                 environment["HOME"] = str(root / "replay-home")
                 environment["XDG_CONFIG_HOME"] = str(root / "replay-config")
                 environment["XDG_STATE_HOME"] = str(root / "replay-state")
-                replay = subprocess.run([str(binary), "--replay", str(trace)], cwd=root,
+                replay = subprocess.run([str(binary), "--replay", str(trace)], cwd=launch_cwd,
                     env=environment, capture_output=True, text=True, timeout=30)
                 if replay.returncode:
                     raise RuntimeError(f"native-free LSP completion replay failed: {replay.stderr}")
@@ -97,7 +117,8 @@ def check(binary: Path) -> dict:
                 if state["mode"] != "NORMAL" or state["completion"]["worker"] != "idle":
                     raise RuntimeError("replay did not preserve completion exit/retirement")
                 captures["native_free_full_replay"] = True
-            captures["full" if content else "metadata"] = {
+            captures[name] = {
+                "startup_layout": layout,
                 "bytes": trace.stat().st_size, "events": len(records),
                 "payloads_present": present,
                 "trace_sha256": hashlib.sha256(captured.encode()).hexdigest(),
