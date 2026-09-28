@@ -2035,7 +2035,7 @@
           "migration": {
             "from": "0058/FS-NOCLOBBER",
             "classification": "unchanged",
-            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -2055,7 +2055,7 @@
           "migration": {
             "from": "0058/FS-SESSION-BOUNDARY",
             "classification": "unchanged",
-            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -2077,7 +2077,7 @@
           "migration": {
             "from": "0058/FS-LIFECYCLE",
             "classification": "unchanged",
-            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -2106,7 +2106,7 @@
           "migration": {
             "from": "0058/FS-ADVERSARIAL",
             "classification": "unchanged",
-            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -2134,7 +2134,7 @@
           "migration": {
             "from": "0058/FS-STORE",
             "classification": "unchanged",
-            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         }
       ],
@@ -2143,7 +2143,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "00f42b966166bea7311af869824022de64c609400537ed4f4fa781de0e3c3025",
+          "crates/strop-fs/Cargo.toml": "910ba6586358fa335b516974f7a1925465027122efd7856f312d28e0b4141c52",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -2403,12 +2403,12 @@
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
           ".github/scripts/release-catalog.py": "c96e67b8021d13b68e3bf7eef6527b200f37ca0d6fe50600d00dccdc959ac0ca",
           ".github/workflows/ci.yml": "a9d0c88391ec5baf787ac19316ef919739dcaf24b3bc023b13027e205b21781c",
-          ".github/workflows/release.yml": "476a3ba3334940861dee2973c61e64d056c2f6f0250bdbbb2daa96621c8cc825",
+          ".github/workflows/release.yml": "a22cbd1b0f5979022b470a3d28cf5a2a375aca5c14c6a86c2015381c46b6a755",
           "crates/strop-terminal/build.rs": "b9c2bf1ff6f4412eabdf2314ec10b542d7a430fc9c5f8a58b8a2603f608237b2",
           "crates/strop/src/update.rs": "1bfede018d097ae69d56c5074cb89ab5aaf7b0c06983688849011df2db73300f",
           "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
         },
-        "evidence": "83efc7d84bcfe2e1201b0b60afa42fdf31cbc1f70fc84ae54723d017d9c221e3"
+        "evidence": "6d35064056a1a5bceaf1a6558edc2b4770d63f14b1d162102ffabb93c968ca59"
       }
     },
     {
@@ -3193,7 +3193,7 @@
           "migration": {
             "from": "0058/WS-SERVE",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3221,7 +3221,7 @@
           "migration": {
             "from": "0058/WS-CLIENT",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3258,7 +3258,7 @@
           "migration": {
             "from": "0058/WS-PREPARED-SESSION",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3290,7 +3290,7 @@
           "migration": {
             "from": "0058/WS-WARM-HANDSHAKE",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3312,7 +3312,7 @@
           "migration": {
             "from": "0058/WS-WARM-CONTROL",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3344,7 +3344,7 @@
           "migration": {
             "from": "0058/WS-UI-FRAME",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3384,7 +3384,7 @@
           "migration": {
             "from": "0058/WS-TUI-FRAME",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3411,7 +3411,7 @@
           "migration": {
             "from": "0058/WPERF-LSP-LOCAL",
             "classification": "transferred",
-            "basis": "Preserve the released 0058 raw measurements under the immutable archive hash; replace obsolete live-source 0058 readers with the archive validator. Current native product/LSP/transfer journeys run again in the exact-source CI/release lanes; completion measurements have their own source and artifact binding."
+            "basis": "Preserve the released 0058 raw measurements under the immutable archive hash; replace obsolete live-source 0058 readers with the archive validator. Current native product/LSP/transfer journeys run again in the exact-source CI/release lanes; completion measurements have their own source and artifact binding. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3493,7 +3493,7 @@
           "migration": {
             "from": "0058/WPERF-FULL",
             "classification": "transferred",
-            "basis": "Preserve the released 0058 raw measurements under the immutable archive hash; replace obsolete live-source 0058 readers with the archive validator. Current native product/LSP/transfer journeys run again in the exact-source CI/release lanes; completion measurements have their own source and artifact binding."
+            "basis": "Preserve the released 0058 raw measurements under the immutable archive hash; replace obsolete live-source 0058 readers with the archive validator. Current native product/LSP/transfer journeys run again in the exact-source CI/release lanes; completion measurements have their own source and artifact binding. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3523,7 +3523,7 @@
           "migration": {
             "from": "0058/WS-RECOVERY-KERNEL",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3573,7 +3573,7 @@
           "migration": {
             "from": "0058/WS-ACTIVE-LEASE",
             "classification": "unchanged",
-            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change."
+            "basis": "The owning terminal integration fixture gains completion cases and improved failure diagnostics; shipped worker serve/PTY/framing effects are unchanged. Existing worker and terminal tests passed; reviewed test-fixture-only source change. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         }
       ],
@@ -3591,7 +3591,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "b9df6a96a00edd766c2ea653ab6b3a96e36aad19a10abf0436281ec39aeaec1a",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "00f42b966166bea7311af869824022de64c609400537ed4f4fa781de0e3c3025",
+          "crates/strop-fs/Cargo.toml": "910ba6586358fa335b516974f7a1925465027122efd7856f312d28e0b4141c52",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -3599,7 +3599,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "0c64cbdf376ee0856b42fe8539b91e2ba261f7e33a9d3b25449bb31947784bdb",
+          "crates/strop-worker/Cargo.toml": "e270a7ee11b8367fd800a18058717d3673abef360340067aa30f899cdd9c2fca",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -3884,7 +3884,7 @@
           "migration": {
             "from": "0058/WDEP-MODEL",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3943,7 +3943,7 @@
           "migration": {
             "from": "0058/WDEP-ACTIVATE",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -3981,7 +3981,7 @@
           "migration": {
             "from": "0058/WDEP-CONTEXT",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -4017,7 +4017,7 @@
           "migration": {
             "from": "0058/WDEP-CONTAINER-PERF",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -4111,7 +4111,7 @@
           "migration": {
             "from": "0058/WDEP-GC",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -4149,7 +4149,7 @@
           "migration": {
             "from": "0058/WDEP-TLAPS",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -4205,7 +4205,7 @@
           "migration": {
             "from": "0058/WDEP-VERUS",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -4233,7 +4233,7 @@
           "migration": {
             "from": "0058/WDEP-CACHE-CONCURRENT",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         },
         {
@@ -4266,7 +4266,7 @@
           "migration": {
             "from": "0058/WDEP-SSH-PYTHONFREE",
             "classification": "unchanged",
-            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged."
+            "basis": "The explain caller migrates from implicit current-document LSP attachment to the same explicit current DocumentId. Deployment/cache/consent policy is unchanged; reviewed call-site-only migration. The subsequent 0.37.0 source-digest change is limited to workspace dependency version pins in the owning Cargo manifests; the corresponding production behavior is unchanged. The 0.37.1 publication-only patch changes the owning Cargo release pins, not this runtime boundary; the qualified 0.37.0 tag remains immutable."
           }
         }
       ],
@@ -4296,11 +4296,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "0c64cbdf376ee0856b42fe8539b91e2ba261f7e33a9d3b25449bb31947784bdb",
+          "crates/strop-worker/Cargo.toml": "e270a7ee11b8367fd800a18058717d3673abef360340067aa30f899cdd9c2fca",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "838cf8a58bbb957634c6e742a52af4995845be00f9187580e26255781b495a90"
+          "crates/strop/Cargo.toml": "e6637be198bda829d87bbca0b70028b9bd01c651a80a00afe5def0e5a0f3259d"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }
@@ -5062,7 +5062,7 @@
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "39a346d746437d5a6a761c0387e3e1a90faa3e0d9ca39adaaa734fb69ab32984"
         },
-        "evidence": "4bfee36d21f738adef6593fa65ed51bd5fc86f309aeeafa57a9bae7e73253f07"
+        "evidence": "3df1b944b39e66a9e72d75bd1d8fe0b70149b36ee0f4bb85346766a4b3292f9c"
       }
     },
     {

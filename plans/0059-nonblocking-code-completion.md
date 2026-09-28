@@ -1,6 +1,6 @@
 # 0059 — Nonblocking, precise code completion
 
-Status: **C01–C08 implemented and locally qualified; 0.37.0 C09/release gates running**.
+Status: **C01–C09 complete and qualified; 0.37.1 publication in progress after the immutable 0.37.0 tag's artifact-directory failure**.
 0056 AR01–AR16, 0057 VF01–VF20 and 0058 WK01–WK20 are complete.
 The prerequisite release is the immutable `v0.36.0` commit
 `a858e889113507ef50302286117193d9d4e99573`, published and verified in
@@ -8,8 +8,8 @@ run `36319871385`. Completion follows it, before debugger and GUI work.
 C01–C09 remain required; a popup or one provider does not complete this plan.
 
 Research baseline: Strop 0.28.0,
-`c7a5ac6c9089cff654365a0376f6cf87d746db95`. Incremental implementation
-evidence is recorded in §11; it is not an exact-candidate release qualification.
+`c7a5ac6c9089cff654365a0376f6cf87d746db95`. Section 11 records the exact
+source/artifact qualification and separates it from public publication.
 
 ## 1. Release contract
 
@@ -561,10 +561,10 @@ Silicon, with completion pressure/capture observations alongside the existing
 worker and real-server journeys.
 No release is complete with only a renderer, fake provider or unbounded “async” work.
 
-### 0.37.0 candidate qualification
+### 0.37.1 candidate qualification
 
-The local static, stripped Linux x86_64 artifact is 48,385,328 bytes, SHA-256
-`e4acdfd91ad857e4ded243ce345cd619f58ffe2aa0a9c167a1ff095aa8a930e8`.
+The local static, stripped Linux x86_64 artifact is 48,381,232 bytes, SHA-256
+`1fb5eac9305aaed3e245f862cc883d225a7001c62ef937e96e3b75e2213eeb94`.
 `verification/measurements/0059-linux-x86-completion.json` binds 700 crate/build
 inputs, the lockfile, measurement methods, raw observations and this executable.
 The independent before artifact is the published 0.36.0 binary, retained in
@@ -610,28 +610,28 @@ Same-machine/profile external input-to-semantic-view observations, milliseconds:
 | Fixture | p50 | p95 | p99 / max |
 | --- | ---: | ---: | ---: |
 | 0.36.0 before, 64 inputs | 0.226 | 0.316 | 0.530 |
-| 0.37.0 after, same 64-input fixture | 0.447 | 0.698 | 0.788 |
-| Completion disabled | 0.249 | 0.304 | 0.519 |
-| Automatic words | 0.405 | 0.553 | 0.771 |
-| Ignoring language server | 0.505 | 0.693 | 0.864 |
-| 16.8 MB source, warm incremental typing | 0.441 | 0.564 | 0.675 |
-| 1 MiB line | 7.693 | 8.598 | 9.078 |
-| 90,000 words on a 1.17 MB line | 8.482 | 9.325 | 9.436 |
+| 0.37.1 after, same 64-input fixture | 0.452 | 0.652 | 0.793 |
+| Completion disabled | 0.261 | 0.336 | 0.528 |
+| Automatic words | 0.388 | 0.522 | 0.931 |
+| Ignoring language server | 0.514 | 0.634 | 0.953 |
+| 16.8 MB source, warm incremental typing | 0.422 | 0.684 | 0.835 |
+| 1 MiB line | 7.836 | 8.581 | 9.423 |
+| 90,000 words on a 1.17 MB line | 8.572 | 9.426 | 10.123 |
 
 These external observations include semantic-line serialization and transport;
 they are not terminal paint timings. The separate 128-input stage observations
 record enqueue→consume and consume→TUI-frame independently. Their worst
-consume→frame p99 was 0.658 ms; the largest observed frame was 0.745 ms.
+consume→frame p99 was 0.600 ms; the largest observed frame was 0.797 ms.
 The latest-query fields measure the remaining wait after the typing burst.
-First useful cold words took 77.128 ms for the 16.8 MB source
+First useful cold words took 77.401 ms for the 16.8 MB source
 (one startup observation); single-shot startup/cancellation values are not
 percentile distributions. Logical dismissal reached the semantic view in
-0.203–1.340 ms across the measured active word/slow-server cases. LSP cancellation
+0.199–1.279 ms across the measured active word/slow-server cases. LSP cancellation
 is advisory and has no protocol reply; server-observed cancellation counts and
 retained physical ownership are reported separately.
 
 Maximum observed charged candidate retention was 10,510,336 bytes against the
-24 MiB bound. Sampled editor RSS peaked at 40,288 KiB; this is not a kernel peak
+24 MiB bound. Sampled editor RSS peaked at 41,820 KiB; this is not a kernel peak
 or a universal memory guarantee. Every stage observation ended with its
 completion worker idle and zero charged publication bytes. Timings complement
 the deterministic ownership/work bounds; they are not flaky CI thresholds.
@@ -649,7 +649,20 @@ consent journeys pass after the fixes without weakening stale-owner checks.
 The measurements above bind that corrected production source and all three
 capture layouts, not the earlier candidates. The central registry includes
 all twelve completion faults (22 seams, 111 kill obligations overall).
-Final retained-platform CI and public tag publication remain release gates.
+CI run `36459523955` qualified the corrected source on all three retained
+native profiles (attempt 2: the first macOS attempt stopped in the unchanged
+0.36.0 rust-analyzer baseline; the failed observations remain in its log).
+The qualified commit is `cfcb47b62323e1bb1426a8c3a4279f904fa43a8d`.
+
+Its immutable `v0.37.0` release run `36479891772` passed protocol/core/native
+gates and the shipping-artifact journeys, but the Linux runner could not write
+its qualification report into Docker's root-owned `dist/`. No release was
+published. 0.37.1 changes only package identity and runner-owned directory
+creation before the bind mount; it does not move the qualified tag or weaken
+the checks. A real Docker export smoke proved runner UID 1000 owns the
+directory/report while UID 0 owns the exported executable. The patch artifact
+has fresh version-bound measurements, three passing PTY journeys and the
+Compose quality gate; its own tag workflow remains the publication authority.
 
 ## 12. Authorized extensions after this bounded release
 

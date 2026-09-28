@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.37.0 — 2026-09-28
+## 0.37.1 — 2026-09-29
 
 ### Added
 
@@ -16,6 +16,10 @@
   `auto_popup = false` keeps manual completion and its active prefix updates.
 
 ### Fixed
+
+- **Release artifact ownership**: the runner creates `dist/` before the Docker
+  bind mount, so host-side qualification can write its report beside root-owned
+  binary exports. This fixes publication without weakening artifact checks.
 
 - **Crate publication respects versioned test dependencies**: the publication
   graph now places workspace dev-dependencies before their consumers because
@@ -40,6 +44,13 @@
   directory and refuses an unrelated current Git root. Explicit `:trust` uses
   the owning project language layer even when the source is in a nested folder.
 
+
+## 0.37.0 — unpublished tag
+
+The qualified tag remains immutable. Linux shipping-artifact qualification
+passed but could not write its report into Docker's root-owned export directory;
+the release job never published. 0.37.1 contains the same editor behavior and
+the corrected artifact-directory creation.
 
 ## 0.36.0 — 2026-09-27
 

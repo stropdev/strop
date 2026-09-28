@@ -99,6 +99,9 @@ jobs:
       - name: Build (linux musl, docker)
         if: matrix.docker
         run: |
+          # The host later writes qualification reports beside Docker's exports.
+          # Create the bind source as the runner, not implicitly as Docker root.
+          mkdir -p dist
           docker compose run --build --rm \
             -e "VERSION=${GITHUB_REF_NAME#v}" \
             -e "TARGET=${{ matrix.target }}" release

@@ -1381,7 +1381,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-containers"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1392,7 +1392,7 @@ dependencies = [
 
 [[package]]
 name = "strop-core"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "libc",
  "parking_lot",
@@ -1411,7 +1411,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "crossterm",
  "indicatif",
@@ -1444,7 +1444,7 @@ dependencies = [
 
 [[package]]
 name = "strop-engine"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "imbl",
  "loom",
@@ -1480,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "strop-fs"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "getrandom",
  "libc",
@@ -1499,7 +1499,7 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "git2",
  "serde",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "ropey",
  "serde",
@@ -1527,7 +1527,7 @@ dependencies = [
 
 [[package]]
 name = "strop-lsp"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "async-lsp",
  "libc",
@@ -1551,7 +1551,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "base64",
  "globset",
@@ -1576,7 +1576,7 @@ dependencies = [
 
 [[package]]
 name = "strop-remote"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "parking_lot",
  "serde",
@@ -1593,7 +1593,7 @@ dependencies = [
 
 [[package]]
 name = "strop-syntax"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "imbl",
  "ropey",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "strop-terminal"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "cc",
  "flate2",
@@ -1647,7 +1647,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "parking_lot",
  "serde",
@@ -1659,7 +1659,7 @@ dependencies = [
 
 [[package]]
 name = "strop-ui-protocol"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1670,7 +1670,7 @@ dependencies = [
 
 [[package]]
 name = "strop-worker"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "getrandom",
  "libc",
@@ -1691,7 +1691,7 @@ dependencies = [
 
 [[package]]
 name = "strop-worker-client"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "parking_lot",
  "sha2",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "strop-worker-deploy"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "getrandom",
  "serde",
@@ -1722,7 +1722,7 @@ dependencies = [
 
 [[package]]
 name = "strop-worker-protocol"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1733,7 +1733,7 @@ dependencies = [
 
 [[package]]
 name = "strop-workspace"
-version = "0.37.0"
+version = "0.37.1"
 dependencies = [
  "serde",
  "serde_json",
