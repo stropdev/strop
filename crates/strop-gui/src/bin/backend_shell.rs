@@ -39,7 +39,10 @@ impl Render for BackendShell {
             .bg(rgb(0x11111b))
             .text_color(rgb(0xcdd6f4))
             .p_4()
-            .child(text!("{}\nbackend generation {}", self.title, generation))
+            .child(text!(format!(
+                "{}\nbackend generation {}",
+                self.title, generation
+            )))
     }
 }
 
