@@ -1,6 +1,6 @@
 # 0059 — Nonblocking, precise code completion
 
-Status: **C01–C09 complete and qualified; 0.37.1 publication in progress after the immutable 0.37.0 tag's artifact-directory failure**.
+Status: **C01–C09 complete; released and publicly verified as 0.37.1**.
 0056 AR01–AR16, 0057 VF01–VF20 and 0058 WK01–WK20 are complete.
 The prerequisite release is the immutable `v0.36.0` commit
 `a858e889113507ef50302286117193d9d4e99573`, published and verified in
@@ -662,7 +662,42 @@ creation before the bind mount; it does not move the qualified tag or weaken
 the checks. A real Docker export smoke proved runner UID 1000 owns the
 directory/report while UID 0 owns the exported executable. The patch artifact
 has fresh version-bound measurements, three passing PTY journeys and the
-Compose quality gate; its own tag workflow remains the publication authority.
+Compose quality gate.
+
+### Published release and independent installation
+
+The immutable [`v0.37.1`](https://github.com/stropdev/strop/releases/tag/v0.37.1)
+tag points to `6214bfeaf50bb89ffcfa1e77cd9260eea695ad8f`.
+[Release run `36496855343`](https://github.com/stropdev/strop/actions/runs/36496855343)
+passed every required core, native and shipping-artifact gate, then published
+all three retained targets, their checksums/attestations, the catalog, clean
+source freeze, per-target completion reports and promotion ledger. The
+`strop-editor` 0.37.1 crates.io sparse-index entry is public and not yanked.
+Neither the 0.36.0 worker tag nor the unpublished 0.37.0 tag moved.
+
+Independent public-channel verification downloaded the Linux x86_64 tarball,
+checked its sidecar and GitHub attestation, and executed the public
+`https://strop.dev/install.sh` in an isolated install root. Its latest catalog
+selected 0.37.1 and wrote the matching tarball-channel receipt. The installed
+binary SHA-256 is
+`d2d02e546ee4226a07408b97ad917c9db6438896ea61e6cd6e7fa7c6be5d3fc2`.
+This is the shipping binary, not the local qualification artifact above:
+the published target report binds it to the same 700-input source fingerprint
+`671c3695078665bfc3bd2caaddb0e92df5b9d92638de83e5fdffc2c0db854952`.
+
+The installed public bytes passed the full completion collector (13 pressure
+cases and all three capture layouts, including native-free full replay) and
+all three real-PTY completion journeys. Its independent 64-observation typing
+smoke measured p50/p95/p99/max 0.428/0.657/0.787/0.787 ms; this is an installation
+smoke, not a replacement for the frozen matched before/after measurements.
+
+The website's stale hard-coded hero version was replaced with the same published
+release response used by its footer. Site commit
+`6ca56140b8fb77d9a4cfef92d8074f67b4389d49` deployed in Pages run `36508195800`.
+Real Chromium verified both public chips render `v0.37.1`, the completion controls
+and the Linux x86_64/arm64 plus macOS Apple Silicon install labels. The resumable
+public promotion ledger now records `rendered-site-version=ok`; no binary, source
+freeze, qualification report or immutable tag was replaced.
 
 ## 12. Authorized extensions after this bounded release
 
