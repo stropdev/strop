@@ -2,26 +2,24 @@
 
 #[cfg(target_os = "windows")]
 use gpui::{
-    div, prelude::*, px, rgb, size, text, App, Bounds, Context, Render, Window, WindowBounds,
+    prelude::*, px, size, App, Bounds, Context, FocusHandle, Render, Window, WindowBounds,
     WindowOptions,
 };
 #[cfg(target_os = "windows")]
 use strop_ui_protocol::Client;
 
 #[cfg(target_os = "windows")]
-use strop_gui::bridge::{BridgeEvent, WslBridge, WslSelection};
+use strop_gui::bridge::{BridgeEvent, WslBridge};
 
 #[cfg(target_os = "windows")]
 struct BackendShell {
     bridge: WslBridge,
     client: Client,
-    title: String,
+    focus_handle: FocusHandle,
 }
-
 #[cfg(target_os = "windows")]
-
 impl Render for BackendShell {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         while let Some(event) = self.bridge.next_event() {
             match event {
                 BridgeEvent::Message(message) => {
@@ -30,16 +28,17 @@ impl Render for BackendShell {
                 BridgeEvent::Closed(_) => {}
             }
         }
-        let generation = self.client.generation();
-        let mut surface = strop_gui::surface::view_surface(self.client.view());
-        surface = surface
+        // The shell owns exactly one source surface; it keeps native focus so
+        // key delivery reaches the admitted-action route below.
+        window.focus(&self.focus_handle, cx);
+        strop_gui::surface::view_surface(self.client.view())
+            .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(|this, event, _window, _cx| {
                 let _ = strop_gui::routing::admit_key_down(&this.bridge, event);
             }))
             .on_key_up(cx.listener(|this, event, _window, _cx| {
                 let _ = strop_gui::routing::admit_key_up(&this.bridge, event);
-            }));
-        surface
+            }))
     }
 }
 
@@ -73,10 +72,10 @@ fn main() {
                 ..Default::default()
             },
             |_, cx| {
-                cx.new(|_| BackendShell {
+                cx.new(|cx| BackendShell {
                     bridge,
                     client,
-                    title,
+                    focus_handle: cx.focus_handle(),
                 })
             },
         )

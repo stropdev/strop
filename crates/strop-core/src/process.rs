@@ -14,6 +14,9 @@ use std::sync::Arc;
 #[derive(Default)]
 struct Group {
     pid: Option<u32>,
+    /// Set by a cancellation racing the unix spawn; read when the child
+    /// lands so the race still revokes it. Unix spawn paths only.
+    #[cfg(unix)]
     cancelled: bool,
     #[cfg(unix)]
     lease: Option<std::os::unix::net::UnixStream>,
@@ -48,6 +51,7 @@ impl Group {
         }
         Ok(())
     }
+    #[cfg(unix)]
     fn cancel(&mut self) -> Result<(), Failure> {
         self.cancelled = true;
         self.signal()
@@ -65,10 +69,14 @@ pub struct OwnedProcess {
 impl OwnedProcess {
     pub fn spawn(command: &mut Command, token: &CancelToken) -> Result<Self, Failure> {
         #[cfg(not(unix))]
-        return Err(Failure::new(
-            FailureKind::Unavailable,
-            "process-group supervision requires Unix",
-        ));
+        {
+            // Supervision is unix-only; the request is refused, not ignored.
+            let _ = (command, token);
+            return Err(Failure::new(
+                FailureKind::Unavailable,
+                "process-group supervision requires Unix",
+            ));
+        }
         #[cfg(unix)]
         Self::spawn_unix(command, token, None)
     }
@@ -191,10 +199,15 @@ impl Drop for OwnedProcess {
 /// Call before `Child::wait`/`try_wait`; reaping ends that reservation.
 pub fn child_has_exited(child: &Child) -> Result<bool, Failure> {
     #[cfg(not(unix))]
-    return Err(Failure::new(
-        FailureKind::Unavailable,
-        "process supervision requires Unix",
-    ));
+    {
+        // Observation without reaping uses waitid; refuse it where the
+        // PID-reservation protocol does not exist.
+        let _ = child;
+        return Err(Failure::new(
+            FailureKind::Unavailable,
+            "process supervision requires Unix",
+        ));
+    }
     #[cfg(unix)]
     {
         // SAFETY: zero initializes siginfo_t; waitid writes it on success.

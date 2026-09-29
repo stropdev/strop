@@ -2,13 +2,14 @@
 //! draws the same pane identities, revisions, bounds and bounded text windows
 //! the backend prepared; it does not clone or reinterpret document state.
 
-use gpui::{div, prelude::*, px, rgb, text};
+use gpui::{div, prelude::*, rgb, text};
 use strop_ui_protocol::{PaneSnapshot, ViewSnapshot};
 
 /// Render the shared semantic view as native source cards. Presentation
 /// composition is frontend work; every source identity/bound comes from the
-/// backend publication.
-pub fn view_surface(view: Option<&ViewSnapshot>) -> impl IntoElement {
+/// backend publication. The concrete `Stateful<Div>` return keeps native
+/// input routing (focus tracking, key listeners) available to the caller.
+pub fn view_surface(view: Option<&ViewSnapshot>) -> gpui::Stateful<gpui::Div> {
     let generation = view.map_or(0, |view| view.generation);
     let mut cards = div()
         .id("source-surface")
