@@ -665,6 +665,21 @@ impact/evidence/re-entry ledger.
 - The exported run-36602740429 executable repeated the real Windows → Ubuntu
   WSL → published 0.37.1 backend journey in 0.45s. This remains a vertical
   shell/proof, not a full editor surface, parity claim or release.
+- Branch repair and the 0.38.0 engine/TUI release (2026-09-29): the
+  shared-inventory cutover had left the engine keymap adapter with no-op
+  leaf closures, severing every leaf dispatch from its `Editor` method
+  (the compose gate failed with 25 dead-code errors; the Windows lane
+  failed on the half-wired shell). Dispatch handlers were restored from
+  the pre-cutover table keyed on keys/id/sections, the native shell
+  window gained a real focus handle and working key routing, and
+  strop-core's unix-only process-supervision state was gated behind
+  explicit cfgs. The 0057 inventory was re-pinned (reviewed no-op
+  extractions), completion re-qualified on the 0.38.0 musl artifact
+  (typing p50 0.438 ms, p95 0.647 ms), and the Compose, model, Verus,
+  TLAPS, SSH, container and native Windows lanes are green on the
+  released tree. This release contains the arc's engine-side
+  deliverables only; the private `strop-gui` package remains an
+  unreleased vertical shell, and no UI01–UI18 requirement is claimed.
 
 ## 16. Primary references and evidence anchors
 
