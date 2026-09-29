@@ -77,8 +77,7 @@ pub fn select(
             "first-open selection lacks an explicit distro, user or Linux workspace".into(),
         ));
     }
-    let backend = backend.to_owned();
-    if !backend.is_absolute() {
+    if !backend.starts_with('/') {
         return Err(BridgeError::Transport(
             "first-open backend must be an absolute Linux path".into(),
         ));
