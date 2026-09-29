@@ -39,6 +39,8 @@ jobs:
         run: cargo +1.98.1 test --locked -p strop-gui
       - name: Build the native backend shell artifact
         run: cargo +1.98.1 build --locked -p strop-gui --bin backend_shell
+      - name: Exercise the shared command inventory
+        run: cargo +1.98.1 test --locked -p strop-gui "commands::"
       - name: Export the explicit WSL hardware-lane journey
         uses: actions/upload-artifact@v7
         with:

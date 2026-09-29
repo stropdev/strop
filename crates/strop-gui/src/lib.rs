@@ -8,5 +8,6 @@
 pub use gpui_platform::application;
 pub use strop_ui_protocol::{AdmittedAction, Client, ClientEvent, ViewSnapshot};
 
-pub mod input;
 pub mod bridge;
+pub mod commands;
+pub mod input;
