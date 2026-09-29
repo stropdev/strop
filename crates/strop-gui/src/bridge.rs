@@ -132,7 +132,8 @@ impl WslBridge {
         )?;
 
         let (transport_tx, transport_rx) = std::sync::mpsc::sync_channel(MAX_PENDING_REQUESTS);
-        std::thread::spawn(move || read_backend(stdout, transport_tx.clone()));
+        let reader_tx = transport_tx.clone();
+        std::thread::spawn(move || read_backend(stdout, reader_tx));
         let backend = match transport_rx.recv_timeout(DEFAULT_BRIDGE_BUDGET) {
             Ok(TransportEvent::Message(ServerMessage::Welcome { backend, .. })) => backend,
             Ok(TransportEvent::Message(ServerMessage::Error { error, .. })) => {
