@@ -11,3 +11,4 @@ pub use strop_ui_protocol::{AdmittedAction, Client, ClientEvent, ViewSnapshot};
 pub mod bridge;
 pub mod commands;
 pub mod input;
+pub mod wsl;
