@@ -16,8 +16,7 @@ use std::time::Duration;
 use strop_ui_protocol::frame::{self, FrameDecoder};
 use strop_ui_protocol::{
     AdmittedAction, Client, ClientCapabilities, ClientError, ClientInfo, ClientMessage,
-    ProtocolError, ServerMessage, MAX_PENDING_REQUESTS,
-    PROTOCOL_VERSION,
+    ProtocolError, ServerMessage, MAX_PENDING_REQUESTS, PROTOCOL_VERSION,
 };
 
 /// Deadlock canary for protocol barriers. Measured presentation latency
@@ -62,6 +61,7 @@ enum TransportEvent {
 /// ordered loop, so publications and user input cannot race the caller.
 pub enum BridgeAction {
     Act(Vec<AdmittedAction>),
+    Viewport { columns: u16, rows: u16 },
     Resync,
     Shutdown,
 }
@@ -214,6 +214,9 @@ fn bridge_loop(
                         .ok_or(BridgeError::Client(ClientError::NoView))?;
                     let base = client.base_stamp()?;
                     write_client(&stdin, &ClientMessage::Act { seq, base, actions })?;
+                }
+                BridgeAction::Viewport { columns, rows } => {
+                    write_client(&stdin, &ClientMessage::Viewport { seq, columns, rows })?;
                 }
                 BridgeAction::Resync => {
                     write_client(&stdin, &ClientMessage::Resync { seq })?;
