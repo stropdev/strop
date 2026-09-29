@@ -70,7 +70,7 @@ pub fn select(
     distro: &WslDistro,
     user: &str,
     workspace: &str,
-    backend: &std::path::Path,
+    backend: &str,
 ) -> Result<WslSelection, BridgeError> {
     if distro.name.is_empty() || user.is_empty() || !workspace.starts_with('/') {
         return Err(BridgeError::Transport(
@@ -86,7 +86,7 @@ pub fn select(
         wsl: std::path::PathBuf::from("wsl.exe"),
         distribution: distro.name.clone(),
         user: user.to_owned(),
-        backend,
+        backend: std::path::PathBuf::from(backend),
         workspace: workspace.to_owned(),
         environment: Vec::new(),
     })
@@ -135,27 +135,9 @@ mod tests {
         let distro = WslDistro {
             name: "Ubuntu".into(),
         };
-        assert!(select(
-            &distro,
-            "tarek",
-            "/home/tarek",
-            std::path::Path::new("/opt/strop/strop")
-        )
-        .is_ok());
-        assert!(select(
-            &distro,
-            "tarek",
-            "C:\\Users",
-            std::path::Path::new("/opt/strop/strop")
-        )
-        .is_err());
-        assert!(select(
-            &distro,
-            "tarek",
-            "/home/tarek",
-            std::path::Path::new("strop")
-        )
-        .is_err());
+        assert!(select(&distro, "tarek", "/home/tarek", "/opt/strop/strop").is_ok());
+        assert!(select(&distro, "tarek", "C:\\Users", "/opt/strop/strop").is_err());
+        assert!(select(&distro, "tarek", "/home/tarek", "strop").is_err());
     }
     #[test]
     #[ignore = "requires the native Windows WSL hardware lane"]

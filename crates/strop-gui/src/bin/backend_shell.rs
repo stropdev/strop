@@ -55,7 +55,7 @@ fn main() {
         &distro,
         &std::env::var("STROP_WSL_USER").expect("STROP_WSL_USER"),
         &std::env::var("STROP_WSL_WORKSPACE").expect("STROP_WSL_WORKSPACE"),
-        std::path::Path::new(&std::env::var_os("STROP_WSL_BACKEND").expect("STROP_WSL_BACKEND")),
+        &std::env::var("STROP_WSL_BACKEND").expect("STROP_WSL_BACKEND"),
     )
     .expect("explicit first-open WSL selection");
     gpui_platform::application().run(move |cx: &mut App| {
