@@ -41,6 +41,8 @@ jobs:
         run: cargo +1.98.1 build --locked -p strop-gui --bin backend_shell
       - name: Exercise the shared command inventory
         run: cargo +1.98.1 test --locked -p strop-gui "commands::"
+      - name: Exercise explicit WSL discovery and selection
+        run: cargo +1.98.1 test --locked -p strop-gui "wsl::"
       - name: Export the explicit WSL hardware-lane journey
         uses: actions/upload-artifact@v7
         with:
