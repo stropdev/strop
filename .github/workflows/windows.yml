@@ -33,6 +33,8 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/strop-windows-target
         run: cargo +1.98.1 test --locked -p strop-ui-protocol
+      - name: Check the pinned GPUI frontend package
+        run: cargo +1.98.1 check --locked -p strop-gui
       - name: Export the explicit WSL hardware-lane journey
         uses: actions/upload-artifact@v7
         with:

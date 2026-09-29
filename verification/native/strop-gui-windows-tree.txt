@@ -1,0 +1,728 @@
+strop-gui v0.37.1 (/home/tarek/workspace/strop/crates/strop-gui)
+├── gpui v0.2.2 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   ├── accesskit v0.24.1
+│   │   ├── enumn v0.1.14 (proc-macro)
+│   │   │   ├── proc-macro2 v1.0.107
+│   │   │   │   └── unicode-ident v1.0.24
+│   │   │   ├── quote v1.0.47
+│   │   │   │   └── proc-macro2 v1.0.107 (*)
+│   │   │   └── syn v2.0.119
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── unicode-ident v1.0.24
+│   │   └── uuid v1.26.1
+│   │       ├── getrandom v0.4.3
+│   │       │   └── cfg-if v1.0.4
+│   │       ├── serde_core v1.0.229
+│   │       └── sha1_smol v1.0.1
+│   ├── anyhow v1.0.104
+│   ├── async-channel v2.5.0
+│   │   ├── concurrent-queue v2.5.0
+│   │   │   └── crossbeam-utils v0.8.22
+│   │   ├── event-listener-strategy v0.5.4
+│   │   │   ├── event-listener v5.4.2
+│   │   │   │   ├── parking v2.2.1
+│   │   │   │   └── pin-project-lite v0.2.17
+│   │   │   └── pin-project-lite v0.2.17
+│   │   ├── futures-core v0.3.34
+│   │   └── pin-project-lite v0.2.17
+│   ├── async-task v4.7.1
+│   ├── bitflags v2.13.1
+│   ├── chrono v0.4.45
+│   │   ├── num-traits v0.2.19
+│   │   │   └── libm v0.2.16
+│   │   │   [build-dependencies]
+│   │   │   └── autocfg v1.5.1
+│   │   ├── serde v1.0.229
+│   │   │   ├── serde_core v1.0.229
+│   │   │   └── serde_derive v1.0.229 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v3.0.4
+│   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │           ├── quote v1.0.47 (*)
+│   │   │           └── unicode-ident v1.0.24
+│   │   └── windows-link v0.2.1
+│   ├── collections v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   ├── gpui_util v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   │   ├── anyhow v1.0.104
+│   │   │   ├── log v0.4.34
+│   │   │   │   ├── serde_core v1.0.229
+│   │   │   │   └── value-bag v1.14.1
+│   │   │   │       └── value-bag-serde1 v1.14.1
+│   │   │   │           ├── erased-serde v0.4.10
+│   │   │   │           │   ├── serde_core v1.0.229
+│   │   │   │           │   └── typeid v1.0.3
+│   │   │   │           ├── serde_core v1.0.229
+│   │   │   │           └── serde_fmt v1.1.0
+│   │   │   │               └── serde_core v1.0.229
+│   │   │   └── which v8.0.6
+│   │   ├── indexmap v2.14.1
+│   │   │   ├── equivalent v1.0.2
+│   │   │   ├── hashbrown v0.17.1
+│   │   │   └── serde_core v1.0.229
+│   │   └── rustc-hash v2.1.3
+│   ├── ctor v1.0.13
+│   │   ├── link-section v0.19.3
+│   │   └── linktime-proc-macro v0.2.3 (proc-macro)
+│   ├── derive_more v2.1.1
+│   │   └── derive_more-impl v2.1.1 (proc-macro)
+│   │       ├── convert_case v0.10.0
+│   │       │   └── unicode-segmentation v1.13.3
+│   │       ├── proc-macro2 v1.0.107 (*)
+│   │       ├── quote v1.0.47 (*)
+│   │       ├── syn v2.0.119 (*)
+│   │       └── unicode-xid v0.2.6
+│   │       [build-dependencies]
+│   │       └── rustc_version v0.4.1
+│   │           └── semver v1.0.28
+│   ├── etagere v0.2.15
+│   │   ├── euclid v0.22.14
+│   │   │   └── num-traits v0.2.19 (*)
+│   │   └── svg_fmt v0.4.5
+│   ├── futures v0.3.34
+│   │   ├── futures-channel v0.3.34
+│   │   │   ├── futures-core v0.3.34
+│   │   │   └── futures-sink v0.3.34
+│   │   ├── futures-core v0.3.34
+│   │   ├── futures-executor v0.3.34
+│   │   │   ├── futures-core v0.3.34
+│   │   │   ├── futures-task v0.3.34
+│   │   │   └── futures-util v0.3.34
+│   │   │       ├── futures-channel v0.3.34 (*)
+│   │   │       ├── futures-core v0.3.34
+│   │   │       ├── futures-io v0.3.34
+│   │   │       ├── futures-macro v0.3.34 (proc-macro)
+│   │   │       │   ├── proc-macro2 v1.0.107 (*)
+│   │   │       │   ├── quote v1.0.47 (*)
+│   │   │       │   └── syn v3.0.4 (*)
+│   │   │       ├── futures-sink v0.3.34
+│   │   │       ├── futures-task v0.3.34
+│   │   │       ├── memchr v2.8.3
+│   │   │       ├── pin-project-lite v0.2.17
+│   │   │       └── slab v0.4.12
+│   │   ├── futures-io v0.3.34
+│   │   ├── futures-sink v0.3.34
+│   │   ├── futures-task v0.3.34
+│   │   └── futures-util v0.3.34 (*)
+│   ├── futures-concurrency v7.7.1
+│   │   ├── fixedbitset v0.5.7
+│   │   ├── futures-core v0.3.34
+│   │   ├── futures-lite v2.6.1
+│   │   │   ├── fastrand v2.5.0
+│   │   │   ├── futures-core v0.3.34
+│   │   │   ├── futures-io v0.3.34
+│   │   │   ├── parking v2.2.1
+│   │   │   └── pin-project-lite v0.2.17
+│   │   ├── pin-project v1.1.13
+│   │   │   └── pin-project-internal v1.1.13 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v2.0.119 (*)
+│   │   └── smallvec v1.16.0
+│   ├── gpui_macros v0.1.0 (proc-macro) (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   ├── heck v0.5.0
+│   │   ├── proc-macro2 v1.0.107 (*)
+│   │   ├── quote v1.0.47 (*)
+│   │   └── syn v2.0.119 (*)
+│   ├── gpui_shared_string v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   ├── schemars v1.2.2
+│   │   │   ├── dyn-clone v1.0.20
+│   │   │   ├── indexmap v2.14.1 (*)
+│   │   │   ├── ref-cast v1.0.27
+│   │   │   │   └── ref-cast-impl v1.0.27 (proc-macro)
+│   │   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │   │       ├── quote v1.0.47 (*)
+│   │   │   │       └── syn v3.0.4 (*)
+│   │   │   ├── schemars_derive v1.2.2 (proc-macro)
+│   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   ├── serde_derive_internals v0.30.0
+│   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   │   └── syn v3.0.4 (*)
+│   │   │   │   └── syn v3.0.4 (*)
+│   │   │   ├── serde v1.0.229 (*)
+│   │   │   └── serde_json v1.0.151
+│   │   │       ├── indexmap v2.14.1 (*)
+│   │   │       ├── itoa v1.0.18
+│   │   │       ├── memchr v2.8.3
+│   │   │       ├── serde_core v1.0.229
+│   │   │       └── zmij v1.0.23
+│   │   ├── serde v1.0.229 (*)
+│   │   └── smol_str v0.3.6
+│   ├── gpui_util v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337) (*)
+│   ├── heapless v0.9.3
+│   │   ├── hash32 v0.3.1
+│   │   │   └── byteorder v1.5.0
+│   │   └── stable_deref_trait v1.2.1
+│   ├── http_client v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   ├── anyhow v1.0.104
+│   │   ├── async-compression v0.4.48
+│   │   │   ├── compression-codecs v0.4.43
+│   │   │   │   ├── bzip2 v0.6.1
+│   │   │   │   │   └── libbz2-rs-sys v0.2.5
+│   │   │   │   ├── compression-core v0.4.33
+│   │   │   │   ├── flate2 v1.1.10
+│   │   │   │   │   ├── crc32fast v1.5.2
+│   │   │   │   │   │   └── cfg-if v1.0.4
+│   │   │   │   │   └── miniz_oxide v0.9.1
+│   │   │   │   │       ├── adler2 v2.0.1
+│   │   │   │   │       └── simd-adler32 v0.3.10
+│   │   │   │   └── memchr v2.8.3
+│   │   │   ├── compression-core v0.4.33
+│   │   │   ├── futures-io v0.3.34
+│   │   │   └── pin-project-lite v0.2.17
+│   │   ├── bytes v1.12.1
+│   │   ├── derive_more v2.1.1 (*)
+│   │   ├── futures v0.3.34 (*)
+│   │   ├── http v1.5.0
+│   │   │   ├── bytes v1.12.1
+│   │   │   └── itoa v1.0.18
+│   │   ├── http-body v1.1.0
+│   │   │   ├── bytes v1.12.1
+│   │   │   └── http v1.5.0 (*)
+│   │   ├── log v0.4.34 (*)
+│   │   ├── parking_lot v0.12.5
+│   │   │   ├── lock_api v0.4.14
+│   │   │   │   └── scopeguard v1.2.0
+│   │   │   └── parking_lot_core v0.9.12
+│   │   │       ├── cfg-if v1.0.4
+│   │   │       ├── smallvec v1.16.0
+│   │   │       └── windows-link v0.2.1
+│   │   ├── serde v1.0.229 (*)
+│   │   ├── serde_json v1.0.151 (*)
+│   │   ├── serde_urlencoded v0.7.1
+│   │   │   ├── form_urlencoded v1.2.2
+│   │   │   │   └── percent-encoding v2.3.2
+│   │   │   ├── itoa v1.0.18
+│   │   │   ├── ryu v1.0.23
+│   │   │   └── serde v1.0.229 (*)
+│   │   └── url v2.5.8
+│   │       ├── form_urlencoded v1.2.2 (*)
+│   │       ├── idna v1.1.0
+│   │       │   ├── idna_adapter v1.2.2
+│   │       │   │   ├── icu_normalizer v2.3.0
+│   │       │   │   │   ├── icu_collections v2.3.0
+│   │       │   │   │   │   ├── displaydoc v0.2.7 (proc-macro)
+│   │       │   │   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │       │   │   │   │   │   ├── quote v1.0.47 (*)
+│   │       │   │   │   │   │   └── syn v3.0.4 (*)
+│   │       │   │   │   │   ├── potential_utf v0.1.6
+│   │       │   │   │   │   │   └── zerovec v0.11.8
+│   │       │   │   │   │   │       ├── yoke v0.8.3
+│   │       │   │   │   │   │       │   ├── stable_deref_trait v1.2.1
+│   │       │   │   │   │   │       │   ├── yoke-derive v0.8.2 (proc-macro)
+│   │       │   │   │   │   │       │   │   ├── proc-macro2 v1.0.107 (*)
+│   │       │   │   │   │   │       │   │   ├── quote v1.0.47 (*)
+│   │       │   │   │   │   │       │   │   ├── syn v2.0.119 (*)
+│   │       │   │   │   │   │       │   │   └── synstructure v0.13.2
+│   │       │   │   │   │   │       │   │       ├── proc-macro2 v1.0.107 (*)
+│   │       │   │   │   │   │       │   │       ├── quote v1.0.47 (*)
+│   │       │   │   │   │   │       │   │       └── syn v2.0.119 (*)
+│   │       │   │   │   │   │       │   └── zerofrom v0.1.8
+│   │       │   │   │   │   │       │       └── zerofrom-derive v0.1.7 (proc-macro)
+│   │       │   │   │   │   │       │           ├── proc-macro2 v1.0.107 (*)
+│   │       │   │   │   │   │       │           ├── quote v1.0.47 (*)
+│   │       │   │   │   │   │       │           ├── syn v2.0.119 (*)
+│   │       │   │   │   │   │       │           └── synstructure v0.13.2 (*)
+│   │       │   │   │   │   │       ├── zerofrom v0.1.8 (*)
+│   │       │   │   │   │   │       └── zerovec-derive v0.11.6 (proc-macro)
+│   │       │   │   │   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │       │   │   │   │   │           ├── quote v1.0.47 (*)
+│   │       │   │   │   │   │           └── syn v3.0.4 (*)
+│   │       │   │   │   │   ├── utf8_iter v1.0.4
+│   │       │   │   │   │   ├── yoke v0.8.3 (*)
+│   │       │   │   │   │   ├── zerofrom v0.1.8 (*)
+│   │       │   │   │   │   └── zerovec v0.11.8 (*)
+│   │       │   │   │   ├── icu_normalizer_data v2.3.0
+│   │       │   │   │   ├── icu_provider v2.3.1
+│   │       │   │   │   │   ├── displaydoc v0.2.7 (proc-macro) (*)
+│   │       │   │   │   │   ├── icu_locale_core v2.3.0
+│   │       │   │   │   │   │   ├── displaydoc v0.2.7 (proc-macro) (*)
+│   │       │   │   │   │   │   ├── litemap v0.8.3
+│   │       │   │   │   │   │   ├── tinystr v0.8.4
+│   │       │   │   │   │   │   │   ├── displaydoc v0.2.7 (proc-macro) (*)
+│   │       │   │   │   │   │   │   └── zerovec v0.11.8 (*)
+│   │       │   │   │   │   │   ├── writeable v0.6.4
+│   │       │   │   │   │   │   └── zerovec v0.11.8 (*)
+│   │       │   │   │   │   ├── writeable v0.6.4
+│   │       │   │   │   │   ├── yoke v0.8.3 (*)
+│   │       │   │   │   │   ├── zerofrom v0.1.8 (*)
+│   │       │   │   │   │   ├── zerotrie v0.2.5
+│   │       │   │   │   │   │   ├── displaydoc v0.2.7 (proc-macro) (*)
+│   │       │   │   │   │   │   ├── yoke v0.8.3 (*)
+│   │       │   │   │   │   │   └── zerofrom v0.1.8 (*)
+│   │       │   │   │   │   └── zerovec v0.11.8 (*)
+│   │       │   │   │   ├── smallvec v1.16.0
+│   │       │   │   │   └── zerovec v0.11.8 (*)
+│   │       │   │   └── icu_properties v2.3.0
+│   │       │   │       ├── displaydoc v0.2.7 (proc-macro) (*)
+│   │       │   │       ├── icu_collections v2.3.0 (*)
+│   │       │   │       ├── icu_locale_core v2.3.0 (*)
+│   │       │   │       ├── icu_properties_data v2.3.0
+│   │       │   │       ├── icu_provider v2.3.1 (*)
+│   │       │   │       ├── zerotrie v0.2.5 (*)
+│   │       │   │       └── zerovec v0.11.8 (*)
+│   │       │   ├── smallvec v1.16.0
+│   │       │   └── utf8_iter v1.0.4
+│   │       └── percent-encoding v2.3.2
+│   ├── image v0.25.10
+│   │   ├── bytemuck v1.25.2
+│   │   ├── byteorder-lite v0.1.0
+│   │   ├── color_quant v1.1.0
+│   │   ├── exr v1.74.2
+│   │   │   ├── bit_field v0.10.3
+│   │   │   ├── half v2.7.1
+│   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   └── zerocopy v0.8.59
+│   │   │   │       └── zerocopy-derive v0.8.59 (proc-macro)
+│   │   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │   │           ├── quote v1.0.47 (*)
+│   │   │   │           └── syn v2.0.119 (*)
+│   │   │   ├── lebe v0.5.3
+│   │   │   ├── miniz_oxide v0.8.9
+│   │   │   │   ├── adler2 v2.0.1
+│   │   │   │   └── simd-adler32 v0.3.10
+│   │   │   ├── num-complex v0.4.6
+│   │   │   │   ├── bytemuck v1.25.2
+│   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   ├── pulp v0.22.3
+│   │   │   │   ├── bytemuck v1.25.2
+│   │   │   │   ├── cfg-if v1.0.4
+│   │   │   │   ├── libm v0.2.16
+│   │   │   │   ├── num-complex v0.4.6 (*)
+│   │   │   │   ├── paste v1.0.15 (proc-macro)
+│   │   │   │   ├── pulp-wasm-simd-flag v0.1.1
+│   │   │   │   ├── raw-cpuid v11.6.0
+│   │   │   │   │   └── bitflags v2.13.1
+│   │   │   │   └── reborrow v0.5.5
+│   │   │   │   [build-dependencies]
+│   │   │   │   └── version_check v0.9.5
+│   │   │   ├── rayon-core v1.13.0
+│   │   │   │   ├── crossbeam-deque v0.8.7
+│   │   │   │   │   ├── crossbeam-epoch v0.9.20
+│   │   │   │   │   │   └── crossbeam-utils v0.8.22
+│   │   │   │   │   └── crossbeam-utils v0.8.22
+│   │   │   │   └── crossbeam-utils v0.8.22
+│   │   │   ├── smallvec v1.16.0
+│   │   │   └── zune-inflate v0.2.54
+│   │   │       └── simd-adler32 v0.3.10
+│   │   ├── gif v0.14.2
+│   │   │   ├── color_quant v1.1.0
+│   │   │   └── weezl v0.1.12
+│   │   ├── image-webp v0.2.4
+│   │   │   ├── byteorder-lite v0.1.0
+│   │   │   └── quick-error v2.0.1
+│   │   ├── moxcms v0.8.1
+│   │   │   ├── num-traits v0.2.19 (*)
+│   │   │   └── pxfm v0.1.30
+│   │   ├── num-traits v0.2.19 (*)
+│   │   ├── png v0.18.1
+│   │   │   ├── bitflags v2.13.1
+│   │   │   ├── crc32fast v1.5.2 (*)
+│   │   │   ├── fdeflate v0.3.7
+│   │   │   │   └── simd-adler32 v0.3.10
+│   │   │   ├── flate2 v1.1.10 (*)
+│   │   │   └── miniz_oxide v0.8.9 (*)
+│   │   ├── qoi v0.4.1
+│   │   │   └── bytemuck v1.25.2
+│   │   ├── rayon v1.12.0
+│   │   │   ├── either v1.18.0
+│   │   │   └── rayon-core v1.13.0 (*)
+│   │   ├── tiff v0.11.3
+│   │   │   ├── fax v0.2.7
+│   │   │   ├── flate2 v1.1.10 (*)
+│   │   │   ├── half v2.7.1 (*)
+│   │   │   ├── quick-error v2.0.1
+│   │   │   ├── weezl v0.1.12
+│   │   │   └── zune-jpeg v0.5.15
+│   │   │       └── zune-core v0.5.3
+│   │   ├── zune-core v0.5.3
+│   │   └── zune-jpeg v0.5.15 (*)
+│   ├── inventory v0.3.24
+│   ├── itertools v0.14.0
+│   │   └── either v1.18.0
+│   ├── log v0.4.34 (*)
+│   ├── lyon v1.0.19
+│   │   ├── lyon_algorithms v1.0.21
+│   │   │   ├── lyon_path v1.0.19
+│   │   │   │   ├── lyon_geom v1.0.19
+│   │   │   │   │   ├── arrayvec v0.7.8
+│   │   │   │   │   ├── euclid v0.22.14 (*)
+│   │   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   │   └── num-traits v0.2.19 (*)
+│   │   │   └── num-traits v0.2.19 (*)
+│   │   └── lyon_tessellation v1.0.22
+│   │       ├── float_next_after v1.0.0
+│   │       ├── lyon_path v1.0.19 (*)
+│   │       └── num-traits v0.2.19 (*)
+│   ├── num_cpus v1.17.0
+│   ├── parking v2.2.1
+│   ├── parking_lot v0.12.5 (*)
+│   ├── pin-project v1.1.13 (*)
+│   ├── pollster v0.4.0
+│   ├── postage v0.5.0
+│   │   ├── atomic v0.5.3
+│   │   ├── crossbeam-queue v0.3.14
+│   │   │   └── crossbeam-utils v0.8.22
+│   │   ├── futures v0.3.34 (*)
+│   │   ├── log v0.4.34 (*)
+│   │   ├── parking_lot v0.12.5 (*)
+│   │   ├── pin-project v1.1.13 (*)
+│   │   ├── pollster v0.2.5
+│   │   ├── static_assertions v1.1.0
+│   │   └── thiserror v1.0.69
+│   │       └── thiserror-impl v1.0.69 (proc-macro)
+│   │           ├── proc-macro2 v1.0.107 (*)
+│   │           ├── quote v1.0.47 (*)
+│   │           └── syn v2.0.119 (*)
+│   ├── profiling v1.0.18
+│   │   └── profiling-procmacros v1.0.18 (proc-macro)
+│   │       ├── quote v1.0.47 (*)
+│   │       └── syn v2.0.119 (*)
+│   ├── rand v0.9.5
+│   │   ├── rand_chacha v0.9.0
+│   │   │   ├── ppv-lite86 v0.2.21
+│   │   │   │   └── zerocopy v0.8.59 (*)
+│   │   │   └── rand_core v0.9.5
+│   │   │       └── getrandom v0.3.4
+│   │   │           └── cfg-if v1.0.4
+│   │   └── rand_core v0.9.5 (*)
+│   ├── raw-window-handle v0.6.2
+│   ├── refineable v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   └── derive_refineable v0.1.0 (proc-macro) (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │       ├── proc-macro2 v1.0.107 (*)
+│   │       ├── quote v1.0.47 (*)
+│   │       └── syn v2.0.119 (*)
+│   ├── regex v1.13.1
+│   │   ├── aho-corasick v1.1.5
+│   │   │   └── memchr v2.8.3
+│   │   ├── memchr v2.8.3
+│   │   ├── regex-automata v0.4.18
+│   │   │   ├── aho-corasick v1.1.5 (*)
+│   │   │   ├── memchr v2.8.3
+│   │   │   └── regex-syntax v0.8.11
+│   │   └── regex-syntax v0.8.11
+│   ├── resvg v0.46.0
+│   │   ├── gif v0.14.2 (*)
+│   │   ├── image-webp v0.2.4 (*)
+│   │   ├── log v0.4.34 (*)
+│   │   ├── pico-args v0.5.0
+│   │   ├── rgb v0.8.53
+│   │   │   └── bytemuck v1.25.2
+│   │   ├── svgtypes v0.16.1
+│   │   │   ├── kurbo v0.13.1
+│   │   │   │   ├── arrayvec v0.7.8
+│   │   │   │   ├── polycool v0.4.0
+│   │   │   │   │   └── arrayvec v0.7.8
+│   │   │   │   └── smallvec v1.16.0
+│   │   │   └── siphasher v1.0.4
+│   │   ├── tiny-skia v0.11.4
+│   │   │   ├── arrayref v0.3.9
+│   │   │   ├── arrayvec v0.7.8
+│   │   │   ├── bytemuck v1.25.2
+│   │   │   ├── cfg-if v1.0.4
+│   │   │   ├── log v0.4.34 (*)
+│   │   │   ├── png v0.17.16
+│   │   │   │   ├── bitflags v1.3.2
+│   │   │   │   ├── crc32fast v1.5.2 (*)
+│   │   │   │   ├── fdeflate v0.3.7 (*)
+│   │   │   │   ├── flate2 v1.1.10 (*)
+│   │   │   │   └── miniz_oxide v0.8.9 (*)
+│   │   │   └── tiny-skia-path v0.11.4
+│   │   │       ├── arrayref v0.3.9
+│   │   │       ├── bytemuck v1.25.2
+│   │   │       └── strict-num v0.1.1
+│   │   │           └── float-cmp v0.9.0
+│   │   ├── usvg v0.46.0
+│   │   │   ├── base64 v0.22.1
+│   │   │   ├── data-url v0.3.2
+│   │   │   ├── flate2 v1.1.10 (*)
+│   │   │   ├── fontdb v0.23.0
+│   │   │   │   ├── log v0.4.34 (*)
+│   │   │   │   ├── memmap2 v0.9.11
+│   │   │   │   ├── slotmap v1.1.1
+│   │   │   │   │   [build-dependencies]
+│   │   │   │   │   └── version_check v0.9.5
+│   │   │   │   ├── tinyvec v1.13.2
+│   │   │   │   │   └── tinyvec_macros v0.1.1
+│   │   │   │   └── ttf-parser v0.25.1
+│   │   │   │       └── core_maths v0.1.1
+│   │   │   │           └── libm v0.2.16
+│   │   │   ├── imagesize v0.14.0
+│   │   │   ├── kurbo v0.13.1 (*)
+│   │   │   ├── log v0.4.34 (*)
+│   │   │   ├── pico-args v0.5.0
+│   │   │   ├── roxmltree v0.21.1
+│   │   │   │   └── memchr v2.8.3
+│   │   │   ├── rustybuzz v0.20.1
+│   │   │   │   ├── bitflags v2.13.1
+│   │   │   │   ├── bytemuck v1.25.2
+│   │   │   │   ├── core_maths v0.1.1 (*)
+│   │   │   │   ├── log v0.4.34 (*)
+│   │   │   │   ├── smallvec v1.16.0
+│   │   │   │   ├── ttf-parser v0.25.1 (*)
+│   │   │   │   ├── unicode-bidi-mirroring v0.4.0
+│   │   │   │   ├── unicode-ccc v0.4.0
+│   │   │   │   ├── unicode-properties v0.1.3
+│   │   │   │   └── unicode-script v0.5.8
+│   │   │   ├── simplecss v0.2.2
+│   │   │   │   └── log v0.4.34 (*)
+│   │   │   ├── siphasher v1.0.4
+│   │   │   ├── strict-num v0.1.1 (*)
+│   │   │   ├── svgtypes v0.16.1 (*)
+│   │   │   ├── tiny-skia-path v0.11.4 (*)
+│   │   │   ├── unicode-bidi v0.3.18
+│   │   │   ├── unicode-script v0.5.8
+│   │   │   ├── unicode-vo v0.1.0
+│   │   │   └── xmlwriter v0.1.0
+│   │   └── zune-jpeg v0.5.15 (*)
+│   ├── scheduler v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   ├── async-task v4.7.1
+│   │   ├── backtrace v0.3.76
+│   │   │   ├── cfg-if v1.0.4
+│   │   │   ├── rustc-demangle v0.1.28
+│   │   │   └── windows-link v0.2.1
+│   │   ├── chrono v0.4.45 (*)
+│   │   ├── flume v0.12.0
+│   │   │   ├── fastrand v2.5.0
+│   │   │   ├── futures-core v0.3.34
+│   │   │   ├── futures-sink v0.3.34
+│   │   │   └── spin v0.9.9
+│   │   │       └── lock_api v0.4.14 (*)
+│   │   ├── futures v0.3.34 (*)
+│   │   ├── parking_lot v0.12.5 (*)
+│   │   ├── rand v0.9.5 (*)
+│   │   └── web-time v1.1.0
+│   ├── schemars v1.2.2 (*)
+│   ├── seahash v4.1.0
+│   ├── serde v1.0.229 (*)
+│   ├── serde_json v1.0.151 (*)
+│   ├── slotmap v1.1.1 (*)
+│   ├── smallvec v1.16.0
+│   ├── spin v0.10.1
+│   │   └── lock_api v0.4.14 (*)
+│   ├── strum v0.28.0
+│   │   └── strum_macros v0.28.0 (proc-macro)
+│   │       ├── heck v0.5.0
+│   │       ├── proc-macro2 v1.0.107 (*)
+│   │       ├── quote v1.0.47 (*)
+│   │       └── syn v2.0.119 (*)
+│   ├── sum_tree v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   ├── heapless v0.9.3 (*)
+│   │   ├── log v0.4.34 (*)
+│   │   ├── rayon v1.12.0 (*)
+│   │   ├── tracing v0.1.44
+│   │   │   ├── pin-project-lite v0.2.17
+│   │   │   ├── tracing-attributes v0.1.31 (proc-macro)
+│   │   │   │   ├── proc-macro2 v1.0.107 (*)
+│   │   │   │   ├── quote v1.0.47 (*)
+│   │   │   │   └── syn v2.0.119 (*)
+│   │   │   └── tracing-core v0.1.36
+│   │   │       └── once_cell v1.21.4
+│   │   └── ztracing v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │       ├── tracing v0.1.44 (*)
+│   │       ├── tracing-subscriber v0.3.23
+│   │       │   ├── nu-ansi-term v0.50.3
+│   │       │   │   └── windows-sys v0.61.2
+│   │       │   │       └── windows-link v0.2.1
+│   │       │   ├── sharded-slab v0.1.7
+│   │       │   │   └── lazy_static v1.5.0
+│   │       │   ├── smallvec v1.16.0
+│   │       │   ├── thread_local v1.1.10
+│   │       │   │   └── cfg-if v1.0.4
+│   │       │   ├── tracing-core v0.1.36 (*)
+│   │       │   └── tracing-log v0.2.0
+│   │       │       ├── log v0.4.34 (*)
+│   │       │       ├── once_cell v1.21.4
+│   │       │       └── tracing-core v0.1.36 (*)
+│   │       ├── zlog v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │       │   ├── anyhow v1.0.104
+│   │       │   ├── chrono v0.4.45 (*)
+│   │       │   ├── collections v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337) (*)
+│   │       │   └── log v0.4.34 (*)
+│   │       └── ztracing_macro v0.1.0 (proc-macro) (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   ├── taffy v0.13.0
+│   │   ├── arrayvec v0.7.8
+│   │   ├── slotmap v1.1.1 (*)
+│   │   └── smallvec v1.16.0
+│   ├── thiserror v2.0.20
+│   │   └── thiserror-impl v2.0.20 (proc-macro)
+│   │       ├── proc-macro2 v1.0.107 (*)
+│   │       ├── quote v1.0.47 (*)
+│   │       └── syn v3.0.4 (*)
+│   ├── ttf-parser v0.25.1 (*)
+│   ├── url v2.5.8 (*)
+│   ├── usvg v0.46.0 (*)
+│   ├── util_macros v0.1.0 (proc-macro) (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   ├── perf v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   │   ├── collections v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   │   │   ├── gpui_util v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   │   │   │   │   ├── anyhow v1.0.104
+│   │   │   │   │   └── log v0.4.34
+│   │   │   │   │       ├── serde_core v1.0.229
+│   │   │   │   │       └── value-bag v1.14.1
+│   │   │   │   │           └── value-bag-serde1 v1.14.1
+│   │   │   │   │               ├── erased-serde v0.4.10
+│   │   │   │   │               │   ├── serde_core v1.0.229
+│   │   │   │   │               │   └── typeid v1.0.3
+│   │   │   │   │               ├── serde_core v1.0.229
+│   │   │   │   │               └── serde_fmt v1.1.0
+│   │   │   │   │                   └── serde_core v1.0.229
+│   │   │   │   ├── indexmap v2.14.1
+│   │   │   │   │   ├── equivalent v1.0.2
+│   │   │   │   │   ├── hashbrown v0.17.1
+│   │   │   │   │   └── serde_core v1.0.229
+│   │   │   │   └── rustc-hash v2.1.3
+│   │   │   ├── serde v1.0.229
+│   │   │   │   ├── serde_core v1.0.229
+│   │   │   │   └── serde_derive v1.0.229 (proc-macro) (*)
+│   │   │   └── serde_json v1.0.151
+│   │   │       ├── indexmap v2.14.1 (*)
+│   │   │       ├── itoa v1.0.18
+│   │   │       ├── memchr v2.8.3
+│   │   │       ├── serde_core v1.0.229
+│   │   │       └── zmij v1.0.23
+│   │   ├── quote v1.0.47 (*)
+│   │   └── syn v2.0.119 (*)
+│   ├── uuid v1.26.1 (*)
+│   ├── waker-fn v1.2.0
+│   ├── web-time v1.1.0
+│   └── windows v0.62.2
+│       ├── windows-collections v0.3.2
+│       │   └── windows-core v0.62.2
+│       │       ├── windows-implement v0.60.2 (proc-macro)
+│       │       │   ├── proc-macro2 v1.0.107 (*)
+│       │       │   ├── quote v1.0.47 (*)
+│       │       │   └── syn v2.0.119 (*)
+│       │       ├── windows-interface v0.59.3 (proc-macro)
+│       │       │   ├── proc-macro2 v1.0.107 (*)
+│       │       │   ├── quote v1.0.47 (*)
+│       │       │   └── syn v2.0.119 (*)
+│       │       ├── windows-link v0.2.1
+│       │       ├── windows-result v0.4.1
+│       │       │   └── windows-link v0.2.1
+│       │       └── windows-strings v0.5.1
+│       │           └── windows-link v0.2.1
+│       ├── windows-core v0.62.2 (*)
+│       ├── windows-future v0.3.2
+│       │   ├── windows-core v0.62.2 (*)
+│       │   ├── windows-link v0.2.1
+│       │   └── windows-threading v0.2.1
+│       │       └── windows-link v0.2.1
+│       └── windows-numerics v0.3.1
+│           ├── windows-core v0.62.2 (*)
+│           └── windows-link v0.2.1
+│   [build-dependencies]
+│   └── embed-resource v3.0.11
+│       ├── cc v1.2.67
+│       │   ├── find-msvc-tools v0.1.11
+│       │   └── shlex v2.0.1
+│       ├── memchr v2.8.3
+│       ├── rustc_version v0.4.1 (*)
+│       └── toml v1.1.6+spec-1.1.0
+│           ├── serde_core v1.0.229
+│           ├── serde_spanned v1.1.1
+│           │   └── serde_core v1.0.229
+│           ├── toml_datetime v1.1.1+spec-1.1.0
+│           │   └── serde_core v1.0.229
+│           ├── toml_parser v1.1.3+spec-1.1.0
+│           │   └── winnow v1.0.4
+│           ├── toml_writer v1.1.2+spec-1.1.0
+│           └── winnow v1.0.4
+├── gpui_platform v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│   ├── anyhow v1.0.104
+│   ├── gpui v0.2.2 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337) (*)
+│   └── gpui_windows v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337)
+│       ├── accesskit v0.24.1 (*)
+│       ├── accesskit_windows v0.34.0
+│       │   ├── accesskit v0.24.1 (*)
+│       │   ├── accesskit_consumer v0.38.0
+│       │   │   ├── accesskit v0.24.1 (*)
+│       │   │   └── hashbrown v0.16.1
+│       │   │       └── foldhash v0.2.0
+│       │   ├── hashbrown v0.16.1 (*)
+│       │   ├── static_assertions v1.1.0
+│       │   ├── windows v0.62.2 (*)
+│       │   └── windows-core v0.62.2 (*)
+│       ├── anyhow v1.0.104
+│       ├── collections v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337) (*)
+│       ├── dunce v1.0.5
+│       ├── etagere v0.2.15 (*)
+│       ├── futures v0.3.34 (*)
+│       ├── gpui v0.2.2 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337) (*)
+│       ├── gpui_util v0.1.0 (https://github.com/zed-industries/zed?rev=bd747337d7be138834e20972b9e203c7b239cc47#bd747337) (*)
+│       ├── image v0.25.10 (*)
+│       ├── itertools v0.14.0 (*)
+│       ├── log v0.4.34 (*)
+│       ├── parking_lot v0.12.5 (*)
+│       ├── rand v0.9.5 (*)
+│       ├── raw-window-handle v0.6.2
+│       ├── smallvec v1.16.0
+│       ├── uuid v1.26.1 (*)
+│       ├── windows v0.62.2 (*)
+│       ├── windows-core v0.62.2 (*)
+│       ├── windows-numerics v0.3.1 (*)
+│       └── windows-registry v0.6.1
+│           ├── windows-link v0.2.1
+│           ├── windows-result v0.4.1 (*)
+│           └── windows-strings v0.5.1 (*)
+└── strop-ui-protocol v0.37.1 (/home/tarek/workspace/strop/crates/strop-ui-protocol)
+    ├── serde v1.0.229 (*)
+    ├── serde_json v1.0.151 (*)
+    ├── strop-core v0.37.1 (/home/tarek/workspace/strop/crates/strop-core)
+    │   ├── parking_lot v0.12.5 (*)
+    │   ├── ropey v1.6.1
+    │   │   ├── smallvec v1.16.0
+    │   │   └── str_indices v0.4.4
+    │   ├── serde v1.0.229 (*)
+    │   ├── sha2 v0.10.9
+    │   │   ├── cfg-if v1.0.4
+    │   │   ├── cpufeatures v0.2.17
+    │   │   └── digest v0.10.7
+    │   │       ├── block-buffer v0.10.4
+    │   │       │   └── generic-array v0.14.7
+    │   │       │       └── typenum v1.20.1
+    │   │       │       [build-dependencies]
+    │   │       │       └── version_check v0.9.5
+    │   │       └── crypto-common v0.1.7
+    │   │           ├── generic-array v0.14.7 (*)
+    │   │           └── typenum v1.20.1
+    │   ├── strop-trace v0.37.1 (/home/tarek/workspace/strop/crates/strop-trace)
+    │   │   ├── parking_lot v0.12.5 (*)
+    │   │   ├── serde v1.0.229 (*)
+    │   │   ├── serde_json v1.0.151 (*)
+    │   │   ├── sha2 v0.10.9 (*)
+    │   │   └── thiserror v2.0.20 (*)
+    │   ├── tempfile v3.27.0
+    │   │   ├── fastrand v2.5.0
+    │   │   ├── getrandom v0.4.3 (*)
+    │   │   ├── once_cell v1.21.4
+    │   │   └── windows-sys v0.61.2 (*)
+    │   ├── thiserror v2.0.20 (*)
+    │   ├── unicode-segmentation v1.13.3
+    │   ├── unicode-width v0.2.0
+    │   ├── verus_builtin v0.0.0-2026-09-06-0133
+    │   ├── verus_builtin_macros v0.0.0-2026-09-06-0133 (proc-macro)
+    │   │   ├── convert_case v0.4.0
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   ├── syn v2.0.119 (*)
+    │   │   ├── synstructure v0.13.2 (*)
+    │   │   ├── verus_prettyplease v0.0.0-2026-09-06-0133
+    │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   │   └── verus_syn v0.0.0-2026-09-06-0133
+    │   │   │       ├── proc-macro2 v1.0.107 (*)
+    │   │   │       ├── quote v1.0.47 (*)
+    │   │   │       └── unicode-ident v1.0.24
+    │   │   └── verus_syn v0.0.0-2026-09-06-0133 (*)
+    │   └── vstd v0.0.0-2026-09-06-0133
+    │       ├── verus_builtin v0.0.0-2026-09-06-0133
+    │       ├── verus_builtin_macros v0.0.0-2026-09-06-0133 (proc-macro) (*)
+    │       └── verus_state_machines_macros v0.0.0-2026-09-06-0133 (proc-macro)
+    │           ├── indexmap v2.14.1 (*)
+    │           ├── proc-macro2 v1.0.107 (*)
+    │           ├── quote v1.0.47 (*)
+    │           └── verus_syn v0.0.0-2026-09-06-0133 (*)
+    └── thiserror v2.0.20 (*)

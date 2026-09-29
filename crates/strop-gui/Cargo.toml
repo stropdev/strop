@@ -1,0 +1,14 @@
+[package]
+name = "strop-gui"
+description = "Private native Windows GPUI frontend over the released WSL UI backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "bd747337d7be138834e20972b9e203c7b239cc47", default-features = false }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "bd747337d7be138834e20972b9e203c7b239cc47", default-features = false }
+strop-ui-protocol = { path = "../strop-ui-protocol" }
