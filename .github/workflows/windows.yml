@@ -23,8 +23,6 @@ jobs:
   protocol:
     name: Native Windows shared protocol
     runs-on: windows-2025
-    env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/strop-windows-target
     steps:
       - uses: actions/checkout@v7
       - name: Install pinned native Rust toolchain
@@ -32,6 +30,8 @@ jobs:
       # This executes the actual client/framing contracts under MSVC. It is
       # portability evidence, not GPU, native input, WSL or UIA evidence.
       - name: Exercise native protocol and readonly client
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/strop-windows-target
         run: cargo +1.98.1 test --locked -p strop-ui-protocol
       - name: Export the explicit WSL hardware-lane journey
         uses: actions/upload-artifact@v7
