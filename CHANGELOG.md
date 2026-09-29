@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.38.0 — 2026-09-29
 
 ### Changed
 
@@ -8,6 +8,10 @@
   key data and streaming script notation now live in `strop-core`; engine,
   headless and protocol callers use that same implementation. A native MSVC
   lane exercises the existing framing and readonly-client contracts.
+- The dispatch keymap adapts the shared `strop-core` command inventory, so
+  `Space ?`, which-key and key dispatch read one table whose command data a
+  native frontend can consume without the Linux engine. Dispatch handlers and
+  coverage are unchanged.
 
 ## 0.37.1 — 2026-09-29
 
