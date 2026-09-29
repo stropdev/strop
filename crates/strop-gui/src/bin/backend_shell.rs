@@ -31,18 +31,7 @@ impl Render for BackendShell {
             }
         }
         let generation = self.client.generation();
-        div()
-            .id("root")
-            .role(gpui::Role::Application)
-            .aria_label(format!("Strop backend shell, generation {generation}"))
-            .size_full()
-            .bg(rgb(0x11111b))
-            .text_color(rgb(0xcdd6f4))
-            .p_4()
-            .child(text!(format!(
-                "{}\nbackend generation {}",
-                self.title, generation
-            )))
+        strop_gui::surface::view_surface(self.client.view())
     }
 }
 
