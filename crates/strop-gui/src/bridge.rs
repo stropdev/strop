@@ -11,13 +11,13 @@
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use strop_ui_protocol::frame::{self, FrameDecoder};
 use strop_ui_protocol::{
-    AdmittedAction, BaseStamp, Client, ClientInfo, ClientCapabilities, ClientMessage,
-    ClientError, ClientEvent, EffectRequest, ProtocolError, ServerMessage,
-    MAX_PENDING_REQUESTS, PROTOCOL_VERSION,
+    AdmittedAction, Client, ClientCapabilities, ClientError, ClientInfo, ClientMessage,
+    ProtocolError, ServerMessage, MAX_PENDING_REQUESTS,
+    PROTOCOL_VERSION,
 };
 
 /// Deadlock canary for protocol barriers. Measured presentation latency
@@ -83,7 +83,9 @@ pub struct WslBridge {
 impl WslBridge {
     /// Launch the selected backend and return its handshake identity.
     /// The shared client is constructed here; the caller owns and applies it.
-    pub fn spawn(selection: &WslSelection) -> Result<(Self, strop_ui_protocol::BackendInfo), BridgeError> {
+    pub fn spawn(
+        selection: &WslSelection,
+    ) -> Result<(Self, strop_ui_protocol::BackendInfo), BridgeError> {
         let mut args = vec![
             "--distribution".to_string(),
             selection.distribution.clone(),
@@ -149,10 +151,14 @@ impl WslBridge {
             }
             Ok(TransportEvent::Failed(error)) => return Err(BridgeError::Transport(error)),
             Ok(TransportEvent::Closed) => {
-                return Err(BridgeError::Transport("backend closed during handshake".into()));
+                return Err(BridgeError::Transport(
+                    "backend closed during handshake".into(),
+                ));
             }
             Ok(TransportEvent::Message(_)) => {
-                return Err(BridgeError::Transport("backend published before handshake".into()));
+                return Err(BridgeError::Transport(
+                    "backend published before handshake".into(),
+                ));
             }
             Err(_) => return Err(BridgeError::Transport("handshake deadline expired".into())),
         };
@@ -195,7 +201,7 @@ fn bridge_loop(
     transport: Receiver<TransportEvent>,
     events: SyncSender<BridgeEvent>,
 ) -> Result<(), BridgeError> {
-    let mut client = None;
+    let mut client: Option<Client> = None;
     let mut seq = 0u64;
     let mut closed = None;
     while closed.is_none() {
@@ -247,10 +253,9 @@ fn bridge_loop(
                 events
                     .send(BridgeEvent::Closed(Ok(())))
                     .map_err(|_| BridgeError::QueueClosed)?;
-                return status
-                    .success()
-                    .then_some(())
-                    .ok_or_else(|| BridgeError::Transport(format!("backend exited with {status}")));
+                return status.success().then_some(()).ok_or_else(|| {
+                    BridgeError::Transport(format!("backend exited with {status}"))
+                });
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
