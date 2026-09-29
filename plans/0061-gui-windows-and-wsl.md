@@ -654,6 +654,17 @@ impact/evidence/re-entry ledger.
   `gpui_platform` contains 356 packages, all license-classified except the
   throwaway probe root; no OpenSSL, GPL or LGPL package appears in that graph.
   Resolution is a dependency policy gate, not a completed native build or SBOM.
+- Branch `feat/0061-native-windows-gui` now has a private `strop-gui` package,
+  pinned to the same GPUI revision, with no publishable TUI dependency on it.
+  The native shell launches through explicit distro/user/workspace/backend
+  selection, a bounded ordered `wsl.exe` bridge, the shared readonly protocol
+  reducer, physical key mapping and the engine's shared command inventory.
+  Native Windows run `36602740429` passed all existing protocol/client,
+  GPUI package, physical input, shell build, command inventory, explicit WSL
+  selection and real WSL enumeration gates, and exported the hardware journey.
+- The exported run-36602740429 executable repeated the real Windows → Ubuntu
+  WSL → published 0.37.1 backend journey in 0.45s. This remains a vertical
+  shell/proof, not a full editor surface, parity claim or release.
 
 ## 16. Primary references and evidence anchors
 
