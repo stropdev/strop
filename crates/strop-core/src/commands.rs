@@ -25,8 +25,7 @@ pub enum AbsorbKind {
 pub enum CommandKind {
     /// A direct command or semantic action.
     Leaf,
-    /// Alias: expands to these keys through the engine walker.
-    Alias,
+    Alias(&'static str),
     /// A grammar motion.
     Motion,
     /// A grammar operator.
@@ -60,13 +59,7 @@ pub struct Binding {
 }
 
 pub const SECTIONS: &[&str] = &[
-    "normal",
-    "visual",
-    "insert",
-    "leader",
-    "git",
-    "ex+panes",
-    "terminal",
+    "normal", "visual", "insert", "leader", "git", "ex+panes", "terminal",
 ];
 
 include!("commands/bindings.rs");

@@ -432,7 +432,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-d",
-        kind: CommandKind::Alias,
+        kind: CommandKind::Alias("d$"),
     },
     Binding {
         keys: "C",
@@ -440,7 +440,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-c",
-        kind: CommandKind::Alias,
+        kind: CommandKind::Alias("c$"),
     },
     Binding {
         keys: "Y",
@@ -448,7 +448,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-y",
-        kind: CommandKind::Alias,
+        kind: CommandKind::Alias("yy"),
     },
     Binding {
         keys: "s",
@@ -456,7 +456,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-s",
-        kind: CommandKind::Alias,
+        kind: CommandKind::Alias("cl"),
     },
     Binding {
         keys: "x X",
@@ -536,7 +536,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "subst-line",
-        kind: CommandKind::Alias,
+        kind: CommandKind::Alias("cc"),
     },
     Binding {
         keys: "u ctrl-r",
