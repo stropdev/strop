@@ -59,7 +59,7 @@ fn main() {
     };
     gpui_platform::application().run(move |cx: &mut App| {
         let (bridge, backend) = WslBridge::spawn(&selection).expect("WSL backend handshake");
-        let mut client = Client::new(&backend);
+        let client = Client::new(&backend);
         let title = format!(
             "Strop — {} · {}",
             selection.distribution, selection.workspace
