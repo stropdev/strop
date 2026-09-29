@@ -77,7 +77,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "view-place",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.view_place(k)),
     },
     Binding {
         keys: "H M L",
@@ -85,7 +85,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "visible-jumps",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.jump_visible(k, 1)),
     },
     Binding {
         keys: "ZZ",
@@ -93,7 +93,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "write-quit",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.write_quit()),
     },
     Binding {
         keys: "gv",
@@ -101,7 +101,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "reselect-visual",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.reselect_visual()),
     },
     Binding {
         keys: "gi",
@@ -109,7 +109,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "insert-at-last",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.insert_at_last()),
     },
     Binding {
         keys: "g;",
@@ -117,7 +117,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "change-back",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.change_jump(true)),
     },
     Binding {
         keys: "g,",
@@ -125,7 +125,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "change-forward",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.change_jump(false)),
     },
     Binding {
         keys: "ge gE { }",
@@ -149,7 +149,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "collection-source",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.collection_open_source_pub()),
     },
     Binding {
         keys: "gb",
@@ -157,7 +157,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal", "visual"],
         live: true,
         id: "occurrence-next",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.occurrence_next_pub()),
     },
     Binding {
         keys: "gB",
@@ -165,7 +165,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal", "visual"],
         live: true,
         id: "occurrence-all",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.occurrence_all_pub()),
     },
     Binding {
         keys: "gg",
@@ -181,7 +181,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "enter",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.enter_pub()),
     },
     Binding {
         keys: "tab",
@@ -189,7 +189,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "jump-forward",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.jump_forward()),
     },
     Binding {
         keys: "ctrl-r",
@@ -197,7 +197,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "redo",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.redo()),
     },
     Binding {
         keys: "ctrl-d ctrl-u ctrl-f ctrl-b",
@@ -213,7 +213,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "alternate-buffer",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.alternate_buffer()),
     },
     Binding {
         keys: "q<a>",
@@ -237,7 +237,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "references",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::References)),
     },
     Binding {
         keys: "gI",
@@ -245,7 +245,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "implementation",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::Implementation)),
     },
     Binding {
         keys: "gy",
@@ -253,7 +253,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "type-definition",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::TypeDefinition)),
     },
     Binding {
         keys: "gD",
@@ -261,7 +261,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "declaration",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.lsp_locations_pub(strop_lsp::LocKind::Declaration)),
     },
     Binding {
         keys: "]d [d",
@@ -269,7 +269,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "diagnostic-jumps",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.jump_diagnostic_pub(k != '[')),
     },
     Binding {
         keys: "gd",
@@ -277,7 +277,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "goto-definition",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::lsp_goto_definition_pub(e)),
     },
     Binding {
         keys: "gs",
@@ -285,7 +285,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "switch-source-header",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::lsp_switch_source_header_pub(e)),
     },
     Binding {
         keys: "f<c> F<c> t<c> T<c>",
@@ -317,7 +317,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "search-next",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.repeat_search_pub(false)),
     },
     Binding {
         keys: "N",
@@ -325,7 +325,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "search-prev",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.repeat_search_pub(true)),
     },
     Binding {
         keys: "]f [f",
@@ -333,7 +333,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "collection-file-nav",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.collection_file_step_pub(k != '[')),
     },
     Binding {
         keys: "]e [e",
@@ -341,7 +341,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "collection-excerpt-nav",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.collection_excerpt_step(k != '[')),
     },
     Binding {
         keys: "]c [c",
@@ -349,7 +349,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "hunk-nav",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.jump_hunk_pub(k != '[')),
     },
     Binding {
         keys: "m<a>",
@@ -373,7 +373,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "word-search",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.search_word_under_cursor_pub(k == '#')),
     },
     Binding {
         keys: "; ,",
@@ -381,7 +381,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "find-repeat",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.repeat_find_pub(k == ',')),
     },
     Binding {
         keys: "|",
@@ -405,7 +405,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "cursor-toggle",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::toggle_cursor(e)),
     },
     Binding {
         keys: "d y c > <",
@@ -461,7 +461,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "char-delete",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::delete_char(e)),
     },
     Binding {
         keys: "iw i\" i' i( i[ i{",
@@ -485,7 +485,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "insert-entries",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(crate::editor::Editor::insert_entry_pub),
     },
     Binding {
         keys: "p P",
@@ -493,7 +493,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "paste",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.paste_named_pub(None, 1, k == 'P')),
     },
     Binding {
         keys: "r<c>",
@@ -509,7 +509,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "join-repeat",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(crate::editor::Editor::join_or_repeat),
     },
     Binding {
         keys: "^",
@@ -525,7 +525,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "toggle-case",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::toggle_case_pub(e)),
     },
     Binding {
         keys: "S",
@@ -541,7 +541,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "undo-redo",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::undo(e)),
     },
     Binding {
         keys: "\"+y \"+p \"+P",
@@ -565,7 +565,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "visual-block",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.enter_block_pub()),
     },
     Binding {
         keys: "v V",
@@ -573,7 +573,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "visual-enter",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.enter_visual_pub(k)),
     },
     Binding {
         keys: "d y c x > <",
@@ -605,7 +605,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["visual"],
         live: true,
         id: "clip-yank",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.clipboard_yank_pub()),
     },
     Binding {
         keys: "ctrl-space",
@@ -701,7 +701,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "directory-reveal",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.reveal_source()),
     },
     Binding {
         keys: "space f",
@@ -709,7 +709,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "files",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Files)),
     },
     Binding {
         keys: "space o",
@@ -717,7 +717,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "remote-open",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_remote_picker()),
     },
     Binding {
         keys: "space b",
@@ -725,7 +725,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "buffers",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Buffers)),
     },
     Binding {
         keys: "space /",
@@ -733,7 +733,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "search",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_search(false)),
     },
     Binding {
         keys: "space R",
@@ -741,7 +741,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "replace-global",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_search(true)),
     },
     Binding {
         keys: "space ?",
@@ -749,7 +749,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "help",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::open_help(e)),
     },
     Binding {
         keys: "space y",
@@ -757,7 +757,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "clip-yank",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.clipboard_yank_pub()),
     },
     Binding {
         keys: "space p",
@@ -765,7 +765,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "clip-paste",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.clipboard_paste_pub(k == 'P')),
     },
     Binding {
         keys: "space P",
@@ -773,7 +773,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "clip-paste-before",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, k| e.clipboard_paste_pub(k == 'P')),
     },
     Binding {
         keys: "space d",
@@ -781,7 +781,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "diagnostics",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_diagnostics_picker()),
     },
     Binding {
         keys: "space k",
@@ -789,7 +789,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "hover",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.lsp_hover_pub()),
     },
     Binding {
         keys: "space a",
@@ -797,7 +797,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "code-actions",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.context_actions()),
     },
     Binding {
         keys: "space s",
@@ -805,7 +805,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "document-symbols",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.lsp_document_symbols_pub()),
     },
     Binding {
         keys: "space S",
@@ -813,7 +813,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "workspace-symbols",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_workspace_symbols()),
     },
     Binding {
         keys: "space j",
@@ -821,7 +821,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "jumplist-picker",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_picker(strop_picker::Kind::Jumps)),
     },
     Binding {
         keys: "space u",
@@ -829,7 +829,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "undo-tree",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::open_undo_tree(e)),
     },
     Binding {
         keys: "space c",
@@ -837,7 +837,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "cursor-stack",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::add_cursor_next_line(e)),
     },
     Binding {
         keys: "space g",
@@ -853,7 +853,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-log",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_log_pub(false)),
     },
     Binding {
         keys: "space g h",
@@ -861,7 +861,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-file-history",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_log_pub(true)),
     },
     Binding {
         keys: "space g b",
@@ -869,7 +869,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-blame",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.toggle_blame_gutter()),
     },
     Binding {
         keys: "space g y",
@@ -877,7 +877,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-permalink-yank",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.yank_permalink()),
     },
     Binding {
         keys: "space g o",
@@ -885,7 +885,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-permalink-open",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.open_permalink()),
     },
     Binding {
         keys: "space g u",
@@ -893,7 +893,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-undo",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.undo_hunk()),
     },
     Binding {
         keys: "space g s",
@@ -901,7 +901,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-stage",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.stage_hunk()),
     },
     Binding {
         keys: "space g S",
@@ -909,7 +909,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-unstage",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.unstage_hunk()),
     },
     Binding {
         keys: "space g p",
@@ -917,7 +917,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-preview",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.preview_hunk()),
     },
     Binding {
         keys: "]f [f",
@@ -997,7 +997,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "pane-nav",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(crate::editor::Editor::pane_move_pub),
     },
     Binding {
         keys: "ctrl-o / ctrl-i (tab)",
@@ -1005,7 +1005,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "jumplist",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::jump_back(e)),
     },
     Binding {
         keys: "ctrl-w v / s",
@@ -1013,7 +1013,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "pane-split",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(crate::editor::Editor::split_pub),
     },
     Binding {
         keys: ":view :set",
@@ -1029,7 +1029,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "pane-close",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| crate::editor::Editor::pane_close_pub(e)),
     },
     Binding {
         keys: "up down left right tab s-tab",
@@ -1117,6 +1117,6 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "redraw",
-        handler: Handler::Leaf(|_, _| {}),
+        handler: Handler::Leaf(|e, _| e.needs_repaint = true),
     },
 ];
