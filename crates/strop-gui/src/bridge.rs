@@ -34,8 +34,7 @@ pub struct WslSelection {
     pub workspace: String,
     pub environment: Vec<(String, String)>,
 }
-
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum BridgeError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
@@ -157,6 +156,7 @@ impl WslBridge {
         let transport_tx_thread = transport_tx.clone();
         let stdin = std::sync::Arc::new(std::sync::Mutex::new(stdin));
         let event_tx_thread = event_tx.clone();
+        let ordered_backend = backend.clone();
         std::thread::spawn(move || {
             let result = bridge_loop(
                 child,
@@ -171,7 +171,9 @@ impl WslBridge {
             }
             let _ = transport_tx_thread.send(TransportEvent::Closed);
             if let Err(error) = &result {
-                let _ = event_tx_thread.send(BridgeEvent::Closed(Err(error.clone())));
+                let _ = event_tx_thread.send(BridgeEvent::Closed(Err(BridgeError::Transport(
+                    error.to_string(),
+                ))));
             }
             result
         });
