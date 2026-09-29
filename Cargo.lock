@@ -5242,7 +5242,9 @@ version = "0.37.1"
 dependencies = [
  "gpui",
  "gpui_platform",
+ "serde_json",
  "strop-ui-protocol",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

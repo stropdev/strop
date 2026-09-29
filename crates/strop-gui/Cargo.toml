@@ -12,3 +12,5 @@ publish = false
 gpui = { git = "https://github.com/zed-industries/zed", rev = "bd747337d7be138834e20972b9e203c7b239cc47", default-features = false }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "bd747337d7be138834e20972b9e203c7b239cc47", default-features = false }
 strop-ui-protocol = { path = "../strop-ui-protocol" }
+serde_json = "1"
+thiserror = "2"
