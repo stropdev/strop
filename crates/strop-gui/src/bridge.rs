@@ -133,17 +133,6 @@ impl WslBridge {
 
         let (transport_tx, transport_rx) = std::sync::mpsc::sync_channel(MAX_PENDING_REQUESTS);
         std::thread::spawn(move || read_backend(stdout, transport_tx));
-
-        let (actions, action_rx) = std::sync::mpsc::sync_channel(MAX_PENDING_REQUESTS);
-        let (event_tx, events) = std::sync::mpsc::sync_channel(MAX_PENDING_REQUESTS);
-        let transport_tx_thread = transport_tx.clone();
-        let stdin = std::sync::Arc::new(std::sync::Mutex::new(stdin));
-        std::thread::spawn(move || {
-            let result = bridge_loop(child, stdin, action_rx, transport_rx, event_tx);
-            let _ = transport_tx_thread.send(TransportEvent::Closed);
-            result
-        });
-
         let backend = match transport_rx.recv_timeout(DEFAULT_BRIDGE_BUDGET) {
             Ok(TransportEvent::Message(ServerMessage::Welcome { backend, .. })) => backend,
             Ok(TransportEvent::Message(ServerMessage::Error { error, .. })) => {
@@ -162,6 +151,25 @@ impl WslBridge {
             }
             Err(_) => return Err(BridgeError::Transport("handshake deadline expired".into())),
         };
+
+        let (actions, action_rx) = std::sync::mpsc::sync_channel(MAX_PENDING_REQUESTS);
+        let (event_tx, events) = std::sync::mpsc::sync_channel(MAX_PENDING_REQUESTS);
+        let transport_tx_thread = transport_tx.clone();
+        let stdin = std::sync::Arc::new(std::sync::Mutex::new(stdin));
+        let ordered_backend = backend.clone();
+        std::thread::spawn(move || {
+            let result = bridge_loop(
+                child,
+                stdin,
+                action_rx,
+                transport_rx,
+                event_tx,
+                ordered_backend,
+            );
+            let _ = transport_tx_thread.send(TransportEvent::Closed);
+            result
+        });
+
         Ok((Self { actions, events }, backend))
     }
 
@@ -200,18 +208,16 @@ fn bridge_loop(
     actions: Receiver<BridgeAction>,
     transport: Receiver<TransportEvent>,
     events: SyncSender<BridgeEvent>,
+    backend: strop_ui_protocol::BackendInfo,
 ) -> Result<(), BridgeError> {
-    let mut client: Option<Client> = None;
+    let mut client = Client::new(&backend);
     let mut seq = 0u64;
-    let mut closed = None;
-    while closed.is_none() {
+    let mut closed = false;
+    while !closed {
         while let Ok(action) = actions.try_recv() {
             seq += 1;
             match action {
                 BridgeAction::Act(actions) => {
-                    let client = client
-                        .as_ref()
-                        .ok_or(BridgeError::Client(ClientError::NoView))?;
                     let base = client.base_stamp()?;
                     write_client(&stdin, &ClientMessage::Act { seq, base, actions })?;
                 }
@@ -226,24 +232,13 @@ fn bridge_loop(
                 }
             }
         }
+
         match transport.recv_timeout(Duration::from_millis(10)) {
             Ok(TransportEvent::Message(message)) => {
                 if matches!(message, ServerMessage::Bye { .. }) {
-                    closed = Some(());
+                    closed = true;
                 }
-                if let Some(client) = client.as_mut() {
-                    let _ = client.apply(&message);
-                } else if let ServerMessage::Snapshot { .. } = &message {
-                    client = Some(Client::new(&strop_ui_protocol::BackendInfo {
-                        name: String::new(),
-                        version: String::new(),
-                        build: None,
-                        incarnation: 0,
-                    }));
-                    if let Some(client) = client.as_mut() {
-                        let _ = client.apply(&message);
-                    }
-                }
+                let _ = client.apply(&message);
                 events
                     .send(BridgeEvent::Message(message))
                     .map_err(|_| BridgeError::QueueClosed)?;
