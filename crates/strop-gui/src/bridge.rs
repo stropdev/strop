@@ -333,3 +333,23 @@ fn read_backend(mut stdout: ChildStdout, tx: SyncSender<TransportEvent>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridge_error_remains_typed_and_pressure_is_explicit() {
+        let error = BridgeError::Backpressure;
+        assert_eq!(
+            error.to_string(),
+            "the ordered input queue is full; user input is refused, not coalesced"
+        );
+        let (tx, _rx) = std::sync::mpsc::sync_channel(1);
+        tx.send(BridgeAction::Shutdown).unwrap();
+        assert!(matches!(
+            tx.try_send(BridgeAction::Shutdown),
+            Err(TrySendError::Full(_))
+        ));
+    }
+}
