@@ -158,4 +158,13 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    #[ignore = "requires the native Windows WSL hardware lane"]
+    fn real_windows_wsl_enumeration_decodes_utf16le() {
+        let state = enumerate(std::path::Path::new("wsl.exe")).unwrap();
+        match state {
+            WslState::Available(distros) => assert!(!distros.is_empty()),
+            WslState::NoDistribution | WslState::Unavailable(_) => {}
+        }
+    }
 }
