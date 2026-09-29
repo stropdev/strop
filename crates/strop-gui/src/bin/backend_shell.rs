@@ -31,7 +31,15 @@ impl Render for BackendShell {
             }
         }
         let generation = self.client.generation();
-        strop_gui::surface::view_surface(self.client.view())
+        let mut surface = strop_gui::surface::view_surface(self.client.view());
+        surface = surface
+            .on_key_down(cx.listener(|this, event, _window, _cx| {
+                let _ = strop_gui::routing::admit_key_down(&this.bridge, event);
+            }))
+            .on_key_up(cx.listener(|this, event, _window, _cx| {
+                let _ = strop_gui::routing::admit_key_up(&this.bridge, event);
+            }));
+        surface
     }
 }
 
