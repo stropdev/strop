@@ -352,4 +352,18 @@ mod tests {
             Err(TrySendError::Full(_))
         ));
     }
+
+    #[test]
+    fn bridge_actions_cover_admitted_input_viewport_recovery_and_shutdown() {
+        let actions = [
+            BridgeAction::Act(Vec::new()),
+            BridgeAction::Viewport {
+                columns: 120,
+                rows: 40,
+            },
+            BridgeAction::Resync,
+            BridgeAction::Shutdown,
+        ];
+        assert_eq!(actions.len(), 4);
+    }
 }
