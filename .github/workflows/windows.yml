@@ -43,6 +43,8 @@ jobs:
         run: cargo +1.98.1 test --locked -p strop-gui "commands::"
       - name: Exercise explicit WSL discovery and selection
         run: cargo +1.98.1 test --locked -p strop-gui "wsl::"
+      - name: Exercise real WSL enumeration on the hardware lane
+        run: cargo +1.98.1 test --locked -p strop-gui "real_windows_wsl_enumeration_decodes_utf16le" -- --ignored --exact --nocapture
       - name: Export the explicit WSL hardware-lane journey
         uses: actions/upload-artifact@v7
         with:
