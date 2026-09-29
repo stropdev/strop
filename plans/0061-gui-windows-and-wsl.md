@@ -630,6 +630,30 @@ impact/evidence/re-entry ledger.
 - Assess GPUI/platform together at upstream
   `bd747337d7be138834e20972b9e203c7b239cc47` (toolchain 1.98.1). This is an
   investigation pin until the required native vertical slice proves it.
+- The first native interface gates are complete: shared normalized keys and
+  script notation moved to `strop-core`; `strop-ui-protocol` no longer depends
+  on the Linux engine. Branch commit `cb04164f1dd80dc659eff322e28e9e9a95dcb0da`
+  passed the full Compose gate (fmt, workspace clippy with warnings denied and
+  all locked tests). Native MSVC run `36511527275` exercised the existing framing
+  and readonly-client tests on Windows 2025 with Rust 1.98.1.
+- The exported run-36511527275 executable then drove the real interactive Windows
+  session → Ubuntu WSL → published 0.37.1 Linux backend through `wsl.exe` stdio.
+  It opened a quoted Unicode Linux path, committed `λ🦀e\u{301}` as text, applied
+  undo/redo, saved, read the exact Linux bytes back and completed authorized
+  shutdown in 0.46s. This proves native argv, ordered actions, effect ownership,
+  WSL execution and source-byte integrity. It is deliberately not GPUI, IME,
+  GPU, UIA, distribution or complete parity evidence.
+- Upstream GPUI's pinned Windows platform now exposes a test-support
+  `Window::render_to_image` that renders the complete scene through DirectX and
+  reads back a CPU image without presentation. For actual presented frames,
+  `Window::on_next_frame` runs after `Window::present()` returns; the capture
+  endpoint must pair that presented-frame barrier with an owned-window Windows
+  Graphics Capture sample and its backend generation. `DwmFlush` is compositor
+  scheduling, not a pixel-readiness oracle.
+- Cargo's exact x86_64-pc-windows-msvc resolution for pinned `gpui` +
+  `gpui_platform` contains 356 packages, all license-classified except the
+  throwaway probe root; no OpenSSL, GPL or LGPL package appears in that graph.
+  Resolution is a dependency policy gate, not a completed native build or SBOM.
 
 ## 16. Primary references and evidence anchors
 

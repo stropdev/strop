@@ -489,6 +489,13 @@ See [tracing design](plans/0029-session-tracing.md), the
 [prioritized review/roadmap](plans/0028-roadmap-and-review.md), and the
 [P1/P2 execution contract](plans/0031-p1-p2-execution.md).
 
+## Code signing policy
+
+Public Windows executables and installers are approved manually and signed
+through SignPath Foundation. The policy, privacy statement, build/provenance
+controls and named approver live in [SECURITY.md](SECURITY.md).
+
+
 ## Links
 
 - [strop.dev](https://strop.dev) — demo, palettes, install
