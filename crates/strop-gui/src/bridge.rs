@@ -34,6 +34,7 @@ pub struct WslSelection {
     pub workspace: String,
     pub environment: Vec<(String, String)>,
 }
+
 #[derive(Debug, thiserror::Error)]
 pub enum BridgeError {
     #[error("io: {0}")]
