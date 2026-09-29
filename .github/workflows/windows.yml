@@ -35,6 +35,8 @@ jobs:
         run: cargo +1.98.1 test --locked -p strop-ui-protocol
       - name: Check the pinned GPUI frontend package
         run: cargo +1.98.1 check --locked -p strop-gui
+      - name: Exercise physical native input mapping
+        run: cargo +1.98.1 test --locked -p strop-gui
       - name: Export the explicit WSL hardware-lane journey
         uses: actions/upload-artifact@v7
         with:

@@ -7,3 +7,5 @@
 
 pub use gpui_platform::application;
 pub use strop_ui_protocol::{AdmittedAction, Client, ClientEvent, ViewSnapshot};
+
+pub mod input;
