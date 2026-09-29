@@ -364,6 +364,15 @@ mod tests {
             BridgeAction::Resync,
             BridgeAction::Shutdown,
         ];
-        assert_eq!(actions.len(), 4);
+        assert!(matches!(actions[0], BridgeAction::Act(_)));
+        assert!(matches!(
+            actions[1],
+            BridgeAction::Viewport {
+                columns: 120,
+                rows: 40
+            }
+        ));
+        assert!(matches!(actions[2], BridgeAction::Resync));
+        assert!(matches!(actions[3], BridgeAction::Shutdown));
     }
 }
