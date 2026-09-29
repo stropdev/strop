@@ -12,9 +12,10 @@ mod generated;
 #[cfg(test)]
 mod tests;
 
-use super::{Editor, Key};
+use super::Editor;
 use serde::Serialize;
 use std::cell::Cell;
+use strop_core::frontend_input::Key;
 use strop_trace::{enabled, record, EventKind};
 thread_local! { static INPUT_DEPTH: Cell<usize> = const { Cell::new(0) }; }
 

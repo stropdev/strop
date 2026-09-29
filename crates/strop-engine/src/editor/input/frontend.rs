@@ -1,6 +1,7 @@
 //! Editor normalization runs only after the engine has selected the input owner.
 //! The native frontend must preserve modifiers and releases for other owners.
-use crate::editor::{events::AppEvent, Editor, Key};
+use crate::editor::{events::AppEvent, Editor};
+use strop_core::frontend_input::Key;
 use strop_core::frontend_input::{Input, KeyCode, KeyEvent, KeyKind};
 
 impl Editor {

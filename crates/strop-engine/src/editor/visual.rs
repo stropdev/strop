@@ -7,7 +7,8 @@ use strop_core::Range;
 use strop_grammar::{self as grammar, Op};
 
 use super::input::Action;
-use super::{Editor, Key, Mode};
+use super::{Editor, Mode};
+use strop_core::frontend_input::Key;
 
 impl Editor {
     pub(crate) fn feed_visual(&mut self, key: Key) {

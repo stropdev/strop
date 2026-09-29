@@ -1,5 +1,5 @@
 use super::*;
-use strop_core::Buffer;
+use strop_core::{frontend_input::Key, Buffer};
 
 fn fixture() -> (tempfile::TempDir, Editor) {
     let root = tempfile::tempdir().unwrap();

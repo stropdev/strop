@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn typing_publishes_each_key_and_keeps_one_source_undo_group() {
     let (mut editor, path, _) = fixture();
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = editor.current();
     let source = editor
         .docs
@@ -17,13 +17,13 @@ fn typing_publishes_each_key_and_keeps_one_source_undo_group() {
         "XYZalpha one\nalpha two\n"
     );
     assert_eq!(editor.mode, crate::editor::Mode::Insert);
-    editor.feed(crate::editor::Key::Esc);
+    editor.feed(strop_core::frontend_input::Key::Esc);
     editor.feed_text("u");
     assert_eq!(
         editor.docs.get(source).unwrap().buf.text().to_string(),
         "alpha one\nalpha two\n"
     );
-    editor.feed(crate::editor::Key::CtrlR);
+    editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert!(editor
         .docs
         .get(source)
@@ -55,7 +55,7 @@ fn context_merges_preserve_same_line_matches_and_source_position() {
         },
     });
     editor.picker_items_fixture(items.to_vec());
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     assert!(current_text(&editor).contains("2 match(es)"));
     assert!(current_text(&editor).contains("before\nfn hit() { hit(); }\nafter"));
     let at = current_text(&editor).find("fn hit").unwrap() + 3;
@@ -85,7 +85,7 @@ fn context_merges_preserve_same_line_matches_and_source_position() {
 #[test]
 fn redo_refuses_a_different_history_branch_without_consuming_the_receipt() {
     let (mut editor, path, _) = fixture();
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = editor.current();
     let source = editor
         .docs
@@ -98,7 +98,7 @@ fn redo_refuses_a_different_history_branch_without_consuming_the_receipt() {
     editor.set_head(0);
     editor.feed_text("rY");
     editor.switch_to(collection);
-    editor.feed(crate::editor::Key::CtrlR);
+    editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert!(editor
         .docs
         .get(source)
@@ -111,7 +111,7 @@ fn redo_refuses_a_different_history_branch_without_consuming_the_receipt() {
     editor.switch_to(source);
     editor.feed_text("u");
     editor.switch_to(collection);
-    editor.feed(crate::editor::Key::CtrlR);
+    editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert!(editor
         .docs
         .get(source)
@@ -125,7 +125,7 @@ fn redo_refuses_a_different_history_branch_without_consuming_the_receipt() {
 #[test]
 fn closing_a_source_removes_only_its_excerpts_and_keeps_the_view_usable() {
     let (mut editor, path, _) = fixture();
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = editor.current();
     let source = editor
         .docs
@@ -165,7 +165,7 @@ fn final_line_without_newline_deletes_and_undoes_without_editing_chrome() {
     }
     editor.picker.as_mut().unwrap().picker.clear_items();
     editor.picker_items_fixture(items);
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     editor.set_head(current_text(&editor).find("alpha").unwrap());
     editor.feed_text("dd");
     assert_eq!(editor.docs.get(source).unwrap().buf.text().to_string(), "");
@@ -188,7 +188,7 @@ fn indentation_controls_capture_the_excerpt_source_not_the_projection() {
             .unwrap()
     };
     let (a_id, b_id) = (source(&editor, &a), source(&editor, &b));
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     editor.set_head(current_text(&editor).find("alpha one").unwrap());
     editor.feed_text(":tab-size 3<cr>");
     assert_eq!(editor.doc(a_id).indent.width, 3);
@@ -199,7 +199,7 @@ fn indentation_controls_capture_the_excerpt_source_not_the_projection() {
     editor.feed_text(":tab-size<cr>");
     editor.wait_picker();
     editor.switch_to(b_id);
-    editor.feed(crate::editor::Key::Enter);
+    editor.feed(strop_core::frontend_input::Key::Enter);
     assert_eq!(editor.doc(a_id).indent.width, 2);
     assert_eq!(editor.doc(b_id).indent.width, 4);
     assert_eq!(editor.current(), b_id);
@@ -208,7 +208,7 @@ fn indentation_controls_capture_the_excerpt_source_not_the_projection() {
 #[test]
 fn grouped_history_preflights_every_sources_write_authority() {
     let (mut editor, a, b) = two_file_fixture();
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let source = |editor: &Editor, path: &std::path::Path| {
         editor
             .docs
@@ -227,11 +227,11 @@ fn grouped_history_preflights_every_sources_write_authority() {
     assert_eq!(editor.doc(a_id).buf.text(), "alpha one\n");
     assert_eq!(editor.doc(b_id).buf.text(), "beta one\n");
     editor.doc_mut(b_id).buf.readonly = true;
-    editor.feed(crate::editor::Key::CtrlR);
+    editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert_eq!(editor.doc(a_id).buf.text(), "alpha one\n");
     assert_eq!(editor.doc(b_id).buf.text(), "beta one\n");
     editor.doc_mut(b_id).buf.readonly = false;
-    editor.feed(crate::editor::Key::CtrlR);
+    editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert_eq!(editor.doc(a_id).buf.text(), "alpha 1\n");
     assert_eq!(editor.doc(b_id).buf.text(), "beta 1\n");
 }
@@ -239,7 +239,7 @@ fn grouped_history_preflights_every_sources_write_authority() {
 #[test]
 fn long_insert_undo_restores_the_collection_source_position() {
     let (mut editor, a, _) = fixture();
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = editor.current();
     let source = editor
         .docs
@@ -250,7 +250,7 @@ fn long_insert_undo_restores_the_collection_source_position() {
     editor.set_head(start);
     editor.feed_text("i");
     editor.feed_text(&"x".repeat(200));
-    editor.feed(crate::editor::Key::Esc);
+    editor.feed(strop_core::frontend_input::Key::Esc);
     editor.feed_text("u");
     assert_eq!(
         editor.source_position(collection, editor.head()),
@@ -262,7 +262,7 @@ fn long_insert_undo_restores_the_collection_source_position() {
 #[test]
 fn source_edits_preserve_collection_carets_and_jump_anchors() {
     let (mut editor, a, _) = fixture();
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = editor.current();
     let source = editor
         .docs
@@ -339,7 +339,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
             },
         },
     ]);
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = editor.current();
     editor.set_head(current_text(&editor).find("beta one").unwrap());
     editor.push_jump();

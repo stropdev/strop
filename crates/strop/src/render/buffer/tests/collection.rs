@@ -22,7 +22,7 @@ fn collection_view_gutters_source_line_numbers() {
             line_text: "alpha three".into(),
         },
     }]);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let mut terminal = viewport_terminal(50, 8);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let grid = terminal.backend().buffer();
@@ -71,7 +71,7 @@ fn collection_bodies_project_syntax_and_paint_hits() {
             line_text: "fn send_request(retries: u32) -> bool {".into(),
         },
     }]);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let mut terminal = viewport_terminal(60, 8);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     e.wait_analysis();

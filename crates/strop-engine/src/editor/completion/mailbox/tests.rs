@@ -1,7 +1,8 @@
 use super::*;
 use crate::editor::completion::context::{capture, Invocation};
 use crate::editor::completion::model::{CompletionPayload, CompletionQuery, LanguageSuggestions};
-use crate::editor::{Editor, Key};
+use crate::editor::Editor;
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 use strop_lsp::completion::{CompletionEntry, CompletionItem, CompletionList};
 

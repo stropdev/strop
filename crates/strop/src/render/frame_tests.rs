@@ -2,8 +2,9 @@
 //! assert on rendered cell grids, and cell-grid production is the
 //! binary's — so they live beside the renderer and drive the engine
 //! through `strop_engine`'s public surface.
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
-use strop_engine::editor::{Editor, Key};
+use strop_engine::editor::Editor;
 
 /// The tab glyph and the caret read the same layout, driven by the
 /// editor's tab width.

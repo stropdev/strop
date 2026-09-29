@@ -251,7 +251,7 @@ impl Driver {
     /// engine's own script-token parser — the same tokens the headless
     /// driver's `keys` directive consumes.
     pub fn act_keys(&mut self, keys: &str) -> Result<u64, DriverError> {
-        let actions: Vec<AdmittedAction> = strop_engine::editor::keys::parse(keys)
+        let actions: Vec<AdmittedAction> = strop_core::frontend_input::notation::parse(keys)
             .map(|key| AdmittedAction::Input(strop_core::frontend_input::Input::Key(key)))
             .collect();
         self.act(actions)

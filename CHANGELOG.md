@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- The shared UI protocol owns no Linux editor/service dependency. Normalized
+  key data and streaming script notation now live in `strop-core`; engine,
+  headless and protocol callers use that same implementation. A native MSVC
+  lane exercises the existing framing and readonly-client contracts.
+
 ## 0.37.1 — 2026-09-29
 
 ### Added

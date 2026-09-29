@@ -13,11 +13,11 @@ mod picker_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.open_picker(Kind::Files);
         e.feed_text("main");
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert!(e.picker_open(), "esc once: picker stays open");
         e.feed_text("0x"); // to 0, delete 'm'
         assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "ain");
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert!(!e.picker_open(), "esc twice closes");
     }
 
@@ -35,7 +35,7 @@ mod picker_tests {
         e.wait_picker();
         let sel = |e: &Editor| e.picker.as_ref().unwrap().picker.selected;
         assert_eq!(sel(&e), 0);
-        e.feed(crate::editor::Key::Esc); // normal mode on the field
+        e.feed(strop_core::frontend_input::Key::Esc); // normal mode on the field
         e.feed_text("jj");
         assert_eq!(sel(&e), 2, "j moved the selection down twice");
         e.feed_text("k");
@@ -55,7 +55,7 @@ mod picker_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.open_picker(Kind::Files);
         e.feed_text(query);
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         e.feed_text(keys);
         let picker = &e.picker.as_ref().unwrap().picker;
         (picker.input.text().to_string(), picker.input_normal())
@@ -85,7 +85,7 @@ mod picker_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.open_picker(Kind::Files);
         e.feed_text("main");
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         e.feed_text("qa"); // macros belong to the document surface
         assert!(e.message.contains("record macro"), "{}", e.message);
         e.feed_text("ds\"");
@@ -114,21 +114,21 @@ mod picker_tests {
         e.open_picker(Kind::Buffers);
         e.feed_text("a");
         e.wait_picker();
-        e.feed(crate::editor::Key::Down);
+        e.feed(strop_core::frontend_input::Key::Down);
         assert_eq!(
             e.picker.as_ref().unwrap().picker.selected,
             1,
             "Down walks results"
         );
-        e.feed(crate::editor::Key::Up);
+        e.feed(strop_core::frontend_input::Key::Up);
         assert_eq!(e.picker.as_ref().unwrap().picker.selected, 0);
-        e.feed(crate::editor::Key::Left);
+        e.feed(strop_core::frontend_input::Key::Left);
         assert_eq!(
             e.picker.as_ref().unwrap().picker.input.cursor(),
             0,
             "Left moves the caret"
         );
-        e.feed(crate::editor::Key::Right);
+        e.feed(strop_core::frontend_input::Key::Right);
         assert_eq!(e.picker.as_ref().unwrap().picker.input.cursor(), 1);
     }
 
@@ -143,13 +143,13 @@ mod picker_tests {
         assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "main");
         assert_eq!(e.buf().text(), "x\n", "the document is untouched");
         // caret placement is honored
-        e.feed(crate::editor::Key::Left);
-        e.feed(crate::editor::Key::Left);
+        e.feed(strop_core::frontend_input::Key::Left);
+        e.feed(strop_core::frontend_input::Key::Left);
         e.paste_bracketed("__");
         assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "ma__in");
         // paste works in the field's normal mode too (the ex line's
         // pending reducer pastes the same way)
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         e.feed_text("0");
         e.paste_bracketed("#");
         assert_eq!(e.picker.as_ref().unwrap().picker.input.text(), "#ma__in");
@@ -188,10 +188,10 @@ mod picker_tests {
             texts[2].starts_with("> "),
             "the current row is marked: {texts:?}"
         );
-        e.feed(crate::editor::Key::Enter);
+        e.feed(strop_core::frontend_input::Key::Enter);
         assert!(!e.picker_open(), "accept closes the picker");
         assert_eq!(e.buf().line_of(e.head()), 3, "landed on the accepted entry");
-        e.feed(crate::editor::Key::CtrlO);
+        e.feed(strop_core::frontend_input::Key::CtrlO);
         assert_eq!(
             e.buf().line_of(e.head()),
             0,
@@ -322,7 +322,7 @@ mod picker_tests {
             p.items.iter().all(|i| !format!("{i:?}").contains("b.py")),
             "no python hit leaks through"
         );
-        e.feed(crate::editor::Key::Enter);
+        e.feed(strop_core::frontend_input::Key::Enter);
         assert!(!e.picker_open(), "Enter accepts the first hit");
     }
 
@@ -354,20 +354,20 @@ mod picker_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.open_picker(Kind::Search);
         e.feed_text("lang");
-        e.feed(crate::editor::Key::CtrlSpace);
+        e.feed(strop_core::frontend_input::Key::CtrlSpace);
         let glue = e.picker.as_ref().unwrap();
         let list = glue.suggestions.as_ref().expect("suggestions open");
         assert_eq!(list.items.len(), 1);
         assert_eq!(list.items[0].insert, "language:");
-        e.feed(crate::editor::Key::Enter);
+        e.feed(strop_core::frontend_input::Key::Enter);
         assert_eq!(
             e.picker.as_ref().unwrap().picker.input.text(),
             "language:",
             "the span replaced"
         );
         // Esc in the suggestion list dismisses IT, not the picker
-        e.feed(crate::editor::Key::CtrlSpace);
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::CtrlSpace);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert!(e.picker_open(), "esc dismissed only the list");
         assert!(e.picker.as_ref().unwrap().suggestions.is_none());
     }
@@ -379,9 +379,9 @@ mod picker_tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.open_search(true);
         e.feed_text("foo");
-        e.feed(crate::editor::Key::Tab); // With field
+        e.feed(strop_core::frontend_input::Key::Tab); // With field
         e.feed_text("lang");
-        e.feed(crate::editor::Key::CtrlSpace);
+        e.feed(strop_core::frontend_input::Key::CtrlSpace);
         assert!(
             e.picker.as_ref().unwrap().suggestions.is_none(),
             "no suggestions in the With field"
@@ -397,7 +397,7 @@ mod picker_tests {
         e.wait_picker();
         let p = &e.picker.as_ref().unwrap().picker;
         assert!(p.items[0].text.contains("hidden (dotfiles): include"));
-        e.feed(crate::editor::Key::Enter);
+        e.feed(strop_core::frontend_input::Key::Enter);
         assert!(!e.config.search_show_hidden, "the toggle flipped");
         let p = &e.picker.as_ref().unwrap().picker;
         assert!(p.items[0].text.contains("hidden (dotfiles): exclude"));

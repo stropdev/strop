@@ -268,9 +268,9 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("one\ntwo hone\nthree\n"));
         e.feed_text("/hone\r");
         assert_eq!(e.buf().line_of(e.head()), 1, "landed on the match");
-        e.feed(crate::editor::Key::CtrlO);
+        e.feed(strop_core::frontend_input::Key::CtrlO);
         assert_eq!(e.buf().line_of(e.head()), 0, "ctrl-o back to the top");
-        e.feed(crate::editor::Key::Tab); // ctrl-i in a terminal
+        e.feed(strop_core::frontend_input::Key::Tab); // ctrl-i in a terminal
         assert_eq!(e.buf().line_of(e.head()), 1, "ctrl-i forward again");
     }
 

@@ -4,7 +4,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::editor::{Editor, Key, Mode};
+    use crate::editor::{Editor, Mode};
+    use strop_core::frontend_input::Key;
     use strop_core::Buffer;
 
     fn text(e: &Editor) -> String {

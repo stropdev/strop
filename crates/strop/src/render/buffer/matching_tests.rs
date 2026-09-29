@@ -171,7 +171,7 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
         item(&a, 3, "}"),
         item(&b, 1, "if (x) {"),
     ]);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     // view rows: title, card top, body("fn main() {"), gap, body("}"), …
     let probe = e.buf().line_start(2) + 10; // a's '{'
     let mate = e.buf().line_start(4); // a's '}'

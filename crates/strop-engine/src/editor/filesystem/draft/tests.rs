@@ -68,9 +68,9 @@ fn browsing_an_open_filename_draft_keeps_its_text_history_and_provenance() {
     assert_eq!(editor.buf().text().to_string(), text);
     assert!(editor.buf().dirty);
     assert!(editor.filename_draft(document).is_some_and(Draft::editable));
-    editor.feed(crate::editor::Key::Char('u'));
+    editor.feed(strop_core::frontend_input::Key::Char('u'));
     assert_eq!(editor.buf().text().to_string(), "a.txt\n");
-    editor.feed(crate::editor::Key::CtrlR);
+    editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert_eq!(editor.buf().text().to_string(), text);
     command(&mut editor, ":w<cr>");
     command(&mut editor, ":apply-change<cr>");

@@ -35,8 +35,8 @@ fn pump_hunks(e: &mut Editor) {
 use std::process::Command;
 
 use super::*;
-use crate::editor::Key;
 use crate::editor::Surface;
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 
 /// A git repo with one committed file, edited in-memory.

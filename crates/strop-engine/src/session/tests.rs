@@ -18,7 +18,7 @@ fn roundtrip_restores_buffers_and_position() {
     e.state_dir = Some(root.join("state"));
     e.feed_text("jl");
     e.feed_text("ix");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     assert!(save(&e).unwrap());
     let mut e2 = Editor::new(Buffer::from_text(""));
     e2.cwd = root.to_path_buf();
@@ -61,7 +61,7 @@ fn undo_history_crosses_when_disk_matches() {
     e.cwd = root.to_path_buf();
     e.state_dir = Some(root.join("state"));
     e.feed_text("o// note");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text(":w\r");
     e.wait_io().unwrap();
     assert!(save(&e).unwrap());

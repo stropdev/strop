@@ -184,7 +184,7 @@ pub fn run_script(
                 ));
             }
             DirectiveKind::Keys => {
-                for key in crate::editor::keys::parse(arguments) {
+                for key in strop_core::frontend_input::notation::parse(arguments) {
                     driver.input(AppEvent::Input(strop_core::frontend_input::Input::Key(key)))?;
                     if driver.editor.should_quit() {
                         break;

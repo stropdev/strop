@@ -1,6 +1,6 @@
 //! Remote content is a real buffer; stale service deliveries cannot take a view.
 use super::*;
-use crate::editor::Key;
+use strop_core::frontend_input::Key;
 
 use crate::editor::test_support::remote::{deliver, io_editor as editor, open, ticket};
 use strop_workspace::RemoteFile;

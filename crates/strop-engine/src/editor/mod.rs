@@ -39,7 +39,6 @@ mod input;
 mod insert;
 pub mod io;
 mod jumps;
-pub mod keys;
 mod lsp;
 pub mod macros;
 pub(crate) mod matching;
@@ -100,6 +99,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 pub use workspaces::WorkspaceRegistry;
 
+use strop_core::frontend_input::Key;
 use strop_core::{Buffer, Range};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,45 +122,6 @@ impl Mode {
             Mode::VisualBlock => "V-BLOCK",
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Key {
-    Char(char),
-    Esc,
-    Enter,
-    Backspace,
-    Up,
-    Down,
-    Left,
-    Right,
-    Tab,
-    Backtab,
-    /// Replace picker: exclude the row's whole file (vscode's toggle).
-    CtrlD,
-    CtrlR,
-    /// vim's jump-back (ctrl-i forward is Tab in a terminal).
-    CtrlO,
-    /// ctrl-space: query suggestions in a query field (0051 R02).
-    CtrlSpace,
-    /// Insert completion selection/acceptance; fields retain their own keys.
-    CtrlN,
-    CtrlP,
-    CtrlY,
-    CtrlE,
-    CtrlW,
-    /// Replace picker: exclude/include the selected match (0007 §2).
-    CtrlX,
-    /// vim ctrl-u/ctrl-f/ctrl-b: half/full page up.
-    CtrlU,
-    CtrlF,
-    CtrlB,
-    /// vim ctrl-^: alternate buffer.
-    CtrlCaret,
-    /// vim ctrl-v: visual block mode.
-    CtrlV,
-    /// vim ctrl-l: force a full terminal repaint (desync recovery).
-    CtrlL,
 }
 
 pub const FLASH_FOR: Duration = Duration::from_millis(280);
@@ -557,7 +518,7 @@ impl Editor {
     }
 
     pub fn feed_text(&mut self, text: &str) {
-        for key in keys::parse(text) {
+        for key in strop_core::frontend_input::notation::parse(text) {
             self.handle_frontend_input(strop_core::frontend_input::Input::Key(key));
         }
     }

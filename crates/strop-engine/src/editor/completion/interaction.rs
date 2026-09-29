@@ -3,7 +3,8 @@ use super::model::CandidateKey;
 use super::session::{
     Acceptance, Direction, InsertPrefix, ProviderState, RequestIntent, ResolveState, Selection,
 };
-use crate::editor::{Editor, InputOwner, Key, Mode};
+use crate::editor::{Editor, InputOwner, Mode};
+use strop_core::frontend_input::Key;
 use strop_core::worker::CancelReason;
 use strop_lsp::completion::CompletionTrigger;
 

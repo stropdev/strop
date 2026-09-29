@@ -3,7 +3,8 @@
 //! Newlines preserve the buffer's line-ending style (0031 R5): Enter
 //! and replay both insert the document's own break, CRLF or LF.
 
-use super::{Editor, Key, Mode};
+use super::{Editor, Mode};
+use strop_core::frontend_input::Key;
 
 impl Editor {
     /// The buffer's line-ending for NEW lines: the first line's break

@@ -237,8 +237,8 @@ mod tests {
         // the new pane shows the same buffer from its own view
         e.feed_text("gg");
         // C-w back to the first pane — it kept its cursor
-        e.feed(crate::editor::Key::CtrlW);
-        e.feed(crate::editor::Key::Char('h'));
+        e.feed(strop_core::frontend_input::Key::CtrlW);
+        e.feed(strop_core::frontend_input::Key::Char('h'));
         assert_eq!(e.active_pane, 0);
         assert_eq!(e.buf().line_of(e.head()), 1, "pane 1 kept its own cursor");
         // :q closes the pane, buffer stays
@@ -259,8 +259,8 @@ mod tests {
         e.wait_io().unwrap();
         assert_eq!(e.panes.len(), 2);
         assert_eq!(e.buf().path.as_deref(), Some(b.as_path()));
-        e.feed(crate::editor::Key::CtrlW);
-        e.feed(crate::editor::Key::Char('h'));
+        e.feed(strop_core::frontend_input::Key::CtrlW);
+        e.feed(strop_core::frontend_input::Key::Char('h'));
         assert_eq!(e.buf().path.as_deref(), Some(a.as_path()));
     }
 }

@@ -1,6 +1,7 @@
 use super::attach::{AttachDecision, AttachRecord};
 use super::*;
-use crate::editor::{document::Document, events::AppEvent, Key};
+use crate::editor::{document::Document, events::AppEvent};
+use strop_core::frontend_input::Key;
 use strop_core::worker::WorkerId;
 use strop_core::{
     id::{BufferRevision, ByteColumn, LineIndex},

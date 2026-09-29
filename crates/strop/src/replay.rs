@@ -3,10 +3,10 @@
 //! never executes anything. `run_full` is the R11 forensic replay: a
 //! complete full-content capture is reconstructed deterministically from
 //! its seed and injected service results.
-use crate::editor::Key;
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+use strop_core::frontend_input::Key;
 
 /// Schemas the input extractor understands. Schema 2 adds the forensic
 /// `replay` substream and the terminal `trace_end` marker; schema 3 adds

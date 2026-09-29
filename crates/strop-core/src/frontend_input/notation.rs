@@ -1,7 +1,7 @@
 //! Streaming script-token decoding shared by Editor::feed_text and headless.
 //! Tokens retain physical modifiers until the engine selects the input owner.
 //! Unknown tokens stay literal; a lone '<' never fabricates a closing '>'.
-use strop_core::frontend_input::{KeyCode, KeyEvent, Modifiers};
+use super::{KeyCode, KeyEvent, Modifiers};
 
 pub fn parse(text: &str) -> Keys<'_> {
     Keys {

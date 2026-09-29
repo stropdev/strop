@@ -3,7 +3,8 @@
 use strop_core::Range;
 use strop_grammar::{self as grammar, Command, Op};
 
-use crate::editor::{Editor, Key, Mode};
+use crate::editor::{Editor, Mode};
+use strop_core::frontend_input::Key;
 
 use crate::editor::Register;
 

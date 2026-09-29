@@ -6,9 +6,10 @@ pub(crate) use filter::apply_filter;
 #[cfg(test)]
 mod tests;
 use super::io::{IoEvent, OpenIntent, Opened};
-use super::{Directory, Editor, Key};
+use super::{Directory, Editor};
 use crate::files::FileTarget;
 use std::collections::HashMap;
+use strop_core::frontend_input::Key;
 use strop_core::id::{BufferRevision, DocumentId, LineIndex};
 use strop_core::worker::{self, CancelReason, Completion, FailureKind, Outcome, Ticket, WorkerId};
 use strop_workspace::{Filesystem, ResourceLocation};

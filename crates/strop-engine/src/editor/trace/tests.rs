@@ -73,7 +73,7 @@ fn cursor_fade_retriggers_only_on_focus_returns_and_large_jumps() {
 }
 
 fn keys(editor: &mut Editor, text: &str) {
-    for key in crate::editor::keys::parse(text) {
+    for key in strop_core::frontend_input::notation::parse(text) {
         action(
             editor,
             AppEvent::Input(strop_core::frontend_input::Input::Key(key)),

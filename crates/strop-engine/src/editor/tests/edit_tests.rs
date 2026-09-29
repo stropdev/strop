@@ -121,7 +121,7 @@ fn alias_verbs() {
     assert_eq!(e.register(None).text, "let x = 1;\n");
     let mut e = editor_with("abc\n");
     e.feed_text("sZ"); // cl + insert Z
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     assert_eq!(text(&e), "Zbc\n");
 }
 
@@ -147,7 +147,7 @@ fn indent_and_dedent() {
 fn dot_repeat_replays_insert() {
     let mut e = editor_with("one\ntwo\n");
     e.feed_text("A!");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("j.");
     assert_eq!(text(&e), "one!\ntwo!\n");
 }
@@ -269,7 +269,7 @@ fn dot_repeats_delete_and_change() {
     assert_eq!(e.buf().text().to_string(), "three\n");
     let mut e = Editor::new(Buffer::from_text("aa bb\ncc dd\n"));
     e.feed_text("cwX");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     assert_eq!(e.buf().text().to_string(), "X bb\ncc dd\n");
     e.feed_text("j"); // to line 2 — repeat there
     e.feed_text(".");
@@ -310,13 +310,13 @@ fn arrows_speak_hjkl() {
     // the translation layer used to drop KeyCode::Up/Down — arrows
     // did nothing anywhere (user report: picker nav needed Tab)
     let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
-    e.feed(crate::editor::Key::Down);
+    e.feed(strop_core::frontend_input::Key::Down);
     assert_eq!(e.buf().line_of(e.head()), 1, "Down is j");
-    e.feed(crate::editor::Key::Right);
+    e.feed(strop_core::frontend_input::Key::Right);
     assert_eq!(e.head(), e.buf().line_start(1) + 1, "Right is l");
-    e.feed(crate::editor::Key::Up);
+    e.feed(strop_core::frontend_input::Key::Up);
     assert_eq!(e.buf().line_of(e.head()), 0, "Up is k");
-    e.feed(crate::editor::Key::Left);
+    e.feed(strop_core::frontend_input::Key::Left);
     assert_eq!(e.head(), 0, "Left is h");
 }
 
@@ -329,7 +329,7 @@ fn wq_never_closes_a_failed_save() {
     std::fs::write(&f, "one\n").unwrap();
     let mut e = Editor::new(Buffer::open(f.to_str().unwrap()).unwrap());
     e.feed_text("ix");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     std::fs::write(&f, "external\n").unwrap(); // someone else writes
     std::fs::File::options()
         .write(true)
@@ -363,7 +363,7 @@ fn ex_open_and_close_buffers() {
     assert_eq!(text(&e), "first\n");
     // dirty buffer refuses :q, allows :q!
     e.feed_text("ix");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text(":q<cr>");
     assert_eq!(e.docs.len(), 1);
     assert!(e.message.contains("unsaved"));

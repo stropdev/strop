@@ -1,0 +1,41 @@
+name: windows-native
+
+on:
+  push:
+    paths:
+      - "crates/strop-core/**"
+      - "crates/strop-trace/**"
+      - "crates/strop-ui-protocol/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/windows.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protocol:
+    name: Native Windows shared protocol
+    runs-on: windows-2025
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/strop-windows-target
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned native Rust toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      # This executes the actual client/framing contracts under MSVC. It is
+      # portability evidence, not GPU, native input, WSL or UIA evidence.
+      - name: Exercise native protocol and readonly client
+        run: cargo +1.98.1 test --locked -p strop-ui-protocol
+      - name: Export the explicit WSL hardware-lane journey
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-wsl-protocol-journey
+          path: ${{ runner.temp }}/strop-windows-target/debug/deps/windows_wsl-*.exe
+          if-no-files-found: error

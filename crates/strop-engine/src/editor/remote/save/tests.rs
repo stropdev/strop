@@ -1,6 +1,7 @@
 use super::*;
 use crate::editor::document::RemoteDocument;
-use crate::editor::{Document, Key};
+use crate::editor::Document;
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 use strop_remote::{ReadLimit, ReadSelection, RemoteSize, RemoteWindow};
 

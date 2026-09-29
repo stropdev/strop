@@ -1,7 +1,8 @@
 use super::*;
 use crate::editor::completion::context::{capture, Invocation};
-use crate::editor::{Editor, Key};
+use crate::editor::Editor;
 use serde_json::json;
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 
 fn editing(text: &str, caret: usize) -> Editor {

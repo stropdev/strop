@@ -26,7 +26,7 @@ use strop_grammar::{self as grammar, Command, Motion, Op, Parse, Target};
 use strop_picker::LineEdit;
 
 use super::input::{Action, Walker};
-use super::Key;
+use strop_core::frontend_input::Key;
 
 /// One key's outcome in a field's normal mode.
 pub(crate) enum FieldReply {

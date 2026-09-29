@@ -6,7 +6,8 @@ use crate::editor::permalink::{PermalinkIntent, PermalinkOutcome};
 use crate::editor::test_support::git::{
     fixture, git_out, multi_file_fixture, pump, pump_ready, settle,
 };
-use crate::editor::{Editor, GitJob, Key, Surface};
+use crate::editor::{Editor, GitJob, Surface};
+use strop_core::frontend_input::Key;
 use strop_core::worker::{Completion, FailureKind, Outcome};
 use strop_core::Buffer;
 use strop_git::memory::LogRow;
@@ -557,7 +558,7 @@ fn tab_cycles_focus_between_sidebar_and_diff() {
     });
     assert!(!e.sidebar_focused());
 
-    e.feed(crate::editor::Key::Tab);
+    e.feed(strop_core::frontend_input::Key::Tab);
     assert!(e.sidebar_focused(), "tab focuses the sidebar");
     e.feed_text("j"); // focused j steps to the next file
     settle(
@@ -565,9 +566,9 @@ fn tab_cycles_focus_between_sidebar_and_diff() {
         |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "b.rs"),
     );
     assert!(e.sidebar_focused(), "focus survives the file step");
-    e.feed(crate::editor::Key::Enter);
+    e.feed(strop_core::frontend_input::Key::Enter);
     assert!(!e.sidebar_focused(), "enter hops back to the diff");
-    e.feed(crate::editor::Key::Backtab);
+    e.feed(strop_core::frontend_input::Key::Backtab);
     assert!(e.sidebar_focused(), "shift-tab focuses too");
 }
 
@@ -602,7 +603,7 @@ fn hunk_discard_undoes_byte_exact() {
     settle(&mut e, |e| e.git.is_some());
     // the edit happens IN the editor (live buffer = the worktree state)
     e.feed_text("Gofn c() {}");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     let before = e.buf().text().to_string();
     e.refresh_hunks();
     // the gutter is async: pump the job like the event loop
@@ -616,7 +617,7 @@ fn hunk_discard_undoes_byte_exact() {
     e.feed_text("u");
     assert_eq!(e.buf().text().to_string(), before);
     // and redo discards again
-    e.feed(crate::editor::Key::CtrlR);
+    e.feed(strop_core::frontend_input::Key::CtrlR);
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
 }
 

@@ -1,7 +1,8 @@
 //! The workspace pickers (find-file, symbols, grep) own one stable
 //! near-full-frame layout; the file preview carries the evidence.
-use crate::editor::{Editor, Key};
+use crate::editor::Editor;
 use ratatui::{backend::TestBackend, Terminal};
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 
 fn draw(editor: &mut Editor, width: u16, height: u16) -> ratatui::buffer::Buffer {

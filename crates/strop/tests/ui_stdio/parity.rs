@@ -15,7 +15,7 @@ use crate::harness::{fixture, spawn, state, Raw};
 /// One scripted key sequence as a raw admitted-action batch (the same
 /// engine script tokens the headless driver consumes).
 fn act_message(seq: u64, base: BaseStamp, keys: &str) -> ClientMessage {
-    let actions: Vec<AdmittedAction> = strop_engine::editor::keys::parse(keys)
+    let actions: Vec<AdmittedAction> = strop_core::frontend_input::notation::parse(keys)
         .map(|key| AdmittedAction::Input(strop_core::frontend_input::Input::Key(key)))
         .collect();
     ClientMessage::Act { seq, base, actions }

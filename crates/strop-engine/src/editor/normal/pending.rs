@@ -9,7 +9,8 @@ use strop_grammar::{self as grammar, Command, Parse};
 use crate::editor::pending::{
     PendingEffect, PendingEvent, PromptContext, SearchOrigin, TextPrompt,
 };
-use crate::editor::{input::ParserState, Editor, Key, Mode};
+use crate::editor::{input::ParserState, Editor, Mode};
+use strop_core::frontend_input::Key;
 
 impl Editor {
     /// A text line opened (`: / ? |`) with the typed entry state that

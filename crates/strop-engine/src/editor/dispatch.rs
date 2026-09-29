@@ -4,7 +4,8 @@
 //! data; transient overlays forward keys in insert mode after dismissing
 //! themselves (the 0.20.1 swallowed-keystroke fix), modal owners consume.
 
-use super::{Editor, Key, Mode};
+use super::{Editor, Mode};
+use strop_core::frontend_input::Key;
 
 /// Who consumes the next key. Priority is fixed by `input_owner`'s
 /// evaluation order: pending fields, pickers, transient cards, document.
@@ -164,11 +165,11 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text("i");
         e.hover_card = Some("late docs".into());
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert_eq!(e.mode, Mode::Normal, "esc landed through the overlay");
         assert!(e.hover_card.is_none());
         e.hover_card = Some("docs".into());
-        e.feed(crate::editor::Key::Char('j'));
+        e.feed(strop_core::frontend_input::Key::Char('j'));
         assert!(e.hover_card.is_none(), "normal mode: the key dismisses");
     }
 }

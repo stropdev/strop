@@ -10,7 +10,7 @@ use std::sync::mpsc::{channel, Receiver};
 use strop_core::worker::{CancelHandle, CancelReason, Load, Ticket, WorkerId};
 use strop_picker::{Item, Kind, Payload, Picker, PickerMsg};
 
-use super::{Editor, Key};
+use super::Editor;
 
 mod accept;
 mod drain;

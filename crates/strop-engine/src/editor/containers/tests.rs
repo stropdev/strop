@@ -1,8 +1,9 @@
 //! Container attachment and common Directory/read ownership, without native work.
 use super::*;
 use crate::editor::io::{IoEvent, Opened};
-use crate::editor::{Directory, Document, Editor, Key};
+use crate::editor::{Directory, Document, Editor};
 use crate::files::FileTarget;
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 use strop_workspace::{ContainerId, Filesystem, ResourceLocation};
 

@@ -31,7 +31,8 @@ use crate::editor::events::{
     AppEvent, EventReceiver, EventSender, RecvTimeoutError, EVENTS_PER_TURN, TURN_BUDGET,
 };
 use crate::editor::io::OpenIntent;
-use crate::editor::{Editor, Key};
+use crate::editor::Editor;
+use strop_core::frontend_input::Key;
 
 /// Settle budgets are backstops, not timing: a settle that outlives
 /// them is a hung worker, surfaced as an error — never a sleep.

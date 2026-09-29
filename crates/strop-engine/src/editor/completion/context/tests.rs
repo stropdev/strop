@@ -121,7 +121,7 @@ fn collection_completion_uses_real_source_and_rejects_chrome() {
             line_text: "alpha al".into(),
         },
     }]);
-    editor.feed(crate::editor::Key::CtrlO);
+    editor.feed(strop_core::frontend_input::Key::CtrlO);
     let view = editor.current();
     let excerpt = editor.collections[&view].excerpts[0].clone();
     editor.set_head(excerpt.view_start + 7);
@@ -132,7 +132,7 @@ fn collection_completion_uses_real_source_and_rejects_chrome() {
     editor.feed_text("p");
     assert!(!context.still_owns(&editor, 0));
     assert_eq!(editor.doc(source).buf.text().to_string(), "alpha alp\n");
-    editor.feed(crate::editor::Key::Esc);
+    editor.feed(strop_core::frontend_input::Key::Esc);
     editor.set_head(editor.buf().line_start(excerpt.view_line));
     editor.feed_text("i");
     assert!(capture(&editor, Invocation::ManualWords, 0, None).is_err());

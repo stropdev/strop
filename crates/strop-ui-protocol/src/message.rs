@@ -8,7 +8,7 @@
 //! rules in [`crate::client`].
 
 use serde::{Deserialize, Serialize};
-use strop_core::frontend_input::Input;
+use strop_core::frontend_input::{Input, Key};
 use strop_core::id::{BufferRevision, DocumentId};
 
 /// The only wire version this build speaks.
@@ -75,7 +75,7 @@ pub enum AdmittedAction {
     /// Physical/logical input; the engine selects the owner.
     Input(Input),
     /// Already-normalized semantic input (scripted/editor commands).
-    EditorKey(strop_engine::editor::Key),
+    EditorKey(Key),
     /// Bracketed paste: one text payload, never a key stream.
     Paste(String),
     /// Terminal resized.
@@ -344,7 +344,7 @@ mod tests {
                 },
                 actions: vec![
                     AdmittedAction::Input(Input::Text("héllo".into())),
-                    AdmittedAction::EditorKey(strop_engine::editor::Key::Enter),
+                    AdmittedAction::EditorKey(Key::Enter),
                     AdmittedAction::Resize {
                         columns: 120,
                         rows: 40,

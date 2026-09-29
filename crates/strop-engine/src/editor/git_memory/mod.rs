@@ -32,7 +32,8 @@ use strop_git::memory::{self, BlameLine};
 use strop_git::{Hunk, LineOrigin, RepoTarget};
 
 use super::document::Surface;
-use super::{trace, Editor, Key};
+use super::{trace, Editor};
+use strop_core::frontend_input::Key;
 /// The commit a Diff surface's file belongs to, with the commit's full
 /// changed-file list — the sidebar's data (typed numstat rows, the same
 /// ones the changed-files surface renders from; 0011 §4). `repo` is

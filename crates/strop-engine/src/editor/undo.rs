@@ -5,7 +5,8 @@
 
 use strop_core::{Buffer, Range};
 
-use super::{Editor, Key};
+use super::Editor;
+use strop_core::frontend_input::Key;
 
 /// Live browser state: which buffer is the browser, which buffer it
 /// describes, and the revision index per text row (after the header).
@@ -199,7 +200,7 @@ mod tests {
         assert_eq!(br.row_rev.len(), 3); // header + 2 revisions
                                          // cursor starts on the current revision (#2, the "c" branch)
         e.feed_text("j"); // down to revision 1 (the "b" branch)
-        e.feed(crate::editor::Key::Enter);
+        e.feed(strop_core::frontend_input::Key::Enter);
         assert_eq!(e.buf().name.as_deref(), None, "back on the file");
         assert_eq!(e.buf().text().to_string(), "a\nb\n");
         // and the restored state keeps its history: u walks back to "a"

@@ -292,7 +292,7 @@ fn collection_fixture() -> (Editor, tempfile::TempDir) {
         item(&b, 1, "if (x) {"),    // source line 0
     ];
     e.picker_items_fixture(items);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     (e, dir)
 }
 

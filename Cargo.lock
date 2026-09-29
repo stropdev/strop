@@ -1664,7 +1664,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strop-core",
- "strop-engine",
  "thiserror",
 ]
 

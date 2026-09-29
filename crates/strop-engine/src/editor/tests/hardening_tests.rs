@@ -38,7 +38,7 @@ fn undo_lands_cursor_at_change_start() {
     // change) — vim lands at the start of the undone region
     let mut e = Editor::new(Buffer::from_text("hello\n"));
     e.feed_text("A world");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("0"); // move away from the change
     e.feed_text("u");
     assert_eq!(e.buf().text().to_string(), "hello\n");

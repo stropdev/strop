@@ -4,18 +4,18 @@ use super::*;
 fn enter_copies_and_deepens_indent() {
     let mut e = Editor::new(Buffer::from_text("fn f() {\n    let x = 1;\n}\n"));
     e.feed_text("j$"); // on the let line, at EOL
-    e.feed(crate::editor::Key::Char('a'));
-    e.feed(crate::editor::Key::Enter);
+    e.feed(strop_core::frontend_input::Key::Char('a'));
+    e.feed(strop_core::frontend_input::Key::Enter);
     e.feed_text("let y = 2;");
     assert_eq!(
         e.buf().text().to_string(),
         "fn f() {\n    let x = 1;\n    let y = 2;\n}\n"
     );
     // after an opener, one level deeper
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("gg$");
-    e.feed(crate::editor::Key::Char('a'));
-    e.feed(crate::editor::Key::Enter);
+    e.feed(strop_core::frontend_input::Key::Char('a'));
+    e.feed(strop_core::frontend_input::Key::Enter);
     e.feed_text("// body");
     let got = e.buf().text().to_string();
     assert!(got.starts_with("fn f() {\n    // body"), "got: {got:?}");
@@ -50,7 +50,7 @@ fn new_file_opens_empty_and_saves() {
     let mut e = Editor::new(Buffer::open(&path).expect("missing file is a new buffer"));
     assert_eq!(e.buf().len_bytes(), 0);
     e.feed_text("ifresh");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text(":w<cr>");
     e.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh");
@@ -61,7 +61,7 @@ fn tab_key_inserts_the_documents_indent_unit() {
     // spaces document: Tab inserts the width in spaces
     let mut e = Editor::new(Buffer::from_text("x\n"));
     e.feed_text("i");
-    e.feed(crate::editor::Key::Tab);
+    e.feed(strop_core::frontend_input::Key::Tab);
     assert_eq!(e.buf().text().to_string(), "    x\n");
     // tabs document (detected from content): Tab inserts one tab.
     // Detection needs real evidence (0051 R08): one line is a guess.
@@ -71,7 +71,7 @@ fn tab_key_inserts_the_documents_indent_unit() {
     e.reresolve_indents();
     assert_eq!(e.cur().indent.style, crate::config::IndentStyle::Tabs);
     e.feed_text("Gi");
-    e.feed(crate::editor::Key::Tab);
+    e.feed(strop_core::frontend_input::Key::Tab);
     assert_eq!(
         e.buf().text().to_string(),
         "\t\ta = 1\n\t\tb = 2\n\t\tc = 3\n\t\t\tx = 1\n"
@@ -295,7 +295,7 @@ fn tab_size_selector_applies_and_validates() {
     // Acceptance goes through the selector that owns the captured source.
     e.feed_text("3");
     e.wait_picker();
-    e.feed(crate::editor::Key::Enter);
+    e.feed(strop_core::frontend_input::Key::Enter);
     assert_eq!(e.cur().indent.width, 3);
     assert_eq!(
         e.cur().indent.width_source,

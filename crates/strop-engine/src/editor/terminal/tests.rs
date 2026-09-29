@@ -1,7 +1,8 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-use crate::editor::{Document, DocumentSource, Key, Mode};
+use crate::editor::{Document, DocumentSource, Mode};
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 use strop_terminal::model::{Color, Style, Update};
 

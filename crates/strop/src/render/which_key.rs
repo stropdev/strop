@@ -172,7 +172,7 @@ mod tests {
         assert!(frame.contains("set mark at cursor"), "{frame}");
         assert!(frame.contains(":2  let x = 1;"), "mark a row: {frame}");
         assert!(frame.contains(":3  fn helper() {}"), "mark b row: {frame}");
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         e.feed_text("'");
         let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
         assert!(frame.contains("jump to mark"), "{frame}");

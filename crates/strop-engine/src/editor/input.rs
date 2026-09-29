@@ -11,7 +11,7 @@
 
 use strop_grammar::{Command, Op};
 
-use crate::editor::Key;
+use strop_core::frontend_input::Key;
 mod frontend;
 use crate::keymap::{self, AbsorbKind, Binding, Handler};
 

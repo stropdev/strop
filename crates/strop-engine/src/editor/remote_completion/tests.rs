@@ -457,6 +457,6 @@ fn raw_spaces_and_mid_line_cursors_refuse_with_a_hint() {
     e.feed_text("<esc><esc>");
     e.feed_text(":e ssh://build/lo");
     e.feed_text("<esc>h"); // line's normal mode, caret moved left
-    e.feed_pending(crate::editor::Key::Tab);
+    e.feed_pending(strop_core::frontend_input::Key::Tab);
     assert!(e.message.contains("end of the line"));
 }

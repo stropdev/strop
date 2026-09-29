@@ -2,12 +2,13 @@
 //! accepted command stays ordered; Ctrl-C revokes it. Preview and execution use
 //! the same revision/cursor/command-stamped pure resolver result.
 mod worker;
-use super::{Editor, Key};
+use super::Editor;
 use std::collections::VecDeque;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc,
 };
+use strop_core::frontend_input::Key;
 use strop_core::{
     id::{BufferRevision, DocumentId},
     worker::{Completion, FailureKind, Outcome, Ticket},

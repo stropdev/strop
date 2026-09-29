@@ -1,5 +1,5 @@
 use super::*;
-use strop_core::Buffer;
+use strop_core::{frontend_input::Key, Buffer};
 
 #[test]
 fn filter_only_files_and_literal_content_share_scope() {
@@ -564,7 +564,7 @@ fn workspace_symbols_field_edits_notify_exactly_once_per_completed_command() {
     };
     editor.paste_bracketed("one two");
     assert_eq!(probes(), vec!["one two"]);
-    editor.feed(crate::editor::Key::Esc);
+    editor.feed(strop_core::frontend_input::Key::Esc);
     // Pure motions must never rerank.
     editor.feed_text("0lhw$");
     assert_eq!(probes(), vec!["one two"], "motions do not notify");

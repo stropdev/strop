@@ -12,7 +12,8 @@ mod search;
 
 use strop_grammar::{self as grammar, Parse};
 
-use super::{Editor, Key};
+use super::Editor;
+use strop_core::frontend_input::Key;
 
 /// The ex vocabulary (completion + `run_ex` dispatch reads the same
 /// list — one table, no drift).

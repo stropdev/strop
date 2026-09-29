@@ -7,7 +7,8 @@
 use strop_core::{id::BufferRevision, Range};
 use strop_picker::LineEdit;
 
-use super::{input::ParserState, panes::Pane, Key};
+use super::{input::ParserState, panes::Pane};
+use strop_core::frontend_input::Key;
 
 /// Where a prompt opened: the whole originating pane (document,
 /// complete selections, viewport) and the buffer revision. Cancellation
@@ -381,7 +382,7 @@ mod tests {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(":");
         e.feed_text(body);
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         e.feed_text(keys);
         e.pending.text().to_string()
     }
@@ -405,13 +406,13 @@ mod tests {
     fn ex_line_change_reenters_insert_and_sigil_ops_abort() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(":w foo");
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         e.feed_text("bcwbar");
         assert_eq!(e.pending.text(), ":w bar");
         assert!(!e.pending.normal(), "cw re-enters the line's insert mode");
         // an operator range covering the sigil trips the standing
         // sigil rule: the prompt closes, exactly like x at 0
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert!(e.pending.normal());
         e.feed_text("0dw");
         assert!(!e.pending.is_active(), "0dw covers the sigil: abort");

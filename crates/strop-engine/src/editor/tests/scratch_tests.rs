@@ -31,7 +31,7 @@ fn view_marks_readonly_and_edits_refuse() {
 fn edited_scratch_survives() {
     let mut e = Editor::new(Buffer::from_text(""));
     e.feed_text("ix"); // scratch has content now
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     let dir = tempfile::tempdir().unwrap();
     let f = dir.path().join("scratch-test.rs");
     std::fs::write(&f, "fn a() {}\n").unwrap();

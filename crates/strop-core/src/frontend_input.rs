@@ -2,6 +2,49 @@
 //! No toolkit types, grammar normalization, native work or implicit key expansion.
 use serde::{Deserialize, Serialize};
 
+pub mod notation;
+
+/// Normalized editor keys for admitted semantic input. Physical frontend input
+/// retains its modifiers until the engine selects its owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Key {
+    Char(char),
+    Esc,
+    Enter,
+    Backspace,
+    Up,
+    Down,
+    Left,
+    Right,
+    Tab,
+    Backtab,
+    /// Replace picker: exclude the row's whole file (vscode's toggle).
+    CtrlD,
+    CtrlR,
+    /// vim's jump-back (ctrl-i forward is Tab in a terminal).
+    CtrlO,
+    /// ctrl-space: query suggestions in a query field (0051 R02).
+    CtrlSpace,
+    /// Insert completion selection/acceptance; fields retain their own keys.
+    CtrlN,
+    CtrlP,
+    CtrlY,
+    CtrlE,
+    CtrlW,
+    /// Replace picker: exclude/include the selected match (0007 §2).
+    CtrlX,
+    /// vim ctrl-u/ctrl-f/ctrl-b: half/full page up.
+    CtrlU,
+    CtrlF,
+    CtrlB,
+    /// vim ctrl-^: alternate buffer.
+    CtrlCaret,
+    /// vim ctrl-v: visual block mode.
+    CtrlV,
+    /// vim ctrl-l: force a full terminal repaint (desync recovery).
+    CtrlL,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyCode {
     Char(char),

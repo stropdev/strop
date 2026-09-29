@@ -2,7 +2,8 @@
 //! resolves against the live field state (insert, or the normal-mode
 //! field machine), never against the document behind the card.
 
-use super::{Editor, Key, Kind};
+use super::{Editor, Kind};
+use strop_core::frontend_input::Key;
 
 impl Editor {
     pub(crate) fn feed_picker(&mut self, key: Key) {

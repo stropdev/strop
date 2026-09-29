@@ -68,7 +68,7 @@ mod tests {
         e.feed_text(" c");
         e.feed_text("cw"); // change both first words
         e.feed_text("val");
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert_eq!(text(&e), "val = 1\nval = 2\n");
         e.feed_text("u"); // change + insert = one unit
         assert_eq!(text(&e), "x = 1\ny = 2\n");
@@ -80,7 +80,7 @@ mod tests {
         e.feed_text(" c");
         e.feed_text(" c");
         assert_eq!((e.sels().count() - 1), 2);
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert!(e
             .extra_selections()
             .iter()
@@ -98,7 +98,7 @@ mod tests {
         e.feed_text("u");
         e.feed_text("i"); // insert mirrors once, not twice
         e.feed_text("Z");
-        e.feed(crate::editor::Key::Esc);
+        e.feed(strop_core::frontend_input::Key::Esc);
         assert_eq!(text(&e), "Zword here\n");
     }
 

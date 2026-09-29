@@ -8,7 +8,8 @@ use std::time::Duration;
 use strop_core::worker::{CancelReason, Completion, FailureKind, Outcome, Ticket};
 
 use super::jobs::{ProcessOutput, ShellIntent, ShellKey, ShellResult};
-use crate::editor::{Document, Editor, Key};
+use crate::editor::{Document, Editor};
+use strop_core::frontend_input::Key;
 
 fn editor_with(text: &str) -> Editor {
     Editor::new(strop_core::Buffer::from_text(text))

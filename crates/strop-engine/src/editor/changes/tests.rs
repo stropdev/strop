@@ -165,7 +165,7 @@ fn plain_save_without_a_binding_writes_directly() {
     let dir = tempfile::tempdir().unwrap();
     let (mut e, _document) = file_editor(&dir, "plain.txt", "x\n");
     e.feed_text("A y");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.request_save(None, false, false);
     e.wait_io().unwrap();
     assert_eq!(

@@ -1,11 +1,10 @@
 # 0061 — Final GUI arc: native Windows presentation, WSL editor engine
 
-Status: requested architectural/product/testing handoff; implementation
-begins **after the native worker and auto-completion releases**. The user
-explicitly moved GUI work ahead of the debugger experience; this
-reorders implementation, not an assertion that debugger UI has shipped.
-The GUI still needs the entire supported editor experience—not an empty
-window, text-editor subset or independent second editor.
+Status: **implementation started after publicly verified worker 0.36.0 and
+completion 0.37.1 releases; no GUI release or parity claim yet**. The user
+explicitly moved GUI work ahead of the debugger experience; this reorders
+implementation, not an assertion that debugger UI has shipped. UI01–UI18
+remain mandatory, including 0060 for UI10 and 0062 for UI17.
 
 This refines [0038](0038-remote-experience-and-responsiveness.md)'s GPUI direction
 and [0055](0055-embedded-terminal-tui-and-gui.md)'s later GUI terminal milestone.
@@ -551,8 +550,10 @@ outcome; no load-bound work or allocation proportional to all documents during p
 
 ## 14. Implementation sequence and acceptance
 
-1. Verify completed 0056 AR01–AR16, 0057 VF01–VF20, 0058 WK01–WK20 and 0059/0060
-   feature ledgers with their assurance extensions. Missing foundations block entry.
+1. Verify completed 0056 AR01–AR16, 0057 VF01–VF20, 0058 WK01–WK20 and
+   0059 C01–C09 with their assurance extensions. Missing foundations block
+   entry. Under the user's ordering amendment, 0060 may land during this arc
+   but must close before UI10 or the GUI release is declared complete.
 2. Pin GPUI/platform dependencies and implement one native Windows vertical slice
    against the released backend: open → edit/undo/save → selection/IME → capture/UIA.
    This is a private native-platform proof, not the full GUI release.
@@ -604,6 +605,31 @@ An implementation may not put LSP, debugger, terminal, remote access, filesystem
 operations, accessibility or any supported parity family into this list merely
 to finish sooner. Required scope changes need explicit user approval and 0028's
 impact/evidence/re-entry ledger.
+
+## Implementation entry evidence — 2026-09-29
+
+- 0059 §11 records the published 0.37.1 tag/run, public installer and installed-
+  artifact completion/replay/real-PTY verification. GUI work began afterward.
+- Read-only Windows interop probes reached an interactive session 1 on Windows
+  11 Pro build 26200, WSL 2.7.13.0 and Ubuntu WSL2. The enumerated adapters are
+  NVIDIA RTX 4000 Ada Generation, AMD Radeon PRO W7700 and AMD Radeon Graphics.
+  Enumeration is not DirectWrite/GPU rendering, IME or UIA evidence.
+- No Windows Rust/MSVC/NSIS toolchain was discovered on PATH. Native builds
+  therefore use the explicit Windows build lane rather than silently installing
+  global developer tools or relocating the Linux workspace.
+- No code-signing certificate was present in the current-user store; repository
+  secrets contain only existing Cargo/Homebrew/site credentials and no release
+  environments. A maintainer-provided trusted signing identity remains a release
+  prerequisite under 0062 §10, not permission for self-signed production artifacts.
+- The first source audit found `strop-ui-protocol` depends on `strop-engine`
+  solely for normalized `Key` data and script-key notation. That violates the
+  intended native frontend dependency boundary. Move those shared input data/
+  parsing owners into `strop-core`, migrate every consumer and remove the
+  protocol's engine dependency. Keep wire semantics and serialization intact;
+  do not port Linux service implementations to Windows to satisfy this leak.
+- Assess GPUI/platform together at upstream
+  `bd747337d7be138834e20972b9e203c7b239cc47` (toolchain 1.98.1). This is an
+  investigation pin until the required native vertical slice proves it.
 
 ## 16. Primary references and evidence anchors
 

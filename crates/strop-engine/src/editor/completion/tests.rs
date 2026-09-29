@@ -1,5 +1,6 @@
 use super::session::{Selection, WorkerLifecycle};
-use crate::editor::{events, Editor, Key, Mode};
+use crate::editor::{events, Editor, Mode};
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 mod language;
 mod sources;

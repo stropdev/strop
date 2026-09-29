@@ -76,7 +76,7 @@ fn current_text(e: &Editor) -> String {
 #[test]
 fn collection_builds_from_picker_hits() {
     let (mut e, _, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let text = current_text(&e);
     assert!(text.contains("alpha one"), "{text}");
     assert!(text.contains("beta two"), "{text}");
@@ -88,7 +88,7 @@ fn collection_builds_from_picker_hits() {
 #[test]
 fn stale_collection_explains_its_readonly_source() {
     let (mut e, _, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = e.current();
     e.invalidate_collection_projection(collection, strop_core::EditError::InvalidRange);
     assert_eq!(
@@ -106,7 +106,7 @@ fn stale_collection_explains_its_readonly_source() {
 #[test]
 fn editing_an_excerpt_writes_back_to_the_source() {
     let (mut e, a, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let body_line = e.buf().line_start(2);
     e.set_head(body_line + 8); // on the 'e' of "one"
     e.feed_text("x"); // delete the 'e' of "one"
@@ -129,7 +129,7 @@ fn editing_an_excerpt_writes_back_to_the_source() {
 #[test]
 fn editing_a_header_is_refused_and_the_view_refreshes() {
     let (mut e, _, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     // land on the 'a' of "a.txt" inside the header line
     let header_text = e.buf().text().to_string();
     let at = header_text.find("a.txt").unwrap();
@@ -146,7 +146,7 @@ fn editing_a_header_is_refused_and_the_view_refreshes() {
 #[test]
 fn an_edit_spanning_excerpts_is_refused() {
     let (mut e, _, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     // delete from the first excerpt's body through the second's header
     e.set_head(e.buf().line_start(2));
     e.feed_text("Vjjjd");
@@ -159,7 +159,7 @@ fn a_source_edited_elsewhere_refreshes_the_view() {
     // the view shows the new text immediately, and editing the fresh
     // view writes back (no stale fingerprint refusal).
     let (mut e, a, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let collection_id = e.current();
     // edit the source directly in its own buffer
     let source_id = e
@@ -185,7 +185,7 @@ fn a_source_edited_elsewhere_refreshes_the_view() {
 #[test]
 fn anchors_remap_when_the_source_grows() {
     let (mut e, a, b) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let collection_id = e.current();
     // grow a.txt at the top: the excerpt anchor shifts, sync stays true
     let source_id = e
@@ -240,7 +240,7 @@ fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
 #[test]
 fn one_commit_across_excerpts_writes_back_to_both_sources() {
     let (mut e, a, b) = two_file_fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     // title 1, card-a 2, body-a 3, bottom 4, card-b 5, body-b 6 (0049 §6)
     e.feed_text(":3,6s/one/1/\r");
     for (path, want) in [(&a, "alpha 1\n"), (&b, "beta 1\n")] {
@@ -257,7 +257,7 @@ fn one_commit_across_excerpts_writes_back_to_both_sources() {
 #[test]
 fn inserting_a_line_inside_a_body_writes_the_wider_span_back() {
     let (mut e, a, _b) = two_file_fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let body = e.buf().text().to_string().find("alpha one").unwrap();
     e.set_head(body);
     e.feed_text("Oinserted first<esc>");
@@ -273,7 +273,7 @@ fn inserting_a_line_inside_a_body_writes_the_wider_span_back() {
 #[test]
 fn inserting_between_excerpts_is_refused() {
     let (mut e, a, b) = two_file_fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     // O on the b header line inserts between the excerpts — structure
     let header = e.buf().text().to_string().find("b.txt").unwrap();
     e.set_head(header);
@@ -311,7 +311,7 @@ fn unopened_sources_load_in_the_background_and_assemble() {
             line_text: "late one".into(),
         },
     }]);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     assert!(e.message.contains("loading"), "{}", e.message);
     assert!(e.collections.is_empty(), "not yet");
     e.wait_io().unwrap();
@@ -372,7 +372,7 @@ fn remote_sources_join_collections_and_refuse_without_a_permit() {
             },
         },
     ]);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let text = e.buf().text().to_string();
     assert!(text.contains("alpha one"), "{text}");
     assert!(
@@ -427,7 +427,7 @@ fn relative_startup_path_collects_all_hits() {
         },
     ];
     e.picker_items_fixture(items);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let text = current_text(&e);
     assert!(
         text.contains("alpha needle one"),
@@ -445,7 +445,7 @@ fn collection_undo_restores_sources_and_the_view() {
     // edit group across its actual sources; the view refreshes. Two
     // groups undo newest-first.
     let (mut e, a, b) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = e.current();
     let src = |e: &Editor, path: &std::path::Path| {
         e.docs
@@ -473,9 +473,9 @@ fn collection_undo_restores_sources_and_the_view() {
     assert!(view.contains("alpha one"), "view after undos: {view}");
     assert!(!view.contains("xlpha"), "no stale text: {view}");
     // and the redo stack replays both, newest-first
-    e.feed(crate::editor::Key::CtrlR);
+    e.feed(strop_core::frontend_input::Key::CtrlR);
     assert!(text(&e, a_id).starts_with("xlpha"), "redo group 1");
-    e.feed(crate::editor::Key::CtrlR);
+    e.feed(strop_core::frontend_input::Key::CtrlR);
     assert!(text(&e, b_id).contains("xeta two"), "redo group 2");
 }
 
@@ -484,7 +484,7 @@ fn collection_undo_restores_sources_and_the_view() {
 #[test]
 fn collection_undo_preflight_refuses_a_moved_source() {
     let (mut e, a, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = e.current();
     e.set_head(e.buf().line_start(2));
     e.feed_text("rx");
@@ -496,7 +496,7 @@ fn collection_undo_preflight_refuses_a_moved_source() {
     // an independent edit to the source
     e.switch_to(a_id);
     e.feed_text("Gobackchannel\n");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.switch_to(collection);
     e.feed_text("u");
     assert!(
@@ -527,7 +527,7 @@ fn collection_undo_preflight_refuses_a_moved_source() {
 fn collection_write_saves_dirty_sources_and_refuses_a_target() {
     let live = live_fixture();
     let (mut e, a, b) = (live.editor, live.a.clone(), live.b.clone());
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     e.set_head(e.buf().line_start(2));
     e.feed_text("rx"); // dirty a.txt via the collection
     e.feed_text(":w<cr>");
@@ -553,7 +553,7 @@ fn collection_write_saves_dirty_sources_and_refuses_a_target() {
 #[test]
 fn collection_close_keeps_dirty_sources() {
     let (mut e, a, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     e.set_head(e.buf().line_start(2));
     e.feed_text("rx");
     e.feed_text(":q<cr>");
@@ -577,7 +577,7 @@ fn collection_close_keeps_dirty_sources() {
 #[test]
 fn collection_open_source_maps_positions_and_returns() {
     let (mut e, a, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = e.current();
     // body row: line 2 is a.txt's first excerpt body
     e.set_head(e.buf().line_start(2) + 2); // 'p' of alpha
@@ -589,7 +589,7 @@ fn collection_open_source_maps_positions_and_returns() {
         .unwrap();
     assert_eq!(e.current(), a_id, "switched to the live source");
     assert_eq!(e.head(), 2, "exact source byte — unsaved-edit view");
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     assert_eq!(e.current(), collection, "Ctrl-O returns to the collection");
     // header row: line 1 is a.txt's header
     e.collection_open_source();
@@ -602,18 +602,18 @@ fn collection_open_source_maps_positions_and_returns() {
 #[test]
 fn collection_enter_on_header_only() {
     let (mut e, a, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let a_id = e
         .docs
         .iter()
         .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
         .unwrap();
     e.set_head(e.buf().line_start(1)); // a.txt header row
-    e.feed(crate::editor::Key::Enter);
+    e.feed(strop_core::frontend_input::Key::Enter);
     assert_eq!(e.current(), a_id, "Enter on a header opens the source");
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     e.set_head(e.buf().line_start(2)); // body row
-    e.feed(crate::editor::Key::Enter);
+    e.feed(strop_core::frontend_input::Key::Enter);
     assert_eq!(
         e.buf().line_of(e.head()),
         3,
@@ -626,7 +626,7 @@ fn collection_enter_on_header_only() {
 #[test]
 fn occurrence_selection_skips_collection_chrome() {
     let (mut e, _, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     // caret on the header's "txt" (in "a.txt") — seeds "txt"
     let header_start = e.buf().line_start(1);
     let header = e.buf().line_text(1);
@@ -688,7 +688,7 @@ fn collection_loads_unopened_sources_in_the_background() {
             },
         },
     ]);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     assert!(
         e.message.contains("loading"),
         "the build is pending: {}",
@@ -741,7 +741,7 @@ fn one_card_per_file_with_gap_rows() {
             },
         },
     ]);
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let text = current_text(&e);
     assert_eq!(
         text.matches("╭─").count(),
@@ -766,7 +766,7 @@ fn one_card_per_file_with_gap_rows() {
 #[test]
 fn file_card_navigation_steps_between_cards() {
     let (mut e, _, _) = fixture();
-    e.feed(crate::editor::Key::CtrlO);
+    e.feed(strop_core::frontend_input::Key::CtrlO);
     let tops: Vec<usize> = e
         .collections
         .get(&e.current())

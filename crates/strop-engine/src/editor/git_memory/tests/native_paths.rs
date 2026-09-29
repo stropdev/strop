@@ -4,7 +4,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::editor::{Editor, Key, Surface};
+use crate::editor::{Editor, Surface};
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 
 use super::{pump, settle};

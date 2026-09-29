@@ -28,7 +28,8 @@ pub use channel::{
 /// This is not used on the input→render path.
 pub const QUIESCENCE_POLL: std::time::Duration = std::time::Duration::from_millis(16);
 
-use super::{Editor, Key, ShellResult};
+use super::{Editor, ShellResult};
+use strop_core::frontend_input::Key;
 
 /// External input retains its physical facts until the engine selects an owner.
 /// EditorKey is already-normalized semantic input from scripted/editor commands.

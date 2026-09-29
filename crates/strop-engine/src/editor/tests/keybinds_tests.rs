@@ -44,7 +44,7 @@ fn arrows_consume_pending_counts() {
     // 0015: 2 <Right> x — the count moves twice and clears; x is 1
     let mut e = Editor::new(Buffer::from_text("hello world\n"));
     e.feed_text("2");
-    e.feed(crate::editor::Key::Right);
+    e.feed(strop_core::frontend_input::Key::Right);
     assert_eq!(e.buf().col_of(e.head()), 2);
     e.feed_text("x");
     assert_eq!(e.buf().text().to_string(), "helo world\n");
@@ -73,7 +73,7 @@ fn ctrl_c_warns_once_then_forces() {
     // 0015: dirty work gets one warning; the second press exits
     let mut e = Editor::new(Buffer::from_text("dirty\n"));
     e.feed_text("ix");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     assert!(!e.ctrl_c_quit());
     assert!(e.message.contains("ctrl-c again"));
     assert!(e.ctrl_c_quit());
@@ -88,7 +88,7 @@ fn failed_pipe_never_touches_the_source() {
     let mut e = Editor::new(Buffer::from_text("keep me\n"));
     e.feed_text("V");
     e.feed_text(" |false");
-    e.feed(crate::editor::Key::Enter);
+    e.feed(strop_core::frontend_input::Key::Enter);
     let result = e
         .shell_rx
         .as_ref()
@@ -147,14 +147,14 @@ fn visible_jumps_and_counts() {
 fn gv_reselects_and_gi_reinserts() {
     let mut e = Editor::new(Buffer::from_text("hello world\nsecond\n"));
     e.feed_text("vll");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("gv");
     assert_eq!(e.mode, crate::editor::Mode::Visual);
     let p = e.sels().primary();
     assert_eq!((p.anchor.min(p.head), p.anchor.max(p.head)), (0, 2));
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("2Gix");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("gg");
     e.feed_text("gi");
     assert_eq!(e.mode, crate::editor::Mode::Insert);
@@ -165,10 +165,10 @@ fn gv_reselects_and_gi_reinserts() {
 fn change_list_walks_and_invalidates() {
     let mut e = Editor::new(Buffer::from_text("aaa\nbbb\nccc\n"));
     e.feed_text("ix");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("G");
     e.feed_text("Ay");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     // newest change first: the y-append at the last line
     e.feed_text("gg");
     e.feed_text("g;");
@@ -179,7 +179,7 @@ fn change_list_walks_and_invalidates() {
     assert_eq!(e.buf().line_of(e.head()), 2);
     // a new edit invalidates the walk: g; starts from newest again
     e.feed_text("ggiz");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("g;");
     assert_eq!(e.buf().line_of(e.head()), 0);
 }
@@ -303,7 +303,7 @@ fn bracketed_paste_is_one_text_unit() {
     let mut e = Editor::new(Buffer::from_text("fn main() {}\n"));
     e.feed_text("i");
     e.paste_bracketed("// :q! not a command\n");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     assert!(e
         .buf()
         .text()
@@ -327,7 +327,7 @@ fn block_mode_ops() {
     e.feed_text("<c-v>j");
     e.feed_text("I");
     e.feed_text(">>");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     assert_eq!(e.buf().text().to_string(), ">>aa\n>>cc\n");
 }
 #[test]
@@ -341,7 +341,7 @@ fn write_to_path_respects_overwrite_policy() {
     std::fs::write(&b, "content b\n").unwrap();
     let mut e = Editor::new(Buffer::open(a.to_str().unwrap()).unwrap());
     e.feed_text("ix");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     // ordinary :w b.txt — b exists: refused, b unchanged
     e.feed_text(&format!(":w {}\r", b.display()));
     e.wait_io().unwrap();
@@ -358,7 +358,7 @@ fn write_to_path_respects_overwrite_policy() {
     assert!(!e.buf().dirty);
     // a failed write (unwritable dir) keeps identity
     e.feed_text("iy");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     let missing = dir.path().join("missing").join("q.txt");
     e.feed_text(&format!(":w {}<cr>", missing.display()));
     e.wait_io().unwrap();
@@ -380,7 +380,7 @@ fn grep_respawns_reach_the_production_event_source() {
     e.open_picker(strop_picker::Kind::Search);
     // type the query: respawns flow through the forwarded channel
     for c in "needle".chars() {
-        e.feed(crate::editor::Key::Char(c));
+        e.feed(strop_core::frontend_input::Key::Char(c));
     }
     // pump the PRODUCTION event source until Done (bounded)
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -497,7 +497,7 @@ fn edits_map_marks_jumps_and_other_panes() {
     e.feed_text("<c-w>v"); // second pane, same doc (cursor on TARGET)
     e.feed_text("<c-w>h"); // back to pane 1
     e.feed_text("ggOheader");
-    e.feed(crate::editor::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
     // the mark moved from line 1 to line 2
     let (_, mpos) = e.marks[&'a'];
     assert_eq!(e.buf().line_of(mpos), 2);
@@ -528,8 +528,8 @@ fn incremental_syntax_equals_fresh_parse() {
         e.analysis_fixture();
         for keys in &script {
             match *keys {
-                "<esc>" => e.feed(crate::editor::Key::Esc),
-                "<c-r>" => e.feed(crate::editor::Key::CtrlR),
+                "<esc>" => e.feed(strop_core::frontend_input::Key::Esc),
+                "<c-r>" => e.feed(strop_core::frontend_input::Key::CtrlR),
                 k => e.feed_text(k),
             }
         }

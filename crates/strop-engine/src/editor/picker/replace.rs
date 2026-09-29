@@ -184,7 +184,7 @@ mod tests {
         e.feed_text(" Rfoo");
         e.wait_picker();
         assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 3);
-        e.feed(crate::editor::Key::Tab);
+        e.feed(strop_core::frontend_input::Key::Tab);
         e.feed_text("bar");
         e.accept_current_picker();
         // the unopened target loads through its owned job, then the
@@ -300,7 +300,7 @@ mod tests {
         e.feed_text(" Rfoo");
         e.wait_picker();
         assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 1);
-        e.feed(crate::editor::Key::Tab);
+        e.feed(strop_core::frontend_input::Key::Tab);
         e.feed_text("bar");
         e.prepare_search_review();
         e.wait_io().unwrap();
@@ -322,7 +322,7 @@ mod tests {
         let a_doc = e.open_fixture(&a).unwrap();
         e.feed_text(" Rfoo");
         e.wait_picker();
-        e.feed(crate::editor::Key::Tab);
+        e.feed(strop_core::frontend_input::Key::Tab);
         e.feed_text("bar");
         // the unopened target becomes unreadable before its owned open
         // lands (a directory never reads as a file)
@@ -353,7 +353,7 @@ mod tests {
         let a_doc = e.open_fixture(&a).unwrap();
         e.feed_text(" Rfoo");
         e.wait_picker();
-        e.feed(crate::editor::Key::Tab);
+        e.feed(strop_core::frontend_input::Key::Tab);
         e.feed_text("bar");
         e.accept_current_picker();
         e.wait_io().unwrap();
@@ -392,7 +392,7 @@ mod tests {
         let a_doc = e.open_fixture(&a).unwrap();
         e.feed_text(" Rfoo");
         e.wait_picker();
-        e.feed(crate::editor::Key::Tab);
+        e.feed(strop_core::frontend_input::Key::Tab);
         e.feed_text("bar");
         e.accept_current_picker();
         e.wait_io().unwrap();
@@ -482,7 +482,7 @@ mod tests {
         e.wait_picker();
         let p = &e.picker.as_ref().unwrap().picker;
         assert_eq!(p.items.len(), 2, "the guard drops the broken line");
-        e.feed(crate::editor::Key::Tab);
+        e.feed(strop_core::frontend_input::Key::Tab);
         e.feed_text("blade");
         e.accept_current_picker();
         e.wait_io().unwrap();
@@ -520,7 +520,7 @@ mod tests {
         e.wait_picker();
         // One admitted line, one item per matching positive span.
         assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 2);
-        e.feed(crate::editor::Key::Tab);
+        e.feed(strop_core::frontend_input::Key::Tab);
         e.feed_text("again");
         e.accept_current_picker();
         // Named refusal: the ambiguity diagnostic, the picker stays
