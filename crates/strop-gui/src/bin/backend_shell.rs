@@ -45,18 +45,16 @@ impl Render for BackendShell {
 
 #[cfg(target_os = "windows")]
 fn main() {
-    let selection = WslSelection {
-        wsl: std::env::var_os("STROP_WSL_EXE")
-            .unwrap_or_else(|| "wsl.exe".into())
-            .into(),
-        distribution: std::env::var("STROP_WSL_DISTRO").expect("STROP_WSL_DISTRO"),
-        user: std::env::var("STROP_WSL_USER").expect("STROP_WSL_USER"),
-        backend: std::env::var_os("STROP_WSL_BACKEND")
-            .expect("STROP_WSL_BACKEND")
-            .into(),
-        workspace: std::env::var("STROP_WSL_WORKSPACE").expect("STROP_WSL_WORKSPACE"),
-        environment: Vec::new(),
+    let distro = strop_gui::wsl::WslDistro {
+        name: std::env::var("STROP_WSL_DISTRO").expect("STROP_WSL_DISTRO"),
     };
+    let selection = strop_gui::wsl::select(
+        &distro,
+        &std::env::var("STROP_WSL_USER").expect("STROP_WSL_USER"),
+        &std::env::var("STROP_WSL_WORKSPACE").expect("STROP_WSL_WORKSPACE"),
+        std::path::Path::new(&std::env::var_os("STROP_WSL_BACKEND").expect("STROP_WSL_BACKEND")),
+    )
+    .expect("explicit first-open WSL selection");
     gpui_platform::application().run(move |cx: &mut App| {
         let (bridge, backend) = WslBridge::spawn(&selection).expect("WSL backend handshake");
         let client = Client::new(&backend);
