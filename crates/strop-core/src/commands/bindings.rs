@@ -6,7 +6,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["terminal"],
         live: true,
         id: "terminal-lifecycle",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-\\ ctrl-n",
@@ -14,7 +14,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["terminal"],
         live: true,
         id: "terminal-normal",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-w h/j/k/l/w · ctrl-w N · ctrl-w .",
@@ -22,7 +22,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["terminal"],
         live: true,
         id: "terminal-window",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "i a",
@@ -30,7 +30,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["terminal"],
         live: true,
         id: "terminal-input",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: ":terminal-paste :terminal-paste-cancel",
@@ -38,7 +38,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["terminal"],
         live: true,
         id: "terminal-paste-decision",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: ":terminal-refresh",
@@ -46,7 +46,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["terminal"],
         live: true,
         id: "terminal-refresh",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-4 ctrl-n",
@@ -54,7 +54,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["terminal"],
         live: true,
         id: "terminal-normal-legacy",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     // normal: motions
     Binding {
@@ -63,7 +63,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "move",
-        handler: CommandKind::Motion,
+        kind: CommandKind::Motion,
     },
     Binding {
         keys: "w b e W B E",
@@ -71,7 +71,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "word-motions",
-        handler: CommandKind::Motion,
+        kind: CommandKind::Motion,
     },
     Binding {
         keys: "zz zt zb",
@@ -79,7 +79,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "view-place",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "H M L",
@@ -87,7 +87,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "visible-jumps",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "ZZ",
@@ -95,7 +95,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "write-quit",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gv",
@@ -103,7 +103,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "reselect-visual",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gi",
@@ -111,7 +111,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "insert-at-last",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "g;",
@@ -119,7 +119,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "change-back",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "g,",
@@ -127,7 +127,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "change-forward",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "ge gE { }",
@@ -135,7 +135,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "paragraph-motions",
-        handler: CommandKind::Motion,
+        kind: CommandKind::Motion,
     },
     Binding {
         keys: "0 $ G %",
@@ -143,7 +143,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "line-jumps",
-        handler: CommandKind::Motion,
+        kind: CommandKind::Motion,
     },
     Binding {
         keys: "g<space>",
@@ -151,7 +151,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "collection-source",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gb",
@@ -159,7 +159,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal", "visual"],
         live: true,
         id: "occurrence-next",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gB",
@@ -167,7 +167,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal", "visual"],
         live: true,
         id: "occurrence-all",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gg",
@@ -175,7 +175,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "top",
-        handler: CommandKind::Motion,
+        kind: CommandKind::Motion,
     },
     Binding {
         keys: "enter",
@@ -183,7 +183,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "enter",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "tab",
@@ -191,7 +191,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "jump-forward",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "ctrl-r",
@@ -199,7 +199,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "redo",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "ctrl-d ctrl-u ctrl-f ctrl-b",
@@ -207,7 +207,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "scroll-pages",
-        handler: CommandKind::Leaf, // count-aware: dispatch_row
+        kind: CommandKind::Leaf, // count-aware: dispatch_row
     },
     Binding {
         keys: "ctrl-^",
@@ -215,7 +215,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "alternate-buffer",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "q<a>",
@@ -223,7 +223,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "macro-record",
-        handler: CommandKind::AbsorbChar(AbsorbKind::MacroRecord),
+        kind: CommandKind::AbsorbChar(AbsorbKind::MacroRecord),
     },
     Binding {
         keys: "@<a>",
@@ -231,7 +231,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "macro-play",
-        handler: CommandKind::AbsorbChar(AbsorbKind::MacroPlay),
+        kind: CommandKind::AbsorbChar(AbsorbKind::MacroPlay),
     },
     Binding {
         keys: "gr",
@@ -239,7 +239,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "references",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gI",
@@ -247,7 +247,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "implementation",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gy",
@@ -255,7 +255,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "type-definition",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gD",
@@ -263,7 +263,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "declaration",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "]d [d",
@@ -271,7 +271,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "diagnostic-jumps",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gd",
@@ -279,7 +279,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "goto-definition",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "gs",
@@ -287,7 +287,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "switch-source-header",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "f<c> F<c> t<c> T<c>",
@@ -295,7 +295,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "find-char",
-        handler: CommandKind::AbsorbChar(AbsorbKind::Find),
+        kind: CommandKind::AbsorbChar(AbsorbKind::Find),
     },
     Binding {
         keys: ":",
@@ -303,7 +303,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "ex-line",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: "/ ?",
@@ -311,7 +311,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "search",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: "n",
@@ -319,7 +319,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "search-next",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "N",
@@ -327,7 +327,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "search-prev",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "]f [f",
@@ -335,7 +335,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "collection-file-nav",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "]e [e",
@@ -343,7 +343,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "collection-excerpt-nav",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "]c [c",
@@ -351,7 +351,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "hunk-nav",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "m<a>",
@@ -359,7 +359,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "mark-set",
-        handler: CommandKind::AbsorbChar(AbsorbKind::MarkSet),
+        kind: CommandKind::AbsorbChar(AbsorbKind::MarkSet),
     },
     Binding {
         keys: "'<a> `<a>",
@@ -367,7 +367,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "mark-jump",
-        handler: CommandKind::AbsorbChar(AbsorbKind::MarkJump),
+        kind: CommandKind::AbsorbChar(AbsorbKind::MarkJump),
     },
     Binding {
         keys: "* #",
@@ -375,7 +375,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "word-search",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "; ,",
@@ -383,7 +383,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "find-repeat",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "|",
@@ -391,7 +391,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "column-motion",
-        handler: CommandKind::Motion,
+        kind: CommandKind::Motion,
     },
     Binding {
         keys: "space |",
@@ -399,7 +399,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "pipe-shell",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: "Q",
@@ -407,7 +407,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "cursor-toggle",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     // normal: operators
     Binding {
@@ -416,7 +416,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "operators",
-        handler: CommandKind::Operator,
+        kind: CommandKind::Operator,
     },
     Binding {
         keys: "dd yy cc",
@@ -424,7 +424,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "line-ops",
-        handler: CommandKind::Operator,
+        kind: CommandKind::Operator,
     },
     Binding {
         keys: "D",
@@ -432,7 +432,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-d",
-        handler: CommandKind::Alias("d$"),
+        kind: CommandKind::Alias,
     },
     Binding {
         keys: "C",
@@ -440,7 +440,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-c",
-        handler: CommandKind::Alias("c$"),
+        kind: CommandKind::Alias,
     },
     Binding {
         keys: "Y",
@@ -448,7 +448,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-y",
-        handler: CommandKind::Alias("yy"),
+        kind: CommandKind::Alias,
     },
     Binding {
         keys: "s",
@@ -456,7 +456,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "op-alias-s",
-        handler: CommandKind::Alias("cl"),
+        kind: CommandKind::Alias,
     },
     Binding {
         keys: "x X",
@@ -464,7 +464,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "char-delete",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "iw i\" i' i( i[ i{",
@@ -472,7 +472,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "objects",
-        handler: CommandKind::ObjectPrefix,
+        kind: CommandKind::ObjectPrefix,
     },
     Binding {
         keys: "ds\" cs\"' ysiw\"",
@@ -480,7 +480,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "surround",
-        handler: CommandKind::ObjectPrefix,
+        kind: CommandKind::ObjectPrefix,
     },
     Binding {
         keys: "i a A o O I",
@@ -488,7 +488,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "insert-entries",
-        handler: Handler::Leaf(crate::editor::Editor::insert_entry_pub),
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "p P",
@@ -496,7 +496,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "paste",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "r<c>",
@@ -504,7 +504,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "replace-char",
-        handler: CommandKind::AbsorbChar(AbsorbKind::Replace),
+        kind: CommandKind::AbsorbChar(AbsorbKind::Replace),
     },
     Binding {
         keys: "J .",
@@ -512,7 +512,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "join-repeat",
-        handler: Handler::Leaf(crate::editor::Editor::join_or_repeat),
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "^",
@@ -520,7 +520,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "first-non-blank",
-        handler: CommandKind::Motion,
+        kind: CommandKind::Motion,
     },
     Binding {
         keys: "~",
@@ -528,7 +528,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "toggle-case",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "S",
@@ -536,7 +536,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "subst-line",
-        handler: CommandKind::Alias("cc"),
+        kind: CommandKind::Alias,
     },
     Binding {
         keys: "u ctrl-r",
@@ -544,7 +544,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "undo-redo",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "\"+y \"+p \"+P",
@@ -552,7 +552,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "reg-clipboard",
-        handler: CommandKind::AbsorbRegister,
+        kind: CommandKind::AbsorbRegister,
     },
     Binding {
         keys: "\"xy \"xp",
@@ -560,7 +560,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "reg-named",
-        handler: CommandKind::AbsorbRegister,
+        kind: CommandKind::AbsorbRegister,
     },
     Binding {
         keys: "ctrl-v",
@@ -568,7 +568,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "visual-block",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "v V",
@@ -576,7 +576,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["normal"],
         live: true,
         id: "visual-enter",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     // visual
     Binding {
@@ -585,7 +585,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["visual"],
         live: true,
         id: "visual-ops",
-        handler: CommandKind::Operator,
+        kind: CommandKind::Operator,
     },
     Binding {
         keys: "S<c>",
@@ -593,7 +593,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["visual"],
         live: true,
         id: "visual-surround",
-        handler: CommandKind::AbsorbChar(AbsorbKind::Replace),
+        kind: CommandKind::AbsorbChar(AbsorbKind::Replace),
     },
     Binding {
         keys: "i<a> a<a>",
@@ -601,7 +601,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["visual"],
         live: true,
         id: "visual-objects",
-        handler: CommandKind::ObjectPrefix,
+        kind: CommandKind::ObjectPrefix,
     },
     Binding {
         keys: "space y",
@@ -609,23 +609,72 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["visual"],
         live: true,
         id: "clip-yank",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     // insert
-    completion::REQUEST,
-    completion::LANGUAGE,
-    completion::WORDS,
-    completion::ARROWS,
-    completion::ACCEPT,
-    completion::DISMISS,
-    completion::TAB,
+    Binding {
+        keys: "ctrl-space",
+        desc: "code completion: language service + current source words",
+        sections: &["insert"],
+        live: true,
+        id: "completion-request",
+        kind: CommandKind::Contextual,
+    },
+    Binding {
+        keys: "ctrl-x ctrl-o",
+        desc: "language-service completion",
+        sections: &["insert"],
+        live: true,
+        id: "completion-language",
+        kind: CommandKind::Contextual,
+    },
+    Binding {
+        keys: "ctrl-n ctrl-p",
+        desc: "source words; choose next/previous completion",
+        sections: &["insert"],
+        live: true,
+        id: "completion-words",
+        kind: CommandKind::Contextual,
+    },
+    Binding {
+        keys: "up down",
+        desc: "choose completion when open; otherwise move the caret",
+        sections: &["insert"],
+        live: true,
+        id: "completion-arrows",
+        kind: CommandKind::Contextual,
+    },
+    Binding {
+        keys: "ctrl-y",
+        desc: "accept choice",
+        sections: &["insert"],
+        live: true,
+        id: "completion-accept",
+        kind: CommandKind::Contextual,
+    },
+    Binding {
+        keys: "ctrl-e",
+        desc: "dismiss",
+        sections: &["insert"],
+        live: true,
+        id: "completion-dismiss",
+        kind: CommandKind::Contextual,
+    },
+    Binding {
+        keys: "tab",
+        desc: "indent; accept completion only after deliberate selection",
+        sections: &["insert"],
+        live: true,
+        id: "insert-tab",
+        kind: CommandKind::Contextual,
+    },
     Binding {
         keys: "esc",
         desc: "dismiss completion and enter Normal mode in one event (one undo unit)",
         sections: &["insert"],
         live: true,
         id: "insert-esc",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     Binding {
         keys: "backspace",
@@ -633,7 +682,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["insert"],
         live: true,
         id: "insert-bs",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     Binding {
         keys: "enter",
@@ -641,7 +690,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["insert"],
         live: true,
         id: "insert-enter",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     Binding {
         keys: "} ] )",
@@ -649,7 +698,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["insert"],
         live: true,
         id: "insert-closers",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     // leader
     Binding {
@@ -658,7 +707,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "directory-reveal",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space f",
@@ -666,7 +715,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "files",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space o",
@@ -674,7 +723,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "remote-open",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space b",
@@ -682,7 +731,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "buffers",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space /",
@@ -690,7 +739,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "search",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space R",
@@ -698,7 +747,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "replace-global",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space ?",
@@ -706,7 +755,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "help",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space y",
@@ -714,7 +763,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "clip-yank",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space p",
@@ -722,7 +771,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "clip-paste",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space P",
@@ -730,7 +779,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "clip-paste-before",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space d",
@@ -738,7 +787,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "diagnostics",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space k",
@@ -746,7 +795,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "hover",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space a",
@@ -754,7 +803,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "code-actions",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space s",
@@ -762,7 +811,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "document-symbols",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space S",
@@ -770,7 +819,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "workspace-symbols",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space j",
@@ -778,7 +827,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "jumplist-picker",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space u",
@@ -786,7 +835,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "undo-tree",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space c",
@@ -794,7 +843,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["leader"],
         live: true,
         id: "cursor-stack",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     // git
     Binding {
@@ -803,7 +852,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-prefix",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     Binding {
         keys: "space g l",
@@ -811,7 +860,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-log",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g h",
@@ -819,7 +868,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-file-history",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g b",
@@ -827,7 +876,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-blame",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g y",
@@ -835,7 +884,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-permalink-yank",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g o",
@@ -843,7 +892,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-permalink-open",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g u",
@@ -851,7 +900,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-undo",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g s",
@@ -859,7 +908,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-stage",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g S",
@@ -867,7 +916,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-unstage",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "space g p",
@@ -875,7 +924,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "git-hunk-preview",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "]f [f",
@@ -883,7 +932,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "commit-file-nav",
-        handler: CommandKind::Soon,
+        kind: CommandKind::Soon,
     },
     Binding {
         keys: "enter",
@@ -891,7 +940,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "surface-dive",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     Binding {
         keys: "q",
@@ -899,7 +948,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["git"],
         live: true,
         id: "surface-close",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     // ex + panes
     Binding {
@@ -908,7 +957,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "ex-write-quit",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: ":[range]s/a/b/[g] :N :% :N,Md :N,My",
@@ -916,7 +965,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "ex-ranges",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: "ctrl-d ctrl-u ctrl-f ctrl-b",
@@ -924,7 +973,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "scroll-pages",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: ":e",
@@ -932,7 +981,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "ex-edit",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: ":help",
@@ -940,7 +989,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "ex-help",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: ":vs :sp",
@@ -948,7 +997,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "ex-split",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: "ctrl-w h / l / j / k / w",
@@ -956,7 +1005,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "pane-nav",
-        handler: Handler::Leaf(crate::editor::Editor::pane_move_pub),
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "ctrl-o / ctrl-i (tab)",
@@ -964,7 +1013,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "jumplist",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "ctrl-w v / s",
@@ -972,7 +1021,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "pane-split",
-        handler: Handler::Leaf(crate::editor::Editor::split_pub),
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: ":view :set",
@@ -980,7 +1029,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "readonly",
-        handler: CommandKind::TextLine,
+        kind: CommandKind::TextLine,
     },
     Binding {
         keys: "ctrl-w q",
@@ -988,7 +1037,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "pane-close",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
     Binding {
         keys: "up down left right tab s-tab",
@@ -996,7 +1045,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "picker-nav",
-        handler: CommandKind::Prefix,
+        kind: CommandKind::Prefix,
     },
     Binding {
         keys: "ctrl-x",
@@ -1004,7 +1053,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "search-exclude",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-space",
@@ -1012,7 +1061,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "query-suggestions",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-d",
@@ -1020,7 +1069,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "search-file-exclude",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-r",
@@ -1028,7 +1077,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "search-replacement",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "enter",
@@ -1036,7 +1085,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "search-accept",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-o",
@@ -1044,7 +1093,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "search-collect",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: ":tab-size :indent-style :search-options",
@@ -1052,7 +1101,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "source-and-search-settings",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: ":fs :browse :filter",
@@ -1060,7 +1109,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "filesystem",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: ":apply-change :cancel-change :save-change",
@@ -1068,7 +1117,7 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "change-review-actions",
-        handler: CommandKind::Contextual,
+        kind: CommandKind::Contextual,
     },
     Binding {
         keys: "ctrl-l",
@@ -1076,6 +1125,6 @@ pub const BINDINGS: &[Binding] = &[
         sections: &["ex+panes"],
         live: true,
         id: "redraw",
-        handler: CommandKind::Leaf,
+        kind: CommandKind::Leaf,
     },
 ];
