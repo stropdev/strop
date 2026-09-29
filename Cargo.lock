@@ -5109,6 +5109,7 @@ dependencies = [
  "parking_lot",
  "ropey",
  "serde",
+ "serde_json",
  "sha2",
  "strop-trace",
  "tempfile",
@@ -5243,6 +5244,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "serde_json",
+ "strop-core",
  "strop-ui-protocol",
  "thiserror 2.0.20",
 ]

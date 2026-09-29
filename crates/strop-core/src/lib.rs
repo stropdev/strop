@@ -4,6 +4,7 @@
 mod buffer;
 pub mod cohortguard;
 pub mod diagnostics;
+pub mod commands;
 pub mod editmap;
 pub mod frontend_input;
 pub mod history;

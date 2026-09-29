@@ -2,7 +2,7 @@
 //! engine's keymap-as-data owner; the GUI must not build its own command
 //! table or infer supported actions from rendering code.
 
-use strop_engine::keymap::{Binding, Handler, SECTIONS};
+use strop_core::commands::{Binding, CommandKind, SECTIONS};
 
 /// One supported action row, in stable table order. Planned slots remain
 /// visible and inert, matching the TUI's `(soon)` presentation rule.
@@ -17,7 +17,7 @@ pub struct CommandRow {
 }
 
 pub fn commands() -> impl Iterator<Item = CommandRow> {
-    strop_engine::keymap::BINDINGS.iter().map(command_row)
+    strop_core::commands::BINDINGS.iter().map(command_row)
 }
 
 pub fn command_row(binding: &Binding) -> CommandRow {
@@ -27,7 +27,7 @@ pub fn command_row(binding: &Binding) -> CommandRow {
         description: binding.desc,
         sections: binding.sections,
         live: binding.live,
-        contextual: matches!(binding.handler, Handler::Contextual | Handler::Soon),
+        contextual: matches!(binding.kind, CommandKind::Contextual | CommandKind::Soon),
     }
 }
 
