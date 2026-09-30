@@ -3,6 +3,7 @@ use crate::editor::{events, Editor, Mode};
 use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 mod language;
+mod preview;
 mod sources;
 
 fn fixture(text: &str, caret: usize) -> (Editor, events::EventReceiver) {

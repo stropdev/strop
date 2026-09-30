@@ -88,6 +88,7 @@ pub(super) fn prepare(editor: &mut Editor, value: serde_json::Value) -> model::C
     session.acceptance = session::Acceptance::Preparing {
         candidate: candidate.clone(),
         work,
+        preview: false,
     };
     editor.completion.session = Some(session);
     editor.tape =

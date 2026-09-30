@@ -32,10 +32,14 @@ pub struct CompletionProviderStatus<'a> {
 impl Editor {
     pub fn completion_menu(&self) -> Option<CompletionMenu<'_>> {
         let session = self.completion.session.as_ref()?;
-        if !session
-            .query
-            .context
-            .still_owns(self, self.completion.settings_generation)
+        // An applied live preview is self-inflicted staleness (0059 §6.1):
+        // the menu stays open and follows the previewed candidate's caret.
+        let owns = session.preview.is_some()
+            || session
+                .query
+                .context
+                .still_owns(self, self.completion.settings_generation);
+        if !owns
             || session.language().is_some_and(|language| {
                 !language
                     .owner
@@ -47,10 +51,15 @@ impl Editor {
         }
         let primary = session.query.context.primary()?;
         let source = self.docs.get(primary.source)?;
+        // The original context offsets can exceed the previewed buffer;
+        // clamp to a valid empty prefix rather than hiding the menu.
+        let len = source.buf.len_bytes();
+        let (start, caret) = (primary.start.min(len), primary.caret.min(len));
         let prefix = source
             .buf
             .text()
-            .get_byte_slice(primary.start..primary.caret)?;
+            .get_byte_slice(start..caret)
+            .or_else(|| source.buf.text().get_byte_slice(0..0))?;
         Some(CompletionMenu { session, prefix })
     }
 
@@ -209,8 +218,13 @@ impl<'a> CompletionMenu<'a> {
     pub fn action_status(&self) -> Option<&'static str> {
         match &self.session.acceptance {
             Acceptance::Resolving { .. } => return Some("resolving required edits"),
+            Acceptance::Preparing { preview: true, .. } => {
+                return Some("previewing completion edits")
+            }
             Acceptance::Preparing { .. } => return Some("checking completion edits"),
-            Acceptance::WaitingCapacity { candidate, work } => {
+            Acceptance::WaitingCapacity {
+                candidate, work, ..
+            } => {
                 debug_assert!(
                     self.session
                         .selected()

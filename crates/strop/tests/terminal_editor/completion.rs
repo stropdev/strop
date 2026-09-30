@@ -80,6 +80,81 @@ fn completion_physical_word_keys_resize_accept_escape_and_undo() {
 }
 
 #[test]
+fn completion_tab_preview_cycle_revert_and_commit() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let original = "result response reusable return_value\n\n";
+    std::fs::write(root.join("words.txt"), original).unwrap();
+    let (binary, digest, bytes) = benchmark_binary();
+    eprintln!("0059 PTY binary={digest} bytes={bytes}");
+    let mut tui = Tui::spawn(root, &root.join("tab-preview.jsonl"), &binary, true);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b":e words.txt\r");
+    tui.until(|screen| numbered_line(screen, "result response reusable return_value"));
+    let words = ["result", "response", "reusable", "return_value"];
+    // Tab focuses the popup and previews the first candidate (0059 §6.1).
+    tui.send(b"Gire");
+    tui.until(|screen| screen.contains("completions"));
+    tui.send(b"\t");
+    let previewed = tui.until(|screen| {
+        screen.contains("completions") && words.iter().any(|word| numbered_line(screen, word))
+    });
+    let first = words
+        .iter()
+        .find(|word| numbered_line(&previewed, word))
+        .expect("first previewed candidate")
+        .to_string();
+    eprintln!("0059 TAB PREVIEW PTY 120x30\n{previewed}");
+    // Shift-Tab wraps to the last candidate, Tab cycles back to the first.
+    tui.send(b"\x1b[Z");
+    let wrapped = tui.until(|screen| {
+        screen.contains("completions")
+            && words
+                .iter()
+                .any(|word| *word != first && numbered_line(screen, word))
+    });
+    eprintln!("0059 SHIFT-TAB WRAP PTY 120x30\n{wrapped}");
+    tui.send(b"\t");
+    tui.until(|screen| numbered_line(screen, &first));
+    // Escape reverts the preview exactly and leaves Insert in one event.
+    tui.send(b"\x1b");
+    tui.until(|screen| {
+        screen.contains("NORMAL")
+            && numbered_line(screen, "re")
+            && words.iter().all(|word| !numbered_line(screen, word))
+    });
+    // Retype, cycle once, and Ctrl-Y commits the previewed candidate.
+    tui.send(b"u");
+    tui.until(|screen| !numbered_line(screen, "re"));
+    tui.send(b"ire");
+    tui.until(|screen| screen.contains("completions"));
+    tui.send(b"\t");
+    let cycled = tui.until(|screen| {
+        screen.contains("completions") && words.iter().any(|word| numbered_line(screen, word))
+    });
+    let chosen = words
+        .iter()
+        .find(|word| numbered_line(&cycled, word))
+        .expect("cycled candidate")
+        .to_string();
+    tui.send(b"\x19");
+    tui.until(|screen| !screen.contains("completions") && numbered_line(screen, &chosen));
+    tui.send(b"\x1b");
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b":w\r");
+    tui.until(|_| {
+        std::fs::read_to_string(root.join("words.txt")).unwrap()
+            == format!("result response reusable return_value\n{chosen}\n")
+    });
+    tui.send(b":q!\r");
+    assert!(tui.wait_exit().success());
+    assert_eq!(
+        std::fs::read_to_string(root.join("words.txt")).unwrap(),
+        format!("result response reusable return_value\n{chosen}\n")
+    );
+}
+
+#[test]
 #[ignore = "0059 real-server qualification; requires installed clangd"]
 fn completion_real_clangd_docs_narrow_split_and_acceptance() {
     let directory = tempfile::tempdir().unwrap();

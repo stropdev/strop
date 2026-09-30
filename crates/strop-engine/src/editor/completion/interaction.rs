@@ -47,6 +47,11 @@ impl Editor {
                 return KeyDisposition::Requested;
             }
         }
+        // Any key outside the Tab cycling pair retires an active live
+        // preview before its normal handling (0059 §6.1).
+        if !matches!(key, Key::Tab | Key::Backtab) {
+            self.completion_revert_preview();
+        }
         match key {
             Key::CtrlSpace => {
                 self.completion_request(Invocation::ManualCombined, None);
@@ -88,7 +93,22 @@ impl Editor {
                 self.completion_accept_selected();
                 KeyDisposition::Accepted
             }
-            Key::Enter | Key::Tab
+            Key::Tab | Key::Backtab
+                if self
+                    .completion
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.count() > 0) =>
+            {
+                let direction = if key == Key::Tab {
+                    Direction::Next
+                } else {
+                    Direction::Previous
+                };
+                self.completion_preview_cycle(direction);
+                KeyDisposition::Navigated
+            }
+            Key::Enter
                 if self
                     .completion
                     .session
@@ -246,6 +266,106 @@ impl Editor {
             (None, Direction::Previous) => count - 1,
         };
         self.completion_choose(index);
+    }
+
+    /// Tab cycling with a live preview (0059 §6.1): retire the previous
+    /// preview, move the selection, then prepare the chosen candidate for a
+    /// speculative apply through the same validated pipeline as acceptance.
+    fn completion_preview_cycle(&mut self, direction: Direction) {
+        self.completion_revert_preview();
+        self.completion_navigate(direction);
+        let Some(session) = &self.completion.session else {
+            return;
+        };
+        if !session
+            .query
+            .context
+            .still_owns(self, self.completion.settings_generation)
+        {
+            return;
+        }
+        // Collection excerpt targets stay acceptance-only in this amendment.
+        let context = &session.query.context;
+        if context
+            .primary()
+            .is_some_and(|primary| primary.source != context.scope.view)
+        {
+            return;
+        }
+        self.completion_preview_selected();
+    }
+
+    /// Retire one applied live preview: replay its exact inverse inside the
+    /// same insert undo unit, restore the pre-preview selection shape and
+    /// re-capture the owning context (buffer epochs are monotonic). A foreign
+    /// interleaved edit refuses the revert instead of moving user data.
+    pub(super) fn completion_revert_preview(&mut self) {
+        let Some(active) = self
+            .completion
+            .session
+            .as_mut()
+            .and_then(|session| session.preview.take())
+        else {
+            return;
+        };
+        if self
+            .docs
+            .get(active.document)
+            .is_none_or(|document| document.buf.revision() != active.revision)
+        {
+            debug_assert!(false, "completion preview revision guard");
+            self.message = "completion preview diverged from its document".into();
+            return;
+        }
+        let outcome = self.apply(
+            active.document,
+            active.revision,
+            crate::editor::transact::ChangeSet {
+                edits: active.inverse,
+                undo_open: true,
+            },
+        );
+        if let Err(error) = outcome {
+            debug_assert!(false, "completion preview revert failed: {error}");
+            self.message = format!("completion preview revert diverged: {error}");
+            return;
+        }
+        let (request, invocation, scope, targets) = {
+            let Some(session) = &self.completion.session else {
+                return;
+            };
+            let targets: Vec<strop_core::selection::Selection> = session
+                .query
+                .context
+                .targets
+                .iter()
+                .map(|target| target.selection)
+                .collect();
+            (
+                session.query.request,
+                session.query.context.invocation,
+                session.query.context.scope.clone(),
+                targets,
+            )
+        };
+        let settings_generation = self.completion.settings_generation;
+        let mut targets = targets.into_iter();
+        if let Some(primary) = targets.next() {
+            self.sels_mut()
+                .stretch_primary(primary.anchor, primary.head);
+        }
+        self.sels_mut().set_extra_selections(targets);
+        match super::context::capture(self, invocation, settings_generation, Some(&scope)) {
+            Ok(fresh) => {
+                if let Some(session) = &mut self.completion.session {
+                    session.query = std::sync::Arc::new(super::model::CompletionQuery {
+                        request,
+                        context: std::sync::Arc::new(fresh),
+                    });
+                }
+            }
+            Err(_) => self.completion_close(CancelReason::Superseded),
+        }
     }
 
     fn completion_choose(&mut self, index: usize) {

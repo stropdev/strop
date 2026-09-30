@@ -49,11 +49,26 @@ pub(super) enum Acceptance {
     Preparing {
         candidate: CandidateKey,
         work: WorkerId,
+        /// Tab cycling (0059 §6.1): the prepared plan applies as a
+        /// speculative preview, not an acceptance.
+        preview: bool,
     },
     WaitingCapacity {
         candidate: CandidateKey,
         work: WorkerId,
+        preview: bool,
     },
+}
+/// One applied Tab live preview (0059 §6.1). `revision` is the post-apply
+/// revision, so a foreign interleaved edit refuses the revert instead of
+/// moving user data. `inverse` is the exact inverse of the applied plan
+/// against the post-preview snapshot; the revert replays it inside the same
+/// insert undo unit, so previews never add user-visible undo steps or
+/// history branches.
+pub(super) struct ActivePreview {
+    pub document: strop_core::id::DocumentId,
+    pub revision: BufferRevision,
+    pub inverse: Vec<strop_core::Replacement>,
 }
 pub(super) enum ResolveState {
     Idle,
@@ -76,6 +91,8 @@ pub(super) struct Session {
     pub words: ProviderState,
     pub language: ProviderState,
     pub selection: Selection,
+    /// Applied Tab live preview awaiting revert/commit (0059 §6.1).
+    pub preview: Option<ActivePreview>,
     pub acceptance: Acceptance,
     pub request: Option<RequestStamp>,
     pub resolve: ResolveState,
@@ -102,6 +119,7 @@ impl Session {
             words,
             language,
             selection: direction.map_or(Selection::None, Selection::Awaiting),
+            preview: None,
             acceptance: Acceptance::Idle,
             request: None,
             resolve: ResolveState::Idle,

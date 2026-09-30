@@ -62,8 +62,9 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, pane: Rect, caret: Opti
     };
     frame.render_widget(Clear, card);
     let hint = format!(
-        "{} · {} {} · {} {}",
-        strop_engine::keymap::completion::WORDS.keys,
+        "{} {} · {} {} · {} {}",
+        strop_engine::keymap::completion::CYCLE.keys,
+        strop_engine::keymap::completion::CYCLE.desc,
         strop_engine::keymap::completion::ACCEPT.keys,
         strop_engine::keymap::completion::ACCEPT.desc,
         strop_engine::keymap::completion::DISMISS.keys,

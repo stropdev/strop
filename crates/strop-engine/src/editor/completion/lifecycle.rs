@@ -67,6 +67,8 @@ impl Editor {
     }
 
     pub(in crate::editor) fn completion_close(&mut self, reason: CancelReason) {
+        // Speculative edits never outlive their session (0059 §6.1).
+        self.completion_revert_preview();
         if let Some(mailbox) = self.completion.worker.mailbox() {
             mailbox.query(None);
         }

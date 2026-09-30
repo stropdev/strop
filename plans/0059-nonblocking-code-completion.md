@@ -258,16 +258,72 @@ Choose Vim-honest, explicit acceptance:
 - **Escape dismisses completion AND leaves Insert mode in the same event.**
   No new “press Escape twice” behavior. This is a hard regression gate given
   the original Escape failure that motivated these handoffs.
-- Enter/Tab retain newline/indent behavior when there is no explicit selection.
-  With a deliberately selected candidate, their documented accept behavior can
-  share the same acceptance action. Mere menu appearance must not steal them.
-- No automatic preview insertion into the buffer while moving the menu
-  selection. The source changes only on an admitted acceptance or normal typing.
+- **Tab/Shift-Tab cycle the menu with a live preview** (2026-09-30 user
+  request; contract in §6.1). With the menu open and candidates present, Tab
+  focuses the popup and previews the first candidate; further Tabs (Shift-Tab
+  backward) cycle the highlight and preview each highlighted candidate in the
+  buffer. Enter retains newline behavior without a selection and accepts a
+  deliberately selected one. With no menu or an empty menu, Tab/Shift-Tab
+  keep their indent/dedent behavior.
+- Menu-arrow/Ctrl-N/Ctrl-P selection never inserts by itself. Speculative
+  insertion exists only as the §6.1 Tab preview, and the source changes
+  otherwise only on an admitted acceptance or normal typing.
 
 Handle keys with a typed outcome—menu navigation, acceptance, dismissal with
 forwarding, or pass-through—not a boolean that accidentally swallows input.
 All bindings and hints come from the existing registry. Query-field Ctrl-Space
 belongs to 0051 query assistance; completion does not hijack it or Ex prompts.
+
+### 6.1 Tab live-preview cycling (2026-09-30 user-authorized amendment)
+
+The user requested flyline-style completion interaction: Tab switches focus
+into the popup, Tab/Shift-Tab cycle through the options, and the currently
+previewed option is inserted. This subsection is the separate
+interaction/safety contract §12 requires for speculative preview insertion;
+it amends the earlier "no automatic preview insertion" rule for the Tab route
+only and releases in 0.38.1.
+
+Interaction:
+
+- With the menu open and at least one candidate, **Tab** moves the selection
+  forward (from nothing to the first candidate) and **Shift-Tab** backward;
+  both wrap. Each cycled candidate is applied to the buffer as a **live
+  preview** so the user sees exactly what acceptance would produce, imports
+  included.
+- Every other key first reverts any active preview to the exact pre-preview
+  text and selection, then keeps its existing meaning: Ctrl-Y/Enter accept
+  through the unchanged whole-operation acceptance path, Esc/Ctrl-E dismiss,
+  typing continues the session from the real typed prefix, and anything else
+  closes the menu and falls through. Ctrl-N/Ctrl-P and arrows still only
+  highlight.
+- Candidates whose language item still requires resolution highlight but do
+  not preview until resolved. Completion into a collection excerpt (source
+  target) highlights but does not preview in this amendment; the live
+  commit/receipt machinery remains acceptance-only.
+
+Safety contract:
+
+- A preview is a speculative session-owned edit applied through the **same
+  validated worker preparation and ownership recheck** as acceptance (source
+  ranges, bounds, target revision and selection shape). It never touches the
+  Insert recording (dot-repeat/macros), collection `pending_commit`, or any
+  receipt path.
+- Preview edits join the current insert undo unit (they are speculative
+  until acceptance, never a separate user-visible undo step or history
+  branch). The exact inverse of the applied plan is captured at apply time;
+  revert replays it inside the same unit, guarded by the recorded
+  post-preview revision (an interleaved foreign edit is a `debug_assert`
+  defect, never silent data movement), and restores the pre-preview
+  selection shape. The session context is then re-captured, because buffer
+  epochs are monotonic.
+- Rapid cycling supersedes in-flight preparations through the existing
+  candidate/work ownership checks; a superseded preparation can never apply.
+- Session close from any path reverts an active preview first: speculative
+  edits never outlive their session.
+- Invariant tests pin: cycle/dismiss restores exact pre-preview bytes and
+  selection; cycle-then-accept is byte- and undo-identical to direct Ctrl-Y
+  acceptance of the same candidate; typing after a preview reverts before
+  inserting; preview-accept dot-repeat equals direct-accept dot-repeat.
 
 ### Menu
 
@@ -710,9 +766,10 @@ silent missing behavior:
   after the required sources prove ownership, performance and privacy.
 - General semantic completion across heterogeneous source/workspace selections,
   beyond the explicitly supported applicability in §8.
-- Commit-character acceptance, speculative preview insertion or AI edit
-  prediction only under a separate interaction/safety contract. None is needed
-  for the required explicit-acceptance completion experience.
+- Commit-character acceptance or AI edit prediction only under a separate
+  interaction/safety contract. Speculative preview insertion is contracted:
+  §6.1's Tab live-preview cycling (0.38.1) is the supported form; none of it
+  changes the required explicit-acceptance experience, which remains intact.
 
 These extensions do not authorize deferring C01–C09. This whole release is an
 explicit D01 deferral from 0051, not a reason to defer 0051's static query

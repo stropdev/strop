@@ -661,8 +661,8 @@ pub const BINDINGS: &[Binding] = &[
         kind: CommandKind::Contextual,
     },
     Binding {
-        keys: "tab",
-        desc: "indent; accept completion only after deliberate selection",
+        keys: "tab s-tab",
+        desc: "indent/dedent; with the menu open, cycle candidates with a live preview",
         sections: &["insert"],
         live: true,
         id: "insert-tab",

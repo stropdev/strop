@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.38.1 — 2026-09-30
+
+### Added
+
+- **Tab live-preview completion cycling** (0059 §6.1, user-requested): with
+  the completion menu open, `Tab` focuses the popup and inserts the first
+  candidate as a live preview; `Tab`/`Shift-Tab` cycle with wrap-around and
+  each highlighted option is previewed in the buffer, imports included.
+  `Escape`/`Ctrl-E` restores the exact typed text, `Ctrl-Y`/`Enter` commits
+  the shown candidate as the usual single undo unit, and typing keeps
+  refining from the real prefix. Preview edits join the insert undo unit and
+  never create separate undo steps; the menu footer and the `?` insert rows
+  document the cycle keys.
+
 ## 0.38.0 — 2026-09-29
 
 ### Changed

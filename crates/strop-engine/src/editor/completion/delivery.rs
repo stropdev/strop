@@ -183,10 +183,13 @@ impl Editor {
         let Some(session) = &self.completion.session else {
             return;
         };
-        if !session
-            .query
-            .context
-            .still_owns(self, self.completion.settings_generation)
+        // An applied live preview is self-inflicted staleness (0059 §6.1),
+        // never a supersession; the revert re-captures the context.
+        if session.preview.is_none()
+            && !session
+                .query
+                .context
+                .still_owns(self, self.completion.settings_generation)
         {
             self.completion_close(CancelReason::Superseded);
             return;
@@ -227,13 +230,20 @@ impl Editor {
         }) {
             self.completion_resolve_selected();
         }
-        if self
-            .completion
-            .session
-            .as_ref()
-            .is_some_and(|session| matches!(session.acceptance, Acceptance::WaitingCapacity { .. }))
-        {
-            self.completion_accept_selected();
+        let waiting_preview =
+            self.completion
+                .session
+                .as_ref()
+                .and_then(|session| match &session.acceptance {
+                    Acceptance::WaitingCapacity { preview, .. } => Some(*preview),
+                    _ => None,
+                });
+        if let Some(preview) = waiting_preview {
+            if preview {
+                self.completion_preview_selected();
+            } else {
+                self.completion_accept_selected();
+            }
         }
     }
 }

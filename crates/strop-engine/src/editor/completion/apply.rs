@@ -1,6 +1,6 @@
 use super::acceptance::{AcceptanceRefusal, AcceptanceTarget};
 use super::model::{CompletionDelivery, CompletionPayload, DeliveryScope};
-use super::session::{Acceptance, Candidate, Selection};
+use super::session::{Acceptance, ActivePreview, Candidate, Selection};
 use super::worker::{Preparation, PreparationOperation, WorkRefusal};
 use crate::editor::Editor;
 use strop_core::worker::CancelReason;
@@ -84,6 +84,18 @@ impl Editor {
     }
 
     pub(super) fn completion_accept_selected(&mut self) {
+        self.completion_prepare_selected(false);
+    }
+
+    /// Tab live preview (0059 §6.1): prepare the chosen candidate through the
+    /// same validated pipeline, applying it speculatively on delivery. A
+    /// candidate still awaiting a required resolve highlights without
+    /// previewing.
+    pub(super) fn completion_preview_selected(&mut self) {
+        self.completion_prepare_selected(true);
+    }
+
+    fn completion_prepare_selected(&mut self, preview: bool) {
         self.completion_refresh_language_owner();
         let Some(session) = &self.completion.session else {
             return;
@@ -96,11 +108,13 @@ impl Editor {
             self.completion_close(CancelReason::Superseded);
             return;
         }
-        if matches!(session.acceptance, Acceptance::Preparing { .. }) {
+        if !preview && matches!(session.acceptance, Acceptance::Preparing { .. }) {
             return;
         }
         let Some((_, candidate)) = session.selected() else {
-            self.message = "choose a completion before accepting".into();
+            if !preview {
+                self.message = "choose a completion before accepting".into();
+            }
             return;
         };
         let Selection::Chosen { key, generation } = &session.selection else {
@@ -124,6 +138,11 @@ impl Editor {
                 }
                 let resolved = session.resolved_item(key).cloned();
                 if suggestions.resolve_required && resolved.is_none() {
+                    if preview {
+                        // Highlight only until the required resolve lands
+                        // (0059 §6.1); completion_choose already requested it.
+                        return;
+                    }
                     let key = key.clone();
                     if let Some(session) = &mut self.completion.session {
                         session.acceptance = Acceptance::Resolving { candidate: key };
@@ -170,6 +189,7 @@ impl Editor {
             session.acceptance = Acceptance::Preparing {
                 candidate: candidate.clone(),
                 work,
+                preview,
             };
         }
         let result = self.tape.call(
@@ -187,7 +207,11 @@ impl Editor {
             Ok(Ok(())) => {}
             Ok(Err(WorkRefusal::Busy)) => {
                 if let Some(session) = &mut self.completion.session {
-                    session.acceptance = Acceptance::WaitingCapacity { candidate, work };
+                    session.acceptance = Acceptance::WaitingCapacity {
+                        candidate,
+                        work,
+                        preview,
+                    };
                 }
             }
             Ok(Err(error)) => {
@@ -221,13 +245,21 @@ impl Editor {
         let DeliveryScope::Preparation { work, .. } = delivery.scope else {
             return;
         };
-        let intended = self.completion.session.as_ref().is_some_and(|session| {
-            matches!(&session.acceptance, Acceptance::Preparing { candidate: owner, work: request }
-                if owner == candidate && *request == work)
-        });
-        if !intended {
+        let Some(preview) =
+            self.completion
+                .session
+                .as_ref()
+                .and_then(|session| match &session.acceptance {
+                    Acceptance::Preparing {
+                        candidate: owner,
+                        work: request,
+                        preview,
+                    } if owner == candidate && *request == work => Some(*preview),
+                    _ => None,
+                })
+        else {
             return;
-        }
+        };
         if let Err(refusal) = prepared {
             if let Some(session) = &mut self.completion.session {
                 session.acceptance = Acceptance::Idle;
@@ -271,6 +303,9 @@ impl Editor {
             self.completion_close(CancelReason::Superseded);
             self.message = "prepared completion differs from its source/selection owner".into();
             return;
+        }
+        if preview {
+            return self.completion_apply_preview(plan, context);
         }
         let collection = match plan.target {
             AcceptanceTarget::Source { document, .. } if document != context.scope.view => {
@@ -349,5 +384,82 @@ impl Editor {
         }
         self.completion_close(CancelReason::Dismissed);
         self.message.clear();
+    }
+
+    /// Tab live preview commit (0059 §6.1): apply the validated plan inside
+    /// the current insert undo unit with no acceptance side effects — no
+    /// recording update, no pending_commit, no session close. The exact
+    /// inverse rides along so the revert replays inside the same unit.
+    /// Collection excerpt (source) targets stay acceptance-only; the
+    /// highlight remains.
+    fn completion_apply_preview(
+        &mut self,
+        plan: super::acceptance::CompletionAcceptancePlan,
+        _context: &super::context::CompletionContext,
+    ) {
+        let AcceptanceTarget::View { document, .. } = plan.target else {
+            if let Some(session) = &mut self.completion.session {
+                session.acceptance = Acceptance::Idle;
+                session.preparation = None;
+            }
+            return;
+        };
+        // Capture the pre-apply text of every edit range and translate each
+        // inverse range into the post-apply snapshot. The plan's ranges refer
+        // to one shared pre-apply snapshot, are sorted and non-overlapping.
+        let mut sorted: Vec<&strop_core::Replacement> = plan.edits.iter().collect();
+        sorted.sort_by_key(|edit| (edit.range.start.get(), edit.range.end.get()));
+        let mut inverse = Vec::with_capacity(sorted.len());
+        {
+            let Some(document_ref) = self.docs.get(document) else {
+                return;
+            };
+            let mut shift: isize = 0;
+            for edit in sorted {
+                let old_text = document_ref.buf.slice_string(edit.range);
+                let start = edit.range.start.get() as isize + shift;
+                let start = usize::try_from(start).unwrap_or(0);
+                inverse.push(strop_core::Replacement {
+                    range: strop_core::Range::charwise(start, start + edit.text.len()),
+                    text: old_text,
+                });
+                shift += edit.text.len() as isize
+                    - (edit.range.end.get() - edit.range.start.get()) as isize;
+            }
+        }
+        let outcome = self.apply(
+            document,
+            plan.target.revision(),
+            crate::editor::transact::ChangeSet {
+                edits: plan.edits,
+                // The insert session stays one undo unit (0059 §6.1).
+                undo_open: true,
+            },
+        );
+        let committed = match outcome {
+            Ok(committed) => committed,
+            Err(error) => {
+                if let Some(session) = &mut self.completion.session {
+                    session.acceptance = Acceptance::Idle;
+                    session.preparation = None;
+                }
+                self.message = format!("completion preview was not applied: {error}");
+                return;
+            }
+        };
+        let carets = plan.caret_bytes;
+        if let Some(primary) = carets.first().copied() {
+            self.sels_mut().collapse_primary(primary);
+            self.sels_mut().set_extras(carets.into_iter().skip(1));
+        }
+        if let Some(session) = &mut self.completion.session {
+            session.preview = Some(ActivePreview {
+                document,
+                revision: committed.revision,
+                inverse,
+            });
+            session.acceptance = Acceptance::Idle;
+            session.preparation = None;
+        }
     }
 }

@@ -39,10 +39,14 @@ impl Editor {
         }
         let Some(intent) = self.completion.intent.take() else {
             if self.completion.session.as_ref().is_some_and(|session| {
-                !session
-                    .query
-                    .context
-                    .still_owns(self, self.completion.settings_generation)
+                // An applied live preview makes the context stale by design
+                // (0059 §6.1); the revert re-captures it, so it is not a
+                // supersession.
+                session.preview.is_none()
+                    && !session
+                        .query
+                        .context
+                        .still_owns(self, self.completion.settings_generation)
             }) {
                 self.completion_close(CancelReason::Superseded);
             }

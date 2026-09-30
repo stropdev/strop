@@ -49,9 +49,9 @@ pub const DISMISS: Binding = Binding {
     id: "completion-dismiss",
     handler: Handler::Contextual,
 };
-pub const TAB: Binding = Binding {
-    keys: "tab",
-    desc: "indent; accept completion only after deliberate selection",
+pub const CYCLE: Binding = Binding {
+    keys: "tab s-tab",
+    desc: "cycle candidates with a live preview",
     sections: &["insert"],
     live: true,
     id: "insert-tab",

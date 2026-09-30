@@ -4889,6 +4889,43 @@
           }
         },
         {
+          "id": "CMP-PREVIEW",
+          "status": "correspondence-tested",
+          "statement": "Tab/Shift-Tab cycle the menu with a live preview (0059 §6.1): each cycled candidate applies through the same validated preparation and ownership recheck as acceptance inside the current insert undo unit, the guarded inverse replay restores exact pre-preview bytes and selection before any other key, cycle-then-accept is byte- and undo-identical to direct acceptance, previews never touch the Insert recording or receipts, and superseded in-flight preparations never apply.",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/completion/tests/preview.rs",
+              "gate": "test",
+              "tests": [
+                "tab_focuses_the_popup_and_previews_the_first_candidate",
+                "tab_cycles_each_candidate_with_live_preview_and_wraps",
+                "shift_tab_cycles_backward_and_wraps_to_the_last_candidate",
+                "dismiss_restores_the_exact_pre_preview_text_and_caret",
+                "escape_reverts_the_preview_and_leaves_insert_in_one_event",
+                "cycle_then_accept_matches_direct_acceptance_in_text_and_undo",
+                "typing_after_a_preview_reverts_then_continues_the_session",
+                "preview_accept_dot_repeat_matches_direct_accept",
+                "session_close_from_an_unrelated_key_reverts_the_preview",
+                "preview_revert_does_not_create_user_undo_steps"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor/completion.rs",
+              "gate": "test",
+              "tests": [
+                "completion_tab_preview_cycle_revert_and_commit"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "User-authorized 0059 §6.1 Tab live-preview cycling adds speculative preview/revert transitions; they extend, rather than inherit, the 0059 acceptance guarantees."
+          }
+        },
+        {
           "id": "CMP-NATIVE-RETIREMENT",
           "statement": "A stale or last UI lease cannot destroy a large candidate snapshot; obsolete producers cannot erase unseen newer publication; cancellation crosses a full retirement budget without waiting for UI leases.",
           "status": "correspondence-tested",
@@ -5037,19 +5074,19 @@
         "sources": {
           "crates/strop-engine/src/config.rs": "898c641c384708a3552f29e9b6f5070df336f681447ee9a8e6cc9a4fa3a6f505",
           "crates/strop-engine/src/editor/completion/acceptance.rs": "b8497a7323a6eecd5ae7693dd7aec5eac8782a4a1f2f6a2ce3c8c1d988d09301",
-          "crates/strop-engine/src/editor/completion/admission.rs": "582113243eaf44c56ad8c58d4158d4d7d30936cbbf61e99b7ab23b922fc71718",
-          "crates/strop-engine/src/editor/completion/apply.rs": "89213e5d5bd3a4924ba2a1df7d773de368a375135e3462d412c0db89b30a110b",
+          "crates/strop-engine/src/editor/completion/admission.rs": "bade006a1ba8e0bb281901e7f174f3e399a03f53020113cd356f82db2ff2441c",
+          "crates/strop-engine/src/editor/completion/apply.rs": "1d083cef4d41236b7d90c8bb5b5e768cddd8f2cd1dbbe3c7412c50f530f2d778",
           "crates/strop-engine/src/editor/completion/context.rs": "237e44539330ae14e05cd1a280347a187d1ca377e4d53b5c6c433550348b65bc",
-          "crates/strop-engine/src/editor/completion/delivery.rs": "05c080d04504f1b9259eefea642c3f0a3e2479be6cc927b8a623fdc8dc02da7f",
-          "crates/strop-engine/src/editor/completion/interaction.rs": "62814c6e8ae7fb3f3611ee37623ea33070fce18a53774d5f9b8e130a1a77f772",
-          "crates/strop-engine/src/editor/completion/lifecycle.rs": "0db670889a5953e848395693237f4c0e871412e2d39ed44da5debe8d9161beb6",
+          "crates/strop-engine/src/editor/completion/delivery.rs": "fc08e93cce47e2ba657e4dd9319b057fae6f270a38c24dc2863e12b7190e58ad",
+          "crates/strop-engine/src/editor/completion/interaction.rs": "103eaa00845a6e02e91e2e27d69fbb0b6360fdb3c524a64193467a9757bc76a1",
+          "crates/strop-engine/src/editor/completion/lifecycle.rs": "49ad0fc059a27554b0ef104f9ae6472df805dc8e95a6fbff19fb636e725e8e4b",
           "crates/strop-engine/src/editor/completion/mailbox.rs": "2b1d2bcbbf651238ce4b1d25129a1594310bebc2629f48ab0f18693134dc4e28",
           "crates/strop-engine/src/editor/completion/mailbox/prepared.rs": "9683efa9cc77a41ae5cb1d1f731f6401bbe281b5d51767f3d7538d98afb9d599",
           "crates/strop-engine/src/editor/completion/mod.rs": "c4dcd67c1dde91962da72298aef90caf380527410a5791ee28d75f6ea5fb4a55",
           "crates/strop-engine/src/editor/completion/model.rs": "d9947a545cb7f812121290b798adf23295867905ae8239e345f121be38383153",
-          "crates/strop-engine/src/editor/completion/presentation.rs": "4f60684024cc0411f9b6d0a7d0491f83b8d91fb9c64e47b378532d3c70ed275f",
+          "crates/strop-engine/src/editor/completion/presentation.rs": "15baf8a43c670fffeecca522866fa96d2e10ca9fa317984a6fb077682b1e9e9d",
           "crates/strop-engine/src/editor/completion/provider.rs": "3dc623e8a745ad84ad4fe89d1387e791cf84eb40a10f85678868d1e29fc0b900",
-          "crates/strop-engine/src/editor/completion/session.rs": "2f41df6fd87594f70d89c9fc4a3f449c62705bf4595c0cba9116a38ce0f959b2",
+          "crates/strop-engine/src/editor/completion/session.rs": "ab2aad29fb3e4965fdcacc437fe3f66876f3812f28c4d0a453495d0e25956fb3",
           "crates/strop-engine/src/editor/completion/words/journal.rs": "82efbdad10c1287f68a83687dc0b8fa6ccec9f96972ad8bd8bf006d38e33e286",
           "crates/strop-engine/src/editor/completion/words/mod.rs": "2c776bf79e8c0289b35d9e1e32ad7c5f76b02fc9a74407ee312d08445887010a",
           "crates/strop-engine/src/editor/completion/words/scan.rs": "97315abc4d7b1c44f6ff60b4ff8a395dc20cc97c09ac1bcba6a9d64bc2aa2395",
@@ -5060,9 +5097,9 @@
           "crates/strop-engine/src/editor/resolution/mod.rs": "9fcaefbefb5ef4066f4b1a4474582bc9078ac9530e36ec7cdcc8ce1edd0d0b39",
           "crates/strop-engine/src/editor/trace/seed.rs": "39b9b6ca5a14d1df879eb10ccdbca51d98cd7646362c9838a8f20b723b439c8c",
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
-          "crates/strop/src/render/completion.rs": "39a346d746437d5a6a761c0387e3e1a90faa3e0d9ca39adaaa734fb69ab32984"
+          "crates/strop/src/render/completion.rs": "0cbe127c16032d25808a88b324377bb1f49d26d0044a39399a53ba49be091d83"
         },
-        "evidence": "32f63082503fc6e37165df3d69b4b153a35d82c1c531874f96e739d6890a7a62"
+        "evidence": "96a8d51fa809a2605cae62a153fe0a04ea9a3312bc83b1e1db98a60ecb567f3c"
       }
     },
     {
