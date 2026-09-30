@@ -2143,7 +2143,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "06bf445ae4d3c454e1e3a8807336a4cf6a68a70f690fe0076f1063e27ad3ea10",
+          "crates/strop-fs/Cargo.toml": "892a4f4c7ebbe322bdf24edb35d16d9fb2fffd36d287b11e7c6752e0a52522c6",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -3591,7 +3591,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "b9df6a96a00edd766c2ea653ab6b3a96e36aad19a10abf0436281ec39aeaec1a",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "06bf445ae4d3c454e1e3a8807336a4cf6a68a70f690fe0076f1063e27ad3ea10",
+          "crates/strop-fs/Cargo.toml": "892a4f4c7ebbe322bdf24edb35d16d9fb2fffd36d287b11e7c6752e0a52522c6",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -3599,7 +3599,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "797bdd539e256e30af00b2afaad20f8643d308a8f811a0f9cd52ac95d890a52f",
+          "crates/strop-worker/Cargo.toml": "61feacc7e8d0f9006135c44523c8f7c11d74fffd3f4b6c99c075aa31c4d958c4",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -4296,11 +4296,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "797bdd539e256e30af00b2afaad20f8643d308a8f811a0f9cd52ac95d890a52f",
+          "crates/strop-worker/Cargo.toml": "61feacc7e8d0f9006135c44523c8f7c11d74fffd3f4b6c99c075aa31c4d958c4",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "435aaaefd3c94d5bd8a1f5c25b1933832b1c272d296833a9e52133bb1f6c081b"
+          "crates/strop/Cargo.toml": "7331f57f3aba0c3312337a45e748707c10fde8d8a7eaebba7d5f462338d65516"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }
@@ -5075,16 +5075,16 @@
           "crates/strop-engine/src/config.rs": "898c641c384708a3552f29e9b6f5070df336f681447ee9a8e6cc9a4fa3a6f505",
           "crates/strop-engine/src/editor/completion/acceptance.rs": "b8497a7323a6eecd5ae7693dd7aec5eac8782a4a1f2f6a2ce3c8c1d988d09301",
           "crates/strop-engine/src/editor/completion/admission.rs": "bade006a1ba8e0bb281901e7f174f3e399a03f53020113cd356f82db2ff2441c",
-          "crates/strop-engine/src/editor/completion/apply.rs": "1d083cef4d41236b7d90c8bb5b5e768cddd8f2cd1dbbe3c7412c50f530f2d778",
+          "crates/strop-engine/src/editor/completion/apply.rs": "a52770c58d390486c87f2f24e8bb854eeecc8e81337894bdb8d77c8f5621a575",
           "crates/strop-engine/src/editor/completion/context.rs": "237e44539330ae14e05cd1a280347a187d1ca377e4d53b5c6c433550348b65bc",
-          "crates/strop-engine/src/editor/completion/delivery.rs": "fc08e93cce47e2ba657e4dd9319b057fae6f270a38c24dc2863e12b7190e58ad",
-          "crates/strop-engine/src/editor/completion/interaction.rs": "103eaa00845a6e02e91e2e27d69fbb0b6360fdb3c524a64193467a9757bc76a1",
+          "crates/strop-engine/src/editor/completion/delivery.rs": "9bb3625d1411f2d033f2a180b18dbc0927956259dd15eaf1de1622a4d1add49f",
+          "crates/strop-engine/src/editor/completion/interaction.rs": "9d50d77d254d3028f871d6436f064b559f3fb8938bedc6bd0e9e7e97ab393a2d",
           "crates/strop-engine/src/editor/completion/lifecycle.rs": "49ad0fc059a27554b0ef104f9ae6472df805dc8e95a6fbff19fb636e725e8e4b",
           "crates/strop-engine/src/editor/completion/mailbox.rs": "2b1d2bcbbf651238ce4b1d25129a1594310bebc2629f48ab0f18693134dc4e28",
           "crates/strop-engine/src/editor/completion/mailbox/prepared.rs": "9683efa9cc77a41ae5cb1d1f731f6401bbe281b5d51767f3d7538d98afb9d599",
           "crates/strop-engine/src/editor/completion/mod.rs": "c4dcd67c1dde91962da72298aef90caf380527410a5791ee28d75f6ea5fb4a55",
           "crates/strop-engine/src/editor/completion/model.rs": "d9947a545cb7f812121290b798adf23295867905ae8239e345f121be38383153",
-          "crates/strop-engine/src/editor/completion/presentation.rs": "15baf8a43c670fffeecca522866fa96d2e10ca9fa317984a6fb077682b1e9e9d",
+          "crates/strop-engine/src/editor/completion/presentation.rs": "e258af05462defc23aad288eeefa69c9a2570fe3c5f9a7f9ed9dd89d46644c39",
           "crates/strop-engine/src/editor/completion/provider.rs": "3dc623e8a745ad84ad4fe89d1387e791cf84eb40a10f85678868d1e29fc0b900",
           "crates/strop-engine/src/editor/completion/session.rs": "ab2aad29fb3e4965fdcacc437fe3f66876f3812f28c4d0a453495d0e25956fb3",
           "crates/strop-engine/src/editor/completion/words/journal.rs": "82efbdad10c1287f68a83687dc0b8fa6ccec9f96972ad8bd8bf006d38e33e286",
@@ -5099,7 +5099,7 @@
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "0cbe127c16032d25808a88b324377bb1f49d26d0044a39399a53ba49be091d83"
         },
-        "evidence": "96a8d51fa809a2605cae62a153fe0a04ea9a3312bc83b1e1db98a60ecb567f3c"
+        "evidence": "041a613cfe0b44be6b4efa0ecd895d652cd700b73a8525fe33eb5a5735524cd7"
       }
     },
     {
