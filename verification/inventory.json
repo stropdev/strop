@@ -2755,7 +2755,7 @@
       "claims": [
         {
           "id": "UI-FRESHNESS",
-          "statement": "No misapplied or wrong-document delivery: the bounded model passes both freshness invariants, and the mutant without delivery freshness violates exactly NoMisapply and NoWrongDocument — no structural accounting invariant. Worker notify records use a coalesced wake hint; a trace-owned write cannot loop back as an editor input event.",
+          "statement": "No misapplied or wrong-document delivery: the bounded model passes both freshness invariants, and the mutant without delivery freshness violates exactly NoMisapply and NoWrongDocument — no structural accounting invariant. Worker notify records use a coalesced wake hint; a trace-owned write cannot loop back as an editor input event. The pipe backend publishes an acknowledged action's semantic effects before the acknowledgement itself, including state-only actions whose view generation does not move.",
           "status": "bounded-model-checked",
           "evidence": [
             {
@@ -2776,6 +2776,14 @@
               "gate": "test",
               "tests": [
                 "trace_owned_hints_do_not_wake_the_editor_but_other_files_still_do"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/ui_stdio/main.rs",
+              "gate": "test",
+              "tests": [
+                "acknowledged_state_only_actions_publish_before_the_ack"
               ]
             }
           ],
@@ -2881,9 +2889,9 @@
           "crates/strop/src/headless/directives.rs": "818a64a5998954089141b9829753b959d1b0cbd3ac4f647ed05259387f7720b5",
           "crates/strop/src/headless/driver.rs": "8b463ad8da95038f961571164448d66aead389dadccf3bc37bc54ef67726440d",
           "crates/strop/src/replay.rs": "530665a536c98229a3505a23adc7376f5b6f26f4d065087c699f3deaab0a8840",
-          "crates/strop/src/ui_stdio/serve.rs": "f07d1fc71661cc6ee8837ac6534319308ccd4dfb29f025d5d5f1770a9b343107"
+          "crates/strop/src/ui_stdio/serve.rs": "9149c1e96b5af2934a85f6c95c3986242a92d547c740ecb907303262cd0646ad"
         },
-        "evidence": "931edaddbcaedce1fb591aa723ab82578d6680c0769e0e5375b23473d156cc27"
+        "evidence": "3f592de13e8fdf6d2bda99f5dbcf1fa30bde35a6253ee2b6c8123bef494d4b33"
       }
     },
     {

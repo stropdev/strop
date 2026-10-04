@@ -115,6 +115,51 @@ fn boolean_search_journey() {
     assert!(status.success());
 }
 
+/// 0066 release evidence: an acknowledged action's semantic effects are
+/// already published when the ack arrives. A state-only action —
+/// dismissing the completion menu changes no buffer revision, so the
+/// view generation does not move — must still deliver its delta before
+/// the acknowledgement; a client that reads up to the ack otherwise
+/// observes the pre-action state (the completion qualification's
+/// "dismissal retained obsolete query authority" failure).
+#[test]
+fn acknowledged_state_only_actions_publish_before_the_ack() {
+    let fixture = fixture();
+    let mut driver = spawn(fixture.dir.path());
+
+    driver.act_keys(":e notes.txt<cr>").unwrap();
+    driver
+        .wait_view("file loaded", |view| {
+            view.panes
+                .iter()
+                .any(|pane| pane.lines.first().map(String::as_str) == Some("alpha"))
+        })
+        .unwrap();
+
+    // Manual completion over the buffer's own words: the menu is the
+    // state-only surface, and dismissing it must be observable at the
+    // ack barrier of the very act that dismissed it.
+    driver.act_keys("A<c-space>").unwrap();
+    driver
+        .wait_view("completion menu", |view| {
+            view.state["completion"]["menu"].is_object()
+        })
+        .unwrap();
+    driver.act_keys("<c-e>").unwrap();
+    assert!(
+        state(&driver)["completion"]["menu"].is_null(),
+        "the dismissal is published before its acknowledgement"
+    );
+    assert_eq!(
+        state(&driver)["mode"],
+        "INSERT",
+        "dismissal leaves Insert mode intact"
+    );
+
+    let status = driver.shutdown().unwrap();
+    assert!(status.success());
+}
+
 /// Viewport interest rides the same resize a TUI delivers; the cell
 /// bound refuses typed; the OSC52 clipboard write arrives as a host
 /// effect request (AR08) and is answered.

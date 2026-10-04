@@ -426,3 +426,20 @@ query, and the immutable cached-preview path is untouched.
   --workspace --all-targets -- -D warnings` clean. The Docker test gate
   (`docker compose run --build --rm test`) ran green before the release
   tag; see the changelog entry for the shipped version.
+
+### Release follow-up (same version)
+
+The 0.39.0 release workflow's completion qualification failed twice with
+"dismissal retained obsolete query authority". Reproduced locally (2/30
+ stress runs on this change's build, 0/30 on the 0.38.1 control), then
+diagnosed to a `--ui-stdio` protocol defect this change's shifted
+publish timing exposed: `serve.rs` sent the action acknowledgement
+BEFORE publishing the action's view, and a state-only action (completion
+dismissal — no revision change, so the view generation does not move)
+could leave the pre-action state as the client's last word at the ack.
+The publication now precedes both the action and viewport acks, with a
+pipe-level regression (`acknowledged_state_only_actions_publish_before_
+the_ack`) that fails on the old ordering and passes on the new one. The
+separate TLAPS lane failure did not reproduce on the same tree locally
+(`docker compose run --build --rm tlaps` green; specs untouched) —
+prover-backend flakiness on the loaded runner, re-run.

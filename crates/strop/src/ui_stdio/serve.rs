@@ -342,7 +342,18 @@ impl Session {
         let generation = if quitting {
             self.published.as_ref().map_or(0, |view| view.generation)
         } else {
-            editor.prepare_view(self.geometry).generation
+            // Publish BEFORE the acknowledgement: an acked action's
+            // effects must already be observable in a published view.
+            // The generation only advances when the preparation stamp
+            // moved, so a state-only action (dismissing the completion
+            // menu) is acked with the current generation and its delta
+            // must precede the ack — otherwise a client that reads to
+            // the ack observes the pre-action state (0066 field
+            // evidence: the completion qualification's dismissal
+            // check).
+            let generation = editor.prepare_view(self.geometry).generation;
+            self.publish(editor, out)?;
+            generation
         };
         let outcome = match failure {
             None => {
@@ -363,7 +374,7 @@ impl Session {
         if quitting {
             return Ok(());
         }
-        self.publish(editor, out)
+        Ok(())
     }
     /// Base admission (AR09): an action may build on any generation of
     /// THIS incarnation at or above the floor the client provably knows
@@ -419,13 +430,15 @@ impl Session {
             self.applied += 1;
             let generation = editor.prepare_view(self.geometry).generation;
             self.client_known = self.client_known.max(generation);
+            // same contract as act: the publication precedes the ack
+            self.publish(editor, out)?;
             AckOutcome::Applied {
                 applied: self.applied,
                 generation,
             }
         };
         self.send(&mut *out, &ServerMessage::Ack { seq, outcome })?;
-        self.publish(editor, out)
+        Ok(())
     }
 
     /// Explicit resynchronization: the complete current snapshot, the

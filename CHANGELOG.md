@@ -25,6 +25,16 @@
   renders no slower than before (median frame cost improved in the
   release-build measurement).
 
+- **Acknowledged actions publish before the ack** (0066 release
+  evidence): a `--ui-stdio` action that changes semantic state without
+  moving the view generation — dismissing the completion menu — was
+  acknowledged before its delta was published, so a client reading to
+  the acknowledgement could observe the pre-action state; the completion
+  qualification caught this as "dismissal retained obsolete query
+  authority". The publication now precedes both the action and viewport
+  acknowledgements, with a pipe-level regression test that fails on the
+  old ordering.
+
 ## 0.38.1 — 2026-09-30
 
 ### Added
