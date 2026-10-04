@@ -1,5 +1,30 @@
 # Changelog
 
+
+## 0.39.0 — 2026-10-04
+
+### Fixed
+
+- **Stable syntax highlighting while typing** (0066): ordinary edits and
+  scrolls no longer blank the pane's colors for a frame. Previously an
+  edit changed the viewport's byte window, defeated the interim cache and
+  repainted every visible token in the default foreground until fresh
+  analysis landed — measured at 98 unrelated cells flashing on a single
+  inserted space, including an untouched function below the edit. The
+  engine now keeps the accepted syntax on screen at coordinates mapped
+  through the mutation journal (spans keep their fragments around an
+  edit, coverage tracks what was analyzed, indent rails survive
+  single-line edits and re-seat on multi-line ones), and the next exact
+  result atomically replaces it — including genuinely changed syntax such
+  as a newly opened string or comment. Genuine syntax reinterpretation
+  still applies; only the delivery flash is gone. Search hit counts,
+  modeline counts and line layouts remain current-revision-only, declared
+  pane bounds stay truthfully loading while an interim frame is painted,
+  failed analysis invalidates its window rather than looking settled,
+  and input-to-render never waits on analysis. Typing on an 830 KB file
+  renders no slower than before (median frame cost improved in the
+  release-build measurement).
+
 ## 0.38.1 — 2026-09-30
 
 ### Added

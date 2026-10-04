@@ -31,6 +31,13 @@ parsers back onto input. Keep measuring the complete path, not just the matcher.
 
 Current delivery and remaining priorities:
 
+- **P1 delivered for 0.39 — stable syntax while typing (0066).** The
+  edit-mapped presentation keeps accepted syntax colors on screen through
+  edits and scrolls (journal-projected spans, coverage and rails, bounded
+  retention) until the exact result replaces them; the demonstrated
+  98-cell flash measures 0, and search counts/layouts stay
+  current-revision-only. Delivery evidence lives in 0066 §6.
+
 - **P1 delivered for 0.19 — remote editing/saving (RW4).** 0040 implements explicit
   writable admission, content-aware conflicts, protected atomic replacement,
   metadata/symlink policy, cancellation outcomes and qualified cooperative exclusion.

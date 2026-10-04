@@ -434,8 +434,9 @@ impl Editor {
     }
 
     /// True when the pane's visible window needs analysis (guides, syntax
-    /// or search) that is neither cached nor served stale — the window's
-    /// decorations are still in flight.
+    /// or search) whose exact result is not cached yet — 0066 may paint an
+    /// edit-mapped interim frame meanwhile, but the window's decorations
+    /// are still in flight.
     fn window_analysis_pending(&self, pane: &PreparedPane, document: &super::Document) -> bool {
         let guides = self.config.indent_guides
             && matches!(
@@ -462,7 +463,7 @@ impl Editor {
             .min(document.buf.len_lines());
         let first = document.buf.line_start(pane.view_top);
         let last = document.buf.line_end(last_line.saturating_sub(1));
-        self.document_analysis_cached(
+        self.exact_analysis_cached(
             pane.doc,
             first,
             last,
