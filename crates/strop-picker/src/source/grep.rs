@@ -364,7 +364,7 @@ pub(super) fn run(
                             Err(error) => return Outcome::failed(FailureKind::Protocol, error),
                         };
                         if let Err(error) = out_tx.batch(items, &token) {
-                            return error.outcome();
+                            return error.finish(&out_tx);
                         }
                     }
                     Outcome::Success(())
@@ -468,7 +468,12 @@ mod tests {
     }
 
     #[test]
-    fn exhausted_catalog_reports_failure_after_the_bounded_prefix() {
+    fn exhausted_catalog_keeps_the_bounded_prefix_with_a_truncation_warning() {
+        // the catalog bound is memory management, not a failure: the
+        // source stops walking, the 100,000 already-streamed rows stay
+        // ranked and openable, the note is a warning and the finished
+        // outcome is success so Enter keeps working (the red-error
+        // contract this replaced is why large repos felt broken)
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(
             directory.path().join("hits.txt"),
@@ -492,12 +497,14 @@ mod tests {
         loop {
             match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
                 PickerMsg::Items(items) => received += items.len(),
-                PickerMsg::Finished(Outcome::Failed { failure, .. }) => {
-                    assert_eq!(failure.kind, FailureKind::Unavailable);
+                PickerMsg::Warning(message) => {
+                    assert!(message.contains("100,000"), "truncation note: {message}");
+                }
+                PickerMsg::Finished(Outcome::Success(())) => {
                     assert_eq!(received, 100_000);
                     break;
                 }
-                event => panic!("expected source rows followed by a capacity failure: {event:?}"),
+                event => panic!("expected rows, a warning, then success: {event:?}"),
             }
         }
     }

@@ -331,6 +331,29 @@ fn block_mode_ops() {
     assert_eq!(e.buf().text().to_string(), ">>aa\n>>cc\n");
 }
 #[test]
+fn a_cli_opened_missing_file_saves_under_the_editor_cwd() {
+    // field report: `strop <new-file>` refused the first save with
+    // "InvalidPath: an absolute non-control resource path is required".
+    // The CLI open keeps the relative name it was given; the store guard
+    // requires an absolute target, so the save admission must resolve it
+    // against the editor's cwd — not the process cwd (tests never write
+    // outside the tempdir).
+    let dir = tempfile::tempdir().unwrap();
+    let buffer = Buffer::open("missing-file.txt").unwrap();
+    let mut e = Editor::new_in(buffer, dir.path().to_path_buf());
+    e.feed_text("ibrand new text");
+    e.feed(strop_core::frontend_input::Key::Esc);
+    e.feed_text(":w\r");
+    e.wait_io().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("missing-file.txt")).unwrap(),
+        "brand new text"
+    );
+    assert_eq!(e.message(), "written");
+    assert!(!e.buf().dirty);
+}
+
+#[test]
 fn write_to_path_respects_overwrite_policy() {
     // 0020 §1: ordinary :w existing refuses; :w! forces; a failed
     // write leaves path/dirty untouched

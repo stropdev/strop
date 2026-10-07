@@ -172,7 +172,19 @@ impl Editor {
         // as a Store intent — the same protected-save kernel the remote
         // worker serves, never an in-process filesystem path.
         let worker = self.filesystem.worker().clone();
-        let plan = work.into_plan();
+        let plan = {
+            let mut plan = work.into_plan();
+            // A plain `:w` names the buffer's own path; a CLI-opened
+            // missing file keeps the relative name it was given, and the
+            // store guard requires an absolute target. Resolve against
+            // the editor's cwd (launch-time — no :cd exists) at this
+            // admission site: the worker thread reads no process state.
+            // `origin` stays untouched — save acceptance keys on it.
+            if !plan.target.is_absolute() {
+                plan.target = self.cwd.join(&plan.target);
+            }
+            plan
+        };
         let handle = worker::spawn(
             "strop-save",
             move |outcome| {

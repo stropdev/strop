@@ -6,13 +6,13 @@ license.workspace = true
 description = "strop lsp: async-lsp client, server registry, diagnostics store"
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.39.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.39.0" }
-strop-trace = { path = "../strop-trace", version = "0.39.0" }
+strop-core = { path = "../strop-core", version = "0.40.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.40.0" }
+strop-trace = { path = "../strop-trace", version = "0.40.0" }
 # Every LSP server process belongs to its namespace's worker.
 # No second local supervisor or remote interpreter transport survives.
-strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.39.0" }
-strop-worker-client = { path = "../strop-worker-client", version = "0.39.0" }
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.40.0" }
+strop-worker-client = { path = "../strop-worker-client", version = "0.40.0" }
 async-lsp = "0.2"
 tokio = { version = "1", features = ["rt", "io-util", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -28,7 +28,7 @@ tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 # dev only: the loopback worker crosses the real codec in-process, the
 # same handlers the shipped worker serves.
-strop-worker = { path = "../strop-worker", version = "0.39.0" }
+strop-worker = { path = "../strop-worker", version = "0.40.0" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

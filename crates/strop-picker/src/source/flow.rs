@@ -90,6 +90,20 @@ impl BatchError {
             Self::Bound(message) => Outcome::failed(FailureKind::Unavailable, message),
         }
     }
+    /// A catalog bound is a truncation, not a failure (the workspace-
+    /// symbols tier's warning precedent): the source stops walking, the
+    /// results that already streamed stay ranked and openable, and the
+    /// honest note — not a red error — says why the catalog is partial.
+    /// Real source failures keep their error outcome.
+    pub(super) fn finish(self, tx: &StreamSender) -> strop_core::worker::Outcome<()> {
+        match self {
+            Self::Bound(message) => {
+                let _ = tx.control(crate::source::PickerMsg::Warning(message.into()));
+                strop_core::worker::Outcome::Success(())
+            }
+            other => other.outcome(),
+        }
+    }
 }
 
 /// Owned row allocation, excluding shared source text (charged once per run).
@@ -168,7 +182,7 @@ impl StreamSender {
         }
         if bytes > BACKLOG_BYTES {
             return Err(BatchError::Bound(
-                "search batch exceeds 4 MiB; narrow the query",
+                "one result batch exceeds 4 MiB; kept what streamed — narrow the query",
             ));
         }
         if self
@@ -190,9 +204,10 @@ impl StreamSender {
                 .is_err()
         {
             return Err(BatchError::Bound(
-                "search results exceed 100000 rows or 64 MiB; narrow the query",
+                "results exceed 100,000 rows or 64 MiB; kept what streamed — narrow the query",
             ));
         }
+
         loop {
             if cancel.is_cancelled() {
                 return Err(BatchError::Cancelled);
@@ -233,5 +248,78 @@ impl StreamSender {
     pub fn control(&self, message: PickerMsg) -> bool {
         debug_assert!(!matches!(message, PickerMsg::Items(_)));
         self.sender.send(message)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(name: String) -> Item {
+        Item {
+            badge: None,
+            text: name.clone(),
+            payload: Payload::File(std::path::PathBuf::from(name)),
+        }
+    }
+
+    /// The catalog bound is a truncation, not a failure: the source
+    /// stops walking, the already-streamed rows stay (their permits
+    /// release credit), the note is a warning — never a red error —
+    /// and the finished outcome is success so Enter keeps working.
+    #[test]
+    fn the_catalog_bound_finishes_with_a_truncation_warning() {
+        let controls = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&controls);
+        let sink = SourceSink::new(move |message| {
+            // keep control traffic only: dropping item batches releases
+            // their backlog credit, exactly like the TUI consumer
+            if !matches!(message, PickerMsg::Items(_)) {
+                seen.lock().push(message);
+            }
+            true
+        });
+        let sender = StreamSender::new(sink, Arc::new(Flow::default()));
+        let (cancel, _handle) = CancelToken::standalone();
+        let mut bound = None;
+        for index in 0..400usize {
+            let batch = (0..512)
+                .map(|n| item(format!("f{}", index * 512 + n)))
+                .collect();
+            if let Err(error) = sender.batch(batch, &cancel) {
+                bound = Some(error);
+                break;
+            }
+        }
+        let error = bound.expect("the catalog budget stops delivery");
+        let outcome = error.finish(&sender);
+        assert!(
+            matches!(outcome, strop_core::worker::Outcome::Success(())),
+            "a bound is a truncation, not a source failure"
+        );
+        let controls = controls.lock();
+        let warning = controls.iter().find_map(|message| match message {
+            PickerMsg::Warning(message) => Some(message),
+            _ => None,
+        });
+        assert!(
+            warning.is_some_and(|message| message.contains("100,000")),
+            "the honest truncation note: {controls:?}"
+        );
+    }
+
+    /// Real delivery failures keep their failure outcome — only the
+    /// catalog bound downgrades to a warning.
+    #[test]
+    fn a_closed_consumer_still_fails_the_source() {
+        let sender = StreamSender::new(SourceSink::new(|_| false), Arc::new(Flow::default()));
+        let (cancel, _handle) = CancelToken::standalone();
+        let error = sender
+            .batch(vec![item("f1".into())], &cancel)
+            .expect_err("a closed sink fails delivery");
+        assert!(matches!(
+            error.finish(&sender),
+            strop_core::worker::Outcome::Failed { .. }
+        ));
     }
 }

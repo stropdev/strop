@@ -148,6 +148,7 @@ impl Editor {
             }
             Key::Esc => {
                 self.mode = Mode::Normal;
+                self.apply_pending_diagnostics();
                 self.set_head(self.head().saturating_sub(1));
                 let extras: Vec<strop_core::selection::Selection> = self
                     .extra_selections()

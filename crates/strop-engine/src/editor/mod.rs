@@ -301,6 +301,10 @@ pub struct Editor {
     /// own servers. Diagnostics by path, hover card, open bookkeeping.
     pub(crate) lsp_servers: Vec<crate::editor::lsp::LspServer>,
     pub(crate) diags: HashMap<strop_core::id::DocumentId, DocumentDiagnostics>,
+    /// Insert-mode diagnostic freeze (0009 insert-update policy): the
+    /// latest publish stashed while the edited document is in Insert,
+    /// applied at InsertLeave when still revision-current.
+    pub(crate) pending_diags: HashMap<strop_core::id::DocumentId, DocumentDiagnostics>,
     pub(crate) hover_card: Option<String>,
     /// Shell jobs (`:!cmd` output buffers, `|cmd` pipes): results land
     /// in drain_shell — never a subprocess on the input path (0001 §3).
@@ -498,6 +502,7 @@ impl Editor {
             clip_rx: Some(clip_rx),
             clip_paste_pending: None,
             diags: HashMap::new(),
+            pending_diags: HashMap::new(),
             hover_card: None,
             panes: vec![Pane {
                 terminal_input: false,

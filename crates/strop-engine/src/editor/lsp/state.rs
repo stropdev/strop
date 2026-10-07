@@ -233,6 +233,7 @@ impl Editor {
         }
         self.lsp_state.jump_contexts.remove(&document);
         self.diags.remove(&document);
+        self.pending_diags.remove(&document);
         if !self.docs.is_empty() && document == self.current() {
             self.hover_card = None;
         }

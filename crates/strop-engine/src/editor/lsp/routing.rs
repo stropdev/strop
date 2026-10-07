@@ -64,7 +64,7 @@ impl Editor {
                     .into_iter()
                     .map(|d| d.resolve(context.encoding, buffer))
                     .collect();
-                self.diags.insert(
+                self.record_diagnostics(
                     context.document,
                     crate::editor::diagnostics::DocumentDiagnostics {
                         revision: context.revision,

@@ -31,6 +31,13 @@ parsers back onto input. Keep measuring the complete path, not just the matcher.
 
 Current delivery and remaining priorities:
 
+- **P1 delivered for 0.40 — daily-driver correctness and quiet diagnostics
+  (0067).** New-file saves resolve against the editor cwd; large-repo
+  finders treat the catalog bound as a truthful truncation, not an error;
+  diagnostics follow Neovim's `update_in_insert = false` default (stash
+  while the edited document is in Insert, apply at InsertLeave) with a
+  live eager-server capture proving zero mid-word markings.
+
 - **P1 delivered for 0.39 — stable syntax while typing (0066).** The
   edit-mapped presentation keeps accepted syntax colors on screen through
   edits and scrolls (journal-projected spans, coverage and rails, bounded

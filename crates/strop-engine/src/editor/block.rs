@@ -161,6 +161,7 @@ impl Editor {
             ),
         );
         self.mode = Mode::Normal;
+        self.apply_pending_diagnostics();
         self.land_at_cell(rect.first_line, rect.left_cell);
     }
     pub(crate) fn block_delete(&mut self) {

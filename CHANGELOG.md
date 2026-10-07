@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.40.0 — 2026-10-07
+
+### Fixed
+
+- **`strop <new-file>` saves on the first `:w`** (0067 §1): opening a file
+  that does not exist yet and writing it failed with `write failed:
+  InvalidPath: an absolute non-control resource path is required` — the CLI
+  open keeps the relative name when `canonicalize` cannot resolve a missing
+  file, and the store guard rightly refuses relative targets. The save
+  admission now resolves the target against the editor's cwd; existing files
+  were never affected.
+
+- **Large-repo finders truncate calmly instead of erroring** (0067 §2): past
+  the catalog bound (100,000 rows or 64 MiB) `Space f`/`Space /` showed a red
+  "search results exceed 100000 rows" error even though the bounded prefix
+  stayed ranked and openable. A bound is memory backpressure, not a failure:
+  the walk now stops with the truthful warning "kept what streamed — narrow
+  the query", results remain usable, Enter works, and typing narrows.
+
+### Changed
+
+- **Diagnostics don't repaint while you're typing** (0067 §3): with LSP
+  enabled, partial words used to get amber underlines on every keystroke —
+  everything looks broken mid-thought. Language servers genuinely publish
+  that eagerly, so strop adopts Neovim's `update_in_insert = false` default:
+  while the edited document is in Insert mode its diagnostic publishes are
+  stashed instead of displayed (publishes for other documents stay live, so
+  split panes keep working), and the latest set applies the moment Insert
+  ends. No timers, no debounce — the mode transition is the signal. The
+  frozen set also stops matching on the first edit, so nothing paints stale
+  positions mid-word.
 
 ## 0.39.0 — 2026-10-04
 

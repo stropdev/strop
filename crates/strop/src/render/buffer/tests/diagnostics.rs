@@ -25,6 +25,51 @@ fn cursor_line_shows_eol_diagnostic() {
 }
 
 #[test]
+fn a_diagnostic_range_underlines_its_cells() {
+    // the undercurl is the noisy layer the insert-mode freeze holds
+    // back — pin that it actually paints (the user's "yellow markings")
+    let mut e = Editor::new(Buffer::from_text("let x = 1;\n"));
+    e.fixture_buf_mut().path = Some("strop-ul-diag-test.rs".into());
+    e.fixture_insert_diagnostics(
+        e.current(),
+        crate::editor::DocumentDiagnostics {
+            revision: e.buf().revision(),
+            items: vec![strop_lsp::ResolvedDiag {
+                line: strop_core::id::LineIndex::new(0),
+                col: strop_core::id::ByteColumn::new(4),
+                severity: strop_lsp::Severity::Error,
+                end_line: strop_core::id::LineIndex::new(0),
+                end_col: strop_core::id::ByteColumn::new(8),
+                message: "mismatched types".into(),
+            }],
+        },
+    );
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let row: Vec<_> = (0..60).map(|x| buffer[(x, 0)].clone()).collect();
+    let underlined: Vec<usize> = row
+        .iter()
+        .enumerate()
+        .filter(|(_, cell)| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED))
+        .map(|(x, _)| x)
+        .collect();
+    assert!(!underlined.is_empty(), "the range must underline its cells");
+    let identifier = row
+        .iter()
+        .position(|cell| cell.symbol() == "x")
+        .expect("the identifier cell");
+    assert!(
+        underlined.contains(&identifier),
+        "the diagnostic covers the identifier cell"
+    );
+    assert!(
+        !underlined.contains(&(identifier - 1)),
+        "the underline starts at the diagnostic's column, not before"
+    );
+}
+
+#[test]
 fn last_text_row_and_four_digit_gutter_keep_caret_alignment() {
     let mut e = Editor::new(Buffer::from_text(&"x\n".repeat(1001)));
     e.set_head(e.buf().line_start(1000));

@@ -168,6 +168,7 @@ impl Editor {
             // popping the seed ends the session: the caret stays on it
             self.sels_mut().collapse_primary(popped.0);
             self.mode = Mode::Normal;
+            self.apply_pending_diagnostics();
             self.message = "occurrence selection cleared".into();
             return;
         }

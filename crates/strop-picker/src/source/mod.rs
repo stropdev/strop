@@ -101,18 +101,18 @@ fn run_files(
         true
     });
     if let Some(error) = delivery_error {
-        return error.outcome();
+        return error.finish(&tx);
     }
     if let Err(error) = result {
         if !batch.is_empty() {
             if let Err(error) = tx.batch(std::mem::take(&mut batch), &cancel) {
-                return error.outcome();
+                return error.finish(&tx);
             }
         }
         return Outcome::failed(FailureKind::Io, error);
     }
     if let Err(error) = tx.batch(batch, &cancel) {
-        return error.outcome();
+        return error.finish(&tx);
     }
     Outcome::Success(())
 }
@@ -294,10 +294,10 @@ fn run_workspace_symbols(
         }
     }
     if let Some(error) = delivery_error {
-        return error.outcome();
+        return error.finish(&tx);
     }
     if let Err(error) = tx.batch(batch, &cancel) {
-        return error.outcome();
+        return error.finish(&tx);
     }
     if index.coverage_gap() {
         let _ = tx.control(PickerMsg::Warning(
