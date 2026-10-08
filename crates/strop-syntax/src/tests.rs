@@ -573,3 +573,5 @@ mod symbols_fallback {
         assert!(extractor.extract(b"fn f() {}", &|| true).is_none());
     }
 }
+
+mod sovel;

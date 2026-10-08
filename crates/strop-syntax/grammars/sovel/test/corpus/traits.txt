@@ -1,0 +1,103 @@
+================================================================================
+traits, associated members, impls, delegation
+================================================================================
+
+dyn trait Describe: Clone {
+    fn label(&self) -> &Str from self ! {};
+    type Output: Clone;
+    const MAX: U64 = 8;
+}
+impl<T> Vec<T> {
+    fn len(&self) -> U64 ! {} {
+        self.len
+    }
+}
+impl Describe for Named {
+    type Output = Str;
+    delegate Describe to self.inner;
+}
+
+---
+
+(source_file
+  (trait_declaration
+    name: (identifier)
+    (trait_bounds
+      (trait_type
+        (type_path
+          (identifier))))
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (receiver)))
+      return_type: (reference_type
+        (type_atom
+          (type_path
+            (identifier))))
+      return_type: (origin_clause
+        (origin_bound
+          (origin_path)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    name: (identifier)
+    (trait_bounds
+      (trait_type
+        (type_path
+          (identifier))))
+    name: (identifier)
+    (type_atom
+      (type_path
+        (identifier)))
+    (literal
+      (integer_literal)))
+  (impl_declaration
+    (generic_parameters
+      (generic_parameter
+        (type_parameter
+          (identifier))))
+    (type_atom
+      (type_path
+        (identifier))
+      (generic_arguments
+        (generic_argument
+          (type_atom
+            (type_path
+              (identifier))))))
+    (function_declaration
+      (function_signature
+        name: (identifier)
+        (parameter_list
+          (parameter
+            (receiver)))
+        return_type: (type_atom
+          (type_path
+            (identifier)))
+        (effect_clause
+          (effect_expression
+            (effect_atom
+              (effect_set)))))
+      (block
+        (member_expression
+          value: (value_path)
+          member: (identifier)))))
+  (impl_declaration
+    (type_atom
+      (type_path
+        (identifier)))
+    (type_atom
+      (type_path
+        (identifier)))
+    name: (identifier)
+    (type_atom
+      (type_path
+        (identifier)))
+    (delegation_declaration
+      (trait_type
+        (type_path
+          (identifier)))
+      (place
+        (identifier)))))
+

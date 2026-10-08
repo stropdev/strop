@@ -1,0 +1,180 @@
+================================================================================
+macro declarations, token trees, quotes, splices
+================================================================================
+
+macro surround<T>(body: Syntax<Expr>) -> Syntax<Expr> ! {} {
+    quote {
+        let temp: U64 = 1;
+        $body
+    }
+}
+macro_rules_style!();
+emit!(let x = 1 + f(")("); [a; 2]);
+dsl!{ [key => value] ("literal ( text") };
+fn staged() -> Unit ! {} {
+    let a = quote expr(1 + 2);
+    let b = quote block { work(); };
+    let c = quote type(Vec<T>);
+    let d = quote pattern(Some(x));
+    let e = quote items { fn generated() -> Unit ! {} {} };
+    $item;
+}
+
+---
+
+(source_file
+  (macro_declaration
+    name: (identifier)
+    (generic_parameters
+      (generic_parameter
+        (type_parameter
+          (identifier))))
+    (parameter_list
+      (parameter
+        (binding_pattern
+          (identifier))
+        (type_atom
+          (type_path
+            (identifier))
+          (generic_arguments
+            (generic_argument
+              (type_atom
+                (type_path
+                  (identifier))))))))
+    return_type: (type_atom
+      (type_path
+        (identifier))
+      (generic_arguments
+        (generic_argument
+          (type_atom
+            (type_path
+              (identifier))))))
+    (effect_clause
+      (effect_expression
+        (effect_atom
+          (effect_set))))
+    (block
+      (quote_expression
+        (block
+          (let_statement
+            (binding_pattern
+              (identifier))
+            (type_atom
+              (type_path
+                (identifier)))
+            (literal
+              (integer_literal)))
+          (syntax_splice
+            (identifier))))))
+  (item_macro_call
+    (macro_call
+      (module_path
+        (identifier))
+      (token_group)))
+  (item_macro_call
+    (macro_call
+      (module_path
+        (identifier))
+      (token_group
+        (token_tree)
+        (token_tree)
+        (token_tree)
+        (token_tree)
+        (token_tree)
+        (token_tree)
+        (token_tree
+          (token_group
+            (token_tree
+              (string_literal))))
+        (token_tree)
+        (token_tree
+          (token_group
+            (token_tree)
+            (token_tree))))))
+  (item_macro_call
+    (macro_call
+      (module_path
+        (identifier))
+      (token_group
+        (token_tree
+          (token_group
+            (token_tree)
+            (token_tree)
+            (token_tree)))
+        (token_tree
+          (token_group
+            (token_tree
+              (string_literal)))))))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (quote_expression
+          (binary_expression
+            (literal
+              (integer_literal))
+            (literal
+              (integer_literal)))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (quote_expression
+          (block
+            (expression_statement
+              (call_expression
+                function: (value_path
+                  (identifier))
+                (argument_list))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (quote_expression
+          (type_atom
+            (type_path
+              (identifier))
+            (generic_arguments
+              (generic_argument
+                (type_atom
+                  (type_path
+                    (identifier))))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (quote_expression
+          (constructor_pattern
+            (type_path
+              (identifier))
+            (pattern_list
+              (binding_pattern
+                (identifier))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (quote_expression
+          (function_declaration
+            (function_signature
+              name: (identifier)
+              (parameter_list)
+              return_type: (type_atom
+                (type_path
+                  (identifier)))
+              (effect_clause
+                (effect_expression
+                  (effect_atom
+                    (effect_set)))))
+            (block))))
+      (expression_statement
+        (syntax_splice
+          (identifier))))))
+

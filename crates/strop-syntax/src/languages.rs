@@ -29,6 +29,8 @@ pub enum LanguageId {
     Yaml,
     Html,
     Css,
+    /// Experimental syntax highlighting (0070); presentation grammar only.
+    Sovel,
 }
 
 pub struct LanguageSpec {
@@ -335,6 +337,20 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["css"],
         highlights: include_str!("../queries/css/highlights.scm"),
+        injections: "",
+    },
+    // Experimental syntax highlighting only (0070): a dedicated
+    // presentation grammar, statically linked; no server, no formatter,
+    // no symbols. Appended last so existing detection precedence stands.
+    Entry {
+        id: LanguageId::Sovel,
+        name: "sovel",
+        grammar: || crate::sovel::LANGUAGE.into(),
+        extensions: &["sov"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["sovel", "sov"],
+        highlights: include_str!("../queries/sovel/highlights.scm"),
         injections: "",
     },
 ];

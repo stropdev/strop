@@ -1,0 +1,106 @@
+================================================================================
+extern blocks, foreign functions, named unsafe, export attributes
+================================================================================
+
+extern "C" raw {
+    type Opaque;
+    #[link_name = "count_nonzero"]
+    fn count_nonzero(data: CPtr<CU8>, size: CSize) -> CSize;
+    pub fn clear(buf: CPtr<CU8>,) -> CInt;
+}
+#[c_export("demo_identity", contracts::identity)]
+pub fn identity(value: CInt) -> CInt ! {} {
+    unsafe(contracts::identity) {
+        raw::identity(value)
+    }
+}
+
+---
+
+(source_file
+  (extern_block
+    abi: (string_literal)
+    name: (identifier)
+    name: (identifier)
+    (attribute
+      (module_path
+        (identifier))
+      (literal
+        (string_literal)))
+    (extern_function
+      name: (identifier)
+      (extern_parameter
+        name: (identifier)
+        (type_atom
+          (type_path
+            (identifier))
+          (generic_arguments
+            (generic_argument
+              (type_atom
+                (type_path
+                  (identifier)))))))
+      (extern_parameter
+        name: (identifier)
+        (type_atom
+          (type_path
+            (identifier))))
+      (type_atom
+        (type_path
+          (identifier))))
+    (extern_function
+      name: (identifier)
+      (extern_parameter
+        name: (identifier)
+        (type_atom
+          (type_path
+            (identifier))
+          (generic_arguments
+            (generic_argument
+              (type_atom
+                (type_path
+                  (identifier)))))))
+      (type_atom
+        (type_path
+          (identifier)))))
+  (attribute
+    (module_path
+      (identifier))
+    (argument
+      (literal
+        (string_literal)))
+    (argument
+      (value_path
+        (identifier)
+        (identifier))))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (type_atom
+            (type_path
+              (identifier)))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (unsafe_expression
+        contract: (module_path
+          (identifier)
+          (identifier))
+        (block
+          (call_expression
+            function: (value_path
+              (identifier)
+              (identifier))
+            (argument_list
+              (argument
+                (value_path
+                  (identifier))))))))))
+

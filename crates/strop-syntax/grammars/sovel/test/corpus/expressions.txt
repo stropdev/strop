@@ -1,0 +1,453 @@
+================================================================================
+operators, literals and precedence
+================================================================================
+
+fn ops() -> Unit ! {} {
+    let a = 1 + 2 * 3 - 4 / 5 % 6;
+    let b = !ready && ok || done;
+    let c = x < y <= z;
+    let d = 1..3;
+    let e = 1..=3;
+    let f = 2.seconds();
+    let g = 2.5e-3;
+    let h = 0x1F + 0b101 + 0o17 + 1_000;
+    *ptr = -value;
+    let i = &mut cell;
+    let j = move token;
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (binary_expression
+          (binary_expression
+            (literal
+              (integer_literal))
+            (binary_expression
+              (literal
+                (integer_literal))
+              (literal
+                (integer_literal))))
+          (binary_expression
+            (binary_expression
+              (literal
+                (integer_literal))
+              (literal
+                (integer_literal)))
+            (literal
+              (integer_literal)))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (binary_expression
+          (binary_expression
+            (unary_expression
+              (value_path
+                (identifier)))
+            (value_path
+              (identifier)))
+          (value_path
+            (identifier))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (binary_expression
+          (binary_expression
+            (value_path
+              (identifier))
+            (value_path
+              (identifier)))
+          (value_path
+            (identifier))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (binary_expression
+          (literal
+            (integer_literal))
+          (literal
+            (integer_literal))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (binary_expression
+          (literal
+            (integer_literal))
+          (literal
+            (integer_literal))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (call_expression
+          function: (member_expression
+            value: (literal
+              (integer_literal))
+            member: (identifier))
+          (argument_list)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (literal
+          (float_literal)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (binary_expression
+          (binary_expression
+            (binary_expression
+              (literal
+                (integer_literal))
+              (literal
+                (integer_literal)))
+            (literal
+              (integer_literal)))
+          (literal
+            (integer_literal))))
+      (assignment_statement
+        (unary_expression
+          (value_path
+            (identifier)))
+        (assignment_operator)
+        (unary_expression
+          (value_path
+            (identifier))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (unary_expression
+          (value_path
+            (identifier))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (unary_expression
+          (value_path
+            (identifier)))))))
+
+================================================================================
+calls, turbofish, projection, collections, using arguments
+================================================================================
+
+fn calls() -> Unit ! {} {
+    let a = f::<T>(x);
+    let b = Vec::<T>.new();
+    let c = obj.method::<U>(1, name = 2);
+    let d = pair.0;
+    let e = arr[i + 1];
+    let f = fetch(url)?;
+    g(x) using (io = exec, scratch = arena);
+    let h = (a, b,);
+    let i = [1, 2, 3];
+    let j = [0; n];
+    let k = Point { x: 1, y, $rest };
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (call_expression
+          function: (value_path
+            (identifier)
+            (generic_arguments
+              (generic_argument
+                (type_atom
+                  (type_path
+                    (identifier))))))
+          (argument_list
+            (argument
+              (value_path
+                (identifier))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (call_expression
+          function: (member_expression
+            value: (value_path
+              (identifier)
+              (generic_arguments
+                (generic_argument
+                  (type_atom
+                    (type_path
+                      (identifier))))))
+            member: (identifier))
+          (argument_list)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (call_expression
+          function: (member_expression
+            value: (value_path
+              (identifier))
+            member: (identifier)
+            member: (generic_arguments
+              (generic_argument
+                (type_atom
+                  (type_path
+                    (identifier))))))
+          (argument_list
+            (argument
+              (literal
+                (integer_literal)))
+            (argument
+              (identifier)
+              (literal
+                (integer_literal))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (member_expression
+          value: (value_path
+            (identifier))
+          member: (integer_literal)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (index_expression
+          value: (value_path
+            (identifier))
+          (binary_expression
+            (value_path
+              (identifier))
+            (literal
+              (integer_literal)))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (propagation_expression
+          (call_expression
+            function: (value_path
+              (identifier))
+            (argument_list
+              (argument
+                (value_path
+                  (identifier)))))))
+      (expression_statement
+        (call_expression
+          function: (value_path
+            (identifier))
+          (argument_list
+            (argument
+              (value_path
+                (identifier))))
+          (context_arguments
+            (context_argument
+              (identifier)
+              (value_path
+                (identifier)))
+            (context_argument
+              (identifier)
+              (value_path
+                (identifier))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (tuple_expression
+          (value_path
+            (identifier))
+          (expression_list
+            (value_path
+              (identifier)))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (array_expression
+          (expression_list
+            (literal
+              (integer_literal))
+            (literal
+              (integer_literal))
+            (literal
+              (integer_literal)))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (array_expression
+          (literal
+            (integer_literal))
+          (value_path
+            (identifier))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (struct_expression
+          (value_path
+            (identifier))
+          (field_initializer
+            (identifier)
+            (literal
+              (integer_literal)))
+          (field_initializer
+            (identifier))
+          (field_initializer
+            (syntax_splice
+              (identifier))))))))
+
+================================================================================
+lambdas, boolean or, spawn, await, fail
+================================================================================
+
+fn lambdas() -> Unit ! {} {
+    let a = || 1;
+    let b = ready || fallback;
+    let c = |x, y: U64| x + y;
+    let d = move || move y;
+    let e = |(Left(l) | Right(l))| l;
+    let f = || -> U64 ! {} { 1 };
+    spawn || io.fetch(url)?;
+    let g = (await task)?;
+    let h = await join?;
+    fail IoError;
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (lambda_expression
+          (literal
+            (integer_literal))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (binary_expression
+          (value_path
+            (identifier))
+          (value_path
+            (identifier))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (lambda_expression
+          (lambda_parameter
+            (binding_pattern
+              (identifier)))
+          (lambda_parameter
+            (binding_pattern
+              (identifier))
+            (type_atom
+              (type_path
+                (identifier))))
+          (binary_expression
+            (value_path
+              (identifier))
+            (value_path
+              (identifier)))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (lambda_expression
+          (unary_expression
+            (value_path
+              (identifier)))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (lambda_expression
+          (lambda_parameter
+            (parenthesized_pattern
+              (or_pattern
+                (constructor_pattern
+                  (type_path
+                    (identifier))
+                  (pattern_list
+                    (binding_pattern
+                      (identifier))))
+                (constructor_pattern
+                  (type_path
+                    (identifier))
+                  (pattern_list
+                    (binding_pattern
+                      (identifier)))))))
+          (value_path
+            (identifier))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (lambda_expression
+          (type_atom
+            (type_path
+              (identifier)))
+          (effect_clause
+            (effect_expression
+              (effect_atom
+                (effect_set))))
+          (block
+            (literal
+              (integer_literal)))))
+      (expression_statement
+        (spawn_expression
+          (lambda_expression
+            (propagation_expression
+              (call_expression
+                function: (member_expression
+                  value: (value_path
+                    (identifier))
+                  member: (identifier))
+                (argument_list
+                  (argument
+                    (value_path
+                      (identifier)))))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (propagation_expression
+          (parenthesized_expression
+            (unary_expression
+              (value_path
+                (identifier))))))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (unary_expression
+          (propagation_expression
+            (value_path
+              (identifier)))))
+      (expression_statement
+        (fail_expression
+          (value_path
+            (identifier)))))))
+

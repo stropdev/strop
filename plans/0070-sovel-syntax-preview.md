@@ -1,6 +1,26 @@
 # 0070 — Sovel syntax preview in Strop
 
-Status: **owner-authorized plan; not implemented** (2026-10-08).
+Status: **implemented** (2026-10-08). Dedicated Sovel presentation
+grammar (ABI 15, `tree-sitter-cli` 0.25.10, runtime 0.25.10) statically
+linked through `crates/strop-syntax/build.rs`; queries at
+`queries/sovel/highlights.scm`; `sovel`/`sov` registered in strop-syntax
+and strop-core. Implemented against Sovel handover rev `eab2ce3`, syntax
+snapshot `0.1-draft.4`; grammar provenance, the pinned regeneration
+recipe and the rule-to-EBNF coverage table live in
+`crates/strop-syntax/grammars/sovel/{README,COVERAGE}.md`. Verified:
+23/23 corpus tests, zero ERROR/MISSING parse of the unchanged showcase
+and all accept/reject fixtures, real-Highlighter behavior tests
+(incremental == fresh parse, contextual effect spellings, no keyword
+leakage, UTF-8/CRLF/multichunk spans, Markdown fence injection), and a
+real-binary headless styled-cell smoke at 100×30 showing the §5 capture
+classes distinguished by the current theme. Documented deviations
+(assignment LHS as expression, left-assoc comparison/range, dynamic
+precedence on control-head struct literals) are in COVERAGE.md. The
+28-obligation language gate remains blocked and unchanged; no Sovel
+server, formatter, symbols or validation ships.
+
+The rest of this file is the original execution handoff, kept for the
+record.
 
 ## 1. Decision, authority and boundaries
 

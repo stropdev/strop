@@ -1,0 +1,246 @@
+================================================================================
+if, while, for, loop, match
+================================================================================
+
+fn flow(input: &Bytes) -> Unit ! {} {
+    if let Some(x) = maybe {
+        use_it(x);
+    } else if ready {
+    } else {
+    }
+    while work.remains() {
+    }
+    for item in items {
+        continue;
+    }
+    loop {
+        break;
+    }
+    match value {
+        Option::None => 0,
+        Some(n) if n > 0 => n,
+        _ => 1,
+    };
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (type_atom
+              (type_path
+                (identifier))))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (if_expression
+        (constructor_pattern
+          (type_path
+            (identifier))
+          (pattern_list
+            (binding_pattern
+              (identifier))))
+        (value_path
+          (identifier))
+        (block
+          (expression_statement
+            (call_expression
+              function: (value_path
+                (identifier))
+              (argument_list
+                (argument
+                  (value_path
+                    (identifier)))))))
+        (if_expression
+          (value_path
+            (identifier))
+          (block)
+          (block)))
+      (while_expression
+        (call_expression
+          function: (member_expression
+            value: (value_path
+              (identifier))
+            member: (identifier))
+          (argument_list))
+        (block))
+      (for_expression
+        (binding_pattern
+          (identifier))
+        (value_path
+          (identifier))
+        (block
+          (continue_statement)))
+      (loop_expression
+        (block
+          (break_statement)))
+      (expression_statement
+        (match_expression
+          (value_path
+            (identifier))
+          (match_arm
+            (constructor_pattern
+              (identifier)
+              (identifier))
+            (literal
+              (integer_literal)))
+          (match_arm
+            (constructor_pattern
+              (type_path
+                (identifier))
+              (pattern_list
+                (binding_pattern
+                  (identifier))))
+            (binary_expression
+              (value_path
+                (identifier))
+              (literal
+                (integer_literal)))
+            (value_path
+              (identifier)))
+          (match_arm
+            (wildcard_pattern)
+            (literal
+              (integer_literal))))))))
+
+================================================================================
+try, region, tasks, named unsafe, comptime, control-head parens
+================================================================================
+
+fn scoped(exec: &Executor, budget: Duration) -> Unit ! {} {
+    try {
+        risky()?;
+    } catch IoError {
+        recover();
+    } catch e if e.retryable() {
+    }
+    region scratch: ScratchMemory in heap {
+    }
+    tasks on exec within budget {
+    }
+    unsafe(contracts::raw_read) {
+        raw::read(buf);
+    }
+    comptime {
+        emit();
+    };
+    if (Predicate { ok: true }).ok {
+    }
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (type_atom
+              (type_path
+                (identifier)))))
+        (parameter
+          (binding_pattern
+            (identifier))
+          (type_atom
+            (type_path
+              (identifier)))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (try_expression
+        (block
+          (expression_statement
+            (propagation_expression
+              (call_expression
+                function: (value_path
+                  (identifier))
+                (argument_list)))))
+        (catch_clause
+          (binding_pattern
+            (identifier))
+          (block
+            (expression_statement
+              (call_expression
+                function: (value_path
+                  (identifier))
+                (argument_list)))))
+        (catch_clause
+          (binding_pattern
+            (identifier))
+          (call_expression
+            function: (member_expression
+              value: (value_path
+                (identifier))
+              member: (identifier))
+            (argument_list))
+          (block)))
+      (region_expression
+        name: (identifier)
+        (type_atom
+          (type_path
+            (identifier)))
+        (value_path
+          (identifier))
+        (block))
+      (tasks_expression
+        (value_path
+          (identifier))
+        (value_path
+          (identifier))
+        (block))
+      (unsafe_expression
+        contract: (module_path
+          (identifier)
+          (identifier))
+        (block
+          (expression_statement
+            (call_expression
+              function: (value_path
+                (identifier)
+                (identifier))
+              (argument_list
+                (argument
+                  (value_path
+                    (identifier))))))))
+      (expression_statement
+        (comptime_expression
+          (block
+            (expression_statement
+              (call_expression
+                function: (value_path
+                  (identifier))
+                (argument_list))))))
+      (if_expression
+        (member_expression
+          value: (parenthesized_expression
+            (struct_expression
+              (value_path
+                (identifier))
+              (field_initializer
+                (identifier)
+                (literal
+                  (boolean_literal)))))
+          member: (identifier))
+        (block)))))
+

@@ -1,0 +1,173 @@
+================================================================================
+effect rows, unions, exclusions, origin constraints
+================================================================================
+
+fn effects() -> Unit
+    ! {
+        io(net), alloc(heap), release(heap),
+        spawn, suspend, cancel,
+        fail(IoError), drop(Session),
+        ..extra,
+    }
+{
+}
+fn unioned() -> Unit ! E + {foreign(lib)} + (F) {
+}
+fn constrained<effects E>() -> Unit ! E
+where
+    effects E excludes fail(AllocError),
+    origin a.b disjoint c,
+    Wrap<T> = Inner,
+{
+}
+fn origins(x: NodeId from graph) -> Registration from {lib, ..rest} ! {} {
+    x
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set
+              (effect_label
+                (effect_name
+                  (module_path
+                    (identifier)))
+                (origin_path
+                  (identifier)))
+              (effect_label
+                (effect_name
+                  (module_path
+                    (identifier)))
+                (origin_path
+                  (identifier)))
+              (effect_label
+                (effect_name
+                  (module_path
+                    (identifier)))
+                (origin_path
+                  (identifier)))
+              (effect_label
+                (effect_name))
+              (effect_label
+                (effect_name))
+              (effect_label
+                (effect_name))
+              (effect_label
+                (type_atom
+                  (type_path
+                    (identifier))))
+              (effect_label
+                (type_atom
+                  (type_path
+                    (identifier))))
+              (row_tail
+                (identifier)))))))
+    (block))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (identifier))
+          (effect_atom
+            (effect_set
+              (effect_label
+                (effect_name
+                  (module_path
+                    (identifier)))
+                (origin_path
+                  (identifier)))))
+          (effect_atom
+            (effect_expression
+              (effect_atom
+                (identifier)))))))
+    (block))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (generic_parameters
+        (generic_parameter
+          (effect_parameter
+            (identifier))))
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (identifier))))
+      (where_clause
+        (constraint
+          (identifier)
+          (effect_label
+            (type_atom
+              (type_path
+                (identifier)))))
+        (constraint
+          (origin_path
+            (identifier)
+            (identifier))
+          (origin_path
+            (identifier)))
+        (constraint
+          (type_atom
+            (type_path
+              (identifier))
+            (generic_arguments
+              (generic_argument
+                (type_atom
+                  (type_path
+                    (identifier))))))
+          (type_atom
+            (type_path
+              (identifier))))))
+    (block))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (type_atom
+            (type_path
+              (identifier)))
+          (origin_clause
+            (origin_bound
+              (origin_path
+                (identifier))))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      return_type: (origin_clause
+        (origin_bound
+          (origin_member
+            (origin_path
+              (identifier)))
+          (origin_member
+            (origin_tail
+              (identifier)))))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (value_path
+        (identifier)))))
+

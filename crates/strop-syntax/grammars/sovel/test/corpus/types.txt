@@ -1,0 +1,126 @@
+================================================================================
+type forms: references, arrays, tuples, generics, abstract, origins
+================================================================================
+
+fn types(a: &mut [U64; 4], b: &(Str, U64), c: ()) -> &[Vec<Vec<T>>] from {} ! {} {
+    a
+}
+fn abs(x: &dyn Describe, y: impl Iterator + Clone, z: impl (fn mut() -> Unit)) -> Unit ! {} {
+}
+type Annotated = &(Ast from doc);
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (type_atom
+              (array_type
+                (type_atom
+                  (type_path
+                    (identifier)))
+                (constant_argument
+                  (integer_literal))))))
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (type_atom
+              (tuple_type
+                (type_atom
+                  (type_path
+                    (identifier)))
+                (type_list
+                  (type_atom
+                    (type_path
+                      (identifier))))))))
+        (parameter
+          (binding_pattern
+            (identifier))
+          (type_atom
+            (unit_type))))
+      return_type: (reference_type
+        (type_atom
+          (array_type
+            (type_atom
+              (type_path
+                (identifier))
+              (generic_arguments
+                (generic_argument
+                  (type_atom
+                    (type_path
+                      (identifier))
+                    (generic_arguments
+                      (generic_argument
+                        (type_atom
+                          (type_path
+                            (identifier))))))))))))
+      return_type: (origin_clause
+        (origin_bound))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (value_path
+        (identifier))))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (abstract_type
+              (trait_bounds
+                (trait_type
+                  (type_path
+                    (identifier)))))))
+        (parameter
+          (binding_pattern
+            (identifier))
+          (abstract_type
+            (trait_bounds
+              (trait_type
+                (type_path
+                  (identifier)))
+              (trait_type
+                (type_path
+                  (identifier))))))
+        (parameter
+          (binding_pattern
+            (identifier))
+          (abstract_type
+            (function_type
+              (call_mode)
+              (type_atom
+                (type_path
+                  (identifier)))))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block))
+  (type_alias
+    name: (identifier)
+    (reference_type
+      (type_atom
+        (parenthesized_type
+          (type_atom
+            (type_path
+              (identifier)))
+          (origin_clause
+            (origin_bound
+              (origin_path
+                (identifier)))))))))
+

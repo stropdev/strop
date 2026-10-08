@@ -1,0 +1,264 @@
+================================================================================
+function signatures: generics, using, from, effects, where
+================================================================================
+
+fn identity<T: Clone + Send>(value: T) -> T ! {} {
+    value
+}
+fn each<T, effects E, origin pool, const N: U64>(items: &[T; N])
+    using exec: &Executor
+    -> Unit from pool ! E
+    where T: Sized, effects E excludes suspend, origin pool outlives exec
+{
+}
+comptime fn build() -> Unit ! {} {
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (generic_parameters
+        (generic_parameter
+          (type_parameter
+            (identifier))
+          (trait_bounds
+            (trait_type
+              (type_path
+                (identifier)))
+            (trait_type
+              (type_path
+                (identifier))))))
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (type_atom
+            (type_path
+              (identifier)))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (value_path
+        (identifier))))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (generic_parameters
+        (generic_parameter
+          (type_parameter
+            (identifier)))
+        (generic_parameter
+          (effect_parameter
+            (identifier)))
+        (generic_parameter
+          (generic_origin_parameter
+            (identifier)))
+        (generic_parameter
+          (const_parameter
+            (identifier)
+            (type_atom
+              (type_path
+                (identifier))))))
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (type_atom
+              (array_type
+                (type_atom
+                  (type_path
+                    (identifier)))
+                (constant_argument
+                  (identifier)))))))
+      (context_parameters
+        (context_parameter
+          name: (identifier)
+          (reference_type
+            (type_atom
+              (type_path
+                (identifier))))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      return_type: (origin_clause
+        (origin_bound
+          (origin_path
+            (identifier))))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (identifier))))
+      (where_clause
+        (constraint
+          (type_atom
+            (type_path
+              (identifier)))
+          (trait_bounds
+            (trait_type
+              (type_path
+                (identifier)))))
+        (constraint
+          (identifier)
+          (effect_label
+            (effect_name)))
+        (constraint
+          (origin_path
+            (identifier))
+          (origin_path
+            (identifier)))))
+    (block))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block)))
+
+================================================================================
+function types and result dependencies
+================================================================================
+
+fn prefix_test(prefix: &Str)
+    -> (fn(&Str) -> Bool ! {}) from prefix
+    ! {}
+{
+    |candidate| candidate.starts_with(prefix)
+}
+fn takes_cb(cb: &mut impl (fn mut(&T) -> Unit ! E), once_fn: fn once() -> Unit) -> Unit ! E {
+}
+fn higher(forall: for<T> fn(T) -> T) -> Unit ! {} {
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (type_atom
+              (type_path
+                (identifier))))))
+      return_type: (type_atom
+        (parenthesized_type
+          (function_type
+            (function_type_parameter
+              (reference_type
+                (type_atom
+                  (type_path
+                    (identifier)))))
+            (type_atom
+              (type_path
+                (identifier)))
+            (effect_clause
+              (effect_expression
+                (effect_atom
+                  (effect_set)))))))
+      return_type: (origin_clause
+        (origin_bound
+          (origin_path
+            (identifier))))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (lambda_expression
+        (lambda_parameter
+          (binding_pattern
+            (identifier)))
+        (call_expression
+          function: (member_expression
+            value: (value_path
+              (identifier))
+            member: (identifier))
+          (argument_list
+            (argument
+              (value_path
+                (identifier))))))))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (reference_type
+            (abstract_type
+              (function_type
+                (call_mode)
+                (function_type_parameter
+                  (reference_type
+                    (type_atom
+                      (type_path
+                        (identifier)))))
+                (type_atom
+                  (type_path
+                    (identifier)))
+                (effect_clause
+                  (effect_expression
+                    (effect_atom
+                      (identifier))))))))
+        (parameter
+          (binding_pattern
+            (identifier))
+          (function_type
+            (call_mode)
+            (type_atom
+              (type_path
+                (identifier))))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (identifier)))))
+    (block))
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (function_type
+            (generic_parameters
+              (generic_parameter
+                (type_parameter
+                  (identifier))))
+            (function_type_parameter
+              (type_atom
+                (type_path
+                  (identifier))))
+            (type_atom
+              (type_path
+                (identifier))))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block)))
+

@@ -1,0 +1,124 @@
+================================================================================
+bindings, wildcards, tuples, slices, constructors, or-patterns
+================================================================================
+
+fn patterns(p: Point) -> Unit ! {} {
+    let _ = p;
+    let ref mut cell = p;
+    let whole @ Point { x } = p;
+    let (a, b,) = pair;
+    let [first, second] = items;
+    let lit = match code {
+        0 => "zero",
+        'a' => "ay",
+        Option::Some(v) | Option::None => "opt",
+        Wrapper(inner @ 9) => "nine",
+        _ => "other",
+    };
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list
+        (parameter
+          (binding_pattern
+            (identifier))
+          (type_atom
+            (type_path
+              (identifier)))))
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (let_statement
+        (wildcard_pattern)
+        (value_path
+          (identifier)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (value_path
+          (identifier)))
+      (let_statement
+        (binding_pattern
+          (identifier)
+          (constructor_pattern
+            (type_path
+              (identifier))
+            (field_patterns
+              (field_pattern
+                (identifier)))))
+        (value_path
+          (identifier)))
+      (let_statement
+        (tuple_pattern
+          (binding_pattern
+            (identifier))
+          (pattern_list
+            (binding_pattern
+              (identifier))))
+        (value_path
+          (identifier)))
+      (let_statement
+        (slice_pattern
+          (pattern_list
+            (binding_pattern
+              (identifier))
+            (binding_pattern
+              (identifier))))
+        (value_path
+          (identifier)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (match_expression
+          (value_path
+            (identifier))
+          (match_arm
+            (literal
+              (integer_literal))
+            (literal
+              (string_literal)))
+          (match_arm
+            (literal
+              (char_literal))
+            (literal
+              (string_literal)))
+          (match_arm
+            (or_pattern
+              (constructor_pattern
+                (type_path
+                  (identifier)
+                  (identifier))
+                (pattern_list
+                  (binding_pattern
+                    (identifier))))
+              (constructor_pattern
+                (identifier)
+                (identifier)))
+            (literal
+              (string_literal)))
+          (match_arm
+            (constructor_pattern
+              (type_path
+                (identifier))
+              (pattern_list
+                (binding_pattern
+                  (identifier)
+                  (literal
+                    (integer_literal)))))
+            (literal
+              (string_literal)))
+          (match_arm
+            (wildcard_pattern)
+            (literal
+              (string_literal))))))))
+

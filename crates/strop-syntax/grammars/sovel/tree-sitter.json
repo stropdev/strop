@@ -1,0 +1,26 @@
+{
+  "grammars": [
+    {
+      "name": "sovel",
+      "camelcase": "Sovel",
+      "scope": "source.sovel",
+      "path": ".",
+      "file-types": [
+        "sov"
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "0.0.1",
+    "license": "MIT",
+    "description": "Presentation grammar for Sovel 0.1-draft.4 — experimental syntax highlighting only (Strop plan 0070); not an authoritative frontend"
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false
+  }
+}

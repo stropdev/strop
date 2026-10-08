@@ -59,6 +59,33 @@ fn known_extension_beats_shebang() {
 }
 
 #[test]
+fn sovel_detection_uses_extension_name_and_alias() {
+    // 0070: canonical name `sovel`, extension `sov`, aliases `sovel`/`sov`.
+    let spec = detect(std::path::Path::new("demo.sov"), None).unwrap();
+    assert_eq!(spec.name, "sovel");
+    assert_eq!(spec.id, LanguageId::Sovel);
+    for name in ["sovel", "sov", "source.sovel"] {
+        assert_eq!(
+            for_name(name).map(|spec| spec.name),
+            Some("sovel"),
+            "{name}"
+        );
+    }
+    assert_eq!(for_extension("sov").map(|spec| spec.name), Some("sovel"));
+    // the query compiles against the statically linked grammar
+    assert!(!spec.highlights.is_empty());
+    // core catalog agrees on extension membership (lang:sovel filters)
+    assert_eq!(
+        strop_core::languages::language_for_extension(".sov"),
+        Some("sovel")
+    );
+    assert_eq!(
+        strop_core::languages::extensions_for_language("sovel"),
+        Some(&["sov"][..])
+    );
+}
+
+#[test]
 fn core_catalog_membership_matches_syntax_catalog() {
     // 0063 §3: one language catalog policy. Every syntax entry whose
     // language name the core catalog knows must agree on extension

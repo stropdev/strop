@@ -12,6 +12,16 @@
   `workspace/didRenameFiles` reports only the receipts that committed.
   Servers without the capability (or with no open documents) change
   nothing; `:cancel-change` while waiting abandons the stage untouched.
+- **Sovel — experimental syntax highlighting** (0070): `.sov` files open
+  with a dedicated Tree-sitter presentation grammar (ABI 15, statically
+  linked, pinned regeneration recipe under
+  `crates/strop-syntax/grammars/sovel/`). Modules, contextual/dependency/
+  effect clauses, generics, traits, regions, tasks, attributes, macro
+  quotes/splices and `extern "C"` blocks highlight through the current
+  theme; effect spellings stay contextual (an ordinary `read` identifier
+  is not an effect). Preview only: no Sovel server, formatter, symbols or
+  validation is spawned or implied, and a colored tree is not a proof of
+  source validity.
 ## 0.42.0 — 2026-10-08
 
 ### Added

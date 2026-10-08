@@ -1,0 +1,150 @@
+================================================================================
+modules and imports
+================================================================================
+
+module store::kv;
+module nested {
+    const LIMIT: U64 = 64;
+}
+import util::log as logger;
+import iface;
+
+---
+
+(source_file
+  (module_declaration
+    (module_path
+      (identifier)
+      (identifier)))
+  (module_declaration
+    (module_path
+      (identifier))
+    (const_declaration
+      name: (identifier)
+      (type_atom
+        (type_path
+          (identifier)))
+      (literal
+        (integer_literal))))
+  (import_declaration
+    (module_path
+      (identifier)
+      (identifier))
+    (identifier))
+  (import_declaration
+    (module_path
+      (identifier))))
+
+================================================================================
+type declarations and attributes
+================================================================================
+
+#[derive(Copy)]
+#[must_finish]
+struct Handle {
+    id: U64,
+    pub name: Str,
+}
+enum Outcome<T> {
+    Ok(T),
+    Err { code: U64, },
+}
+newtype Meters = U64 where Meters: Copy;
+type Pair<T> = (T, T);
+effect Audit(origin log, origin sink,);
+#[link_name = "getenv"]
+const UNUSED: U64 = 0;
+
+---
+
+(source_file
+  (attribute
+    (module_path
+      (identifier))
+    (argument
+      (value_path
+        (identifier))))
+  (attribute
+    (module_path
+      (identifier)))
+  (struct_declaration
+    name: (identifier)
+    (field_declarations
+      (field_declaration
+        name: (identifier)
+        (type_atom
+          (type_path
+            (identifier))))
+      (field_declaration
+        name: (identifier)
+        (type_atom
+          (type_path
+            (identifier))))))
+  (enum_declaration
+    name: (identifier)
+    (generic_parameters
+      (generic_parameter
+        (type_parameter
+          (identifier))))
+    (variant_declaration
+      name: (identifier)
+      (type_list
+        (type_atom
+          (type_path
+            (identifier)))))
+    (variant_declaration
+      name: (identifier)
+      (field_declarations
+        (field_declaration
+          name: (identifier)
+          (type_atom
+            (type_path
+              (identifier)))))))
+  (newtype_declaration
+    name: (identifier)
+    (type_atom
+      (type_path
+        (identifier)))
+    (where_clause
+      (constraint
+        (type_atom
+          (type_path
+            (identifier)))
+        (trait_bounds
+          (trait_type
+            (type_path
+              (identifier)))))))
+  (type_alias
+    name: (identifier)
+    (generic_parameters
+      (generic_parameter
+        (type_parameter
+          (identifier))))
+    (type_atom
+      (tuple_type
+        (type_atom
+          (type_path
+            (identifier)))
+        (type_list
+          (type_atom
+            (type_path
+              (identifier)))))))
+  (effect_declaration
+    name: (identifier)
+    (origin_parameter
+      (identifier))
+    (origin_parameter
+      (identifier)))
+  (attribute
+    (module_path
+      (identifier))
+    (literal
+      (string_literal)))
+  (const_declaration
+    name: (identifier)
+    (type_atom
+      (type_path
+        (identifier)))
+    (literal
+      (integer_literal))))
+

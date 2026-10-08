@@ -5319,6 +5319,7 @@ dependencies = [
 name = "strop-syntax"
 version = "0.42.0"
 dependencies = [
+ "cc",
  "imbl",
  "ropey",
  "serde",
@@ -5337,6 +5338,7 @@ dependencies = [
  "tree-sitter-java",
  "tree-sitter-javascript",
  "tree-sitter-json",
+ "tree-sitter-language",
  "tree-sitter-lua",
  "tree-sitter-md",
  "tree-sitter-php",

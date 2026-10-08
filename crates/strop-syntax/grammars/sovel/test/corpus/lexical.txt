@@ -1,0 +1,66 @@
+================================================================================
+comments, strings, escapes, characters
+================================================================================
+
+// line comment with keywords: using from region extern unsafe
+/// doc comment on a function
+/** doc block comment */
+/* plain block { unbalanced */
+/* multi
+   line */
+fn commented() -> Unit ! {} {
+    let s = "string with // and /* and #[not-attr] and $not-splice";
+    let t = "escapes \n \r \t \\ \" \0 {a}";
+    let u = "unicode: λ 絵 —";
+    let c = 'x';
+    let q = '\'';
+    // a comment (with parens
+}
+
+---
+
+(source_file
+  (comment)
+  (comment)
+  (comment)
+  (comment)
+  (comment)
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (literal
+          (string_literal)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (literal
+          (string_literal)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (literal
+          (string_literal)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (literal
+          (char_literal)))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (literal
+          (char_literal)))
+      (comment))))
+

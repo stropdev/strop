@@ -1,0 +1,170 @@
+================================================================================
+unfinished attribute
+================================================================================
+
+#[derive(
+struct S { x: U64 }
+
+---
+
+(source_file
+  (ERROR
+    (module_path
+      (identifier))
+    (struct_expression
+      (value_path
+        (identifier))
+      (ERROR
+        (identifier))
+      (field_initializer
+        (identifier)
+        (value_path
+          (identifier))))))
+
+================================================================================
+trailing using clause
+================================================================================
+
+fn f(x: &Str) using
+
+---
+
+(source_file
+  (ERROR
+    (identifier)
+    (parameter_list
+      (parameter
+        (binding_pattern
+          (identifier))
+        (reference_type
+          (type_atom
+            (type_path
+              (identifier))))))))
+
+================================================================================
+unfinished effect row
+================================================================================
+
+fn g() -> Unit ! {
+
+---
+
+(source_file
+  (ERROR
+    (identifier)
+    (parameter_list)
+    (type_atom
+      (type_path
+        (identifier)))))
+
+================================================================================
+unclosed generic parameter list
+================================================================================
+
+fn h<T: Clone(
+
+---
+
+(source_file
+  (ERROR
+    (identifier)
+    (generic_parameter
+      (type_parameter
+        (identifier))
+      (trait_bounds
+        (trait_type
+          (type_path
+            (identifier)))))))
+
+================================================================================
+unfinished quote and splice
+================================================================================
+
+fn q() -> Unit ! {} {
+    let a = quote { $x + ${y
+}
+
+---
+
+(ERROR
+  (function_signature
+    name: (identifier)
+    (parameter_list)
+    return_type: (type_atom
+      (type_path
+        (identifier)))
+    (effect_clause
+      (effect_expression
+        (effect_atom
+          (effect_set)))))
+  (binding_pattern
+    (identifier))
+  (binary_expression
+    (syntax_splice
+      (identifier))
+    (syntax_splice
+      (value_path
+        (identifier)))))
+
+================================================================================
+unterminated string
+================================================================================
+
+fn b() -> Unit ! {} {
+    let s = "unterminated
+    let t = 1;
+}
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier)))
+      (effect_clause
+        (effect_expression
+          (effect_atom
+            (effect_set)))))
+    (block
+      (ERROR
+        (binding_pattern
+          (identifier))
+        (UNEXPECTED '\n'))
+      (let_statement
+        (binding_pattern
+          (identifier))
+        (literal
+          (integer_literal))))))
+
+================================================================================
+missing effect clause and body
+================================================================================
+
+fn v() -> Vec<Vec<T>> {
+
+---
+
+(source_file
+  (function_declaration
+    (function_signature
+      name: (identifier)
+      (parameter_list)
+      return_type: (type_atom
+        (type_path
+          (identifier))
+        (generic_arguments
+          (generic_argument
+            (type_atom
+              (type_path
+                (identifier))
+              (generic_arguments
+                (generic_argument
+                  (type_atom
+                    (type_path
+                      (identifier))))))))))
+    (block
+      (MISSING "}"))))

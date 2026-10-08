@@ -61,6 +61,12 @@ pub const LANGUAGES: &[Language] = &[
         extensions: &["sh", "bash", "zsh", "ksh"],
         aliases: &["sh", "bash", "shell"],
     },
+    // Experimental syntax highlighting (0070); no server/formatter.
+    Language {
+        name: "sovel",
+        extensions: &["sov"],
+        aliases: &["sov"],
+    },
 ];
 
 /// Language name for a bare extension (no dot).
@@ -101,6 +107,15 @@ mod tests {
         assert_eq!(language_for_extension_name("lua"), Some("lua"));
         assert_eq!(extensions_for_language("lua"), Some(&["lua"][..]));
         assert!(language_names().any(|name| name == "lua"));
+    }
+
+    #[test]
+    fn sovel_resolves_through_extension_name_and_alias() {
+        assert_eq!(language_for_extension(".sov"), Some("sovel"));
+        assert_eq!(language_for_extension_name("sov"), Some("sovel"));
+        assert_eq!(extensions_for_language("sovel"), Some(&["sov"][..]));
+        assert_eq!(extensions_for_language("sov"), Some(&["sov"][..]));
+        assert!(language_names().any(|name| name == "sovel"));
     }
 
     #[test]
