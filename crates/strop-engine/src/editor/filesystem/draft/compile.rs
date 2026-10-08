@@ -39,7 +39,10 @@ impl Draft {
             let name = text.strip_suffix('\n').unwrap_or(&text);
             if name.is_empty() {
                 if row.origin.is_some() {
-                    return Err(format!("draft line {}: an existing entry needs a name; delete the whole line to stage removal", line + 1));
+                    return Err(format!(
+                        "draft line {}: an existing entry needs a name; delete the whole line to stage removal",
+                        line + 1
+                    ));
                 }
                 continue;
             }
@@ -108,7 +111,10 @@ impl Draft {
                 }
                 Some(Origin::Copy(source)) => {
                     if source.observation.kind != strop_workspace::EntryKind::File || directory {
-                        return Err(format!("draft line {}: copying directories or changing source type is unsupported", line + 1));
+                        return Err(format!(
+                            "draft line {}: copying directories or changing source type is unsupported",
+                            line + 1
+                        ));
                     }
                     if source.location.filesystem != self.root.filesystem {
                         return Err("cross-namespace draft copies are unsupported".into());

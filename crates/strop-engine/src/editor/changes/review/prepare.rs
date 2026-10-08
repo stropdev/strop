@@ -381,9 +381,13 @@ fn prepare(input: Input, cancel: &worker::CancelToken) -> Outcome<PreparedReview
         sources.entry(identity).or_default().extend(hits);
     }
     let mut result = PreparedReview {
-        targets: Vec::new(), refused: Vec::new(),
-        summary: format!("{}: {} included matches, {excluded} excluded; Apply edits buffers, :save-change persists files",
-            input.scope.root.label(), input.catalog.len().saturating_sub(excluded)),
+        targets: Vec::new(),
+        refused: Vec::new(),
+        summary: format!(
+            "{}: {} included matches, {excluded} excluded; Apply edits buffers, :save-change persists files",
+            input.scope.root.label(),
+            input.catalog.len().saturating_sub(excluded)
+        ),
     };
     for (path, mut hits) in sources {
         if cancel.is_cancelled() {

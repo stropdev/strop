@@ -532,7 +532,10 @@ impl Editor {
             return;
         }
         if let Some(proposal) = self.review.pending.take() {
-            let note = format!("strop change proposal {} — STALE\nSearch changed; prepare a new review. Nothing applied.\n", proposal.id);
+            let note = format!(
+                "strop change proposal {} — STALE\nSearch changed; prepare a new review. Nothing applied.\n",
+                proposal.id
+            );
             if let Err(error) = self.replace_system(proposal.buffer, &note) {
                 self.message = format!("could not retire stale review: {error}");
             }

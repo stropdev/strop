@@ -130,7 +130,7 @@ impl Editor {
             // A committed save has no filesystem undo: the previous bytes
             // are gone; the document's own undo history owns that past.
             OperationKind::Store => {
-                return Err("a saved document has no filesystem undo; edit history owns it".into())
+                return Err("a saved document has no filesystem undo; edit history owns it".into());
             }
         };
         let from = from.ok_or("receipt has no recoverable source location")?;

@@ -32,7 +32,11 @@ impl Draft {
                                 self.apply_geometry(change, inserted, hint.as_ref())
                             });
                         if let Err(error) = result {
-                            self.geometry.error = Some(format!("draft line {} at revision {}: {error}; undo the ambiguous edit or discard the draft", change.edit.start_point.0 + 1, change.revision));
+                            self.geometry.error = Some(format!(
+                                "draft line {} at revision {}: {error}; undo the ambiguous edit or discard the draft",
+                                change.edit.start_point.0 + 1,
+                                change.revision
+                            ));
                         }
                     }
                     if let Some(reference) = change.history {

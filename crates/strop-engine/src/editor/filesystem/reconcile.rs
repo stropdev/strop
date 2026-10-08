@@ -18,7 +18,10 @@ impl Editor {
                     return Err("local save/save-as is still in progress; wait before preparing filesystem mutations".into());
                 }
                 if self.filesystem.blocks(location) {
-                    return Err(format!("filesystem operation pending or unconfirmed for {}; verify its receipt first", location.label()));
+                    return Err(format!(
+                        "filesystem operation pending or unconfirmed for {}; verify its receipt first",
+                        location.label()
+                    ));
                 }
                 if matches!(location.filesystem, Filesystem::Container(_)) {
                     return Err("container filesystem operations are read-only by policy".into());
@@ -52,7 +55,10 @@ impl Editor {
                             .as_ref()
                             .is_some_and(|state| state.starts_with(&source.path)))
                 {
-                    return Err(format!("{} contains an active workspace/cwd/state anchor; relocation is not authorized", source.label()));
+                    return Err(format!(
+                        "{} contains an active workspace/cwd/state anchor; relocation is not authorized",
+                        source.label()
+                    ));
                 }
             }
             for (document, entry) in self.docs.iter() {
@@ -101,7 +107,10 @@ impl Editor {
                             )
                     });
                     if !vacated {
-                        return Err(format!("destination {} is already owned by an open document, including its unsaved text", location.label()));
+                        return Err(format!(
+                            "destination {} is already owned by an open document, including its unsaved text",
+                            location.label()
+                        ));
                     }
                 }
             }

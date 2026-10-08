@@ -29,7 +29,9 @@ impl Editor {
             self.message = "no changed files to save".into();
             return;
         }
-        let mut buffer = Buffer::from_text("strop save receipt — per-file persistence results\nApply and Save are separate; newer edits remain unsaved.\n\n");
+        let mut buffer = Buffer::from_text(
+            "strop save receipt — per-file persistence results\nApply and Save are separate; newer edits remain unsaved.\n\n",
+        );
         buffer.name = Some("change save receipt".into());
         let Some(report) = self.open_temporary_output(buffer) else {
             return; // message already names the exhaustion
