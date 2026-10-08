@@ -201,6 +201,8 @@ pub enum RequestKind {
     CodeAction,
     /// All symbols in one document — no position rides the request.
     DocumentSymbols,
+    /// `workspace/willRenameFiles` — a file rename about to happen.
+    WillRenameFiles,
     /// All symbols in the workspace matching a query string —
     /// document-free (0063 §2).
     WorkspaceSymbols,
@@ -219,6 +221,7 @@ impl RequestKind {
             Self::Rename => "rename",
             Self::CodeAction => "code action",
             Self::DocumentSymbols => "document symbols",
+            Self::WillRenameFiles => "file rename preparation",
             Self::WorkspaceSymbols => "workspace symbols",
             Self::Completion => "completion",
             Self::CompletionResolve => "completion item resolve",
@@ -333,6 +336,10 @@ pub struct RequestInput {
     /// tapes decode without it.
     #[serde(default)]
     pub rename_to: Option<String>,
+    /// `willRenameFiles` pairs (old PATH, new PATH — the wire encodes
+    /// URIs at launch); `None` otherwise.
+    #[serde(default)]
+    pub rename_files: Option<Vec<(std::path::PathBuf, std::path::PathBuf)>>,
 }
 
 /// An admitted request: its owning stamp plus the captured input.

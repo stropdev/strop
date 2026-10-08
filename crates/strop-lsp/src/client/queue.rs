@@ -48,7 +48,7 @@ type SharedArc = loom::sync::Arc<Shared>;
 
 use async_lsp::lsp_types as lt;
 use async_lsp::lsp_types::notification::{
-    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument,
+    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, DidRenameFiles,
 };
 use async_lsp::ServerSocket;
 use ropey::Rope;
@@ -96,6 +96,10 @@ pub(crate) enum WireJob {
     Request(PendingRequest),
     /// A small barrier only; bounded completion tasks own their captured input.
     Completion(crate::RequestStamp),
+    /// `workspace/didRenameFiles` — the rename happened (notification).
+    DidRenameFiles {
+        files: Vec<(std::path::PathBuf, std::path::PathBuf)>,
+    },
     /// Workspace-wide symbol query (0063 §2): document-free, so the
     /// reply correlates on the caller's generation.
     WorkspaceSymbols {
@@ -215,7 +219,7 @@ fn admit_change(
                 break;
             }
             WireJob::Request(_) | WireJob::Completion(_) | WireJob::WorkspaceSymbols { .. } => {
-                break
+                break;
             }
             WireJob::Open { uri: queued, .. } | WireJob::Close { uri: queued }
                 if *queued == uri =>
@@ -580,6 +584,26 @@ fn frame(env: &WireEnv, shared: &Shared, retired: &mut Vec<Rope>, job: WireJob) 
                 lt::DidCloseTextDocumentParams {
                     text_document: lt::TextDocumentIdentifier { uri },
                 },
+            );
+        }
+        WireJob::DidRenameFiles { files } => {
+            let files: Vec<lt::FileRename> = files
+                .into_iter()
+                .filter_map(|(old_path, new_path)| {
+                    env.workspace
+                        .uri(&old_path)
+                        .zip(env.workspace.uri(&new_path))
+                        .map(|(old_uri, new_uri)| lt::FileRename {
+                            old_uri: old_uri.to_string(),
+                            new_uri: new_uri.to_string(),
+                        })
+                })
+                .collect();
+            env.notify::<DidRenameFiles>(
+                shared,
+                retired,
+                super::outbound::Method::Open,
+                lt::RenameFilesParams { files },
             );
         }
         WireJob::Completion(stamp) => env.completion.start(stamp),

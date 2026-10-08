@@ -406,6 +406,7 @@ impl Editor {
             ),
             kind,
             rename_to,
+            rename_files: None,
         };
         let native_input = input.clone();
         let prepared = self.tape.call("lsp.prepare", &input, || {

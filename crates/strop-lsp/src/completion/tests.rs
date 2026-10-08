@@ -14,6 +14,7 @@ fn input(text: &str, caret: usize) -> RequestInput {
         line_text: FrozenLine::from(text),
         kind: RequestKind::Hover,
         rename_to: None,
+        rename_files: None,
     }
 }
 

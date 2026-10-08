@@ -66,6 +66,7 @@ fn hover_null_and_empty_results_are_explicit_empties() {
                 line_text: "y".into(),
                 kind: RequestKind::Hover,
                 rename_to: None,
+                rename_files: None,
             })
             .unwrap();
         let request = wire.next().await;
@@ -109,6 +110,7 @@ fn goto_null_is_a_note_and_switch_header_null_is_a_note() {
                 line_text: "x".into(),
                 kind: RequestKind::Goto,
                 rename_to: None,
+                rename_files: None,
             })
             .unwrap();
         let request = wire.next().await;
@@ -129,6 +131,7 @@ fn goto_null_is_a_note_and_switch_header_null_is_a_note() {
                 line_text: "x".into(),
                 kind: RequestKind::SwitchHeader,
                 rename_to: None,
+                rename_files: None,
             })
             .unwrap();
         let request = wire.next().await;
@@ -175,6 +178,7 @@ fn document_symbols_flatten_both_reply_shapes() {
                     line_text: "x".into(),
                     kind,
                     rename_to: None,
+                    rename_files: None,
                 })
                 .unwrap()
         };
@@ -265,6 +269,7 @@ fn locations_null_is_an_empty_list_and_errors_are_notes() {
                 line_text: "x".into(),
                 kind: RequestKind::Locations(LocKind::References),
                 rename_to: None,
+                rename_files: None,
             })
             .unwrap();
         let request = wire.next().await;
@@ -293,6 +298,7 @@ fn locations_null_is_an_empty_list_and_errors_are_notes() {
                 line_text: "y".into(),
                 kind: RequestKind::Locations(LocKind::References),
                 rename_to: None,
+                rename_files: None,
             })
             .unwrap();
         let request = wire.next().await;

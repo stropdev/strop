@@ -61,6 +61,7 @@ fn main() {
                         line_text: line_text.into(),
                         kind: strop_lsp::RequestKind::Hover,
                         rename_to: None,
+                        rename_files: None,
                     });
                     if let Err(refusal) = admitted {
                         println!("REFUSED {refusal:?}");

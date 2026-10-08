@@ -218,6 +218,7 @@ impl Editor {
             ),
             kind,
             rename_to: None,
+            rename_files: None,
         })
     }
 

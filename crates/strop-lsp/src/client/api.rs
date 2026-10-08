@@ -148,6 +148,7 @@ impl Client {
             line_text: crate::FrozenLine::from(""),
             kind: RequestKind::Format,
             rename_to: None,
+            rename_files: None,
         })?;
         request.tab_width = Some(tab_width);
         let stamp = request.stamp;
@@ -164,6 +165,24 @@ impl Client {
     ) -> Result<RequestStamp, RequestRefusal> {
         input.rename_to = Some(new_name.to_owned());
         self.request(input)
+    }
+
+    /// `workspace/willRenameFiles` admission: the (old, new) pairs ride
+    /// the admission record so a replay relaunches the identical payload.
+    pub fn will_rename_files(
+        &self,
+        mut input: RequestInput,
+        files: Vec<(std::path::PathBuf, std::path::PathBuf)>,
+    ) -> Result<RequestStamp, RequestRefusal> {
+        input.rename_files = Some(files);
+        self.request(input)
+    }
+
+    /// `workspace/didRenameFiles`: the rename completed.
+    pub fn did_rename_files(&self, files: Vec<(std::path::PathBuf, std::path::PathBuf)>) {
+        let _ = self
+            .queue
+            .send(super::queue::WireJob::DidRenameFiles { files });
     }
 
     /// Code-action admission at the input's position.
@@ -214,6 +233,7 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
     };
     let tab_width = request.tab_width;
     let rename_to = request.input.rename_to.clone();
+    let rename_files = request.input.rename_files.clone();
     let handle = env.handle.clone();
     let env = env.clone();
     handle.spawn(async move {
@@ -251,6 +271,14 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
             RequestKind::DocumentSymbols => {
                 document_symbols(env, tdp.text_document, context, path).await
             }
+            RequestKind::WillRenameFiles => match rename_files {
+                Some(files) => will_rename_files(env, context, files).await,
+                None => note(
+                    &env,
+                    context,
+                    "file rename preparation is missing its pairs".into(),
+                ),
+            },
             RequestKind::WorkspaceSymbols
             | RequestKind::Completion
             | RequestKind::CompletionResolve => {
@@ -262,6 +290,59 @@ pub(crate) fn launch(env: &WireEnv, request: PendingRequest) {
             }
         }
     });
+}
+
+/// `workspace/willRenameFiles`: the server's preparation edits (if any)
+/// decode through the same WorkspaceEdit channel as rename/code-action.
+/// Every outcome — empty edit, decode refusal, transport error — still
+/// emits the (possibly empty) WorkspaceEdits event: the editor's staged
+/// filesystem apply counts replies, and a silent path would stall it.
+async fn will_rename_files(
+    env: WireEnv,
+    context: ReplyContext,
+    files: Vec<(std::path::PathBuf, std::path::PathBuf)>,
+) {
+    let files: Vec<lt::FileRename> = files
+        .into_iter()
+        .filter_map(|(old_path, new_path)| {
+            let old_uri = env.workspace.uri(&old_path);
+            let new_uri = env.workspace.uri(&new_path);
+            old_uri
+                .zip(new_uri)
+                .map(|(old_uri, new_uri)| lt::FileRename {
+                    old_uri: old_uri.to_string(),
+                    new_uri: new_uri.to_string(),
+                })
+        })
+        .collect();
+    let params = lt::RenameFilesParams { files };
+    let edits = match env
+        .socket
+        .request::<lt::request::WillRenameFiles>(params)
+        .await
+    {
+        Ok(Some(edit)) => match super::wire::workspace_edits(&env, edit) {
+            Ok(edits) => edits,
+            Err(refusal) => {
+                note(
+                    &env,
+                    context,
+                    refusal.note_text("file rename preparation", &env.workspace.label()),
+                );
+                Vec::new()
+            }
+        },
+        Ok(None) => Vec::new(),
+        Err(error) => {
+            note(
+                &env,
+                context,
+                format!("file rename preparation failed: {error}"),
+            );
+            Vec::new()
+        }
+    };
+    let _ = env.tx.send(LspEvent::WorkspaceEdits { context, edits });
 }
 
 fn note(env: &WireEnv, context: ReplyContext, text: String) {

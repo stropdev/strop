@@ -251,6 +251,7 @@ fn ask(client: &Client, document: strop_core::id::DocumentId, revision: u64) -> 
             line_text: "a😀z".into(),
             kind: RequestKind::Hover,
             rename_to: None,
+            rename_files: None,
         })
         .unwrap()
 }
@@ -425,6 +426,7 @@ fn live_close_reopen_sends_fresh_content_and_reordered_replies_keep_original_own
                 line_text: "externally changed".into(),
                 kind: RequestKind::Hover,
                 rename_to: None,
+                rename_files: None,
             })
             .unwrap();
         let new_request = wire.next().await;
@@ -527,6 +529,7 @@ fn unsupported_capability_refuses_admission_without_wire_traffic() {
             line_text: "x".into(),
             kind: RequestKind::Hover,
             rename_to: None,
+            rename_files: None,
         });
         assert_eq!(refused, Err(RequestRefusal::Unsupported));
         // No frame and no event: refusals never touch the wire.
@@ -560,6 +563,7 @@ fn stale_revision_and_unopened_documents_refuse_admission() {
             line_text: "x".into(),
             kind: RequestKind::Hover,
             rename_to: None,
+            rename_files: None,
         });
         assert_eq!(stale, Err(RequestRefusal::StaleRevision));
         let elsewhere = client.request(RequestInput {
@@ -571,6 +575,7 @@ fn stale_revision_and_unopened_documents_refuse_admission() {
             line_text: "x".into(),
             kind: RequestKind::Hover,
             rename_to: None,
+            rename_files: None,
         });
         assert_eq!(elsewhere, Err(RequestRefusal::NotOpen));
         wire.stop().await;

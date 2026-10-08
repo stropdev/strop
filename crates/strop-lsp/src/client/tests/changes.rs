@@ -103,6 +103,7 @@ fn rename_over_changes_map_and_document_changes_produce_workspace_edits() {
             line_text: "a😀z".into(),
             kind: RequestKind::Rename,
             rename_to: None,
+            rename_files: None,
         };
         let changes_stamp = client.rename(input(0), "renamed").unwrap();
         let request = wire.next().await;
@@ -204,6 +205,7 @@ fn rename_with_resource_operations_or_a_foreign_version_is_a_refusal_note() {
             line_text: "x".into(),
             kind: RequestKind::Rename,
             rename_to: None,
+            rename_files: None,
         };
         // Resource operations: never a partial edit set.
         let ops_stamp = client.rename(input(), "new").unwrap();
@@ -253,6 +255,105 @@ fn rename_with_resource_operations_or_a_foreign_version_is_a_refusal_note() {
 }
 
 #[test]
+fn will_rename_files_round_trips_pairs_and_null_still_completes() {
+    run(async {
+        let (client, rx, mut wire) = Wire::production();
+        let mut docs = Documents::default();
+        let document = docs.try_insert(()).unwrap();
+        let path = Path::new("/workspace/a.rs");
+        client.caps.set(lt::ServerCapabilities {
+            workspace: Some(lt::WorkspaceServerCapabilities {
+                workspace_folders: None,
+                file_operations: Some(lt::WorkspaceFileOperationsServerCapabilities {
+                    will_rename: Some(lt::FileOperationRegistrationOptions { filters: vec![] }),
+                    ..Default::default()
+                }),
+            }),
+            ..Default::default()
+        });
+        client.finish_initialize().unwrap();
+        assert!(client.did_open(
+            document,
+            BufferRevision::new(0),
+            path,
+            "rust",
+            Rope::from_str("mod a;\n")
+        ));
+        let _open = wire.next().await;
+        let input = || RequestInput {
+            document,
+            revision: BufferRevision::new(0),
+            path: path.to_owned(),
+            line: LineIndex::new(0),
+            byte_col: ByteColumn::new(0),
+            line_text: "mod a;".into(),
+            kind: RequestKind::WillRenameFiles,
+            rename_to: None,
+            rename_files: None,
+        };
+        let pairs = || {
+            vec![(
+                PathBuf::from("/workspace/a.rs"),
+                PathBuf::from("/workspace/b.rs"),
+            )]
+        };
+        let stamp = client.will_rename_files(input(), pairs()).unwrap();
+        let request = wire.next().await;
+        assert_eq!(request["method"], "workspace/willRenameFiles");
+        assert_eq!(
+            request["params"]["files"][0]["oldUri"],
+            "file:///workspace/a.rs"
+        );
+        assert_eq!(
+            request["params"]["files"][0]["newUri"],
+            "file:///workspace/b.rs"
+        );
+        wire.reply(
+            &request,
+            json!({
+                "changes": {
+                    "file:///workspace/main.rs": [
+                        { "range": { "start": { "line": 0, "character": 4 }, "end": { "line": 0, "character": 5 } }, "newText": "b" }
+                    ]
+                }
+            }),
+        )
+        .await;
+        let LspEvent::WorkspaceEdits { context, edits } = event(&rx).await else {
+            panic!("workspace edits")
+        };
+        assert_eq!(context.stamp, stamp);
+        assert_eq!(context.kind, RequestKind::WillRenameFiles);
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].0.path, PathBuf::from("/workspace/main.rs"));
+        assert_eq!(edits[0].1[0].new_text, "b");
+        // A null preparation result is an explicit empty edit set — the
+        // staged apply depends on the completion signal either way.
+        let null_stamp = client.will_rename_files(input(), pairs()).unwrap();
+        let request = wire.next().await;
+        wire.reply(&request, Value::Null).await;
+        let LspEvent::WorkspaceEdits { context, edits } = event(&rx).await else {
+            panic!("workspace edits")
+        };
+        assert_eq!(context.stamp, null_stamp);
+        assert!(edits.is_empty());
+        // didRenameFiles rides the notification lane with the same codec.
+        client.did_rename_files(pairs());
+        let notification = wire.next().await;
+        assert_eq!(notification["method"], "workspace/didRenameFiles");
+        assert_eq!(
+            notification["params"]["files"][0]["oldUri"],
+            "file:///workspace/a.rs"
+        );
+        assert_eq!(
+            notification["params"]["files"][0]["newUri"],
+            "file:///workspace/b.rs"
+        );
+        wire.stop().await;
+    });
+}
+
+#[test]
 fn code_actions_decode_edits_and_commands() {
     run(async {
         let (client, rx, mut wire) = Wire::production();
@@ -283,6 +384,7 @@ fn code_actions_decode_edits_and_commands() {
                 line_text: "hello world".into(),
                 kind: RequestKind::CodeAction,
                 rename_to: None,
+                rename_files: None,
             })
             .unwrap();
         let request = wire.next().await;
@@ -376,6 +478,7 @@ fn format_rename_and_code_action_refuse_admission_without_providers() {
             line_text: "x".into(),
             kind,
             rename_to: None,
+            rename_files: None,
         };
         assert_eq!(
             client.format(document, BufferRevision::new(0), path.to_owned(), 4),

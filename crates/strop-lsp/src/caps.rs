@@ -95,6 +95,16 @@ impl ServerCaps {
             )
         })
     }
+    /// `workspace/willRenameFiles` advertised
+    /// (`workspace.fileOperations.willRename`).
+    pub fn will_rename_files(&self) -> bool {
+        self.flag(|c| {
+            c.workspace
+                .as_ref()
+                .and_then(|workspace| workspace.file_operations.as_ref())
+                .is_some_and(|operations| operations.will_rename.is_some())
+        })
+    }
     pub fn rename(&self) -> bool {
         use async_lsp::lsp_types::OneOf;
         self.flag(|c| {
@@ -171,6 +181,7 @@ impl ServerCaps {
             RequestKind::Rename => self.rename(),
             RequestKind::CodeAction => self.code_action(),
             RequestKind::DocumentSymbols => self.document_symbols(),
+            RequestKind::WillRenameFiles => self.will_rename_files(),
             RequestKind::WorkspaceSymbols => self.workspace_symbols(),
             RequestKind::Completion => self.completion(),
             RequestKind::CompletionResolve => self.completion_resolve(),

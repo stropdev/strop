@@ -2,6 +2,9 @@
 mod actions;
 mod commands;
 pub(crate) mod draft;
+mod lsp_rename;
+#[cfg(test)]
+mod lsp_rename_tests;
 mod prepare;
 mod reconcile;
 mod recovery;
@@ -54,6 +57,15 @@ pub(crate) struct Proposal {
     report: DocumentId,
     view_revision: BufferRevision,
 }
+/// A reviewed proposal parked while language servers answer
+/// `workspace/willRenameFiles` (lsp_rename.rs). The apply resumes when
+/// every admitted stamp has replied; cancellation demotes the proposal
+/// back to `pending`.
+pub(crate) struct WillRenameStage {
+    proposal: Proposal,
+    stamps: Vec<strop_lsp::RequestStamp>,
+    servers: lsp_rename::RenameServers,
+}
 pub(crate) struct Attempt {
     ticket: Ticket<FsKey>,
     batch: strop_fs::batch::PreparedBatch,
@@ -63,6 +75,8 @@ pub(crate) struct Attempt {
     /// Original publication evidence survives later verification observations.
     publication: Vec<Option<strop_workspace::Observation>>,
     warning: Option<String>,
+    /// Servers that prepared these renames; notified on commit.
+    lsp_renames: lsp_rename::RenameServers,
 }
 pub(crate) struct FsState {
     /// The session's local worker lease (0058 WK04): local user-resource
@@ -72,6 +86,7 @@ pub(crate) struct FsState {
     preparing: Option<Ticket<FsKey>>,
     preparing_copies: HashMap<ResourceLocation, ropey::Rope>,
     pending: Option<Proposal>,
+    will_rename: Option<WillRenameStage>,
     running: Option<WorkerId>,
     verifying: Option<Ticket<VerifyKey>>,
     history: VecDeque<Attempt>,
@@ -86,6 +101,7 @@ impl Default for FsState {
             preparing: None,
             preparing_copies: HashMap::new(),
             pending: None,
+            will_rename: None,
             running: None,
             verifying: None,
             history: VecDeque::new(),
@@ -101,7 +117,10 @@ impl FsState {
         &self.worker
     }
     pub(crate) fn pending(&self) -> bool {
-        self.preparing.is_some() || self.running.is_some() || self.verifying.is_some()
+        self.preparing.is_some()
+            || self.will_rename.is_some()
+            || self.running.is_some()
+            || self.verifying.is_some()
     }
     pub(crate) fn mutation_pending(&self, request: WorkerId) -> bool {
         self.running == Some(request)
@@ -204,6 +223,11 @@ impl Editor {
         let Some(proposal) = self.filesystem.pending.take() else {
             return false;
         };
+        if self.filesystem.will_rename.is_some() {
+            self.filesystem.pending = Some(proposal);
+            self.message = "language-server rename preparation is still in flight".into();
+            return true;
+        }
         if self
             .docs
             .get(proposal.report)
@@ -275,6 +299,28 @@ impl Editor {
             self.filesystem.pending = Some(proposal);
             return true;
         }
+        if let Some((stamps, servers)) = self.admit_will_rename(&proposal) {
+            self.filesystem.will_rename = Some(WillRenameStage {
+                proposal,
+                stamps,
+                servers,
+            });
+            self.message = "awaiting language-server rename preparation…".into();
+            return true;
+        }
+        self.dispatch_filesystem_apply(proposal, Vec::new());
+        true
+    }
+
+    /// The mutation half of an accepted review: draft freeze, history
+    /// admission, worker spawn. Runs either straight from
+    /// `apply_filesystem_review` or from `will_rename_edits` once every
+    /// admitted language server answered (lsp_rename.rs).
+    fn dispatch_filesystem_apply(
+        &mut self,
+        proposal: Proposal,
+        lsp_renames: lsp_rename::RenameServers,
+    ) {
         let request = proposal.ticket.request;
         let ticket = proposal.ticket;
         if let Some(stamp) = &ticket.key.draft {
@@ -289,6 +335,7 @@ impl Editor {
             apply_focus: self.focus_epoch,
             publication: Vec::new(),
             warning: None,
+            lsp_renames,
         });
         while self.filesystem.history.len() > 32
             || self
@@ -317,14 +364,14 @@ impl Editor {
             proposal.batch.steps.len()
         );
         match self.tape.request("filesystem.apply", &ticket) {
-            Ok(false) => return true,
+            Ok(false) => return,
             Ok(true) => {}
             Err(error) => {
                 self.handle_filesystem(FsEvent::Applied(Box::new(Completion {
                     ticket,
                     outcome: Outcome::failed(FailureKind::Protocol, error.to_string()),
                 })));
-                return true;
+                return;
             }
         }
         let tx = self.io.tx.clone();
@@ -348,10 +395,14 @@ impl Editor {
             },
         );
         self.worker_handles.insert(request, handle);
-        true
     }
 
     pub(crate) fn cancel_filesystem_review(&mut self) -> bool {
+        // A staged will-rename proposal demotes back to pending so the
+        // ordinary cancel path renders it; late replies find no stage.
+        if let Some(stage) = self.filesystem.will_rename.take() {
+            self.filesystem.pending = Some(stage.proposal);
+        }
         if let Some(request) = self.filesystem.running.filter(|request| {
             self.filesystem.history.iter().any(|attempt| {
                 attempt.ticket.request == *request && attempt.report == self.current()
@@ -577,6 +628,7 @@ impl Editor {
                     let receipt = self.filesystem.history[index].receipts[step].clone();
                     self.reconcile_filesystem_step(&receipt);
                 }
+                self.notify_did_rename(index);
                 self.publish_filesystem_receipt(index);
                 self.finish_filesystem_draft_attempt(index);
                 self.open_created_filesystem_resource(index);
@@ -674,6 +726,8 @@ impl Editor {
             }
             self.set_filesystem_review_rows(report, rows);
         }
-        self.message = format!("filesystem: {committed} committed, {unknown} unconfirmed; :fs operations retains receipts");
+        self.message = format!(
+            "filesystem: {committed} committed, {unknown} unconfirmed; :fs operations retains receipts"
+        );
     }
 }

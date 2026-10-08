@@ -38,6 +38,7 @@ fn request() -> WireJob {
             line_text: crate::FrozenLine::from(""),
             kind: crate::protocol::RequestKind::Hover,
             rename_to: None,
+            rename_files: None,
         },
         tab_width: None,
     })

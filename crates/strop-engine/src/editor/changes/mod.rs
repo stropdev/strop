@@ -21,6 +21,8 @@ use super::Editor;
 pub(crate) enum ChangeProducer {
     Format,
     Rename,
+    /// `workspace/willRenameFiles` preparation edits (0054 §12).
+    FileRename,
     CodeAction,
     /// A global replace accepted from the picker review (0051 §6 R04).
     Replace,
@@ -31,6 +33,7 @@ impl ChangeProducer {
         match self {
             Self::Format => "format",
             Self::Rename => "rename",
+            Self::FileRename => "file rename",
             Self::CodeAction => "code action",
             Self::Replace => "replace",
         }
@@ -336,7 +339,10 @@ impl Editor {
         self.message = if skipped == 0 {
             format!("undid {} across {undone} buffer(s)", receipt.producer)
         } else {
-            format!("undid {} in {undone} buffer(s); {skipped} skipped (edited, read-only or closed); receipt retained", receipt.producer)
+            format!(
+                "undid {} in {undone} buffer(s); {skipped} skipped (edited, read-only or closed); receipt retained",
+                receipt.producer
+            )
         };
         if skipped > 0 {
             receipt.applied = remaining;

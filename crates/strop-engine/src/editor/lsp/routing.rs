@@ -138,6 +138,13 @@ impl Editor {
                 self.continue_after_format(&context, refused.then(|| self.message.clone()));
             }
             LspEvent::WorkspaceEdits { context, edits } => {
+                if context.kind == strop_lsp::RequestKind::WillRenameFiles {
+                    // Rename-preparation replies resume the staged
+                    // filesystem apply; an empty set is a valid "this
+                    // server contributes nothing" answer, never an error.
+                    self.will_rename_edits(context, edits);
+                    return;
+                }
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected("lsp", "workspace-edit owner/revision changed");
                     return;

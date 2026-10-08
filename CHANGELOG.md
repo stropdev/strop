@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.43.0 — 2026-10-08
+
+### Added
+
+- **Semantic file rename through the LSP** (0054 §12): applying a reviewed
+  `:fs rename`/`move` now asks every ready server advertising
+  `workspace/willRenameFiles` for preparation edits before the mutation
+  runs. Returned edits apply straight to open buffers through the
+  revision-checked gateway; the reviewed steps then execute, and
+  `workspace/didRenameFiles` reports only the receipts that committed.
+  Servers without the capability (or with no open documents) change
+  nothing; `:cancel-change` while waiting abandons the stage untouched.
 ## 0.42.0 — 2026-10-08
 
 ### Added

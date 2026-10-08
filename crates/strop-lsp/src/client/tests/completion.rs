@@ -44,6 +44,7 @@ fn query(
                 line_text: text.into(),
                 kind: RequestKind::Completion,
                 rename_to: None,
+                rename_files: None,
             },
             CompletionCall::Query {
                 trigger: CompletionTrigger::Invoked,
