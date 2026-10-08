@@ -102,6 +102,16 @@ fn loom_cancel_wakes_a_lane_blocked_producer() {
         scheduler
             .admit(RequestId(1), RequestClass::Bulk, handle)
             .expect("budget has room");
+        // Cancellation hooks may re-enter the scheduler. The wakeup
+        // handshake must not "fix" the race by invoking hooks under
+        // its state lock.
+        let callback_scheduler = Arc::clone(&scheduler);
+        token
+            .register_cancel_resource(move || {
+                assert!(callback_scheduler.push_control(control(9)));
+                Ok(())
+            })
+            .unwrap();
         scheduler.push_chunk(chunk(0, false), None);
         scheduler.push_chunk(chunk(1, false), None);
         let producer = {
@@ -128,6 +138,13 @@ fn loom_cancel_wakes_a_lane_blocked_producer() {
         canceller.join().unwrap();
         assert_eq!(scheduler.outstanding(), 0);
         assert_eq!(scheduler.queued_data_sequences(StreamId(2)), vec![0, 1, 2]);
+        assert!(matches!(
+            scheduler.pop(),
+            Some(Outbound::Control(WorkerMessage::Result {
+                id: RequestId(9),
+                ..
+            }))
+        ));
     });
 }
 

@@ -277,8 +277,12 @@ impl Scheduler {
                 .and_then(|slot| slot.handle.take())
         };
         let Some(handle) = handle else { return false };
+        // Cancellation is outside the scheduler lock and uses native
+        // synchronization; expose that boundary to the model.
+        #[cfg(strop_loom)]
+        loom::thread::yield_now();
         handle.cancel(CancelReason::Dismissed);
-        self.data_room.notify_all();
+        self.wake_producers();
         true
     }
 
@@ -348,7 +352,14 @@ impl Scheduler {
             if state.halted {
                 return PushChunk::Halted;
             }
-            if token.is_some_and(CancelToken::is_cancelled) {
+            let cancelled = token.is_some_and(CancelToken::is_cancelled);
+            // The token uses native atomics. Expose the interval after
+            // this read to Loom so cancellation can race with parking.
+            #[cfg(strop_loom)]
+            if token.is_some() {
+                loom::thread::yield_now();
+            }
+            if cancelled {
                 return PushChunk::Cancelled;
             }
             if chunk.last || state.data.len() < self.budgets.data_chunks {
@@ -419,6 +430,11 @@ impl Scheduler {
     /// Wake data-lane waiters without cancelling a specific request
     /// (session stop): blocked producers re-check their token/halt.
     pub(crate) fn wake_producers(&self) {
+        // External cancellation/stop flags are set without this lock.
+        // Acquire it before notifying so a waiter cannot check the old
+        // flag, miss the notification, then park forever. Cancellation
+        // resource callbacks must remain outside the scheduler lock.
+        let _state = lock(self);
         self.data_room.notify_all();
         self.data_written.notify_all();
     }

@@ -1733,6 +1733,14 @@
           "evidence": [
             {
               "kind": "test",
+              "path": "crates/strop-worker/src/serve/schedule/loom_tests.rs",
+              "gate": "core-assurance",
+              "tests": [
+                "loom_cancel_wakes_a_lane_blocked_producer"
+              ]
+            },
+            {
+              "kind": "test",
               "path": "crates/strop-worker/src/exec/tests.rs",
               "gate": "test",
               "tests": [
@@ -1959,6 +1967,7 @@
         "test",
         "model",
         "container-test",
+        "core-assurance",
         "verify"
       ],
       "pins": {
@@ -1974,9 +1983,9 @@
           "crates/strop-worker/src/exec/supervisor.rs": "e3e206d5d5fd421be56ffcf1bf5937424aa52846e8b4fd3c48035980967089bc",
           "crates/strop-worker/src/serve/process.rs": "862a56b4d8147b9c7ed1eee8eadcdc7c4e40f8866600fc1a941ee88fc301ba77",
           "crates/strop-worker/src/serve/process/pty.rs": "5bcfcdaaae3fda81a95b23562a4e2441369136e1ab94ee0837b7ba6af2fc0e22",
-          "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca"
+          "crates/strop-worker/src/serve/schedule.rs": "20b7d148a9015c1f98eaf1dfc48c40e6c44939ce2ea585dd5744154a89ff961e"
         },
-        "evidence": "48a8cd19f6092de6d42625df8c2477d31eb234c55570ff7760c0d68b4a591ec0"
+        "evidence": "ace432cdd014b3a1584b9c21e2a7237ec24734e960e0e578c8d4617bd4e4b244"
       }
     },
     {
@@ -2143,7 +2152,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "29a87f24b1f7ef9f0c9becaf143f8a7fb7727c4e056987259e7462a70b1ef9e1",
+          "crates/strop-fs/Cargo.toml": "9f9f82771c69066cab230ae8110eebac43205d788e17716d39c5841daa19ebe7",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -3599,7 +3608,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "c43f52a39c9e252520b02bc600fb093e60ae46503c2229bb4566aa4b446c94ff",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "29a87f24b1f7ef9f0c9becaf143f8a7fb7727c4e056987259e7462a70b1ef9e1",
+          "crates/strop-fs/Cargo.toml": "9f9f82771c69066cab230ae8110eebac43205d788e17716d39c5841daa19ebe7",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -3607,7 +3616,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "9a3c900b6718b458f28c180228ef3d93a56550d0ecd844251ef5ac1200cbbd87",
+          "crates/strop-worker/Cargo.toml": "c3279d49a9b3c687ad20351acf0292c0f1d9123b1f73fa0ef4a9a5882d8f740a",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -4304,11 +4313,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "9a3c900b6718b458f28c180228ef3d93a56550d0ecd844251ef5ac1200cbbd87",
+          "crates/strop-worker/Cargo.toml": "c3279d49a9b3c687ad20351acf0292c0f1d9123b1f73fa0ef4a9a5882d8f740a",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "0ca0875d9c0d4e2221bdf902c1ccef1d5c64df873337976521c9d33a1324b352"
+          "crates/strop/Cargo.toml": "15d947c50c71effc646f036d29dd002327436ad805a27b0e390ea6c3527ddc6a"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }
@@ -4372,6 +4381,14 @@
           "statement": "A 17 MiB worker read, large exec output and a saturated PTY all deliver exact bytes while Health remains live; dropped exec output drains its child rather than buffering unboundedly. A PTY flood exit routed through separate client channels waits until queued VT output has drained. The bounded LSP bridge also wakes pending writers/flushes after a failed relayed stdin write; the failure and disconnected queue are visible before wake, and flush polling registers before observing the result.",
           "status": "correspondence-tested",
           "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-worker/src/serve/schedule/loom_tests.rs",
+              "gate": "core-assurance",
+              "tests": [
+                "loom_cancel_wakes_a_lane_blocked_producer"
+              ]
+            },
             {
               "kind": "test",
               "path": "crates/strop-worker-client/tests/loopback.rs",
@@ -4456,6 +4473,7 @@
       ],
       "gates": [
         "model",
+        "core-assurance",
         "test"
       ],
       "pins": {
@@ -4468,10 +4486,10 @@
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
           "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
           "crates/strop-worker/src/serve/process/pty.rs": "5bcfcdaaae3fda81a95b23562a4e2441369136e1ab94ee0837b7ba6af2fc0e22",
-          "crates/strop-worker/src/serve/schedule.rs": "f293340cc86252f54bf5514cd98ff19d221d98f873b773bad737386938a163ca",
+          "crates/strop-worker/src/serve/schedule.rs": "20b7d148a9015c1f98eaf1dfc48c40e6c44939ce2ea585dd5744154a89ff961e",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "658d8278e8e909d65bfef9146bbd6fd8ca940d048363042cb5f8f6de36ab0e59"
+        "evidence": "287b7bec0135ff11a6b08f4f32395394d0d049277a61624026f99b0fd478866a"
       }
     },
     {

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.43.1 — 2026-10-08
+
+Release recovery for the unpublished 0.43.0 candidate. Includes its Sovel
+syntax preview, built-in light theme and LSP file-rename changes below;
+the existing 0.43.0 source tag is preserved.
+
+### Fixed
+
+- **Worker cancellation under backpressure**: synchronize cancellation and
+  session-stop wakeups with the scheduler's wait lock. Previously a producer
+  could miss the wakeup between checking its cancellation flag and parking,
+  leaving a full stream queue blocked indefinitely. Cancellation callbacks
+  still run outside that lock. The Loom regression now exposes the native
+  token's scheduling gaps and checks callback reentry as well.
+
 ## 0.43.0 — 2026-10-08
 
 ### Added
