@@ -152,10 +152,37 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
             Vec::new()
         },
         flash: view.overlays.then(|| editor.flash_range()).flatten(),
-        selection: view.overlays.then(|| editor.visual_range()).flatten(),
+        selection: if view.overlays {
+            // 0069 D05: in a snippet session the active placeholder reads
+            // as the selection (insert mode has none otherwise)
+            if editor.mode() == crate::editor::Mode::Insert && editor.snippet_active() {
+                editor
+                    .snippet_selection_ranges()
+                    .0
+                    .map(|(start, end)| strop_core::Range::charwise(start, end.max(start)))
+            } else {
+                editor.visual_range()
+            }
+        } else {
+            None
+        },
         // occurrence selections (0049 §7): every stretched extra paints
         // its range like the primary's visual selection
         extra_selections: if view.overlays
+            && view.doc == editor.current()
+            && editor.mode() == crate::editor::Mode::Insert
+            && editor.snippet_active()
+        {
+            // 0069 D05: linked stops and mirrored targets paint like the
+            // primary placeholder
+            editor
+                .snippet_selection_ranges()
+                .1
+                .into_iter()
+                .filter(|(a, b)| a < b)
+                .map(|(start, end)| strop_core::Range::charwise(start, end))
+                .collect()
+        } else if view.overlays
             && view.doc == editor.current()
             && matches!(editor.mode(), crate::editor::Mode::Visual)
         {

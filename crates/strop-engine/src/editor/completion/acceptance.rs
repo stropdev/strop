@@ -12,7 +12,7 @@ const MAX_ACCEPTANCE_EDITS: usize = 128;
 const MAX_ACCEPTANCE_BYTES: usize = 128 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(super) enum AcceptanceTarget {
+pub(crate) enum AcceptanceTarget {
     View {
         document: DocumentId,
         revision: BufferRevision,
@@ -36,17 +36,31 @@ impl AcceptanceTarget {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(super) struct CompletionAcceptancePlan {
+pub(crate) struct CompletionAcceptancePlan {
     pub target: AcceptanceTarget,
     pub edits: Vec<Replacement>,
     /// Primary first, in the target's coordinate domain after every represented
     /// edit (including imports). Selection is collapsed at these accepted ends.
     pub caret_bytes: Vec<usize>,
     pub recording: InsertRecordingUpdate,
+    /// 0069 D05: snippet tabstops (index, per-target offsets in post-edit
+    /// coordinates, primary first). `None` for plain-text acceptances.
+    /// `#[serde(default)]`: tapes recorded before snippets decode clean.
+    #[serde(default)]
+    pub snippet: Option<Vec<SnippetStop>>,
+}
+
+/// One snippet tabstop occurrence (repeated indexes are linked stops).
+/// `offsets` are (start, end) byte offsets, one per mirrored target,
+/// primary first; a zero-length offset is a caret-only stop (e.g. `$0`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SnippetStop {
+    pub index: u32,
+    pub offsets: Vec<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(super) struct InsertRecordingUpdate {
+pub(crate) struct InsertRecordingUpdate {
     pub remove_chars: usize,
     pub append: String,
 }
@@ -123,16 +137,21 @@ pub(super) fn word(
         &primaries,
         prefix_chars,
         recorded_chars,
+        Vec::new(),
     )
 }
 
 pub(super) fn unsupported_item(item: &CompletionItem) -> Option<AcceptanceRefusal> {
     let item = &item.protocol();
-    if item
+    let format = item
         .insert_text_format
-        .unwrap_or(InsertTextFormat::PLAIN_TEXT)
-        != InsertTextFormat::PLAIN_TEXT
-    {
+        .unwrap_or(InsertTextFormat::PLAIN_TEXT);
+    // Snippets are supported (0069 D05); an unparsable one refuses at
+    // expansion time with the same named refusal, never a partial insert.
+    if !matches!(
+        format,
+        InsertTextFormat::PLAIN_TEXT | InsertTextFormat::SNIPPET
+    ) {
         Some(AcceptanceRefusal::Snippet)
     } else if item.insert_text_mode.unwrap_or(InsertTextMode::AS_IS) != InsertTextMode::AS_IS {
         Some(AcceptanceRefusal::WhitespaceMode)
@@ -194,6 +213,38 @@ pub(super) fn language(
                 .unwrap_or(&original.label),
         ),
     };
+    // 0069 D05: snippet items expand at plan time — the replacement text
+    // is the expanded form and tabstops travel as typed offsets.
+    let snippet_format = original
+        .insert_text_format
+        .unwrap_or(InsertTextFormat::PLAIN_TEXT)
+        == InsertTextFormat::SNIPPET;
+    let expanded;
+    let mut snippet_stops: Vec<(u32, usize, usize)> = Vec::new();
+    let text = if snippet_format {
+        let parsed =
+            strop_lsp::completion::snippet::parse(text).map_err(|_| AcceptanceRefusal::Snippet)?;
+        let mut at = 0usize;
+        for segment in &parsed.segments {
+            use strop_lsp::completion::snippet::Segment;
+            match segment {
+                Segment::Text(run) => at += run.len(),
+                Segment::Tabstop { index, default } => {
+                    snippet_stops.push((*index, at, at + default.len()));
+                    at += default.len();
+                }
+                Segment::Choice { index, options } => {
+                    snippet_stops.push((*index, at, at + options[0].len()));
+                    at += options[0].len();
+                }
+                Segment::Final => snippet_stops.push((0, at, at)),
+            }
+        }
+        expanded = parsed.text;
+        expanded.as_str()
+    } else {
+        text
+    };
     if primary.caret - range.start.get() > strop_lsp::completion::MAX_FILTER_BYTES {
         return Err(AcceptanceRefusal::Limit);
     }
@@ -246,6 +297,7 @@ pub(super) fn language(
         &primaries,
         prefix_chars,
         recorded_chars,
+        snippet_stops,
     )
 }
 
@@ -296,6 +348,7 @@ fn finish(
     primaries: &[Range],
     prefix_chars: usize,
     recorded_chars: usize,
+    snippet_stops: Vec<(u32, usize, usize)>,
 ) -> Result<CompletionAcceptancePlan, AcceptanceRefusal> {
     if edits.len() > MAX_ACCEPTANCE_EDITS {
         return Err(AcceptanceRefusal::Limit);
@@ -318,6 +371,19 @@ fn finish(
             .collect(),
     )
     .map_err(|()| AcceptanceRefusal::Overlap)?;
+    // Earlier edits shift everything behind them (imports sit ahead of
+    // the primary); tabstops take the same ride as the caret.
+    let shift_before = |edits: &[Edit<'_>], primary: &Range| -> isize {
+        let mut shift = 0isize;
+        for edit in edits {
+            if edit.range.start >= primary.start {
+                break;
+            }
+            shift +=
+                edit.text.len() as isize - (edit.range.end.get() - edit.range.start.get()) as isize;
+        }
+        shift
+    };
     let mut caret_bytes = Vec::with_capacity(primaries.len());
     for primary in primaries {
         let inserted = edits
@@ -340,6 +406,28 @@ fn finish(
         }
         caret_bytes.push(caret);
     }
+    let snippet = if snippet_stops.is_empty() {
+        None
+    } else {
+        let stops = snippet_stops
+            .iter()
+            .map(|(index, start, end)| SnippetStop {
+                index: *index,
+                offsets: primaries
+                    .iter()
+                    .map(|primary| {
+                        let shift = shift_before(&edits, primary);
+                        let base = primary.start.get() as isize + shift;
+                        (
+                            (base + *start as isize).max(0) as usize,
+                            (base + *end as isize).max(0) as usize,
+                        )
+                    })
+                    .collect(),
+            })
+            .collect();
+        Some(stops)
+    };
     let primary = primaries.first().ok_or(AcceptanceRefusal::MissingSource)?;
     let inserted = edits
         .iter()
@@ -363,6 +451,7 @@ fn finish(
         edits,
         caret_bytes,
         recording,
+        snippet,
     })
 }
 

@@ -70,6 +70,37 @@ fn a_diagnostic_range_underlines_its_cells() {
 }
 
 #[test]
+fn a_snippet_placeholder_paints_as_the_selection() {
+    // 0069 D05: in Insert mode the active placeholder carries SELECT_BG
+    // — the live fake-server capture must show it (the paint channel).
+    use strop_engine::editor::completion::acceptance::SnippetStop;
+    let mut e = Editor::new(Buffer::from_text("fn name(arg) {}\n"));
+    e.feed(strop_core::frontend_input::Key::Char('i'));
+    e.snippet_enter(vec![
+        SnippetStop {
+            index: 1,
+            offsets: vec![(3, 7)],
+        },
+        SnippetStop {
+            index: 2,
+            offsets: vec![(8, 11)],
+        },
+        SnippetStop {
+            index: 0,
+            offsets: vec![(12, 12)],
+        },
+    ]);
+    assert!(e.snippet_active());
+    let mut terminal = viewport_terminal(30, 6);
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let select = crate::render::SELECT_BG;
+    let painted: Vec<u16> = (0..30).filter(|x| buffer[(*x, 0)].bg == select).collect();
+    // "fn name(arg) {}" — 5-cell gutter, "fn " (3), so "name" is cells 8..12
+    assert_eq!(painted, [8, 9, 10, 11], "the placeholder carries SELECT_BG");
+}
+
+#[test]
 fn last_text_row_and_four_digit_gutter_keep_caret_alignment() {
     let mut e = Editor::new(Buffer::from_text(&"x\n".repeat(1001)));
     e.set_head(e.buf().line_start(1000));

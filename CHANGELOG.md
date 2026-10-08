@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.42.0 — 2026-10-08
+
+### Added
+
+- **Snippet completion engine** (0069 §1, 0059 §12 D05): LSP snippet items
+  (`insertTextFormat: 2`) now expand instead of refusing. Accepting a
+  snippet inserts the expanded text as one undo unit and selects the first
+  placeholder (painted like the selection); typing replaces it, Tab/Shift-
+  Tab cycle tabstops with linked placeholders moving together, `$0` ends
+  the session with the caret there, Esc ends and forwards. Choices expand
+  to the first option; malformed snippets refuse with a named error and
+  insert nothing.
+- **Commit-character acceptance** (0069 §2): typing one of the deliberately
+  selected completion item's `commitCharacters` accepts it, then the
+  character types normally. Only a chosen item commits — the menu alone
+  never does.
+
+### Changed
+
+- **Hygiene run** (0069 §3): the over-ceiling `editor/notify.rs` (1,109
+  lines) is split by owner into `notify/{mod,queue,subscribe,reconcile}.rs`;
+  the 782-line `terminal_editor` test harness is split into
+  `{main,harness,journeys,perf}.rs`. No behavior changes; the notify and
+  real-PTY suites pass unchanged.
+
 ## 0.41.0 — 2026-10-08
 
 ### Changed

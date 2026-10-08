@@ -8,13 +8,13 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.41.0" }
-strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.41.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.41.0" }
+strop-core = { path = "../strop-core", version = "0.42.0" }
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.42.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.42.0" }
 parking_lot = "0.12"
 sha2 = "0.10"
 thiserror = "2"
 
 [dev-dependencies]
-strop-worker = { path = "../strop-worker", version = "0.41.0" }
+strop-worker = { path = "../strop-worker", version = "0.42.0" }
 tempfile = "3"

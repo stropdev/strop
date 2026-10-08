@@ -95,6 +95,8 @@ pub(super) fn prepare(editor: &mut Editor, value: serde_json::Value) -> model::C
         std::rc::Rc::new(strop_trace::replay::Tape::fixture(
             move |operation, _| match operation {
                 "completion.accept.take" => Ok(serde_json::to_value(Some(&plan)).unwrap()),
+                "completion.accept.prepare" => Ok(serde_json::json!({"Ok": null})),
+                "completion.trigger" => Ok(serde_json::json!(false)),
                 "analysis.start" => Ok(serde_json::json!({"Ok": null})),
                 _ => Err(std::io::Error::other(format!(
                     "unexpected native observation: {operation}"
@@ -111,15 +113,17 @@ pub(super) fn prepare(editor: &mut Editor, value: serde_json::Value) -> model::C
     }
 }
 
-fn editing() -> (tempfile::TempDir, Editor, DocumentId) {
+pub(super) fn editing() -> (tempfile::TempDir, Editor, DocumentId, events::EventReceiver) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("source.txt");
     std::fs::write(&path, "// import slot\nres\n").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), directory.path().to_owned());
+    let (tx, rx) = events::channel();
+    editor.app_tx = Some(tx);
     editor.open_fixture(&path).unwrap();
     editor.feed_text("G$a");
     let document = editor.current();
-    (directory, editor, document)
+    (directory, editor, document, rx)
 }
 
 pub(super) fn import_item() -> serde_json::Value {
@@ -128,10 +132,66 @@ pub(super) fn import_item() -> serde_json::Value {
         "newText": "// imported\n"}]})
 }
 
+/// 0069 D05: the commit-character decision binds exactly the selected
+/// language item's advertised characters — nothing else.
+#[test]
+fn the_commit_character_decision_binds_the_selected_items_characters() {
+    let (_directory, mut editor, _source, events) = editing();
+    let _delivery = prepare(
+        &mut editor,
+        serde_json::json!({
+            "label": "result",
+            "insertText": "result",
+            "commitCharacters": ["("],
+        }),
+    );
+    assert!(editor.completion_commit_character('('));
+    assert!(!editor.completion_commit_character('x'));
+    assert!(!editor.completion_commit_character('.'));
+    drop(events);
+}
+
+/// A word candidate carries no commit characters — the decision is
+/// language-item-only.
+#[test]
+fn word_candidates_have_no_commit_characters() {
+    let (editor, _events) = fixture("result\n\n", 7);
+    // force the decision against an empty session first
+    assert!(!editor.completion_commit_character('('));
+}
+
+/// The menu alone never commits: without a deliberate selection the same
+/// character only types (the explicit-acceptance contract stands).
+#[test]
+fn no_selection_means_no_commit_character_acceptance() {
+    let (_directory, mut editor, _source, events) = editing();
+    let _delivery = prepare(
+        &mut editor,
+        serde_json::json!({
+            "label": "result",
+            "insertText": "result",
+            "commitCharacters": ["("],
+        }),
+    );
+    // drop the deliberate selection the fixture installs
+    editor.completion.session.as_mut().unwrap().selection = session::Selection::None;
+    assert!(!editor.completion_commit_character('('));
+    editor.feed(Key::Char('('));
+    assert!(
+        matches!(
+            editor.completion.session.as_ref().map(|s| &s.acceptance),
+            None | Some(session::Acceptance::Idle),
+        ),
+        "no selection, no acceptance"
+    );
+    assert!(!editor.buf().text().to_string().contains("result("));
+    drop(events);
+}
+
 #[test]
 fn prepared_completion_does_not_apply_after_language_service_rebinding() {
     for changed in ["server", "root", "path", "language", "namespace"] {
-        let (_directory, mut editor, source) = editing();
+        let (_directory, mut editor, source, _events) = editing();
         let delivery = prepare(&mut editor, import_item());
         let binding = editor.lsp_state.bindings.get_mut(&source).unwrap();
         match changed {

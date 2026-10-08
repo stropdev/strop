@@ -382,8 +382,14 @@ impl Editor {
             }
             recording.push_str(&plan.recording.append);
         }
+        // 0069 D05: a snippet plan takes over placement — the session
+        // selects the first placeholder instead of a bare caret.
+        let snippet = plan.snippet;
         self.completion_close(CancelReason::Dismissed);
         self.message.clear();
+        if let Some(stops) = snippet {
+            self.snippet_enter(stops);
+        }
     }
 
     /// Tab live preview commit (0059 §6.1): apply the validated plan inside

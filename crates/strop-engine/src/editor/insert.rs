@@ -129,6 +129,17 @@ impl Editor {
     }
 
     pub(crate) fn feed_insert(&mut self, key: Key) {
+        // 0069 D05: a live snippet tabstop session owns Tab/Esc/etc.
+        // first; printable keys fall through with the placeholder
+        // replaced (see snippet.rs).
+        if self.snippet.is_some() {
+            use super::snippet::SnippetKeyOutcome;
+            match self.snippet_key(key) {
+                SnippetKeyOutcome::Consumed => return,
+                SnippetKeyOutcome::EndAndForward => {}
+                SnippetKeyOutcome::PassThrough => {}
+            }
+        }
         use super::completion::KeyDisposition;
         match self.completion_key(key) {
             KeyDisposition::Requested

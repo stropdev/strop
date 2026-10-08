@@ -1,6 +1,8 @@
 use super::*;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
 
 impl Tui {
     fn resize_completion(&mut self, columns: u16, rows: u16) {

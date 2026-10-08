@@ -188,7 +188,9 @@ fn invalid_ranges_overlapping_imports_and_unsupported_effects_refuse_whole_items
     let editor = editing("a😀res", 8);
     let cases = [
         (
-            json!({"label":"result", "insertText":"${1:result}", "insertTextFormat":2}),
+            // a MALFORMED snippet still refuses with the named refusal;
+            // a valid one expands (0069 D05)
+            json!({"label":"result", "insertText":"${1:result", "insertTextFormat":2}),
             AcceptanceRefusal::Snippet,
         ),
         (

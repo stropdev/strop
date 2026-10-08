@@ -4,11 +4,15 @@
 //! overflow and lifecycle edges. Notify.tla correspondence: dirty
 //! buffers are never clobbered, stale generations never act, overflow
 //! is a conservative rescan, close retires the subscription.
+use super::subscribe::RemoteScope;
 use super::*;
 use crate::editor::Editor;
 use std::time::{Duration, Instant};
+use strop_core::worker::Outcome;
 use strop_core::Buffer;
+use strop_worker_protocol::{Event, Session, Subscription};
 use strop_worker_protocol::{LeaseId, NotifyHint, NotifyKind};
+use strop_workspace::ResourceLocation;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -385,9 +389,7 @@ fn trace_owned_hints_do_not_wake_the_editor_but_other_files_still_do() {
         id: 1,
         generation: 1,
     };
-    let queue = NotifyQueue {
-        state: Mutex::new(QueueState::default()),
-    };
+    let queue = NotifyQueue::new();
     queue.set_owned_trace(Some((subscription, b"capture.jsonl".to_vec())));
     let hint = |path: &[u8]| NotifyHint {
         path: path.to_vec(),

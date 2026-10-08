@@ -2,6 +2,8 @@
 //! No editor state, source mutation or rendering lives at this boundary.
 mod decode;
 mod filter;
+pub mod snippet;
+
 #[cfg(test)]
 mod tests;
 

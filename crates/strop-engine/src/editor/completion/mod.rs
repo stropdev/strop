@@ -1,5 +1,5 @@
 //! Source-owned code completion. Provider state remains outside input/render.
-mod acceptance;
+pub mod acceptance;
 mod admission;
 mod apply;
 mod context;

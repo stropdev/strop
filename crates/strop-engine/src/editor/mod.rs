@@ -17,7 +17,7 @@ mod changes;
 pub use changes::review::ReviewRow;
 pub use dispatch::InputOwner;
 pub mod collections;
-mod completion;
+pub mod completion;
 mod containers;
 mod cursor;
 mod diagnostics;
@@ -61,6 +61,7 @@ mod registers;
 pub mod remote;
 mod remote_completion;
 mod shell;
+mod snippet;
 pub(crate) mod terminal;
 pub use terminal::TerminalDocument;
 pub mod transact;
@@ -150,6 +151,9 @@ pub struct Editor {
     pub(crate) io: io::IoState,
     pub(crate) remote_completion: remote_completion::RemoteCompletionState,
     pub(crate) completion: completion::CompletionState,
+    /// 0069 D05: the live snippet tabstop session (after a snippet
+    /// acceptance; `None` otherwise).
+    pub(crate) snippet: Option<snippet::SnippetSession>,
     pub(crate) worker_ids: strop_core::worker::WorkerIds,
     pub(crate) worker_handles:
         HashMap<strop_core::worker::WorkerId, strop_core::worker::CancelHandle>,
@@ -403,6 +407,7 @@ impl Editor {
             filesystem: filesystem::FsState::default(),
             remote_completion: remote_completion::RemoteCompletionState::default(),
             completion: completion::CompletionState::default(),
+            snippet: None,
             notify: notify::NotifyState::default(),
             picker_ranking: picker::ranking::State::default(),
             analysis: analysis::AnalysisState::default(),

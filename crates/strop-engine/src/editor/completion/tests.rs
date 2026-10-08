@@ -4,6 +4,7 @@ use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 mod language;
 mod preview;
+mod snippet;
 mod sources;
 
 fn fixture(text: &str, caret: usize) -> (Editor, events::EventReceiver) {

@@ -146,6 +146,10 @@ impl Editor {
         // remap every endpoint: stretched selections (occurrences, 0049
         // §7.4) keep their anchors and direction through mirrored edits
         self.sels_mut().map_positions(map);
+        // 0069 D05: snippet tabstops follow the same mirrored edit
+        if self.snippet.is_some() {
+            self.snippet_map(map);
+        }
     }
 
     /// `Q`: drop the cursor under point when one exists, else plant one.

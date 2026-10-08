@@ -1,7 +1,8 @@
 use super::context::Invocation;
 use super::model::CandidateKey;
 use super::session::{
-    Acceptance, Direction, InsertPrefix, ProviderState, RequestIntent, ResolveState, Selection,
+    Acceptance, Candidate, Direction, InsertPrefix, ProviderState, RequestIntent, ResolveState,
+    Selection,
 };
 use crate::editor::{Editor, InputOwner, Mode};
 use strop_core::frontend_input::Key;
@@ -127,7 +128,20 @@ impl Editor {
                 self.completion_close(CancelReason::Dismissed);
                 KeyDisposition::DismissAndForward
             }
-            Key::Char(_) | Key::Backspace => {
+            Key::Char(ch) => {
+                // 0069 D05 commit characters (LSP
+                // `completionItem.commitCharacters`): typing one of the
+                // deliberately-selected language item's commit characters
+                // accepts it, then the character types normally. The menu
+                // alone never commits — only a chosen item, exactly the
+                // Enter bar. Word candidates carry no commit characters.
+                if self.completion_commit_character(ch) {
+                    self.completion_accept_selected();
+                }
+                self.completion_typing(key);
+                KeyDisposition::PassThrough
+            }
+            Key::Backspace => {
                 self.completion_typing(key);
                 KeyDisposition::PassThrough
             }
@@ -151,6 +165,31 @@ impl Editor {
             cached_language: None,
             selection: None,
         });
+    }
+
+    /// 0069 D05 commit characters (LSP
+    /// `completionItem.commitCharacters`): the typed character is one of
+    /// the deliberately-selected language item's commit characters —
+    /// accept it. Only a chosen item commits; the server-level
+    /// `allCommitCharacters` capability is out of scope (absent in the
+    /// servers strop supports today).
+    pub(super) fn completion_commit_character(&self, ch: char) -> bool {
+        let Some(session) = self.completion.session.as_ref() else {
+            return false;
+        };
+        let Some((_, Candidate::Language { entry, .. })) = session.selected() else {
+            return false;
+        };
+        entry
+            .item
+            .protocol()
+            .commit_characters
+            .as_ref()
+            .is_some_and(|characters| {
+                characters
+                    .iter()
+                    .any(|candidate| candidate.chars().eq(std::iter::once(ch)))
+            })
     }
 
     fn completion_typing(&mut self, key: Key) {
