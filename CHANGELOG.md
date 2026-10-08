@@ -22,6 +22,13 @@
   is not an effect). Preview only: no Sovel server, formatter, symbols or
   validation is spawned or implied, and a colored tree is not a proof of
   source validity.
+- **Built-in light theme**: `theme = "light"` in config.toml, `--theme
+  light` at launch, or `:theme` mid-session (bare opens the selector,
+  `:theme dark|light` switches directly). Same hue family as the dark
+  default — amber accent, violet keywords, teal types — inked down for
+  paper; the terminal's default palette follows on the same frame.
+  Palette overrides stay 0005's follow-on.
+
 ## 0.42.0 — 2026-10-08
 
 ### Added

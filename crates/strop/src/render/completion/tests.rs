@@ -38,7 +38,7 @@ fn selected_word_cells_keep_prefix_hierarchy_and_real_unicode_anchor() {
     let mut column = anchor + 1;
     while column < anchor + MENU_WIDTH - 1 {
         let cell = &grid[(column, row)];
-        assert_eq!(cell.bg, SELECT_BG, "selection band at {column}");
+        assert_eq!(cell.bg, select_bg(), "selection band at {column}");
         // A wide glyph paints its covered cell; TestBackend stores a reset
         // placeholder there, just as the canonical frame dumper accounts for.
         column += Span::raw(cell.symbol()).width().max(1) as u16;
@@ -48,13 +48,13 @@ fn selected_word_cells_keep_prefix_hierarchy_and_real_unicode_anchor() {
     assert_eq!(grid[(label + 4, row)].symbol(), "r");
     assert_eq!(grid[(label + 5, row)].symbol(), "e");
     for column in [label, label + 2, label + 4, label + 5] {
-        assert_eq!(grid[(column, row)].fg, ACCENT);
+        assert_eq!(grid[(column, row)].fg, accent());
         assert!(grid[(column, row)].modifier.contains(Modifier::BOLD));
     }
-    assert_eq!(grid[(label + 6, row)].fg, TEXT);
-    assert_eq!(grid[(anchor + 2, row)].fg, MUTED); // kind
+    assert_eq!(grid[(label + 6, row)].fg, text());
+    assert_eq!(grid[(anchor + 2, row)].fg, muted()); // kind
     for column in anchor + MENU_WIDTH - 5..anchor + MENU_WIDTH - 2 {
-        assert_eq!(grid[(column, row)].fg, MUTED); // source
+        assert_eq!(grid[(column, row)].fg, muted()); // source
     }
     assert_eq!(
         editor.buf().text().to_string(),
@@ -86,7 +86,7 @@ fn narrow_split_and_bottom_edge_keep_card_inside_owning_pane_off_caret() {
         let mut selected_cells = Vec::new();
         for y in 0..rows {
             for x in 0..columns {
-                if grid[(x, y)].bg == SELECT_BG {
+                if grid[(x, y)].bg == select_bg() {
                     selected_cells.push((x, y));
                 }
             }
@@ -106,7 +106,7 @@ fn narrow_split_and_bottom_edge_keep_card_inside_owning_pane_off_caret() {
                     && grid[(*x + 2, selected_row)].symbol() == "f"
             })
             .unwrap();
-        assert_eq!(grid[(source, selected_row)].fg, MUTED);
+        assert_eq!(grid[(source, selected_row)].fg, muted());
         assert_eq!(editor.buf().text().to_string(), text);
     }
 }
@@ -153,6 +153,6 @@ fn documentation_uses_shared_syntax_styles_and_never_reclaims_the_caret_row() {
         grid[(1, 1)].fg,
         crate::render::class_color(strop_syntax::Class::Keyword)
     );
-    assert_eq!(grid[(4, 1)].fg, TEXT);
-    assert_eq!(grid[(0, 1)].fg, MUTED);
+    assert_eq!(grid[(4, 1)].fg, text());
+    assert_eq!(grid[(0, 1)].fg, muted());
 }

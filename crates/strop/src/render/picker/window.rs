@@ -1,6 +1,6 @@
 //! Cell-budgeted match windows. Seek around the known byte span rather than
 //! allocating/scanning a complete long line on every frame.
-use super::super::text;
+use super::super::clip;
 use strop_core::layout::{printable_grapheme, RopeGraphemes};
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
@@ -30,7 +30,7 @@ fn before(input: &str, end: usize, cells: usize, tab: usize) -> usize {
         let width = if grapheme == "\t" {
             tab
         } else {
-            text::width(grapheme)
+            clip::width(grapheme)
         };
         if used + width > cells {
             break;
@@ -167,7 +167,7 @@ mod tests {
     fn zero_width_and_end_of_line_matches_never_index_past_text() {
         for budget in 0..5 {
             let (window, _) = match_window("界界", 6, 6, budget, 4);
-            assert!(text::width(&window) <= budget);
+            assert!(clip::width(&window) <= budget);
             let (window, _) = match_window("", 0, 0, budget, 4);
             assert!(window.is_empty());
         }
@@ -176,7 +176,7 @@ mod tests {
     fn long_replacements_keep_only_visible_context() {
         let line = format!("{}needle{}", "x".repeat(100_000), "z".repeat(100_000));
         let (window, span) = replacement_window(&line, 100_000, 100_006, "界new", 20, 4);
-        assert!(text::width(&window) <= 20);
+        assert!(clip::width(&window) <= 20);
         assert_eq!(
             window
                 .chars()

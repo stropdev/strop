@@ -12,7 +12,7 @@ use ratatui::text::{Line, Span};
 use crate::editor::{DiffRow, Surface};
 use strop_git::{DiffLine, LineOrigin};
 
-use super::{ACCENT, MUTED, TEXT};
+use super::{accent, muted, text};
 
 mod list;
 mod margins;
@@ -33,11 +33,11 @@ pub(crate) fn origin_fg(origin: LineOrigin) -> Color {
     match origin {
         LineOrigin::Addition => ADD_FG,
         LineOrigin::Deletion => DEL_FG,
-        LineOrigin::Context => TEXT,
+        LineOrigin::Context => text(),
     }
 }
 
-/// Full-row background for add/del rows; context rows stay on BASE.
+/// Full-row background for add/del rows; context rows stay on base().
 pub(crate) fn origin_bg(origin: LineOrigin) -> Option<Color> {
     match origin {
         LineOrigin::Addition => Some(ADD_BG),
@@ -74,16 +74,16 @@ pub(crate) fn diff_gutter(
     let (marker, color) = match (line.origin, is_cursor_row) {
         (LineOrigin::Addition, true) => ("▸", ADD_FG),
         (LineOrigin::Deletion, true) => ("▸", DEL_FG),
-        (LineOrigin::Context, true) => ("▸", ACCENT),
+        (LineOrigin::Context, true) => ("▸", accent()),
         (LineOrigin::Addition, false) => ("▎", ADD_FG),
         (LineOrigin::Deletion, false) => ("▎", DEL_FG),
-        (LineOrigin::Context, false) => (" ", MUTED),
+        (LineOrigin::Context, false) => (" ", muted()),
     };
     let number = |n: Option<usize>| {
         let style = if is_cursor_row {
-            Style::default().fg(ACCENT)
+            Style::default().fg(accent())
         } else {
-            Style::default().fg(MUTED)
+            Style::default().fg(muted())
         };
         let text = match n {
             Some(n) => format!("{:>width$}", n, width = digits),
@@ -112,7 +112,7 @@ pub(crate) fn structural_row(surface: &Surface, row: usize) -> Line<'static> {
         (Surface::Diff { hunks, .. }, 0) => Line::from(vec![
             Span::styled(
                 hunks.label().to_owned(),
-                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+                Style::default().fg(text()).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!(" +{} ", hunks.added()),
@@ -142,17 +142,17 @@ pub(crate) fn structural_row(surface: &Surface, row: usize) -> Line<'static> {
 /// `Hunk::header()`, the string the buffer row holds.
 fn hunk_header_spans(hunk: &strop_git::Hunk) -> Vec<Span<'static>> {
     vec![
-        Span::styled("@@ ", Style::default().fg(MUTED)),
+        Span::styled("@@ ", Style::default().fg(muted())),
         Span::styled(
             format!("-{},{}", hunk.old_start, hunk.old_count),
             Style::default().fg(DEL_FG),
         ),
-        Span::styled(" ", Style::default().fg(MUTED)),
+        Span::styled(" ", Style::default().fg(muted())),
         Span::styled(
             format!("+{},{}", hunk.new_start, hunk.new_count),
             Style::default().fg(ADD_FG),
         ),
-        Span::styled(" @@", Style::default().fg(MUTED)),
+        Span::styled(" @@", Style::default().fg(muted())),
     ]
 }
 

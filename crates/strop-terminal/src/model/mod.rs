@@ -147,9 +147,10 @@ impl Palette {
             blue: value.b,
         };
         Self {
-            foreground: rgb(strop_core::theme::TEXT),
-            background: rgb(strop_core::theme::BASE),
-            colors: strop_core::theme::ansi256()
+            foreground: rgb(strop_core::theme::current().text),
+            background: rgb(strop_core::theme::current().base),
+            colors: strop_core::theme::current()
+                .ansi256()
                 .iter()
                 .map(|value| rgb(*value))
                 .collect(),

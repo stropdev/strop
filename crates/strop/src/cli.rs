@@ -54,6 +54,9 @@ pub struct Options {
     pub trace_path: Option<PathBuf>,
     pub content: ContentPolicy,
     pub terminal_capture: bool,
+    /// `--theme dark|light`: session-start palette override over the
+    /// config file's `theme` knob.
+    pub theme: Option<strop_core::theme::ThemeId>,
 }
 
 pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
@@ -67,6 +70,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     let mut initial_line = None;
     let mut remote_selection = None;
     let mut follow = false;
+    let mut theme = None;
     let mut headless = false;
     let mut script = None;
     let mut replay = None;
@@ -103,6 +107,14 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 }
                 "--follow" => {
                     follow = true;
+                    continue;
+                }
+                "--theme" => {
+                    let value = args.next().ok_or("--theme requires dark or light")?;
+                    theme = Some(
+                        strop_core::theme::ThemeId::from_name(&value.to_string_lossy())
+                            .ok_or("--theme takes dark or light")?,
+                    );
                     continue;
                 }
                 "--" => {
@@ -295,5 +307,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         trace_path,
         content,
         terminal_capture,
+        theme,
     })
 }

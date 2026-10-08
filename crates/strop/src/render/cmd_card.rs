@@ -10,7 +10,7 @@ use ratatui::Frame;
 
 use crate::editor::Editor;
 
-use super::{ACCENT, BASE, MUTED, TEXT};
+use super::{accent, base, muted, text};
 
 pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     // `?` is a first-class search sigil here (the old detection missed
@@ -52,11 +52,11 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(MUTED))
-        .style(Style::default().bg(BASE))
+        .border_style(Style::default().fg(muted()))
+        .style(Style::default().bg(base()))
         .title(Span::styled(
             title,
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            Style::default().fg(text()).add_modifier(Modifier::BOLD),
         ));
     frame.render_widget(&block, card);
     let inner = block.inner(card);
@@ -102,12 +102,15 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
             Ok(None) => "0 matches".into(),
             Err(error) => error.to_string(),
         };
-        let label = super::text::clip_end(&label, usize::from(text_area.width) / 3);
-        let label_w = super::text::width(&label);
+        let label = super::clip::clip_end(&label, usize::from(text_area.width) / 3);
+        let label_w = super::clip::width(&label);
         let used: usize = spans.iter().map(|span| span.width()).sum();
         let pad = usize::from(text_area.width).saturating_sub(used + label_w + 1);
         spans.push(Span::raw(" ".repeat(pad)));
-        spans.push(Span::styled(label.into_owned(), Style::default().fg(MUTED)));
+        spans.push(Span::styled(
+            label.into_owned(),
+            Style::default().fg(muted()),
+        ));
     }
 
     frame.render_widget(Paragraph::new(Line::from(spans)), text_area);
@@ -120,7 +123,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     let shown: Vec<_> = candidates.iter().take(6).collect();
     let name_w = shown
         .iter()
-        .map(|(name, _)| super::text::width(name))
+        .map(|(name, _)| super::clip::width(name))
         .max()
         .unwrap_or(4)
         .clamp(4, 16);
@@ -132,21 +135,21 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
             ..text_area
         };
         let (name_fg, doc_fg) = if i == 0 {
-            (ACCENT, TEXT)
+            (accent(), text())
         } else {
-            (TEXT, MUTED)
+            (text(), muted())
         };
         let marker = if name == &body_str { "▌" } else { " " };
         let doc_budget = usize::from(text_area.width).saturating_sub(1 + name_w + 2 + 1);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(marker, Style::default().fg(ACCENT)),
+                Span::styled(marker, Style::default().fg(accent())),
                 Span::styled(
-                    format!("{:<name_w$}  ", super::text::clip_end(name, name_w)),
+                    format!("{:<name_w$}  ", super::clip::clip_end(name, name_w)),
                     Style::default().fg(name_fg).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    super::text::clip_end(doc, doc_budget).into_owned(),
+                    super::clip::clip_end(doc, doc_budget).into_owned(),
                     Style::default().fg(doc_fg),
                 ),
             ])),

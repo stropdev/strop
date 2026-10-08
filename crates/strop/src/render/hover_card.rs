@@ -9,7 +9,7 @@ use ratatui::Frame;
 
 use crate::editor::Editor;
 
-use super::{BASE, MUTED, TEXT};
+use super::{base, muted};
 
 pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
     if editor.input_owner() != crate::editor::InputOwner::HoverCard {
@@ -40,15 +40,17 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(MUTED))
-        .style(Style::default().bg(BASE))
+        .border_style(Style::default().fg(muted()))
+        .style(Style::default().bg(base()))
         .title(Span::styled(
             " hover ",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(crate::render::text())
+                .add_modifier(Modifier::BOLD),
         ))
         .title_bottom(Span::styled(
             " enter full documentation · other key dismisses ",
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         ));
     frame.render_widget(&block, card);
     let inner = block.inner(card);
@@ -60,7 +62,7 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
     };
     frame.render_widget(
         Paragraph::new(text)
-            .style(Style::default().fg(TEXT))
+            .style(Style::default().fg(crate::render::text()))
             .wrap(Wrap { trim: false }),
         inner,
     );
@@ -79,7 +81,7 @@ fn wrapped_rows(text: &str, width: u16) -> usize {
             let mut used = 0usize;
             let mut last_space = 0usize; // `used` before the last space
             for grapheme in unicode_segmentation::UnicodeSegmentation::graphemes(line, true) {
-                let w = super::text::width(grapheme);
+                let w = super::clip::width(grapheme);
                 if used + w > width {
                     rows += 1;
                     if grapheme.trim().is_empty() {

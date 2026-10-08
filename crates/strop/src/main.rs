@@ -100,7 +100,7 @@ fn launch() -> Result<(), Box<dyn Error>> {
             "headless":matches!(options.command, cli::Command::Headless { .. }),
         })
     });
-    let result = execute(options.command, options.terminal_capture);
+    let result = execute(options.command, options.terminal_capture, options.theme);
     if let Err(error) = &result {
         record_with(
             EventKind::Error,
@@ -117,7 +117,11 @@ fn launch() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn Error>> {
+fn execute(
+    command: cli::Command,
+    terminal_capture: bool,
+    theme_flag: Option<strop_core::theme::ThemeId>,
+) -> Result<(), Box<dyn Error>> {
     match command {
         cli::Command::Help => print_help(),
         cli::Command::Version => println!("strop {}", env!("CARGO_PKG_VERSION")),
@@ -149,6 +153,7 @@ fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn 
             editor.set_terminal_capture(terminal_capture);
             editor.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)?;
             let (configuration, error) = config::Config::load();
+            strop_core::theme::set_current(theme_flag.unwrap_or(configuration.theme));
             editor.set_config(configuration);
             editor.reresolve_indents();
             editor.set_state_dir(session::state_root());
@@ -182,6 +187,7 @@ fn execute(command: cli::Command, terminal_capture: bool) -> Result<(), Box<dyn 
             editor.set_terminal_capture(terminal_capture);
             editor.set_frame_draw(Some(headless::frame_draw));
             let (configuration, error) = config::Config::load();
+            strop_core::theme::set_current(theme_flag.unwrap_or(configuration.theme));
             editor.set_config(configuration);
             editor.reresolve_indents();
             editor.set_state_dir(session::state_root());
@@ -276,6 +282,7 @@ fn print_help() {
     println!(
         "strop {} — see the cut before you make it\n\n\
 USAGE:\n  strop [+LINE] [FILE[:LINE]|DIR] terminal editor (-R: readonly)\n\
+  strop --theme light [FILE]    session-start palette override\n\
   strop --headless SCRIPT [+LINE] [FILE[:LINE]]  scripted driver\n\
   strop --script SCRIPT [+LINE] [FILE[:LINE]]    same scripted driver\n\
   strop --replay-script TRACE     extract a headless reproduction script\n\

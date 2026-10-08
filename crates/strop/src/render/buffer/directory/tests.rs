@@ -81,10 +81,10 @@ fn folder_rows_align_metadata_and_keep_selection_and_marks_visible() {
     // the cursor-row band spans the pane; the reserved track column
     // (0064 §1) keeps its own surface at the last cell
     assert!((0..79).all(|x| grid[(x, 2)].bg == diff::CURSOR_ROW_BG));
-    assert_eq!(grid[(5, 2)].fg, ACCENT);
-    assert_eq!(grid[(5, 3)].fg, TEXT);
-    assert_eq!(grid[(34, 3)].fg, MUTED);
-    assert_eq!(grid[(5, 0)].fg, MUTED);
+    assert_eq!(grid[(5, 2)].fg, accent());
+    assert_eq!(grid[(5, 3)].fg, crate::render::text());
+    assert_eq!(grid[(34, 3)].fg, muted());
+    assert_eq!(grid[(5, 0)].fg, muted());
     assert!(grid[(16, 0)].modifier.contains(Modifier::BOLD));
     editor.feed_text(":fs mark\rj");
     let marked = frame(&mut editor, 80, 9);

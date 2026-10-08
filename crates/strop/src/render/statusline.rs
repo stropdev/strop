@@ -20,8 +20,8 @@ use strop_lsp::Severity;
 
 use crate::editor::Editor;
 
-use super::text::{clip_end, clip_start, width};
-use super::{cmd_card_active, mode_color, severity_color, BASE, MUTED, SECONDARY, TEXT};
+use super::clip::{clip_end, clip_start, width};
+use super::{base, cmd_card_active, mode_color, muted, secondary, severity_color, text};
 
 #[cfg(test)]
 mod tests;
@@ -30,7 +30,7 @@ mod tests;
 /// muted text so groups read as groups (0032's "quiet separators").
 const QUIET: Color = Color::Rgb(0x56, 0x5b, 0x6e);
 /// Held-back amber: read-only files and staged changes — real state,
-/// softer than the worktree's ACCENT.
+/// softer than the worktree's accent().
 const HELD: Color = Color::Rgb(0xe0, 0xaf, 0x68);
 const BACKGROUND: Color = Color::Rgb(0x20, 0x22, 0x2b);
 
@@ -172,7 +172,7 @@ impl Modeline {
                 )
             },
             accent: if terminal_input {
-                super::TERMINAL_CHIP
+                super::terminal_chip()
             } else {
                 mode_color(editor.mode())
             },
@@ -408,15 +408,21 @@ impl Modeline {
         if !self.namespace.is_empty() {
             spans.push(Span::styled(
                 self.namespace.as_str(),
-                Style::default().fg(MUTED),
+                Style::default().fg(muted()),
             ));
             spans.push(Span::raw(" "));
         }
         if !self.dir.is_empty() {
-            spans.push(Span::styled(self.dir.as_str(), Style::default().fg(MUTED)));
+            spans.push(Span::styled(
+                self.dir.as_str(),
+                Style::default().fg(muted()),
+            ));
         }
         if !self.name.is_empty() {
-            spans.push(Span::styled(self.name.as_str(), Style::default().fg(TEXT)));
+            spans.push(Span::styled(
+                self.name.as_str(),
+                Style::default().fg(text()),
+            ));
         }
         if self.dirty {
             spans.push(Span::styled(" ●", Style::default().fg(HELD)));
@@ -428,7 +434,9 @@ impl Modeline {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 mark.as_str(),
-                Style::default().fg(SECONDARY).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(secondary())
+                    .add_modifier(Modifier::BOLD),
             ));
         }
         spans
@@ -442,7 +450,7 @@ impl Modeline {
             Span::styled(
                 self.chip.as_str(),
                 Style::default()
-                    .fg(BASE)
+                    .fg(base())
                     .bg(self.accent)
                     .add_modifier(Modifier::BOLD),
             ),
@@ -451,7 +459,7 @@ impl Modeline {
             left.push(Span::styled(SEP, quiet));
             left.push(Span::styled(
                 self.git_context.as_str(),
-                Style::default().fg(MUTED),
+                Style::default().fg(muted()),
             ));
             if self.worktree_dirty {
                 left.push(Span::styled("*", Style::default().fg(HELD)));
@@ -473,7 +481,7 @@ impl Modeline {
         if !self.status.is_empty() {
             right.push(Span::styled(
                 self.status.as_str(),
-                Style::default().fg(SECONDARY),
+                Style::default().fg(secondary()),
             ));
         }
         if self.show_diag {
@@ -502,13 +510,13 @@ impl Modeline {
             }
             right.push(Span::styled(
                 self.indent.as_str(),
-                Style::default().fg(MUTED),
+                Style::default().fg(muted()),
             ));
         }
         if !right.is_empty() {
             right.push(Span::styled(SEP, quiet));
         }
-        right.push(Span::styled(self.position(), Style::default().fg(MUTED)));
+        right.push(Span::styled(self.position(), Style::default().fg(muted())));
         (left, right)
     }
 
@@ -537,14 +545,14 @@ impl Modeline {
             spans.push(Span::styled(
                 clip_end(&self.chip, self.bare_chip - 1).into_owned(),
                 Style::default()
-                    .fg(BASE)
+                    .fg(base())
                     .bg(self.accent)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         spans.push(Span::styled(
             clip_end(&self.position(), cells.saturating_sub(self.bare_chip)).into_owned(),
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         ));
         spans
     }

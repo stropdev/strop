@@ -245,7 +245,7 @@ fn terminal_input_and_inspection_present_distinct_states() {
     let row = row_text(&buffer, statusline_y);
     assert!(row.contains(" TERMINAL "), "{row}");
     let (x, _) = find_cell(&buffer, " TERMINAL ").unwrap();
-    assert_eq!(buffer[(x, statusline_y)].bg, super::TERMINAL_CHIP);
+    assert_eq!(buffer[(x, statusline_y)].bg, super::terminal_chip());
     // Ctrl-\ Ctrl-N leaves to inspection: NORMAL chip in the normal
     // accent; with the entry message spent, the steady-state hint names
     // the way back.
@@ -266,7 +266,7 @@ fn terminal_input_and_inspection_present_distinct_states() {
     assert!(row.contains(" NORMAL "), "{row}");
     assert!(row.contains("snapshot · i returns to input"), "{row}");
     let (x, _) = find_cell(&buffer, " NORMAL ").unwrap();
-    assert_eq!(buffer[(x, statusline_y)].bg, super::ACCENT);
+    assert_eq!(buffer[(x, statusline_y)].bg, super::accent());
 }
 
 /// 0065 S3: indexed, RGB and default cell colors resolve through the
@@ -285,12 +285,15 @@ fn terminal_content_uses_the_strop_palette_on_both_views() {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
         let idx = find_cell(&buffer, "idx").expect("indexed row");
-        assert_eq!(buffer[idx].fg, expected(strop_core::theme::ANSI16[1]));
+        assert_eq!(
+            buffer[idx].fg,
+            expected(strop_core::theme::current().ansi16[1])
+        );
         let rgb = find_cell(&buffer, "rgb").expect("truecolor row");
         assert_eq!(buffer[rgb].fg, ratatui::style::Color::Rgb(1, 2, 3));
         let def = find_cell(&buffer, "def").expect("default row");
-        assert_eq!(buffer[def].fg, expected(strop_core::theme::TEXT));
-        assert_eq!(buffer[def].bg, expected(strop_core::theme::BASE));
+        assert_eq!(buffer[def].fg, expected(strop_core::theme::current().text));
+        assert_eq!(buffer[def].bg, expected(strop_core::theme::current().base));
     };
     editor.feed_text("i");
     assert_palette(&mut editor, &mut terminal);
@@ -322,7 +325,7 @@ fn terminal_palette_reaches_the_physical_screen() {
             })
         })
         .expect("indexed row on the physical screen");
-    let theme = strop_core::theme::ANSI16[1];
+    let theme = strop_core::theme::current().ansi16[1];
     assert_eq!(
         screen.physical.screen().cell(y, x).unwrap().fgcolor(),
         vt100::Color::Rgb(theme.r, theme.g, theme.b)

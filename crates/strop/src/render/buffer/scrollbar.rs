@@ -10,7 +10,7 @@
 //! never a false neutral.
 
 use super::PaneView;
-use super::{ACCENT, BASE};
+use super::{accent, base};
 use crate::editor::Editor;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
@@ -53,13 +53,13 @@ pub(super) fn render(editor: &Editor, output: &mut ratatui::Frame, rect: Rect, v
             let row = line_to_row(line.saturating_sub(1), total, track_h);
             let color = match sign {
                 '+' => ADD,
-                '~' => ACCENT,
+                '~' => accent(),
                 _ => DELETE,
             };
             let cell = &mut output.buffer_mut()[(track_x, rect.y + row as u16)];
             cell.set_symbol("▎");
             cell.set_fg(color);
-            cell.set_bg(BASE);
+            cell.set_bg(base());
         }
     }
     // Viewport thumb last: position is the primary signal. The thumb's
@@ -71,7 +71,7 @@ pub(super) fn render(editor: &Editor, output: &mut ratatui::Frame, rect: Rect, v
             visible: rows,
             scrollable: total - rows,
         };
-        thumb.paint(output, track_x, rect.y, view.view_top, ACCENT, BASE);
+        thumb.paint(output, track_x, rect.y, view.view_top, accent(), base());
     }
 }
 
@@ -145,7 +145,7 @@ pub(super) fn terminal(
             rect.x + rect.width - 1,
             rect.y,
             frame.history_rows,
-            ACCENT,
+            accent(),
             rgb(frame.palette.background),
         );
     }
@@ -156,7 +156,7 @@ fn paint_track(output: &mut ratatui::Frame, x: u16, y: u16, height: usize) {
         let cell = &mut output.buffer_mut()[(x, y + row as u16)];
         cell.set_symbol("│");
         cell.set_fg(TRACK);
-        cell.set_bg(BASE);
+        cell.set_bg(base());
     }
 }
 

@@ -1,7 +1,7 @@
 //! Folder decoration preserves the real buffer prefix byte-for-byte. Metadata
 //! comes from the listing; selection/search/caret keep the shared text renderer.
 use crate::editor::Directory;
-use crate::render::{diff, ACCENT, MUTED, TEXT};
+use crate::render::{accent, diff, muted};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::Span,
@@ -22,7 +22,7 @@ pub(super) fn row(
         return None;
     }
     let text = text.to_string();
-    let quiet = Style::default().fg(MUTED);
+    let quiet = Style::default().fg(muted());
     if line == 0 {
         let boundary = directory.location.label().len();
         let (path, count) = text.split_at_checked(boundary)?;
@@ -38,7 +38,9 @@ pub(super) fn row(
                 Span::styled(path[..leaf].to_owned(), quiet),
                 Span::styled(
                     path[leaf..].to_owned(),
-                    Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(crate::render::text())
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(count.to_owned(), quiet),
             ],
@@ -48,7 +50,7 @@ pub(super) fn row(
     if line == 1 {
         let mut spans = vec![Span::styled(
             text,
-            Style::default().fg(if focused { ACCENT } else { MUTED }),
+            Style::default().fg(if focused { accent() } else { muted() }),
         )];
         spans.push(Span::styled(
             if directory.parent().is_some() {
@@ -75,10 +77,10 @@ pub(super) fn row(
         return None;
     }
     let color = match entry.observation.kind {
-        EntryKind::Directory => ACCENT,
+        EntryKind::Directory => accent(),
         EntryKind::SymbolicLink => Color::Rgb(0x89, 0xb4, 0xfa),
-        EntryKind::Unknown => MUTED,
-        _ => TEXT,
+        EntryKind::Unknown => muted(),
+        _ => crate::render::text(),
     };
     let marked = directory.marked.contains_key(&entry.name);
     let label_style = if focused || marked || entry.observation.kind == EntryKind::Directory {

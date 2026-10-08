@@ -8,12 +8,12 @@ use ratatui::Frame;
 
 use crate::editor::{Editor, PreviewSource};
 
-use super::super::{syntax_style, ACCENT, BASE, MUTED, PAIR_BG, SELECT_BG, TEXT};
+use super::super::{accent, base, muted, pair_bg, select_bg, syntax_style};
 
 const SURFACE: Color = Color::Rgb(0x20, 0x22, 0x2e);
 pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
     let Some((title, focus_line, source)) = editor.picker_preview_cached() else {
-        frame.render_widget(Paragraph::new("").style(Style::default().bg(BASE)), area);
+        frame.render_widget(Paragraph::new("").style(Style::default().bg(base())), area);
         return;
     };
     let visible = area.height.saturating_sub(1) as usize;
@@ -84,7 +84,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
         }
         PreviewSource::Loading => vec![Line::from(Span::styled(
             " loading…",
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         ))],
         PreviewSource::Failed(error) => vec![Line::from(format!("preview: {error}"))],
         PreviewSource::Cancelled(reason) => {
@@ -94,14 +94,14 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::LEFT)
-        .border_style(Style::default().fg(PAIR_BG))
+        .border_style(Style::default().fg(pair_bg()))
         .style(Style::default().bg(SURFACE))
         .title(Span::styled(
             format!(
                 " {} ",
-                super::super::text::clip_end(&title, area.width.saturating_sub(2) as usize)
+                super::super::clip::clip_end(&title, area.width.saturating_sub(2) as usize)
             ),
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         ));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
@@ -140,18 +140,22 @@ fn highlight_lines_owned(
         let first_span = spans.partition_point(|span| span.end <= start);
         let focused = focus_line == Some(line + 1);
         let mut spans_out = Vec::new();
-        let number_style = Style::default().fg(if focused { TEXT } else { MUTED });
+        let number_style = Style::default().fg(if focused {
+            crate::render::text()
+        } else {
+            muted()
+        });
         let number_style = if focused {
             number_style.add_modifier(ratatui::style::Modifier::BOLD)
         } else {
             number_style
         };
         if gutter > 0 {
-            let mut marker = Style::default().fg(ACCENT);
+            let mut marker = Style::default().fg(accent());
             if focused {
                 marker = marker
                     .add_modifier(ratatui::style::Modifier::BOLD)
-                    .bg(SELECT_BG);
+                    .bg(select_bg());
             }
             spans_out.push(Span::styled(if focused { "▶" } else { " " }, marker));
         }
@@ -160,7 +164,7 @@ fn highlight_lines_owned(
                 format!(" {:>digits$}", line + 1),
                 number_style,
             ));
-            spans_out.push(Span::styled(" │ ", Style::default().fg(MUTED)));
+            spans_out.push(Span::styled(" │ ", Style::default().fg(muted())));
         } else if gutter == digits + 2 {
             spans_out.push(Span::styled(
                 format!("{:>digits$} ", line + 1),
@@ -176,7 +180,7 @@ fn highlight_lines_owned(
                 continue;
             };
             let pos = start + placement.byte;
-            let mut style = Style::default().fg(TEXT).bg(SURFACE);
+            let mut style = Style::default().fg(crate::render::text()).bg(SURFACE);
             if let Some(span) = spans[first_span..]
                 .iter()
                 .take_while(|span| span.start <= pos)
@@ -186,11 +190,11 @@ fn highlight_lines_owned(
                 style = style.patch(syntax_style(span));
             }
             if focus_line == Some(line + 1) {
-                style = style.bg(SELECT_BG);
+                style = style.bg(select_bg());
             }
             if matched.is_some_and(|range| range.start.get() <= pos && pos < range.end.get()) {
                 style = style
-                    .fg(ACCENT)
+                    .fg(accent())
                     .add_modifier(ratatui::style::Modifier::BOLD);
             }
             let symbol = if !visible.complete || grapheme == "\t" {
@@ -201,7 +205,7 @@ fn highlight_lines_owned(
             spans_out.push(Span::styled(symbol, style));
         }
         out.push(Line::from(spans_out).style(Style::default().bg(if focused {
-            SELECT_BG
+            select_bg()
         } else {
             SURFACE
         })));
@@ -351,9 +355,9 @@ mod tests {
         }
         let (marker_x, marker_y) = marker.unwrap();
         let marker = &grid[(marker_x, marker_y)];
-        assert_eq!(marker.fg, crate::render::ACCENT);
+        assert_eq!(marker.fg, crate::render::accent());
         assert!(marker.modifier.contains(ratatui::style::Modifier::BOLD));
-        assert_eq!(marker.bg, crate::render::SELECT_BG);
+        assert_eq!(marker.bg, crate::render::select_bg());
     }
 
     #[test]

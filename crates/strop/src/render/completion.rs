@@ -1,6 +1,6 @@
 //! A non-modal card inside the active pane. Geometry depends on pane/caret
 //! cells, never on a candidate label's byte length or asynchronous arrival order.
-use super::{ACCENT, BASE, MUTED, SECONDARY, SELECT_BG, TEXT};
+use super::{accent, base, muted, secondary, select_bg, text};
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -74,12 +74,12 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, pane: Rect, caret: Opti
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .style(Style::default().bg(BASE).fg(TEXT))
-        .border_style(Style::default().fg(MUTED))
-        .title(Span::styled(title, Style::default().fg(SECONDARY)))
+        .style(Style::default().bg(base()).fg(text()))
+        .border_style(Style::default().fg(muted()))
+        .title(Span::styled(title, Style::default().fg(secondary())))
         .title_bottom(Span::styled(
-            super::text::clip_end(footer, usize::from(width.saturating_sub(4))),
-            Style::default().fg(MUTED),
+            super::clip::clip_end(footer, usize::from(width.saturating_sub(4))),
+            Style::default().fg(muted()),
         ));
     let inner = block.inner(card);
     frame.render_widget(block, card);
@@ -90,13 +90,16 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, pane: Rect, caret: Opti
             .filter(|provider| provider.state != "off")
             .map(|provider| {
                 Line::from(vec![
-                    Span::styled(format!("{}  ", provider.source), Style::default().fg(MUTED)),
                     Span::styled(
-                        super::text::clip_end(
+                        format!("{}  ", provider.source),
+                        Style::default().fg(muted()),
+                    ),
+                    Span::styled(
+                        super::clip::clip_end(
                             provider.explanation,
                             usize::from(inner.width.saturating_sub(5)),
                         ),
-                        Style::default().fg(SECONDARY),
+                        Style::default().fg(secondary()),
                     ),
                 ])
             })
@@ -120,9 +123,9 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, pane: Rect, caret: Opti
             selected.map_or(start + 1, |index| index + 1),
             menu.len()
         );
-        let cells = super::text::width(&indicator).min(usize::from(width.saturating_sub(2))) as u16;
+        let cells = super::clip::width(&indicator).min(usize::from(width.saturating_sub(2))) as u16;
         frame.render_widget(
-            Paragraph::new(indicator).style(Style::default().fg(MUTED).bg(BASE)),
+            Paragraph::new(indicator).style(Style::default().fg(muted()).bg(base())),
             Rect::new(card.right() - cells - 1, card.y, cells, 1),
         );
     }
@@ -140,8 +143,8 @@ fn render_row(
     frame: &mut Frame,
     area: Rect,
 ) {
-    let background = if selected { SELECT_BG } else { BASE };
-    let base = Style::default().fg(TEXT).bg(background);
+    let background = if selected { select_bg() } else { base() };
+    let base = Style::default().fg(text()).bg(background);
     frame.buffer_mut().set_style(area, base);
     let Some(row) = menu.row(index) else { return };
     let wide = area.width >= 34;
@@ -150,37 +153,40 @@ fn render_row(
     let available = area.width.saturating_sub(kind_width + source_width + 2);
     let label_width = if wide { available.min(27) } else { available };
     let detail_width = available.saturating_sub(label_width + 1);
-    let label = super::text::clip_end(row.label, usize::from(label_width));
+    let label = super::clip::clip_end(row.label, usize::from(label_width));
     let matched = prefix_end(&label, menu.prefix());
     let mut spans = Vec::with_capacity(9);
     spans.push(Span::styled(
         if selected { "▌" } else { " " },
-        base.fg(ACCENT),
+        base.fg(accent()),
     ));
     if wide {
-        spans.push(Span::styled(format!("{:<6} ", row.kind), base.fg(MUTED)));
+        spans.push(Span::styled(format!("{:<6} ", row.kind), base.fg(muted())));
     }
     spans.push(Span::styled(
         &label[..matched],
-        base.fg(ACCENT).add_modifier(Modifier::BOLD),
+        base.fg(accent()).add_modifier(Modifier::BOLD),
     ));
     spans.push(Span::styled(&label[matched..], base));
-    let label_cells = super::text::width(&label);
+    let label_cells = super::clip::width(&label);
     spans.push(Span::styled(
         " ".repeat(usize::from(label_width).saturating_sub(label_cells)),
         base,
     ));
     if detail_width > 0 {
-        let detail = super::text::clip_end(
+        let detail = super::clip::clip_end(
             row.unsupported.unwrap_or(row.detail),
             usize::from(detail_width),
         );
-        let padding = usize::from(detail_width).saturating_sub(super::text::width(&detail));
+        let padding = usize::from(detail_width).saturating_sub(super::clip::width(&detail));
         spans.push(Span::styled(" ", base));
-        spans.push(Span::styled(detail, base.fg(SECONDARY)));
+        spans.push(Span::styled(detail, base.fg(secondary())));
         spans.push(Span::styled(" ".repeat(padding), base));
     }
-    spans.push(Span::styled(format!(" {:>3}", row.source), base.fg(MUTED)));
+    spans.push(Span::styled(
+        format!(" {:>3}", row.source),
+        base.fg(muted()),
+    ));
     frame.render_widget(Paragraph::new(Line::from(spans)).style(base), area);
 }
 
@@ -236,9 +242,9 @@ fn render_documentation(documentation: CompletionDocumentation<'_>, frame: &mut 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .style(Style::default().fg(TEXT).bg(BASE))
-        .border_style(Style::default().fg(MUTED))
-        .title(Span::styled(title, Style::default().fg(MUTED)));
+        .style(Style::default().fg(text()).bg(base()))
+        .border_style(Style::default().fg(muted()))
+        .title(Span::styled(title, Style::default().fg(muted())));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let mut lines = Vec::new();
@@ -278,7 +284,7 @@ fn render_documentation(documentation: CompletionDocumentation<'_>, frame: &mut 
     }
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::default().fg(TEXT))
+            .style(Style::default().fg(text()))
             .wrap(Wrap { trim: false }),
         inner,
     );

@@ -21,7 +21,7 @@ mod workspace_tests;
 
 use rows::render_results;
 
-use super::{dim_color, ACCENT, BASE, MUTED, PAIR_BG, SECONDARY, SELECT_BG, TEXT};
+use super::{accent, base, dim_color, muted, pair_bg, secondary, select_bg, text};
 
 /// Dim the backdrop: the editor stays readable under the card (0003 §2.1
 /// live backdrop), with fg colors pulled toward the base.
@@ -30,7 +30,7 @@ pub fn dim_backdrop(frame: &mut Frame, area: Rect) {
         for x in area.x..area.x + area.width {
             let cell = &mut frame.buffer_mut()[(x, y)];
             cell.set_fg(dim_color(cell.fg));
-            if cell.bg != BASE {
+            if cell.bg != base() {
                 cell.set_bg(dim_color(cell.bg));
             }
         }
@@ -171,23 +171,23 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
         format!(" {total} ")
     };
     let count = strop_core::layout::printable_text(count);
-    let count = super::text::clip_end(
+    let count = super::clip::clip_end(
         &count,
-        usize::from(card.width).saturating_sub(super::text::width(kind.title()) + 4),
+        usize::from(card.width).saturating_sub(super::clip::width(kind.title()) + 4),
     );
     let title = editor
         .search_scope()
         .map(|scope| format!(" Search — {} ", scope.root.label()));
-    let title = super::text::clip_end(
+    let title = super::clip::clip_end(
         title.as_deref().unwrap_or(kind.title()),
-        usize::from(card.width).saturating_sub(super::text::width(&count) + 4),
+        usize::from(card.width).saturating_sub(super::clip::width(&count) + 4),
     );
     // Fit whole action groups; ratatui's raw title clipping can cut a chord.
     let mut hint_end = 0;
     let mut hint_cells = 0;
     for group in hint.split(" · ") {
         let separator = if hint_end == 0 { "" } else { " · " };
-        let cells = super::text::width(separator) + super::text::width(group);
+        let cells = super::clip::width(separator) + super::clip::width(group);
         if hint_cells + cells > usize::from(card.width.saturating_sub(2)) {
             break;
         }
@@ -198,14 +198,14 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(MUTED))
-        .style(Style::default().bg(BASE))
+        .border_style(Style::default().fg(muted()))
+        .style(Style::default().bg(base()))
         .title(Span::styled(
             title,
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            Style::default().fg(text()).add_modifier(Modifier::BOLD),
         ))
-        .title_bottom(Span::styled(hint, Style::default().fg(MUTED)))
-        .title_top(Line::from(Span::styled(count, Style::default().fg(MUTED))).right_aligned());
+        .title_bottom(Span::styled(hint, Style::default().fg(muted())))
+        .title_top(Line::from(Span::styled(count, Style::default().fg(muted()))).right_aligned());
     // 1-cell border + 1-cell inner padding (0001 §4: floating panes
     // breathe) — the engine's card geometry, shared with preparation.
     let inner = super::from_cells(strop_engine::editor::prepare::picker_inner(
@@ -288,9 +288,9 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
             .unwrap_or_else(|| "─".repeat(rows[0].width as usize));
         frame.render_widget(
             Paragraph::new(rule).style(Style::default().fg(if query_roles {
-                MUTED
+                muted()
             } else {
-                PAIR_BG
+                pair_bg()
             })),
             Rect {
                 y: rule_y,
@@ -319,7 +319,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
                 Line::from("ssh://host/absolute/path  —  file or directory"),
                 Line::from("New hosts open /; no mount or recursive workspace scan."),
             ])
-            .style(Style::default().fg(MUTED)),
+            .style(Style::default().fg(muted())),
             results,
         );
     } else {
@@ -343,7 +343,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
             let cell = &mut frame.buffer_mut()[(track_x, results.y + y as u16)];
             if y == thumb {
                 cell.set_symbol("▮");
-                cell.set_fg(ACCENT);
+                cell.set_fg(accent());
             } else {
                 cell.set_symbol("│");
                 cell.set_fg(Color::Rgb(0x2a, 0x2c, 0x3a));
@@ -378,24 +378,24 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
             {
                 let active = i == list.selected;
                 let style = if active {
-                    Style::default().fg(TEXT).bg(SELECT_BG)
+                    Style::default().fg(text()).bg(select_bg())
                 } else {
-                    Style::default().fg(SECONDARY)
+                    Style::default().fg(secondary())
                 };
                 lines.push(Line::from(vec![
                     Span::styled(if active { "▌" } else { " " }, style),
                     Span::styled(suggestion.insert.clone(), style),
                     Span::styled(
                         format!("  {}", suggestion.detail),
-                        Style::default().fg(MUTED),
+                        Style::default().fg(muted()),
                     ),
                 ]));
             }
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(MUTED))
-                .style(Style::default().bg(BASE));
+                .border_style(Style::default().fg(muted()))
+                .style(Style::default().bg(base()));
             frame.render_widget(Clear, area);
             frame.render_widget(Paragraph::new(lines).block(block), area);
         }

@@ -46,6 +46,11 @@ impl Editor {
             Payload::IndentChoice(_) => {
                 self.message = "indentation choice requires its original selector".into()
             }
+            // Theme rows apply through their own selector, never the
+            // generic accept path (same owner rule as indentation).
+            Payload::ThemeChoice(_) => {
+                self.message = "theme choice requires its original selector".into()
+            }
             Payload::FilesystemAction(_) => {
                 self.message = "filesystem choice requires its original selector".into()
             }

@@ -1,5 +1,5 @@
 //! One printable cell projection for modal input fields, independent of grammar.
-use super::{ACCENT, MUTED, TEXT};
+use super::{accent, muted, text};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use strop_core::id::DisplayColumn;
@@ -29,7 +29,7 @@ pub(super) fn project(
     let label_budget = usize::from(width.saturating_sub(1));
     // A narrow field ellipsizes the label instead of letting it vanish
     // into clipped blanks (0068 B3).
-    let label = super::text::clip_end(&label, label_budget);
+    let label = super::clip::clip_end(&label, label_budget);
     let mut spans = Vec::new();
     let mut prefix = 0;
     for (glyph, grapheme) in RopeGraphemes::new(label.as_ref().into(), 4) {
@@ -42,7 +42,7 @@ pub(super) fn project(
             } else {
                 " ".repeat(visible.width)
             },
-            Style::default().fg(if active { ACCENT } else { MUTED }),
+            Style::default().fg(if active { accent() } else { muted() }),
         ));
         prefix = visible.x + visible.width;
     }
@@ -62,7 +62,7 @@ pub(super) fn project(
             .iter()
             .rev()
             .find(|span| span.range.contains(&glyph.byte))
-            .map_or_else(|| Style::default().fg(TEXT), |span| role_style(span.role));
+            .map_or_else(|| Style::default().fg(text()), |span| role_style(span.role));
         let text = if visible.complete && grapheme != "\t" {
             printable_grapheme(&grapheme).to_string()
         } else {
@@ -72,7 +72,7 @@ pub(super) fn project(
         used = visible.x + visible.width;
     }
     if active && caret == value.len() && used < available {
-        spans.push(Span::styled("▏", Style::default().fg(ACCENT)));
+        spans.push(Span::styled("▏", Style::default().fg(accent())));
     }
     FieldLine {
         line: Line::from(spans),
@@ -82,15 +82,15 @@ pub(super) fn project(
 
 fn role_style(role: Role) -> Style {
     match role {
-        Role::QualifierKey => Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        Role::Punctuation => Style::default().fg(MUTED),
-        Role::Operator => Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        Role::Value | Role::Literal => Style::default().fg(TEXT),
+        Role::QualifierKey => Style::default().fg(accent()).add_modifier(Modifier::BOLD),
+        Role::Punctuation => Style::default().fg(muted()),
+        Role::Operator => Style::default().fg(accent()).add_modifier(Modifier::BOLD),
+        Role::Value | Role::Literal => Style::default().fg(text()),
         Role::Regex => Style::default().fg(Color::Rgb(0xcb, 0xa6, 0xf7)),
         Role::Negation | Role::Error => Style::default()
             .fg(Color::Rgb(0xf3, 0x8b, 0xa8))
             .add_modifier(Modifier::UNDERLINED),
-        Role::Incomplete => Style::default().fg(MUTED).add_modifier(Modifier::ITALIC),
+        Role::Incomplete => Style::default().fg(muted()).add_modifier(Modifier::ITALIC),
     }
 }
 

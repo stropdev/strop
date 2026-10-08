@@ -18,7 +18,7 @@ fn selected_band(grid: &ratatui::buffer::Buffer, width: u16, height: u16) -> (u1
     for y in 0..height {
         let mut edge = None;
         for x in 0..width {
-            if grid[(x, y)].bg == crate::render::SELECT_BG {
+            if grid[(x, y)].bg == crate::render::select_bg() {
                 edge = Some(x);
             }
         }
@@ -134,7 +134,7 @@ fn assert_track(
         if cell.symbol() == "▮" {
             assert_eq!(
                 cell.fg,
-                crate::render::ACCENT,
+                crate::render::accent(),
                 "thumb paints in the accent style"
             );
             thumbs.push(y);

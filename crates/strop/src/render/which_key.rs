@@ -11,7 +11,7 @@ use ratatui::Frame;
 use crate::editor::Editor;
 use crate::keymap;
 
-use super::{ACCENT, BASE, MUTED, SELECT_BG, TEXT};
+use super::{accent, base, muted, select_bg, text};
 
 /// Pending prefixes that show a card: (pending keys, card title).
 const PREFIXES: &[(&str, &str)] = &[
@@ -106,14 +106,14 @@ fn render_hints(
     }
     let key_w = rows
         .iter()
-        .map(|row| super::text::width(&row.key))
+        .map(|row| super::clip::width(&row.key))
         .max()
         .unwrap_or(1)
         .max(1);
     const DESC_CAP: usize = 60;
     let desc_w = rows
         .iter()
-        .map(|row| super::text::width(&row.desc))
+        .map(|row| super::clip::width(&row.desc))
         .max()
         .unwrap_or(1)
         .min(DESC_CAP);
@@ -134,11 +134,11 @@ fn render_hints(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(MUTED))
-        .style(Style::default().bg(BASE))
+        .border_style(Style::default().fg(muted()))
+        .style(Style::default().bg(base()))
         .title(Span::styled(
             title,
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            Style::default().fg(text()).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(card);
     frame.render_widget(block, card);
@@ -158,25 +158,25 @@ fn render_hints(
         if row.key.is_empty() {
             lines.push(Line::from(Span::styled(
                 format!(" {}", row.desc),
-                Style::default().fg(MUTED),
+                Style::default().fg(muted()),
             )));
             continue;
         }
         let key_style = if row.key_live {
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+            Style::default().fg(accent()).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(MUTED)
+            Style::default().fg(muted())
         };
         let desc_style = if row.desc_live {
-            Style::default().fg(TEXT)
+            Style::default().fg(text())
         } else {
-            Style::default().fg(MUTED)
+            Style::default().fg(muted())
         };
         lines.push(Line::from(vec![
             Span::raw(" "),
-            Span::styled(format!(" {:>key_w$} ", row.key), key_style.bg(SELECT_BG)),
+            Span::styled(format!(" {:>key_w$} ", row.key), key_style.bg(select_bg())),
             Span::styled(
-                format!("  {}", super::text::clip_end(&row.desc, desc_budget)),
+                format!("  {}", super::clip::clip_end(&row.desc, desc_budget)),
                 desc_style,
             ),
         ]));
@@ -184,7 +184,7 @@ fn render_hints(
     if overflow > 0 {
         lines.push(Line::from(Span::styled(
             format!("  +{overflow} more"),
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         )));
     }
     frame.render_widget(Paragraph::new(lines), inner);

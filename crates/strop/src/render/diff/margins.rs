@@ -10,8 +10,8 @@ use ratatui::text::Span;
 use strop_engine::editor::{Sidebar, SidebarRow};
 use strop_git::memory::ChangedFile;
 
-use super::super::text;
-use super::super::{ACCENT, MUTED, SELECT_BG, TEXT};
+use super::super::clip;
+use super::super::{accent, muted, select_bg, text};
 
 /// Blame gutter width: `sha˟7 author˟9 age˟3` + separators — the
 /// engine-owned constant preparation's left inset clamps against.
@@ -27,14 +27,18 @@ const RECENT_SECS: i64 = 30 * 86400;
 pub(crate) fn blame_spans(line: &strop_git::memory::BlameLine, now: i64) -> Span<'static> {
     let uncommitted = line.is_uncommitted();
     let recent = line.ts > 0 && now.saturating_sub(line.ts) < RECENT_SECS;
-    let fg = if uncommitted || recent { ACCENT } else { MUTED };
+    let fg = if uncommitted || recent {
+        accent()
+    } else {
+        muted()
+    };
     let sha: String = if uncommitted {
         "0".repeat(7)
     } else {
         line.sha.chars().take(7).collect()
     };
-    let author = text::clip_end(&line.author, 9);
-    let author_pad = " ".repeat(9usize.saturating_sub(text::width(&author)));
+    let author = clip::clip_end(&line.author, 9);
+    let author_pad = " ".repeat(9usize.saturating_sub(clip::width(&author)));
     let age: String = line.age.chars().take(3).collect();
     Span::styled(
         format!("{sha} {author}{author_pad} {age:>3} "),
@@ -64,10 +68,10 @@ pub(crate) fn sidebar_row_spans(
     let mut spans = match sidebar.rows().get(row) {
         Some(SidebarRow::Dir { name, depth }) => {
             let label = format!("{}{}/", " ".repeat(2 * depth), name);
-            let shown = text::clip_end(&label, w.saturating_sub(1));
-            let pad = (w - 1).saturating_sub(text::width(&shown));
+            let shown = clip::clip_end(&label, w.saturating_sub(1));
+            let pad = (w - 1).saturating_sub(clip::width(&shown));
             vec![
-                Span::styled(format!(" {shown}"), Style::default().fg(MUTED)),
+                Span::styled(format!(" {shown}"), Style::default().fg(muted())),
                 Span::raw(" ".repeat(pad)),
             ]
         }
@@ -79,18 +83,18 @@ pub(crate) fn sidebar_row_spans(
                 (false, _) => " ",
             };
             let label = format!("{}{name}", " ".repeat(2 * depth));
-            let shown = text::clip_end(&label, w.saturating_sub(2));
-            let pad = (w - 1).saturating_sub(text::width(&shown));
+            let shown = clip::clip_end(&label, w.saturating_sub(2));
+            let pad = (w - 1).saturating_sub(clip::width(&shown));
             let style = if is_current {
                 Style::default()
-                    .fg(ACCENT)
-                    .bg(SELECT_BG)
+                    .fg(accent())
+                    .bg(select_bg())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(TEXT)
+                Style::default().fg(text())
             };
             let fill = if is_current {
-                Style::default().bg(SELECT_BG)
+                Style::default().bg(select_bg())
             } else {
                 Style::default()
             };
@@ -103,7 +107,7 @@ pub(crate) fn sidebar_row_spans(
     };
     spans.push(Span::styled(
         "│",
-        Style::default().fg(if focused { ACCENT } else { RULE }),
+        Style::default().fg(if focused { accent() } else { RULE }),
     ));
     spans
 }
@@ -152,7 +156,7 @@ mod tests {
         let sidebar = Sidebar::build(&files);
         for row in 0..sidebar.rows().len() + 3 {
             let spans = sidebar_row_spans(&sidebar, &files, Path::new("none.rs"), row, false);
-            let cells: usize = spans.iter().map(|s| text::width(&s.content)).sum();
+            let cells: usize = spans.iter().map(|s| clip::width(&s.content)).sum();
             assert_eq!(cells, sidebar.outer_width(), "row {row}");
         }
         // a wide name clips at a grapheme boundary with an ellipsis

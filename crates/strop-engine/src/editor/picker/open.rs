@@ -80,6 +80,7 @@ impl Editor {
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
             Kind::SearchOptions => unreachable!("search options build their own items"),
             Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
+            Kind::Theme => unreachable!("the theme selector builds its own items"),
             Kind::FilesystemActions => {
                 unreachable!("filesystem actions build their own captured selector")
             }

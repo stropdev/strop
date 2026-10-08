@@ -10,8 +10,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+use super::super::clip;
 use super::super::diff::{ADD_FG, DEL_FG};
-use super::super::{text, ACCENT, BASE, MUTED, SECONDARY, SELECT_BG, TEXT};
+use super::super::{accent, base, muted, secondary, select_bg, text};
 use super::window::{match_window, replacement_window};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -52,7 +53,7 @@ pub(super) fn render_results(
         // obsolete flag hint
         lines.push(Line::from(Span::styled(
             " language:rust path:src/ glob:\"**/*.rs\" hidden:include case:smart",
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         )));
         lines.push(Line::from(Span::styled(
             if picker.kind == strop_picker::Kind::Files {
@@ -60,7 +61,7 @@ pub(super) fn render_results(
             } else {
                 " bare words are literal content · ctrl-space suggests"
             },
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         )));
     }
     if picker.rows.is_empty()
@@ -79,7 +80,7 @@ pub(super) fn render_results(
         };
         lines.push(Line::from(Span::styled(
             message,
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         )));
     }
     if picker.rows.is_empty() && !picker.input.text().is_empty() {
@@ -91,11 +92,11 @@ pub(super) fn render_results(
         };
         lines.push(Line::from(Span::styled(
             format!(" No {noun} “{}”", picker.input.text()),
-            Style::default().fg(SECONDARY),
+            Style::default().fg(secondary()),
         )));
         lines.push(Line::from(Span::styled(
             " edit query · esc normal/close",
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         )));
     }
     for (vi, row) in picker
@@ -131,7 +132,10 @@ pub(super) fn render_results(
         };
         lines.extend(rendered);
     }
-    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(base())),
+        area,
+    );
 }
 
 /// One logical row as display lines, by kind.
@@ -154,9 +158,9 @@ fn compose_row(
 /// Selection band and the marker share one style decision.
 fn marker(active: bool) -> Span<'static> {
     let style = if active {
-        Style::default().fg(ACCENT).bg(SELECT_BG)
+        Style::default().fg(accent()).bg(select_bg())
     } else {
-        Style::default().fg(MUTED)
+        Style::default().fg(muted())
     };
     Span::styled(if active { "▌" } else { " " }, style)
 }
@@ -173,7 +177,7 @@ fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'stat
                 .into();
         }
         if active {
-            span.style = span.style.bg(SELECT_BG);
+            span.style = span.style.bg(select_bg());
         }
     }
     let clipped = spans.iter().map(Span::width).sum::<usize>() > width as usize;
@@ -187,7 +191,7 @@ fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'stat
         if span.width() > budget - used {
             let mut prefix = String::new();
             for grapheme in span.content.graphemes(true) {
-                let cells = text::width(grapheme);
+                let cells = clip::width(grapheme);
                 if used + cells > budget {
                     break;
                 }
@@ -205,9 +209,9 @@ fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'stat
         output.push(Span::styled(
             "…",
             if active {
-                Style::default().fg(MUTED).bg(SELECT_BG)
+                Style::default().fg(muted()).bg(select_bg())
             } else {
-                Style::default().fg(MUTED)
+                Style::default().fg(muted())
             },
         ));
         used += 1;
@@ -215,7 +219,7 @@ fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'stat
     if active && used < width as usize {
         output.push(Span::styled(
             " ".repeat(width as usize - used),
-            Style::default().bg(SELECT_BG),
+            Style::default().bg(select_bg()),
         ));
     }
     Line::from(output)
@@ -236,12 +240,12 @@ fn emphasis(value: &str, cols: &[u32], base: Style, active: bool) -> Vec<Span<'s
             continue;
         }
         let mut style = if matched {
-            base.fg(ACCENT).add_modifier(Modifier::BOLD)
+            base.fg(accent()).add_modifier(Modifier::BOLD)
         } else {
             base
         };
         if active {
-            style = style.bg(SELECT_BG);
+            style = style.bg(select_bg());
         }
         let shown = strop_core::layout::printable_grapheme(&grapheme).to_string();
         spans.push(Span::styled(shown, style));
@@ -265,7 +269,7 @@ fn chip(badge: Option<&str>, active: bool) -> Span<'static> {
     let text = format!(" {:<7} ", label);
     let mut style = Style::default().fg(kind_color(label));
     if active {
-        style = style.bg(SELECT_BG);
+        style = style.bg(select_bg());
     }
     Span::styled(text, style)
 }
@@ -277,7 +281,7 @@ fn kind_color(label: &str) -> Color {
         "struct" | "class" | "iface" | "enum" | "variant" | "T" => Color::Rgb(0xcb, 0xa6, 0xf7),
         "const" | "var" | "field" | "prop" => Color::Rgb(0xa6, 0xe3, 0xa1),
         "mod" | "ns" | "pkg" => Color::Rgb(0x94, 0xe2, 0xd5),
-        _ => SECONDARY,
+        _ => secondary(),
     }
 }
 
@@ -291,7 +295,7 @@ fn symbol_row(
 ) -> Line<'static> {
     let (name, container, location) = symbol_fields(item);
     let budget = (width as usize).saturating_sub(1 + CHIP_W);
-    let loc_w = text::width(&location);
+    let loc_w = clip::width(&location);
     let (name_w, _cont_w) = if !location.is_empty() {
         (budget.saturating_sub(loc_w + 1), loc_w)
     } else {
@@ -299,33 +303,33 @@ fn symbol_row(
     };
     let name_budget = name_w.saturating_sub(if container.is_empty() { 0 } else { 1 });
     let mut spans = vec![marker(active), chip(item.badge.as_deref(), active)];
-    let name_chars = text::width(&name);
+    let name_chars = clip::width(&name);
     if name_chars <= name_budget {
         spans.extend(emphasis(
             &name,
             match_cols,
-            Style::default().fg(TEXT),
+            Style::default().fg(text()),
             active,
         ));
         let used = 1 + CHIP_W + name_chars;
         // container sits after the name; pad between the fields
-        if !container.is_empty() && used + 1 + text::width(&container) + loc_w < width as usize {
+        if !container.is_empty() && used + 1 + clip::width(&container) + loc_w < width as usize {
             spans.push(plain(" ", Style::default()));
             spans.extend(emphasis(
                 &container,
                 &[],
-                Style::default().fg(SECONDARY),
+                Style::default().fg(secondary()),
                 active,
             ));
         } else if used < width as usize {
             spans.push(plain(" ", Style::default()));
         }
     } else {
-        let clipped = text::clip_end(&name, name_budget);
+        let clipped = clip::clip_end(&name, name_budget);
         spans.extend(emphasis(
             &clipped,
             match_cols,
-            Style::default().fg(TEXT),
+            Style::default().fg(text()),
             active,
         ));
     }
@@ -333,7 +337,7 @@ fn symbol_row(
         let used: usize = spans.iter().map(Span::width).sum();
         let pad = (width as usize).saturating_sub(used + loc_w + 1);
         spans.push(plain(" ".repeat(pad.max(1)), Style::default()));
-        spans.push(plain(&location, Style::default().fg(SECONDARY)));
+        spans.push(plain(&location, Style::default().fg(secondary())));
     }
     finish(spans, width, active)
 }
@@ -384,14 +388,14 @@ fn file_row(value: &str, match_cols: &[u32], width: u16, active: bool) -> Line<'
         .filter(|c| (*c as usize) < dir.chars().count())
         .collect();
     let budget = (width as usize).saturating_sub(1);
-    let dir_w = text::width(dir);
-    let name_w = text::width(name);
+    let dir_w = clip::width(dir);
+    let name_w = clip::width(name);
     let mut spans = vec![marker(active)];
     if budget >= name_w + dir_w + 2 {
         spans.extend(emphasis(
             name,
             &name_cols,
-            Style::default().fg(TEXT),
+            Style::default().fg(text()),
             active,
         ));
         let pad = budget - name_w - dir_w;
@@ -399,7 +403,7 @@ fn file_row(value: &str, match_cols: &[u32], width: u16, active: bool) -> Line<'
         spans.extend(emphasis(
             dir,
             &dir_cols,
-            Style::default().fg(SECONDARY),
+            Style::default().fg(secondary()),
             active,
         ));
     } else {
@@ -409,7 +413,7 @@ fn file_row(value: &str, match_cols: &[u32], width: u16, active: bool) -> Line<'
             (budget / 3).max(4).min(budget / 2)
         };
         let name_budget = budget.saturating_sub(room + usize::from(room > 0));
-        let shown = text::clip_end(name, name_budget);
+        let shown = clip::clip_end(name, name_budget);
         if name_w > name_budget {
             let prefix = shown.chars().count().saturating_sub(1);
             name_cols.retain(|column| (*column as usize) < prefix);
@@ -417,17 +421,17 @@ fn file_row(value: &str, match_cols: &[u32], width: u16, active: bool) -> Line<'
         spans.extend(emphasis(
             &shown,
             &name_cols,
-            Style::default().fg(TEXT),
+            Style::default().fg(text()),
             active,
         ));
         if room > 0 {
             let context = elide_middle(dir, room);
-            let pad = budget.saturating_sub(text::width(&shown) + text::width(&context));
+            let pad = budget.saturating_sub(clip::width(&shown) + clip::width(&context));
             spans.push(plain(" ".repeat(pad), Style::default()));
             spans.extend(emphasis(
                 &context,
                 &[],
-                Style::default().fg(SECONDARY),
+                Style::default().fg(secondary()),
                 active,
             ));
         }
@@ -441,13 +445,13 @@ fn elide_middle(path: &str, room: usize) -> String {
     if room == 0 {
         return String::new();
     }
-    if text::width(path) <= room {
+    if clip::width(path) <= room {
         return path.to_string();
     }
     let tail_budget = (room - 1) * 2 / 3;
     let head_budget = room - 1 - tail_budget;
-    let head = text::clip_end(path, head_budget + 1);
-    let tail = text::clip_start(path, tail_budget + 1);
+    let head = clip::clip_end(path, head_budget + 1);
+    let tail = clip::clip_start(path, tail_budget + 1);
     format!(
         "{}…{}",
         head.strip_suffix('…').unwrap_or(&head),
@@ -469,10 +473,10 @@ fn generic_row(
     active: bool,
 ) -> Line<'static> {
     let mut spans = vec![marker(active)];
-    let text = text::clip_end(&item.text, width.saturating_sub(1) as usize);
+    let text = clip::clip_end(&item.text, width.saturating_sub(1) as usize);
     let dim_prefix = locator_prefix_chars(item);
     let base = Style::default().fg(if active {
-        TEXT
+        crate::render::text()
     } else {
         Color::Rgb(0xb8, 0xb4, 0xa9)
     });
@@ -480,7 +484,7 @@ fn generic_row(
     for (glyph, grapheme) in strop_core::layout::RopeGraphemes::new(text.as_ref().into(), 4) {
         let end = character + grapheme.chars().count();
         let mut style = if character < dim_prefix {
-            base.fg(MUTED)
+            base.fg(muted())
         } else {
             base
         };
@@ -488,14 +492,14 @@ fn generic_row(
             .iter()
             .any(|&column| character <= column as usize && (column as usize) < end)
         {
-            style = style.fg(ACCENT).add_modifier(Modifier::BOLD);
+            style = style.fg(accent()).add_modifier(Modifier::BOLD);
         }
         character = end;
         if glyph.width == 0 {
             continue;
         }
         if active {
-            style = style.bg(SELECT_BG);
+            style = style.bg(select_bg());
         }
         spans.push(Span::styled(
             strop_core::layout::printable_grapheme(&grapheme).to_string(),
@@ -579,18 +583,18 @@ fn search_rows(
         return vec![generic_row(item, &[], width, active)];
     };
     let path = &location.path;
-    let secondary = if excluded { MUTED } else { SECONDARY };
+    let secondary = if excluded { muted() } else { secondary() };
     let budget = (width as usize).saturating_sub(1);
     let basename = path
         .file_name()
         .unwrap_or(path.as_os_str())
         .to_string_lossy();
-    let mut room = (width as usize).saturating_sub(text::width(&basename) + 5);
+    let mut room = (width as usize).saturating_sub(clip::width(&basename) + 5);
     let mut notice = String::new();
     if let Some(count) = file_hits {
         let count = format!(" · {count} hits");
-        if text::width(&count) <= room {
-            room -= text::width(&count);
+        if clip::width(&count) <= room {
+            room -= clip::width(&count);
             notice.push_str(&count);
         }
     }
@@ -598,13 +602,13 @@ fn search_rows(
         .into_iter()
         .flatten()
     {
-        if text::width(label) + 3 <= room {
-            room -= text::width(label) + 3;
+        if clip::width(label) + 3 <= room {
+            room -= clip::width(label) + 3;
             notice.push_str(" · ");
             notice.push_str(label);
         }
     }
-    let path_width = width.saturating_sub((4 + text::width(&notice)) as u16);
+    let path_width = width.saturating_sub((4 + clip::width(&notice)) as u16);
     let label = if location.local_path().is_some() {
         strop_workspace::directory::display_path(path)
     } else {
@@ -615,17 +619,17 @@ fn search_rows(
         marker(active),
         plain(
             if excluded { "[ ] " } else { "[x] " },
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         ),
     ];
     for mut span in heading.spans.into_iter().skip(1) {
         if excluded {
-            span.style = span.style.fg(MUTED);
+            span.style = span.style.fg(muted());
         }
         top.push(span);
     }
     if !notice.is_empty() {
-        top.push(plain(notice, Style::default().fg(MUTED)));
+        top.push(plain(notice, Style::default().fg(muted())));
     }
     let mut line1 = finish(top, width, active);
     if !active {
@@ -634,7 +638,7 @@ fn search_rows(
     // The same checked byte span drives source evidence and the optional delta.
     let (s, e) = strop_picker::replace_span(line_text, *col, *match_len);
     let numbers = format!(" {line}:{}  ", s + 1);
-    let numbers_w = text::width(&numbers);
+    let numbers_w = clip::width(&numbers);
     let code_budget = budget.saturating_sub(numbers_w + 2);
     let evidence = |window: &str, span: (usize, usize)| {
         if excluded {
@@ -650,7 +654,7 @@ fn search_rows(
     } else if delta.is_some() {
         DEL_FG
     } else {
-        TEXT
+        text()
     };
     let mut old = vec![plain(" ", Style::default())];
     old.push(plain(&numbers, Style::default().fg(secondary)));

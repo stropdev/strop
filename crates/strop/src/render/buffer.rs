@@ -24,8 +24,8 @@ use strop_core::layout::{clip, RopeGraphemes};
 use crate::editor::{Editor, LayoutDir};
 
 use super::diff;
+use super::{accent, base, flash_bg, muted, pair_bg, preview_bg, select_bg, text};
 use super::{dim_color, severity_color};
-use super::{ACCENT, BASE, FLASH_BG, MUTED, PAIR_BG, PREVIEW_BG, SELECT_BG, TEXT};
 
 mod content;
 mod directory;
@@ -104,19 +104,19 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
                 if document.buf.dirty { " *" } else { "" },
                 if document.buf.readonly { " [RO]" } else { "" }
             );
-            let budget = w.saturating_sub(super::text::width(&flags) + 2);
+            let budget = w.saturating_sub(super::clip::width(&flags) + 2);
             let title = format!(
                 "{} {}{}",
                 if active { "▌" } else { " " },
-                super::text::clip_end(&name, budget),
+                super::clip::clip_end(&name, budget),
                 flags
             );
             let spans = fixed_spans(
                 vec![Span::styled(
                     title,
                     Style::default()
-                        .fg(if active { TEXT } else { MUTED })
-                        .bg(BASE),
+                        .fg(if active { text() } else { muted() })
+                        .bg(base()),
                 )],
                 w,
                 document.indent.width.max(1),
@@ -171,7 +171,7 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
                     let cell = &mut frame.buffer_mut()[(dx, dy)];
                     cell.set_symbol("│");
                     cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
-                    cell.set_bg(BASE);
+                    cell.set_bg(base());
                 }
             } else {
                 let dy = area.y + divider as u16;
@@ -179,7 +179,7 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
                     let cell = &mut frame.buffer_mut()[(dx, dy)];
                     cell.set_symbol("─");
                     cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
-                    cell.set_bg(BASE);
+                    cell.set_bg(base());
                 }
             }
         }
@@ -238,8 +238,8 @@ fn render_extra_cursors(editor: &Editor, frame: &mut Frame, area: Rect, view: &P
     for byte in editor.extra_selections().iter().map(|s| s.head) {
         if let Some(at) = caret_position(editor, area, view.doc, byte, view.view_top, view.hscroll)
         {
-            frame.buffer_mut()[at].set_bg(TEXT);
-            frame.buffer_mut()[at].set_fg(BASE);
+            frame.buffer_mut()[at].set_bg(text());
+            frame.buffer_mut()[at].set_fg(base());
         }
     }
 }

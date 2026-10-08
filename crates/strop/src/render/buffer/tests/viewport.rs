@@ -37,7 +37,7 @@ fn narrower_than_the_gutter_keeps_the_margin_fixed() {
 
 #[test]
 fn block_mode_highlights_the_rectangle() {
-    // ctrl-v lj selects cells 0-1 on rows 0-1 — the SELECT_BG must
+    // ctrl-v lj selects cells 0-1 on rows 0-1 — the select_bg() must
     // land on exactly those cells (0017: the rect, not the bytes)
     let mut e = Editor::new(Buffer::from_text("aabb\nccdd\n"));
     e.feed_text("<c-v>lj");
@@ -47,7 +47,7 @@ fn block_mode_highlights_the_rectangle() {
     let buf = terminal.backend().buffer();
     let bg = |x: u16, y: u16| buf[(x, y)].bg;
     // text starts after the 5-cell gutter ("▎  1 ")
-    let sel = crate::render::SELECT_BG;
+    let sel = crate::render::select_bg();
     assert_eq!(bg(5, 0), sel, "block corner");
     assert_eq!(bg(6, 0), sel, "block col 2 row 0");
     assert_eq!(bg(5, 1), sel, "block row 1");
@@ -191,8 +191,14 @@ fn extra_carets_and_vertical_bounds_do_not_alias() {
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(e.view().hscroll.get(), 7);
     assert_eq!(terminal.backend().buffer()[(6, 0)].symbol(), "i");
-    assert_eq!(terminal.backend().buffer()[(6, 0)].bg, crate::render::TEXT);
-    assert_ne!(terminal.backend().buffer()[(4, 0)].bg, crate::render::TEXT);
+    assert_eq!(
+        terminal.backend().buffer()[(6, 0)].bg,
+        crate::render::text()
+    );
+    assert_ne!(
+        terminal.backend().buffer()[(4, 0)].bg,
+        crate::render::text()
+    );
     let area = ratatui::layout::Rect::new(2, 3, 10, 2);
     let origin = strop_core::id::DisplayColumn::new(6);
     // rows above the top and columns left of the origin are absent,
@@ -246,17 +252,17 @@ fn clipped_graphemes_keep_overlay_ranges_and_precedence() {
     );
     // a partially clipped CJK cluster is a styled blank that still
     // carries every overlay it intersects (block, search, …)
-    assert_eq!(grid[(0, 0)].bg, crate::render::SELECT_BG);
-    assert_eq!(grid[(0, 0)].fg, crate::render::ACCENT);
-    assert_eq!(grid[(1, 0)].bg, crate::render::PREVIEW_BG);
+    assert_eq!(grid[(0, 0)].bg, crate::render::select_bg());
+    assert_eq!(grid[(0, 0)].fg, crate::render::accent());
+    assert_eq!(grid[(1, 0)].bg, crate::render::preview_bg());
     assert!(grid[(1, 0)]
         .modifier
         .contains(ratatui::style::Modifier::UNDERLINED));
-    assert_eq!(grid[(2, 0)].bg, crate::render::FLASH_BG);
-    assert_eq!(grid[(3, 0)].bg, crate::render::BASE);
+    assert_eq!(grid[(2, 0)].bg, crate::render::flash_bg());
+    assert_eq!(grid[(3, 0)].bg, crate::render::base());
     let right = clipped_row(&e, 3, 2, &style);
     assert_eq!(row_symbols(&right, 0, 0, 2), [" ", " "]);
-    assert_eq!(right[(1, 0)].bg, crate::render::SELECT_BG);
+    assert_eq!(right[(1, 0)].bg, crate::render::select_bg());
 }
 
 #[test]
@@ -289,7 +295,7 @@ fn diff_background_and_annotation_use_absolute_cells() {
     let style = super::super::RowStyle {
         note: Some((
             "  ▍\t界Z".into(),
-            ratatui::style::Style::default().fg(crate::render::MUTED),
+            ratatui::style::Style::default().fg(crate::render::muted()),
         )),
         ..Default::default()
     };
@@ -297,7 +303,7 @@ fn diff_background_and_annotation_use_absolute_cells() {
     // the note starts at the line's ABSOLUTE end cell (4); its tab
     // expands from absolute stops (4→8), so scrolling keeps it aligned
     assert_eq!(row_symbols(&grid, 0, 0, 4), [" ", "界", " ", "Z"]);
-    assert_eq!(grid[(3, 0)].fg, crate::render::MUTED);
+    assert_eq!(grid[(3, 0)].fg, crate::render::muted());
 }
 
 #[test]
@@ -378,7 +384,7 @@ fn markdown_semantics_reach_the_real_cell_grid() {
         .unwrap();
     let grid = terminal.backend().buffer();
     assert_eq!(grid[(7, 0)].symbol(), "H");
-    assert_eq!(grid[(7, 0)].fg, crate::render::ACCENT);
+    assert_eq!(grid[(7, 0)].fg, crate::render::accent());
     assert!(grid[(7, 0)].modifier.contains(Modifier::BOLD));
     assert_eq!(grid[(7, 2)].symbol(), "b");
     assert!(grid[(7, 2)].modifier.contains(Modifier::BOLD));

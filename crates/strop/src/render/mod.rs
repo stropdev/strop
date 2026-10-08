@@ -13,6 +13,7 @@ use crate::editor::{Editor, Mode};
 
 mod blame_card;
 mod buffer;
+mod clip;
 mod cmd_card;
 mod completion;
 pub(crate) mod diff;
@@ -27,63 +28,85 @@ mod statusline;
 mod terminal;
 #[cfg(test)]
 mod terminal_tests;
-mod text;
 mod which_key;
 
-// strop default palette (plan 0004 site, --accent amber): every value
-// derives from the strop-core theme seed (0065 D3) — never restated here.
+// strop palette (plan 0004 site, --accent amber): every value derives
+// from the strop-core theme seed's CURRENT palette (0065 D3, `:theme`)
+// — never restated here. Accessors, not consts: a theme switch takes
+// effect on the next frame.
 const fn seed(value: strop_core::theme::Rgb) -> Color {
     Color::Rgb(value.r, value.g, value.b)
 }
-pub const BASE: Color = seed(strop_core::theme::BASE);
-pub const TEXT: Color = seed(strop_core::theme::TEXT);
-pub const MUTED: Color = seed(strop_core::theme::MUTED);
-pub const ACCENT: Color = seed(strop_core::theme::ACCENT);
-pub const PREVIEW_BG: Color = seed(strop_core::theme::PREVIEW_BG);
-pub const FLASH_BG: Color = seed(strop_core::theme::FLASH_BG);
-pub const SELECT_BG: Color = seed(strop_core::theme::SELECT_BG);
+pub fn base() -> Color {
+    seed(strop_core::theme::current().base)
+}
+pub fn text() -> Color {
+    seed(strop_core::theme::current().text)
+}
+pub fn muted() -> Color {
+    seed(strop_core::theme::current().muted)
+}
+pub fn accent() -> Color {
+    seed(strop_core::theme::current().accent)
+}
+pub fn preview_bg() -> Color {
+    seed(strop_core::theme::current().preview_bg)
+}
+pub fn flash_bg() -> Color {
+    seed(strop_core::theme::current().flash_bg)
+}
+pub fn select_bg() -> Color {
+    seed(strop_core::theme::current().select_bg)
+}
 /// Matching-delimiter overlay (0051 §7 R09): quiet — a slate wash one
 /// step above the selection, never the accent's urgency.
-pub const PAIR_BG: Color = seed(strop_core::theme::PAIR_BG);
-/// Useful secondary context (0050 §4): between TEXT and MUTED.
-pub const SECONDARY: Color = seed(strop_core::theme::SECONDARY);
+pub fn pair_bg() -> Color {
+    seed(strop_core::theme::current().pair_bg)
+}
+/// Useful secondary context (0050 §4): between text and muted.
+pub fn secondary() -> Color {
+    seed(strop_core::theme::current().secondary)
+}
 /// Terminal-input chip (0065 S1): the child's type teal — glanceably not
 /// Normal's amber, Insert's green or Visual's violet, because the keys go
 /// to the child, not the grammar.
-pub const TERMINAL_CHIP: Color = seed(strop_core::theme::CLASS_TYPE);
+pub fn terminal_chip() -> Color {
+    seed(strop_core::theme::current().class_type)
+}
 
 /// Diagnostic severity → color (LSP typed severity; one source for
 /// the gutter sign and the cursor-line end-of-line note).
 pub(crate) fn severity_color(sev: strop_lsp::Severity) -> Color {
     use strop_lsp::Severity;
+    let theme = strop_core::theme::current();
     match sev {
-        Severity::Error => seed(strop_core::theme::DIAG_ERROR),
-        Severity::Warning => ACCENT, // warning amber
-        Severity::Information => seed(strop_core::theme::DIAG_INFO),
-        Severity::Hint => MUTED, // hint
+        Severity::Error => seed(theme.diag_error),
+        Severity::Warning => accent(), // warning amber
+        Severity::Information => seed(theme.diag_info),
+        Severity::Hint => muted(), // hint
     }
 }
 
-/// Syntax class → color (strop palette; theme engine swaps these later).
+/// Syntax class → color (one projection; `:theme` swaps the palette).
 pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
-    use strop_core::theme;
     use strop_syntax::Class as C;
+    let theme = strop_core::theme::current();
     match class {
-        C::Keyword => seed(theme::CLASS_KEYWORD),
-        C::Function => seed(theme::CLASS_FUNCTION),
-        C::Type => seed(theme::CLASS_TYPE),
-        C::String => seed(theme::CLASS_STRING),
-        C::Comment => MUTED,
-        C::Number => seed(theme::CLASS_NUMBER),
-        C::Operator => seed(theme::CLASS_OPERATOR),
-        C::Punctuation => seed(theme::CLASS_PUNCTUATION),
-        C::Constant => ACCENT,
-        C::Attribute => seed(theme::CLASS_ATTRIBUTE),
-        C::Variable => TEXT,
-        C::Heading | C::List => ACCENT,
-        C::Link | C::Tag => seed(theme::DIAG_INFO),
-        C::Code => seed(theme::CLASS_STRING),
-        C::Quote => MUTED,
+        C::Keyword => seed(theme.class_keyword),
+        C::Function => seed(theme.class_function),
+        C::Type => seed(theme.class_type),
+        C::String => seed(theme.class_string),
+        C::Comment => muted(),
+        C::Number => seed(theme.class_number),
+        C::Operator => seed(theme.class_operator),
+        C::Punctuation => seed(theme.class_punctuation),
+        C::Constant => accent(),
+        C::Attribute => seed(theme.class_attribute),
+        C::Variable => text(),
+        C::Heading | C::List => accent(),
+        C::Link | C::Tag => seed(theme.diag_info),
+        C::Code => seed(theme.class_string),
+        C::Quote => muted(),
     }
 }
 
@@ -192,7 +215,7 @@ pub(crate) fn paint(editor: &mut Editor, frame: &mut Frame) {
 /// Mode chip colors (0001 §4: mode = accent color change, not bars).
 pub(crate) fn mode_color(mode: Mode) -> Color {
     match mode {
-        Mode::Normal => ACCENT,
+        Mode::Normal => accent(),
         Mode::Insert => Color::Rgb(0xa9, 0xc4, 0x7c), // green
         Mode::Visual | Mode::VisualLine | Mode::VisualBlock => Color::Rgb(0xc5, 0x8a, 0xe8), // violet
     }
@@ -234,8 +257,8 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) -> Option<(u16, 
         if let Some(progress) = editor.cursor_fade_progress() {
             let cell = &mut frame.buffer_mut()[at];
             let fg = cell.fg;
-            cell.set_bg(fade_mix(BASE, TEXT, progress));
-            cell.set_fg(fade_mix(fg, BASE, progress));
+            cell.set_bg(fade_mix(base(), text(), progress));
+            cell.set_fg(fade_mix(fg, base(), progress));
             return Some(at);
         }
     }
@@ -280,51 +303,51 @@ fn render_welcome(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(MUTED))
-        .style(Style::default().bg(BASE));
+        .border_style(Style::default().fg(muted()))
+        .style(Style::default().bg(base()));
     let inner = block.inner(card);
     frame.render_widget(block, card);
     let lines = vec![
         Line::from(""),
         Line::from(Span::styled(
             " strop",
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            Style::default().fg(text()).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
             " see the cut before you make it.",
-            Style::default().fg(ACCENT),
+            Style::default().fg(accent()),
         )),
         Line::from(""),
         Line::from(vec![
             Span::styled(
                 " space ",
                 Style::default()
-                    .fg(ACCENT)
-                    .bg(SELECT_BG)
+                    .fg(accent())
+                    .bg(select_bg())
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" everything · ", Style::default().fg(MUTED)),
+            Span::styled(" everything · ", Style::default().fg(muted())),
             Span::styled(
                 " ? ",
                 Style::default()
-                    .fg(ACCENT)
-                    .bg(SELECT_BG)
+                    .fg(accent())
+                    .bg(select_bg())
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" keybindings · ", Style::default().fg(MUTED)),
+            Span::styled(" keybindings · ", Style::default().fg(muted())),
             Span::styled(
                 " :w ",
                 Style::default()
-                    .fg(ACCENT)
-                    .bg(SELECT_BG)
+                    .fg(accent())
+                    .bg(select_bg())
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" save", Style::default().fg(MUTED)),
+            Span::styled(" save", Style::default().fg(muted())),
         ]),
         Line::from(""),
         Line::from(Span::styled(
             "  git signs paint the gutter · ci[ previews the cut",
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         )),
     ];
     frame.render_widget(Paragraph::new(lines), inner);

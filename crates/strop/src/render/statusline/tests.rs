@@ -12,7 +12,7 @@ use strop_git::GitContext;
 use crate::editor::Editor;
 
 use super::render;
-use crate::render::text::width;
+use crate::render::clip::width;
 
 /// The modeline row as one string, measured in display cells.
 fn row(editor: &Editor, columns: u16, rows: u16) -> String {

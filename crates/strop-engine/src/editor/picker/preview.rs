@@ -344,7 +344,8 @@ impl PreviewProbe<'_> {
             | Payload::Container(_)
             | Payload::FilesystemAction(_)
             | Payload::ProjectStatus(_)
-            | Payload::IndentChoice(_) => None,
+            | Payload::IndentChoice(_)
+            | Payload::ThemeChoice(_) => None,
             Payload::Buffer(_) => None, // handled via label in the admitting path
             Payload::File(path) => Some((
                 strop_workspace::ResourceLocation::local(self.editor.picker_path(path)),
@@ -375,7 +376,8 @@ impl Editor {
             | Payload::Container(_)
             | Payload::FilesystemAction(_)
             | Payload::ProjectStatus(_)
-            | Payload::IndentChoice(_) => return None,
+            | Payload::IndentChoice(_)
+            | Payload::ThemeChoice(_) => return None,
             Payload::Buffer(document) => {
                 let name = self.docs.get(*document)?.label(&self.cwd);
                 return Some((name, None, PreviewSource::Buffer(*document)));

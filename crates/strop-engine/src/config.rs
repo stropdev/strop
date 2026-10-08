@@ -8,6 +8,7 @@
 //! indent_style = "spaces"   # or "tabs"
 //! indent_detect = true      # infer a document's indent from its content
 //! auto_format = true        # LSP format before :w (helix parity)
+//! theme = "light"           # interface palette (default "dark")
 //! ```
 //!
 //! LSP server config is a separate file with its own layering —
@@ -54,6 +55,9 @@ pub struct Config {
     pub cursor_fade: bool,
     /// Code-completion lifecycle and automatic request admission (0059 C06).
     pub completion: CompletionSettings,
+    /// The interface palette (0.42.0). `--theme` and `:theme` override
+    /// per session; nothing here is hot-reloaded.
+    pub theme: strop_core::theme::ThemeId,
     /// Winning-layer record per knob (0056 AR14); populated by `load`.
     /// Crate-visible so struct-update test fixtures keep working.
     #[serde(skip)]
@@ -123,6 +127,7 @@ impl Default for Config {
             search_respect_ignore: true,
             cursor_fade: true,
             completion: CompletionSettings::default(),
+            theme: strop_core::theme::ThemeId::Dark,
             provenance: Provenance::default(),
         }
     }
@@ -187,6 +192,11 @@ pub const KNOBS: &[Knob] = &[
         kind: "bool",
         desc: "automatic suggestions while typing; off keeps manual completion",
     },
+    Knob {
+        key: "theme",
+        kind: "string",
+        desc: "interface palette: dark or light",
+    },
 ];
 
 impl Config {
@@ -205,6 +215,7 @@ impl Config {
             "cursor_fade" => self.cursor_fade.to_string(),
             "completion.enabled" => self.completion.enabled.to_string(),
             "completion.auto_popup" => self.completion.auto_popup.to_string(),
+            "theme" => self.theme.name().to_string(),
             _ => return None,
         })
     }

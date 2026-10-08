@@ -85,7 +85,7 @@ fn replace_rows_show_identity_window_and_delta() {
     let amber = |line: &Line| {
         line.spans
             .iter()
-            .filter(|span| span.style.fg == Some(ACCENT))
+            .filter(|span| span.style.fg == Some(accent()))
             .map(|span| span.content.as_ref())
             .collect::<String>()
     };
@@ -113,7 +113,7 @@ fn replace_rows_exclusion_is_neutral_not_failure_red() {
         for span in &line.spans {
             assert_ne!(span.style.fg, Some(DEL_FG), "no deletion red: {span:?}");
             assert_ne!(span.style.fg, Some(ADD_FG), "no addition green: {span:?}");
-            assert_ne!(span.style.fg, Some(ACCENT), "no match evidence: {span:?}");
+            assert_ne!(span.style.fg, Some(accent()), "no match evidence: {span:?}");
             assert_ne!(
                 span.style.fg,
                 Some(Color::Rgb(0xf3, 0x8b, 0xa8)),
@@ -130,7 +130,7 @@ fn replace_rows_selected_band_covers_the_logical_block() {
         let width: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
         assert_eq!(width, 40, "the band pads to full width");
         assert!(
-            line.spans.iter().all(|s| s.style.bg == Some(SELECT_BG)),
+            line.spans.iter().all(|s| s.style.bg == Some(select_bg())),
             "every cell carries the band"
         );
     }

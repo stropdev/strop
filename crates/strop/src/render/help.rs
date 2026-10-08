@@ -6,7 +6,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
-use super::{ACCENT, MUTED, TEXT};
+use super::{accent, muted};
 
 /// Key-column hue per section: the eye learns "amber = leader, blue =
 /// normal" in one page (color is structure).
@@ -15,10 +15,10 @@ fn section_color(section: &str) -> Color {
         "normal" => Color::Rgb(0x7a, 0xa2, 0xf7),   // blue
         "visual" => Color::Rgb(0xbb, 0x9a, 0xf7),   // purple
         "insert" => Color::Rgb(0x9e, 0xce, 0x6a),   // green
-        "leader" => ACCENT,                         // amber
+        "leader" => accent(),                       // amber
         "git" => Color::Rgb(0x7d, 0xcf, 0xff),      // cyan
         "ex+panes" => Color::Rgb(0xe0, 0xaf, 0x68), // yellow
-        _ => ACCENT,
+        _ => accent(),
     }
 }
 
@@ -32,7 +32,7 @@ pub(crate) fn row_spans(text: &str, section: &str, width: u16) -> Vec<Span<'stat
     if text.starts_with("strop help") {
         return vec![Span::styled(
             text.to_string(),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default().fg(accent()).add_modifier(Modifier::BOLD),
         )];
     }
     if text.starts_with('[') && text.ends_with(']') {
@@ -52,9 +52,13 @@ pub(crate) fn row_spans(text: &str, section: &str, width: u16) -> Vec<Span<'stat
         ];
     }
     let planned = text.ends_with("(soon)");
-    let fg = if planned { MUTED } else { TEXT };
+    let fg = if planned {
+        muted()
+    } else {
+        crate::render::text()
+    };
     let key_fg = if planned {
-        MUTED
+        muted()
     } else {
         section_color(section)
     };
@@ -85,19 +89,19 @@ mod tests {
     #[test]
     fn sections_and_keys_get_section_hues() {
         let header = row_spans("[leader]", "leader", 40);
-        assert_eq!(header[0].style.fg, Some(ACCENT));
+        assert_eq!(header[0].style.fg, Some(accent()));
         assert!(header[1].content.starts_with(' '), "rule trails");
 
         let row = row_spans("  space f  file finder", "leader", 40);
         assert_eq!(row[0].content, "  space f");
-        assert_eq!(row[0].style.fg, Some(ACCENT));
+        assert_eq!(row[0].style.fg, Some(accent()));
         assert_eq!(row[1].content, "  file finder");
-        assert_eq!(row[1].style.fg, Some(TEXT));
+        assert_eq!(row[1].style.fg, Some(crate::render::text()));
 
         let normal = row_spans("  h j k l  move", "normal", 40);
         assert_eq!(normal[0].style.fg, Some(Color::Rgb(0x7a, 0xa2, 0xf7)));
 
         let soon = row_spans("  space j  jumplist picker  (soon)", "leader", 40);
-        assert!(soon.iter().all(|s| s.style.fg == Some(MUTED)));
+        assert!(soon.iter().all(|s| s.style.fg == Some(muted())));
     }
 }

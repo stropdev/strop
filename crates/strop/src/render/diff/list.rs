@@ -12,12 +12,12 @@ use ratatui::text::Span;
 use crate::editor::Surface;
 use strop_git::memory::ChangedFile;
 
-use super::super::text;
-use super::super::{ACCENT, MUTED, TEXT};
+use super::super::clip;
+use super::super::{accent, muted, text};
 use super::{ADD_FG, DEL_FG};
 
 /// Restrained cursor-row band for log/file surfaces — a hair above
-/// BASE, well under the selection color, so search/visual overlays
+/// base(), well under the selection color, so search/visual overlays
 /// still read on top of it (they override the background per cell).
 pub(crate) const CURSOR_ROW_BG: Color = Color::Rgb(0x1e, 0x20, 0x2b);
 
@@ -50,10 +50,10 @@ pub(crate) fn surface_list_row(
         Surface::ChangedFiles { sha, files, .. } => match line_idx {
             0 => Some(RowDecoration {
                 spans: vec![
-                    Span::styled("commit ", Style::default().fg(MUTED)),
+                    Span::styled("commit ", Style::default().fg(muted())),
                     Span::styled(
                         sha.chars().take(10).collect::<String>(),
-                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                        Style::default().fg(accent()).add_modifier(Modifier::BOLD),
                     ),
                 ],
                 row_bg,
@@ -86,13 +86,16 @@ fn log_row_spans(text: &str) -> Vec<Span<'static>> {
         // graph-only art carries nothing after it; load/error rows
         // are ordinary text, not the metadata shape
         if !rest.is_empty() {
-            spans.push(Span::styled(rest.to_string(), Style::default().fg(TEXT)));
+            spans.push(Span::styled(
+                rest.to_string(),
+                Style::default().fg(crate::render::text()),
+            ));
         }
         return spans;
     }
     spans.push(Span::styled(
         rest[..sha_len].to_string(),
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        Style::default().fg(accent()).add_modifier(Modifier::BOLD),
     ));
     let remainder = &rest[sha_len..];
     let mut parts = remainder.splitn(3, " · ");
@@ -102,19 +105,22 @@ fn log_row_spans(text: &str) -> Vec<Span<'static>> {
         spans.push(quiet(age));
         spans.push(quiet(" · "));
         if !subject.is_empty() {
-            spans.push(Span::styled(subject.to_string(), Style::default().fg(TEXT)));
+            spans.push(Span::styled(
+                subject.to_string(),
+                Style::default().fg(crate::render::text()),
+            ));
         }
     } else if !remainder.is_empty() {
         spans.push(Span::styled(
             remainder.to_string(),
-            Style::default().fg(TEXT),
+            Style::default().fg(crate::render::text()),
         ));
     }
     spans
 }
 
 fn quiet(part: &str) -> Span<'static> {
-    Span::styled(part.to_string(), Style::default().fg(MUTED))
+    Span::styled(part.to_string(), Style::default().fg(muted()))
 }
 
 /// Split graph art (ASCII lanes) from the rest at a byte-exact
@@ -141,8 +147,8 @@ fn hex_prefix_len(rest: &str) -> usize {
 /// commit node `*` is bold in its lane's color (gitui/lazygit lesson —
 /// lane color is how the eye tracks a branch through merges).
 fn graph_spans(prefix: &str) -> Vec<Span<'static>> {
-    const LANES: [Color; 6] = [
-        ACCENT,                       // amber
+    let lanes: [Color; 6] = [
+        accent(),                     // amber
         Color::Rgb(0x9e, 0xce, 0x6a), // green
         Color::Rgb(0x7a, 0xa2, 0xf7), // blue
         Color::Rgb(0xbb, 0x9a, 0xf7), // purple
@@ -156,7 +162,7 @@ fn graph_spans(prefix: &str) -> Vec<Span<'static>> {
             if c == ' ' {
                 return Span::styled(" ", Style::default());
             }
-            let color = LANES[(i / 2) % LANES.len()];
+            let color = lanes[(i / 2) % lanes.len()];
             let style = if c == '*' {
                 Style::default().fg(color).add_modifier(Modifier::BOLD)
             } else {
@@ -179,18 +185,18 @@ fn file_row_spans(file: &ChangedFile, width: usize) -> Vec<Span<'static>> {
     // 0068 B4: a long path yields its prefix (never the stats) — the
     // filename end survives, the `+N -M` pair always shows.
     let stats_w = added.len() + deleted.len() + 1;
-    let display = if text::width(&display) > width.saturating_sub(stats_w) {
-        text::clip_start(&display, width.saturating_sub(stats_w)).into_owned()
+    let display = if clip::width(&display) > width.saturating_sub(stats_w) {
+        clip::clip_start(&display, width.saturating_sub(stats_w)).into_owned()
     } else {
         display.to_string()
     };
-    let path_cells = text::width(&display);
+    let path_cells = clip::width(&display);
     let mut spans = match display.rfind('/') {
         Some(at) => vec![
-            Span::styled(display[..=at].to_string(), Style::default().fg(MUTED)),
-            Span::styled(display[at + 1..].to_string(), Style::default().fg(TEXT)),
+            Span::styled(display[..=at].to_string(), Style::default().fg(muted())),
+            Span::styled(display[at + 1..].to_string(), Style::default().fg(text())),
         ],
-        None => vec![Span::styled(display, Style::default().fg(TEXT))],
+        None => vec![Span::styled(display, Style::default().fg(text()))],
     };
     let pad = width
         .saturating_sub(path_cells + added.len() + deleted.len())
@@ -216,7 +222,7 @@ mod tests {
         // the buffer line's exact bytes come first — caret/yank truth
         assert!(joined(&spans).starts_with(source));
         let sha = spans.iter().find(|s| s.content == "51b63a8").unwrap();
-        assert_eq!(sha.style.fg, Some(ACCENT));
+        assert_eq!(sha.style.fg, Some(accent()));
         assert!(sha.style.add_modifier.contains(Modifier::BOLD));
         assert_eq!(
             spans
@@ -225,12 +231,12 @@ mod tests {
                 .unwrap()
                 .style
                 .fg,
-            Some(TEXT)
+            Some(crate::render::text())
         );
         for muted in [" t", "35 seconds ago"] {
             assert_eq!(
                 spans.iter().find(|s| s.content == muted).unwrap().style.fg,
-                Some(MUTED),
+                Some(crate::render::muted()),
                 "{muted} must be quiet"
             );
         }
@@ -250,7 +256,7 @@ mod tests {
                 .unwrap()
                 .style
                 .fg,
-            Some(TEXT)
+            Some(crate::render::text())
         );
     }
 
@@ -258,10 +264,12 @@ mod tests {
     fn graph_art_and_plain_rows_stay_unmuted() {
         let graph = log_row_spans("| |\\");
         assert_eq!(joined(&graph), "| |\\");
-        assert!(graph.iter().all(|s| s.style.fg != Some(MUTED)));
+        assert!(graph.iter().all(|s| s.style.fg != Some(muted())));
         let plain = log_row_spans("loading log…");
         assert_eq!(joined(&plain), "loading log…");
-        assert!(plain.iter().all(|s| s.style.fg == Some(TEXT)));
+        assert!(plain
+            .iter()
+            .all(|s| s.style.fg == Some(crate::render::text())));
     }
 
     #[test]
@@ -282,7 +290,7 @@ mod tests {
                 .unwrap()
                 .style
                 .fg,
-            Some(MUTED)
+            Some(muted())
         );
         assert_eq!(
             spans
@@ -291,7 +299,7 @@ mod tests {
                 .unwrap()
                 .style
                 .fg,
-            Some(TEXT)
+            Some(crate::render::text())
         );
     }
 
@@ -309,6 +317,6 @@ mod tests {
             .iter()
             .find(|s| !s.content.is_empty() && s.content.chars().all(|c| c == ' '))
             .unwrap();
-        assert_eq!(text::width(&pad.content), 40 - (7 + 5));
+        assert_eq!(clip::width(&pad.content), 40 - (7 + 5));
     }
 }

@@ -161,7 +161,7 @@ fn clipped_row(
         .draw(|f| {
             f.render_widget(
                 ratatui::widgets::Paragraph::new(ratatui::text::Line::from(spans))
-                    .style(ratatui::style::Style::default().bg(crate::render::BASE)),
+                    .style(ratatui::style::Style::default().bg(crate::render::base())),
                 f.area(),
             )
         })

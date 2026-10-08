@@ -64,6 +64,7 @@ mod shell;
 mod snippet;
 pub(crate) mod terminal;
 pub use terminal::TerminalDocument;
+mod theme;
 pub mod transact;
 mod undo;
 pub mod view;

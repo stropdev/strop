@@ -282,11 +282,11 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                     left.push(Span::raw(" ".repeat(number_width)));
                     left.push(Span::styled(
                         directory::empty_message(directory),
-                        Style::default().fg(MUTED),
+                        Style::default().fg(muted()),
                     ));
                 }
             } else {
-                left.push(Span::styled("~", Style::default().fg(MUTED)));
+                left.push(Span::styled("~", Style::default().fg(muted())));
             }
             lines.push(pad_row(Line::from(left), area.width));
             continue;
@@ -322,10 +322,10 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         };
         match editor.review_row(view.doc, line_idx) {
             Some(crate::editor::ReviewRow::Heading | crate::editor::ReviewRow::File) => {
-                style.row_fg = Some(ACCENT)
+                style.row_fg = Some(accent())
             }
             Some(crate::editor::ReviewRow::Hunk) => {
-                style.row_fg = Some(MUTED);
+                style.row_fg = Some(muted());
                 style.row_bg = Some(diff::BAND_BG);
             }
             Some(crate::editor::ReviewRow::Removed) => {
@@ -362,9 +362,9 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
             }
             None => {
                 let num_style = if line_idx == cur_line {
-                    Style::default().fg(ACCENT)
+                    Style::default().fg(accent())
                 } else {
-                    Style::default().fg(MUTED)
+                    Style::default().fg(muted())
                 };
                 // Helix-grade gutter: a colored ▎ bar in the leftmost
                 // column — diagnostics first, then git signs
@@ -385,7 +385,9 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 // card borders mute, the gap rows whisper, and the top
                 // border's path carries the accent.
                 match editor.collection_row_kind(view.doc, line_idx) {
-                    Some(crate::editor::CollectionRow::Title) => style.row_fg = Some(TEXT),
+                    Some(crate::editor::CollectionRow::Title) => {
+                        style.row_fg = Some(crate::render::text())
+                    }
                     Some(crate::editor::CollectionRow::CardTop(_)) => {
                         // 0049 §6: focus reads through the active card's
                         // border + path, not a selection-colored chip
@@ -393,7 +395,11 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                             .get(row)
                             .and_then(Option::as_ref)
                             .is_some_and(|info| info.card_active);
-                        style.row_fg = Some(if focused { TEXT } else { MUTED });
+                        style.row_fg = Some(if focused {
+                            crate::render::text()
+                        } else {
+                            muted()
+                        });
                         let mut text = text.to_string();
                         if let Some(info) = collection_rows.get(row).and_then(Option::as_ref) {
                             if info.source_dirty {
@@ -403,19 +409,19 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                                 text.push_str(" · read-only");
                             }
                         }
-                        let pad = width.saturating_sub(crate::render::text::width(&text) + 2);
+                        let pad = width.saturating_sub(crate::render::clip::width(&text) + 2);
                         let text = format!("{}─{}╮", text, "─".repeat(pad));
                         style.decorations = collection_card_top_spans(&text);
                     }
                     Some(crate::editor::CollectionRow::Gap) => {
-                        style.row_fg = Some(MUTED);
+                        style.row_fg = Some(muted());
                     }
                     Some(crate::editor::CollectionRow::CardBottom) => {
-                        style.row_fg = Some(MUTED);
+                        style.row_fg = Some(muted());
                         let pad = width.saturating_sub(2);
                         style.decorations = vec![Span::styled(
                             format!("╰{}╯", "─".repeat(pad)),
-                            Style::default().fg(MUTED),
+                            Style::default().fg(muted()),
                         )];
                     }
                     _ => {}
@@ -487,7 +493,10 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         ));
         lines.push(pad_row(Line::from(left), area.width));
     }
-    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(base())),
+        area,
+    );
     if let Some(analysis) = &analysis {
         for row in 0..rows {
             let line = view.view_top.saturating_add(row);
@@ -531,14 +540,14 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
     {
         if let Some(entry) = directory.entry(strop_core::id::LineIndex::new(line_idx)) {
             if directory.marked.contains_key(&entry.name) {
-                return ("●", ACCENT);
+                return ("●", accent());
             }
             if entry.error.is_some() {
                 return ("!", diff::DEL_FG);
             }
         }
         if view.overlays && editor.doc(view.doc).buf.line_of(view.cursor) == line_idx {
-            return ("▸", ACCENT);
+            return ("▸", accent());
         }
     }
     if let Some(sev) = editor.diag_severity_at(view.doc, line_idx + 1) {
@@ -556,18 +565,18 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
         }
         match editor.sign_at(line_idx + 1) {
             Some('+') => return ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
-            Some('~') => return ("▎", ACCENT),
+            Some('~') => return ("▎", accent()),
             Some('-') => return ("▎", Color::Rgb(0xe8, 0x67, 0x7a)),
             _ => {}
         }
     }
-    (" ", MUTED)
+    (" ", muted())
 }
 
 /// A card top border's spans: the path in accent, the border and badges
 /// muted (0049 §6).
 fn collection_card_top_spans(text: &str) -> Vec<Span<'static>> {
-    let border = Style::default().fg(MUTED);
+    let border = Style::default().fg(muted());
     match (text.find("╭─ "), text.find(" ──")) {
         (Some(lo), Some(hi)) => {
             let path_start = lo + "╭─ ".len();
@@ -575,7 +584,7 @@ fn collection_card_top_spans(text: &str) -> Vec<Span<'static>> {
                 Span::styled(text[..path_start].to_string(), border),
                 Span::styled(
                     text[path_start..hi].to_string(),
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    Style::default().fg(accent()).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(text[hi..].to_string(), border),
             ]

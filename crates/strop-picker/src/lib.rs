@@ -67,6 +67,8 @@ pub enum Payload {
     },
     /// A `:tab-size` selector row (0051 R08).
     IndentChoice(IndentChoice),
+    /// A `:theme` selector row (0.42.0): one compiled-in palette.
+    ThemeChoice(strop_core::theme::ThemeId),
     /// An engine-appended per-project status row (0063 §2): the
     /// absolute project root. Informational chrome, never a symbol
     /// candidate; accepting opens the root as a directory.
@@ -139,6 +141,8 @@ pub enum Kind {
     Containers,
     /// The `:tab-size` indent selector (0051 R08).
     TabSize,
+    /// The `:theme` palette selector (0.42.0).
+    Theme,
 }
 
 impl Kind {
@@ -154,6 +158,7 @@ impl Kind {
             Kind::Jumps => " jumps ",
             Kind::SearchOptions => " search options ",
             Kind::TabSize => " tab size ",
+            Kind::Theme => " theme ",
             Kind::Symbols => " symbols ",
             Kind::WorkspaceSymbols => " workspace symbols ",
             Kind::RemoteAddress => " connect to remote ",

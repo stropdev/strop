@@ -57,7 +57,7 @@ pub(super) fn render(
     let Some(frame) = editor.terminal_frame(document, true) else {
         output.render_widget(
             Paragraph::new("terminal starting")
-                .style(Style::default().fg(super::MUTED).bg(super::BASE)),
+                .style(Style::default().fg(super::muted()).bg(super::base())),
             area,
         );
         return;

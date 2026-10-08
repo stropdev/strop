@@ -380,6 +380,15 @@ impl Editor {
         // TabSize: every row is an IndentChoice; the typed filter text
         // rides along so the pinned custom row can validate it as a
         // width (the RemoteHosts draft pattern, 0.21.0).
+        if glue.picker.kind == Kind::Theme {
+            let Some(strop_picker::Payload::ThemeChoice(id)) = payload else {
+                self.message = "no matching entries".into();
+                return;
+            };
+            self.close_picker();
+            self.apply_theme(id);
+            return;
+        }
         if glue.picker.kind == Kind::TabSize {
             let draft = glue.picker.input.text().trim().to_string();
             let Some(Payload::IndentChoice(choice)) = payload else {

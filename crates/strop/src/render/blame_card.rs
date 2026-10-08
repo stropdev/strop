@@ -9,7 +9,7 @@ use ratatui::Frame;
 
 use crate::editor::Editor;
 
-use super::{ACCENT, BASE, MUTED, TEXT};
+use super::{accent, base, muted, text};
 
 pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
     if editor.input_owner() != crate::editor::InputOwner::BlameCard {
@@ -26,8 +26,8 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
     // space under three lines), never a cut mid-word summary.
     let content_budget = usize::from(width.saturating_sub(5));
     let author_age_raw = format!("{} · {} ago", card.author, card.age);
-    let author_age = super::text::clip_end(&author_age_raw, content_budget);
-    let summary = super::text::clip_end(&card.summary, content_budget);
+    let author_age = super::clip::clip_end(&author_age_raw, content_budget);
+    let summary = super::clip::clip_end(&card.summary, content_budget);
     let height = 5u16.min(area.height.saturating_sub(4)).max(3);
     let rect = Rect {
         x: (area.width - width) / 2,
@@ -39,15 +39,15 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(MUTED))
-        .style(Style::default().bg(BASE))
+        .border_style(Style::default().fg(muted()))
+        .style(Style::default().bg(base()))
         .title(Span::styled(
             format!(" blame · line {} ", card.line),
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            Style::default().fg(text()).add_modifier(Modifier::BOLD),
         ))
         .title_bottom(Span::styled(
             " enter dive · any key dismisses ",
-            Style::default().fg(MUTED),
+            Style::default().fg(muted()),
         ));
     frame.render_widget(&block, rect);
     let inner = block.inner(rect);
@@ -63,16 +63,16 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
             Span::styled(
                 format!(" {} ", card.short_sha),
                 Style::default()
-                    .fg(BASE)
-                    .bg(ACCENT)
+                    .fg(base())
+                    .bg(accent())
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("  {author_age}"), Style::default().fg(MUTED)),
+            Span::styled(format!("  {author_age}"), Style::default().fg(muted())),
         ]),
         Line::from(""),
         Line::from(Span::styled(
             format!(" {summary}"),
-            Style::default().fg(TEXT),
+            Style::default().fg(text()),
         )),
     ];
     frame.render_widget(Paragraph::new(lines), inner);

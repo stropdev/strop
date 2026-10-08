@@ -426,6 +426,7 @@ impl Editor {
             "jumps" => self.open_jumps_picker(),
             "search-options" => self.open_search_options(),
             "tab-size" => self.tab_size_command(arg),
+            "theme" => self.theme_command(arg),
             "indent-style" => self.indent_style_command(arg),
             "apply-change" => self.review_apply_pub(),
             "select-next" => self.occurrence_next_pub(),

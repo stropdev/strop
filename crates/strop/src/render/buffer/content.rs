@@ -35,7 +35,7 @@ pub(super) fn content_spans(
     let Some(checkpoint) =
         buf.layout_checkpoint(strop_core::id::LineIndex::new(row), view.hscroll, tab)
     else {
-        return vec![Span::styled("layout pending", Style::default().fg(MUTED))];
+        return vec![Span::styled("layout pending", Style::default().fg(muted()))];
     };
     if checkpoint.byte.get() > source.len_bytes() {
         return Vec::new();
@@ -61,7 +61,7 @@ pub(super) fn content_spans(
         let i = glyph.byte;
         let pos = start + i;
         let is_source = i < text.len_bytes();
-        let mut cell = Style::default().fg(style.row_fg.unwrap_or(TEXT));
+        let mut cell = Style::default().fg(style.row_fg.unwrap_or(crate::render::text()));
         if let Some(bg) = style.row_bg {
             cell = cell.bg(bg);
         }
@@ -119,7 +119,7 @@ pub(super) fn content_spans(
                     || style.extra_selections.iter().any(covers)
             };
             if selected {
-                cell = cell.bg(SELECT_BG);
+                cell = cell.bg(select_bg());
             }
             // search hits light up (accent bold); the match under the
             // cursor — the "current" one n/N walks — wears an underline
@@ -131,7 +131,7 @@ pub(super) fn content_spans(
                 .get(hit_index)
                 .filter(|hit| hit.start.get() < pos + grapheme.len() && pos < hit.end.get())
             {
-                cell = cell.fg(ACCENT).add_modifier(Modifier::BOLD);
+                cell = cell.fg(accent()).add_modifier(Modifier::BOLD);
                 if hit.start.get() <= view.cursor && view.cursor < hit.end.get() {
                     cell = cell.add_modifier(Modifier::UNDERLINED);
                 }
@@ -140,7 +140,7 @@ pub(super) fn content_spans(
             // both endpoints — under find/preview/flash, over the
             // selection and search layers
             if style.pair_first == Some(pos) || style.pair_second == Some(pos) {
-                cell = cell.bg(PAIR_BG).add_modifier(Modifier::BOLD);
+                cell = cell.bg(pair_bg()).add_modifier(Modifier::BOLD);
             }
             if let Some(find) = style.find {
                 // leap-style: candidates bold-accent on the pending side
@@ -150,7 +150,7 @@ pub(super) fn content_spans(
                     pos > view.cursor
                 };
                 if row == cur_line && ahead && !grapheme.chars().all(|c| c.is_whitespace()) {
-                    cell = cell.fg(ACCENT).add_modifier(Modifier::BOLD);
+                    cell = cell.fg(accent()).add_modifier(Modifier::BOLD);
                 }
             }
             if style
@@ -158,13 +158,13 @@ pub(super) fn content_spans(
                 .iter()
                 .any(|r| r.start.get() < pos + grapheme.len() && pos < r.end.get())
             {
-                cell = cell.fg(ACCENT).bg(PREVIEW_BG);
+                cell = cell.fg(accent()).bg(preview_bg());
             }
             if style
                 .flash
                 .is_some_and(|r| r.start.get() < pos + grapheme.len() && pos < r.end.get())
             {
-                cell = cell.bg(FLASH_BG);
+                cell = cell.bg(flash_bg());
             }
         }
         let symbol = if !visible.complete || grapheme == "\t" {
@@ -197,10 +197,10 @@ pub(super) fn content_spans(
                     at += to_stop;
                 } else {
                     expanded.push_str(strop_core::layout::printable_grapheme(grapheme));
-                    at += crate::render::text::width(grapheme);
+                    at += crate::render::clip::width(grapheme);
                 }
             }
-            let note = crate::render::text::clip_end(&expanded, budget);
+            let note = crate::render::clip::clip_end(&expanded, budget);
             for (glyph, grapheme) in RopeGraphemes::new_at(note.as_ref().into(), tab, end_cell) {
                 if glyph.cell.get() >= right {
                     break;

@@ -18,6 +18,7 @@ use strop_core::frontend_input::Key;
 /// The ex vocabulary (completion + `run_ex` dispatch reads the same
 /// list — one table, no drift).
 pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
+    ("theme", "dark or light — pick the interface palette"),
     ("terminal", "local interactive shell or explicit command"),
     (
         "terminal-local",
