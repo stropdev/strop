@@ -32,6 +32,7 @@ fn request() -> WireJob {
             line_text: crate::FrozenLine::from(""),
             kind: crate::protocol::RequestKind::Hover,
             rename_to: None,
+            rename_files: None,
         },
         tab_width: None,
     })
@@ -142,7 +143,9 @@ fn loom_fifo_barrier_drain_disconnect() {
                     last_version = v;
                 }
                 WireJob::Request(_) | WireJob::Completion(_) => request_seen = true,
-                WireJob::Close { .. } | WireJob::WorkspaceSymbols { .. } => {}
+                WireJob::Close { .. }
+                | WireJob::WorkspaceSymbols { .. }
+                | WireJob::DidRenameFiles { .. } => {}
             }
         }
         assert!(request_seen, "the request drained");

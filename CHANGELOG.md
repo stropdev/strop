@@ -14,6 +14,9 @@ the existing 0.43.0 source tag is preserved.
   leaving a full stream queue blocked indefinitely. Cancellation callbacks
   still run outside that lock. The Loom regression now exposes the native
   token's scheduling gaps and checks callback reentry as well.
+- **Release assurance configuration**: update the LSP queue's Loom fixture
+  for file-rename requests and notifications so the concurrency gate compiles
+  with the same request and queue types as the shipped client.
 
 ## 0.43.0 — 2026-10-08
 
