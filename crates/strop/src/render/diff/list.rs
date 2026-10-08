@@ -174,19 +174,24 @@ fn graph_spans(prefix: &str) -> Vec<Span<'static>> {
 /// stats are printable chrome, measured in display cells.
 fn file_row_spans(file: &ChangedFile, width: usize) -> Vec<Span<'static>> {
     let display = strop_core::layout::printable_text(file.path.to_string_lossy());
+    let added = format!("+{} ", file.added);
+    let deleted = format!("-{}", file.deleted);
+    // 0068 B4: a long path yields its prefix (never the stats) — the
+    // filename end survives, the `+N -M` pair always shows.
+    let stats_w = added.len() + deleted.len() + 1;
+    let display = if text::width(&display) > width.saturating_sub(stats_w) {
+        text::clip_start(&display, width.saturating_sub(stats_w)).into_owned()
+    } else {
+        display.to_string()
+    };
     let path_cells = text::width(&display);
     let mut spans = match display.rfind('/') {
         Some(at) => vec![
             Span::styled(display[..=at].to_string(), Style::default().fg(MUTED)),
             Span::styled(display[at + 1..].to_string(), Style::default().fg(TEXT)),
         ],
-        None => vec![Span::styled(
-            display.into_owned(),
-            Style::default().fg(TEXT),
-        )],
+        None => vec![Span::styled(display, Style::default().fg(TEXT))],
     };
-    let added = format!("+{} ", file.added);
-    let deleted = format!("-{}", file.deleted);
     let pad = width
         .saturating_sub(path_cells + added.len() + deleted.len())
         .max(1);

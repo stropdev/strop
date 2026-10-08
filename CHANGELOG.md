@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.41.0 — 2026-10-08
+
+### Changed
+
+- **Full UI polish** (0068): every card breathes. The `Space` which-key
+  overlay and its submenus are rebuilt: bottom-centered, width fitted to
+  content, one padded key column, descriptions ellipsized with padding on
+  both sides — never a mid-word cut against the border — and a `+N more`
+  footer instead of silently dropped rows. The `:` command card sizes its
+  completion-name column to the candidates and right-aligns the live match
+  count; the hover card sizes from a render-verified wrapped-row estimate
+  (wrapped content was silently cut at the bottom border); the blame card
+  fits its content; cursor-line diagnostic notes ellipsize at the row's real
+  width (tab-aware); picker borders go quiet (MUTED, like the welcome card)
+  and the rule line reads the palette; the modeline moves dirty/multicursor/
+  transient state off the accent so the mode chip is the only one left;
+  scrollbar thumbs now size to the visible fraction; narrow input fields and
+  long diff paths ellipsize instead of vanishing or hiding their stats.
+
 ## 0.40.0 — 2026-10-07
 
 ### Fixed

@@ -21,7 +21,7 @@ use strop_lsp::Severity;
 use crate::editor::Editor;
 
 use super::text::{clip_end, clip_start, width};
-use super::{cmd_card_active, mode_color, severity_color, ACCENT, BASE, MUTED, TEXT};
+use super::{cmd_card_active, mode_color, severity_color, BASE, MUTED, SECONDARY, TEXT};
 
 #[cfg(test)]
 mod tests;
@@ -419,7 +419,7 @@ impl Modeline {
             spans.push(Span::styled(self.name.as_str(), Style::default().fg(TEXT)));
         }
         if self.dirty {
-            spans.push(Span::styled(" ●", Style::default().fg(ACCENT)));
+            spans.push(Span::styled(" ●", Style::default().fg(HELD)));
         }
         if self.readonly {
             spans.push(Span::styled(" [RO]", Style::default().fg(HELD)));
@@ -428,7 +428,7 @@ impl Modeline {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 mark.as_str(),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default().fg(SECONDARY).add_modifier(Modifier::BOLD),
             ));
         }
         spans
@@ -454,7 +454,7 @@ impl Modeline {
                 Style::default().fg(MUTED),
             ));
             if self.worktree_dirty {
-                left.push(Span::styled("*", Style::default().fg(ACCENT)));
+                left.push(Span::styled("*", Style::default().fg(HELD)));
             }
             if self.staged_mark {
                 left.push(Span::styled("+", Style::default().fg(HELD)));
@@ -473,7 +473,7 @@ impl Modeline {
         if !self.status.is_empty() {
             right.push(Span::styled(
                 self.status.as_str(),
-                Style::default().fg(ACCENT),
+                Style::default().fg(SECONDARY),
             ));
         }
         if self.show_diag {

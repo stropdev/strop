@@ -423,10 +423,12 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
             }
         }
         // cursor-line end-of-line diagnostic (scoped to the one line —
-        // you see what the dot means without leaving the buffer)
+        // you see what the dot means without leaving the buffer). The
+        // painter clips at the row's real width with an ellipsis
+        // (0068 B1: the old 80-char pre-clip lied about the budget).
         if view.overlays && line_idx == cur_line {
             if let Some((sev, msg)) = editor.diag_message_at(view.doc, line_idx + 1) {
-                let shown: String = msg.replace('\n', " · ").chars().take(80).collect();
+                let shown = msg.replace('\n', " · ");
                 style.note = Some((
                     format!("  ▍ {shown}"),
                     Style::default()

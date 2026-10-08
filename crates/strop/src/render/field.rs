@@ -27,9 +27,12 @@ pub(super) fn project(
     }
     let label = format!("{label} ");
     let label_budget = usize::from(width.saturating_sub(1));
+    // A narrow field ellipsizes the label instead of letting it vanish
+    // into clipped blanks (0068 B3).
+    let label = super::text::clip_end(&label, label_budget);
     let mut spans = Vec::new();
     let mut prefix = 0;
-    for (glyph, grapheme) in RopeGraphemes::new(label.as_str().into(), 4) {
+    for (glyph, grapheme) in RopeGraphemes::new(label.as_ref().into(), 4) {
         let Some(visible) = clip(glyph, DisplayColumn::new(0), label_budget) else {
             continue;
         };

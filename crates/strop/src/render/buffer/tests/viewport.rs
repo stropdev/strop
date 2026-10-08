@@ -435,9 +435,10 @@ fn pane_scrollbar_carries_track_thumb_and_git_overview() {
         ratatui::style::Color::Rgb(0xa9, 0xc4, 0x7c)
     );
 
-    // Scrolling moves the thumb down the same fractional mapping;
-    // move the caret (the viewport follows it) — a bare view_top is
-    // clamped back to the caret by admission.
+    // Scrolling moves the thumb down — 0068 B2 contract: the thumb's
+    // START is the viewport's fraction of the travel space
+    // (track height minus the thumb's own length), so `view_top` 91 of
+    // ~193 scrollable lines over an 8-cell travel lands on row 3.
     e.set_head(99 * 5); // start of line 100 in the 5-byte-lines fixture
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let grid = terminal.backend().buffer();
@@ -445,8 +446,16 @@ fn pane_scrollbar_carries_track_thumb_and_git_overview() {
         .find(|&y| grid[(39, y)].symbol() == "\u{25ae}")
         .unwrap();
     assert!(
-        thumb_row >= 4,
-        "half the document scrolled past: thumb at {thumb_row}"
+        (2..=4).contains(&thumb_row),
+        "half-scrolled thumb rides the travel space: row {thumb_row}"
+    );
+    // and it is a THUMB, not a dot: with a 1-cell minimum it stays one
+    // cell here, but it never paints outside the track.
+    assert!(
+        (0..9)
+            .filter(|&y| grid[(39, y)].symbol() == "\u{25ae}")
+            .count()
+            >= 1
     );
 }
 

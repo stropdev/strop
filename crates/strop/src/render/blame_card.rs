@@ -22,7 +22,13 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
     let width = ((u32::from(area.width) * 55 / 100) as u16)
         .max(46)
         .min(area.width.saturating_sub(4));
-    let height = 7u16.min(area.height.saturating_sub(4));
+    // 0068 C4: fit the card to its content (a fixed 7 rows left dead
+    // space under three lines), never a cut mid-word summary.
+    let content_budget = usize::from(width.saturating_sub(5));
+    let author_age_raw = format!("{} · {} ago", card.author, card.age);
+    let author_age = super::text::clip_end(&author_age_raw, content_budget);
+    let summary = super::text::clip_end(&card.summary, content_budget);
+    let height = 5u16.min(area.height.saturating_sub(4)).max(3);
     let rect = Rect {
         x: (area.width - width) / 2,
         y: (area.height - height) / 3,
@@ -33,7 +39,7 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
+        .border_style(Style::default().fg(MUTED))
         .style(Style::default().bg(BASE))
         .title(Span::styled(
             format!(" blame · line {} ", card.line),
@@ -61,14 +67,11 @@ pub fn render_blame_card(editor: &Editor, frame: &mut Frame) {
                     .bg(ACCENT)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!("  {} · {} ago", card.author, card.age),
-                Style::default().fg(MUTED),
-            ),
+            Span::styled(format!("  {author_age}"), Style::default().fg(MUTED)),
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            format!(" {}", card.summary),
+            format!(" {summary}"),
             Style::default().fg(TEXT),
         )),
     ];

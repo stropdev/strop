@@ -62,14 +62,55 @@ pub(super) fn render(editor: &Editor, output: &mut ratatui::Frame, rect: Rect, v
             cell.set_bg(BASE);
         }
     }
-    // Viewport thumb last: position is the primary signal.
+    // Viewport thumb last: position is the primary signal. The thumb's
+    // LENGTH is the visible fraction of the document (0068 B2: a
+    // 1-cell thumb says nothing about how much you're seeing).
     if total > rows {
-        let scrollable = total - rows;
-        let thumb = line_to_row(view.view_top, scrollable + 1, track_h);
-        let cell = &mut output.buffer_mut()[(track_x, rect.y + thumb as u16)];
-        cell.set_symbol("▮");
-        cell.set_fg(ACCENT);
-        cell.set_bg(BASE);
+        let thumb = Thumb {
+            track_h,
+            visible: rows,
+            scrollable: total - rows,
+        };
+        thumb.paint(output, track_x, rect.y, view.view_top, ACCENT, BASE);
+    }
+}
+
+/// The viewport thumb: `visible/total` of the track, minimum one cell,
+/// scrolling the remaining travel space with the pane's position.
+struct Thumb {
+    track_h: usize,
+    visible: usize,
+    scrollable: usize,
+}
+
+impl Thumb {
+    fn paint(
+        &self,
+        output: &mut ratatui::Frame,
+        x: u16,
+        y: u16,
+        top: usize,
+        color: Color,
+        bg: Color,
+    ) {
+        let total = self.scrollable + self.visible;
+        let len = (self.visible * self.track_h / total.max(1))
+            .max(1)
+            .min(self.track_h);
+        let room = self.track_h - len;
+        let start = if self.scrollable == 0 {
+            0
+        } else {
+            (top.min(self.scrollable) * room)
+                .checked_div(self.scrollable)
+                .unwrap_or(0)
+        };
+        for row in start..(start + len).min(self.track_h) {
+            let cell = &mut output.buffer_mut()[(x, y + row as u16)];
+            cell.set_symbol("▮");
+            cell.set_fg(color);
+            cell.set_bg(bg);
+        }
     }
 }
 
@@ -94,11 +135,19 @@ pub(super) fn terminal(
     let rows = usize::from(reserved(rect).height);
     if total > rows {
         let scrollable = total - rows;
-        let thumb = line_to_row(frame.history_rows, scrollable + 1, track_h);
-        let cell = &mut output.buffer_mut()[(rect.x + rect.width - 1, rect.y + thumb as u16)];
-        cell.set_symbol("▮");
-        cell.set_fg(ACCENT);
-        cell.set_bg(rgb(frame.palette.background));
+        let thumb = Thumb {
+            track_h,
+            visible: rows,
+            scrollable,
+        };
+        thumb.paint(
+            output,
+            rect.x + rect.width - 1,
+            rect.y,
+            frame.history_rows,
+            ACCENT,
+            rgb(frame.palette.background),
+        );
     }
 }
 

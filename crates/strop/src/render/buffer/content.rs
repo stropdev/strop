@@ -178,10 +178,30 @@ pub(super) fn content_spans(
     }
     if reached_end {
         if let Some((note, cell)) = &style.note {
-            // virtual EOL annotation at the line's absolute end cell —
-            // tabs in the note continue the line's stops, so it cannot
-            // drift when the origin scrolls
-            for (glyph, grapheme) in RopeGraphemes::new_at(note.as_str().into(), tab, end_cell) {
+            // virtual EOL annotation at the line's absolute end cell.
+            // Tabs expand against the line's absolute stops BEFORE
+            // clipping — clip_end measures printable cells, not tab
+            // stops, and a raw tab would emit as a replacement cell
+            // (0068 B1).
+            let budget = right.saturating_sub(end_cell.get());
+            let mut expanded = String::new();
+            let mut at = end_cell.get();
+            for grapheme in
+                unicode_segmentation::UnicodeSegmentation::graphemes(note.as_str(), true)
+            {
+                if grapheme == "\t" {
+                    let to_stop = tab - (at % tab);
+                    for _ in 0..to_stop {
+                        expanded.push(' ');
+                    }
+                    at += to_stop;
+                } else {
+                    expanded.push_str(strop_core::layout::printable_grapheme(grapheme));
+                    at += crate::render::text::width(grapheme);
+                }
+            }
+            let note = crate::render::text::clip_end(&expanded, budget);
+            for (glyph, grapheme) in RopeGraphemes::new_at(note.as_ref().into(), tab, end_cell) {
                 if glyph.cell.get() >= right {
                     break;
                 }

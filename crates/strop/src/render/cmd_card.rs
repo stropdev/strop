@@ -52,7 +52,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
+        .border_style(Style::default().fg(MUTED))
         .style(Style::default().bg(BASE))
         .title(Span::styled(
             title,
@@ -85,30 +85,46 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     let caret = field.cursor;
     let mut spans = field.line.spans;
 
-    // search rides with a live match count
+    // search rides with a live match count — right-aligned inside the
+    // field's width instead of appended past it (0068 C2: inline
+    // append truncated hard)
     if matches!(kind, '/' | '?') {
         let label = match editor.current_search_query() {
             Ok(Some(query)) => match editor.search_summary(&query) {
                 Some(Ok(summary)) => format!(
-                    "   {} match{}",
+                    "{} match{}",
                     summary.count,
                     if summary.count == 1 { "" } else { "es" }
                 ),
-                Some(Err(error)) => format!("   {error}"),
-                None => "   searching…".into(),
+                Some(Err(error)) => error.to_string(),
+                None => "searching…".into(),
             },
-            Ok(None) => "   0 matches".into(),
-            Err(error) => format!("   {error}"),
+            Ok(None) => "0 matches".into(),
+            Err(error) => error.to_string(),
         };
-        spans.push(Span::styled(label, Style::default().fg(MUTED)));
+        let label = super::text::clip_end(&label, usize::from(text_area.width) / 3);
+        let label_w = super::text::width(&label);
+        let used: usize = spans.iter().map(|span| span.width()).sum();
+        let pad = usize::from(text_area.width).saturating_sub(used + label_w + 1);
+        spans.push(Span::raw(" ".repeat(pad)));
+        spans.push(Span::styled(label.into_owned(), Style::default().fg(MUTED)));
     }
 
     frame.render_widget(Paragraph::new(Line::from(spans)), text_area);
 
     // completion rows: first candidate accent (Tab cycles to it), the
-    // rest muted with their doc strings
+    // rest muted with their doc strings. The name column sizes to the
+    // shown candidates (0068 C2: a fixed 10 overflowed into the doc
+    // column), names and docs ellipsize — nothing touches the border.
     let body_str = pending.strip_prefix(':').unwrap_or("");
-    for (i, (name, doc)) in candidates.iter().take(6).enumerate() {
+    let shown: Vec<_> = candidates.iter().take(6).collect();
+    let name_w = shown
+        .iter()
+        .map(|(name, _)| super::text::width(name))
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 16);
+    for (i, (name, doc)) in shown.iter().enumerate() {
         let y = text_area.y + 1 + i as u16;
         let row = Rect {
             y,
@@ -121,14 +137,18 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
             (TEXT, MUTED)
         };
         let marker = if name == &body_str { "▌" } else { " " };
+        let doc_budget = usize::from(text_area.width).saturating_sub(1 + name_w + 2 + 1);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(marker, Style::default().fg(ACCENT)),
                 Span::styled(
-                    format!("{name:<10}"),
+                    format!("{:<name_w$}  ", super::text::clip_end(name, name_w)),
                     Style::default().fg(name_fg).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(doc.to_string(), Style::default().fg(doc_fg)),
+                Span::styled(
+                    super::text::clip_end(doc, doc_budget).into_owned(),
+                    Style::default().fg(doc_fg),
+                ),
             ])),
             row,
         );

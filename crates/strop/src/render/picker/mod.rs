@@ -21,7 +21,7 @@ mod workspace_tests;
 
 use rows::render_results;
 
-use super::{dim_color, ACCENT, BASE, MUTED, SECONDARY, SELECT_BG, TEXT};
+use super::{dim_color, ACCENT, BASE, MUTED, PAIR_BG, SECONDARY, SELECT_BG, TEXT};
 
 /// Dim the backdrop: the editor stays readable under the card (0003 §2.1
 /// live backdrop), with fg colors pulled toward the base.
@@ -198,7 +198,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
+        .border_style(Style::default().fg(MUTED))
         .style(Style::default().bg(BASE))
         .title(Span::styled(
             title,
@@ -290,7 +290,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
             Paragraph::new(rule).style(Style::default().fg(if query_roles {
                 MUTED
             } else {
-                Color::Rgb(0x3a, 0x3d, 0x4d)
+                PAIR_BG
             })),
             Rect {
                 y: rule_y,

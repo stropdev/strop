@@ -8,7 +8,7 @@ use ratatui::Frame;
 
 use crate::editor::{Editor, PreviewSource};
 
-use super::super::{syntax_style, ACCENT, BASE, MUTED, SELECT_BG, TEXT};
+use super::super::{syntax_style, ACCENT, BASE, MUTED, PAIR_BG, SELECT_BG, TEXT};
 
 const SURFACE: Color = Color::Rgb(0x20, 0x22, 0x2e);
 pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
@@ -94,7 +94,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::LEFT)
-        .border_style(Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d)))
+        .border_style(Style::default().fg(PAIR_BG))
         .style(Style::default().bg(SURFACE))
         .title(Span::styled(
             format!(
