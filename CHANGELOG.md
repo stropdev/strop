@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Active platform policy:** Linux x86_64 only, including Linux x86_64
+  distributions inside WSL. Install/update, worker admission, release artifacts
+  and public installation guidance use that boundary. macOS, ARM/aarch64 and
+  native Windows expansion are deferred pending an explicit support decision
+  and fresh target-specific qualification. Linux editor, worker, protocol and
+  assurance obligations are retained. Historical release notes, artifacts and
+  evidence remain immutable; this policy change makes no new qualification claim.
+
 ## 0.43.1 — 2026-10-08
 
 Release recovery for the unpublished 0.43.0 candidate. Includes its Sovel

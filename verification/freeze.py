@@ -23,7 +23,7 @@ from pathlib import Path
 # Evidence readers must leave the candidate checkout unchanged.
 sys.dont_write_bytecode = True
 
-from completion_evidence import source_files, validate as completion_evidence
+from completion_evidence import PLATFORM_POLICY, source_files, validate as completion_evidence
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "dist" / "completion-candidate.json"
@@ -127,6 +127,7 @@ def freeze(allow_dirty: bool) -> dict:
     pins = dockerfile_pins((ROOT / "Dockerfile").read_text())
     return {
         "schema": SCHEMA, "release": "0059", "plan": "plans/0059-nonblocking-code-completion.md",
+        "platform_policy": PLATFORM_POLICY,
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"],
         "commit": commit, "tree": git("rev-parse", "HEAD^{tree}"),
         "commit_date": git("show", "-s", "--format=%cI", "HEAD"), "dirty": dirty,
@@ -138,6 +139,10 @@ def freeze(allow_dirty: bool) -> dict:
             "install.sh", "crates/strop/src/update.rs", ".github/scripts/release-catalog.py")},
         "qualification_workflows": {path: sha256_file(path) for path in (
             ".github/workflows/ci.yml", ".github/workflows/release.yml")},
+        "assurance_policy": {path: sha256_file(path) for path in (
+            "verification/check.py", "verification/schema.json", "verification/freeze.py",
+            "verification/test_platform_policy.py", "verification/check_mutants.py",
+            "verification/mutants.json")},
         "dockerfile_sha256": sha256_file("Dockerfile"),
         "dockerfile_stages": pins["stage_base_images"],
         "checksum_pinned_downloads": pins["checksum_pinned_downloads"],

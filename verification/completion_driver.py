@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from bench_ui_input_frame import Peer, key
-from bench_worker import process_state, worker_processes
+from bench_worker import native_profile, process_state, worker_processes
 
 
 def control_key(character: str) -> dict:
@@ -25,7 +25,8 @@ class CompletionEditor:
     def __init__(self, binary: Path, text: str, *, enabled: bool = True,
                  automatic: bool = True, server: str | None = None,
                  geometry: tuple[int, int] = (120, 40)):
-        # The native control socket must fit macOS's 104-byte sockaddr_un.
+        native_profile()
+        # Keep the AF_UNIX control socket below the kernel pathname bound.
         self.directory = tempfile.TemporaryDirectory(prefix="strop-completion-", dir="/tmp")
         self.root = Path(self.directory.name)
         self.socket = None
@@ -35,7 +36,7 @@ class CompletionEditor:
         self.editor_peak_kib = 0
         self.worker_peak_kib = 0
         self.worker_threads_peak = 0
-        self.completion_threads_peak = 0 if sys.platform == "linux" else None
+        self.completion_threads_peak = 0
         for folder in ("home", "config/strop", "state", "cache", "bin"):
             (self.root / folder).mkdir(parents=True)
         (self.root / "config/strop/config.toml").write_text(
@@ -188,28 +189,25 @@ class CompletionEditor:
         if len(workers) != 1:
             raise RuntimeError(f"expected one real local worker, got {workers}; use a production build without test-support")
         worker_states = [process_state(pid) for pid in workers]
-        completion_threads = None
-        if sys.platform == "linux":
-            completion_threads = 0
-            for path in Path(f"/proc/{self.child.pid}/task").glob("*/comm"):
-                try:
-                    completion_threads += path.read_text().strip().startswith("strop-complet")
-                except FileNotFoundError:
-                    pass  # An unrelated forwarder can retire during the census.
-        if completion_threads is not None and completion_threads > 1:
+        completion_threads = 0
+        for path in Path(f"/proc/{self.child.pid}/task").glob("*/comm"):
+            try:
+                completion_threads += path.read_text().strip().startswith("strop-complet")
+            except FileNotFoundError:
+                pass  # An unrelated forwarder can retire during the census.
+        if completion_threads > 1:
             raise RuntimeError("completion admitted overlapping persistent CPU workers")
         self.editor_peak_kib = max(self.editor_peak_kib, rss)
         self.worker_peak_kib = max(self.worker_peak_kib, sum(item[0] for item in worker_states))
         self.worker_threads_peak = max(self.worker_threads_peak, sum(item[1] for item in worker_states))
-        if completion_threads is not None:
-            self.completion_threads_peak = max(self.completion_threads_peak, completion_threads)
+        self.completion_threads_peak = max(self.completion_threads_peak, completion_threads)
         return {"editor_rss_kib": rss, "editor_threads": threads, "worker_pids": workers,
                 "worker_rss_kib": sum(item[0] for item in worker_states),
                 "completion_threads": completion_threads}
 
     def shutdown(self) -> dict:
         workers = worker_processes(self.child.pid)
-        descriptors = [os.pidfd_open(pid) for pid in workers] if sys.platform == "linux" else []
+        descriptors = [os.pidfd_open(pid) for pid in workers]
         self.peer.sequence += 1
         self.peer.send({"type": "shutdown", "seq": self.peer.sequence})
         acked = False
@@ -231,8 +229,7 @@ class CompletionEditor:
                     selector.register(descriptor, selectors.EVENT_READ)
                     if not selector.select(15):
                         raise RuntimeError("an owned native worker survived editor shutdown")
-            return {"owned_worker_count": len(workers), "owned_workers_exited": len(descriptors)
-                    if sys.platform == "linux" else None}
+            return {"owned_worker_count": len(workers), "owned_workers_exited": len(descriptors)}
         finally:
             for descriptor in descriptors:
                 os.close(descriptor)

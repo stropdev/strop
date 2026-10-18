@@ -8,22 +8,22 @@ mod listing;
 mod observation;
 pub use context::{ExecutionContext, NamespaceView};
 pub use environment::Environment;
-#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(test, target_os = "linux"))]
 mod adversarial;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod attributes;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod guard;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub mod local;
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(target_os = "linux"))]
 #[path = "unsupported.rs"]
 pub mod local;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod stage;
 #[cfg(test)]
 mod tests;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod trash;
 
 pub use listing::{assemble, list, parent, ListedDirectory, ObservedEntry};

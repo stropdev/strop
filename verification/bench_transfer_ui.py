@@ -32,8 +32,7 @@ def high_water(pid: int) -> int:
         status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
         return next(int(line.split()[1]) for line in status.splitlines()
                     if line.startswith("VmHWM:"))
-    # ps offers only current RSS on macOS; never call this an OS peak.
-    return process_state(pid)[0]
+    raise ValueError("process high-water measurement requires Linux /proc")
 
 
 def post_exit_worker_state(pid: int) -> str:
@@ -44,9 +43,7 @@ def post_exit_worker_state(pid: int) -> str:
             return "-"
         return next(line.split(":", 1)[1].strip().split()[0]
                     for line in status.splitlines() if line.startswith("State:"))
-    observed = subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
-                              capture_output=True, text=True, check=False)
-    return observed.stdout.strip().split()[0][:1] if observed.returncode == 0 else "-"
+    raise ValueError("worker retirement measurement requires Linux /proc")
 
 
 def visible(peer: Peer, marker: str) -> bool:
@@ -161,13 +158,6 @@ def observe(binary: Path, root: Path, version: str) -> dict:
                 except ProcessLookupError:
                     pass
                 os.close(worker_fd)
-            elif worker is not None and platform.system() == "Darwin":
-                try:
-                    if (worker_state not in ("-", "Z")
-                            and os.getpgid(worker) == child.pid):
-                        os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
             if child.returncode != 0:
                 errors.seek(0)
                 detail = errors.read(1024)
@@ -176,8 +166,9 @@ def observe(binary: Path, root: Path, version: str) -> dict:
 
 
 def measure(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
-    if platform.system() not in ("Linux", "Darwin"):
-        raise ValueError("process high-water measurement needs Linux or macOS")
+    native_profile()
+    if profile not in ("release-musl-stripped", "release-gnu-native"):
+        raise ValueError("benchmark requires a Linux x86_64 release profile")
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("--binary must be the native release executable")
     identity = subprocess.check_output([str(binary), "--version"], text=True).strip().split()
@@ -210,8 +201,7 @@ def measure(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
             "fixture": {"lines": LINES, "bytes": source_bytes,
                         "source_sha256": source_sha256, "geometry": [120, 40],
                         "worker_count_after_each_open": 1,
-                        "rss_peak_kind": ("kernel VmHWM" if platform.system() == "Linux"
-                                          else "observed current RSS, not a kernel peak"),
+                        "rss_peak_kind": "kernel VmHWM",
                         "retirement_scope": "immediate state after editor exit; fixture kills only its owned worker after observation"},
             "method": "file open to complete 120x40 UI frame, verify last line and observe post-exit worker",
             "warmup_requests": warmup, "measured_requests": iterations,
@@ -226,8 +216,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--warmup", type=int, default=8)
     parser.add_argument("--iterations", type=int, default=64)
-    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native",
-                                             "release-macos-native"))
+    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native"))
     args = parser.parse_args()
     if args.warmup < 0 or args.iterations < 1:
         parser.error("warmup must be nonnegative and iterations positive")

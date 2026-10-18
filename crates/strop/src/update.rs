@@ -195,9 +195,11 @@ pub fn is_newer(latest: &str) -> bool {
 fn target_triple(os: &str, arch: &str) -> Result<&'static str, String> {
     Ok(match (os, arch) {
         ("linux", "x86_64") => "x86_64-unknown-linux-musl",
-        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos", "aarch64") => "aarch64-apple-darwin",
-        (os, arch) => return Err(format!("no prebuilt binary for {os}/{arch}")),
+        (os, arch) => {
+            return Err(format!(
+                "unsupported platform {os}/{arch} — supported: Linux x86_64 (including WSL)"
+            ))
+        }
     })
 }
 
@@ -247,6 +249,11 @@ fn done(pb: &indicatif::ProgressBar, label: &str) {
 
 /// `strop update [--check]`.
 pub fn update(check_only: bool) -> Result<(), String> {
+    update_for_target(check_only, std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn update_for_target(check_only: bool, os: &str, arch: &str) -> Result<(), String> {
+    let triple = target_triple(os, arch)?;
     let current = env!("CARGO_PKG_VERSION");
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let receipt_path = exe
@@ -285,7 +292,6 @@ pub fn update(check_only: bool) -> Result<(), String> {
         Channel::Tarball => {}
     }
 
-    let triple = target_triple(std::env::consts::OS, std::env::consts::ARCH)?;
     let pb = stage("resolving release catalog…");
     let body = curl(&[CATALOG_URL])?;
     let catalog = Catalog::parse(&body)?;
@@ -416,16 +422,29 @@ fn version_ordering() {
 
 #[cfg(test)]
 #[test]
-fn update_targets_retain_linux_and_apple_silicon_but_refuse_intel_macos() {
-    for (os, arch, expected) in [
-        ("linux", "x86_64", "x86_64-unknown-linux-musl"),
-        ("linux", "aarch64", "aarch64-unknown-linux-musl"),
-        ("macos", "aarch64", "aarch64-apple-darwin"),
+fn update_targets_admit_only_linux_x86_64() {
+    assert_eq!(
+        target_triple("linux", "x86_64").unwrap(),
+        "x86_64-unknown-linux-musl"
+    );
+    for (os, arch) in [
+        ("linux", "aarch64"),
+        ("linux", "arm64"),
+        ("linux", "i686"),
+        ("linux", "riscv64"),
+        ("macos", "aarch64"),
+        ("macos", "arm64"),
+        ("macos", "x86_64"),
+        ("macos", "amd64"),
+        ("windows", "x86_64"),
+        ("freebsd", "x86_64"),
     ] {
-        assert_eq!(target_triple(os, arch).unwrap(), expected);
-    }
-    for arch in ["x86_64", "amd64"] {
-        assert!(target_triple("macos", arch).is_err());
+        let error = target_triple(os, arch).expect_err("unsupported target");
+        for check_only in [false, true] {
+            // Platform admission precedes even receipt discovery, and hence
+            // all downloads, temporary staging, binary and receipt writes.
+            assert_eq!(update_for_target(check_only, os, arch), Err(error.clone()));
+        }
     }
 }
 

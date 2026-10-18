@@ -65,21 +65,15 @@ fetch_to() {
     fi
 }
 
-# Detect OS/arch — the release matrix (plan 0002 §1).
+# Detect the active product target: Linux x86_64, including WSL.
 OS=$(uname -s)
 ARCH=$(uname -m)
 case "$OS/$ARCH" in
     Linux/x86_64|Linux/amd64)
         TARGET="x86_64-unknown-linux-musl"
         ;;
-    Linux/aarch64|Linux/arm64)
-        TARGET="aarch64-unknown-linux-musl"
-        ;;
-    Darwin/arm64)
-        TARGET="aarch64-apple-darwin"
-        ;;
     *)
-        err "unsupported platform $OS/$ARCH — supported: Linux x86_64/aarch64 and macOS Apple Silicon (arm64)"
+        err "unsupported platform $OS/$ARCH — supported: Linux x86_64 (including WSL)"
         ;;
 esac
 

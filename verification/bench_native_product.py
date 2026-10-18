@@ -105,8 +105,7 @@ def sample(binary: Path, target: str, profile: str, protocol: int) -> dict[str, 
         raise RuntimeError("editor file fixture did not retain exactly one local worker")
     if worker["platform"] != semantic["platform"]:
         raise RuntimeError("worker and UI samples were not taken on the same native host")
-    expected_os = "macos" if target.endswith("-apple-darwin") else "linux"
-    if (grid["platform"]["os"] != expected_os
+    if (grid["platform"]["os"] != "linux"
             or grid["platform"]["arch"] != target.split("-", 1)[0]
             or grid["platform"] != terminal_load["platform"]
             or terminal_load["fixture"]["output_lines_per_request"] != 256):

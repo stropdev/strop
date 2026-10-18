@@ -255,24 +255,6 @@ pub(super) fn store(
             publication = Some(observed_publication);
             public_file = Some(file);
         }
-        #[cfg(target_os = "macos")]
-        {
-            if replace {
-                rustix::fs::renameat(&stage.directory, "contents", &parent.file, name)
-                    .map_err(|error| io_failure(error.into()))?;
-            } else {
-                rustix::fs::renameat_with(
-                    &stage.directory,
-                    "contents",
-                    &parent.file,
-                    name,
-                    rustix::fs::RenameFlags::NOREPLACE,
-                )
-                .map_err(rename_error)?;
-            }
-            published = true;
-            public_file = Some(stage.file.try_clone().map_err(io_failure)?);
-        }
         #[cfg(test)]
         test_support::check(
             test_support::Fault::BeforeDirectorySync,

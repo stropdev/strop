@@ -77,7 +77,7 @@ GATES = {
     "core-assurance",  # docker compose run --build --rm core-assurance (VF19)
     "install-fixture", # sh tests/install.sh + sh tests/release-catalog.sh
     "benchmark",      # verification/bench_worker.py against real static binaries
-    "platform-test",  # real native GNU tests on WSL2 and CI x64/arm runners
+    "platform-test",  # real native GNU tests on Linux/WSL x86_64
     "ci",             # .github/workflows/ci.yml
     "release",         # .github/workflows/release.yml
 }
@@ -430,6 +430,22 @@ def validate_migration(inv: dict, errors: list) -> None:
     }
     if qualified - old:
         errors.append("clean Linux baseline contains claims absent from historical archive")
+    required_gates = {row["id"]: set(row["gates"]) for row in baseline["boundaries"]}
+    required_gates.update({
+        "completion-lifecycle": {"test", "model", "tlaps", "benchmark", "core-assurance"},
+        "completion-transport": {"test", "model", "benchmark", "core-assurance"},
+    })
+    for boundary, gates in {
+        "lsp-wire": {"model", "benchmark"},
+        "exec-supervision": {"core-assurance"},
+        "worker-serve": {"release"},
+        "worker-streams": {"core-assurance"},
+    }.items():
+        required_gates[boundary].update(gates)
+    for boundary in inv["boundaries"]:
+        missing_gates = required_gates.get(boundary["id"], set()) - set(boundary.get("gates", []))
+        if missing_gates:
+            errors.append(f"{boundary['id']}: retained gates missing: {', '.join(sorted(missing_gates))}")
     current = {
         (boundary["id"], claim["id"])
         for boundary in inv["boundaries"]
@@ -464,6 +480,8 @@ def validate_inventory(inv: dict) -> list:
     if inv.get("schema") != SCHEMA_VERSION:
         errors.append(f"schema must be {SCHEMA_VERSION}")
         return errors
+    if inv.get("platform_policy") != candidate_freeze.PLATFORM_POLICY:
+        errors.append("active qualification must require Linux/WSL x86_64 GNU and musl only")
     rows = inv.get("boundaries")
     if not isinstance(rows, list) or not rows:
         errors.append("inventory has no boundary rows")
@@ -579,6 +597,11 @@ def check(inv: dict, release: bool = False) -> int:
                 "worker release NOT qualified; unresolved claims: "
                 + ", ".join(sorted(set(blocked)))
             )
+            return 1
+        try:
+            candidate_freeze.completion_evidence(ROOT)
+        except (OSError, ValueError, KeyError, TypeError, SystemExit) as exc:
+            print(f"FAIL: current-source Linux x86_64 completion qualification: {exc}")
             return 1
     rows = inv["boundaries"]
     claims = sum(len(r["claims"]) for r in rows)

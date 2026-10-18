@@ -148,7 +148,6 @@ fn env_value(env: &[String], key: &str) -> Option<String> {
 fn catalog_target(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("linux", "amd64") => Some("x86_64-unknown-linux-musl"),
-        ("linux", "arm64") => Some("aarch64-unknown-linux-musl"),
         _ => None,
     }
 }
@@ -597,15 +596,14 @@ mod tests {
     }
 
     #[test]
-    fn platform_maps_to_the_musl_catalog_targets() {
+    fn platform_maps_only_linux_amd64_to_the_musl_catalog_target() {
         assert_eq!(
             catalog_target("linux", "amd64"),
             Some("x86_64-unknown-linux-musl")
         );
-        assert_eq!(
-            catalog_target("linux", "arm64"),
-            Some("aarch64-unknown-linux-musl")
-        );
+        assert_eq!(catalog_target("linux", "arm64"), None);
+        assert_eq!(catalog_target("linux", "386"), None);
+        assert_eq!(catalog_target("darwin", "amd64"), None);
         assert_eq!(catalog_target("linux", "riscv64"), None);
         assert_eq!(catalog_target("windows", "amd64"), None);
     }

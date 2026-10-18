@@ -5,15 +5,15 @@
 # worker's tests; neovim for the differential harness (0006 tier 1) —
 # rustls only; an openssl-dragging dependency is a bug.
 # a dependency that drags in openssl is a bug (AGENTS.md).
-# AR15 pin policy: every external base image is pinned to its multi-arch
-# manifest-list digest (FROM image:tag@sha256:...), so amd64 and arm64 both
-# resolve and the tag can never drift under the digest. The tag stays only
-# as a human-readable label. Internal stages and `scratch` need no pin.
+# AR15 pin policy: every external base image is pinned to its manifest-list
+# digest (FROM image:tag@sha256:...), resolving only linux/amd64 in active
+# compose lanes. The tag cannot drift under the digest and stays only as a
+# human-readable label. Internal stages and `scratch` need no pin.
 # To bump: for each pinned image run
 #   docker buildx imagetools inspect <image>:<new-tag> \
 #     --format '{{.Manifest.Digest}}'
 # then checklist: (1) digest is the index/list digest, not an arch-specific
-#   manifest; (2) the list covers linux/amd64 AND linux/arm64;
+#   manifest; (2) the list covers linux/amd64;
 # (3) update tag+digest together here; (4) `docker compose build test model
 #   verify` resolves; (5) run the full gates before landing.
 
@@ -23,6 +23,8 @@ RUN apk add --no-cache build-base git ripgrep neovim less curl ca-certificates x
 COPY .github/scripts/install-zig.sh /tmp/install-zig.sh
 RUN sh /tmp/install-zig.sh /opt/strop-zig && rm /tmp/install-zig.sh
 ENV ZIG=/opt/strop-zig/zig
+ARG CARGO_BUILD_JOBS=4
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
@@ -139,7 +141,8 @@ COPY .github ./.github
 COPY tests ./tests
 COPY install.sh ./install.sh
 COPY Dockerfile ./Dockerfile
-RUN python3 verification/check.py \
+RUN python3 -B -m unittest discover -s verification -p 'test_*.py' \
+    && python3 verification/check.py \
     && python3 verification/check_mutants.py \
     && python3 verification/check_mutants.py --self-test \
     && cargo test --locked -p strop-fs tests::store:: \

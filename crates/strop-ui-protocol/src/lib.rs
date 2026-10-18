@@ -1,6 +1,6 @@
 //! The strop UI protocol (0056 AR09/AR10): one bounded, versioned,
 //! non-graphical contract between the `strop --ui-stdio` backend and any
-//! frontend process (the future Windows GUI, test drivers, automation).
+//! frontend process (Linux/WSL clients, test drivers, automation).
 //!
 //! Shape:
 //! - Bytes: bounded Content-Length framing ([`frame`]), the convention

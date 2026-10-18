@@ -57,7 +57,7 @@ def collect(binary: Path, profile: str, build: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
-    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native", "release-macos-native"), required=True)
+    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native"), required=True)
     parser.add_argument("--build", required=True, help="actual build command/toolchain lane, not an inferred profile")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()

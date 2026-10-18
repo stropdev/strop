@@ -51,23 +51,7 @@ def process_state(pid: int) -> tuple[int, int]:
         status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
         fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
         return int(fields["VmRSS"].split()[0]), int(fields["Threads"].strip())
-    if platform.system() == "Darwin":
-        rss = subprocess.check_output(
-            ["ps", "-p", str(pid), "-o", "rss="], text=True
-        ).split()
-        # Apple ps -M adds its built-in USER/PID/TT thread format even
-        # with -o. It emits one header plus one row per thread of -p pid;
-        # checking each whole row against pid would reject real threads.
-        lines = subprocess.check_output(
-            ["ps", "-M", "-p", str(pid)], text=True
-        ).splitlines()
-        if len(rss) == 1 and len(lines) > 1 and "PID" in lines[0].split():
-            return int(rss[0]), len(lines) - 1
-        raise RuntimeError(
-            "macOS ps did not observe one process and its thread rows: "
-            f"rss_fields={len(rss)} ps_lines={len(lines)}"
-        )
-    raise RuntimeError("worker RSS/thread sampling needs Linux /proc or macOS ps -M")
+    raise RuntimeError("worker RSS/thread sampling requires Linux /proc")
 
 
 def worker_processes(pid: int) -> list[int]:
@@ -89,14 +73,7 @@ def worker_processes(pid: int) -> list[int]:
                 if b"--worker-stdio" in argv:
                     workers.add(int(child))
         return sorted(workers)
-    if platform.system() == "Darwin":
-        processes = subprocess.check_output(
-            ["ps", "-axo", "pid=", "-o", "ppid=", "-o", "command="], text=True
-        )
-        return [int(parts[0]) for line in processes.splitlines()
-                if len(parts := line.split(maxsplit=2)) == 3
-                and parts[1] == str(pid) and "--worker-stdio" in parts[2]]
-    raise RuntimeError("worker process sampling needs Linux /proc or macOS ps")
+    raise RuntimeError("worker process sampling requires Linux /proc")
 
 
 def cpu_model() -> str:
@@ -106,22 +83,19 @@ def cpu_model() -> str:
              for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines()
              if line.startswith("model name")), "unreported"
         )
-    if platform.system() == "Darwin":
-        return subprocess.check_output(
-            ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
-        ).strip()
-    raise RuntimeError("benchmark supports only Linux and macOS native targets")
+    raise RuntimeError("benchmark supports only Linux/WSL x86_64")
 
 
 def native_profile(target: str | None = None) -> str:
-    if platform.system() == "Linux":
-        return "release-gnu-native" if target and target.endswith("-gnu") else "release-musl-stripped"
-    if platform.system() == "Darwin":
-        return "release-macos-native"
-    raise RuntimeError("benchmark supports only Linux and macOS native targets")
+    if platform.system() != "Linux" or platform.machine() != "x86_64":
+        raise ValueError("benchmark requires native Linux/WSL x86_64")
+    if target not in (None, "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"):
+        raise ValueError("benchmark target must be Linux x86_64 GNU or musl")
+    return "release-gnu-native" if target == "x86_64-unknown-linux-gnu" else "release-musl-stripped"
 
 
 def sample(args: argparse.Namespace) -> dict:
+    native_profile(args.target)
     hello = json.dumps({
         "type": "hello", "protocol": args.protocol,
         "client": {"name": "worker-benchmark", "version": args.version,

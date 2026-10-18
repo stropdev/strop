@@ -44,8 +44,6 @@ DEFAULT_REPO = "stropdev/strop"
 ARTIFACT_RE = re.compile(r"^strop-(?P<version>[^-]+)-(?P<target>.+)\.tar\.gz$")
 ARTIFACT_TARGETS = frozenset((
     "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
-    "aarch64-apple-darwin",
 ))
 
 

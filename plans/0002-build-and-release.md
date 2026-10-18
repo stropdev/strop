@@ -1,17 +1,18 @@
 # 0002 — Build & Release Story
 
-> Docker + docker compose, musl-static Linux binaries, native Apple Silicon builds,
-> three tarballs, crates.io + homebrew + site dispatch.
-> The new wrinkle is native C/C++ code: tree-sitter grammars and libgit2.
+> Docker + docker compose, one musl-static Linux x86_64 tarball,
+> crates.io + Linux-only Homebrew formula + site dispatch.
+> Native C/C++ dependencies include tree-sitter grammars and libgit2.
 
-Status: historical build/release design. Current workflow sources own implemented
-details; [0062](0062-distribution-and-wsl-onboarding.md) extends the distribution
-contract for the native Windows GUI and selected-WSL backend without weakening
-the TUI/static gates. Historical illustrative snippets are not replacement gates.
+Status: historical build/release design with an active Linux/WSL x86_64-only
+policy amendment. Current workflow sources own implemented details. Native
+Windows distribution in [0061](0061-gui-windows-and-wsl.md) and
+[0062](0062-distribution-and-wsl-onboarding.md) is deferred pending an explicit
+expansion decision. Historical illustrative snippets are not replacement gates.
 
 [0056](0056-architecture-prerequisites.md) AR11–AR15 close the current shared TUI
 installation/ownership, release-catalog, build/evidence foundations first. 0062
-extends them for Windows/WSL packaging instead of repairing them inside GUI delivery.
+retains future Windows/WSL packaging requirements without activating that work.
 The separate [0057](0057-core-verification-and-assurance.md) release immediately
 qualifies the stable core and adds required generalized proof/core-assurance gates.
 [0058](0058-unified-native-worker.md) then adds shared native worker mode and verified
@@ -26,20 +27,18 @@ actual uploaded/executed worker to the exact source/target/assurance candidate.
 | Target | Runner | Method |
 |---|---|---|
 | `x86_64-unknown-linux-musl` | `ubuntu-latest` | `docker compose run release` (rust:alpine) |
-| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | same compose build, native — rust:alpine is multi-arch, no cross config |
-| `aarch64-apple-darwin` | `macos-14` | native cargo |
 
-Starting with 0.36.0, the user explicitly removed Intel macOS support.
-No `x86_64-apple-darwin` binary, native CI lane or Homebrew Intel download
-is published. Install/update and remote-worker target discovery refuse
-Intel macOS rather than selecting an ARM artifact. Historical releases
-retain their original artifacts and evidence. See [0028](0028-roadmap-and-review.md)
-for the scope decision and re-entry condition.
+The active support boundary is **Linux x86_64 only**, including a Linux x86_64
+distribution inside WSL. GNU/Linux native qualification and the static musl
+artifact gates both remain required. macOS, ARM/aarch64 and native Windows
+executables/installers are unsupported; install/update and worker discovery
+must refuse them rather than aliasing a supported artifact.
 
-The TUI's Windows story remains WSL. Native Windows GUI distribution is now
-specified by [0061](0061-gui-windows-and-wsl.md) and
-[0062](0062-distribution-and-wsl-onboarding.md); workspace execution stays in WSL.
-One musl-static artifact per supported Linux architecture covers glibc and musl distributions.
+Historical releases retain their original artifacts and evidence. Expansion
+requires an explicit support decision, owned native qualification capacity,
+and fresh worker/SSH/PTY/editor/LSP/retirement and install/artifact evidence
+before support is readvertised; see [0028](0028-roadmap-and-review.md).
+Linux editor, worker and protocol obligations are not weakened.
 
 ## 2. Why musl-static survives tree-sitter (the decision this plan records)
 
@@ -80,9 +79,9 @@ If a future dependency refuses to static-link under musl, the fallback is
 **cargo-zigbuild**: `zig cc`/`zig c++` as compiler+linker with glibc-version pinning —
 `cargo zigbuild --target x86_64-unknown-linux-gnu.2.17` produces a manylinux-class
 binary without docker. It handles the C++ side via libc++ (statically linked). It would
-replace only the Linux docker jobs; the macOS jobs and the release pipeline are
-unchanged. Not building this now: musl-static is strictly better for the
-ssh-into-a-server test, and a second Linux build system is dead weight until needed.
+replace only the Linux docker jobs and leave the release pipeline unchanged.
+Not building this now: musl-static is strictly better for the ssh-into-a-server
+test, and a second Linux build system is dead weight until needed.
 
 ## 4. Dockerfile + compose layout
 
@@ -119,29 +118,29 @@ static-libstdc++ link fails CI on the PR, not a user's first `cpp` file), `build
 install.sh contract: `strop-<VERSION>-<TARGET>.tar.gz` containing `<dir>/strop`), and
 later `e2e`.
 
-The compose release command takes `TARGET` exactly like gripsack's; aarch64 just runs
-the same build on the arm runner.
+The compose release command takes `TARGET` exactly like gripsack's; the only
+active release target is `x86_64-unknown-linux-musl`.
 
 ## 5. Release workflow (rootle/gripsack shape)
 
 Trigger: `push` on tags `v*`. `concurrency.group: release`, `cancel-in-progress: false`
 (two tags raced the homebrew push once — the gripsack lesson).
 
-- **build** job: matrix above; docker path on Linux, native cargo on macOS.
-- **Verify steps** (per platform, extended vs. rootle):
-  - checksum verifies, tarball extracts, `file` + `ldd`/`otool -L` gates
-    (Linux fully static; macOS system libs only).
+- **build** job: the Linux x86_64 matrix above, using Docker.
+- **Verify steps** (for the supported target):
+  - checksum verifies, tarball extracts, and `file` + `readelf` confirm a fully
+    static Linux executable.
   - `strop --version` runs.
   - **Headless grammar smoke** against the shipped tarball: parse a C++-scanner file
     (`strop --headless parse <file>` spelling decided when the binary exists; the gate
     is contractual, the spelling is not). The same check runs per-PR in the docker
     `test` stage (§4) — release verify is the belt, CI is the suspenders.
-- **release** job: assemble all three tarballs, fail unless exactly 3; crates.io publish
+- **release** job: assemble exactly one Linux x86_64 tarball; crates.io publish
   with the tag/version guard (`cargo metadata` vs `$GITHUB_REF_NAME`; strop publishes as
-  `strop-editor` per plan 0001 — the guard reads that package); homebrew formula (source,
-  from the crate) + cask (Apple Silicon binary and sha256) bump via
-  `HOMEBREW_TAP_TOKEN`; `gh release create`; best-effort site redeploy dispatch
-  (`continue-on-error`, `SITE_REPO_TOKEN`) once strop.dev has a site.
+  `strop-editor` per plan 0001 — the guard reads that package); Linux x86_64-only
+  Homebrew source formula bump via `HOMEBREW_TAP_TOKEN`, with no macOS cask;
+  `gh release create`; site redeploy dispatch using `SITE_REPO_TOKEN`.
+  Catalog, artifact and promotion controls remain required for the supported target.
 
 Publication ordering includes **versioned workspace dev-dependencies**:
 Cargo resolves them while generating the packaged lockfile even though the
@@ -159,10 +158,10 @@ already published crate versions and the qualified tag remain immutable.
 
 ## 6. Deferred
 
-- **Native Windows workspace/process targets** remain later work. The Windows GUI
-  frontend + WSL backend and its installer now have 0061/0062 contracts.
-- **Grammar smoke on macOS**: same headless parse, cheap to add; the musl static link is
-  the fragile one, so Linux gets the gate first.
+- **macOS, ARM/aarch64 and native Windows** require an explicit support expansion
+  decision and fresh native qualification. This includes the Windows GUI/WSL
+  frontend and installer designs retained in 0061/0062; they are not active
+  delivery requirements. Historical evidence is not a qualification waiver.
 - **cargo-zigbuild / pinned-glibc artifacts**: §3.
 - **dist/ crates.io binary publishing (cargo-binstall metadata)**: nice-to-have for
   faster `cargo install`; not part of v1.

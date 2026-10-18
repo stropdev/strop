@@ -637,9 +637,8 @@ impl StoreDispatch {
         token: &CancelToken,
     ) -> Result<VerifiedOutcome, FsFailure> {
         if namespace.identity == "unattested" {
-            // macOS has no admitted boot+mount witness yet. The same
-            // live worker can still verify its own capability, but a
-            // restarted one fails the ordinary incarnation guard.
+            // Missing boot/mount evidence cannot attest a restarted worker.
+            // The same live worker can still verify its own capability.
             return match self {
                 Self::Local(worker) => worker.verify(token, receipt).map_err(map_client),
                 Self::Remote(worker) => worker.verify(token, receipt).map_err(map_client),

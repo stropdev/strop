@@ -19,18 +19,24 @@ at the completing key rather than pausing for an inspection step.
 ## Install
 
 ```sh
-curl -fsSL https://strop.dev/install.sh | sh     # prebuilt static binary (linux/macOS)
-brew install stropdev/tap/strop                  # homebrew (formula; macOS cask is prebuilt)
-cargo install strop-editor --locked              # crates.io
-mise use cargo:strop-editor                      # mise
+curl -fsSL https://strop.dev/install.sh | sh     # prebuilt static Linux x86_64 binary
+brew install stropdev/tap/strop                 # Linux x86_64 source formula
+cargo install strop-editor --locked             # Linux x86_64 source build
+mise use cargo:strop-editor                     # Linux x86_64 Cargo backend
 ```
 
 Already installed? `strop update` self-updates tarball installs.
 
-Supported targets: Linux x86_64/aarch64 and macOS Apple Silicon (arm64).
-Intel macOS is no longer supported starting with 0.36.0; installers,
-self-update and remote worker admission refuse it rather than selecting
-an ARM binary.
+Current support is **Linux x86_64 only**, including a Linux x86_64 distribution
+inside WSL. Run installation and Strop inside Linux, not PowerShell or a native
+Windows terminal process. The release artifact is `x86_64-unknown-linux-musl`;
+native GNU/Linux qualification remains required alongside the static build.
+Source builds require Rust and **Zig 0.16.0**.
+
+macOS, ARM/aarch64 (including ARM WSL) and native Windows executables/installers
+are out of scope. Expansion requires an explicit support decision and fresh
+target-specific qualification; historical releases and evidence do not qualify
+new source. Linux editor, worker and protocol obligations remain unchanged.
 
 ## The grammar in one card
 
@@ -489,11 +495,11 @@ See [tracing design](plans/0029-session-tracing.md), the
 [prioritized review/roadmap](plans/0028-roadmap-and-review.md), and the
 [P1/P2 execution contract](plans/0031-p1-p2-execution.md).
 
-## Code signing policy
+## Security and platform policy
 
-Public Windows executables and installers are approved manually and signed
-through SignPath Foundation. The policy, privacy statement, build/provenance
-controls and named approver live in [SECURITY.md](SECURITY.md).
+The current Linux/WSL x86_64 support boundary, privacy policy and deferred
+Windows signing requirements live in [SECURITY.md](SECURITY.md). No native
+Windows installer or signing channel is currently offered.
 
 
 ## Links

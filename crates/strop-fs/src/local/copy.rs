@@ -159,19 +159,6 @@ pub(super) fn copy(
             }
             public_file = Some(file);
         }
-        #[cfg(target_os = "macos")]
-        {
-            rustix::fs::renameat_with(
-                &stage.directory,
-                "contents",
-                &destination_parent.file,
-                name,
-                rustix::fs::RenameFlags::NOREPLACE,
-            )
-            .map_err(rename_error)?;
-            published = true;
-            public_file = Some(stage.file.try_clone().map_err(io_failure)?);
-        }
         destination_parent.file.sync_all().map_err(io_failure)?;
         Ok(())
     })();

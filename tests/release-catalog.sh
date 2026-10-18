@@ -23,7 +23,7 @@ command -v python3 >/dev/null 2>&1 || { echo "skip: python3 required"; exit 0; }
 
 SCRIPT="$ROOT/.github/scripts/release-catalog.py"
 VERSION="9.9.9"
-TARGETS="x86_64-unknown-linux-musl aarch64-apple-darwin"
+TARGETS="x86_64-unknown-linux-musl"
 
 mkdir -p "$WORK/dist"
 for target in $TARGETS; do
@@ -63,6 +63,7 @@ import json, sys
 catalog = json.load(open(sys.argv[1], encoding="utf-8"))
 assert set(catalog) == {"schema", "product", "version", "tag",
                         "published_at", "artifacts", "worker"}, set(catalog)
+assert [a["target"] for a in catalog["artifacts"]] == ["x86_64-unknown-linux-musl"]
 worker = catalog["worker"]
 assert worker == {"protocol": 1,
                   "min_editor": "9.0.0",
@@ -106,22 +107,33 @@ cp "$WORK/sidecar-good" "$SIDECAR"
 ok "tampered sidecar rejected"
 
 # --- retired artifact targets must never enter the current catalog --------
-mkdir -p "$WORK/retired-dist"
-retired="strop-$VERSION-x86_64-apple-darwin.tar.gz"
-printf 'retired Intel macOS artifact\n' > "$WORK/retired-dist/$retired"
-python3 - "$WORK/retired-dist/$retired" <<'SIDECAR'
+for target in aarch64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc; do
+mkdir -p "$WORK/retired-dist/$target"
+retired="strop-$VERSION-$target.tar.gz"
+printf 'retired artifact %s\n' "$target" > "$WORK/retired-dist/$target/$retired"
+python3 - "$WORK/retired-dist/$target/$retired" <<'SIDECAR'
 import hashlib, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 digest = hashlib.sha256(path.read_bytes()).hexdigest()
 path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n")
 SIDECAR
-if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/retired-dist" \
+if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/retired-dist/$target" \
     --worker-protocol 1 --worker-min-editor "9.0.0" \
-    --out "$WORK/retired.json" >/dev/null 2>&1; then
-    fail "Intel macOS was advertised in the current release catalog"
+    --out "$WORK/retired-$target.json" >/dev/null 2>&1; then
+    fail "$target was advertised in the current release catalog"
 fi
-[ ! -e "$WORK/retired.json" ] || fail "retired target published a catalog"
-ok "retired Intel macOS artifact refused"
+[ ! -e "$WORK/retired-$target.json" ] || fail "retired target published a catalog"
+ok "retired $target artifact refused"
+done
+
+# An empty artifact directory cannot publish an incomplete catalog.
+mkdir -p "$WORK/empty-dist"
+if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/empty-dist" \
+    --worker-protocol 1 --worker-min-editor "9.0.0" \
+    --out "$WORK/empty.json" >/dev/null 2>&1; then
+    fail "empty release catalog accepted"
+fi
+[ ! -e "$WORK/empty.json" ] || fail "empty artifact set published a catalog"
 
 # --- verify: match passes, divergence fails ---------------------------------
 gen "$WORK/local.json"

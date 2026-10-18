@@ -6,6 +6,28 @@ Priority is impact, not module size. P0 = demonstrated data loss/security emerge
 P1 = correctness/privacy/daily editing; P2 = structural/performance quality;
 P3 = optional capability or polish. No unresolved P0 was demonstrated in this round.
 
+## Active platform policy — Linux/WSL x86_64 only
+
+The current explicit scope decision supersedes the older platform and GUI
+delivery sequencing below: support **Linux x86_64 only**, including a Linux
+x86_64 distribution inside WSL. Retain both native GNU/Linux qualification and
+the static `x86_64-unknown-linux-musl` artifact. Install/update, worker admission,
+release/catalog channels and public guidance must agree on this boundary.
+
+macOS, ARM/aarch64 (including ARM WSL), native Windows GUI/installer/signing and
+their provisioning channels are deferred, not unfinished requirements of the
+active Linux release. 0061's Windows-specific UI ledger and 0062's Windows-specific
+packaging ledger remain future design contracts. Existing Linux editor, worker,
+terminal, UI/protocol, safety, privacy, proof and assurance obligations remain;
+removing a platform does not waive any of those obligations.
+
+Re-entry requires an explicit support decision, an owned native qualification
+host and fresh exact-candidate worker/SSH/PTY/editor/LSP/retirement plus
+artifact/install evidence for each added target. Native Windows additionally
+requires the retained hardware/IME/accessibility, signing and installer gates.
+Preserve historical release notes, tags, artifacts, measurements and evidence;
+none certify this changed source. This amendment makes no qualification claim.
+
 ## Assessment
 
 The architecture has useful foundations: a pure grammar resolver, generational
@@ -166,9 +188,9 @@ is assigned. They are not unimplemented parts of the 0051 release contract.
 | D01 | Code completion is complete and publicly verified in 0.37.1, after the separately released and verified 0.36.0 worker | [0059](0059-nonblocking-code-completion.md) records all C01–C09 gates, immutable tag/run identity and independent public-installer/real-PTY proof. The 0057/0058 evidence remains immutable history, not proof of new completion code. The completion prerequisite for beginning GUI implementation is satisfied. Query suggestions remain part of 0051. |
 | D02 | Full Boolean/GitHub-style query language, semantic symbol predicates, arbitrary provider qualifiers: unnecessary for the bounded uniform filters | A concrete unmet workflow after 0051's grammar, highlighting and filter-parity corpus are stable; amend/write the query plan before implementation. Do not advertise these forms meanwhile. |
 | D03 | Clickable modeline/general mouse interaction: needs coherent terminal capture and hit-region ownership | A tested pointer contract that does not swallow unrelated mouse input. Keyboard `:tab-size`, its selector and visible effective setting ship in 0051 regardless. |
-| D04 | Theme/typography and additional provisioning remain gated; GUI is the final parity arc after architecture, core verification, native worker, completion and debugger | 0056 closes shared gaps, 0057 verifies the baseline and 0058 unifies/requalifies native services before [0061](0061-gui-windows-and-wsl.md) consumes them for Windows presentation over WSL. |
+| D04 | Native Windows GUI, theme/typography and Windows provisioning are deferred by the active platform decision above | Explicit expansion approval and fresh native qualification before [0061](0061-gui-windows-and-wsl.md)'s Windows presentation work resumes; shared Linux editor/protocol obligations remain active. |
 | D05 | Completion extensions: rich snippets, additional providers, heterogeneous semantic multicursor completion and commit-character/prediction behavior | After 0059 C01–C09, under its §12 ledger and a supported interaction/ownership contract. Do not silently approximate unsupported edits. |
-| D06 | Terminal TUI scope remains independent of its final GUI surface | [0055](0055-embedded-terminal-tui-and-gui.md) owns T01–T10 and preflight. 0058 preserves/requalifies its native worker/PTY integration; G01–G07 integrate under [0061](0061-gui-windows-and-wsl.md), with Windows presentation and WSL execution. |
+| D06 | Terminal TUI scope remains independent of the deferred Windows GUI surface | [0055](0055-embedded-terminal-tui-and-gui.md) owns T01–T10 and preflight. 0058 preserves its Linux native worker/PTY integration; Windows-specific G01–G07/0061 integration waits for an explicit expansion decision. |
 
 Earlier plans for named investigations, structural recipes, Dev Container
 lifecycle, installed remote services and GUI retain their own gates. They must
@@ -354,9 +376,9 @@ no-init process-table and worker-retirement evidence. This preserves
 the no-init functionality and its native tests; it does not waive the
 retained-platform worker gates or owned-live-worker retirement bound.
 
-Worker 0.36 platform amendment (explicit user choice): **drop Intel
-macOS support end to end**. Retain Linux x86_64/aarch64 (GNU native
-profiles and static musl artifacts) and macOS aarch64/Apple Silicon.
+Historical worker 0.36 platform amendment (superseded for active support by the
+Linux/WSL x86_64-only decision above): **drop Intel macOS support end to end**.
+That release retained Linux x86_64/aarch64 and macOS aarch64/Apple Silicon.
 Remove the Intel CI/release lane, executable/build-host selectors,
 installer/update route and Homebrew/catalog artifact requirements.
 An Intel target is unsupported, never an alias for ARM; SSH hosts
@@ -406,21 +428,20 @@ platform or evidence ledger is silently removed by inserting the worker.
   breakpoints/exceptions, inspection/console/stepping, terminals and sessions using
   the completed worker/context/lease/deployment contract. No new Python supervisor.
   `Space D` remains debugger; `Space d` remains diagnostics.
-- **GUI — [0061](0061-gui-windows-and-wsl.md), UI01–UI18.**
-  Last editor feature arc: native Windows GPUI rendering/input/IME/UIA, native
-  automation/capture, bridge/cache integration and full supported TUI parity.
-  The WSL engine owns worker-backed services. No second editor/recovery store,
-  generic repair or competing worker/presentation protocol inside a GUI component.
+- **Deferred Windows GUI — [0061](0061-gui-windows-and-wsl.md), UI01–UI18.**
+  Retain native Windows GPUI rendering/input/IME/UIA, automation/capture and
+  full parity requirements as re-entry gates, not active delivery. Linux
+  editor/worker services and shared UI/protocol boundaries remain required.
 - **Distribution — [0062](0062-distribution-and-wsl-onboarding.md), PKG01–PKG14.**
-  Extend the qualified TUI/worker artifact and install identities with signed Windows
-  installation, selected-WSL bootstrap, paired activation/rollback/uninstall and
-  truthful public presentation. Package the exact worker-capable backend rather
-  than implementing another service installer.
+  Active installation/catalog/public-channel contracts serve Linux/WSL x86_64
+  only. Signed Windows installation, selected-WSL bootstrap and paired
+  frontend/backend activation are deferred pending explicit expansion.
 
 AR01–AR16 precedes VF01–VF20; both precede WK01–WK20; all three precede C01–C09.
-Completion precedes debugger, and both precede GUI. A source defect discovered in
-the worker cutover is fixed and requalified, not hidden behind a local/remote bypass
-or silently deferred. All C/DBG/UI/PKG behavior and native evidence remain required.
+Completion precedes debugger. Windows GUI delivery is deferred by the active
+platform decision above. A source defect discovered in the worker cutover is
+fixed and requalified, not hidden behind a local/remote bypass. Linux C/DBG and
+shared UI/PKG behavior and native evidence remain required.
 
 **Verification migration is release work.** Preserve the pre-worker baseline and
 its exact artifacts as history. 0058's live ledger maps claims to unchanged with
@@ -438,9 +459,10 @@ Publication never inherits an old 0057 badge for a new worker executable.
 
 Every integration owner records source/contract/claim/artifact identities, failure/
 privacy/cancel semantics, raw evidence and status. Required scope reductions need
-explicit user approval and impact/re-entry evidence. Native GUI hardware/IME/UIA and
-Windows signing/installer acceptance remain 0061/0062 obligations, not inferred from
-headless core/worker proofs. The worker has no unsupported “fallback” write mode.
+explicit user approval and impact/re-entry evidence. Native Windows GUI
+hardware/IME/UIA and signing/installer acceptance are deferred re-entry
+obligations, never inferred from headless core/worker proofs. The worker has no
+unsupported “fallback” write mode.
 
 ## Closed in 0.14.1
 

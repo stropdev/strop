@@ -8,7 +8,7 @@ pub(crate) fn managed_root(
 ) -> Result<Option<ResourceLocation>, FsFailure> {
     let looks_like_trash = path.components().any(|component| {
         let name = component.as_os_str().as_encoded_bytes();
-        matches!(name, b"Trash" | b".Trash" | b".Trashes") || name.starts_with(b".Trash-")
+        matches!(name, b"Trash" | b".Trash") || name.starts_with(b".Trash-")
     });
     if !looks_like_trash || environment.home.is_none() {
         return Ok(None);
@@ -30,7 +30,6 @@ pub(crate) fn managed_root(
     }
 }
 
-#[cfg(target_os = "linux")]
 pub(crate) fn prepare_restore(operation: &PreparedOperation) -> Result<Option<Info>, FsFailure> {
     use rustix::fs::{Mode, OFlags};
     use std::io::Read;
@@ -175,10 +174,4 @@ pub(crate) fn prepare_restore(operation: &PreparedOperation) -> Result<Option<In
         identity,
         expected: Some(before),
     }))
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn prepare_restore(_: &PreparedOperation) -> Result<Option<Info>, FsFailure> {
-    // The macOS native Trash layout has no freedesktop .trashinfo sidecar.
-    Ok(None)
 }

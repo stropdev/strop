@@ -8,6 +8,7 @@
     "schema",
     "release",
     "plan",
+    "platform_policy",
     "boundaries",
     "baseline"
   ],
@@ -21,6 +22,14 @@
     },
     "plan": {
       "type": "string"
+    },
+    "platform_policy": {
+      "const": {
+        "host": "linux-x86_64",
+        "wsl": "linux-worker",
+        "native_targets": ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"],
+        "release_targets": ["x86_64-unknown-linux-musl"]
+      }
     },
     "boundaries": {
       "type": "array",

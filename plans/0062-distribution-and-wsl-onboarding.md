@@ -1,35 +1,45 @@
 # 0062 — Distribution: one release, clean Windows onboarding, preserved TUI
 
-Status: requested distribution/release handoff; no installer, publication or host
-configuration change is performed by this research. The user has no strong channel
-preference: make installation and updates easy and truthful instead of accumulating
-package formats.
+Status: **active distribution is Linux/WSL x86_64 only** under
+[0028](0028-roadmap-and-review.md). macOS, ARM/aarch64 and native Windows
+installer/signing/onboarding channels are deferred pending an explicit expansion
+decision and fresh target-specific qualification. No publication or qualification
+is claimed by this amendment.
 
-This extends [0002](0002-build-and-release.md) and serves the native Windows GUI +
-WSL execution design in [0061](0061-gui-windows-and-wsl.md). TUI/static/crates.io
-contracts remain intact. GUI packaging does not authorize a native Windows
-filesystem, Windows LSP/DAP or ConPTY implementation.
+This extends [0002](0002-build-and-release.md). The Windows-specific design,
+research and evidence below are retained for possible re-entry under
+[0061](0061-gui-windows-and-wsl.md), not active delivery authority. Shared Linux
+TUI/static/crates.io, editor, worker, protocol, install ownership, catalog,
+privacy and assurance contracts remain intact.
 
 **Prerequisite ownership:** [0056](0056-architecture-prerequisites.md) AR11–AR12
 close existing TUI install/update identity, transaction and release-catalog/site
-drift first; AR09–AR10 deliver the non-graphical backend. This plan extends those
-released foundations for Windows installation, WSL onboarding and GUI channels,
-not another implementation of the generic repairs. PKG01–PKG14 behavior remains.
-The separate [0057](0057-core-verification-and-assurance.md) VF01–VF20 release
-qualifies the pre-worker core; [0058](0058-unified-native-worker.md) WK01–WK20 then
-delivers and requalifies shared native execution/deployment. This plan extends both
-with actual Windows/WSL installation effects, not an inherited proof badge.
+drift first; AR09–AR10 deliver the non-graphical backend. Their Linux guarantees
+remain active. Windows-specific PKG01–PKG14 requirements below are deferred
+re-entry gates, not current release requirements. The separate
+[0057](0057-core-verification-and-assurance.md) and
+[0058](0058-unified-native-worker.md) evidence remains bound to its original
+source; changed Linux source still requires its own full qualification.
 
 ## 1. Distribution decision
 
-**One authoritative tagged GitHub release, one generated release catalog, two
-product entry paths:**
+**One authoritative tagged GitHub release and one generated release catalog
+for Linux x86_64, including Linux x86_64 distributions inside WSL.** Publish the
+`x86_64-unknown-linux-musl` tarball and matching strop.dev installer; Cargo,
+mise's Cargo backend and the Linux x86_64 Homebrew source formula share that
+support boundary. No macOS cask or native Windows installer is active.
 
-1. **Existing TUI:** verified Linux/macOS tarballs, strop.dev installer and the
-   existing Cargo/Homebrew/mise routes. Keep these first-class.
-2. **Windows GUI:** a signed, per-user Windows installer linked prominently from
-   strop.dev. It installs the native frontend/launcher; first use selects WSL and
-   installs a matching Linux backend privately with explicit consent.
+Users run installation and the editor inside Linux; this does not provision WSL
+or install a Windows launcher. GNU/Linux native and static musl qualification,
+exact-source artifact identity and truthful public channel availability remain
+required. ARM WSL is not an admitted target.
+
+### Deferred Windows distribution design
+
+The remaining Windows-specific installer, signing, onboarding and channel
+requirements in this document apply only after explicit expansion approval.
+The retained design is a signed per-user frontend/launcher and an explicitly
+consented, matching private Linux backend. It is not currently offered.
 
 Use **NSIS in standard/current-user mode** for the initial Windows installer.
 It supports a simple unprivileged install/uninstall story and winget's known
@@ -49,7 +59,7 @@ privilege is required for ordinary Strop installation, updates or workspace acce
 Installing WSL itself can require explicit Microsoft-supported elevation/reboot;
 that is a visible prerequisite, not something hidden in Strop's installer.
 
-## 2. Required delivery ledger
+## 2. Deferred Windows delivery ledger
 
 | ID | Required delivery |
 | --- | --- |
@@ -68,11 +78,12 @@ that is a visible prerequisite, not something hidden in Strop's installer.
 | PKG13 | License/dependency/runtime/SBOM policy preserving publishable TUI crates and no-OpenSSL/static guarantees. |
 | PKG14 | Clean-profile installation/update/rollback/uninstall evidence, integration docs/changelog and no lingering prototype/install scaffolding. |
 
-All PKG requirements are mandatory within their stated envelope. PKG12 requires
-readiness/testing, not pretending the project controls external review time.
-Additional channels and platforms in §13 are explicitly later. A release owner
-records evidence/status per ID; silently dropping a required path needs user
-approval and a roadmap entry.
+All Windows-specific PKG requirements become mandatory within their stated
+envelope only after explicit expansion approval. Shared Linux installation,
+catalog, artifact identity, ownership and evidence requirements remain active.
+PKG12 would require readiness/testing, not pretending the project controls
+external review time. A release owner records evidence/status per applicable ID;
+historical evidence is never stamped as current qualification.
 
 ## 3. Pre-prerequisite evidence and foundations to consume
 

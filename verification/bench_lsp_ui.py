@@ -92,6 +92,9 @@ def call_site(peer: Peer) -> None:
 
 
 def benchmark(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
+    native_profile()
+    if profile not in ("release-musl-stripped", "release-gnu-native"):
+        raise ValueError("benchmark requires a Linux x86_64 release profile")
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("--binary must be the native executable release artifact")
     if not shutil.which("rust-analyzer"):
@@ -243,8 +246,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--warmup", type=int, default=8)
     parser.add_argument("--iterations", type=int, default=64)
-    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native",
-                                             "release-macos-native"))
+    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native"))
     args = parser.parse_args()
     if args.warmup < 0 or args.iterations < 1:
         parser.error("iterations must be positive and warmup nonnegative")

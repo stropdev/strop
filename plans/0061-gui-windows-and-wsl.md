@@ -1,17 +1,24 @@
 # 0061 — Final GUI arc: native Windows presentation, WSL editor engine
 
-Status: **implementation started after publicly verified worker 0.36.0 and
-completion 0.37.1 releases; no GUI release or parity claim yet**. The user
-explicitly moved GUI work ahead of the debugger experience; this reorders
-implementation, not an assertion that debugger UI has shipped. UI01–UI18
-remain mandatory, including 0060 for UI10 and 0062 for UI17.
+Status: **native Windows GUI delivery deferred by the active Linux/WSL
+x86_64-only policy** in [0028](0028-roadmap-and-review.md). macOS, ARM/aarch64
+and native Windows expansion require an explicit decision and fresh native
+qualification. No GUI release or parity claim is made.
+
+The implementation history, research and evidence below are retained as history
+and future re-entry requirements, not active Windows delivery authority or proof
+for changed source. The former Windows frontend/WSL bootstrap implementation is
+retired from active product paths. Shared Linux editor, worker, UI-stdio protocol,
+terminal, safety and assurance contracts remain required; this deferral does not
+remove them. UI01–UI18's Windows-specific criteria apply only if expansion is
+explicitly approved, including 0060 for UI10 and 0062 for UI17.
 
 This refines [0038](0038-remote-experience-and-responsiveness.md)'s GPUI direction
 and [0055](0055-embedded-terminal-tui-and-gui.md)'s later GUI terminal milestone.
 [0060](0060-debugger-workflow-and-architecture.md) owns debugger semantics;
 [0062](0062-distribution-and-wsl-onboarding.md) owns packaging and onboarding.
 
-**Entry gate:** [0056](0056-architecture-prerequisites.md) AR01–AR16,
+**Deferred Windows re-entry gate (historical sequence):** [0056](0056-architecture-prerequisites.md) AR01–AR16,
 [0057](0057-core-verification-and-assurance.md) VF01–VF20,
 [0058](0058-unified-native-worker.md) WK01–WK20 and 0059 completion
 are complete first. The user's 2026-09-26 priority change allows
@@ -21,12 +28,13 @@ debugger work may land during the GUI arc, but an incomplete debugger
 cannot be represented as completed parity without explicit approval
 and a roadmap impact/re-entry record.
 
-## 1. Decision: keep GPUI, keep all workspace execution in WSL
+## 1. Deferred design: GPUI Windows presentation over a WSL engine
 
-**Ship a native Windows GPUI frontend backed by the existing Linux engine in a
-selected WSL distribution.** Windows owns windows, GPU drawing, fonts, native
-input/IME, clipboard and accessibility. WSL owns documents, grammar, syntax/LSP,
-Git, DAP, filesystem operations, SSH/container connections and PTYs.
+The retained design for a future approved expansion is a native Windows GPUI
+frontend backed by the existing Linux engine in a selected WSL distribution.
+Windows would own windows, GPU drawing, fonts, native input/IME, clipboard and
+accessibility; WSL would own documents, grammar, syntax/LSP, Git, DAP, filesystem
+operations, SSH/container connections and PTYs. This is not a current ship decision.
 
 This is not a native Windows filesystem/process port. The user's projects remain
 under Linux paths such as `/home/user/project`; native `C:\` workspaces, Windows
@@ -34,11 +42,12 @@ LSP/debugger processes and ConPTY are separate later work. Access through `/mnt/
 is initially an explicitly limited Linux-side capability (§8), not a shortcut to
 claiming full Windows filesystem semantics.
 
-The versioned engine/view/input protocol and non-graphical backend are delivered
-by 0056. This release adds the native Windows frontend and its transport/window
-integration over that proven boundary. It keeps the editor/services in WSL without
-forking semantics; missing generic contracts are prerequisite failures, not work
-to hide inside a GUI callback.
+The versioned engine/view/input protocol and non-graphical backend delivered by
+0056 remain Linux obligations. A future Windows release would add frontend and
+transport/window integration over that boundary without forking editor/services
+semantics. Missing generic contracts remain prerequisite failures, not work to
+hide inside a GUI callback. Subsequent Windows-specific imperatives in this
+document describe that deferred design, not active platform support.
 
 Use `gpui` + the Windows platform implementation through `gpui_platform`, pinned
 together to a tested upstream revision. Do not import Zed's editor/workspace/debugger

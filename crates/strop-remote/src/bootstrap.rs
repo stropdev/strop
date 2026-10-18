@@ -67,8 +67,10 @@ impl EndpointFacts {
     /// still the honest identity of the only local bytes we may
     /// upload. Different arch/OS is never a same-binary deploy.
     pub fn local_binary_target(&self) -> Option<&'static str> {
-        (self.system == local_system() && self.machine == local_machine())
-            .then_some(strop_worker_protocol::TARGET_TRIPLE)
+        (local_target().is_some()
+            && self.system == local_system()
+            && target_for(&self.system, &self.machine) == local_target())
+        .then_some(strop_worker_protocol::TARGET_TRIPLE)
     }
 }
 
@@ -115,8 +117,6 @@ pub fn quote(word: &str) -> String {
 pub fn target_for(system: &str, machine: &str) -> Option<&'static str> {
     match (system, machine) {
         ("Linux", "x86_64" | "amd64") => Some("x86_64-unknown-linux-musl"),
-        ("Linux", "aarch64" | "arm64") => Some("aarch64-unknown-linux-musl"),
-        ("Darwin", "arm64" | "aarch64") => Some("aarch64-apple-darwin"),
         _ => None,
     }
 }
@@ -131,18 +131,14 @@ pub fn local_target() -> Option<&'static str> {
 const fn local_system() -> &'static str {
     #[cfg(target_os = "linux")]
     return "Linux";
-    #[cfg(target_os = "macos")]
-    return "Darwin";
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(target_os = "linux"))]
     return "other";
 }
 
 const fn local_machine() -> &'static str {
     #[cfg(target_arch = "x86_64")]
     return "x86_64";
-    #[cfg(target_arch = "aarch64")]
-    return "aarch64";
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    #[cfg(not(target_arch = "x86_64"))]
     return "other";
 }
 
@@ -288,12 +284,31 @@ mod tests {
             Some("x86_64-unknown-linux-musl")
         );
         assert_eq!(
-            target_for("Linux", "aarch64"),
-            Some("aarch64-unknown-linux-musl")
+            target_for("Linux", "amd64"),
+            Some("x86_64-unknown-linux-musl")
         );
-        assert_eq!(target_for("Darwin", "arm64"), Some("aarch64-apple-darwin"));
+        assert_eq!(target_for("Linux", "aarch64"), None);
+        assert_eq!(target_for("Linux", "arm64"), None);
+        assert_eq!(target_for("Darwin", "arm64"), None);
+        assert_eq!(target_for("Darwin", "aarch64"), None);
+        assert_eq!(target_for("Windows_NT", "x86_64"), None);
         assert_eq!(target_for("FreeBSD", "x86_64"), None);
         assert_eq!(target_for("Linux", "riscv64"), None);
+    }
+
+    #[test]
+    fn same_binary_deployment_requires_an_active_local_and_remote_target() {
+        for machine in ["x86_64", "amd64"] {
+            let reply = format!("1000\nLinux\n{machine}\n/home/alice/.cache\n");
+            let mut facts = parse_reply(reply.as_bytes()).unwrap();
+            let expected = cfg!(all(target_os = "linux", target_arch = "x86_64"))
+                .then_some(strop_worker_protocol::TARGET_TRIPLE);
+            assert_eq!(facts.local_binary_target(), expected);
+            facts.machine = "aarch64".into();
+            assert_eq!(facts.local_binary_target(), None);
+            facts.system = "Darwin".into();
+            assert_eq!(facts.local_binary_target(), None);
+        }
     }
 
     #[test]
@@ -323,13 +338,22 @@ mod tests {
     }
 
     #[test]
-    fn intel_macos_discovery_refuses_instead_of_selecting_arm() {
-        for machine in ["x86_64", "amd64"] {
-            let reply = format!("501\nDarwin\n{machine}\n/Users/alice/.cache\n");
+    fn unsupported_discovery_refuses_before_worker_deployment() {
+        for (system, machine) in [
+            ("Darwin", "x86_64"),
+            ("Darwin", "amd64"),
+            ("Darwin", "arm64"),
+            ("Darwin", "aarch64"),
+            ("Linux", "aarch64"),
+            ("Linux", "arm64"),
+            ("Linux", "i686"),
+            ("Windows_NT", "x86_64"),
+        ] {
+            let reply = format!("1000\n{system}\n{machine}\n/home/alice/.cache\n");
             assert!(matches!(
                 parse_reply(reply.as_bytes()),
-                Err(BootstrapError::UnsupportedTarget { system, machine: rejected })
-                    if system == "Darwin" && rejected == machine
+                Err(BootstrapError::UnsupportedTarget { system: rejected_system, machine: rejected })
+                    if rejected_system == system && rejected == machine
             ));
         }
     }

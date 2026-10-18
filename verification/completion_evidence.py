@@ -10,7 +10,13 @@ from pathlib import Path
 from bench_worker import percentiles
 
 ROOT = Path(__file__).resolve().parent.parent
-REPORT = "verification/measurements/0059-linux-x86-completion.json"
+PLATFORM_POLICY = {
+    "host": "linux-x86_64",
+    "wsl": "linux-worker",
+    "native_targets": ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"],
+    "release_targets": ["x86_64-unknown-linux-musl"],
+}
+REPORT = "verification/measurements/linux-x86_64-completion.json"
 BEFORE = "verification/measurements/0059-linux-x86-typing-before.json"
 BEFORE_SHA256 = "7f16ce60bcbf26e507718d694457b448b483ef26baf73757b1a76594ac561829"
 METHODS = (
@@ -72,8 +78,10 @@ def validate_report(report: dict, root: Path = ROOT) -> None:
             or report.get("binary_bytes", 0) <= 0):
         raise SystemExit("completion observations do not bind the current source, methods and artifact")
     profile = report["profile"]
-    if profile not in ("release-musl-stripped", "release-gnu-native", "release-macos-native"):
-        raise SystemExit("development observations cannot qualify release performance")
+    if profile not in ("release-musl-stripped", "release-gnu-native"):
+        raise SystemExit("only Linux x86_64 release profiles qualify release performance")
+    if report["platform"].get("machine") != "x86_64":
+        raise SystemExit("completion observations require Linux/WSL x86_64")
     typing = report["typing"]
     if (typing["binary_sha256"] != report["binary_sha256"]
             or typing["binary_version"] != version or typing["binary_bytes"] != report["binary_bytes"]
@@ -100,7 +108,7 @@ def validate_report(report: dict, root: Path = ROOT) -> None:
         if (case["publication_charged_high_water_bytes"] > 24 * 1024 * 1024
                 or (threads is not None and threads > 1)
                 or case["owned_worker_count"] != 1
-                or (profile != "release-macos-native" and (threads is None or case["owned_workers_exited"] != 1))):
+                or threads is None or case["owned_workers_exited"] != 1):
             raise SystemExit(f"{name}: completion/native ownership bounds failed")
         if "wire" in case and case["wire"]["counts"]["physical_high_water"] > 2:
             raise SystemExit(f"{name}: physical completion ownership exceeded two sent requests")

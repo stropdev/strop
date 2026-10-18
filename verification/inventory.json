@@ -2,6 +2,12 @@
   "schema": 2,
   "release": "0059",
   "plan": "plans/0059-nonblocking-code-completion.md",
+  "platform_policy": {
+    "host": "linux-x86_64",
+    "wsl": "linux-worker",
+    "native_targets": ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"],
+    "release_targets": ["x86_64-unknown-linux-musl"]
+  },
   "boundaries": [
     {
       "id": "mutation-gateway",
@@ -1290,7 +1296,7 @@
         },
         {
           "id": "SSH-WORKER-DEPLOY",
-          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated peers; each fixture stops and reaps both children. The catalog names the authenticated endpoint target, whose supplied release bytes the live probe attests. Linux Native Notify requires a relayed hint; a worker advertising Unsupported must answer the exact typed Notify refusal (as arm64 macOS did on PR run 36262445129). This does not claim macOS native push coverage or complete platform qualification. User-approved 0.36 scope retains Linux x86_64/aarch64 and Apple Silicon workers; Intel Darwin x86_64/amd64 discovery returns UnsupportedTarget before deployment, with read-only SFTP remaining available.",
+          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets, advertised posix-rename only, typed status failures, poisoned close and bounded read-back. Real-OpenSSH deploy/probe/actual-worker handshake/read/write parity, live cache leases and fresh reconnect registration, consent, SFTP-only refusal and interrupted-deploy cleanliness remain required against owned TCP loopback sshd fixtures with both children stopped and reaped. Catalog target and live release bytes must match the authenticated endpoint. Linux Native Notify requires a relayed hint; Unsupported must answer the typed refusal. Only Linux x86_64/amd64 discovery admits worker deployment; ARM, Darwin and native Windows refuse with read-only SFTP still available. Earlier macOS/ARM observations remain historical.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1348,7 +1354,8 @@
               "tests": [
                 "target_mapping_names_exact_artifact_triples",
                 "discovery_reply_decoding_is_strict",
-                "intel_macos_discovery_refuses_instead_of_selecting_arm"
+                "unsupported_discovery_refuses_before_worker_deployment",
+                "same_binary_deployment_requires_an_active_local_and_remote_target"
               ]
             }
           ],
@@ -1703,12 +1710,11 @@
       "kind": "lifecycle",
       "title": "Worker-owned native process groups, framing and leased service settlement (VF08/VF11/WK10–WK13)",
       "promise": "Native argv/cwd/env reach only the admitted namespace; process groups are revoked TERM/grace/KILL before reaping, output remains data not control, exit follows written stream terminal markers, and stale exec/PTY controls never inherit a new worker session.",
-      "exclusions": "Kernel process-group signaling and ssh/docker EOF delivery are trusted; escaped setsid descendants, partitions and a killed supervisor cannot promise remote cleanup. macOS libproc enumeration of both live and zombie group members is an explicit system trust premise; a refused/truncated result cannot authorize a clean exit. No public nonce is authentication; the legacy Python status protocol is removed.",
+      "exclusions": "Linux kernel process-group signaling and ssh/docker EOF delivery are trusted; escaped setsid descendants, partitions and a killed supervisor cannot promise remote cleanup. No public nonce is authentication; the legacy Python status protocol is removed. Historical macOS supervisor evidence is not an active platform obligation.",
       "authoritative_state": "worker process/pipe/child/lease tables keyed to the admitted client session and exec id; exit becomes typed control only after output writers settle",
       "trusted": [
         "native fork/setsid/waitid/killpg kernel semantics",
         "OpenSSH/Docker transport and worker codec isolation",
-        "macOS libproc group-member enumeration after an attested zombie-only EPERM",
         "same-principal endpoint trust limit"
       ],
       "files": [
@@ -1728,7 +1734,7 @@
       "claims": [
         {
           "id": "EXEC-LEASE",
-          "statement": "Native worker process-group lifecycle relays attested exit/signal as typed data, keeps stdout/stderr separate, kills inherited descendants before reaping and bounds container group cleanup. XNU's zombie-only kill(-PGID) EPERM is accepted only when a second non-reaping wait attests the leader's exit and libproc lists exactly that unreaped leader; live/inaccessible members or a refused/truncated listing remain failures, with the actual supervisor diagnostic emitted rather than swallowed. This unchanged macOS branch passed native Apple Silicon execution in run 36294464914. Intel macOS was explicitly retired by the user; final platform qualification covers only retained targets.",
+          "statement": "Linux/WSL x86_64 native worker process-group lifecycle must relay attested exit/signal as typed data, keep stdout/stderr separate, kill inherited descendants before reaping and bound container group cleanup. Actual supervisor diagnostics remain visible. The historical XNU/libproc implementation and Apple Silicon execution do not qualify the current Linux-only source.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2257,7 +2263,7 @@
       "kind": "authority",
       "title": "Install/update transaction and release catalog (AR11/AR12)",
       "promise": "Installation is a staged, verified transaction: bytes are digest-verified before activation, failure or interruption preserves the previous install and leaves no partial state, a receipt records channel identity and previous_version, a catalog without this target refuses, and the release catalog is the single source of version/artifact/digest facts.",
-      "exclusions": "Windows installer packaging is 0062 future work. Checksums, TLS and publisher signatures keep their distinct trust meanings; this boundary does not claim signature verification of the catalog itself.",
+      "exclusions": "ARM, macOS and native Windows installation are outside active Linux/WSL x86_64 scope. Checksums, TLS and publisher signatures keep their distinct trust meanings; this boundary does not claim signature verification of the catalog itself.",
       "authoritative_state": "the install receipt beside the binary plus the immutable release catalog generated at tag time",
       "trusted": [
         "TLS to the release host for download integrity in transit",
@@ -2276,7 +2282,7 @@
       "claims": [
         {
           "id": "INS-IDENTITY",
-          "statement": "Channel identity comes from the receipt, never path substrings; version ordering is total; a missing receipt is unknown; the catalog resolves artifacts by target and malformed catalogs are rejected; the target triple set covers the release matrix. Intel macOS has no prebuilt/update target; Linux x86_64/aarch64 and Apple Silicon resolve exact retained artifacts, never an architecture fallback.",
+          "statement": "Channel identity comes from the receipt, never path substrings; version ordering is total; a missing receipt is unknown; the catalog resolves artifacts by target and malformed catalogs are rejected. Only Linux/WSL x86_64 resolves the x86_64-unknown-linux-musl release artifact; ARM, macOS and native Windows refuse, never redirect to another architecture.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2285,7 +2291,7 @@
               "gate": "test",
               "tests": [
                 "version_ordering",
-                "update_targets_retain_linux_and_apple_silicon_but_refuse_intel_macos",
+                "update_targets_admit_only_linux_x86_64",
                 "receipt_roundtrip",
                 "missing_receipt_is_unknown",
                 "channel_identity_comes_from_the_receipt",
@@ -2302,7 +2308,7 @@
         },
         {
           "id": "INS-TRANSACTION",
-          "statement": "Shell-level hermetic fixtures: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture including the WK05 worker-manifest wire shape (protocol, min_editor, targets, byte sizes), invalid worker-facts rejection and worker-divergence detection in public verification. Intel macOS x86_64/amd64 installer and Zig bootstrap invocations fail before any download or destination creation; unsupported Intel artifacts cannot generate a current catalog.",
+          "statement": "Shell-level hermetic fixtures must retain interrupted-install rollback, digest-mismatch and missing-target refusal, receipts with previous_version, exact catalog worker-manifest shape (protocol, min_editor, targets, byte sizes), invalid worker-facts rejection and worker-divergence detection. Installer, Zig bootstrap and current catalog generation admit only Linux/WSL x86_64; unsupported hosts must refuse before download or destination creation. Historical catalogs remain readable as historical data.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2324,7 +2330,7 @@
         },
         {
           "id": "REL-CATALOG",
-          "statement": "The release workflow generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties plus a headless parse and worker-mode (`strop --worker-stdio`) smoke per artifact, attests build provenance for every tarball, and records the WK05 worker compatibility manifest extracted from the pinned source constants so editors make deploy-vs-fallback decisions from catalog facts alone. The user-approved matrix is exactly three artifacts: x86_64/aarch64 Linux musl and aarch64 Apple Silicon macOS. The generator rejects unsupported targets, and Homebrew cask/formula macOS support requires ARM.",
+          "statement": "The release workflow must generate the catalog from exact tagged dist digests, verify static/no-NEEDED properties plus a headless parse and worker-mode (`strop --worker-stdio`) smoke for the artifact, attest build provenance, and record the WK05 worker compatibility manifest extracted from pinned source constants. The active release matrix is exactly x86_64-unknown-linux-musl for Linux/WSL x86_64. GNU x86_64 remains a required native qualification profile, not another release artifact. Catalog generation rejects other current targets; Homebrew publication is the Linux x86_64 formula only, with no macOS cask or native Windows publication.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2341,7 +2347,7 @@
         },
         {
           "id": "REL-ASSURANCE-GATES",
-          "statement": "PR and tag require locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native/Loom/calibrated mutants, selected-context container journeys, both GNU Linux architectures and native Apple Silicon Store/worker/PTY/TUI/product/LSP/transfer execution. Linux runners also execute a same-source static musl worker over authenticated SSH. The user explicitly removed Intel macOS from supported build, install/update, remote worker, catalog, Homebrew and native CI/release scope; no retained gate is waived.",
+          "statement": "PR and tag require locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native/Loom/calibrated mutants, selected-context container journeys, install/update transaction and catalog fixtures, and GNU Linux x86_64 Store/worker/PTY/TUI/product/LSP/transfer/completion execution. Linux/WSL x86_64 also requires a same-source static musl worker over authenticated SSH and musl completion qualification. ARM, macOS and native Windows are outside active scope; no retained Linux editor, worker, protocol, formal proof, calibration or service gate is waived. Historical 0057/0058 and 0.43.1 results do not qualify this changed source.",
           "status": "specified",
           "evidence": [
             {
@@ -2363,7 +2369,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "Historical 0058 release evidence, not a current-source 0059 timing claim: User-approved supported native profiles are GNU Linux x86_64/aarch64 and Apple Silicon; both Linux musl workers also execute over real authenticated SSH. All three retained native jobs passed in run 36301459526 from runtime source bf978405a38bcac1895f88d3c93600caa45550be. Each produced 64 matched Hello/Health/semantic-UI/physical-TUI/loaded-terminal, real rust-analyzer and 17.28 MiB transfer observations; every candidate retained one worker after open and zero after all 64 editor exits. Full raw reports bind each native executable digest, benchmark source, workspace/lock, pinned compiler selector, native workflow and 67 worker source hashes. Current installers, updater, bootstrap, source-build guards, Homebrew and catalog refuse retired Intel macOS rather than downloading ARM. No Intel qualification is required.",
+          "statement": "Historical 0058 release evidence only: GNU Linux x86_64/aarch64 and Apple Silicon jobs passed in run 36301459526 from runtime source bf978405a38bcac1895f88d3c93600caa45550be, with 64 matched Hello/Health/semantic-UI/physical-TUI/loaded-terminal, rust-analyzer and 17.28 MiB transfer observations and zero workers after each candidate editor exit. The archived raw reports retain executable, method, workspace/lock, compiler, workflow and worker-source identities. Neither these results nor released 0.43.1 evidence qualify the changed current source. Active qualification retains Linux/WSL x86_64 GNU and musl only, with every Linux journey rerun; archived ARM/macOS data adds no current platform duty.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2551,7 +2557,7 @@
         },
         {
           "id": "TERM-ALT-INPUT",
-          "statement": "Crossterm presents logical Alt as a modifier. The Ghostty bridge sets option-as-alt after per-key terminal-mode refresh because Ghostty resets its macOS default to Option text translation; the Linux VT encoder already emitted ESC+x and an actual separate Escape then x. Native macOS Intel/arm64 run 36256978392 reproduced the missing prefix before this bridge repair; final retained-target native TUI must still pass its exact child-byte assertion before this can claim cross-platform execution.",
+          "statement": "Crossterm presents logical Alt as a modifier. The Linux VT encoder must emit ESC+x for Alt+x and preserve an actual separate Escape then x; the real Linux/WSL x86_64 TUI journey must retain its exact child-byte assertion. Historical macOS Ghostty bridge repair and Intel/arm64 observations remain historical evidence, not an active platform requirement.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -4826,7 +4832,7 @@
             },
             {
               "kind": "measurement",
-              "path": "verification/measurements/0059-linux-x86-completion.json",
+              "path": "verification/measurements/linux-x86_64-completion.json",
               "gate": "benchmark"
             }
           ],
@@ -5037,7 +5043,7 @@
             },
             {
               "kind": "measurement",
-              "path": "verification/measurements/0059-linux-x86-completion.json",
+              "path": "verification/measurements/linux-x86_64-completion.json",
               "gate": "benchmark"
             }
           ],
@@ -5093,7 +5099,7 @@
             },
             {
               "kind": "measurement",
-              "path": "verification/measurements/0059-linux-x86-completion.json",
+              "path": "verification/measurements/linux-x86_64-completion.json",
               "gate": "benchmark"
             },
             {

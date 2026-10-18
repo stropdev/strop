@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure one-key input to the real framed UI view on Linux or macOS.
+"""Measure one-key input to the real framed UI view on Linux/WSL x86_64.
 
 The matching release binary serves --ui-stdio; an admitted action opens a
 10k-line file through the local worker, then individual committed text inputs
@@ -198,10 +198,9 @@ def failed_worker_census(editor_pid: int) -> list[dict]:
 
 
 def measure(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
-    if platform.system() not in ("Linux", "Darwin"):
-        raise ValueError("worker process evidence requires Linux /proc or macOS ps")
-    if (platform.system() == "Darwin") != (profile == "release-macos-native"):
-        raise ValueError("benchmark profile does not match the native operating system")
+    native_profile()
+    if profile not in ("release-musl-stripped", "release-gnu-native"):
+        raise ValueError("benchmark requires a Linux x86_64 release profile")
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("--binary must be the executable release artifact")
     identity = subprocess.check_output([str(binary), "--version"], text=True).strip().split()
@@ -341,8 +340,7 @@ def main() -> None:
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--warmup", type=int, default=8)
     parser.add_argument("--iterations", type=int, default=64)
-    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native",
-                                             "release-macos-native"))
+    parser.add_argument("--profile", choices=("release-musl-stripped", "release-gnu-native"))
     args = parser.parse_args()
     if args.warmup < 0 or args.iterations < 1:
         parser.error("warmup must be nonnegative and iterations positive")

@@ -1,5 +1,5 @@
-//! Native local Trash storage. Linux follows the freedesktop layout; macOS uses
-//! .Trash/.Trashes. Receipts retain the real recovery path; no unlink fallback.
+//! Native local Trash storage using the Linux freedesktop layout.
+//! Receipts retain the real recovery path; no unlink fallback.
 mod restore;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
@@ -28,9 +28,6 @@ pub(crate) fn root_for(
                 "native Trash needs a captured absolute home directory",
             )
         })?;
-    #[cfg(target_os = "macos")]
-    let home_trash = home.join(".Trash");
-    #[cfg(not(target_os = "macos"))]
     let home_trash = environment
         .data_home
         .as_ref()
@@ -52,11 +49,6 @@ pub(crate) fn root_for(
             }
             mount = parent.to_path_buf();
         }
-        #[cfg(target_os = "macos")]
-        let root = mount
-            .join(".Trashes")
-            .join(rustix::process::geteuid().as_raw().to_string());
-        #[cfg(not(target_os = "macos"))]
         let root = {
             let shared = mount.join(".Trash");
             if valid_shared(&shared)? {
@@ -257,12 +249,7 @@ fn execute_with(
         }
         (root, warnings)
     };
-    #[cfg(not(target_os = "linux"))]
-    let warnings: Vec<String> = Vec::new();
     private_directory(&root.path)?;
-    #[cfg(target_os = "macos")]
-    let files = root.path.clone();
-    #[cfg(not(target_os = "macos"))]
     let files = root.path.join("files");
     private_directory(&files)?;
     let destination_parent = Parent::open(&files)?;
@@ -287,8 +274,6 @@ fn execute_with(
     let recovery = ResourceLocation::local(files.join(&name));
     #[cfg(target_os = "linux")]
     let mut info = Some(Info::create(&root.path, &name)?);
-    #[cfg(not(target_os = "linux"))]
-    let info: Option<Info> = None;
     let mut attempted = false;
     let movement = (|| -> Result<(), FsFailure> {
         #[cfg(target_os = "linux")]

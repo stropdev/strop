@@ -4,7 +4,7 @@
 This is a scoped local IPC measurement, not editor input→render,
 an LSP request, SSH/container deployment, or terminal throughput. The
 worker is one real process; no Python code is on its serving path. Run
-with the named release binary/profile on each native Linux/macOS host.
+with the named release binary/profile on a native Linux/WSL x86_64 host.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from bench_worker import cpu_model, frame, percentiles, process_state
+from bench_worker import cpu_model, frame, native_profile, percentiles, process_state
 
 
 def encoded(message: dict) -> bytes:
@@ -45,8 +45,8 @@ def roundtrip(child: subprocess.Popen, session: dict, request_id: int) -> tuple[
 
 
 def measure(args: argparse.Namespace) -> dict:
-    if platform.system() not in ("Linux", "Darwin"):
-        raise ValueError("warm worker process measurements require Linux /proc or macOS ps")
+    if args.profile != native_profile(args.target):
+        raise ValueError("worker profile must match its Linux x86_64 target")
     binary = Path(args.binary)
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("--binary must name an executable release artifact")

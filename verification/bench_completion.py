@@ -14,7 +14,7 @@ import platform
 import time
 from pathlib import Path
 
-from bench_worker import cpu_model, percentiles
+from bench_worker import cpu_model, native_profile, percentiles
 from completion_driver import CompletionEditor, control_key, key
 
 
@@ -206,6 +206,9 @@ def acceptance_case(binary: Path) -> dict:
 
 
 def measure(binary: Path, profile: str, iterations: int = 32, case: str = "all") -> dict:
+    native_profile()
+    if profile not in ("development", "release-musl-stripped", "release-gnu-native"):
+        raise ValueError("completion benchmark requires a Linux x86_64 profile")
     cases = {}
     if case in ("all", "words"):
         small = "response result reusable return_value\n\nr\n"
@@ -235,7 +238,7 @@ def measure(binary: Path, profile: str, iterations: int = 32, case: str = "all")
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
-    parser.add_argument("--profile", choices=("development", "release-musl-stripped", "release-gnu-native", "release-macos-native"), required=True)
+    parser.add_argument("--profile", choices=("development", "release-musl-stripped", "release-gnu-native"), required=True)
     parser.add_argument("--iterations", type=int, default=32)
     parser.add_argument("--case", choices=("all", "words", "slow", "resolve", "oversized", "reopen", "acceptance"), default="all")
     args = parser.parse_args()

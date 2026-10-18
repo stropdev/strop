@@ -44,7 +44,7 @@ fn namespace_identity() -> NamespaceIdentity {
 }
 
 fn capabilities() -> Capabilities {
-    let native_fs = cfg!(any(target_os = "linux", target_os = "macos"));
+    let native_fs = cfg!(target_os = "linux");
     Capabilities {
         observe: true,
         list: true,

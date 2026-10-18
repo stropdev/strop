@@ -157,9 +157,9 @@ impl RemoteWorkers {
                 ),
             ));
         };
-        // A same-target install supplies its own executable; a foreign
-        // endpoint needs the explicit administrator-provisioned artifact.
-        // Either path still binds exact bytes and target at activation.
+        // An admitted Linux x86_64 endpoint uses this install's executable
+        // or an explicit verified worker override. Activation still binds
+        // exact bytes and the build target.
         let binary = select_binary(target)?;
         let catalog = catalog_for(target, &binary)?;
         let provider =

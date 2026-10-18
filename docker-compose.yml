@@ -6,13 +6,16 @@
 #   docker compose run --build --rm bench     # the perf gate suite (0025)
 
 services:
+  # Linux/WSL x86_64 is the only active build and release platform.
+  # Explicit platform selection also keeps host defaults from relabelling ARM binaries.
   test:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: test
-    # The gate runs at image-build time (RUN steps); if the image
-    # exists, the gate passed. The command is just a confirmation.
+    # Gates run at image-build time. A cached RUN layer is retained evidence,
+    # not fresh qualification; the command only confirms the built image.
     command: 'echo "gate passed: fmt + clippy -D warnings + cargo test"'
 
 
@@ -21,6 +24,7 @@ services:
   # other integration suites.
   ssh-pythonfree:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: ssh-pythonfree
@@ -34,6 +38,7 @@ services:
   # tests discover it).
   container-test:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: container-test
@@ -50,6 +55,7 @@ services:
   # toolchain outside the shipping build graph.
   verify:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: verify
@@ -62,6 +68,7 @@ services:
   # break that gate.
   tlaps:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: tlaps
@@ -73,12 +80,14 @@ services:
   # steps gate at image-build time like the test lane.
   core-assurance:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: core-assurance
     command: 'echo "gate passed: core assurance (inventory, native effects, loom, mutants)"'
   build:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: bin
@@ -86,13 +95,15 @@ services:
 
   model:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: model
-    # TLC runs at image-build time; the image existing IS the gate.
+    # TLC runs at image-build time; a cached layer is not a fresh model run.
     command: 'echo "gate passed: editor protocol model checks clean (TLC)"'
   bench:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: release
@@ -104,6 +115,7 @@ services:
   #   strop-<VERSION>-<TARGET>.tar.gz containing <dir>/strop
   release:
     build:
+      platforms: [linux/amd64]
       context: .
       dockerfile: Dockerfile
       target: release
@@ -114,6 +126,9 @@ services:
         set -e
         VERSION="$${VERSION:?set VERSION to the release version, e.g. -e VERSION=0.1.0}"
         TARGET="$${TARGET:-x86_64-unknown-linux-musl}"
+        test "$$TARGET" = x86_64-unknown-linux-musl || {
+          echo "unsupported release target: $$TARGET (supported: x86_64-unknown-linux-musl)" >&2; exit 1;
+        }
         PKG="strop-$$VERSION-$$TARGET"
         staging="$$(mktemp -d)" \
         && mkdir -p "$$staging/$$PKG" \

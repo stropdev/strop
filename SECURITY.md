@@ -1,16 +1,29 @@
-# Code signing policy
+# Security and platform policy
 
-Strop publishes signed Windows executables and installers through
-[SignPath.io](https://signpath.io/), using a certificate from the
-**SignPath Foundation**. Signing applies to public release artifacts; it is not
-used to publish developer experiments or unsigned internal validation binaries
-as trusted releases.
+## Active support
 
-The signing certificate identifies the issuing publisher, **SignPath
-Foundation**, not an individual Strop developer. Authenticode signing and an
-RFC 3161 timestamp attest that approved bytes came through the project's
-reviewed build-and-signing process; signing does not replace release
-qualification, reproducible-build evidence or independent artifact checks.
+Strop currently supports **Linux x86_64 only**, including Linux x86_64 inside
+WSL. The static release target is `x86_64-unknown-linux-musl`; native GNU/Linux
+qualification remains required. Installation and execution occur inside Linux,
+not through a native Windows executable or installer.
+
+macOS, ARM/aarch64 and native Windows expansion require an explicit decision
+and fresh target-specific qualification before support is advertised. Historical
+artifacts and evidence are retained, not reused as proof for changed source.
+Linux editor, worker, protocol, privacy and release controls remain required.
+
+## Deferred Windows signing policy
+
+No native Windows signing or installer channel is currently offered. The
+following signing requirements are retained for a possible explicitly approved
+Windows expansion, not a claim of available signed releases:
+
+- Public Windows executables/installers would use [SignPath.io](https://signpath.io/)
+  with a **SignPath Foundation** certificate, not developer experiments.
+- The certificate identifies its issuing publisher, SignPath Foundation, not
+  an individual developer. Authenticode and RFC 3161 timestamps would attest
+  approved bytes from the reviewed process, not replace release qualification,
+  reproducible-build evidence or independent artifact checks.
 
 ## Project governance
 
@@ -24,22 +37,22 @@ The project owner is the committer, reviewer and signing approver:
 
 The public GitHub collaborator/permission list is authoritative as the team
 grows. GitHub accounts with source or release authority use multi-factor
-authentication, and each signed release requires an explicit manual approval in
-SignPath before publication.
+authentication. If Windows signing is reactivated, each signed release requires
+explicit manual approval in SignPath before publication.
 
 ## Build and approval controls
 
-- Signed binaries are built from this public repository by automated GitHub
+- Release binaries must be built from this public repository by automated GitHub
   Actions workflows, not from a private desktop copy.
 - Product metadata names **Strop** and uses one consistent product version for
   every artifact in a release.
 - Release artifacts first pass the repository's Compose/native quality,
   assurance and package gates.
 - The release pipeline records immutable artifact URLs, SHA-256 digests,
-  build provenance and the signing/publication outcome in the release catalog
-  and promotion ledger.
+  build provenance and publication outcome in the release catalog and promotion
+  ledger. A future signing channel must also record its signing outcome.
 - Only release artifacts whose expected digest and provenance match the
-  approved source may enter signing; an unapproved or mismatched build fails
+  approved source may be published; an unapproved or mismatched build fails
   closed.
 
 ## Privacy
@@ -61,13 +74,10 @@ presenting their behavior as Strop's own.
 
 - The site documents installation, update, uninstall and supported-platform
   boundaries.
-- Silent installation never performs hidden WSL provisioning or system
-  configuration changes.
-- Windows uninstall removes only Strop-owned application versions, launcher,
-  shortcuts and registration by default. Linux workspaces, WSL distributions,
-  projects and independently installed tools are never removed.
-- Optional Strop-owned backend-cache cleanup names its explicit scope and
-  preserves user data unless separately approved.
-
-Free code signing is provided by SignPath.io; the certificate is issued by
-SignPath Foundation.
+- Installation never performs hidden WSL provisioning or system configuration
+  changes. WSL must already provide a supported Linux x86_64 environment.
+- Uninstall and optional Strop-owned cache cleanup must name their explicit
+  scope and preserve user data unless separately approved. Linux workspaces,
+  WSL distributions, projects and independently installed tools are never removed.
+- Any future Windows installer must preserve these ownership boundaries for its
+  application versions, launcher, shortcuts and registration.

@@ -35,7 +35,7 @@ def check(binary: Path) -> dict:
     source = "// fixture\nresponse result\nre\n"
     fixture = Path(__file__).with_name("completion_server.py").resolve()
     captures = {}
-    # AF_UNIX names have a small kernel byte bound (104 bytes on macOS).
+    # AF_UNIX names have a small kernel byte bound.
     # Keep the private fixture root short regardless of the caller's TMPDIR.
     with tempfile.TemporaryDirectory(prefix="strop-capture-", dir="/tmp") as directory:
         base = Path(directory)

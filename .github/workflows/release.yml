@@ -22,8 +22,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Platform admission calibration
+        run: python3 -B -m unittest discover -s verification -p 'test_*.py'
       - name: Publication dependency ordering
         run: sh tests/publish-order.sh
+      - name: Installer transaction and exact release catalog fixtures
+        run: |
+          sh tests/install.sh
+          sh tests/release-catalog.sh
       - name: Protocol release gate
         run: docker compose run --build --rm model
       - name: Locked workspace, native Store and real SSH gate
@@ -48,15 +54,14 @@ jobs:
           name: dist-source
           path: dist/completion-candidate.json
 
-  # Execute native GNU workers on both architectures; musl artifact
-  # jobs below separately qualify static release binaries.
+  # Execute the Linux x86_64 GNU worker; the musl artifact job below
+  # separately qualifies the static release binary.
   native-linux:
     strategy:
       fail-fast: false
       matrix:
         include:
           - { runner: ubuntu-latest, machine: x86_64 }
-          - { runner: ubuntu-24.04-arm, machine: aarch64 }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -81,23 +86,18 @@ jobs:
           cargo test --locked -p strop-editor --test worker_stdio
           cargo test --locked -p strop-editor --test terminal_editor
 
-  # Musl-static Linux builds run natively in multi-arch Docker; the
-  # Apple Silicon artifact builds and exercises PTY ownership natively
-  # (no cross-only platform badge).
+  # The sole shipping artifact is native Linux x86_64 static musl.
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { target: x86_64-unknown-linux-musl, runner: ubuntu-latest, docker: true }
-          - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm, docker: true }
-          - { target: aarch64-apple-darwin, runner: macos-14 }
+          - { target: x86_64-unknown-linux-musl, runner: ubuntu-latest }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Build (linux musl, docker)
-        if: matrix.docker
         run: |
           # The host later writes qualification reports beside Docker's exports.
           # Create the bind source as the runner, not implicitly as Docker root.
@@ -106,47 +106,11 @@ jobs:
             -e "VERSION=${GITHUB_REF_NAME#v}" \
             -e "TARGET=${{ matrix.target }}" release
 
-      - name: Install pinned native build compiler
-        if: "!matrix.docker"
-        run: |
-          sh .github/scripts/install-zig.sh "$RUNNER_TEMP/strop-zig"
-          echo "ZIG=$RUNNER_TEMP/strop-zig/zig" >> "$GITHUB_ENV"
-
-      - name: Install nested-editor test dependency
-        if: "!matrix.docker"
-        run: brew install neovim
-
-      - name: Verify native macOS Store worker and terminal
-        if: "!matrix.docker"
-        run: |
-          cargo test --locked -p strop-fs tests::store::
-          cargo test --locked -p strop-worker exec::tests::
-          cargo test --locked -p strop-terminal vt::tests::
-          cargo test --locked -p strop-worker-client --test loopback
-          STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor --test worker_ssh deploy_handshake_read_write_notify_parity_over_real_sshd
-          cargo test --locked -p strop-editor --test worker_stdio
-          cargo test --locked -p strop-editor --test terminal_editor
-
-      - name: Build (macOS, native)
-        if: "!matrix.docker"
-        run: |
-          rustup target add ${{ matrix.target }}
-          cargo build --release --locked --target ${{ matrix.target }} -p strop-editor
-          VERSION="${GITHUB_REF_NAME#v}"
-          PKG="strop-$VERSION-${{ matrix.target }}"
-          staging="$(mktemp -d)"
-          mkdir -p "$staging/$PKG"
-          install -m755 "target/${{ matrix.target }}/release/strop" "$staging/$PKG/strop"
-          mkdir -p dist
-          tar -czf "dist/$PKG.tar.gz" -C "$staging" "$PKG"
-          (cd dist && shasum -a 256 "$PKG.tar.gz" > "$PKG.tar.gz.sha256")
-
       # Static-verify the honest way (0002 §4): a static-pie musl binary
       # still prints an ld-musl line in ldd, so `ldd | grep` gates lie in
       # both directions. No NEEDED entries is the truth. Plus a headless
       # smoke that actually exercises tree-sitter (a .rs frame render).
       - name: "Verify (linux: fully static + headless parse)"
-        if: matrix.docker
         run: |
           cd dist
           sha256sum -c strop-*.tar.gz.sha256
@@ -168,35 +132,12 @@ jobs:
           # GUI/TUI/runtime dependency.
           timeout 15 "$bin" --worker-stdio </dev/null
 
-      - name: "Verify (macOS: system libs only + headless parse)"
-        if: "!matrix.docker"
-        run: |
-          cd dist
-          shasum -a 256 -c strop-*.tar.gz.sha256
-          tmp="$(mktemp -d)"
-          tar -xzf strop-*-${{ matrix.target }}.tar.gz -C "$tmp"
-          bin="$(find "$tmp" -type f -name strop | head -1)"
-          file "$bin"
-          otool -L "$bin"
-          if otool -L "$bin" | sed '1d' | grep -qvE "^[[:space:]]+(/usr/lib/(libSystem|libiconv|libz|libproc)[^ ]*|/System/Library/Frameworks/(CoreFoundation|Security|SystemConfiguration)\\.framework/[^ ]*)[[:space:]]"; then
-            echo "::error::non-system dynamic dependency"
-            exit 1
-          fi
-          "$bin" --version
-          printf 'fn main() { let x = 1; }\n' > "$tmp/smoke.rs"
-          printf 'frame\n' > "$tmp/smoke.txt"
-          "$bin" --headless "$tmp/smoke.txt" "$tmp/smoke.rs" | grep -q "fn main"
-          # WK05 worker smoke (no timeout on macOS runners; EOF is a
-          # deterministic clean shutdown, so this returns immediately).
-          "$bin" --worker-stdio </dev/null
-
       - name: Qualify completion on the actual shipping artifact
         run: |
           pkg="strop-${GITHUB_REF_NAME#v}-${{ matrix.target }}"
           mkdir -p "$RUNNER_TEMP/completion-artifact"
           tar -xzf "dist/$pkg.tar.gz" -C "$RUNNER_TEMP/completion-artifact"
-          profile=release-macos-native
-          if [ "${{ matrix.docker }}" = true ]; then profile=release-musl-stripped; fi
+          profile=release-musl-stripped
           python3 -B verification/qualify_completion.py \
             --binary "$RUNNER_TEMP/completion-artifact/$pkg/strop" --profile "$profile" \
             --build "release workflow production artifact; ${{ matrix.target }}" \
@@ -226,12 +167,11 @@ jobs:
       - name: Revalidate source candidate after artifact merge
         run: python3 verification/freeze.py --check --out dist/completion-candidate.json
 
-      - name: Verify all three platform tarballs are present
+      - name: Verify the Linux x86_64 tarball is the exact artifact set
         run: |
-          ls -la dist/
-          count="$(ls dist/strop-*.tar.gz | wc -l)"
-          test "$count" -eq 3 || {
-            echo "::error::expected 3 platform tarballs, got $count"; exit 1; }
+          set -- dist/strop-*.tar.gz
+          test "$#" -eq 1 && test "$1" = "dist/strop-${GITHUB_REF_NAME#v}-x86_64-unknown-linux-musl.tar.gz" || {
+            echo "::error::expected exactly the Linux x86_64 musl tarball"; exit 1; }
 
       # 0056 AR12: the generated release catalog is the single source of
       # truth for version/artifact/digest facts — install.sh, `strop
@@ -303,10 +243,9 @@ jobs:
           done
           [ -z "$failed" ] || { echo "::error::failed to publish:$failed"; exit 1; }
 
-      # Tap bump: formula builds from the crate, cask ships the prebuilt
-      # Apple Silicon binary. Needs HOMEBREW_TAP_TOKEN (fine-grained PAT,
-      # contents:write on stropdev/homebrew-tap) — skipped while unset.
-      - name: Bump homebrew formula + cask
+      # Linux x86_64 source formula only; the macOS cask is retired.
+      # Needs HOMEBREW_TAP_TOKEN (contents:write on stropdev/homebrew-tap).
+      - name: Bump Linux x86_64 homebrew formula
         id: homebrew
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -316,7 +255,7 @@ jobs:
           ver="${GITHUB_REF_NAME#v}"
           sha="$(curl -fsSL "https://static.crates.io/crates/strop-editor/strop-editor-$ver.crate" | sha256sum | cut -d' ' -f1)"
           gh repo clone stropdev/homebrew-tap /tmp/tap -- --depth 1
-          mkdir -p /tmp/tap/Formula /tmp/tap/Casks
+          mkdir -p /tmp/tap/Formula
           cat > /tmp/tap/Formula/strop.rb <<EOF
           class Strop < Formula
             desc "Modal text editor — see the cut before you make it"
@@ -326,9 +265,8 @@ jobs:
             license "MIT"
 
             depends_on "rust" => :build
-            on_macos do
-              depends_on arch: :arm64
-            end
+            depends_on :linux
+            depends_on arch: :x86_64
 
             def install
               system "cargo", "install", *std_cargo_args
@@ -339,27 +277,12 @@ jobs:
             end
           end
           EOF
-          sha_arm="$(cut -d' ' -f1 "dist/strop-$ver-aarch64-apple-darwin.tar.gz.sha256")"
-          cat > /tmp/tap/Casks/strop.rb <<EOF
-          cask "strop" do
-            version "$ver"
-            sha256 "$sha_arm"
-
-            url "https://github.com/stropdev/strop/releases/download/v#{version}/strop-#{version}-aarch64-apple-darwin.tar.gz"
-            name "strop"
-            desc "Modal text editor — see the cut before you make it"
-            homepage "https://strop.dev/"
-            depends_on :macos
-            depends_on arch: :arm64
-
-            binary "strop-#{version}-aarch64-apple-darwin/strop"
-          end
-          EOF
+          rm -f /tmp/tap/Casks/strop.rb
           cd /tmp/tap
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/stropdev/homebrew-tap.git"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/strop.rb Casks/strop.rb
+          git add -A
           git commit -m "strop $ver"
           git push
 

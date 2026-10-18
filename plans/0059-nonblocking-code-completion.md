@@ -11,6 +11,59 @@ Research baseline: Strop 0.28.0,
 `c7a5ac6c9089cff654365a0376f6cf87d746db95`. Section 11 records the exact
 source/artifact qualification and separates it from public publication.
 
+### Current platform admission amendment
+
+`PLATFORM-LINUX-X64-2026-10-09` supersedes earlier platform coverage in this
+plan and the historical 0057/0058 contracts. Active qualification is
+**Linux/WSL x86_64 only**: GNU native execution plus the static musl release
+artifact and worker. ARM, macOS and native Windows are not active duties.
+Portable UI/worker protocol, Linux PTY/editor, GNU/musl, real SSH, selected-context
+containers, completion, install/update transactions, TLC, Verus, TLAPS,
+Loom and mutant calibration obligations remain required without dilution.
+
+The first affected candidate is unversioned next-source after 0.43.1.
+The completed-release statements and run IDs below, the 0057/0058 archives,
+and released 0.43.1 evidence describe their original source only. They are
+not current qualification and must not be rewritten or silently re-stamped.
+`verification/inventory.json` declares the active platform policy;
+`verification/check.py` requires that exact policy and every retained
+boundary gate, with behavior-based rejection calibration in
+`verification/test_platform_policy.py`. No current-source pass is asserted here.
+
+Fresh completion evidence must be generated from the final Linux x86_64
+source, real release artifact and actual build lane:
+
+```sh
+python3 -B verification/qualify_completion.py \
+  --binary /absolute/path/to/strop \
+  --profile release-musl-stripped \
+  --build 'ACTUAL BUILD COMMAND AND PINNED TOOLCHAIN' \
+  --out verification/measurements/linux-x86_64-completion.json
+```
+
+The build argument records the command actually exercised, not a profile
+inference. GNU native qualification remains required in its native lane.
+Do not replace any existing numbered measurement file. The new report must
+bind current crate/build/resource/lock inputs, benchmark methods, artifact
+version/digest/size, all 32-iteration pressure cases, 8 warmups/64 typing
+samples, 128 stage samples and capture/replay outcomes. Freeze additionally
+retains the immutable same-machine/kernel/CPU/profile typing baseline,
+`0059-linux-x86-typing-before.json`; a different host/profile is a qualification
+blocker, not permission to relabel the baseline.
+
+After the retained Linux lanes and behavioral calibration actually pass,
+review affected claims/evidence and run `python3 -B verification/check.py --stamp`.
+Its unchanged source-without-evidence refusal still applies; `--force ID` is
+only for a genuinely reviewed no-op extraction, never a platform-policy or
+runtime change. Then `check.py --release` must pass including generalized
+worker/completion proofs and current-source measurement admission. The final
+`freeze.py` / `freeze.py --check` requires a clean exact committed tree.
+An uncommitted diagnostic `--allow-dirty` freeze is not release qualification.
+Deleted native-only sources disappear from the enumerated live crate inputs;
+only active CI/release workflows are frozen, not the removed Windows workflow.
+Immutable historical readers continue to verify the original archives.
+
+
 ## 1. Release contract
 
 | ID | Required for the code-completion release |
@@ -612,9 +665,9 @@ and top-level documentation to avoid a self-referential measurement commit.
 The final candidate requires a clean, exact commit/tree and the applicable native/Compose gates.
 0057 and released 0058 inventories and measurements remain hash-pinned historical
 archives; their timings are not silently re-stamped against completion source.
-Native CI repeats the current product journeys on Linux x86/ARM and Apple
-Silicon, with completion pressure/capture observations alongside the existing
-worker and real-server journeys.
+Native CI repeats current product journeys on Linux/WSL x86_64 GNU and musl,
+with completion pressure/capture observations alongside the existing worker
+and real-server journeys. Earlier ARM/macOS runs below are historical only.
 No release is complete with only a renderer, fake provider or unbounded “async” work.
 
 ### 0.37.1 candidate qualification
