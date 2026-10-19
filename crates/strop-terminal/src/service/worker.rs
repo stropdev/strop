@@ -179,6 +179,24 @@ impl Actor {
                     }
                 });
             }
+            let theme_request = self.start.budget.theme.load(Ordering::Acquire);
+            if theme_request != 0 && self.client.phase() == &Phase::Running {
+                let theme = strop_core::theme::ThemeId::ALL
+                    .get(usize::from(theme_request - 1))
+                    .copied()
+                    .ok_or(Error::State("unregistered terminal theme request"))?;
+                let update = self.client.set_theme(theme)?;
+                self.start.mailbox.publish_with(update, || {
+                    // A newer request racing publication remains pending.
+                    let _ = self.start.budget.theme.compare_exchange(
+                        theme_request,
+                        0,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    );
+                });
+                published = true;
+            }
             let mut filled_turn = true;
             for _ in 0..32 {
                 if self.pending.is_none() {
@@ -249,9 +267,15 @@ impl Actor {
                                     .push(Effect::PasteConfirmationCleared { ticket });
                             }
                             if let Some(sequence) = sequence {
-                                self.inflight.push_back((sequence, request.permit));
-                                if cleared.is_some() {
-                                    self.start.mailbox.publish(update);
+                                if sequence <= self.acknowledged {
+                                    self.start
+                                        .mailbox
+                                        .publish_with(update, || drop(request.permit));
+                                } else {
+                                    self.inflight.push_back((sequence, request.permit));
+                                    if cleared.is_some() {
+                                        self.start.mailbox.publish(update);
+                                    }
                                 }
                             } else {
                                 update.warning = Some("held terminal paste discarded".into());

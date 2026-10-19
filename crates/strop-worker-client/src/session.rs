@@ -225,9 +225,9 @@ impl PtySession {
         self.output_stream
     }
 
-    /// Feed input: one ordered chunk, acknowledged once delivered.
+    /// Feed input: return the wire sequence acknowledged once delivered.
     /// Never half-closes — a PTY has no input EOF.
-    pub fn feed(&mut self, bytes: &[u8]) -> Result<(), ClientError> {
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<u64, ClientError> {
         let conn = &self.conn;
         let sequence = self.stdin_sequence;
         self.stdin_sequence += 1;
@@ -236,7 +236,8 @@ impl PtySession {
             sequence,
             last: false,
             bytes: bytes.to_vec(),
-        })
+        })?;
+        Ok(sequence)
     }
 
     /// Consume one output chunk or ordered resize marker. Credits

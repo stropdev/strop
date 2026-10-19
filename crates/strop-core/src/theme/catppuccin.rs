@@ -1,0 +1,116 @@
+//! Catppuccin Mocha and Latte: https://catppuccin.com/palette/
+//! Role guidance: https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md
+//!
+//! Selection uses Overlay 2 at 25% over Base, as recommended upstream.
+//! All blends are evaluated at compile time. Mocha uses unmodified upstream
+//! foregrounds. Latte uses Subtext 0 for comments/punctuation instead of the
+//! faint Overlay 1, and Mantle for popup surfaces instead of Surface 0.
+//! Latte's green/teal/peach/yellow semantic inks are darkened toward Text by
+//! 20%/10%/25%/40%, respectively, for >=3:1 on Base and Mantle. Its terminal
+//! ANSI colors remain upstream colors: child-chosen terminal styling is not
+//! covered by the editor's contrast contract. Diff/preview washes are Strop
+//! mappings, not a claim of an exact upstream editor port.
+
+use super::{blend, hex, Theme};
+
+pub const CATPPUCCIN_MOCHA: Theme = Theme {
+    base: hex(0x1e1e2e),
+    surface: hex(0x313244),
+    statusline_bg: hex(0x181825),
+    cursor_row_bg: blend(hex(0x1e1e2e), hex(0x9399b2), 10),
+    inactive_bg: hex(0x181825),
+    border: hex(0x585b70),
+    guide: hex(0x45475a),
+    text: hex(0xcdd6f4),
+    muted: hex(0x7f849c),
+    accent: hex(0xcba6f7),
+    preview_bg: blend(hex(0x1e1e2e), hex(0xcba6f7), 15),
+    flash_bg: blend(hex(0x1e1e2e), hex(0xcba6f7), 25),
+    select_bg: blend(hex(0x1e1e2e), hex(0x9399b2), 25),
+    pair_bg: blend(hex(0x1e1e2e), hex(0x9399b2), 35),
+    secondary: hex(0xa6adc8),
+    diag_error: hex(0xf38ba8),
+    diag_info: hex(0x89b4fa),
+    warning: hex(0xf9e2af),
+    diff_add_bg: blend(hex(0x1e1e2e), hex(0xa6e3a1), 12),
+    diff_del_bg: blend(hex(0x1e1e2e), hex(0xf38ba8), 12),
+    diff_add_strong_bg: blend(hex(0x1e1e2e), hex(0xa6e3a1), 22),
+    diff_del_strong_bg: blend(hex(0x1e1e2e), hex(0xf38ba8), 22),
+    class_keyword: hex(0xcba6f7),
+    class_function: hex(0x89b4fa),
+    class_type: hex(0xf9e2af),
+    class_string: hex(0xa6e3a1),
+    class_number: hex(0xfab387),
+    class_operator: hex(0x89dceb),
+    class_punctuation: hex(0x9399b2),
+    class_attribute: hex(0xf9e2af),
+    ansi16: [
+        hex(0x45475a),
+        hex(0xf38ba8),
+        hex(0xa6e3a1),
+        hex(0xf9e2af),
+        hex(0x89b4fa),
+        hex(0xf5c2e7),
+        hex(0x94e2d5),
+        hex(0xbac2de),
+        hex(0x585b70),
+        hex(0xf38ba8),
+        hex(0xa6e3a1),
+        hex(0xf9e2af),
+        hex(0x89b4fa),
+        hex(0xf5c2e7),
+        hex(0x94e2d5),
+        hex(0xa6adc8),
+    ],
+};
+
+pub const CATPPUCCIN_LATTE: Theme = Theme {
+    base: hex(0xeff1f5),
+    surface: hex(0xe6e9ef),
+    statusline_bg: hex(0xdce0e8),
+    cursor_row_bg: blend(hex(0xeff1f5), hex(0x7c7f93), 10),
+    inactive_bg: hex(0xe6e9ef),
+    border: hex(0xacb0be),
+    guide: hex(0xccd0da),
+    text: hex(0x4c4f69),
+    muted: hex(0x6c6f85),
+    accent: hex(0x8839ef),
+    preview_bg: blend(hex(0xeff1f5), hex(0x8839ef), 10),
+    flash_bg: blend(hex(0xeff1f5), hex(0x8839ef), 16),
+    select_bg: blend(hex(0xeff1f5), hex(0x7c7f93), 25),
+    pair_bg: blend(hex(0xeff1f5), hex(0x7c7f93), 30),
+    secondary: hex(0x5c5f77),
+    diag_error: hex(0xd20f39),
+    diag_info: hex(0x1e66f5),
+    warning: blend(hex(0xdf8e1d), hex(0x4c4f69), 40),
+    diff_add_bg: blend(hex(0xeff1f5), hex(0x40a02b), 12),
+    diff_del_bg: blend(hex(0xeff1f5), hex(0xd20f39), 10),
+    diff_add_strong_bg: blend(hex(0xeff1f5), hex(0x40a02b), 22),
+    diff_del_strong_bg: blend(hex(0xeff1f5), hex(0xd20f39), 18),
+    class_keyword: hex(0x8839ef),
+    class_function: hex(0x1e66f5),
+    class_type: blend(hex(0xdf8e1d), hex(0x4c4f69), 40),
+    class_string: blend(hex(0x40a02b), hex(0x4c4f69), 20),
+    class_number: blend(hex(0xfe640b), hex(0x4c4f69), 25),
+    class_operator: blend(hex(0x179299), hex(0x4c4f69), 10),
+    class_punctuation: hex(0x6c6f85),
+    class_attribute: blend(hex(0xdf8e1d), hex(0x4c4f69), 40),
+    ansi16: [
+        hex(0x5c5f77),
+        hex(0xd20f39),
+        hex(0x40a02b),
+        hex(0xdf8e1d),
+        hex(0x1e66f5),
+        hex(0xea76cb),
+        hex(0x179299),
+        hex(0xacb0be),
+        hex(0x6c6f85),
+        hex(0xd20f39),
+        hex(0x40a02b),
+        hex(0xdf8e1d),
+        hex(0x1e66f5),
+        hex(0xea76cb),
+        hex(0x179299),
+        hex(0xbcc0cc),
+    ],
+};

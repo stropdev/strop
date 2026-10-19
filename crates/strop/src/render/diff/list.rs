@@ -14,12 +14,14 @@ use strop_git::memory::ChangedFile;
 
 use super::super::clip;
 use super::super::{accent, muted, text};
-use super::{ADD_FG, DEL_FG};
+use super::{add_fg, del_fg};
 
 /// Restrained cursor-row band for log/file surfaces — a hair above
 /// base(), well under the selection color, so search/visual overlays
 /// still read on top of it (they override the background per cell).
-pub(crate) const CURSOR_ROW_BG: Color = Color::Rgb(0x1e, 0x20, 0x2b);
+pub(crate) fn cursor_row_bg() -> Color {
+    crate::render::seed(strop_core::theme::current().cursor_row_bg)
+}
 
 /// One decorated row of a log/files surface: styled spans whose
 /// concatenation begins with the buffer line's exact bytes, plus an
@@ -38,7 +40,7 @@ pub(crate) fn surface_list_row(
     width: usize,
     cursor_row: bool,
 ) -> Option<RowDecoration> {
-    let row_bg = cursor_row.then_some(CURSOR_ROW_BG);
+    let row_bg = cursor_row.then_some(cursor_row_bg());
     match surface? {
         Surface::CommitLog { rows, .. } => {
             let row = rows.get(line_idx)?;
@@ -147,13 +149,14 @@ fn hex_prefix_len(rest: &str) -> usize {
 /// commit node `*` is bold in its lane's color (gitui/lazygit lesson —
 /// lane color is how the eye tracks a branch through merges).
 fn graph_spans(prefix: &str) -> Vec<Span<'static>> {
+    let theme = strop_core::theme::current();
     let lanes: [Color; 6] = [
-        accent(),                     // amber
-        Color::Rgb(0x9e, 0xce, 0x6a), // green
-        Color::Rgb(0x7a, 0xa2, 0xf7), // blue
-        Color::Rgb(0xbb, 0x9a, 0xf7), // purple
-        Color::Rgb(0x7d, 0xcf, 0xff), // cyan
-        Color::Rgb(0xe0, 0xaf, 0x68), // yellow
+        accent(),
+        crate::render::seed(theme.class_string),
+        crate::render::seed(theme.class_function),
+        crate::render::seed(theme.class_keyword),
+        crate::render::seed(theme.class_type),
+        crate::render::seed(theme.warning),
     ];
     prefix
         .chars()
@@ -202,8 +205,8 @@ fn file_row_spans(file: &ChangedFile, width: usize) -> Vec<Span<'static>> {
         .saturating_sub(path_cells + added.len() + deleted.len())
         .max(1);
     spans.push(Span::raw(" ".repeat(pad)));
-    spans.push(Span::styled(added, Style::default().fg(ADD_FG)));
-    spans.push(Span::styled(deleted, Style::default().fg(DEL_FG)));
+    spans.push(Span::styled(added, Style::default().fg(add_fg())));
+    spans.push(Span::styled(deleted, Style::default().fg(del_fg())));
     spans
 }
 

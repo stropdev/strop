@@ -7,6 +7,37 @@ use strop_terminal::{
 };
 
 impl Editor {
+    /// Capture the selected theme, then let each existing service update its
+    /// native defaults and publish through the ordinary replay-owned mailbox.
+    pub(crate) fn refresh_terminal_themes(&mut self) -> Result<(), String> {
+        self.set_terminal_themes(strop_core::theme::current_id())
+    }
+
+    pub(super) fn set_terminal_themes(
+        &mut self,
+        theme: strop_core::theme::ThemeId,
+    ) -> Result<(), String> {
+        let tape = self.tape.clone();
+        match tape.call("terminal.theme", &theme.name(), || {
+            let mut result = Ok(());
+            for entry in self.terminals.entries.values() {
+                if !matches!(entry.phase, Phase::Starting | Phase::Running) {
+                    continue;
+                }
+                if let Some(service) = &entry.service {
+                    match service.set_theme(theme) {
+                        Ok(()) | Err(strop_terminal::Error::Closed) => {}
+                        Err(error) => result = Err(error.to_string()),
+                    }
+                }
+            }
+            result
+        }) {
+            Ok(result) => result,
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
     pub(crate) fn launch_terminal(&mut self, command: &str, local: bool) {
         let location = if local {
             strop_workspace::ResourceLocation::local(self.cwd.clone())

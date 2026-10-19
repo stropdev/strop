@@ -6,7 +6,7 @@
 //! border-column scrollbar.
 
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 use ratatui::Frame;
@@ -346,7 +346,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
                 cell.set_fg(accent());
             } else {
                 cell.set_symbol("│");
-                cell.set_fg(Color::Rgb(0x2a, 0x2c, 0x3a));
+                cell.set_fg(crate::render::seed(strop_core::theme::current().border));
             }
         }
     }

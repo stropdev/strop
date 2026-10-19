@@ -1,15 +1,13 @@
-//! The `:theme` palette selector (0.42.0): two compiled-in palettes,
-//! switched live. Render and the terminal read `theme::current()` per
-//! frame, so the switch paints on the next frame — no invalidation,
-//! no config file (0005 owns that when it lands).
+//! The built-in palette selector. Config supplies the startup choice;
+//! `--theme` overrides it and `:theme` switches only this session.
+//! Existing terminals receive an asynchronous palette-default update.
 use super::Editor;
 use strop_core::theme::{self, ThemeId};
 use strop_picker::{Item, Payload, Picker};
 
 impl Editor {
-    /// `:theme` with no argument opens the selector; `:theme dark` /
-    /// `:theme light` switches directly. Anything else is a named
-    /// refusal listing the real choices.
+    /// `:theme` opens the selector; `:theme NAME` applies a registered
+    /// palette. Unknown names leave the current choice untouched.
     pub(crate) fn theme_command(&mut self, arg: &str) {
         let arg = arg.trim();
         if arg.is_empty() {
@@ -36,10 +34,11 @@ impl Editor {
         let items: Vec<Item> = ThemeId::ALL
             .into_iter()
             .map(|id| Item {
-                badge: Some(id.name().to_string()),
+                badge: None,
                 text: format!(
-                    "{} palette{}",
+                    "{} — {}{}",
                     id.name(),
+                    id.description(),
                     if id == current { " — current" } else { "" }
                 ),
                 payload: Payload::ThemeChoice(id),
@@ -53,71 +52,9 @@ impl Editor {
     /// land here alike.
     pub(crate) fn apply_theme(&mut self, id: ThemeId) {
         theme::set_current(id);
-        self.message = format!("theme: {} palette", id.name());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use strop_core::Buffer;
-
-    /// Restore the dark default on exit so neighbors in this test
-    /// binary never observe another test's palette.
-    struct Restore;
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            theme::set_current(ThemeId::Dark);
-        }
-    }
-
-    fn editor() -> Editor {
-        Editor::new_in(Buffer::from_text("x\n"), std::path::PathBuf::from("/proj"))
-    }
-
-    #[test]
-    fn theme_command_switches_refuses_and_restores() {
-        let _restore = Restore;
-        let mut editor = editor();
-        editor.theme_command("light");
-        assert_eq!(theme::current_id(), ThemeId::Light);
-        assert_eq!(editor.message, "theme: light palette");
-        // Case-insensitive, like every other selector argument.
-        editor.theme_command(" DARK ");
-        assert_eq!(theme::current_id(), ThemeId::Dark);
-        // A bogus name is a named refusal listing the real choices;
-        // the live palette does not move.
-        editor.theme_command("solarized");
-        assert_eq!(theme::current_id(), ThemeId::Dark);
-        assert_eq!(
-            editor.message,
-            "theme takes dark or light — not \"solarized\""
-        );
-    }
-
-    #[test]
-    fn bare_theme_opens_the_selector_and_a_row_applies() {
-        let _restore = Restore;
-        let mut editor = editor();
-        editor.theme_command("light");
-        editor.theme_command("");
-        let glue = editor.picker.as_ref().expect("theme selector is open");
-        assert_eq!(glue.picker.kind, strop_picker::Kind::Theme);
-        let (ids, current_marks): (Vec<ThemeId>, Vec<bool>) = glue
-            .picker
-            .items
-            .iter()
-            .map(|item| {
-                let Payload::ThemeChoice(id) = item.payload else {
-                    panic!("theme rows carry theme payloads")
-                };
-                (id, item.text.ends_with(" — current"))
-            })
-            .unzip();
-        assert_eq!(ids, vec![ThemeId::Dark, ThemeId::Light]);
-        assert_eq!(current_marks, vec![false, true]);
-        let _ = glue;
-        editor.apply_theme(ThemeId::Dark);
-        assert_eq!(theme::current_id(), ThemeId::Dark);
+        self.message = match self.refresh_terminal_themes() {
+            Ok(()) => format!("theme: {} palette", id.name()),
+            Err(error) => format!("theme: {}; terminal refresh failed: {error}", id.name()),
+        };
     }
 }

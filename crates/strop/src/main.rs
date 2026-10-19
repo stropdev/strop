@@ -62,7 +62,7 @@ fn launch() -> Result<(), Box<dyn Error>> {
             // Early like replay/export (0056 AR09): stdout is reserved
             // for protocol frames from the first byte; bounded
             // diagnostics go to stderr.
-            return ui_stdio::run();
+            return ui_stdio::run(options.theme);
         }
         _ => {}
     }
@@ -124,6 +124,12 @@ fn execute(
 ) -> Result<(), Box<dyn Error>> {
     match command {
         cli::Command::Help => print_help(),
+        cli::Command::ThemeLicenses => {
+            println!(
+                "Built-in theme licenses\n\n{}",
+                strop_core::theme::THEME_NOTICES
+            );
+        }
         cli::Command::Version => println!("strop {}", env!("CARGO_PKG_VERSION")),
         cli::Command::Compat => print!("{}", keymap::compat_report()),
         cli::Command::Config => {
@@ -282,13 +288,13 @@ fn print_help() {
     println!(
         "strop {} — see the cut before you make it\n\n\
 USAGE:\n  strop [+LINE] [FILE[:LINE]|DIR] terminal editor (-R: readonly)\n\
-  strop --theme light [FILE]    session-start palette override\n\
+  strop --theme NAME [FILE]      session-start palette override\n\
   strop --headless SCRIPT [+LINE] [FILE[:LINE]]  scripted driver\n\
   strop --script SCRIPT [+LINE] [FILE[:LINE]]    same scripted driver\n\
   strop --replay-script TRACE     extract a headless reproduction script\n\
   strop --ui-stdio                UI protocol backend on stdin/stdout (0056 AR09)\n\
   strop update [--check]          self-update\n\
-  strop config | --version | --dump-compat\n\n\
+  strop config | --version | --dump-compat | --licenses\n\n\
   strop -- FILE:3                open a literal colon-suffixed filename\n\n\
   strop [+LINE] ssh://[user@]host[:port]/absolute/path[:LINE]  remote file or directory\n\
 REMOTE: :remote edit enables saving; :remote verify reconciles an unconfirmed\n\
@@ -306,6 +312,10 @@ CONFIG: {}\nhttps://strop.dev · https://github.com/stropdev/strop",
         env!("CARGO_PKG_VERSION"),
         config_path_display()
     );
+    println!("\nTHEMES (select live with :theme):");
+    for id in strop_core::theme::ThemeId::ALL {
+        println!("  {:<20} {} — {}", id.name(), id.label(), id.description());
+    }
     headless::directives::print_help();
 }
 

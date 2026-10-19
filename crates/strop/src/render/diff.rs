@@ -17,22 +17,32 @@ use super::{accent, muted, text};
 mod list;
 mod margins;
 
-pub(crate) use list::{surface_list_row, RowDecoration, CURSOR_ROW_BG};
+pub(crate) use list::{cursor_row_bg, surface_list_row, RowDecoration};
 pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans};
 
-pub(crate) const ADD_FG: Color = Color::Rgb(0xa9, 0xc4, 0x7c);
-pub(crate) const DEL_FG: Color = Color::Rgb(0xe8, 0x67, 0x7a);
+pub(crate) fn add_fg() -> Color {
+    crate::render::seed(strop_core::theme::current().class_string)
+}
+pub(crate) fn del_fg() -> Color {
+    crate::render::seed(strop_core::theme::current().diag_error)
+}
 /// Quiet full-row backgrounds — a visible scan signal that doesn't
 /// shout (tuicr's two-tier idea: quiet under content, loud markers).
-const ADD_BG: Color = Color::Rgb(0x1b, 0x26, 0x20);
-const DEL_BG: Color = Color::Rgb(0x2a, 0x1d, 0x20);
+fn add_bg() -> Color {
+    crate::render::seed(strop_core::theme::current().diff_add_bg)
+}
+fn del_bg() -> Color {
+    crate::render::seed(strop_core::theme::current().diff_del_bg)
+}
 /// Structural rows (stats, hunk headers) sit on a band, not an accent.
-pub(crate) const BAND_BG: Color = Color::Rgb(0x22, 0x24, 0x2e);
+pub(crate) fn band_bg() -> Color {
+    crate::render::seed(strop_core::theme::current().surface)
+}
 
 pub(crate) fn origin_fg(origin: LineOrigin) -> Color {
     match origin {
-        LineOrigin::Addition => ADD_FG,
-        LineOrigin::Deletion => DEL_FG,
+        LineOrigin::Addition => add_fg(),
+        LineOrigin::Deletion => del_fg(),
         LineOrigin::Context => text(),
     }
 }
@@ -40,16 +50,20 @@ pub(crate) fn origin_fg(origin: LineOrigin) -> Color {
 /// Full-row background for add/del rows; context rows stay on base().
 pub(crate) fn origin_bg(origin: LineOrigin) -> Option<Color> {
     match origin {
-        LineOrigin::Addition => Some(ADD_BG),
-        LineOrigin::Deletion => Some(DEL_BG),
+        LineOrigin::Addition => Some(add_bg()),
+        LineOrigin::Deletion => Some(del_bg()),
         LineOrigin::Context => None,
     }
 }
 
 /// Brighter backgrounds for the intra-line changed spans (delta's
 /// two-tier emphasis: row tint whispers, changed span speaks).
-pub(crate) const ADD_STRONG_BG: Color = Color::Rgb(0x27, 0x3a, 0x30);
-pub(crate) const DEL_STRONG_BG: Color = Color::Rgb(0x40, 0x2a, 0x2e);
+pub(crate) fn add_strong_bg() -> Color {
+    crate::render::seed(strop_core::theme::current().diff_add_strong_bg)
+}
+pub(crate) fn del_strong_bg() -> Color {
+    crate::render::seed(strop_core::theme::current().diff_del_strong_bg)
+}
 
 /// Intra-line emphasis (delta-style): the byte range within this row's
 /// text that actually changed, paired against the opposite-side row at
@@ -72,11 +86,11 @@ pub(crate) fn diff_gutter(
 ) -> Vec<Span<'static>> {
     // rootle's triangle: the cursor row's marker points at you
     let (marker, color) = match (line.origin, is_cursor_row) {
-        (LineOrigin::Addition, true) => ("▸", ADD_FG),
-        (LineOrigin::Deletion, true) => ("▸", DEL_FG),
+        (LineOrigin::Addition, true) => ("▸", add_fg()),
+        (LineOrigin::Deletion, true) => ("▸", del_fg()),
         (LineOrigin::Context, true) => ("▸", accent()),
-        (LineOrigin::Addition, false) => ("▎", ADD_FG),
-        (LineOrigin::Deletion, false) => ("▎", DEL_FG),
+        (LineOrigin::Addition, false) => ("▎", add_fg()),
+        (LineOrigin::Deletion, false) => ("▎", del_fg()),
         (LineOrigin::Context, false) => (" ", muted()),
     };
     let number = |n: Option<usize>| {
@@ -116,21 +130,21 @@ pub(crate) fn structural_row(surface: &Surface, row: usize) -> Line<'static> {
             ),
             Span::styled(
                 format!(" +{} ", hunks.added()),
-                Style::default().fg(ADD_FG).add_modifier(Modifier::BOLD),
+                Style::default().fg(add_fg()).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("-{}", hunks.deleted()),
-                Style::default().fg(DEL_FG).add_modifier(Modifier::BOLD),
+                Style::default().fg(del_fg()).add_modifier(Modifier::BOLD),
             ),
         ])
-        .style(Style::default().bg(BAND_BG)),
+        .style(Style::default().bg(band_bg())),
         (Surface::Diff { .. }, _) => surface
             .diff_row(row)
             .and_then(|row| match row {
                 DiffRow::HunkHeader(hunk) => Some(hunk_header_spans(hunk)),
                 _ => None,
             })
-            .map(|spans| Line::from(spans).style(Style::default().bg(BAND_BG)))
+            .map(|spans| Line::from(spans).style(Style::default().bg(band_bg())))
             .unwrap_or_default(),
         _ => Line::default(),
     }
@@ -145,12 +159,12 @@ fn hunk_header_spans(hunk: &strop_git::Hunk) -> Vec<Span<'static>> {
         Span::styled("@@ ", Style::default().fg(muted())),
         Span::styled(
             format!("-{},{}", hunk.old_start, hunk.old_count),
-            Style::default().fg(DEL_FG),
+            Style::default().fg(del_fg()),
         ),
         Span::styled(" ", Style::default().fg(muted())),
         Span::styled(
             format!("+{},{}", hunk.new_start, hunk.new_count),
-            Style::default().fg(ADD_FG),
+            Style::default().fg(add_fg()),
         ),
         Span::styled(" @@", Style::default().fg(muted())),
     ]
@@ -182,7 +196,7 @@ mod tests {
                 .unwrap()
                 .style
                 .fg,
-            Some(DEL_FG)
+            Some(del_fg())
         );
         assert_eq!(
             spans
@@ -191,7 +205,7 @@ mod tests {
                 .unwrap()
                 .style
                 .fg,
-            Some(ADD_FG)
+            Some(add_fg())
         );
     }
 }

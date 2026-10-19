@@ -3,7 +3,7 @@
 use crate::editor::Directory;
 use crate::render::{accent, diff, muted};
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Span,
 };
 use strop_core::id::LineIndex;
@@ -44,7 +44,7 @@ pub(super) fn row(
                 ),
                 Span::styled(count.to_owned(), quiet),
             ],
-            row_bg: Some(diff::BAND_BG),
+            row_bg: Some(diff::band_bg()),
         });
     }
     if line == 1 {
@@ -63,7 +63,7 @@ pub(super) fn row(
         spans.push(Span::styled("   ·   Enter open   Space a actions", quiet));
         return Some(diff::RowDecoration {
             spans,
-            row_bg: focused.then_some(diff::CURSOR_ROW_BG),
+            row_bg: focused.then_some(diff::cursor_row_bg()),
         });
     }
     let entry = directory.entry(LineIndex::new(line))?;
@@ -78,7 +78,7 @@ pub(super) fn row(
     }
     let color = match entry.observation.kind {
         EntryKind::Directory => accent(),
-        EntryKind::SymbolicLink => Color::Rgb(0x89, 0xb4, 0xfa),
+        EntryKind::SymbolicLink => crate::render::seed(strop_core::theme::current().class_function),
         EntryKind::Unknown => muted(),
         _ => crate::render::text(),
     };
@@ -93,7 +93,7 @@ pub(super) fn row(
             Span::styled(label.to_owned(), label_style),
             Span::styled(metadata.to_owned(), quiet),
         ],
-        row_bg: (focused || marked).then_some(diff::CURSOR_ROW_BG),
+        row_bg: (focused || marked).then_some(diff::cursor_row_bg()),
     })
 }
 

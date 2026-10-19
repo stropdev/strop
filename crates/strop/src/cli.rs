@@ -38,6 +38,8 @@ pub enum Command {
     /// frames only.
     UiStdio,
     Help,
+    /// Built-in theme attribution, also retained in source packages.
+    ThemeLicenses,
     Version,
     Compat,
     Config,
@@ -54,7 +56,7 @@ pub struct Options {
     pub trace_path: Option<PathBuf>,
     pub content: ContentPolicy,
     pub terminal_capture: bool,
-    /// `--theme dark|light`: session-start palette override over the
+    /// `--theme NAME`: session-start palette override over the
     /// config file's `theme` knob.
     pub theme: Option<strop_core::theme::ThemeId>,
 }
@@ -110,11 +112,21 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     continue;
                 }
                 "--theme" => {
-                    let value = args.next().ok_or("--theme requires dark or light")?;
-                    theme = Some(
-                        strop_core::theme::ThemeId::from_name(&value.to_string_lossy())
-                            .ok_or("--theme takes dark or light")?,
-                    );
+                    let value = args
+                        .next()
+                        .ok_or("--theme requires a palette name; see --help")?;
+                    let value = value
+                        .to_str()
+                        .ok_or("--theme requires a UTF-8 palette name")?;
+                    theme =
+                        Some(strop_core::theme::ThemeId::from_name(value).ok_or_else(|| {
+                            let choices = strop_core::theme::ThemeId::ALL
+                                .iter()
+                                .map(|id| id.name())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!("unknown theme {value:?}; choose {choices}")
+                        })?);
                     continue;
                 }
                 "--" => {
@@ -123,6 +135,10 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 }
                 "--help" | "-h" => {
                     command = Some(Command::Help);
+                    continue;
+                }
+                "--licenses" => {
+                    command = Some(Command::ThemeLicenses);
                     continue;
                 }
                 "--version" | "-V" => {

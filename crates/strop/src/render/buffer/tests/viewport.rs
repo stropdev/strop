@@ -134,7 +134,7 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     // muted block, pane-local, through its own zero origin
     assert_eq!(
         terminal.backend().buffer()[(8, 1)].bg,
-        ratatui::style::Color::Rgb(0x3a, 0x3d, 0x4d)
+        crate::render::seed(strop_core::theme::current().border)
     );
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 21, 1, 10),
@@ -155,7 +155,7 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     );
     assert_eq!(
         terminal.backend().buffer()[(28, 1)].bg,
-        ratatui::style::Color::Rgb(0x3a, 0x3d, 0x4d)
+        crate::render::seed(strop_core::theme::current().border)
     );
     assert_eq!(terminal.backend().buffer()[(30, 1)].symbol(), "\u{2502}");
     terminal.backend_mut().resize(21, 5);
@@ -289,7 +289,7 @@ fn diff_background_and_annotation_use_absolute_cells() {
     );
     // the intra-line emphasis lands on the clipped 界 placeholder and
     // the row background pads in CELLS past the last glyph
-    assert_eq!(grid[(0, 0)].bg, super::super::diff::ADD_STRONG_BG);
+    assert_eq!(grid[(0, 0)].bg, super::super::diff::add_strong_bg());
     assert_eq!(grid[(5, 0)].bg, bg);
     let e = Editor::new(Buffer::from_text("abcd\n"));
     let style = super::super::RowStyle {
@@ -438,7 +438,7 @@ fn pane_scrollbar_carries_track_thumb_and_git_overview() {
     );
     assert_eq!(
         grid[(39, 6)].fg,
-        ratatui::style::Color::Rgb(0xa9, 0xc4, 0x7c)
+        crate::render::seed(strop_core::theme::current().class_string)
     );
 
     // Scrolling moves the thumb down — 0068 B2 contract: the thumb's
@@ -493,12 +493,12 @@ fn cursor_fade_paints_the_block_then_restores_the_unfaded_cursor() {
     let faded = &terminal.backend().buffer()[caret];
     assert_eq!(
         faded.bg,
-        ratatui::style::Color::Rgb(0x7f, 0x7d, 0x7c),
+        crate::render::fade_mix(crate::render::base(), crate::render::text(), 50),
         "half-faded block bg"
     );
     assert_eq!(
         faded.fg,
-        ratatui::style::Color::Rgb(0x7f, 0x7d, 0x7c),
+        crate::render::fade_mix(unfaded.fg, crate::render::base(), 50),
         "half-faded block fg"
     );
 

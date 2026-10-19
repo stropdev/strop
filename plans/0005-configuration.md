@@ -108,3 +108,53 @@ stack in the binary).
   - knobs: `indent_guides.render` (bool, landed), `indent_guides.character`,
     `indent_guides.skip_levels` (skip shallow levels — Helix defaults 0, users who hate
     clutter set 1).
+
+## 9. Curated built-in themes (owner-authorized, 2026-10-19)
+
+Implemented for 0.44.0. Core palettes live in `strop-core/src/theme/`; renderer
+chrome consumes their semantic roles. Real editor captures exercised all six
+at 90x24 and 42x16, plus idle terminal inspection across a theme change and
+OSC 104 reset with explicit RGB preserved. Isolated-process tests cover
+config/CLI/session precedence and native-free replay. The full container
+test and core-assurance gates passed, including the native terminal and
+concurrency campaigns. Upstream notices are packaged and exposed by
+`--licenses`.
+
+Ship six choices through the existing config/CLI/session selection path:
+`dark`, `light`, `catppuccin-mocha`, `catppuccin-latte`, `nord`, and
+`strop-ink`. Keep `dark` as the zero-config default and retain the existing
+`dark`/`light` spellings. The four additions provide pastel dark, pastel light,
+restrained cool dark, and original low-chroma dark alternatives; this is not
+a promise to reproduce the landing page's palette list.
+
+Sources: [Catppuccin palette](https://catppuccin.com/palette/),
+[Catppuccin style guide](https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md),
+and [Nord role guidance](https://www.nordtheme.com/docs/colors-and-palettes).
+Both upstream palettes are MIT-licensed; include their full notices in the
+distributed core crate and executable's attribution surface. Strop Ink is an
+original graphite/ivory palette with restrained brass and slate syntax.
+Document any contrast-driven adaptations rather than claiming exact upstream
+port fidelity.
+
+Extend the existing typed `Theme` with shared surface, statusline, cursor-row,
+inactive-row, border, indent-guide, warning and diff-background roles. All
+chrome consumes those roles; no dark RGB literals remain as implicit defaults
+in picker previews, diff rows, mode chips or dimming. Store palette data
+statically, with no runtime parsing/downloads or per-cell allocation.
+The registry supplies canonical names, display labels and descriptions to
+the selector/help/CLI rather than maintaining more theme-name lists.
+
+Theme changes must update existing terminal sessions asynchronously through
+their owning service, including an idle terminal; preserve explicit child
+truecolor and OSC palette overrides. Never perform native terminal work or
+wait for a reply in the input path. Config-file palette overrides, automatic
+light/dark detection and live config-file watching remain outside this change.
+
+Acceptance: verify all six themes in source panes, selections, diagnostics,
+pickers/previews, diffs, help/modeline and terminal live/inspection views.
+Check main text contrast (4.5:1) and syntax/comment legibility (3:1 minimum)
+against their base surfaces; these checks are not a blanket accessibility
+claim. Exercise config and CLI selection, selector acceptance/cancellation,
+invalid names, and terminal switching without losing child overrides.
+Use actual rendered cell evidence, the full compose gate and the source-bound
+release assurance/measurement pipeline before tagging.

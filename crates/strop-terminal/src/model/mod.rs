@@ -141,19 +141,21 @@ impl Palette {
     /// 6×6×6/grayscale ramps. One source — `strop_core::theme` — feeds
     /// both this and the frontend's render constants.
     pub fn strop() -> Self {
+        Self::for_theme(strop_core::theme::current_id())
+    }
+
+    /// Resolve a captured selection once on the terminal owner, not per frame.
+    pub fn for_theme(theme: strop_core::theme::ThemeId) -> Self {
+        let theme = theme.palette();
         let rgb = |value: strop_core::theme::Rgb| Rgb {
             red: value.r,
             green: value.g,
             blue: value.b,
         };
         Self {
-            foreground: rgb(strop_core::theme::current().text),
-            background: rgb(strop_core::theme::current().base),
-            colors: strop_core::theme::current()
-                .ansi256()
-                .iter()
-                .map(|value| rgb(*value))
-                .collect(),
+            foreground: rgb(theme.text),
+            background: rgb(theme.base),
+            colors: theme.ansi256().iter().map(|value| rgb(*value)).collect(),
         }
     }
 }

@@ -17,10 +17,11 @@ use std::io;
 use strop_core::Buffer;
 use strop_engine::{config, editor, session};
 
-pub fn run() -> Result<(), Box<dyn Error>> {
+pub fn run(theme: Option<strop_core::theme::ThemeId>) -> Result<(), Box<dyn Error>> {
     let mut editor = editor::Editor::new(Buffer::from_text(""));
     editor.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)?;
     let (configuration, error) = config::Config::load();
+    strop_core::theme::set_current(theme.unwrap_or(configuration.theme));
     editor.set_config(configuration);
     editor.reresolve_indents();
     editor.set_state_dir(session::state_root());

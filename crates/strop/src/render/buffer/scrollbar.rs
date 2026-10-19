@@ -15,12 +15,6 @@ use crate::editor::Editor;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 
-/// The quiet track (0050's reserved-column vocabulary).
-const TRACK: Color = Color::Rgb(0x2a, 0x2c, 0x3a);
-/// Gutter palette: additions green, changes amber, deletions red.
-const ADD: Color = Color::Rgb(0xa9, 0xc4, 0x7c);
-const DELETE: Color = Color::Rgb(0xe8, 0x67, 0x7a);
-
 /// The pane's reserved scrollbar column: the rightmost column of the
 /// pane rect, excluded from every text budget the pane computes.
 pub(super) fn reserved(rect: Rect) -> Rect {
@@ -52,9 +46,9 @@ pub(super) fn render(editor: &Editor, output: &mut ratatui::Frame, rect: Rect, v
         for (line, sign) in editor.sign_lines() {
             let row = line_to_row(line.saturating_sub(1), total, track_h);
             let color = match sign {
-                '+' => ADD,
+                '+' => crate::render::seed(strop_core::theme::current().class_string),
                 '~' => accent(),
-                _ => DELETE,
+                _ => crate::render::seed(strop_core::theme::current().diag_error),
             };
             let cell = &mut output.buffer_mut()[(track_x, rect.y + row as u16)];
             cell.set_symbol("▎");
@@ -155,7 +149,7 @@ fn paint_track(output: &mut ratatui::Frame, x: u16, y: u16, height: usize) {
     for row in 0..height {
         let cell = &mut output.buffer_mut()[(x, y + row as u16)];
         cell.set_symbol("│");
-        cell.set_fg(TRACK);
+        cell.set_fg(crate::render::seed(strop_core::theme::current().border));
         cell.set_bg(base());
     }
 }

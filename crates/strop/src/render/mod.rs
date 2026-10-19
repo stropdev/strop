@@ -28,6 +28,8 @@ mod statusline;
 mod terminal;
 #[cfg(test)]
 mod terminal_tests;
+#[cfg(test)]
+mod theme_tests;
 mod which_key;
 
 // strop palette (plan 0004 site, --accent amber): every value derives
@@ -81,7 +83,7 @@ pub(crate) fn severity_color(sev: strop_lsp::Severity) -> Color {
     let theme = strop_core::theme::current();
     match sev {
         Severity::Error => seed(theme.diag_error),
-        Severity::Warning => accent(), // warning amber
+        Severity::Warning => seed(theme.warning),
         Severity::Information => seed(theme.diag_info),
         Severity::Hint => muted(), // hint
     }
@@ -216,8 +218,10 @@ pub(crate) fn paint(editor: &mut Editor, frame: &mut Frame) {
 pub(crate) fn mode_color(mode: Mode) -> Color {
     match mode {
         Mode::Normal => accent(),
-        Mode::Insert => Color::Rgb(0xa9, 0xc4, 0x7c), // green
-        Mode::Visual | Mode::VisualLine | Mode::VisualBlock => Color::Rgb(0xc5, 0x8a, 0xe8), // violet
+        Mode::Insert => seed(strop_core::theme::current().class_string),
+        Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
+            seed(strop_core::theme::current().class_keyword)
+        }
     }
 }
 
@@ -228,9 +232,9 @@ pub(crate) fn dim_color(c: Color) -> Color {
             |a: u8, b: u8| (a as u16 * (100 - t) as u16 / 100 + b as u16 * t as u16 / 100) as u8;
         Color::Rgb(m(c.0, base.0), m(c.1, base.1), m(c.2, base.2))
     }
-    const BASE_RGB: (u8, u8, u8) = (0x16, 0x16, 0x1e);
+    let base = strop_core::theme::current().base;
     match c {
-        Color::Rgb(r, g, b) => mix((r, g, b), BASE_RGB, 55),
+        Color::Rgb(r, g, b) => mix((r, g, b), (base.r, base.g, base.b), 55),
         other => other,
     }
 }

@@ -2,15 +2,23 @@ use super::*;
 use strop_terminal::model::{Palette, Style};
 
 impl Editor {
-    /// Logical inspection retains normal editor layout while styling each byte
-    /// from the same immutable terminal generation as the buffer projection.
+    /// Inspection pins text and explicit cell styles, not theme defaults.
+    /// Indexed/default colors resolve through the latest native effective
+    /// palette, including application OSC overrides, without cloning rows.
     pub fn terminal_style_at(
         &self,
         document: DocumentId,
         byte: usize,
     ) -> Option<(Style, &Palette)> {
-        let frame = self.terminal_document(document)?.frame.as_ref()?;
-        Some((frame.cell_at_byte(byte)?.style, &frame.palette))
+        let source = self.terminal_document(document)?;
+        let frame = source.frame.as_ref()?;
+        let palette = self
+            .terminals
+            .entries
+            .get(&source.session)
+            .and_then(|entry| entry.live.as_ref())
+            .map_or(&frame.palette, |live| &live.palette);
+        Some((frame.cell_at_byte(byte)?.style, palette))
     }
     pub fn terminal_title(&self, document: DocumentId) -> Option<&str> {
         let session = self.terminal_document(document)?.session;

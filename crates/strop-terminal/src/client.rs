@@ -41,6 +41,8 @@ use strop_worker_protocol::{ExitStatus, PtyGeometry, StreamId};
 struct Pending {
     sequence: u64,
     bytes: usize,
+    /// Input wire indices exclude resize and no-op frontend actions.
+    wire_sequence: Option<u64>,
 }
 
 /// Stream arrivals nudge the owning service's wake datagram: the
@@ -222,6 +224,25 @@ impl Client {
         self.feed(&emission.reply)
     }
 
+    /// Service-owned appearance change: no PTY input or stream sequence is
+    /// consumed, and publication does not depend on fresh child output.
+    pub(crate) fn set_theme(&mut self, theme: strop_core::theme::ThemeId) -> Result<Update, Error> {
+        if self.phase != Phase::Running {
+            return Err(Error::Closed);
+        }
+        self.vt.configure_palette(&Palette::for_theme(theme))?;
+        let (frame, emission) = self.vt.snapshot()?;
+        self.emission(emission)?;
+        Ok(Update {
+            session: self.session,
+            phase: self.phase.clone(),
+            frame: Some(frame),
+            effects: std::mem::take(&mut self.effects),
+            acknowledged_input: self.acknowledged,
+            warning: self.warning.take(),
+        })
+    }
+
     pub fn resize(&mut self, geometry: Geometry) -> Result<u64, Error> {
         if self.phase != Phase::Running {
             return Err(Error::Closed);
@@ -252,6 +273,7 @@ impl Client {
         self.pending.push_back(Pending {
             sequence,
             bytes: charge,
+            wire_sequence: None,
         });
         self.resizes.push_back((sequence, geometry));
         self.geometry_revision = geometry.revision;
@@ -264,12 +286,10 @@ impl Client {
     fn feed(&mut self, bytes: &[u8]) -> Result<u64, Error> {
         const FEED_CHUNK: usize = 128 * 1024;
         if bytes.is_empty() {
-            let sequence = self
-                .sequence
-                .checked_add(1)
-                .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
-            self.sequence = sequence;
-            return Ok(sequence);
+            // No bytes means no worker acknowledgment will arrive. Reuse the
+            // preceding sequence so the service can settle immediately, or
+            // behind that preceding input if it is still in flight.
+            return Ok(self.sequence);
         }
         let chunks = bytes.chunks(FEED_CHUNK);
         let count = chunks.len();
@@ -285,7 +305,8 @@ impl Client {
                 .sequence
                 .checked_add(1)
                 .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
-            self.pty
+            let wire_sequence = self
+                .pty
                 .feed(chunk)
                 .map_err(|error| Error::Unavailable(error.to_string()))?;
             self.retained_input += chunk.len() + 8;
@@ -293,6 +314,7 @@ impl Client {
             self.pending.push_back(Pending {
                 sequence,
                 bytes: chunk.len() + 8,
+                wire_sequence: Some(wire_sequence),
             });
             last = sequence;
         }
@@ -379,7 +401,17 @@ impl Client {
         loop {
             match self.pty.events().try_recv() {
                 Ok(ExecEvent::Input { sequence }) => {
-                    self.cover(sequence);
+                    // The worker numbers only wire input chunks; translate to
+                    // the service's input/resize sequence before retiring credit.
+                    // An earlier ordered resize may already have covered it.
+                    if let Some(local) = self
+                        .pending
+                        .iter()
+                        .find(|pending| pending.wire_sequence == Some(sequence))
+                        .map(|pending| pending.sequence)
+                    {
+                        self.cover(local);
+                    }
                     changed = true;
                 }
                 Ok(ExecEvent::Exit(status)) => {

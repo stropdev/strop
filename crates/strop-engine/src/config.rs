@@ -8,7 +8,7 @@
 //! indent_style = "spaces"   # or "tabs"
 //! indent_detect = true      # infer a document's indent from its content
 //! auto_format = true        # LSP format before :w (helix parity)
-//! theme = "light"           # interface palette (default "dark")
+//! theme = "catppuccin-mocha" # built-in palette (default "dark"; :theme lists choices)
 //! ```
 //!
 //! LSP server config is a separate file with its own layering —
@@ -55,7 +55,7 @@ pub struct Config {
     pub cursor_fade: bool,
     /// Code-completion lifecycle and automatic request admission (0059 C06).
     pub completion: CompletionSettings,
-    /// The interface palette (0.42.0). `--theme` and `:theme` override
+    /// The interface palette. `--theme` and `:theme` override
     /// per session; nothing here is hot-reloaded.
     pub theme: strop_core::theme::ThemeId,
     /// Winning-layer record per knob (0056 AR14); populated by `load`.
@@ -195,7 +195,7 @@ pub const KNOBS: &[Knob] = &[
     Knob {
         key: "theme",
         kind: "string",
-        desc: "interface palette: dark or light",
+        desc: "built-in interface palette; :theme lists choices",
     },
 ];
 

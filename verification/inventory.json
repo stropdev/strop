@@ -4,6 +4,168 @@
   "plan": "plans/0059-nonblocking-code-completion.md",
   "boundaries": [
     {
+      "id": "theme-presentation",
+      "kind": "lifecycle",
+      "title": "Compiled-in palette selection and owned terminal appearance",
+      "promise": "Canonical built-in themes share one semantic role registry across configuration, CLI, session selection and rendering. Main text and syntax contrasts remain checked; terminal default changes are bounded asynchronous requests that preserve child color overrides and input ownership.",
+      "exclusions": "No theme downloads, arbitrary palette files, automatic appearance detection, config hot reload or blanket accessibility certification. Child-selected terminal color combinations are outside editor contrast guarantees.",
+      "authoritative_state": "process-selected ThemeId and immutable palettes; terminal service-owned coalesced appearance request and Ghostty native default/override state",
+      "trusted": [
+        "sRGB contrast model for numerical checks, not individual display calibration",
+        "Ghostty default/override and OSC reset semantics",
+        "ratatui cell styling and frontend color reproduction"
+      ],
+      "files": [
+        "crates/strop-core/src/theme.rs",
+        "crates/strop-core/src/theme/builtin.rs",
+        "crates/strop-core/src/theme/catppuccin.rs",
+        "crates/strop-core/src/theme/nord.rs",
+        "crates/strop-core/src/theme/ink.rs",
+        "crates/strop-engine/src/editor/theme.rs",
+        "crates/strop-engine/src/config.rs",
+        "crates/strop-engine/src/editor/trace/seed.rs",
+        "crates/strop-engine/src/editor/terminal/lifecycle.rs",
+        "crates/strop-engine/src/editor/terminal/presentation.rs",
+        "crates/strop-terminal/src/service/mod.rs",
+        "crates/strop-terminal/src/service/worker.rs",
+        "crates/strop-terminal/src/client.rs",
+        "crates/strop-terminal/src/model/mod.rs",
+        "crates/strop-terminal/src/vt/mod.rs",
+        "crates/strop/src/cli.rs",
+        "crates/strop/src/main.rs",
+        "crates/strop/src/ui_stdio/mod.rs",
+        "crates/strop/src/render/mod.rs",
+        "crates/strop/src/render/diff.rs",
+        "crates/strop/src/render/statusline.rs",
+        "crates/strop/src/render/picker/preview.rs"
+      ],
+      "claims": [
+        {
+          "id": "THEME-ROLE-CONTRAST",
+          "statement": "Main text is at least 4.5:1 against editor backgrounds; syntax/comments are at least 3:1 against base and popup surfaces. Selection and change emphasis remain visually distinct; named palettes serialize canonically and preserve the standard ANSI-256 cube/ramp.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-core/src/theme/tests.rs",
+              "gate": "test",
+              "tests": [
+                "main_text_remains_readable_on_every_editor_background",
+                "syntax_and_comments_are_legible_on_editor_and_popup_surfaces",
+                "selection_and_change_overlays_have_distinct_visual_strength",
+                "ansi256_preserves_indexed_terminal_color_contract",
+                "canonical_names_match_the_serialized_consumer_contract"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0005 section 9 adds explicit numerical contrast and registry contracts for six built-in themes."
+          }
+        },
+        {
+          "id": "THEME-SELECTION-REPLAY",
+          "statement": "Real editor frames follow config then CLI then session choice. Selector cancellation does not apply a candidate, invalid names do not mutate documents, and full replay restores the effective startup palette without reading user configuration.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/themes.rs",
+              "gate": "test",
+              "tests": [
+                "every_registered_palette_renders_from_config_and_cli_override",
+                "live_selector_accept_cancel_and_invalid_choice_preserve_session_ownership",
+                "invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/theme_tests.rs",
+              "gate": "test",
+              "tests": [
+                "all_themes_reach_source_picker_diff_help_and_statusline"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0005 section 9 qualifies palette selection and actual rendered surfaces, including CLI override replay."
+          }
+        },
+        {
+          "id": "THEME-TERMINAL-OWNERSHIP",
+          "statement": "Idle and starting terminal sessions receive the latest theme through a bounded coalesced request; pinned inspection keeps its text while native palette overrides survive. Appearance changes do not consume input sequences, no-op focus settles, and input credit maps through resizes correctly.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/theme_tests.rs",
+              "gate": "test",
+              "tests": [
+                "idle_sessions_retheme_during_startup_and_frozen_inspection",
+                "appearance_publication_does_not_consume_the_child_input_sequence"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-terminal/src/vt/tests.rs",
+              "gate": "test",
+              "tests": [
+                "live_defaults_preserve_osc_overrides_and_reset_to_the_selected_theme",
+                "every_registered_theme_initializes_and_rethemes_an_existing_terminal"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-terminal/src/service/tests.rs",
+              "gate": "test",
+              "tests": [
+                "theme_requests_coalesce_and_wake_even_when_child_input_is_full",
+                "startup_accepts_the_latest_theme_but_closed_services_reject_it"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0005 section 9 extends the existing service-owned VT palette defaults without replacing child-chosen styles."
+          }
+        }
+      ],
+      "gates": [
+        "test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-core/src/theme.rs": "9faf8b4c141a928e3d655a7ad4986baf721758eaa48bbe8ba80f76b7b9cf03b4",
+          "crates/strop-core/src/theme/builtin.rs": "ff59f11855a169205f965e9968074c5762cba3ae096d38d2387296bb6c408553",
+          "crates/strop-core/src/theme/catppuccin.rs": "f7488867404b4953d5fe0cdc2dcb69cad1b307ba3d35d50f574b1bcf2101fbab",
+          "crates/strop-core/src/theme/ink.rs": "7b1a3bdfd0a873f7d3a352600fb8febc84575c29f85fc1848fbd6b5a35538c22",
+          "crates/strop-core/src/theme/nord.rs": "2c1ab4a609639b785dc44415e841e9adea35c7a206aa1f92e7b677650caa6c81",
+          "crates/strop-engine/src/config.rs": "494d6e153417b65dc4572324da55bb4ed410510d5e5ae09218ad46db39ba6e9b",
+          "crates/strop-engine/src/editor/terminal/lifecycle.rs": "6dfc0aea30192d4c1850516a91c15ed5eebac2c051fd3ef442e24ffa54d6afcf",
+          "crates/strop-engine/src/editor/terminal/presentation.rs": "116bc2b594c5aba9357940c86cdb75430398e5f932d65cf0af5d885dfce0252c",
+          "crates/strop-engine/src/editor/theme.rs": "1f350702bde50142b6000b1395aa38c0d4268bb3d2f963bdd150ba7a8e04a5c5",
+          "crates/strop-engine/src/editor/trace/seed.rs": "d5df3e07410eccaa6a5d808cebf5fce268e84087b1e83f7821f8254e014f156f",
+          "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
+          "crates/strop-terminal/src/model/mod.rs": "4af1b183054749001a27b22aad26b440e613855fa4c601d9f3feae8b6b58de92",
+          "crates/strop-terminal/src/service/mod.rs": "8d0e1f0a0af68407d792872a065e7d7aad02524cd85cdabc8b766c52bdc99539",
+          "crates/strop-terminal/src/service/worker.rs": "6dcea006d7a40674c82a830f17c6a1de3a3e3f18c87dade762cf112ea1d0c619",
+          "crates/strop-terminal/src/vt/mod.rs": "3d036a34bee5686fc0e44b9aafc34ba5741e54e78a8236669ad8ebb9e382e6c9",
+          "crates/strop/src/cli.rs": "8043022a223dae185cc18606ec11a98b4b46860f73f6d16fcaf3500231fa1ccc",
+          "crates/strop/src/main.rs": "f4b3e5acc5562ba589108c26d7c8c4cfc5c7dd774c10ccc5a9c61759cb92bce9",
+          "crates/strop/src/render/diff.rs": "4336dc0dca6881efb8c3e2811eb29ea266d12fe88aef6a289db0b2a565bd245b",
+          "crates/strop/src/render/mod.rs": "e09ee0e316c0550dd97a23d8a721383ce4be3837eb17a6abf5afe831f0513996",
+          "crates/strop/src/render/picker/preview.rs": "5f3220bbabcc840d4d15b2a592e41340ef6e6e95d3da12d6c5aeda209902d938",
+          "crates/strop/src/render/statusline.rs": "209e4bcb149c4a22ee0530f03749a1629b8d15495fee38bc4203fea25da3a139",
+          "crates/strop/src/ui_stdio/mod.rs": "77aa880284354afa41ce58a22ead9824e22e808e52a4f3789d1ed4e8abd7757c"
+        },
+        "evidence": "b3acfd6365f31506ff83c6e4ba8e06b5d51417449c1d39288d9adca93dd75ee9"
+      }
+    },
+    {
       "id": "mutation-gateway",
       "kind": "mutation",
       "title": "Buffer mutation gateway and edit geometry",
@@ -1727,6 +1889,26 @@
       ],
       "claims": [
         {
+          "id": "EXEC-INPUT-ACK",
+          "statement": "PTY wire input indices map to the terminal service's separate input/resize sequence, releasing retained input only at the corresponding acknowledgement. Appearance changes and empty focus emissions do not consume wire input slots.",
+          "status": "native-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/theme_tests.rs",
+              "gate": "test",
+              "tests": [
+                "appearance_publication_does_not_consume_the_child_input_sequence"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "Theme-switch validation exposed the pre-existing mismatch between zero-based wire acknowledgements and local terminal input/resize sequences."
+          }
+        },
+        {
           "id": "EXEC-LEASE",
           "statement": "Native worker process-group lifecycle relays attested exit/signal as typed data, keeps stdout/stderr separate, kills inherited descendants before reaping and bounds container group cleanup. XNU's zombie-only kill(-PGID) EPERM is accepted only when a second non-reaping wait attests the leader's exit and libproc lists exactly that unreaped leader; live/inaccessible members or a refused/truncated listing remain failures, with the actual supervisor diagnostic emitted rather than swallowed. This unchanged macOS branch passed native Apple Silicon execution in run 36294464914. Intel macOS was explicitly retired by the user; final platform qualification covers only retained targets.",
           "status": "native-tested",
@@ -1977,7 +2159,7 @@
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
           "crates/strop-worker-client/src/connection/reader.rs": "83bfa7c00f07310fae842df2644aaee11ed814d027a6e61f703fa6d94409c6f2",
           "crates/strop-worker-client/src/exec.rs": "fa10117c12f0afd560bb35f51fe1054df24ac5b8b41464120dcf0f943d0b9607",
-          "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
+          "crates/strop-worker-client/src/session.rs": "7714845c6890277892056fa0bee8e0211e7515b87d0202d7c2d7b2bfb0e863a5",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
           "crates/strop-worker/src/exec/mod.rs": "132f6d1e4f226016c1ef68a9cc02af98972c185ca58bad4c8bc39e47742aad79",
           "crates/strop-worker/src/exec/supervisor.rs": "e3e206d5d5fd421be56ffcf1bf5937424aa52846e8b4fd3c48035980967089bc",
@@ -1985,7 +2167,7 @@
           "crates/strop-worker/src/serve/process/pty.rs": "5bcfcdaaae3fda81a95b23562a4e2441369136e1ab94ee0837b7ba6af2fc0e22",
           "crates/strop-worker/src/serve/schedule.rs": "20b7d148a9015c1f98eaf1dfc48c40e6c44939ce2ea585dd5744154a89ff961e"
         },
-        "evidence": "ace432cdd014b3a1584b9c21e2a7237ec24734e960e0e578c8d4617bd4e4b244"
+        "evidence": "3e5d4a40388768ac4def4d1b5f836824f9d101ea278a63d828fa630e84580839"
       }
     },
     {
@@ -2152,7 +2334,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "9f9f82771c69066cab230ae8110eebac43205d788e17716d39c5841daa19ebe7",
+          "crates/strop-fs/Cargo.toml": "69cfe5b0c4dee20b4a9e6280ca363f5633cedf055dd90c87fc7e89ededd7ecc7",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -2456,6 +2638,15 @@
           "evidence": [
             {
               "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/theme_tests.rs",
+              "gate": "test",
+              "tests": [
+                "idle_sessions_retheme_during_startup_and_frozen_inspection",
+                "appearance_publication_does_not_consume_the_child_input_sequence"
+              ]
+            },
+            {
+              "kind": "test",
               "path": "crates/strop-worker-client/tests/loopback/pty.rs",
               "gate": "test",
               "tests": [
@@ -2616,22 +2807,22 @@
       "pins": {
         "sources": {
           "crates/strop-engine/src/editor/terminal/input.rs": "5b0bf2e34f15d8c3839edbc3da0296ff5fc2c43a0401f876b1c6fbba0e166720",
-          "crates/strop-engine/src/editor/terminal/mod.rs": "7f15290788725ac9a44283334a3587f3a1117c2c91c7cdc3973f494f002e2c8c",
+          "crates/strop-engine/src/editor/terminal/mod.rs": "c961787c86bb922fed9f17f33840694ae0b301c9abe6d9a17efd32f1a1ec60a6",
           "crates/strop-terminal/native/bridge.c": "093dd7baf411b8e647a52404144ed7e5088424ed370ccdfb6ee974da7fd250af",
-          "crates/strop-terminal/src/client.rs": "19bfcb2858bcbe280bde4a5535880091411e0fda0d0e9b37973daa7bf74d515d",
+          "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
           "crates/strop-terminal/src/launch.rs": "c0b3c6b9e1ad4a98ae6598786ebacd29698a5d14376a8aa92214a9f5bc3d8dc4",
-          "crates/strop-terminal/src/model/mod.rs": "35bdd9b500ef6aa38f87f44c573afa4554bcdfd973f7fcce1f97e89969c0a080",
+          "crates/strop-terminal/src/model/mod.rs": "4af1b183054749001a27b22aad26b440e613855fa4c601d9f3feae8b6b58de92",
           "crates/strop-terminal/src/model/validation.rs": "77cc2c061d25e54973b7e6591c48eefba9d054bb9a07dbb91efb33f5b68174da",
           "crates/strop-terminal/src/model/wire.rs": "288cc2dc1e6146612d81e45894a3d0da62159e46e9eb3449959bcabad27a177c",
           "crates/strop-terminal/src/service/mailbox.rs": "1a19cb788b08d33270fb5ce55b23c68b11b466c11406d6422cb26c19928d25cb",
-          "crates/strop-terminal/src/service/mod.rs": "7f3596553841f6ada3b880a1340c31c55e7c6a7ff90646daf029a5c1f1bf2afa",
-          "crates/strop-terminal/src/service/worker.rs": "3937065e226a4f55d7ab6f914b865f507cd5d722136625d5b7f430f2a22b9f63",
+          "crates/strop-terminal/src/service/mod.rs": "8d0e1f0a0af68407d792872a065e7d7aad02524cd85cdabc8b766c52bdc99539",
+          "crates/strop-terminal/src/service/worker.rs": "6dcea006d7a40674c82a830f17c6a1de3a3e3f18c87dade762cf112ea1d0c619",
           "crates/strop-terminal/src/vt/input.rs": "15bdef918d1fd1ac162d9be4b1b527f9bc33d45be241a88a54c99f35f7612bb2",
-          "crates/strop-terminal/src/vt/mod.rs": "fe40a77f280f36c96769f9195d2c752151ad3e25871ba3947e7367dfd84a79d8",
-          "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
+          "crates/strop-terminal/src/vt/mod.rs": "3d036a34bee5686fc0e44b9aafc34ba5741e54e78a8236669ad8ebb9e382e6c9",
+          "crates/strop-worker-client/src/session.rs": "7714845c6890277892056fa0bee8e0211e7515b87d0202d7c2d7b2bfb0e863a5",
           "crates/strop/src/terminal.rs": "323d4bc78a53c17c4a0db334d56618a5dc9e586b7dce9f6f2b40ddb61710c81e"
         },
-        "evidence": "c6f0050cac78151b007431a557fb7178d907e104787bd8959fea01e693b38c8e"
+        "evidence": "d31aba1d0675f63929f5662d7e3ce423d0fa01975ae39e3b1387e9395131a9b9"
       }
     },
     {
@@ -3608,7 +3799,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "c43f52a39c9e252520b02bc600fb093e60ae46503c2229bb4566aa4b446c94ff",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "9f9f82771c69066cab230ae8110eebac43205d788e17716d39c5841daa19ebe7",
+          "crates/strop-fs/Cargo.toml": "69cfe5b0c4dee20b4a9e6280ca363f5633cedf055dd90c87fc7e89ededd7ecc7",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -3616,7 +3807,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "c3279d49a9b3c687ad20351acf0292c0f1d9123b1f73fa0ef4a9a5882d8f740a",
+          "crates/strop-worker/Cargo.toml": "c02586e6787582f938ada7f03eadc524397d7bcc07864fa3dba6fb2f8d26c4e1",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -4313,11 +4504,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "c3279d49a9b3c687ad20351acf0292c0f1d9123b1f73fa0ef4a9a5882d8f740a",
+          "crates/strop-worker/Cargo.toml": "c02586e6787582f938ada7f03eadc524397d7bcc07864fa3dba6fb2f8d26c4e1",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "15d947c50c71effc646f036d29dd002327436ad805a27b0e390ea6c3527ddc6a"
+          "crates/strop/Cargo.toml": "afedc3477f2e4a925d626152d58a1d6121029793486007179b5449dd21f272d6"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }
@@ -4381,6 +4572,14 @@
           "statement": "A 17 MiB worker read, large exec output and a saturated PTY all deliver exact bytes while Health remains live; dropped exec output drains its child rather than buffering unboundedly. A PTY flood exit routed through separate client channels waits until queued VT output has drained. The bounded LSP bridge also wakes pending writers/flushes after a failed relayed stdin write; the failure and disconnected queue are visible before wake, and flush polling registers before observing the result.",
           "status": "correspondence-tested",
           "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/theme_tests.rs",
+              "gate": "test",
+              "tests": [
+                "appearance_publication_does_not_consume_the_child_input_sequence"
+              ]
+            },
             {
               "kind": "test",
               "path": "crates/strop-worker/src/serve/schedule/loom_tests.rs",
@@ -4479,17 +4678,17 @@
       "pins": {
         "sources": {
           "crates/strop-lsp/src/client/worker_io.rs": "cb4ac5b40e966b92acfa3fce401da6e669732051f9c79b4b63cf1ed69c21e6b1",
-          "crates/strop-terminal/src/client.rs": "19bfcb2858bcbe280bde4a5535880091411e0fda0d0e9b37973daa7bf74d515d",
+          "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
           "crates/strop-worker-client/src/connection/reader.rs": "83bfa7c00f07310fae842df2644aaee11ed814d027a6e61f703fa6d94409c6f2",
           "crates/strop-worker-client/src/exec.rs": "fa10117c12f0afd560bb35f51fe1054df24ac5b8b41464120dcf0f943d0b9607",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker-client/src/session.rs": "16bb91f7715e7d7e17f0bed43954345e3f17fe176d32614157b04d588539ee50",
+          "crates/strop-worker-client/src/session.rs": "7714845c6890277892056fa0bee8e0211e7515b87d0202d7c2d7b2bfb0e863a5",
           "crates/strop-worker/src/serve/process/pty.rs": "5bcfcdaaae3fda81a95b23562a4e2441369136e1ab94ee0837b7ba6af2fc0e22",
           "crates/strop-worker/src/serve/schedule.rs": "20b7d148a9015c1f98eaf1dfc48c40e6c44939ce2ea585dd5744154a89ff961e",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "287b7bec0135ff11a6b08f4f32395394d0d049277a61624026f99b0fd478866a"
+        "evidence": "7963c2c257efc76ba935088a7d52a4b0b4bd1629825323bd86436c91f40120a0"
       }
     },
     {
@@ -5023,6 +5222,14 @@
           "evidence": [
             {
               "kind": "test",
+              "path": "crates/strop/tests/themes.rs",
+              "gate": "test",
+              "tests": [
+                "live_selector_accept_cancel_and_invalid_choice_preserve_session_ownership"
+              ]
+            },
+            {
+              "kind": "test",
               "path": "crates/strop/tests/tracing.rs",
               "gate": "test",
               "tests": [
@@ -5111,7 +5318,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/config.rs": "156f6fb1d02ffed6cae8581308580e9b72501c23d07c2de4e418c52f6894a93c",
+          "crates/strop-engine/src/config.rs": "494d6e153417b65dc4572324da55bb4ed410510d5e5ae09218ad46db39ba6e9b",
           "crates/strop-engine/src/editor/completion/acceptance.rs": "24f0cf6c050b0845416df8a665bf5de10c04182eaac0a4618b4e515a3c012d2a",
           "crates/strop-engine/src/editor/completion/admission.rs": "bade006a1ba8e0bb281901e7f174f3e399a03f53020113cd356f82db2ff2441c",
           "crates/strop-engine/src/editor/completion/apply.rs": "22982e9bb884b06ba4809f36bebbd4140f33c8eb369917b6c914e549c4ce5742",
@@ -5134,11 +5341,11 @@
           "crates/strop-engine/src/editor/completion/worker/mod.rs": "edb377ec3a5022b0897d11851d13717ace9350dbd303e5592563eb43a84a6bd1",
           "crates/strop-engine/src/editor/completion/worker/work.rs": "0de0702c6e0112ea1659e3926733e32548005d3ca29ab3a78140724860d98566",
           "crates/strop-engine/src/editor/resolution/mod.rs": "9fcaefbefb5ef4066f4b1a4474582bc9078ac9530e36ec7cdcc8ce1edd0d0b39",
-          "crates/strop-engine/src/editor/trace/seed.rs": "39b9b6ca5a14d1df879eb10ccdbca51d98cd7646362c9838a8f20b723b439c8c",
+          "crates/strop-engine/src/editor/trace/seed.rs": "d5df3e07410eccaa6a5d808cebf5fce268e84087b1e83f7821f8254e014f156f",
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "b3d2778a79c7ae5a7ff148793a12f9c9b0da58401e788dba9f0897fada68cf28"
         },
-        "evidence": "3b14d53b4b1a2ab5509c29bb57a1a0c2f814a9708522cb71cd8b72ea42589dd8"
+        "evidence": "769dc2cd099c4ead704a7e337bb33a35df10c0d79398ddb14e068ced1d549369"
       }
     },
     {

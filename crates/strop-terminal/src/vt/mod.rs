@@ -96,7 +96,9 @@ impl Vt {
         Ok(vt)
     }
 
-    fn configure_palette(&self, palette: &Palette) -> Result<(), Error> {
+    /// Update defaults only. Ghostty retains its OSC override mask and dynamic
+    /// foreground/background overrides; OSC resets resolve to these defaults.
+    pub fn configure_palette(&self, palette: &Palette) -> Result<(), Error> {
         if palette.colors.len() != 256 {
             return Err(Error::Capacity("terminal palette must hold 256 colors"));
         }

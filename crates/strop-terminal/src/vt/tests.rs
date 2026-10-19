@@ -245,7 +245,7 @@ fn the_embedder_palette_configures_defaults_and_survives_indexed_output() {
     // 0065 D3: the embedder-owned palette lands at creation; indexed and
     // default colors resolve through it, and one Arc serves every frame
     // until the child overrides a color itself.
-    let palette = Palette::strop();
+    let palette = Palette::for_theme(strop_core::theme::ThemeId::Dark);
     let mut vt = themed_terminal(20, 3, Some(&palette));
     vt.feed(b"\x1b[31mred \x1b[38;2;1;2;3mtrue \x1b[mplain")
         .unwrap();
@@ -282,4 +282,120 @@ fn the_embedder_palette_configures_defaults_and_survives_indexed_output() {
             blue: 0x56,
         }
     );
+}
+
+#[test]
+fn live_defaults_preserve_osc_overrides_and_reset_to_the_selected_theme() {
+    use strop_core::theme::ThemeId;
+
+    let original = Palette::for_theme(ThemeId::Dark);
+    let selected = Palette::for_theme(ThemeId::CatppuccinMocha);
+    let mut vt = themed_terminal(20, 3, Some(&original));
+    vt.feed(b"\x1b[31mI\x1b[38;2;1;2;3;48;2;4;5;6mT\x1b[mD")
+        .unwrap();
+    // An override equal to the OLD default must still count as child-owned.
+    // Value comparison cannot replace Ghostty's per-index override mask.
+    let same = original.colors[2];
+    vt.feed(
+        format!(
+            "\x1b]4;1;rgb:12/34/56;2;rgb:{:02x}/{:02x}/{:02x}\x07\
+             \x1b]10;rgb:23/45/67\x07\x1b]11;rgb:34/56/78\x07",
+            same.red, same.green, same.blue
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let (before, _) = vt.snapshot().unwrap();
+    assert_eq!(
+        before.palette.foreground,
+        Rgb {
+            red: 0x23,
+            green: 0x45,
+            blue: 0x67
+        }
+    );
+    assert_eq!(
+        before.palette.background,
+        Rgb {
+            red: 0x34,
+            green: 0x56,
+            blue: 0x78
+        }
+    );
+    assert_eq!(
+        before.palette.colors[1],
+        Rgb {
+            red: 0x12,
+            green: 0x34,
+            blue: 0x56
+        }
+    );
+    vt.configure_palette(&selected).unwrap();
+    let (after, emission) = vt.snapshot().unwrap();
+    assert!(emission.reply.is_empty());
+    assert!(emission.effects.is_empty());
+    assert!(after.revision > before.revision);
+    assert_eq!(after.projection, before.projection);
+    assert_eq!(after.cursor, before.cursor);
+    assert_eq!(after.geometry, before.geometry);
+    assert_eq!(after.origin, before.origin);
+    assert_eq!(after.palette.foreground, before.palette.foreground);
+    assert_eq!(after.palette.background, before.palette.background);
+    assert_eq!(after.palette.colors[1], before.palette.colors[1]);
+    assert_eq!(after.palette.colors[2], same);
+    assert_eq!(after.palette.colors[3], selected.colors[3]);
+    let style = after.rows[0].row.cells[1].style;
+    assert_eq!(
+        style.foreground,
+        Color::Rgb(Rgb {
+            red: 1,
+            green: 2,
+            blue: 3
+        })
+    );
+    assert_eq!(
+        style.background,
+        Color::Rgb(Rgb {
+            red: 4,
+            green: 5,
+            blue: 6
+        })
+    );
+    assert_eq!(
+        after.rows[0].row.cells[0].style.foreground,
+        Color::Indexed(1)
+    );
+    assert_eq!(after.rows[0].row.cells[2].style.foreground, Color::Default);
+
+    // Selective OSC 104 reset leaves other child-owned entries alone.
+    vt.feed(b"\x1b]104;1\x07\x1b]110\x07\x1b]111\x07").unwrap();
+    let (reset, _) = vt.snapshot().unwrap();
+    assert_eq!(reset.palette.foreground, selected.foreground);
+    assert_eq!(reset.palette.background, selected.background);
+    assert_eq!(reset.palette.colors[1], selected.colors[1]);
+    assert_eq!(reset.palette.colors[2], same);
+    // Reset-all also uses the new default, never the launch-time palette.
+    vt.feed(b"\x1b]104\x07").unwrap();
+    let (reset_all, _) = vt.snapshot().unwrap();
+    assert_eq!(*reset_all.palette, selected);
+    assert_eq!(reset_all.rows[0].row.cells[1].style, style);
+    let (unchanged, _) = vt.snapshot().unwrap();
+    assert!(Arc::ptr_eq(&reset_all.palette, &unchanged.palette));
+}
+
+#[test]
+fn every_registered_theme_initializes_and_rethemes_an_existing_terminal() {
+    use strop_core::theme::ThemeId;
+
+    let mut existing = terminal(10, 2);
+    existing.feed(b"unchanged").unwrap();
+    for theme in ThemeId::ALL {
+        let palette = Palette::for_theme(theme);
+        let mut fresh = themed_terminal(10, 2, Some(&palette));
+        assert_eq!(*fresh.snapshot().unwrap().0.palette, palette);
+        existing.configure_palette(&palette).unwrap();
+        let (frame, _) = existing.snapshot().unwrap();
+        assert_eq!(*frame.palette, palette);
+        assert!(frame.projection.to_string().starts_with("unchanged"));
+    }
 }

@@ -8,16 +8,15 @@ use ratatui::text::Span;
 
 use super::{accent, muted};
 
-/// Key-column hue per section: the eye learns "amber = leader, blue =
-/// normal" in one page (color is structure).
+/// Key-column semantic hue per section: color reinforces mode structure.
 fn section_color(section: &str) -> Color {
     match section {
-        "normal" => Color::Rgb(0x7a, 0xa2, 0xf7),   // blue
-        "visual" => Color::Rgb(0xbb, 0x9a, 0xf7),   // purple
-        "insert" => Color::Rgb(0x9e, 0xce, 0x6a),   // green
-        "leader" => accent(),                       // amber
-        "git" => Color::Rgb(0x7d, 0xcf, 0xff),      // cyan
-        "ex+panes" => Color::Rgb(0xe0, 0xaf, 0x68), // yellow
+        "normal" => crate::render::seed(strop_core::theme::current().class_function),
+        "visual" => crate::render::seed(strop_core::theme::current().class_keyword),
+        "insert" => crate::render::seed(strop_core::theme::current().class_string),
+        "leader" => accent(),
+        "git" => crate::render::seed(strop_core::theme::current().class_type),
+        "ex+panes" => crate::render::seed(strop_core::theme::current().warning),
         _ => accent(),
     }
 }
@@ -47,7 +46,7 @@ pub(crate) fn row_spans(text: &str, section: &str, width: u16) -> Vec<Span<'stat
             ),
             Span::styled(
                 format!(" {}", "─".repeat(pad)),
-                Style::default().fg(Color::Rgb(0x3a, 0x3d, 0x4d)),
+                Style::default().fg(crate::render::seed(strop_core::theme::current().border)),
             ),
         ];
     }
@@ -99,7 +98,12 @@ mod tests {
         assert_eq!(row[1].style.fg, Some(crate::render::text()));
 
         let normal = row_spans("  h j k l  move", "normal", 40);
-        assert_eq!(normal[0].style.fg, Some(Color::Rgb(0x7a, 0xa2, 0xf7)));
+        assert_eq!(
+            normal[0].style.fg,
+            Some(crate::render::seed(
+                strop_core::theme::current().class_function
+            ))
+        );
 
         let soon = row_spans("  space j  jumplist picker  (soon)", "leader", 40);
         assert!(soon.iter().all(|s| s.style.fg == Some(muted())));

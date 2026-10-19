@@ -78,9 +78,9 @@ fn replace_rows_show_identity_window_and_delta() {
     assert!(!new.contains("retry_request"), "delta, not a copy: {new:?}");
     // common diff roles: `-` old in the deletion role, `+` new in addition
     let old_sign = lines[1].spans.iter().find(|s| s.content == "- ").unwrap();
-    assert_eq!(old_sign.style.fg, Some(DEL_FG));
+    assert_eq!(old_sign.style.fg, Some(del_fg()));
     let new_sign = lines[2].spans.iter().find(|s| s.content == "+ ").unwrap();
-    assert_eq!(new_sign.style.fg, Some(ADD_FG));
+    assert_eq!(new_sign.style.fg, Some(add_fg()));
     // match/replacement evidence stays amber+bold over the roles
     let amber = |line: &Line| {
         line.spans
@@ -111,12 +111,12 @@ fn replace_rows_exclusion_is_neutral_not_failure_red() {
     assert!(header.contains("excluded"), "named, neutral: {header:?}");
     for line in &lines {
         for span in &line.spans {
-            assert_ne!(span.style.fg, Some(DEL_FG), "no deletion red: {span:?}");
-            assert_ne!(span.style.fg, Some(ADD_FG), "no addition green: {span:?}");
+            assert_ne!(span.style.fg, Some(del_fg()), "no deletion red: {span:?}");
+            assert_ne!(span.style.fg, Some(add_fg()), "no addition green: {span:?}");
             assert_ne!(span.style.fg, Some(accent()), "no match evidence: {span:?}");
             assert_ne!(
                 span.style.fg,
-                Some(Color::Rgb(0xf3, 0x8b, 0xa8)),
+                Some(crate::render::seed(strop_core::theme::current().diag_error)),
                 "not the failure red: {span:?}"
             );
         }

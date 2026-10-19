@@ -1,7 +1,7 @@
 //! The picker's source preview: windowed, syntax-spanned, header first
 //! (0050: filename:line identifies before parent/root details).
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
@@ -10,7 +10,6 @@ use crate::editor::{Editor, PreviewSource};
 
 use super::super::{accent, base, muted, pair_bg, select_bg, syntax_style};
 
-const SURFACE: Color = Color::Rgb(0x20, 0x22, 0x2e);
 pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
     let Some((title, focus_line, source)) = editor.picker_preview_cached() else {
         frame.render_widget(Paragraph::new("").style(Style::default().bg(base())), area);
@@ -95,7 +94,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::LEFT)
         .border_style(Style::default().fg(pair_bg()))
-        .style(Style::default().bg(SURFACE))
+        .style(Style::default().bg(crate::render::seed(strop_core::theme::current().surface)))
         .title(Span::styled(
             format!(
                 " {} ",
@@ -180,7 +179,9 @@ fn highlight_lines_owned(
                 continue;
             };
             let pos = start + placement.byte;
-            let mut style = Style::default().fg(crate::render::text()).bg(SURFACE);
+            let mut style = Style::default()
+                .fg(crate::render::text())
+                .bg(crate::render::seed(strop_core::theme::current().surface));
             if let Some(span) = spans[first_span..]
                 .iter()
                 .take_while(|span| span.start <= pos)
@@ -207,7 +208,7 @@ fn highlight_lines_owned(
         out.push(Line::from(spans_out).style(Style::default().bg(if focused {
             select_bg()
         } else {
-            SURFACE
+            crate::render::seed(strop_core::theme::current().surface)
         })));
     }
     out

@@ -7,6 +7,8 @@ mod presentation;
 mod privacy;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod theme_tests;
 use super::{Editor, Pane};
 use std::{
     collections::HashMap,

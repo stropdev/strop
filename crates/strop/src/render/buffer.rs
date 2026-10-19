@@ -170,7 +170,7 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
                 for dy in area.y..bottom {
                     let cell = &mut frame.buffer_mut()[(dx, dy)];
                     cell.set_symbol("│");
-                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                    cell.set_fg(crate::render::seed(strop_core::theme::current().border));
                     cell.set_bg(base());
                 }
             } else {
@@ -178,7 +178,7 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
                 for dx in area.x..area.x + area.width {
                     let cell = &mut frame.buffer_mut()[(dx, dy)];
                     cell.set_symbol("─");
-                    cell.set_fg(Color::Rgb(0x3a, 0x3d, 0x4d));
+                    cell.set_fg(crate::render::seed(strop_core::theme::current().border));
                     cell.set_bg(base());
                 }
             }
@@ -225,7 +225,7 @@ fn render_static_caret(editor: &Editor, frame: &mut Frame, area: Rect, view: &Pa
         view.view_top,
         view.hscroll,
     ) {
-        frame.buffer_mut()[at].set_bg(Color::Rgb(0x3a, 0x3d, 0x4d));
+        frame.buffer_mut()[at].set_bg(crate::render::seed(strop_core::theme::current().border));
     }
 }
 

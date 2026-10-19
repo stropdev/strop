@@ -2,6 +2,8 @@
 //! WK12); the VT and session state stay on this crate's service thread.
 //! Callers only enqueue intents or take immutable updates.
 mod mailbox;
+#[cfg(test)]
+mod tests;
 mod worker;
 use crate::{
     launch::Launch,
@@ -33,6 +35,9 @@ struct Budget {
     bytes: AtomicUsize,
     count: AtomicUsize,
     lifecycle: AtomicU8,
+    /// One latest-value appearance request. Independent of retained PTY input:
+    /// a child that stops reading must not prevent an idle repaint.
+    theme: AtomicU8,
 }
 struct Permit {
     budget: Arc<Budget>,
@@ -167,7 +172,8 @@ impl Service {
                     ),
                 };
                 outcome_mailbox.publish_with(update, || {
-                    outcome_budget.lifecycle.store(FINISHED, Ordering::Release)
+                    outcome_budget.lifecycle.store(FINISHED, Ordering::Release);
+                    outcome_budget.theme.store(0, Ordering::Release);
                 });
             },
             move |token| Outcome::Success(work.run(token)),
@@ -204,6 +210,23 @@ impl Service {
     pub fn focus(&self, focused: bool) -> Result<(), Error> {
         self.send(Intent::Focus(focused), 0)
     }
+    /// Queue an owned selection for the VT actor. Repeated selections coalesce;
+    /// no palette allocation, native call or wait happens on the caller.
+    pub fn set_theme(&self, theme: strop_core::theme::ThemeId) -> Result<(), Error> {
+        if self.stopped || self.budget.lifecycle.load(Ordering::Acquire) >= CLOSING {
+            return Err(Error::Closed);
+        }
+        let index = strop_core::theme::ThemeId::ALL
+            .iter()
+            .position(|candidate| *candidate == theme)
+            .ok_or(Error::State("unregistered terminal theme"))?;
+        self.budget.theme.store(index as u8 + 1, Ordering::Release);
+        if self.budget.lifecycle.load(Ordering::Acquire) >= CLOSING {
+            self.budget.theme.store(0, Ordering::Release);
+            return Err(Error::Closed);
+        }
+        self.nudge()
+    }
     pub fn stop(&mut self) {
         self.stopped = true;
         self.budget.lifecycle.fetch_max(CLOSING, Ordering::AcqRel);
@@ -217,6 +240,7 @@ impl Service {
             STARTING | CLOSING
         ) || self.budget.count.load(Ordering::Acquire) != 0
             || self.mailbox.pending()
+            || self.budget.theme.load(Ordering::Acquire) != 0
     }
     /// Consume only after the corresponding notification; a contended slot
     /// requeues that notification so the frontend never waits on publication.
@@ -234,6 +258,10 @@ impl Service {
             Err(TrySendError::Full(_)) => return Err(Error::InputFull),
             Err(TrySendError::Disconnected(_)) => return Err(Error::Closed),
         }
+        self.nudge()
+    }
+
+    fn nudge(&self) -> Result<(), Error> {
         match self.wake.send(&[1]) {
             Ok(_) => Ok(()),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(()),

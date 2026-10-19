@@ -26,14 +26,6 @@ use super::{base, cmd_card_active, mode_color, muted, secondary, severity_color,
 #[cfg(test)]
 mod tests;
 
-/// Quiet group separator: the palette's punctuation value, dimmer than
-/// muted text so groups read as groups (0032's "quiet separators").
-const QUIET: Color = Color::Rgb(0x56, 0x5b, 0x6e);
-/// Held-back amber: read-only files and staged changes — real state,
-/// softer than the worktree's accent().
-const HELD: Color = Color::Rgb(0xe0, 0xaf, 0x68);
-const BACKGROUND: Color = Color::Rgb(0x20, 0x22, 0x2b);
-
 /// A separator costs three cells (" │ ", padding included).
 const SEP: &str = " │ ";
 const SEP_W: usize = 3;
@@ -58,7 +50,9 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
         ..area
     };
     frame.render_widget(
-        Paragraph::new(Line::from(row.spans(cells))).style(Style::default().bg(BACKGROUND)),
+        Paragraph::new(Line::from(row.spans(cells))).style(Style::default().bg(
+            crate::render::seed(strop_core::theme::current().statusline_bg),
+        )),
         rect,
     );
 }
@@ -425,10 +419,16 @@ impl Modeline {
             ));
         }
         if self.dirty {
-            spans.push(Span::styled(" ●", Style::default().fg(HELD)));
+            spans.push(Span::styled(
+                " ●",
+                Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
+            ));
         }
         if self.readonly {
-            spans.push(Span::styled(" [RO]", Style::default().fg(HELD)));
+            spans.push(Span::styled(
+                " [RO]",
+                Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
+            ));
         }
         if let Some(mark) = &self.multicursor {
             spans.push(Span::raw(" "));
@@ -444,7 +444,7 @@ impl Modeline {
 
     /// Build the visible halves once, after all width decisions.
     fn halves(&self) -> (Vec<Span<'_>>, Vec<Span<'_>>) {
-        let quiet = Style::default().fg(QUIET);
+        let quiet = Style::default().fg(crate::render::seed(strop_core::theme::current().border));
         let mut left = vec![
             Span::styled("▌", Style::default().fg(self.accent)),
             Span::styled(
@@ -462,10 +462,16 @@ impl Modeline {
                 Style::default().fg(muted()),
             ));
             if self.worktree_dirty {
-                left.push(Span::styled("*", Style::default().fg(HELD)));
+                left.push(Span::styled(
+                    "*",
+                    Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
+                ));
             }
             if self.staged_mark {
-                left.push(Span::styled("+", Style::default().fg(HELD)));
+                left.push(Span::styled(
+                    "+",
+                    Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
+                ));
             }
         }
         if !self.dir.is_empty()

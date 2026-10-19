@@ -1,6 +1,6 @@
 //! One printable cell projection for modal input fields, independent of grammar.
 use super::{accent, muted, text};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use strop_core::id::DisplayColumn;
 use strop_core::layout::{clip, printable_grapheme, LineLayout, RopeGraphemes};
@@ -86,9 +86,11 @@ fn role_style(role: Role) -> Style {
         Role::Punctuation => Style::default().fg(muted()),
         Role::Operator => Style::default().fg(accent()).add_modifier(Modifier::BOLD),
         Role::Value | Role::Literal => Style::default().fg(text()),
-        Role::Regex => Style::default().fg(Color::Rgb(0xcb, 0xa6, 0xf7)),
+        Role::Regex => Style::default().fg(crate::render::seed(
+            strop_core::theme::current().class_keyword,
+        )),
         Role::Negation | Role::Error => Style::default()
-            .fg(Color::Rgb(0xf3, 0x8b, 0xa8))
+            .fg(crate::render::seed(strop_core::theme::current().diag_error))
             .add_modifier(Modifier::UNDERLINED),
         Role::Incomplete => Style::default().fg(muted()).add_modifier(Modifier::ITALIC),
     }

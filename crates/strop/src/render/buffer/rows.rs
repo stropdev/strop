@@ -326,14 +326,14 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
             }
             Some(crate::editor::ReviewRow::Hunk) => {
                 style.row_fg = Some(muted());
-                style.row_bg = Some(diff::BAND_BG);
+                style.row_bg = Some(diff::band_bg());
             }
             Some(crate::editor::ReviewRow::Removed) => {
-                style.row_fg = Some(diff::DEL_FG);
+                style.row_fg = Some(diff::del_fg());
                 style.row_bg = diff::origin_bg(strop_git::LineOrigin::Deletion);
             }
             Some(crate::editor::ReviewRow::Added) => {
-                style.row_fg = Some(diff::ADD_FG);
+                style.row_fg = Some(diff::add_fg());
                 style.row_bg = diff::origin_bg(strop_git::LineOrigin::Addition);
             }
             Some(crate::editor::ReviewRow::Warning) => {
@@ -514,7 +514,8 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 let at = (area.x + (inset + x) as u16, area.y + row as u16);
                 let cell = &mut frame.buffer_mut()[at];
                 if cell.symbol() == " " {
-                    cell.set_symbol("│").set_fg(Color::Rgb(0x2e, 0x30, 0x42));
+                    cell.set_symbol("│")
+                        .set_fg(crate::render::seed(strop_core::theme::current().guide));
                 }
             }
         }
@@ -543,7 +544,7 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
                 return ("●", accent());
             }
             if entry.error.is_some() {
-                return ("!", diff::DEL_FG);
+                return ("!", diff::del_fg());
             }
         }
         if view.overlays && editor.doc(view.doc).buf.line_of(view.cursor) == line_idx {
@@ -561,12 +562,27 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
         // the four states in one column: unstaged sign wins; staged-only
         // lines get the committed-adjacent tint (0014 wave 4)
         if editor.sign_at(line_idx + 1).is_none() && editor.sign_at_staged(line_idx + 1) {
-            return ("▎", dim_color(Color::Rgb(0xa9, 0xc4, 0x7c)));
+            return (
+                "▎",
+                dim_color(crate::render::seed(
+                    strop_core::theme::current().class_string,
+                )),
+            );
         }
         match editor.sign_at(line_idx + 1) {
-            Some('+') => return ("▎", Color::Rgb(0xa9, 0xc4, 0x7c)),
+            Some('+') => {
+                return (
+                    "▎",
+                    crate::render::seed(strop_core::theme::current().class_string),
+                )
+            }
             Some('~') => return ("▎", accent()),
-            Some('-') => return ("▎", Color::Rgb(0xe8, 0x67, 0x7a)),
+            Some('-') => {
+                return (
+                    "▎",
+                    crate::render::seed(strop_core::theme::current().diag_error),
+                )
+            }
             _ => {}
         }
     }

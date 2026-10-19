@@ -434,8 +434,8 @@ fn same_line_replacements_share_one_exact_styled_review() {
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     let grid = terminal.backend().buffer();
-    assert_eq!(grid[(5, removed)].fg, crate::render::diff::DEL_FG);
-    assert_eq!(grid[(5, added)].fg, crate::render::diff::ADD_FG);
+    assert_eq!(grid[(5, removed)].fg, crate::render::diff::del_fg());
+    assert_eq!(grid[(5, added)].fg, crate::render::diff::add_fg());
     assert_ne!(grid[(5, removed)].bg, grid[(5, added)].bg);
     editor.feed_text(":apply-change<cr>");
     assert_eq!(editor.doc(source).buf.text().to_string(), "bar bar\n");

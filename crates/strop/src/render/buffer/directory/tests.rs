@@ -80,7 +80,7 @@ fn folder_rows_align_metadata_and_keep_selection_and_marks_visible() {
     );
     // the cursor-row band spans the pane; the reserved track column
     // (0064 §1) keeps its own surface at the last cell
-    assert!((0..79).all(|x| grid[(x, 2)].bg == diff::CURSOR_ROW_BG));
+    assert!((0..79).all(|x| grid[(x, 2)].bg == diff::cursor_row_bg()));
     assert_eq!(grid[(5, 2)].fg, accent());
     assert_eq!(grid[(5, 3)].fg, crate::render::text());
     assert_eq!(grid[(34, 3)].fg, muted());
@@ -91,7 +91,7 @@ fn folder_rows_align_metadata_and_keep_selection_and_marks_visible() {
     assert_eq!(marked[(0, 2)].symbol(), "●");
     assert_eq!(marked[(0, 3)].symbol(), "▸");
     // the track column keeps its own surface (0064 §1)
-    assert_eq!(marked[(78, 2)].bg, diff::CURSOR_ROW_BG);
+    assert_eq!(marked[(78, 2)].bg, diff::cursor_row_bg());
     assert_eq!(marked[(79, 2)].symbol(), "\u{2502}");
 }
 

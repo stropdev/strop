@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.44.0 — 2026-10-19
+
+### Added
+
+- **A curated six-theme collection**: Catppuccin Mocha, Catppuccin Latte,
+  Nord and the original Strop Ink join Dark and Light. Ink uses graphite,
+  ivory and restrained brass/slate for a quieter coding surface. Dark remains
+  the zero-config default. `:theme` lists searchable canonical names and
+  descriptions; `:theme NAME`, `--theme NAME` and the `theme` config key
+  select the same compiled-in palettes.
+- **Bundled theme attribution**: `strop --licenses` prints the full
+  Catppuccin and Nord MIT notices; source packages include both licenses.
+
+### Fixed
+
+- **Theme coverage across the editor**: picker previews, diff rows and
+  intraline emphasis, help, statusline, mode chips, guides, separators,
+  symbol badges and dimmed text use semantic palette roles rather than
+  hardcoded dark colors. Comments and punctuation have contrast-tuned ink.
+- **Existing terminal sessions follow theme changes** through their owning
+  asynchronous service, even when the child is idle. Child truecolor and
+  OSC palette overrides remain intact; resets use the new theme defaults.
+- **Terminal input credit survives appearance changes and resizes**:
+  correlate zero-based worker input acknowledgments with the service's own
+  input/resize sequence. Empty focus emissions settle without waiting for a
+  child acknowledgment that cannot arrive.
+- **Startup and replay agree on the selected theme**: UI-stdio respects
+  config/CLI selection, and full replay retains the effective startup palette
+  even when `--theme` overrode the config file.
+
 ## 0.43.1 — 2026-10-08
 
 Release recovery for the unpublished 0.43.0 candidate. Includes its Sovel

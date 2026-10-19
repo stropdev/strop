@@ -11,7 +11,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use super::super::clip;
-use super::super::diff::{ADD_FG, DEL_FG};
+use super::super::diff::{add_fg, del_fg};
 use super::super::{accent, base, muted, secondary, select_bg, text};
 use super::window::{match_window, replacement_window};
 use unicode_segmentation::UnicodeSegmentation;
@@ -277,10 +277,14 @@ fn chip(badge: Option<&str>, active: bool) -> Span<'static> {
 /// Four quiet kind families (0050 §4): callables, types, data, modules.
 fn kind_color(label: &str) -> Color {
     match label {
-        "fn" | "meth" | "new" => Color::Rgb(0x89, 0xb4, 0xfa),
-        "struct" | "class" | "iface" | "enum" | "variant" | "T" => Color::Rgb(0xcb, 0xa6, 0xf7),
-        "const" | "var" | "field" | "prop" => Color::Rgb(0xa6, 0xe3, 0xa1),
-        "mod" | "ns" | "pkg" => Color::Rgb(0x94, 0xe2, 0xd5),
+        "fn" | "meth" | "new" => crate::render::seed(strop_core::theme::current().class_function),
+        "struct" | "class" | "iface" | "enum" | "variant" | "T" => {
+            crate::render::seed(strop_core::theme::current().class_type)
+        }
+        "const" | "var" | "field" | "prop" => {
+            crate::render::seed(strop_core::theme::current().class_string)
+        }
+        "mod" | "ns" | "pkg" => crate::render::seed(strop_core::theme::current().class_type),
         _ => secondary(),
     }
 }
@@ -478,7 +482,7 @@ fn generic_row(
     let base = Style::default().fg(if active {
         crate::render::text()
     } else {
-        Color::Rgb(0xb8, 0xb4, 0xa9)
+        secondary()
     });
     let mut character = 0;
     for (glyph, grapheme) in strop_core::layout::RopeGraphemes::new(text.as_ref().into(), 4) {
@@ -633,7 +637,9 @@ fn search_rows(
     }
     let mut line1 = finish(top, width, active);
     if !active {
-        line1.style = Style::default().bg(Color::Rgb(0x1b, 0x1d, 0x26));
+        line1.style = Style::default().bg(crate::render::seed(
+            strop_core::theme::current().inactive_bg,
+        ));
     }
     // The same checked byte span drives source evidence and the optional delta.
     let (s, e) = strop_picker::replace_span(line_text, *col, *match_len);
@@ -652,7 +658,7 @@ fn search_rows(
     let del = if excluded {
         secondary
     } else if delta.is_some() {
-        DEL_FG
+        del_fg()
     } else {
         text()
     };
@@ -677,7 +683,7 @@ fn search_rows(
         return lines;
     };
     let (new_window, new_match) = replacement_window(line_text, s, e, delta, code_budget, tab);
-    let add = if excluded { secondary } else { ADD_FG };
+    let add = if excluded { secondary } else { add_fg() };
     let mut new = vec![plain(" ", Style::default())];
     new.push(plain(" ".repeat(numbers_w), Style::default()));
     new.push(plain("+ ", Style::default().fg(add)));

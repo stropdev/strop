@@ -142,7 +142,7 @@ fn assert_track(
             assert_eq!(cell.symbol(), "│", "quiet track cell at row {y}");
             assert_eq!(
                 cell.fg,
-                ratatui::style::Color::Rgb(0x2a, 0x2c, 0x3a),
+                crate::render::seed(strop_core::theme::current().border),
                 "track stays quiet at row {y}"
             );
         }

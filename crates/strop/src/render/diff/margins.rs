@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use strop_engine::editor::{Sidebar, SidebarRow};
 use strop_git::memory::ChangedFile;
@@ -16,8 +16,6 @@ use super::super::{accent, muted, select_bg, text};
 /// Blame gutter width: `sha˟7 author˟9 age˟3` + separators — the
 /// engine-owned constant preparation's left inset clamps against.
 pub(crate) use strop_engine::editor::prepare::BLAME_GUTTER_WIDTH as BLAME_W;
-/// Pane-divider color — the sidebar's rule matches it.
-const RULE: Color = Color::Rgb(0x3a, 0x3d, 0x4d);
 /// Younger than this counts as "recent" → accent (0011 §3).
 const RECENT_SECS: i64 = 30 * 86400;
 /// The blame cell for one buffer line: `sha7 author9 age3`, muted for
@@ -107,7 +105,11 @@ pub(crate) fn sidebar_row_spans(
     };
     spans.push(Span::styled(
         "│",
-        Style::default().fg(if focused { accent() } else { RULE }),
+        Style::default().fg(if focused {
+            accent()
+        } else {
+            crate::render::seed(strop_core::theme::current().border)
+        }),
     ));
     spans
 }

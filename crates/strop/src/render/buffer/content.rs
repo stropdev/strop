@@ -91,8 +91,8 @@ pub(super) fn content_spans(
         if let (Some(line), Some((a, b))) = (style.diff_line, style.emphasis) {
             if a < i + grapheme.len() && i < b {
                 let bg = match line.origin {
-                    strop_git::LineOrigin::Addition => diff::ADD_STRONG_BG,
-                    _ => diff::DEL_STRONG_BG,
+                    strop_git::LineOrigin::Addition => diff::add_strong_bg(),
+                    _ => diff::del_strong_bg(),
                 };
                 cell = cell.bg(bg).add_modifier(Modifier::BOLD);
             }

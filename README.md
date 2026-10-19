@@ -73,6 +73,41 @@ The modeline keeps filenames, live status and position legible at narrow widths.
 Git history uses quieter metadata, clear file hierarchy and native-path-safe
 navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
 
+## Themes
+
+`:theme` opens the searchable palette selector; Enter applies a choice and
+Escape leaves the current theme unchanged (once enters the picker's Normal
+mode; twice closes it). Use `:theme catppuccin-mocha`
+to switch directly.
+
+| Name | Character |
+| --- | --- |
+| `dark` | Strop's original dark palette and amber accent; the default |
+| `light` | Strop's warm paper-and-ink counterpart |
+| `catppuccin-mocha` | Warm pastel dark, with violet and blue syntax |
+| `catppuccin-latte` | Light Catppuccin, adapted for readable editor contrasts |
+| `nord` | Restrained cool blue-grey, with brighter comments for legibility |
+| `strop-ink` | Original low-chroma graphite, ivory and restrained brass |
+
+Choose at launch with `strop --theme nord file.rs`, or persist the choice in
+`$XDG_CONFIG_HOME/strop/config.toml` (normally `~/.config/strop/config.toml`):
+
+```toml
+theme = "catppuccin-mocha"
+```
+
+Precedence is the built-in default, then the user config, then `--theme`.
+`:theme` changes the running session only; it does not rewrite the config.
+Syntax, pickers/previews, diffs, diagnostics, help and statusline share the
+palette. Existing terminal sessions update their default colors without
+overwriting child-selected truecolor or OSC palette customizations.
+
+Adaptations follow the [Catppuccin style guide](https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md)
+and [Nord color roles](https://www.nordtheme.com/docs/colors-and-palettes);
+they are not promises of exact upstream editor-port fidelity.
+`strop --licenses` prints the bundled theme licenses. All palettes are
+compiled into the binary: no downloads, plugins or setup are required.
+
 ## Code completion
 
 Insert mode offers language-server candidates and incremental words from the
