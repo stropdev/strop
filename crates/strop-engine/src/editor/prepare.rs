@@ -245,11 +245,22 @@ impl Editor {
     fn adjust_active_viewport(&mut self, rects: &[CellRect]) -> bool {
         let mut settled = true;
         for (index, rect) in rects.iter().enumerate() {
+            let pane_doc = self.panes[index].doc;
+            let terminal_input = self.terminal_view_input(&self.panes[index]);
+            // Every pane shares document revisions, but only the active
+            // pane's cursor drives scrolling. Clamp inactive origins too:
+            // a shared-document shrink must not leave a split pointing
+            // past EOF until it happens to regain focus.
+            if !terminal_input && rect.height != 0 {
+                if let Some(document) = self.docs.get(pane_doc) {
+                    let content_rows = document.buf.last_content_line().saturating_add(1);
+                    let max_top = content_rows.saturating_sub(usize::from(rect.height));
+                    self.panes[index].view_top = self.panes[index].view_top.min(max_top);
+                }
+            }
             if index != self.active_pane {
                 continue;
             }
-            let pane_doc = self.panes[index].doc;
-            let terminal_input = self.terminal_view_input(&self.panes[index]);
             let h = usize::from(rect.height);
             if h == 0 {
                 self.view_rows = 0;

@@ -12,7 +12,7 @@ use strop_core::frontend_input::{Input, Key};
 use strop_core::id::{BufferRevision, DocumentId};
 
 /// The only wire version this build speaks.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The state an action claims to be based on: the backend incarnation
 /// and the newest view generation the client has applied.
@@ -171,9 +171,19 @@ pub enum PaneDelta {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum AckOutcome {
-    /// Applied; `applied` is the backend's monotone action counter and
-    /// `generation` the view generation after application.
+    /// The entire request applied; `applied` is the backend's monotone
+    /// action counter and `generation` the view generation after application.
     Applied { applied: u64, generation: u64 },
+    /// A nonempty prefix of an action batch applied before an engine error.
+    /// The prefix is published before this acknowledgement, `completed` is
+    /// its action count, and the unattempted suffix must not be retried as
+    /// part of the original whole batch.
+    Partial {
+        applied: u64,
+        generation: u64,
+        completed: u64,
+        refusal: Refusal,
+    },
     /// Refused with a typed reason; nothing was applied.
     Refused { refusal: Refusal },
 }
@@ -264,8 +274,9 @@ pub enum ClientMessage {
         capabilities: ClientCapabilities,
     },
     /// Admitted actions, applied in order, on the stated base. One
-    /// sequence number covers the batch; the acknowledgement carries
-    /// the post-application generation.
+    /// sequence number covers the batch. The acknowledgement reports
+    /// full application, zero-application refusal, or an applied prefix
+    /// with its typed failure and completed count.
     Act {
         seq: u64,
         base: BaseStamp,
@@ -386,6 +397,17 @@ mod tests {
                     refusal: Refusal::StaleGeneration { current: 11 },
                 },
             },
+            ServerMessage::Ack {
+                seq: 3,
+                outcome: AckOutcome::Partial {
+                    applied: 6,
+                    generation: 12,
+                    completed: 2,
+                    refusal: Refusal::Engine {
+                        message: "tape diverged".into(),
+                    },
+                },
+            },
             ServerMessage::Effect {
                 id: 0,
                 effect: EffectRequest::ClipboardWrite {
@@ -395,7 +417,7 @@ mod tests {
             ServerMessage::Error {
                 seq: None,
                 error: ProtocolError::Version {
-                    supported: 1,
+                    supported: PROTOCOL_VERSION,
                     offered: 99,
                 },
             },

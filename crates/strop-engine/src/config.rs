@@ -26,7 +26,7 @@ pub const TAB_SIZE_MIN: usize = 1;
 pub const TAB_SIZE_MAX: usize = 16;
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     /// Indent unit width in spaces (`>>`, auto-indent, tab display).
     /// A document's detected indent overrides this per buffer when
@@ -65,7 +65,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CompletionSettings {
     pub enabled: bool,
     pub auto_popup: bool,
@@ -224,18 +224,25 @@ impl Config {
     /// (KNOBS is the data source; this is its first consumer — the
     /// settings popup is next).
     pub fn print_knobs(&self) {
-        for k in KNOBS {
-            let Some(value) = self.knob_value(k.key) else {
-                debug_assert!(false, "declared config knob has no value projection");
-                continue;
-            };
+        let rows = KNOBS
+            .iter()
+            .filter_map(|knob| {
+                let Some(value) = self.knob_value(knob.key) else {
+                    debug_assert!(false, "declared config knob has no value projection");
+                    return None;
+                };
+                Some((knob, value, self.knob_layer(knob.key).label()))
+            })
+            .collect::<Vec<_>>();
+        let key_width = rows.iter().map(|row| row.0.key.len()).max().unwrap_or(0);
+        let kind_width = rows.iter().map(|row| row.0.kind.len()).max().unwrap_or(0);
+        let value_width = rows.iter().map(|row| row.1.len()).max().unwrap_or(0);
+        let layer_width = rows.iter().map(|row| row.2.len()).max().unwrap_or(0);
+
+        for (knob, value, layer) in rows {
             println!(
-                "  {:<16} {:<7} {:<8} {:<8} {}",
-                k.key,
-                k.kind,
-                value,
-                self.knob_layer(k.key).label(),
-                k.desc
+                "  {:<key_width$} {:<kind_width$} {:<value_width$} {:<layer_width$} {}",
+                knob.key, knob.kind, value, layer, knob.desc
             );
         }
     }
@@ -268,8 +275,20 @@ impl Config {
     /// defaults plus the message. Provenance records the path and the
     /// keys the layer actually set (0056 AR14).
     pub fn load_from(path: &std::path::Path) -> (Self, Option<String>) {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return (Self::default(), None); // absent is fine
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return (Self::default(), None);
+            }
+            Err(error) => {
+                return (
+                    Self::default(),
+                    Some(format!(
+                        "config {}: {error} — using defaults",
+                        path.display()
+                    )),
+                );
+            }
         };
         match Self::parse(&text) {
             Ok((mut config, keys)) => {
@@ -413,5 +432,113 @@ mod tests {
             Config::parse("tab_size = 99").is_err(),
             "validated() still gates"
         );
+    }
+
+    #[test]
+    fn missing_config_file_remains_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.toml");
+        let (config, error) = Config::load_from(&path);
+        assert!(error.is_none());
+        assert_eq!(config.tab_size, Config::default().tab_size);
+        assert!(config.user_layer_path().is_none());
+    }
+
+    #[test]
+    fn non_not_found_config_read_reports_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, error) = Config::load_from(dir.path());
+        let error = error.expect("reading a directory as config must be reported");
+        assert!(error.contains(&dir.path().display().to_string()), "{error}");
+        assert!(error.contains("using defaults"), "{error}");
+        assert_eq!(config.tab_size, Config::default().tab_size);
+        assert!(config.user_layer_path().is_none());
+    }
+
+    #[test]
+    fn invalid_utf8_config_reports_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        let (config, error) = Config::load_from(&path);
+        let error = error.expect("invalid UTF-8 must be reported");
+        assert!(error.contains(&path.display().to_string()), "{error}");
+        assert!(error.contains("using defaults"), "{error}");
+        assert_eq!(config.tab_size, Config::default().tab_size);
+        assert!(config.user_layer_path().is_none());
+    }
+
+    #[test]
+    fn unknown_config_keys_are_named_and_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        for (source, unknown_key) in [
+            ("tabsize = 8\n", "tabsize"),
+            ("[completion]\nautoComplete = false\n", "autoComplete"),
+        ] {
+            std::fs::write(&path, source).unwrap();
+            let (config, error) = Config::load_from(&path);
+            let error = error.unwrap_or_else(|| {
+                panic!("unknown key {unknown_key:?} must reject the config layer")
+            });
+            assert!(error.contains(unknown_key), "{error}");
+            assert!(error.contains("using defaults"), "{error}");
+            assert_eq!(config.tab_size, Config::default().tab_size);
+            assert!(config.completion.auto_popup);
+            assert!(config.user_layer_path().is_none());
+        }
+    }
+
+    #[test]
+    fn config_columns_fit_real_keys_and_theme_names() {
+        const CHILD: &str = "STROP_CONFIG_COLUMNS_TEST_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let config = Config {
+                theme: strop_core::theme::ThemeId::CatppuccinMocha,
+                ..Config::default()
+            };
+            println!();
+            config.print_knobs();
+            return;
+        }
+
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "config::tests::config_columns_fit_real_keys_and_theme_names",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "config output child failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("catppuccin-mocha"), "{stdout}");
+
+        let mut description_column = None;
+        for knob in KNOBS {
+            let prefix = format!("  {}", knob.key);
+            let row = stdout
+                .lines()
+                .find(|line| line.contains(&prefix))
+                .unwrap_or_else(|| panic!("missing {} row:\n{stdout}", knob.key));
+            let column = row
+                .find(knob.desc)
+                .unwrap_or_else(|| panic!("missing description in {row:?}"));
+            if let Some(expected) = description_column {
+                assert_eq!(
+                    column, expected,
+                    "description columns must align:\n{stdout}"
+                );
+            } else {
+                description_column = Some(column);
+            }
+        }
     }
 }

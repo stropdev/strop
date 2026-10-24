@@ -200,7 +200,10 @@ impl Editor {
                     }),
                     None => serde_json::json!({"bytes": bytes}),
                 });
-                if self.resolution.blocked() || !self.resolution.queue.is_empty() {
+                if self.resolution.blocked()
+                    || self.completion.defers_input()
+                    || !self.resolution.queue.is_empty()
+                {
                     self.resolution
                         .queue
                         .push_back(super::resolution::DeferredInput::Paste(text));

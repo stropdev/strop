@@ -18,6 +18,8 @@ use crate::keymap::{self, AbsorbKind, Binding, Handler};
 /// Counts combine multiplicatively (vim: 2d3w = 6 words).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ParserState {
+    /// Digits before the register selector.
+    pub count_before_register: Option<usize>,
     /// Digits before the operator.
     pub count1: Option<usize>,
     /// `"x` — the named/system register selector.
@@ -30,18 +32,25 @@ pub struct ParserState {
 
 impl ParserState {
     pub fn empty(&self) -> bool {
-        self.count1.is_none()
+        self.count_before_register.is_none()
+            && self.count1.is_none()
             && self.register.is_none()
             && self.op.is_none()
             && self.count2.is_none()
     }
 
-    /// vim's count multiplication: 2d3w = count1 × count2. Saturating:
-    /// adversarial counts must not overflow (0015).
+    /// vim's count multiplication: 2d3w = 6 words. A register may
+    /// separate two counts before the operator: 2"a3yy = 6 lines.
+    /// Saturating: adversarial counts must not overflow (0015).
     pub fn count(&self) -> Option<usize> {
-        match (self.count1, self.count2) {
-            (None, None) => None,
-            (a, b) => Some(a.unwrap_or(1).saturating_mul(b.unwrap_or(1))),
+        match (self.count_before_register, self.count1, self.count2) {
+            (None, None, None) => None,
+            (before_register, before_op, after_op) => Some(
+                before_register
+                    .unwrap_or(1)
+                    .saturating_mul(before_op.unwrap_or(1))
+                    .saturating_mul(after_op.unwrap_or(1)),
+            ),
         }
     }
 }
@@ -162,6 +171,9 @@ impl Walker {
     /// the FULL structural state — register, counts, operator, path.
     pub fn display(&self) -> String {
         let mut s = String::new();
+        if let Some(n) = self.state.count_before_register {
+            s.push_str(&n.to_string());
+        }
         if let Some(r) = self.state.register {
             s.push('"');
             s.push(r);
@@ -330,6 +342,7 @@ impl Walker {
         // (f" finds a quote; d" is the quote object; only a bare "
         // selects a register)
         if token == "\"" && self.state.op.is_none() && self.path.is_empty() {
+            self.state.count_before_register = self.state.count1.take();
             self.state.register = Some('\0');
             return Action::Pending;
         }
@@ -740,5 +753,21 @@ mod tests {
                 assert_ne!(count, Some(4), "2{j}x must not double-count");
             }
         }
+    }
+
+    #[test]
+    fn counts_on_both_sides_of_register_selector_multiply() {
+        let original = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n";
+        let mut editor = crate::editor::Editor::new(strop_core::Buffer::from_text(original));
+
+        editor.feed_text("2\"a3yy");
+
+        assert_eq!(
+            editor.register(Some('a')).text,
+            "one\ntwo\nthree\nfour\nfive\nsix\n"
+        );
+        assert_eq!(editor.register(None), editor.register(Some('a')));
+        assert_eq!(editor.buf().text().to_string(), original);
+        assert_eq!(editor.head(), 0);
     }
 }

@@ -315,11 +315,6 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 }
             }
         }
-        style.diags = if view.overlays {
-            editor.diag_ranges_at(view.doc, line_idx + 1)
-        } else {
-            Vec::new()
-        };
         match editor.review_row(view.doc, line_idx) {
             Some(crate::editor::ReviewRow::Heading | crate::editor::ReviewRow::File) => {
                 style.row_fg = Some(accent())

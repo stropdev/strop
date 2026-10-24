@@ -268,9 +268,6 @@ struct RowStyle<'a> {
     pair_first: Option<usize>,
     pair_second: Option<usize>,
     find: Option<crate::editor::FindPending>,
-    /// Diagnostic spans on this row: (col, end_col, severity) — the
-    /// undercurl layer (0009 UX).
-    diags: Vec<(usize, usize, strop_lsp::Severity)>,
     /// Set on diff-surface rows: typed origin drives colors (0010 §4).
     diff_line: Option<&'a strop_git::DiffLine>,
     /// Intra-line changed range on a diff row (delta-style emphasis).

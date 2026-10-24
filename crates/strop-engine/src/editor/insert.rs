@@ -124,6 +124,7 @@ impl Editor {
             // last_cmd_keys in execute()
             if matches!(keys, "i" | "a" | "A" | "o" | "O" | "v..." | "V...") {
                 self.last_cmd_keys = keys.trim_end_matches("...").into();
+                self.last_change = None;
             }
         }
     }
@@ -296,6 +297,9 @@ impl Editor {
                     self.buf_mut().insert(pos, &unit);
                 }
                 self.remap_after_mirrored_edit(&positions, width as isize);
+                if let Some(rec) = &mut self.recording_insert {
+                    rec.push_str(&unit);
+                }
             }
             Key::Char(c) => {
                 // smartindent (vim/helix behavior): a closer typed on an
@@ -318,5 +322,31 @@ impl Editor {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strop_core::Buffer;
+
+    #[test]
+    fn dot_repeat_includes_insert_mode_tab() {
+        let mut editor = Editor::new(Buffer::from_text("ab\ncd\n"));
+        editor.config = crate::config::Config {
+            indent_style: crate::config::IndentStyle::Tabs,
+            ..Default::default()
+        };
+        editor.reresolve_indents();
+
+        editor.feed_text("i");
+        editor.feed(Key::Tab);
+        editor.feed_text("Z");
+        editor.feed(Key::Esc);
+        assert_eq!(editor.buf().text().to_string(), "\tZab\ncd\n");
+
+        editor.feed_text("j0.");
+        assert_eq!(editor.buf().text().to_string(), "\tZab\n\tZcd\n");
+        assert_eq!(editor.head(), editor.buf().line_start(1) + 1);
     }
 }

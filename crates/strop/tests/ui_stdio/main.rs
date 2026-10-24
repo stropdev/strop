@@ -210,6 +210,71 @@ fn viewport_bounds_and_clipboard_effect() {
     assert!(status.success());
 }
 
+/// A client that withholds clipboard-write capability must never receive
+/// the corresponding host effect. Read through the action acknowledgement
+/// and orderly shutdown so every effect ordered before those barriers is
+/// observed without a timing-based absence check.
+#[test]
+fn clipboard_write_capability_suppresses_effect_requests() {
+    let fixture = fixture();
+    let mut raw = Raw::spawn(fixture.dir.path());
+    raw.send(&ClientMessage::Hello {
+        protocol: strop_ui_protocol::PROTOCOL_VERSION,
+        client: strop_ui_protocol::ClientInfo {
+            name: "no-clipboard".into(),
+            version: "0.0".into(),
+        },
+        capabilities: strop_ui_protocol::ClientCapabilities {
+            clipboard_write: false,
+        },
+    });
+    let incarnation = raw.recv_welcome();
+    let generation = match raw.recv_snapshot() {
+        ServerMessage::Snapshot { view, .. } => view.generation,
+        other => unreachable!("recv_snapshot returned {other:?}"),
+    };
+    let actions = strop_core::frontend_input::notation::parse("\"+yy")
+        .map(|key| AdmittedAction::Input(strop_core::frontend_input::Input::Key(key)))
+        .collect();
+    raw.send(&ClientMessage::Act {
+        seq: 1,
+        base: strop_ui_protocol::BaseStamp {
+            incarnation,
+            generation,
+        },
+        actions,
+    });
+    loop {
+        match raw.recv() {
+            ServerMessage::Snapshot { .. } | ServerMessage::Delta { .. } => {}
+            ServerMessage::Effect { effect, .. } => {
+                panic!("clipboard-incapable client received {effect:?}")
+            }
+            ServerMessage::Ack { seq: 1, outcome } => {
+                assert!(
+                    matches!(outcome, strop_ui_protocol::AckOutcome::Applied { .. }),
+                    "yank should still apply locally: {outcome:?}"
+                );
+                break;
+            }
+            other => panic!("expected yank acknowledgement: {other:?}"),
+        }
+    }
+    raw.send(&ClientMessage::Shutdown { seq: 2 });
+    loop {
+        match raw.recv() {
+            ServerMessage::Snapshot { .. } | ServerMessage::Delta { .. } => {}
+            ServerMessage::Effect { effect, .. } => {
+                panic!("clipboard-incapable client received {effect:?}")
+            }
+            ServerMessage::Ack { seq: 2, .. } => {}
+            ServerMessage::Bye { .. } => break,
+            other => panic!("expected shutdown acknowledgement or bye: {other:?}"),
+        }
+    }
+    assert!(raw.wait().success());
+}
+
 /// The quit intent (ctrl-c's admitted form) is the editor's own
 /// decision: a clean scratch session quits through it.
 #[test]

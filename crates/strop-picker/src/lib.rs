@@ -460,8 +460,11 @@ impl Picker {
     /// Replace the pinned tail (0063 §2 per-project status rows):
     /// engine-owned chrome that filtering never hides and later source
     /// appends never bury. Replaces, never stacks — the caller rebuilds
-    /// the full set from its own map on every change.
+    /// the full set from its own map on every change. Installed rows are
+    /// invalidated synchronously because their indices may not address
+    /// the replacement catalog; the caller schedules the next ranking.
     pub fn set_pinned(&mut self, items: Vec<Item>) {
+        self.clear_results();
         let unpinned = self.items.len().saturating_sub(self.pinned.len());
         self.items.truncate(unpinned);
         for item in &items {
@@ -595,6 +598,42 @@ mod tests {
             p.current().unwrap().text,
             "prtdv-pw-846",
             "a real match ranks above the pinned row"
+        );
+    }
+
+    #[test]
+    fn shrinking_pinned_tail_keeps_installed_rows_addressable() {
+        let item = |text: &str| Item {
+            badge: None,
+            text: text.into(),
+            payload: Payload::ProjectStatus(PathBuf::from(text)),
+        };
+        let mut p = Picker::new(
+            Kind::WorkspaceSymbols,
+            vec![Item {
+                badge: None,
+                text: "src/main.rs".into(),
+                payload: Payload::File("src/main.rs".into()),
+            }],
+            false,
+        );
+        p.set_pinned(vec![item("/old/one"), item("/old/two")]);
+        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
+        p.selected = p.rows.len() - 1;
+
+        p.set_pinned(vec![item("/new")]);
+
+        // The catalog changes synchronously; consumers can read the published
+        // rows before the next asynchronous ranking completes.
+        assert!(p.rows.iter().all(|row| {
+            let item = &p.items[row.item];
+            item.text == "src/main.rs" || item.text == "/new"
+        }));
+        assert_eq!(
+            p.current().map(|item| item.text.as_str()),
+            p.rows
+                .get(p.selected)
+                .map(|row| p.items[row.item].text.as_str())
         );
     }
 

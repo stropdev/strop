@@ -66,6 +66,7 @@ pub struct Session {
     published: Option<ViewSnapshot>,
     applied: u64,
     handshaken: bool,
+    clipboard_write: bool,
     /// The newest generation this client was told about in an
     /// acknowledgement or full snapshot — the floor for base admission.
     client_known: u64,
@@ -88,6 +89,7 @@ impl Session {
             handshaken: false,
             client_known: 0,
             pending_observations: false,
+            clipboard_write: false,
             next_effect: 0,
         }
     }
@@ -190,8 +192,8 @@ impl Session {
             ClientMessage::Hello {
                 protocol,
                 client: _,
-                capabilities: _,
-            } => self.hello(editor, protocol, out),
+                capabilities,
+            } => self.hello(editor, protocol, capabilities.clipboard_write, out),
             ClientMessage::Act { seq, base, actions } => {
                 if !self.handshaken {
                     return self.unexpected(out, "act before hello");
@@ -249,6 +251,7 @@ impl Session {
         &mut self,
         editor: &mut Editor,
         protocol: u32,
+        clipboard_write: bool,
         out: &mut io::BufWriter<W>,
     ) -> io::Result<Flow> {
         if self.handshaken {
@@ -273,6 +276,7 @@ impl Session {
             )?;
             return Ok(Flow::Close);
         }
+        self.clipboard_write = clipboard_write;
         self.handshaken = true;
         self.send(
             &mut *out,
@@ -303,8 +307,10 @@ impl Session {
 
     /// Admitted actions on a checked base, through the SAME admitted
     /// engine path (recorded actions over `AppEvent`) the TUI and the
-    /// headless driver use. The acknowledgement follows the engine's
-    /// answer, never precedes it.
+    /// headless driver use. Publication precedes every outcome. Full
+    /// batches are Applied, failures before any completed action are
+    /// Refused, and a failed suffix is Partial with the published prefix's
+    /// generation and completed count.
     fn act<W: Write>(
         &mut self,
         editor: &mut Editor,
@@ -323,6 +329,7 @@ impl Session {
                 },
             );
         }
+        let mut completed = 0_u64;
         let mut failure = None;
         for action in actions {
             self.pending_observations = true;
@@ -331,6 +338,7 @@ impl Session {
                 failure = Some(error);
                 break;
             }
+            completed += 1;
             self.drain_events(editor, events)?;
             self.emit_effects(editor, out)?;
         }
@@ -364,11 +372,23 @@ impl Session {
                     generation,
                 }
             }
-            Some(error) => AckOutcome::Refused {
-                refusal: Refusal::Engine {
+            Some(error) => {
+                let refusal = Refusal::Engine {
                     message: error.to_string(),
-                },
-            },
+                };
+                if completed == 0 {
+                    AckOutcome::Refused { refusal }
+                } else {
+                    self.applied += 1;
+                    self.client_known = self.client_known.max(generation);
+                    AckOutcome::Partial {
+                        applied: self.applied,
+                        generation,
+                        completed,
+                        refusal,
+                    }
+                }
+            }
         };
         self.send(&mut *out, &ServerMessage::Ack { seq, outcome })?;
         if quitting {
@@ -535,6 +555,9 @@ impl Session {
         out: &mut io::BufWriter<W>,
     ) -> io::Result<()> {
         for text in editor.take_terminal_output() {
+            if !self.clipboard_write {
+                continue;
+            }
             let id = self.next_effect;
             self.next_effect += 1;
             self.send(

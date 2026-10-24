@@ -195,6 +195,45 @@ fn ex_completion_updates_the_same_caret_used_by_later_typing() {
 }
 
 #[test]
+fn ex_tab_completion_offers_dispatched_user_commands() {
+    const COMMANDS: &[&str] = &[
+        "trust",
+        "container-worker",
+        "jumps",
+        "symbols",
+        "set",
+        "noh",
+        "qall",
+        "select-next",
+        "select-all",
+        "select-skip",
+        "select-pop",
+    ];
+    let mut missing = Vec::new();
+    for &command in COMMANDS {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        let prefix = &command[..command.len() - 1];
+        e.feed_text(&format!(":{prefix}"));
+        let candidates = e.ex_candidates();
+        if !candidates.iter().any(|(name, _)| *name == command) {
+            missing.push(command);
+            continue;
+        }
+        let expected = format!(":{command}");
+        let mut completed = false;
+        for _ in 0..candidates.len() {
+            e.feed_text("<tab>");
+            completed |= e.pending.text() == expected.as_str();
+        }
+        assert!(completed, "Tab never completed :{prefix} to {expected}");
+    }
+    assert!(
+        missing.is_empty(),
+        "dispatchable Ex commands missing from Tab completion: {missing:?}"
+    );
+}
+
+#[test]
 fn clipboard_yank_uses_counted_operator_state_and_backspace_cancels_it() {
     let mut e = Editor::new(Buffer::from_text("hello world again\n"));
     e.feed_text("2 yw");

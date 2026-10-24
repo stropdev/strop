@@ -129,6 +129,8 @@ impl Driver<'_> {
     }
 }
 
+/// Executes the complete script. Quitting with any unconsumed directive other
+/// than `settle` is an error, not a successfully completed partial script.
 pub fn run_script(
     editor: &mut Editor,
     script: &str,
@@ -151,10 +153,16 @@ pub fn run_script(
         let cwd = editor.cwd().to_owned();
         let state_dir = editor.state_dir().map(std::path::PathBuf::from);
         let message = editor.message().to_owned();
+        let terminal_capture = editor.terminal_capture_enabled();
+        let terminal_keyboard = editor.terminal_keyboard_flags();
         *editor = Editor::new_in(strop_core::Buffer::from_text(&text), cwd);
         editor.set_config(configuration);
         editor.set_state_dir(state_dir);
         editor.set_message(message);
+        editor.set_terminal_capture(terminal_capture);
+        editor
+            .set_terminal_keyboard(terminal_keyboard)
+            .map_err(io::Error::other)?;
         steps.next();
     }
     editor.set_session_policy(crate::session::SessionPolicy::Disabled);
@@ -172,10 +180,13 @@ pub fn run_script(
     driver.apply(Action::Start { open })?;
     driver.draw()?;
     for line in steps {
-        if driver.editor.should_quit() {
-            break;
-        }
         let (kind, arguments) = directives::parse(line)?;
+        if driver.editor.should_quit() && kind != DirectiveKind::Settle {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("editor quit with unconsumed directive: {line}"),
+            ));
+        }
         match kind {
             DirectiveKind::Buffer => {
                 return Err(io::Error::new(

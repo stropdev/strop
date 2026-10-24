@@ -321,6 +321,7 @@ pub(crate) struct CompletionState {
     pub(super) prefix: InsertPrefix,
     pub(super) metrics: PublicationUsage,
     pub(super) prefix_growth: Option<(WorkerId, BufferRevision)>,
+    pub(super) commit_character: Option<char>,
 }
 impl Default for CompletionState {
     fn default() -> Self {
@@ -344,12 +345,16 @@ impl CompletionState {
             prefix: InsertPrefix::None,
             metrics: PublicationUsage::default(),
             prefix_growth: None,
+            commit_character: None,
         }
     }
     pub fn connect_events(&self, sender: crate::editor::events::EventSender) {
         if let Some(mailbox) = self.worker.mailbox() {
             mailbox.connect(sender);
         }
+    }
+    pub(crate) fn defers_input(&self) -> bool {
+        self.commit_character.is_some()
     }
     pub fn pending(&self) -> bool {
         matches!(self.worker, WorkerLifecycle::Stopping { .. })
@@ -362,6 +367,9 @@ impl CompletionState {
             })
     }
     pub fn blocks_deferred_input(&self) -> bool {
+        if self.commit_character.is_some() {
+            return true;
+        }
         let Some(session) = &self.session else {
             return false;
         };

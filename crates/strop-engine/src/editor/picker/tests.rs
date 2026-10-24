@@ -759,3 +759,6 @@ mod worker_lifecycle_tests {
         assert!(matches!(&bin, Outcome::Failed { failure, .. } if failure.kind == FailureKind::Io));
     }
 }
+
+#[path = "source_sink_tests.rs"]
+mod source_sink_tests;

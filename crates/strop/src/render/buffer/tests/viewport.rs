@@ -183,6 +183,27 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
 }
 
 #[test]
+fn shrinking_a_shared_document_reclamps_the_inactive_pane() {
+    let mut e = Editor::new(Buffer::from_text(&"x\n".repeat(200)));
+    e.split(true, None);
+    e.feed_text("G");
+    let mut terminal = viewport_terminal(40, 10);
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    assert!(e.panes()[1].view_top > 0);
+
+    e.focus_pane(0);
+    e.feed_text("ggjdG");
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+
+    assert_eq!(e.panes()[1].view_top, 0);
+    let left: String = (0..20)
+        .map(|x| terminal.backend().buffer()[(x, 1)].symbol())
+        .collect();
+    assert!(left.contains('x'), "inactive pane row: {left:?}");
+}
+
+#[test]
 fn extra_carets_and_vertical_bounds_do_not_alias() {
     let mut e = Editor::new(Buffer::from_text("abcdefghijk\nabcdefghijk\nabcdefghijk\n"));
     e.set_head(10);
@@ -242,7 +263,6 @@ fn clipped_graphemes_keep_overlay_ranges_and_precedence() {
         search_hits: &hits,
         preview: vec![Range::charwise(6, 9)],
         flash: Some(Range::charwise(9, 10)),
-        diags: vec![(6, 9, strop_lsp::Severity::Error)],
         ..Default::default()
     };
     let grid = clipped_row(&e, 5, 4, &style);
@@ -255,6 +275,8 @@ fn clipped_graphemes_keep_overlay_ranges_and_precedence() {
     assert_eq!(grid[(0, 0)].bg, crate::render::select_bg());
     assert_eq!(grid[(0, 0)].fg, crate::render::accent());
     assert_eq!(grid[(1, 0)].bg, crate::render::preview_bg());
+    // The current ordinary search hit retains its underline now that
+    // diagnostics no longer participate in source-cell underlining.
     assert!(grid[(1, 0)]
         .modifier
         .contains(ratatui::style::Modifier::UNDERLINED));

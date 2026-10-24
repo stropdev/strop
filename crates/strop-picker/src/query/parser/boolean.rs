@@ -186,6 +186,15 @@ impl<'a> BooleanParser<'a> {
                 }
                 // `type:` is the documented input alias of `kind:` (0063 §3).
                 let key = if key == "type" { "kind" } else { key };
+                // Keep the flat path's safe policy: shorthand negation is
+                // unsupported for content qualifiers; Boolean NOT is explicit.
+                if *negated && matches!(key, "text" | "regex") {
+                    query.fail(
+                        &token.range,
+                        format!("{key}: cannot be negated"),
+                        Some("use the explicit option value".into()),
+                    );
+                }
                 if key == "text" {
                     Some(BooleanExpr::Content(ContentAtom {
                         regex: false,

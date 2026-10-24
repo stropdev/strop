@@ -539,6 +539,7 @@ impl Editor {
         self.trace_state();
         let generated = self.resolution.in_action;
         if self.resolution.blocked()
+            || self.completion.defers_input()
             || (!generated && !self.resolution.queue.is_empty())
             || (generated && !self.resolution.staged.is_empty())
         {

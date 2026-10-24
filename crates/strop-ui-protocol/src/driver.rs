@@ -35,6 +35,14 @@ pub enum DriverError {
     Io(#[from] io::Error),
     #[error("refused: {0}")]
     Refused(Refusal),
+    #[error(
+        "action batch partially applied ({completed} actions, generation {generation}): {refusal}"
+    )]
+    Partial {
+        generation: u64,
+        completed: u64,
+        refusal: Refusal,
+    },
     #[error("protocol error: {0}")]
     Protocol(ProtocolError),
     #[error("the backend closed ({reason:?}) while waiting for {waiting}")]
@@ -231,19 +239,34 @@ impl Driver {
 
     /// Admitted actions on the current base; the barrier is the
     /// acknowledgement plus the view reaching the acknowledged
-    /// generation. A `stale_generation` refusal means a publication was
-    /// missed: resync explicitly, then retry — the driver never replays
-    /// optimistically.
+    /// generation. A partial outcome consumes that published prefix and
+    /// returns its generation, completed count and typed failure. A
+    /// `stale_generation` refusal means a publication was missed: resync
+    /// explicitly, then retry — the driver never replays optimistically.
     pub fn act(&mut self, actions: Vec<AdmittedAction>) -> Result<u64, DriverError> {
         let base = self.client.base_stamp()?;
         let seq = self.next_seq();
         self.send(&ClientMessage::Act { seq, base, actions })?;
         let deadline = self.deadline();
-        let generation = match self.wait_ack(seq, "the action acknowledgement", deadline)? {
-            AckOutcome::Applied { generation, .. } => generation,
-            AckOutcome::Refused { refusal } => return Err(DriverError::Refused(refusal)),
-        };
+        let (generation, partial) =
+            match self.wait_ack(seq, "the action acknowledgement", deadline)? {
+                AckOutcome::Applied { generation, .. } => (generation, None),
+                AckOutcome::Partial {
+                    generation,
+                    completed,
+                    refusal,
+                    ..
+                } => (generation, Some((completed, refusal))),
+                AckOutcome::Refused { refusal } => return Err(DriverError::Refused(refusal)),
+            };
         self.wait_generation_atleast(generation, "the action's publication", deadline)?;
+        if let Some((completed, refusal)) = partial {
+            return Err(DriverError::Partial {
+                generation,
+                completed,
+                refusal,
+            });
+        }
         Ok(generation)
     }
 
@@ -278,6 +301,11 @@ impl Driver {
         let generation = match self.wait_ack(seq, "the viewport acknowledgement", deadline)? {
             AckOutcome::Applied { generation, .. } => generation,
             AckOutcome::Refused { refusal } => return Err(DriverError::Refused(refusal)),
+            AckOutcome::Partial { .. } => {
+                return Err(DriverError::Protocol(ProtocolError::Unexpected {
+                    message: "partial viewport acknowledgement".into(),
+                }))
+            }
         };
         self.wait_generation_atleast(generation, "the viewport's publication", deadline)?;
         Ok(generation)
@@ -292,6 +320,11 @@ impl Driver {
         let generation = match self.wait_ack(seq, "the resync acknowledgement", deadline)? {
             AckOutcome::Applied { generation, .. } => generation,
             AckOutcome::Refused { refusal } => return Err(DriverError::Refused(refusal)),
+            AckOutcome::Partial { .. } => {
+                return Err(DriverError::Protocol(ProtocolError::Unexpected {
+                    message: "partial resync acknowledgement".into(),
+                }))
+            }
         };
         loop {
             if self.client.poisoned().is_none() && self.client.generation() >= generation {
@@ -578,5 +611,115 @@ fn read_backend(mut stdout: std::process::ChildStdout, tx: SyncSender<Transport>
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::message::{ActionLimits, BackendInfo, ServerCapabilities, ViewDelta};
+
+    /// A synthetic wire peer exercises the real framed transport and
+    /// driver barriers. The server's defensive mid-batch engine-error arm
+    /// has no known consumer-reachable trigger, so this deliberately tests
+    /// only the public v2 wire/driver contract rather than injecting a fake
+    /// production failure mode.
+    #[test]
+    fn partial_ack_consumes_prefix_and_returns_typed_error() {
+        let backend = BackendInfo {
+            name: "partial-fixture".into(),
+            version: "0.0".into(),
+            build: None,
+            incarnation: 7,
+        };
+        let messages = [
+            ServerMessage::Welcome {
+                protocol: PROTOCOL_VERSION,
+                backend: backend.clone(),
+                limits: ActionLimits {
+                    max_frame_bytes: crate::frame::MAX_BODY_BYTES,
+                    max_pending_requests: MAX_PENDING_REQUESTS,
+                    max_viewport_cells: crate::MAX_VIEWPORT_CELLS,
+                },
+                capabilities: ServerCapabilities {
+                    terminals: true,
+                    workspace_search: true,
+                    filesystem: true,
+                    clipboard_write: true,
+                },
+            },
+            ServerMessage::Snapshot {
+                incarnation: 7,
+                view: ViewSnapshot {
+                    generation: 1,
+                    geometry: Default::default(),
+                    active_pane: 0,
+                    panes: Vec::new(),
+                    state: serde_json::json!({"prefix": "before"}),
+                },
+            },
+            ServerMessage::Delta {
+                incarnation: 7,
+                delta: ViewDelta {
+                    base: 1,
+                    generation: 2,
+                    geometry: None,
+                    active_pane: None,
+                    panes: Vec::new(),
+                    state: Some(serde_json::json!({"prefix": "published"})),
+                },
+            },
+            ServerMessage::Ack {
+                seq: 1,
+                outcome: AckOutcome::Partial {
+                    applied: 1,
+                    generation: 2,
+                    completed: 1,
+                    refusal: Refusal::Engine {
+                        message: "fixture failure".into(),
+                    },
+                },
+            },
+        ];
+        let mut bytes = Vec::new();
+        for message in messages {
+            frame::write_message(&mut bytes, &message).unwrap();
+        }
+        let frames = String::from_utf8(bytes).unwrap();
+        let mut driver = Driver::spawn_args(
+            std::path::Path::new("/bin/sh"),
+            &[
+                "-c",
+                "printf '%s' \"$1\"; exec cat >/dev/null",
+                "partial-fixture",
+                &frames,
+            ],
+            std::path::Path::new("/"),
+            &[],
+        )
+        .unwrap();
+
+        let error = driver
+            .act(vec![
+                AdmittedAction::Focus(true),
+                AdmittedAction::Focus(false),
+            ])
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                DriverError::Partial {
+                    generation: 2,
+                    completed: 1,
+                    refusal: Refusal::Engine { message },
+                } if message == "fixture failure"
+            ),
+            "partial acknowledgement keeps its typed details: {error}"
+        );
+        assert_eq!(driver.client().generation(), 2);
+        assert_eq!(
+            driver.client().view().unwrap().state,
+            serde_json::json!({"prefix": "published"})
+        );
     }
 }

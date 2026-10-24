@@ -23,6 +23,12 @@ import time
 from pathlib import Path
 
 
+def ui_protocol(version: str) -> int:
+    """Select the framed UI protocol introduced by strop 0.45.0."""
+    major, minor, *_ = (int(part) for part in version.split("."))
+    return 2 if (major, minor) >= (0, 45) else 1
+
+
 def frame(reader) -> dict:
     header = bytearray()
     while not header.endswith(b"\r\n\r\n"):

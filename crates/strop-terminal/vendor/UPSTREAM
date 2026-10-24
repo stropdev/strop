@@ -6,4 +6,8 @@ Distribution: zig build dist -Demit-lib-vt=true -Doptimize=ReleaseFast -Dvt-feat
 Archive: ghostty-vt-5252b193.tar.gz
 Archive SHA-256: 6eac1c1b1870ebfbcbb0798b091ba91f2e45d1da89ae21e83e6ae66adb082488
 Compiler: Zig 0.16.0, supplied explicitly by the source builder; never downloaded by build.rs
+Required Zig packages (fetched locally by build.rs; upstream package hashes verified by Zig):
+- translate-c 4e879eb8aba615de112eabd1231ea6e01920cead; archive SHA-256 8fb0f5c6a3e8b3bf0e35225d3abc1230bcf6f1fdf162467f1f747ec2fa5eda07
+- arocc f97cdfc3779aec4b242299e2fc9a1c828c3547c6; archive SHA-256 42c8cab9135b12518e6af7dc5e461f055c78b863adca8ed7774f2fb7fe9a7784
+- uucode 2826a37a4562284fdacd8fa029d49509cc9bffcd; archive SHA-256 7e76fc7fab1e7ac728c52b35bbb3e5b8c639841abfc7fe1a4bcb13050594bc9e
 Runtime: statically linked, no Ghostty installation or Zig compiler required

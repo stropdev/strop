@@ -200,6 +200,23 @@ const DISPATCHED: &[&str] = &[
     ":wq",
     ":e",
     ":help",
+    ":theme",
+    ":jumps",
+    ":noh",
+    ":format",
+    ":rename",
+    ":recover",
+    ":qa",
+    ":qall",
+    ":collection",
+    ":symbols",
+    ":trust",
+    ":container-worker",
+    ":set",
+    ":select-next",
+    ":select-all",
+    ":select-skip",
+    ":select-pop",
     ":e!",
     ":vs",
     ":vsplit",
@@ -241,6 +258,7 @@ const EX_ALIASES: &[(&str, &str)] = &[(":vsplit", ":vs"), (":split", ":sp"), (":
 /// BINDINGS row. A new match arm without a row fails here.
 #[test]
 fn every_dispatched_sequence_has_a_row() {
+    let mut missing = Vec::new();
     for entry in DISPATCHED {
         let canonical = EX_ALIASES
             .iter()
@@ -268,17 +286,21 @@ fn every_dispatched_sequence_has_a_row() {
                 toks.extend(tok.chars().map(|c| c.to_string()));
             }
         }
-        assert!(
-            find_row(&toks).is_some()
-                || BINDINGS.iter().any(|row| {
-                    matches!(row.handler, Handler::Contextual)
-                        && expand(row.keys)
-                            .iter()
-                            .any(|keys| keys.iter().copied().eq(toks.iter().map(String::as_str)))
-                }),
-            "{entry} dispatches but has no BINDINGS row (0003 §5.7)"
-        );
+        let covered = find_row(&toks).is_some()
+            || BINDINGS.iter().any(|row| {
+                matches!(row.handler, Handler::Contextual)
+                    && expand(row.keys)
+                        .iter()
+                        .any(|keys| keys.iter().copied().eq(toks.iter().map(String::as_str)))
+            });
+        if !covered {
+            missing.push(*entry);
+        }
     }
+    assert!(
+        missing.is_empty(),
+        "dispatchable sequences missing BINDINGS rows (0003 §5.7): {missing:?}"
+    );
 }
 
 /// 0008 stage 2 structural pin: every live normal/leader row
@@ -328,4 +350,21 @@ fn live_rows_dispatch_through_the_table() {
             );
         }
     }
+}
+
+#[test]
+fn uppercase_x_deletes_backward_instead_of_repeating_lowercase_x() {
+    let mut backward = Editor::new(Buffer::from_text("abc\n"));
+    backward.set_head(1);
+    backward.feed_text("X");
+    assert_eq!(backward.buf().text().to_string(), "bc\n");
+    assert_eq!(backward.head(), 0);
+    assert_eq!(backward.register(None).text, "a");
+
+    let mut forward = Editor::new(Buffer::from_text("abc\n"));
+    forward.set_head(1);
+    forward.feed_text("x");
+    assert_eq!(forward.buf().text().to_string(), "ac\n");
+    assert_eq!(forward.head(), 1);
+    assert_eq!(forward.register(None).text, "b");
 }

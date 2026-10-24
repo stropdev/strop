@@ -1,5 +1,28 @@
 # Changelog
 
+
+## 0.45.0 — 2026-10-24
+
+### Added
+
+- **Honest partial UI action acknowledgements** (0071): UI protocol v2 distinguishes a published action prefix from a fully applied batch and a zero-application refusal. Clipboard effects are emitted only to clients that negotiated `clipboard_write`.
+- **Complete command discoverability**: generated help and Ex completion now include theme, jump, symbol, collection, recovery, quit, container-worker and selection commands.
+- **Register differential coverage**: the nvim harness compares unnamed registers as well as final text and cursor.
+
+### Changed
+
+- **Quiet diagnostics** (0071): source ranges no longer carry straight severity underlines. Gutter signs, cursor-line messages, modeline counts and the diagnostics picker retain severity without painting amber blocks over code.
+- **Strict, legible configuration**: unreadable and unknown keys are named errors instead of silent defaults; `strop config` aligns real key/value widths and `:explain` reports session theme overrides truthfully.
+
+### Fixed
+
+- **Reproducible terminal source builds**: required Zig packages are vendored and imported through Zig's hash-verified local cache, removing GitHub/Codeberg response-header failures from clean BuildKit builds.
+- **Split refresh**: shrinking a shared document immediately reclamps inactive pane origins and UI snapshot line numbers instead of leaving stale/blank splits until focus changes.
+- **Picker and async delivery**: shrinking pinned project-status rows cannot index past the catalog; late LSP lifecycle events and picker terminal results backpressure instead of dropping; notify settlement cannot be lost to advisory queue pressure.
+- **Completion**: commit characters apply the selected item before inserting once, with later input deferred behind acceptance; snippet and commit-character capabilities are advertised to language servers.
+- **Vim grammar**: `X` deletes backward; direct-edit dot repeat no longer replays older operators; insert Tab, register counts, visual-change undo/repeat, and visual-block indent behave consistently. Named yanks also update the unnamed register.
+- **Headless scripts**: early quit cannot silently skip assertions, and `buffer` preserves terminal capture/keyboard composition settings.
+
 ## 0.44.0 — 2026-10-19
 
 ### Added

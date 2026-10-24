@@ -25,6 +25,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tar::Archive::new(flate2::read::GzDecoder::new(archive)).unpack(&source_root)?;
     let source = source_root.join("libghostty-vt-1.3.2-HEAD-+5252b19");
     let prefix = out.join("native");
+    // Seed Zig's content-addressed cache from the pinned local archives.
+    // `zig fetch` verifies their upstream package hashes without depending
+    // on GitHub/Codeberg response headers during a source build.
+    for archive in [
+        "translate-c-4e879eb8.tar.gz",
+        "arocc-f97cdfc3.tar.gz",
+        "uucode-2826a37a.tar.gz",
+    ] {
+        let status = Command::new(&zig)
+            .current_dir(&source)
+            .arg("fetch")
+            .arg(root.join("vendor").join(archive))
+            .status()?;
+        if !status.success() {
+            return Err(
+                format!("vendored Zig package import failed for {archive}: {status}").into(),
+            );
+        }
+    }
     let status = Command::new(&zig)
         .current_dir(&source)
         .args([
@@ -62,6 +81,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=ZIG_GLOBAL_CACHE_DIR");
     for file in [
         "vendor/ghostty-vt-5252b193.tar.gz",
+        "vendor/translate-c-4e879eb8.tar.gz",
+        "vendor/arocc-f97cdfc3.tar.gz",
+        "vendor/uucode-2826a37a.tar.gz",
         "native/bridge.c",
         "native/bridge.h",
         "native/memory.h",

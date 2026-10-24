@@ -121,7 +121,6 @@ impl Editor {
             "\n[documentation]\n",
             "  Enter on hover          Open full searchable documentation; Ctrl-O returns\n",
             "  :containers               Attach to a running container (read-only browse)\n",
-            "  :container-worker        Authorize a verified worker for the attached container; may write its private cache\n",
         ));
         text.push_str("\nSupported language filters:\n  ");
         for (index, language) in strop_core::languages::language_names().enumerate() {
@@ -178,6 +177,25 @@ mod tests {
         for section in crate::keymap::SECTIONS {
             assert!(text.contains(&format!("[{section}]")), "missing {section}");
         }
+        let missing: Vec<_> = [
+            ":theme",
+            ":jumps",
+            ":noh",
+            ":format",
+            ":rename",
+            ":recover",
+            ":qa",
+            ":qall",
+            ":collection",
+            ":symbols",
+        ]
+        .into_iter()
+        .filter(|command| !text.contains(*command))
+        .collect();
+        assert!(
+            missing.is_empty(),
+            "dispatchable Ex commands missing from generated help: {missing:?}"
+        );
         // 0065 S2: the terminal section names every dispatchable escape —
         // the exit from terminal input is discoverable from `?` alone.
         for escape in [

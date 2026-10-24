@@ -55,6 +55,10 @@ pub(crate) struct SubscribedScope {
 #[derive(Default)]
 struct QueueState {
     records: VecDeque<Record>,
+    /// Subscribe outcomes are bounded by the in-flight subscribe jobs,
+    /// not by advisory records. Losing one would permanently strand the
+    /// subscription identity that every later hint requires.
+    settlements: VecDeque<Record>,
     /// The queue itself overflowed: conservative rescan obligation.
     rescan: bool,
     owned_trace: Option<(Subscription, Vec<u8>)>,
@@ -144,6 +148,10 @@ impl NotifyQueue {
 
     pub(crate) fn push_record(&self, record: Record) {
         let mut state = self.state.lock();
+        if matches!(&record, Record::Settled(_) | Record::RemoteSettled { .. }) {
+            state.settlements.push_back(record);
+            return;
+        }
         if state.records.len() >= MAX_RECORDS {
             state.rescan = true;
             return;
@@ -167,10 +175,10 @@ impl NotifyQueue {
     /// Drain everything recorded so far plus the rescan latch.
     pub(crate) fn drain(&self) -> (Vec<Record>, bool) {
         let mut state = self.state.lock();
-        (
-            state.records.drain(..).collect(),
-            std::mem::take(&mut state.rescan),
-        )
+        let mut records = Vec::with_capacity(state.settlements.len() + state.records.len());
+        records.extend(state.settlements.drain(..));
+        records.extend(state.records.drain(..));
+        (records, std::mem::take(&mut state.rescan))
     }
 }
 

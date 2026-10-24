@@ -54,8 +54,11 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("split", "split horizontal"),
     ("help", "help buffer"),
     ("h", "help buffer"),
+    ("jumps", "open the jumplist picker"),
     ("!", "run shell command"),
     ("view", "open readonly"),
+    ("set", "readonly option: ro/noro"),
+    ("noh", "clear the persistent search highlight"),
     ("tail", "remote tail: :tail [BYTES] URI"),
     ("range", "remote range: :range START BYTES URI"),
     ("follow", "follow remote EOF: :follow [URI]"),
@@ -66,13 +69,19 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
         "remote",
         "choose remote destination; edit/verify/root/home/connect/disconnect/clear/list",
     ),
+    ("trust", "authorize the pending endpoint/project command"),
     (
         "explain",
         "why: workspaces, LSP readiness, effective config",
     ),
     ("containers", "attach to a running container (read-only)"),
+    (
+        "container-worker",
+        "authorize a verified worker for the attached container",
+    ),
     ("format", "format the buffer through the language server"),
     ("rename", "rename the symbol under the cursor: :rename NEW"),
+    ("symbols", "open the document symbols picker"),
     ("undo-change", "undo the last applied change plan"),
     (
         "save-change",
@@ -80,6 +89,13 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ),
     ("apply-change", "apply the prepared proposal"),
     ("cancel-change", "cancel the prepared proposal"),
+    (
+        "select-next",
+        "select the next occurrence of the word or selection",
+    ),
+    ("select-all", "select all occurrences in buffer"),
+    ("select-skip", "skip the next occurrence candidate"),
+    ("select-pop", "drop the last-added occurrence"),
     ("search-options", "choose hidden and ignored search policy"),
     ("tab-size", "choose indentation width: N or auto"),
     (
@@ -95,6 +111,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
         "draft recovery: list, restore N, discard N, consent remote|off",
     ),
     ("qa", "quit all (fails on unsaved; :qa! discards)"),
+    ("qall", "quit all (fails on unsaved; :qall! discards)"),
 ];
 
 impl Editor {

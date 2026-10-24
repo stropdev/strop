@@ -10,6 +10,11 @@ use super::input::Action;
 use super::{Editor, Mode};
 use strop_core::frontend_input::Key;
 
+enum VisualChangeReplay {
+    Operator(grammar::Command),
+    Selection(String),
+}
+
 impl Editor {
     pub(crate) fn feed_visual(&mut self, key: Key) {
         // gv's memory: the live visual range, refreshed per key — any
@@ -28,7 +33,12 @@ impl Editor {
             Key::Char('>') | Key::Char('<') if self.walker.is_ground() => {
                 // visual indent: apply to every selected line, one undo
                 // unit, back to normal (vim re-selects with gv)
-                let Some(range) = self.visual_range() else {
+                let range = if self.mode == Mode::VisualBlock {
+                    Some(self.selected_line_range())
+                } else {
+                    self.visual_range()
+                };
+                let Some(range) = range else {
                     return;
                 };
                 if self.buf().readonly {
@@ -86,10 +96,28 @@ impl Editor {
                 };
                 let linewise = self.mode == Mode::VisualLine;
                 if op == Op::Change && linewise {
+                    let count = self
+                        .buf()
+                        .line_of(self.anchor())
+                        .abs_diff(self.buf().line_of(self.head()))
+                        + 1;
                     self.mode = Mode::Normal;
                     self.change_lines(None, "V...", &[(self.head(), range, true)]);
+                    self.last_change = Some(grammar::Command {
+                        op: Some(Op::Change),
+                        register: None,
+                        count: Some(count),
+                        target: grammar::Target::Linewise,
+                        keys: if count == 1 {
+                            "cc".into()
+                        } else {
+                            format!("{count}cc")
+                        },
+                    });
+                    self.last_cmd_keys.clear();
                     return;
                 }
+                let mut replay = None;
                 if op == Op::Yank {
                     let text = self.buf().slice_string(range);
                     let mut register = if linewise {
@@ -103,15 +131,24 @@ impl Editor {
                     self.flash(range);
                 } else {
                     let text = self.buf().slice_string(range);
+                    if op == Op::Change {
+                        replay = Some(self.charwise_change_replay(range, &text));
+                    }
                     let provenance =
                         self.capture_filename_register([(range, linewise)], true, false);
                     let changes = crate::editor::transact::ChangeSet {
                         edits: vec![strop_core::Replacement::new(range, String::new())],
-                        undo_open: false,
+                        undo_open: op == Op::Change,
                     };
+                    if op == Op::Change {
+                        self.tx_begin();
+                    }
                     self.filename_delete_hint(range, linewise);
                     if let Err(error) = self.apply(self.current(), self.buf().revision(), changes) {
                         self.clear_filename_hint();
+                        if op == Op::Change {
+                            self.tx_commit();
+                        }
                         self.message = error.to_string();
                         return;
                     }
@@ -130,6 +167,17 @@ impl Editor {
                 self.clamp_cursor();
                 if op == Op::Change {
                     self.enter_insert_from(if linewise { "V..." } else { "v..." });
+                    match replay {
+                        Some(VisualChangeReplay::Operator(command)) => {
+                            self.last_change = Some(command);
+                            self.last_cmd_keys.clear();
+                        }
+                        Some(VisualChangeReplay::Selection(keys)) => {
+                            self.last_change = None;
+                            self.last_cmd_keys = keys;
+                        }
+                        None => {}
+                    }
                 }
             }
             _ => {
@@ -353,21 +401,83 @@ impl Editor {
                 );
                 Some(Range::charwise(s, e.min(self.buf().len_bytes())))
             }
-            Mode::VisualLine => {
-                let (a, b) = (
-                    self.buf().line_of(self.anchor()),
-                    self.buf().line_of(self.head()),
-                );
-                let (a, b) = (a.min(b), a.max(b));
-                let start = self.buf().line_start(a);
-                let end = if b + 1 >= self.buf().len_lines() {
-                    self.buf().len_bytes()
-                } else {
-                    self.buf().line_start(b + 1)
-                };
-                Some(Range::linewise(start, end))
-            }
+            Mode::VisualLine => Some(self.selected_line_range()),
             _ => None,
         }
+    }
+
+    fn selected_line_range(&self) -> Range {
+        let (a, b) = (
+            self.buf().line_of(self.anchor()),
+            self.buf().line_of(self.head()),
+        );
+        let (a, b) = (a.min(b), a.max(b));
+        let start = self.buf().line_start(a);
+        let end = if b + 1 >= self.buf().len_lines() {
+            self.buf().len_bytes()
+        } else {
+            self.buf().line_start(b + 1)
+        };
+        Range::linewise(start, end)
+    }
+
+    fn charwise_change_replay(&self, range: Range, text: &str) -> VisualChangeReplay {
+        let single_line = self.buf().line_of(range.start.get())
+            == self.buf().line_of(range.end.get().saturating_sub(1));
+        if single_line {
+            let count = text.chars().count().max(1);
+            VisualChangeReplay::Operator(grammar::Command {
+                op: Some(Op::Change),
+                register: None,
+                count: Some(count),
+                target: grammar::Target::Motion(grammar::Motion::Right),
+                keys: format!("c{count}l"),
+            })
+        } else {
+            VisualChangeReplay::Selection(self.visual_change_keys())
+        }
+    }
+
+    fn visual_change_keys(&self) -> String {
+        let anchor = self.anchor();
+        let head = self.head();
+        let buffer = self.buf();
+        let rope = buffer.text();
+        let anchor_line = buffer.line_of(anchor);
+        let head_line = buffer.line_of(head);
+        let column = |position| {
+            let line_start = buffer.line_start(buffer.line_of(position));
+            rope.byte_to_char(position) - rope.byte_to_char(line_start)
+        };
+        let anchor_column = column(anchor);
+        let head_column = column(head);
+
+        let mut keys = String::from("v");
+        Self::push_counted_motion(
+            &mut keys,
+            anchor_line.abs_diff(head_line),
+            if head_line < anchor_line { 'k' } else { 'j' },
+        );
+        Self::push_counted_motion(
+            &mut keys,
+            anchor_column.abs_diff(head_column),
+            if head_column < anchor_column {
+                'h'
+            } else {
+                'l'
+            },
+        );
+        keys.push('c');
+        keys
+    }
+
+    fn push_counted_motion(keys: &mut String, count: usize, motion: char) {
+        if count == 0 {
+            return;
+        }
+        if count > 1 {
+            keys.push_str(&count.to_string());
+        }
+        keys.push(motion);
     }
 }

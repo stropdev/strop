@@ -3,6 +3,7 @@ use super::model::{CompletionDelivery, CompletionPayload, DeliveryScope};
 use super::session::{Acceptance, ActivePreview, Candidate, Selection};
 use super::worker::{Preparation, PreparationOperation, WorkRefusal};
 use crate::editor::Editor;
+use strop_core::frontend_input::Key;
 use strop_core::worker::CancelReason;
 
 impl Editor {
@@ -266,6 +267,9 @@ impl Editor {
                 session.preparation = None;
             }
             self.message = refusal.to_string();
+            if self.completion.commit_character.is_some() {
+                self.completion_close(CancelReason::Dismissed);
+            }
             return;
         }
         let plan = self.tape.call(
@@ -349,6 +353,9 @@ impl Editor {
                 session.preparation = None;
             }
             self.message = format!("completion was not applied: {error}");
+            if self.completion.commit_character.is_some() {
+                self.completion_close(CancelReason::Dismissed);
+            }
             return;
         }
         let mut carets = plan.caret_bytes;
@@ -385,10 +392,14 @@ impl Editor {
         // 0069 D05: a snippet plan takes over placement — the session
         // selects the first placeholder instead of a bare caret.
         let snippet = plan.snippet;
+        let commit_character = self.completion.commit_character.take();
         self.completion_close(CancelReason::Dismissed);
         self.message.clear();
         if let Some(stops) = snippet {
             self.snippet_enter(stops);
+        }
+        if let Some(character) = commit_character {
+            self.dispatch_owned(Key::Char(character));
         }
     }
 

@@ -19,6 +19,16 @@ fn input(text: &str, caret: usize) -> RequestInput {
 }
 
 #[test]
+fn initialization_advertises_snippet_and_commit_character_support() {
+    let capabilities = client_capabilities();
+    let item = capabilities.completion_item.as_ref().unwrap();
+    assert_eq!(
+        (item.snippet_support, item.commit_characters_support),
+        (Some(true), Some(true))
+    );
+}
+
+#[test]
 fn filter_text_and_server_sort_order_determine_the_retained_candidates() {
     let request = input("req", 3);
     let filter = CompletionFilter::new(
