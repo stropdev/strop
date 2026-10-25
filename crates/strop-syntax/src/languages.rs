@@ -21,6 +21,7 @@ pub enum LanguageId {
     CMake,
     Markdown,
     MarkdownInline,
+    MarkdownRustdoc,
     Java,
     CSharp,
     Ruby,
@@ -73,7 +74,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["rust", "rs"],
         highlights: include_str!("../queries/rust/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/rust/injections.scm"),
     },
     Entry {
         id: LanguageId::Python,
@@ -84,7 +85,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &["python", "python3"],
         aliases: &["python", "py", "python3"],
         highlights: include_str!("../queries/python/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/python/injections.scm"),
     },
     Entry {
         id: LanguageId::JavaScript,
@@ -95,7 +96,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &["node", "nodejs"],
         aliases: &["javascript", "js", "node"],
         highlights: include_str!("../queries/javascript/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/javascript/injections.scm"),
     },
     Entry {
         id: LanguageId::TypeScript,
@@ -106,7 +107,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["typescript", "ts"],
         highlights: include_str!("../queries/typescript/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/javascript/injections.scm"),
     },
     Entry {
         id: LanguageId::Tsx,
@@ -117,7 +118,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["tsx"],
         highlights: include_str!("../queries/tsx/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/javascript/injections.scm"),
     },
     Entry {
         id: LanguageId::Go,
@@ -128,7 +129,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["go", "golang"],
         highlights: include_str!("../queries/go/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/go/injections.scm"),
     },
     Entry {
         id: LanguageId::C,
@@ -139,7 +140,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["c"],
         highlights: include_str!("../queries/c/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/javascript/injections.scm"),
     },
     Entry {
         id: LanguageId::Cpp,
@@ -150,7 +151,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["cpp", "c++", "cxx"],
         highlights: include_str!("../queries/cpp/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/javascript/injections.scm"),
     },
     Entry {
         id: LanguageId::Json,
@@ -252,6 +253,21 @@ static LANGUAGES: &[Entry] = &[
         injections: include_str!("../queries/markdown.inline/injections.scm"),
     },
     Entry {
+        id: LanguageId::MarkdownRustdoc,
+        name: "markdown-rustdoc",
+        grammar: || tree_sitter_md::LANGUAGE.into(),
+        extensions: &[],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["markdown-rustdoc"],
+        highlights: include_str!("../queries/markdown/highlights.scm"),
+        injections: concat!(
+            include_str!("../queries/markdown/injections.scm"),
+            "\n",
+            include_str!("../queries/markdown/rustdoc-injections.scm"),
+        ),
+    },
+    Entry {
         id: LanguageId::Java,
         name: "java",
         grammar: || tree_sitter_java::LANGUAGE.into(),
@@ -260,7 +276,7 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["java"],
         highlights: include_str!("../queries/java/highlights.scm"),
-        injections: "",
+        injections: include_str!("../queries/java/injections.scm"),
     },
     Entry {
         id: LanguageId::CSharp,

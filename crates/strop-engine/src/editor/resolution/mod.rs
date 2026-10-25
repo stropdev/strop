@@ -1,7 +1,9 @@
 //! Bounded input work: large grammar reads run on one CPU owner. Input after an
 //! accepted command stays ordered; Ctrl-C revokes it. Preview and execution use
 //! the same revision/cursor/command-stamped pure resolver result.
+mod indentation;
 mod worker;
+use super::structural_indent::{self, Batch as IndentRequest, Edit as IndentEdit, Trigger};
 use super::Editor;
 use std::collections::VecDeque;
 use std::sync::{
@@ -16,11 +18,17 @@ use strop_core::{
 use strop_grammar::{ActionPlan, Command, Resolved};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum Operation {
+    Grammar(Command),
+    Indentation(IndentRequest),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResolutionKey {
     document: DocumentId,
     revision: BufferRevision,
     pane: usize,
-    command: Command,
+    operation: Operation,
     cursors: Vec<usize>,
     tab: usize,
 }
@@ -29,6 +37,7 @@ pub struct ResolutionData {
     resolved: Vec<Option<Resolved>>,
     plan: Option<ActionPlan>,
     layouts: Vec<strop_core::layout::PreparedLineLayout>,
+    indentation: Option<Vec<IndentEdit>>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum ResolutionEvent {
@@ -44,6 +53,7 @@ pub(crate) enum ResolutionPurpose {
     VisualObject,
     RepeatSearch(bool),
     DotRepeat,
+    Indentation,
 }
 impl ResolutionPurpose {
     fn blocks_input(self) -> bool {
@@ -54,6 +64,7 @@ impl ResolutionPurpose {
                 | Self::VisualObject
                 | Self::RepeatSearch(_)
                 | Self::DotRepeat
+                | Self::Indentation
         )
     }
 }
@@ -67,6 +78,10 @@ pub enum DeferredInput {
     Key(Key),
     GeneratedKey {
         key: Key,
+        depth: usize,
+    },
+    InsertStep {
+        step: super::insert::replay::InsertStep,
         depth: usize,
     },
     Paste(String),
@@ -117,6 +132,11 @@ impl Default for ResolutionState {
     }
 }
 impl ResolutionState {
+    pub(crate) fn edits(&self, document: DocumentId, changes: &[strop_core::Change]) {
+        if let Some(worker) = &self.worker {
+            worker.edits(document, changes);
+        }
+    }
     pub fn blocked(&self) -> bool {
         self.pending
             .as_ref()
@@ -149,6 +169,68 @@ impl ResolutionState {
 }
 
 impl Editor {
+    pub(crate) fn resolve_indentation(&mut self, trigger: Trigger) -> Option<Vec<IndentEdit>> {
+        let Some(request) = self.indentation_request(trigger) else {
+            self.message = "indentation requires an editable source position".into();
+            return None;
+        };
+        let cursors = self.all_cursors();
+        let operation = Operation::Indentation(request.clone());
+        if let Some((key, ready)) = &self.resolution.ready {
+            if self.resolution_matches(key, &operation, &cursors) {
+                return ready.as_ref().ok()?.indentation.clone();
+            }
+        }
+        let mut edits = Vec::new();
+        for source in &request.sources {
+            let buffer = &self.docs.get(source.document)?.buf;
+            let cursors = source.cursors();
+            let positions = structural_indent::probes(buffer, &cursors, trigger);
+            let contexts = if cursors
+                .iter()
+                .any(|&at| buffer.line_end(buffer.line_of(at)) > 4096)
+            {
+                None
+            } else {
+                structural_indent::inline_contexts(buffer, &source.request, &positions)
+            };
+            let Some(contexts) = contexts else {
+                self.defer_operation(
+                    operation,
+                    self.all_cursors(),
+                    ResolutionPurpose::Indentation,
+                );
+                return None;
+            };
+            match source.project(structural_indent::plan(
+                buffer,
+                &cursors,
+                &source.request,
+                &contexts,
+            )) {
+                Ok(projected) => edits.extend(projected),
+                Err(error) => {
+                    self.message = error;
+                    return None;
+                }
+            }
+        }
+        if let Err(error) = IndentRequest::order(&mut edits) {
+            self.message = error;
+            return None;
+        }
+        Some(edits)
+    }
+
+    fn finish_indentation(&mut self, trigger: Trigger) {
+        match trigger {
+            Trigger::Enter => self.feed_insert(Key::Enter),
+            Trigger::Closer(kind) => self.feed_insert(Key::Char(kind.closing_character())),
+            Trigger::Below => self.open_below(),
+            Trigger::Above => self.open_above(),
+        }
+    }
+
     /// Small pure reads have a fixed source bound. Larger scans and counts never
     /// run on input/render. This is a work bound, not a second grammar dialect.
     pub(crate) fn resolution_is_large(&self, command: &Command) -> bool {
@@ -159,7 +241,7 @@ impl Editor {
     fn resolution_matches(
         &self,
         key: &ResolutionKey,
-        command: &Command,
+        operation: &Operation,
         cursors: &[usize],
     ) -> bool {
         !self.docs.is_empty()
@@ -167,7 +249,7 @@ impl Editor {
             && key.revision == self.buf().revision()
             && key.pane == self.active_pane
             && key.tab == self.cur_indent().width.max(1)
-            && &key.command == command
+            && &key.operation == operation
             && key.cursors == cursors
     }
     fn prepared_resolution(
@@ -176,7 +258,7 @@ impl Editor {
         cursors: &[usize],
     ) -> Option<Result<&ResolutionData, &str>> {
         let (key, ready) = self.resolution.ready.as_ref()?;
-        self.resolution_matches(key, command, cursors)
+        self.resolution_matches(key, &Operation::Grammar(command.clone()), cursors)
             .then(|| ready.as_ref().map_err(String::as_str))
     }
     pub(crate) fn resolved_many(
@@ -214,8 +296,17 @@ impl Editor {
         if !self.resolution_is_large(command) || self.resolution_ready(command, &cursors) {
             return false;
         }
+        self.defer_operation(Operation::Grammar(command.clone()), cursors, purpose)
+    }
+
+    fn defer_operation(
+        &mut self,
+        operation: Operation,
+        cursors: Vec<usize>,
+        purpose: ResolutionPurpose,
+    ) -> bool {
         if let Some(pending) = self.resolution.pending.as_ref() {
-            if self.resolution_matches(&pending.ticket.key, command, &cursors) {
+            if self.resolution_matches(&pending.ticket.key, &operation, &cursors) {
                 if purpose.blocks_input() {
                     if let Some(pending) = self.resolution.pending.as_mut() {
                         pending.purpose = purpose;
@@ -251,7 +342,7 @@ impl Editor {
             document: self.current(),
             revision: self.buf().revision(),
             pane: self.active_pane,
-            command: command.clone(),
+            operation,
             cursors,
             tab: self.cur_indent().width.max(1),
         };
@@ -274,10 +365,19 @@ impl Editor {
                 return true;
             }
         }
+        let source_ropes = match &ticket.key.operation {
+            Operation::Indentation(request) => request
+                .sources
+                .iter()
+                .filter_map(|source| self.docs.get(source.document).map(|doc| doc.buf.snapshot()))
+                .collect(),
+            Operation::Grammar(_) => Vec::new(),
+        };
         let work = worker::Work {
             ticket,
             rope: self.buf().snapshot(),
             cancel,
+            source_ropes,
         };
         let failed = match &self.resolution.worker {
             Some(worker) => worker.resolve(work).err(),
@@ -315,11 +415,23 @@ impl Editor {
             && self.current() == key.document
             && self.active_pane == key.pane
             && self.buf().revision() == key.revision
-            && (!pending.purpose.blocks_input() || self.all_cursors() == key.cursors);
+            && (!pending.purpose.blocks_input() || self.all_cursors() == key.cursors)
+            && match &key.operation {
+                Operation::Grammar(_) => true,
+                Operation::Indentation(request) => {
+                    self.indentation_request(request.trigger).as_ref() == Some(request)
+                        && matches!(
+                            (request.trigger, self.mode),
+                            (Trigger::Enter | Trigger::Closer(_), super::Mode::Insert)
+                                | (Trigger::Above | Trigger::Below, super::Mode::Normal)
+                        )
+                }
+            };
         if !current {
             self.resolution.queue.clear();
             if !self.finishing {
-                self.message = "resolution cancelled: document or cursor changed".into();
+                self.message =
+                    "resolution cancelled: source, cursor, mode or settings changed".into();
             }
             return;
         }
@@ -350,14 +462,32 @@ impl Editor {
         if succeeded {
             let saved_depth = self.macro_depth;
             self.macro_depth = pending.macro_depth;
-            self.run_input_action(|editor| match pending.purpose {
-                ResolutionPurpose::Motion => editor.move_cursor(&key.command),
-                ResolutionPurpose::Execute => editor.dispatch_grammar(&key.command),
-                ResolutionPurpose::IncSearch => editor.incsearch_jump(),
-                ResolutionPurpose::Preview => {}
-                ResolutionPurpose::VisualObject => editor.select_visual_object(&key.command),
-                ResolutionPurpose::RepeatSearch(invert) => editor.repeat_search(invert),
-                ResolutionPurpose::DotRepeat => editor.dot_repeat_pub(),
+            self.run_input_action(|editor| {
+                if let Operation::Indentation(request) = &key.operation {
+                    if editor.indentation_request(request.trigger).as_ref() == Some(request)
+                        && matches!(
+                            (request.trigger, editor.mode),
+                            (Trigger::Enter | Trigger::Closer(_), super::Mode::Insert)
+                                | (Trigger::Above | Trigger::Below, super::Mode::Normal)
+                        )
+                    {
+                        editor.finish_indentation(request.trigger);
+                    }
+                    return;
+                }
+                let Operation::Grammar(command) = &key.operation else {
+                    return;
+                };
+                match pending.purpose {
+                    ResolutionPurpose::Motion => editor.move_cursor(command),
+                    ResolutionPurpose::Execute => editor.dispatch_grammar(command),
+                    ResolutionPurpose::IncSearch => editor.incsearch_jump(),
+                    ResolutionPurpose::Preview => {}
+                    ResolutionPurpose::VisualObject => editor.select_visual_object(command),
+                    ResolutionPurpose::RepeatSearch(invert) => editor.repeat_search(invert),
+                    ResolutionPurpose::DotRepeat => editor.dot_repeat_pub(),
+                    ResolutionPurpose::Indentation => {}
+                }
             });
             self.macro_depth = saved_depth;
         }
@@ -380,6 +510,12 @@ impl Editor {
                             let saved = editor.macro_depth;
                             editor.macro_depth = depth;
                             editor.feed_inner(key);
+                            editor.macro_depth = saved;
+                        }
+                        DeferredInput::InsertStep { step, depth } => {
+                            let saved = editor.macro_depth;
+                            editor.macro_depth = depth;
+                            editor.apply_insert_step(step);
                             editor.macro_depth = saved;
                         }
                         DeferredInput::Paste(text) => editor.paste_bracketed(&text),

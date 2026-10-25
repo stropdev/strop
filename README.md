@@ -60,7 +60,15 @@ constructs report an error instead of being treated as literals. Search previews
 and Enter use the same counted resolver. Horizontal views, block selection and
 carets share display-cell geometry; new edits preserve the buffer's line endings.
 
-Markdown includes inline emphasis, links, tables and fenced-language highlighting;
+Markdown fences select any bundled language—not just Rust. The same Tree-sitter
+injection pipeline highlights fenced examples inside Rust documentation comments,
+JavaScript/TypeScript/TSX, C/C++ and Java documentation blocks, declaration-attached
+Go block comments, and Python's initial module/class/function docstrings.
+Comment delimiters remain comments; independent documentation groups cannot leak
+unclosed fences into each other. Only rustdoc defaults unlabelled fences to Rust;
+unknown explicit languages remain plain code. Ordinary comments and arbitrary
+strings are not reinterpreted as documentation.
+
 HTML embeds JavaScript and CSS. Grammars and licensed queries ship in the binary.
 Syntax, structural indentation guides and search counts are revision-owned worker
 results. Long-line byte/cell checkpoints keep horizontal navigation and typing
@@ -72,6 +80,22 @@ use private atomic files and lossless native paths, including undo history.
 The modeline keeps filenames, live status and position legible at narrow widths.
 Git history uses quieter metadata, clear file hierarchy and native-path-safe
 navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
+
+## Indentation
+
+Enter between `{}`, `[]` or `()` opens an indented inner line and leaves the
+closing delimiter aligned. Typing a closer on an indentation-only line aligns it
+with its matching opener, even when the current indentation is wrong.
+Each cursor uses its own source context, indentation unit and line endings.
+Undo, counted insertion and dot repeat preserve the operation rather than copying
+generated indentation from a different location.
+
+Structural delimiter indentation supports Rust, Python, JavaScript, TypeScript,
+Go, C, C++, JSON, Java, C# and CSS; Python also indents after a code colon.
+Strings and comments are excluded. Named prose/unsupported files inherit whitespace;
+unnamed scratch buffers retain generic brace behavior. This is not a formatter,
+HTML tag indentation, or keyword-based `end`/`else` alignment.
+Large-file analysis runs on the existing revision-checked worker, never the render path.
 
 ## Themes
 

@@ -170,6 +170,30 @@ fn completion_repeat_records_only_the_new_inserted_part_like_vim() {
 }
 
 #[test]
+fn completion_acceptance_preserves_semantic_paired_enter_on_dot() {
+    let text = "result\n{}\n    {}\n";
+    let (mut editor, events) = fixture(text, text.find('}').unwrap());
+    editor.feed(Key::Enter);
+    editor.feed_text("re");
+    editor.feed(Key::CtrlN);
+    until(&mut editor, &events, selected);
+    editor.feed(Key::CtrlY);
+    until(&mut editor, &events, |editor| {
+        editor.completion.session.is_none()
+    });
+    editor.feed(Key::Esc);
+    let after_first = editor.buf().text().to_string();
+    editor.set_head(after_first.rfind('}').unwrap());
+    editor.feed_text(".");
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "result\n{\n    result\n}\n    {\n        result\n    }\n"
+    );
+    editor.feed_text("u");
+    assert_eq!(editor.buf().text().to_string(), after_first);
+}
+
+#[test]
 fn compatible_multicursor_words_apply_to_every_caret() {
     let (mut editor, events) = fixture("result\nre re", 9);
     editor.sels_mut().set_extras([12]);

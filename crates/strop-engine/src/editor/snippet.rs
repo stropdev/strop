@@ -159,6 +159,7 @@ impl Editor {
                     return SnippetKeyOutcome::EndAndForward;
                 }
                 self.snippet_select();
+                self.record_insert_key(key);
                 SnippetKeyOutcome::Consumed
             }
             Key::Esc => {

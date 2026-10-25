@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.46.0 — 2026-10-25
+
+### Added
+
+- **Structural indentation** (0072): Enter between paired delimiters creates an indented inner line and aligned closer; a typed closer aligns to its matching opener rather than removing one arbitrary unit. Each cursor uses its own source context, indentation and line endings. Tree-sitter analysis runs through the existing revision-checked worker for ambiguous or large inputs.
+- **Languages inside documentation** (0073): the existing generic Markdown injection pipeline now reaches Rust docs, JS/TS/TSX, C/C++ and Java documentation blocks, declaration-attached Go block comments, and Python module/class/function docstrings. Labelled fences use any bundled language, not only Rust. Rustdoc alone defaults unlabelled fences to Rust and recognizes inert doctest attributes; unknown labels stay plain code. No new grammar dependency or runtime download.
+
+### Fixed
+
+- **Indentation without collateral edits**: strings, comments, malformed literal regions and named prose retain whitespace; stale or newly read-only sources revoke pending decisions without moving the caret. `O` no longer deepens from the line below.
+- **Semantic insert replay**: undo, dot repeat, counted insertion and macros preserve structural Enter at the destination. Completion, snippet tabstops and bracketed paste retain verbatim content instead of treating inserted braces as indentation commands.
+- **Nested highlighting boundaries**: comment prefixes and delimiters remain host syntax, independent documentation groups cannot share an unclosed fence, and nested language ranges stay inside their parent ranges across edits and scrolling.
+
 
 ## 0.45.0 — 2026-10-24
 

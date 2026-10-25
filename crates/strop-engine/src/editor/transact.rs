@@ -187,6 +187,7 @@ impl super::Editor {
             }
         }
         self.analysis.edits(id, document.buf.changes());
+        self.resolution.edits(id, document.buf.changes());
         if let Err(error) = self.completion.edits(
             &self.tape,
             id,

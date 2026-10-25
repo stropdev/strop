@@ -67,6 +67,7 @@ impl Editor {
             return;
         }
         self.analysis.edits(document, doc.buf.changes());
+        self.resolution.edits(document, doc.buf.changes());
         if let Err(error) = self.completion.edits(
             &self.tape,
             document,

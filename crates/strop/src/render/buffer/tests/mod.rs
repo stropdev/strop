@@ -3,6 +3,7 @@ use strop_core::Buffer;
 
 mod collection;
 mod diagnostics;
+mod documentation;
 #[path = "../matching_tests.rs"]
 mod matching;
 mod syntax_stability;

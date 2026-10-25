@@ -139,3 +139,34 @@ fn a_malformed_snippet_refuses_without_inserting() {
         "a malformed snippet names its refusal: {refusal:?}"
     );
 }
+
+#[test]
+fn dot_replays_snippet_placeholder_replacement_and_tab_navigation() {
+    let (_directory, mut editor, _source, _events) = editing();
+    let delivery = prepare(
+        &mut editor,
+        serde_json::json!({
+            "label": "pair",
+            "insertTextFormat": 2,
+            "insertText": "res ${1:thing} = ${1:thing} + ${2:extra};$0",
+        }),
+    );
+    editor.completion_apply_prepared(&delivery);
+    editor.feed_text("count");
+    editor.feed(Key::Tab);
+    editor.feed_text("value");
+    editor.feed(Key::Tab);
+    editor.feed(Key::Esc);
+    let first = editor.buf().text().to_string();
+    assert!(first.contains("count = count + value;"), "{first:?}");
+    editor.feed_text(".");
+    let repeated = editor.buf().text().to_string();
+    assert_eq!(
+        repeated.matches("count = count + value;").count(),
+        2,
+        "{repeated:?}"
+    );
+    assert!(!repeated.contains("thing") && !repeated.contains("extra"));
+    editor.feed_text("u");
+    assert_eq!(editor.buf().text().to_string(), first);
+}

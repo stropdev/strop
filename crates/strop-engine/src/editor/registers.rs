@@ -584,12 +584,7 @@ impl Editor {
             return;
         }
         if self.mode == super::Mode::Insert {
-            let pos = self.head();
-            self.tx_begin();
-            self.buf_mut().insert(pos, text);
-            self.tx_commit();
-            self.set_head(pos + text.len());
-            self.clamp_cursor();
+            self.insert_literal(text, super::insert::replay::InsertTargets::Primary);
         } else {
             let register = if text.ends_with('\n') {
                 Register::linewise(text)

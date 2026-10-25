@@ -5,6 +5,7 @@
 
 use super::{Editor, Mode};
 use strop_core::frontend_input::Key;
+pub(crate) mod replay;
 
 impl Editor {
     /// The buffer's line-ending for NEW lines: the first line's break
@@ -26,86 +27,6 @@ impl Editor {
         }
     }
 
-    /// One-level dedent when the line so far is whitespace-only (called
-    /// before inserting a closer). No-op when there is real text or no
-    /// indent to give back.
-    fn dedent_for_closer(&mut self) {
-        let line = self.buf().line_of(self.head());
-        let start = self.buf().line_start(line);
-        let col = self.buf().col_of(self.head());
-        let text = self.buf().line_text(line);
-        let before: String = text.chars().take(col).collect();
-        if !before.chars().all(|c| c == ' ' || c == '\t') {
-            return; // real text before the cursor — never reindent
-        }
-        // Strip exactly one indent unit: a tab, or `width` spaces.
-        if start < self.head() && self.buf().byte(start) == b'\t' {
-            self.buf_mut()
-                .delete(strop_core::Range::charwise(start, start + 1));
-            self.set_head(self.head() - 1);
-            return;
-        }
-        let width = self.cur_indent().width;
-        let mut strip = 0;
-        while strip < width && start + strip < self.head() && self.buf().byte(start + strip) == b' '
-        {
-            strip += 1;
-        }
-        if strip == 0 {
-            return;
-        }
-        self.buf_mut()
-            .delete(strop_core::Range::charwise(start, start + strip));
-        self.set_head(self.head().saturating_sub(strip));
-        // dot-repeat: the dedent belongs to the same change; the recorded
-        // insert text keeps literal content, replay re-derives via the
-        // same smartindent path
-    }
-
-    /// Indent for a new line at the cursor (0001 daily-driver): copy the
-    /// current line's leading whitespace, plus one level after an opener
-    /// (`{[`(` c-like, `:` python-ish). Configurable width (config.toml).
-    pub(crate) fn auto_indent(&self) -> String {
-        let line = self.buf().line_of(self.head());
-        let text = self.buf().line_text(line);
-        let before_cursor = &text[..self.buf().col_of(self.head()).min(text.len())];
-        let base: String = before_cursor
-            .chars()
-            .take_while(|c| *c == ' ' || *c == '\t')
-            .collect();
-        let trimmed = before_cursor.trim_end();
-        let deeper = trimmed.ends_with('{')
-            || trimmed.ends_with('[')
-            || trimmed.ends_with('(')
-            || trimmed.ends_with(':');
-        let mut indent = base;
-        if deeper {
-            indent.push_str(&self.cur_indent().unit());
-        }
-        indent
-    }
-
-    /// Indent for o/O: the current line's full leading whitespace,
-    /// deepened after an opener even mid-line.
-    pub(crate) fn auto_indent_full_line(&self) -> String {
-        let line = self.buf().line_of(self.head());
-        let text = self.buf().line_text(line);
-        let base: String = text
-            .chars()
-            .take_while(|c| *c == ' ' || *c == '\t')
-            .collect();
-        let trimmed = text.trim_end();
-        let deeper = trimmed.ends_with('{')
-            || trimmed.ends_with('[')
-            || trimmed.ends_with('(')
-            || trimmed.ends_with(':');
-        let mut indent = base;
-        if deeper {
-            indent.push_str(&self.cur_indent().unit());
-        }
-        indent
-    }
-
     /// Enter insert mode and start recording (dot-repeat, 0001 §2.1).
     /// `keys` is what got us here (`i`, `o`, `ci[`, …).
     pub(crate) fn enter_insert_from(&mut self, keys: &str) {
@@ -117,6 +38,7 @@ impl Editor {
         }
         self.mode = Mode::Insert;
         self.recording_insert = Some(String::new());
+        self.insert_replay = Some(Vec::new());
         if self.last_cmd_keys.is_empty()
             || !matches!(keys.chars().next(), Some('c') if keys.len() > 1)
         {
@@ -149,8 +71,54 @@ impl Editor {
             | KeyDisposition::Dismissed => return,
             KeyDisposition::DismissAndForward | KeyDisposition::PassThrough => {}
         }
-        // gi's memory: where the insert session is (Esc leaves the
-        // final position behind)
+        // Structural changes are planned against one revision before any
+        // cursor mutates. A deferred request retains the same ordered input.
+        let trigger = match key {
+            Key::Enter => Some(super::structural_indent::Trigger::Enter),
+            Key::Char(character @ ('}' | ']' | ')')) if self.closer_needs_alignment() => {
+                strop_syntax::DelimiterKind::closing(character)
+                    .map(super::structural_indent::Trigger::Closer)
+            }
+            _ => None,
+        };
+        if let Some(trigger) = trigger {
+            let Some(edits) = self.resolve_indentation(trigger) else {
+                return;
+            };
+            let primary = edits.iter().find(|edit| edit.cursor.get() == self.head());
+            let removed = primary.map_or(0, |edit| {
+                let count = edit.cursor.get().saturating_sub(edit.start.get());
+                self.recording_insert
+                    .as_ref()
+                    .filter(|recording| {
+                        recording.len() >= count
+                            && recording.as_bytes()[recording.len() - count..]
+                                .iter()
+                                .copied()
+                                .eq(self
+                                    .buf()
+                                    .text()
+                                    .byte_slice(edit.start.get()..edit.cursor.get())
+                                    .bytes())
+                    })
+                    .map_or(0, |_| count)
+            });
+            if let (Some(recording), Some(edit)) = (&mut self.recording_insert, primary) {
+                recording.truncate(recording.len() - removed);
+                recording.push_str(&edit.text[..edit.landing]);
+            }
+            self.record_insert_key(key);
+            self.apply_indentation(&edits);
+            self.last_insert_pos = Some(self.head());
+            return;
+        }
+        if matches!(
+            key,
+            Key::Char(_) | Key::Tab | Key::Backspace | Key::Left | Key::Right | Key::Up | Key::Down
+        ) {
+            self.record_insert_key(key);
+        }
+        // gi remembers the insert caret; Esc leaves the final position behind.
         self.last_insert_pos = Some(self.head());
         match key {
             Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO | Key::CtrlL | Key::CtrlSpace => {
@@ -159,6 +127,22 @@ impl Editor {
                 }
             }
             Key::Esc => {
+                let count = std::mem::replace(&mut self.insert_count, 1);
+                if count > 1 {
+                    let keys = self.insert_replay.clone().unwrap_or_default();
+                    let open = self.insert_open.is_some();
+                    for _ in 1..count {
+                        if open {
+                            self.replay_insert_key(Key::Enter);
+                        }
+                        for step in &keys {
+                            self.replay_insert_step(step.clone());
+                        }
+                    }
+                    self.replay_insert_key(Key::Esc);
+                    return;
+                }
+                self.last_insert_replay = self.insert_replay.take().unwrap_or_default();
                 self.mode = Mode::Normal;
                 self.apply_pending_diagnostics();
                 self.set_head(self.head().saturating_sub(1));
@@ -171,35 +155,7 @@ impl Editor {
                     })
                     .collect();
                 self.sels_mut().set_extra_selections(extras);
-                // vim insert counts: `3iX` types X three times — the
-                // replay joins the session's undo unit (commit after)
-                let count = std::mem::replace(&mut self.insert_count, 1);
                 if let Some(rec) = self.recording_insert.take() {
-                    if count > 1 {
-                        let open = self.insert_open.take();
-                        for _ in 1..count {
-                            if let Some(o) = &open {
-                                // o/O: the opened line repeats too — the
-                                // stored text already carries the EOL style
-                                // it was opened with
-                                let at = (self.head() + 1).min(self.buf().len_bytes());
-                                self.buf_mut().insert(at, o);
-                                self.set_head(at + o.len().saturating_sub(1));
-                            }
-                            for ch in rec.chars() {
-                                // a recorded newline replays as the
-                                // buffer's own break (CRLF stays CRLF)
-                                let piece = if ch == '\n' {
-                                    self.newline_str().to_string()
-                                } else {
-                                    ch.to_string()
-                                };
-                                let at = (self.head() + 1).min(self.buf().len_bytes());
-                                self.buf_mut().insert(at, &piece);
-                                self.set_head(at + piece.len().saturating_sub(1));
-                            }
-                        }
-                    }
                     if self.block_insert_state.is_some() {
                         self.block_replicate(&rec);
                     }
@@ -218,32 +174,45 @@ impl Editor {
                 positions.sort_unstable();
                 positions.dedup();
                 positions.retain(|&p| p > 0); // cursors at 0 can't delete
-                for &pos in positions.iter().rev() {
-                    self.buf_mut()
-                        .delete(strop_core::Range::charwise(pos - 1, pos));
-                }
-                if !positions.is_empty() {
-                    self.remap_after_mirrored_edit(&positions, -1);
+                let edits: Vec<_> = positions
+                    .iter()
+                    .map(|&pos| {
+                        let start = if self.buf().byte_at(pos - 1) == Some(b'\n')
+                            && pos > 1
+                            && self.buf().byte_at(pos - 2) == Some(b'\r')
+                        {
+                            pos - 2
+                        } else {
+                            self.buf().clamp_boundary(pos - 1)
+                        };
+                        super::structural_indent::Edit {
+                            cursor: strop_core::id::ByteOffset::new(pos),
+                            start: strop_core::id::ByteOffset::new(start),
+                            end: strop_core::id::ByteOffset::new(pos),
+                            text: String::new(),
+                            landing: 0,
+                        }
+                    })
+                    .collect();
+                let removed_chars = edits
+                    .iter()
+                    .find(|edit| edit.cursor.get() == self.head())
+                    .map_or(0, |edit| {
+                        self.buf()
+                            .text()
+                            .byte_slice(edit.start.get()..edit.end.get())
+                            .len_chars()
+                    });
+                if !edits.is_empty() {
+                    self.apply_indentation(&edits);
                     if let Some(rec) = &mut self.recording_insert {
-                        rec.pop();
+                        for _ in 0..removed_chars {
+                            rec.pop();
+                        }
                     }
                 }
             }
-            Key::Enter => {
-                let indent = self.auto_indent();
-                let text = format!("{}{indent}", self.newline_str());
-                let mut positions = self.all_cursors();
-                positions.sort_unstable();
-                positions.dedup(); // stacked cursors edit once
-                for &pos in positions.iter().rev() {
-                    self.buf_mut().insert(pos, &text);
-                }
-                self.remap_after_mirrored_edit(&positions, text.len() as isize);
-                if let Some(rec) = &mut self.recording_insert {
-                    rec.push('\n');
-                    rec.push_str(&indent);
-                }
-            }
+            Key::Enter => unreachable!("structural Enter handled before dispatch"),
             // arrows move in insert too (vim) — char-boundary honest
             Key::Left => {
                 let start = self.buf().line_start(self.buf().line_of(self.head()));
@@ -302,12 +271,6 @@ impl Editor {
                 }
             }
             Key::Char(c) => {
-                // smartindent (vim/helix behavior): a closer typed on an
-                // indent-only line dedents one level first — typing `}`
-                // after the auto-indent deepens never strands you
-                if matches!(c, '}' | ']' | ')') {
-                    self.dedent_for_closer();
-                }
                 let mut tmp = [0u8; 4];
                 let encoded = c.encode_utf8(&mut tmp);
                 let mut positions = self.all_cursors();

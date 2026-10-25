@@ -17,6 +17,7 @@ impl Editor {
         let changes = document.buf.changes().to_vec();
         let edits = super::journal::replacements(&document.buf, &changes);
         self.analysis.edits(id, &changes);
+        self.resolution.edits(id, &changes);
         if let Err(error) = self.completion.edits(
             &self.tape,
             id,

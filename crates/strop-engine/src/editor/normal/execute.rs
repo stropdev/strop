@@ -327,6 +327,7 @@ impl Editor {
             }
         }
         let insert = self.last_insert.clone();
+        let replay = self.last_insert_replay.clone();
         if let Some(cmd) = self.last_change.clone() {
             // the same change, resolved fresh from here (0014 §input)
             self.execute(&cmd);
@@ -339,13 +340,19 @@ impl Editor {
         }
         if let Some(text) = insert {
             let was_insert = self.mode == Mode::Insert;
-            if !was_insert {
+            if !was_insert && !self.resolution.blocked() {
                 self.enter_insert_from("i");
             }
-            for c in text.chars() {
-                self.feed(Key::Char(c));
+            if replay.is_empty() {
+                for character in text.chars() {
+                    self.replay_insert_key(Key::Char(character));
+                }
+            } else {
+                for step in replay {
+                    self.replay_insert_step(step);
+                }
             }
-            self.feed(Key::Esc);
+            self.replay_insert_key(Key::Esc);
             self.message = "repeated".into();
         }
     }
@@ -546,24 +553,30 @@ impl Editor {
     /// `o`: open a line below, auto-indented. Dot-repeat replays `o`
     /// itself, which re-derives the indent — recording it would double it.
     pub(crate) fn open_below(&mut self) {
-        let indent = self.auto_indent_full_line();
-        let end = self.buf().line_end(self.buf().line_of(self.head()));
-        let text = format!("{}{indent}", self.newline_str());
-        self.insert_open = Some(text.clone());
-        self.buf_mut().insert(end, &text);
-        self.set_head(end + text.len());
+        let Some(edits) = self.resolve_indentation(super::super::structural_indent::Trigger::Below)
+        else {
+            return;
+        };
+        self.insert_open = edits
+            .iter()
+            .find(|edit| edit.cursor.get() == self.head())
+            .map(|edit| edit.text.clone());
         self.enter_insert_from("o");
+        self.apply_indentation(&edits);
     }
 
-    /// `O`: open above — same indent derivation as `o`.
+    /// `O`: open above, inheriting the current line rather than deepening it.
     pub(crate) fn open_above(&mut self) {
-        let indent = self.auto_indent_full_line();
-        let start = self.buf().line_start(self.buf().line_of(self.head()));
-        let text = format!("{indent}{}", self.newline_str());
-        self.insert_open = Some(text.clone());
-        self.buf_mut().insert(start, &text);
-        self.set_head(start + indent.len());
+        let Some(edits) = self.resolve_indentation(super::super::structural_indent::Trigger::Above)
+        else {
+            return;
+        };
+        self.insert_open = edits
+            .iter()
+            .find(|edit| edit.cursor.get() == self.head())
+            .map(|edit| edit.text.clone());
         self.enter_insert_from("O");
+        self.apply_indentation(&edits);
     }
 
     /// `v` / `V`: visual mode is primary-only — extras collapse (0013).

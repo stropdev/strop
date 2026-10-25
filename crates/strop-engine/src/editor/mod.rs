@@ -62,6 +62,7 @@ pub mod remote;
 mod remote_completion;
 mod shell;
 mod snippet;
+mod structural_indent;
 pub(crate) mod terminal;
 pub use terminal::TerminalDocument;
 mod theme;
@@ -340,6 +341,8 @@ pub struct Editor {
     pub(crate) last_cmd_keys: String,
     pub(crate) last_insert: Option<String>,
     pub(crate) recording_insert: Option<String>,
+    pub(crate) insert_replay: Option<Vec<insert::replay::InsertStep>>,
+    pub(crate) last_insert_replay: Vec<insert::replay::InsertStep>,
     /// vim insert counts: `3i…`/`2o` repeat the session's text (o/O
     /// repeat the opened line too — `insert_open` carries it).
     pub(crate) insert_count: usize,
@@ -466,6 +469,8 @@ impl Editor {
             last_cmd_keys: String::new(),
             last_insert: None,
             recording_insert: None,
+            insert_replay: None,
+            last_insert_replay: Vec::new(),
             insert_count: 1,
             insert_open: None,
             picker: None,

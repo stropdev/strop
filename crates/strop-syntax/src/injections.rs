@@ -11,6 +11,8 @@ use streaming_iterator::StreamingIterator;
 use strop_core::id::BufferRevision;
 use tree_sitter::{Node, Query, QueryCursor, Range, Tree};
 
+mod documentation;
+
 pub(crate) struct InjectedHighlighter {
     language: LanguageId,
     ranges: Vec<Range>,
@@ -57,7 +59,15 @@ impl Highlighter {
             return Ok(Vec::new());
         };
         let tree = self.tree.as_ref().ok_or(HighlightError::Parse)?;
-        let injections = collect(rope, tree, query, first, last, cancelled)?;
+        let injections = collect(
+            rope,
+            tree,
+            query,
+            &self.parser.included_ranges(),
+            first,
+            last,
+            cancelled,
+        )?;
         if injections.is_empty() {
             self.children.clear();
             return Ok(Vec::new());
@@ -108,7 +118,13 @@ impl Highlighter {
                 .highlighter
                 .highlight_cancellable(rope, revision, first, last, cancelled)?
             {
-                for range in &child.ranges {
+                let first_range = child
+                    .ranges
+                    .partition_point(|range| range.end_byte <= span.start);
+                for range in child.ranges[first_range..]
+                    .iter()
+                    .take_while(|range| range.start_byte < span.end)
+                {
                     let start = span.start.max(range.start_byte);
                     let end = span.end.min(range.end_byte);
                     if start < end {
@@ -129,6 +145,7 @@ fn collect(
     rope: &Rope,
     tree: &Tree,
     query: &Query,
+    parent_ranges: &[Range],
     first: usize,
     last: usize,
     cancelled: &dyn Fn() -> bool,
@@ -144,6 +161,8 @@ fn collect(
     );
     let names = query.capture_names();
     let mut found: Vec<Injection> = Vec::new();
+    let mut unknown = Vec::new();
+    let mut documentation_groups = Vec::new();
     while let Some(matched) = matches.next() {
         if cancelled() {
             return Err(HighlightError::Cancelled);
@@ -154,6 +173,7 @@ fn collect(
         let mut contents = Vec::new();
         let mut children = IncludedChildren::None;
         let mut combined = false;
+        let mut documentation = None;
         for property in query.property_settings(matched.pattern_index) {
             match property.key.as_ref() {
                 "injection.language" => language = property.value.as_deref().map(str::to_owned),
@@ -164,6 +184,9 @@ fn collect(
                     children = IncludedChildren::Unnamed
                 }
                 "injection.combined" => combined = true,
+                "injection.documentation" => {
+                    documentation = documentation::Policy::from_property(property.value.as_deref());
+                }
                 _ => {}
             }
         }
@@ -176,27 +199,41 @@ fn collect(
                 _ => {}
             }
         }
-        let selected = if let Some(language) = language {
-            languages::for_name(&language).map(|spec| (spec, LanguageSource::Explicit))
+        let (spec, source) = if let Some(language) = language {
+            (languages::for_name(&language), LanguageSource::Explicit)
         } else if let Some(filename) = filename {
-            languages::detect(std::path::Path::new(&filename), None)
-                .map(|spec| (spec, LanguageSource::Filename))
+            (
+                languages::detect(std::path::Path::new(&filename), None),
+                LanguageSource::Filename,
+            )
         } else if let Some(shebang) = shebang {
-            languages::for_shebang(&shebang).map(|spec| (spec, LanguageSource::Shebang))
+            (languages::for_shebang(&shebang), LanguageSource::Shebang)
         } else {
-            None
-        };
-        let Some((spec, source)) = selected else {
             continue;
         };
         let mut ranges = Vec::new();
         for node in contents {
-            included_ranges(node, children, &mut ranges);
+            if let Some(policy) = documentation {
+                ranges.extend(policy.ranges(
+                    rope,
+                    node,
+                    matched.pattern_index,
+                    &mut documentation_groups,
+                    cancelled,
+                )?);
+            } else {
+                included_ranges(node, children, &mut ranges);
+            }
         }
         canonicalize(&mut ranges);
+        ranges = intersect(&ranges, parent_ranges);
         if ranges.is_empty() {
             continue;
         }
+        let Some(spec) = spec else {
+            unknown.push((ranges, source));
+            continue;
+        };
         if let Some(index) = found.iter().position(|existing| existing.ranges == ranges) {
             if found[index].source <= source {
                 found[index] = Injection {
@@ -218,6 +255,12 @@ fn collect(
     if cancelled() {
         return Err(HighlightError::Cancelled);
     }
+    // An explicit unknown fence language must not resurrect a shebang fallback.
+    found.retain(|injection| {
+        !unknown
+            .iter()
+            .any(|(ranges, source)| injection.source < *source && injection.ranges == *ranges)
+    });
     let mut result: Vec<Injection> = Vec::new();
     for injection in found {
         if let Some(existing) = result.iter_mut().find(|existing| {
@@ -287,4 +330,41 @@ fn canonicalize(ranges: &mut Vec<Range>) {
         }
     }
     ranges.truncate(kept);
+}
+
+/// A child's syntax nodes can span gaps in the parent's included ranges.
+/// Intersect before parsing, not just when publishing spans: prefixes must not
+/// become tokens in a nested language.
+fn intersect(ranges: &[Range], parent: &[Range]) -> Vec<Range> {
+    let mut result = Vec::new();
+    let mut first_parent = 0;
+    for range in ranges {
+        while first_parent < parent.len() && parent[first_parent].end_byte <= range.start_byte {
+            first_parent += 1;
+        }
+        for outer in &parent[first_parent..] {
+            if outer.start_byte >= range.end_byte {
+                break;
+            }
+            let start = if range.start_byte >= outer.start_byte {
+                range
+            } else {
+                outer
+            };
+            let end = if range.end_byte <= outer.end_byte {
+                range
+            } else {
+                outer
+            };
+            if start.start_byte < end.end_byte {
+                result.push(Range {
+                    start_byte: start.start_byte,
+                    start_point: start.start_point,
+                    end_byte: end.end_byte,
+                    end_point: end.end_point,
+                });
+            }
+        }
+    }
+    result
 }

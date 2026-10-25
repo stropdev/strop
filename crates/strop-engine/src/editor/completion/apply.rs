@@ -358,6 +358,7 @@ impl Editor {
             }
             return;
         }
+        let accepted_end = plan.caret_bytes.first().copied();
         let mut carets = plan.caret_bytes;
         if let Some(indices) = collection {
             let Some(collection) = self.collections.get_mut(&context.scope.view) else {
@@ -389,6 +390,17 @@ impl Editor {
             }
             recording.push_str(&plan.recording.append);
         }
+        if let Some(replay) = &mut self.insert_replay {
+            use crate::editor::insert::replay::{InsertStep, InsertTargets};
+            replay.extend(std::iter::repeat_n(
+                InsertStep::Key(Key::Backspace),
+                plan.recording.remove_chars,
+            ));
+            replay.push(InsertStep::Literal {
+                text: plan.recording.append.clone(),
+                targets: InsertTargets::All,
+            });
+        }
         // 0069 D05: a snippet plan takes over placement — the session
         // selects the first placeholder instead of a bare caret.
         let snippet = plan.snippet;
@@ -396,6 +408,9 @@ impl Editor {
         self.completion_close(CancelReason::Dismissed);
         self.message.clear();
         if let Some(stops) = snippet {
+            if let Some(accepted_end) = accepted_end {
+                self.record_snippet_replay(&stops, accepted_end);
+            }
             self.snippet_enter(stops);
         }
         if let Some(character) = commit_character {
