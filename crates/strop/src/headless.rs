@@ -180,14 +180,55 @@ mod diff_surface_tests {
 }
 
 #[cfg(test)]
-mod quit_tests {
+mod script_tests {
     #[test]
-    fn quit_then_frame_does_not_panic() {
+    fn quit_with_unconsumed_frame_and_state_is_an_error() {
         let mut e =
             crate::editor::Editor::new_in(strop_core::Buffer::from_text("x\n"), "/recorded".into());
         let mut out = Vec::new();
-        crate::headless::run_script(&mut e, "keys :q!<cr>\nframe\n", 60, 10, &mut out, None)
+        crate::headless::run_script(
+            &mut e,
+            "keys :q!<cr>\nframe\nstate\n",
+            60,
+            10,
+            &mut out,
+            None,
+        )
+        .unwrap_err();
+        assert!(e.should_quit());
+    }
+
+    #[test]
+    fn post_quit_settle_still_drains_cleanup() {
+        let mut e =
+            crate::editor::Editor::new_in(strop_core::Buffer::from_text("x\n"), "/recorded".into());
+        let mut out = Vec::new();
+        crate::headless::run_script(&mut e, "keys :q!<cr>\nsettle\n", 60, 10, &mut out, None)
             .unwrap();
         assert!(e.should_quit());
+    }
+
+    #[test]
+    fn buffer_directive_preserves_terminal_composition_settings() {
+        let mut e =
+            crate::editor::Editor::new_in(strop_core::Buffer::from_text("x\n"), "/recorded".into());
+        e.set_terminal_capture(true);
+        e.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)
+            .unwrap();
+        let mut out = Vec::new();
+        crate::headless::run_script(
+            &mut e,
+            "buffer \"replacement\\n\"\n",
+            60,
+            10,
+            &mut out,
+            None,
+        )
+        .unwrap();
+        assert!(e.terminal_capture_enabled());
+        assert_eq!(
+            e.terminal_keyboard_flags(),
+            strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS
+        );
     }
 }

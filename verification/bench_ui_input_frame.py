@@ -20,7 +20,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from bench_worker import cpu_model, native_profile, percentiles, process_state, worker_processes
+from bench_worker import cpu_model, native_profile, percentiles, process_state, ui_protocol, worker_processes
 
 MAX_HEADER = 8192
 MAX_BODY = 32 * 1024 * 1024
@@ -223,11 +223,12 @@ def measure(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
                                      stderr=errors, env=env)
             try:
                 peer = Peer(child)
-                peer.send({"type": "hello", "protocol": 1,
+                protocol = ui_protocol(binary_version)
+                peer.send({"type": "hello", "protocol": protocol,
                            "client": {"name": "ui-frame-benchmark", "version": binary_version},
                            "capabilities": {"clipboard_write": False}})
                 welcome, _, _ = peer.receive()
-                if welcome["type"] != "welcome" or welcome["protocol"] != 1:
+                if welcome["type"] != "welcome" or welcome["protocol"] != protocol:
                     raise RuntimeError(f"UI backend refused its handshake: {welcome}")
                 peer.incarnation = welcome["backend"]["incarnation"]
                 first, _, _ = peer.receive()

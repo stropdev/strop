@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from bench_ui_input_frame import Peer, key
-from bench_worker import cpu_model, native_profile, percentiles, process_state, worker_processes
+from bench_worker import cpu_model, native_profile, percentiles, process_state, ui_protocol, worker_processes
 
 LINES = 10_000
 FILL = "v" * 1700
@@ -66,11 +66,12 @@ def observe(binary: Path, root: Path, version: str) -> dict:
         worker_state = "-"
         try:
             peer = Peer(child)
-            peer.send({"type": "hello", "protocol": 1,
+            protocol = ui_protocol(version)
+            peer.send({"type": "hello", "protocol": protocol,
                        "client": {"name": "transfer-benchmark", "version": version},
                        "capabilities": {"clipboard_write": False}})
             welcome, _, _ = peer.receive()
-            if welcome["type"] != "welcome" or welcome["protocol"] != 1:
+            if welcome["type"] != "welcome" or welcome["protocol"] != protocol:
                 raise RuntimeError(f"the native editor refused its client: {welcome}")
             peer.incarnation = welcome["backend"]["incarnation"]
             frame, _, _ = peer.receive()

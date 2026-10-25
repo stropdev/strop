@@ -414,3 +414,44 @@ fn trace_owned_hints_do_not_wake_the_editor_but_other_files_still_do() {
     ));
     trace.finish().unwrap();
 }
+
+#[test]
+fn a_full_notify_queue_cannot_drop_subscription_settlement() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), directory.path().to_path_buf());
+    editor.notify.subscribing = true;
+    // Distinct identities prevent tail coalescing: these records occupy the
+    // complete bounded landing zone before the subscribe job settles.
+    for id in 0..64 {
+        assert!(editor.notify.queue.push_hints(
+            Subscription { id, generation: 0 },
+            vec![NotifyHint {
+                path: b"queued.txt".to_vec(),
+                kind: NotifyKind::Modified,
+            }],
+        ));
+    }
+    let settled = Subscription {
+        id: 65,
+        generation: 1,
+    };
+    editor
+        .notify
+        .queue
+        .push_record(Record::Settled(Outcome::Success(SubscribedScope {
+            subscription: settled,
+            coverage: strop_worker_protocol::NotifyCoverage::Native,
+            owned_trace: None,
+        })));
+
+    editor.drain_notify();
+    assert!(
+        !editor.notify.subscribing,
+        "the settled record must release the in-flight subscription"
+    );
+    assert_eq!(
+        editor.notify.subscription,
+        Some(settled),
+        "queue overflow cannot strand subscription establishment"
+    );
+}

@@ -59,7 +59,7 @@ class CompletionEditor:
                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.errors)
         self.peer = Peer(self.child)
         try:
-            self.peer.send({"type": "hello", "protocol": 1,
+            self.peer.send({"type": "hello", "protocol": 2,
                             "client": {"name": "completion-qualification", "version": "0059"},
                             "capabilities": {"clipboard_write": False}})
             welcome, _, _ = self.peer.receive()

@@ -221,18 +221,25 @@ impl Editor {
         }
     }
 
+    fn app_source_sink(
+        app_tx: super::events::EventSender,
+        ticket: Ticket<PickerKey>,
+    ) -> strop_picker::SourceSink {
+        strop_picker::SourceSink::new(move |msg| {
+            app_tx
+                .send_blocking(super::events::AppEvent::Picker(PickerEvent {
+                    ticket: ticket.clone(),
+                    msg,
+                }))
+                .is_ok()
+        })
+    }
+
     /// Register headless delivery before launch, or stamp directly onto the live
     /// app queue. Source restarts never allocate per-request bridge threads.
     fn picker_source_sink(&mut self, ticket: Ticket<PickerKey>) -> strop_picker::SourceSink {
         if let Some(app_tx) = self.app_tx.clone() {
-            return strop_picker::SourceSink::new(move |msg| {
-                app_tx
-                    .send(super::events::AppEvent::Picker(PickerEvent {
-                        ticket: ticket.clone(),
-                        msg,
-                    }))
-                    .is_ok()
-            });
+            return Self::app_source_sink(app_tx, ticket);
         }
         let (tx, rx) = channel();
         if let Some(glue) = self.picker.as_mut() {

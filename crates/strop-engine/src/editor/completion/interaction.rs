@@ -137,6 +137,15 @@ impl Editor {
                 // Enter bar. Word candidates carry no commit characters.
                 if self.completion_commit_character(ch) {
                     self.completion_accept_selected();
+                    if self
+                        .completion
+                        .session
+                        .as_ref()
+                        .is_some_and(|session| !matches!(session.acceptance, Acceptance::Idle))
+                    {
+                        self.completion.commit_character = Some(ch);
+                        return KeyDisposition::Accepted;
+                    }
                 }
                 self.completion_typing(key);
                 KeyDisposition::PassThrough

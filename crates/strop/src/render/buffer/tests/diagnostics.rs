@@ -25,11 +25,9 @@ fn cursor_line_shows_eol_diagnostic() {
 }
 
 #[test]
-fn a_diagnostic_range_underlines_its_cells() {
-    // the undercurl is the noisy layer the insert-mode freeze holds
-    // back — pin that it actually paints (the user's "yellow markings")
+fn diagnostics_use_gutter_and_eol_without_underlining_source_cells() {
     let mut e = Editor::new(Buffer::from_text("let x = 1;\n"));
-    e.fixture_buf_mut().path = Some("strop-ul-diag-test.rs".into());
+    e.fixture_buf_mut().path = Some("strop-quiet-diag-test.rs".into());
     e.fixture_insert_diagnostics(
         e.current(),
         crate::editor::DocumentDiagnostics {
@@ -47,26 +45,33 @@ fn a_diagnostic_range_underlines_its_cells() {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let buffer = terminal.backend().buffer();
-    let row: Vec<_> = (0..60).map(|x| buffer[(x, 0)].clone()).collect();
-    let underlined: Vec<usize> = row
-        .iter()
-        .enumerate()
-        .filter(|(_, cell)| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED))
-        .map(|(x, _)| x)
+
+    let error = crate::render::severity_color(strop_lsp::Severity::Error);
+    assert_eq!(buffer[(0, 0)].symbol(), "●", "diagnostic gutter sign");
+    assert_eq!(buffer[(0, 0)].fg, error);
+    let note = (0..60)
+        .map(|x| &buffer[(x, 0)])
+        .find(|cell| cell.symbol() == "▍")
+        .expect("cursor-line diagnostic note");
+    assert_eq!(note.fg, crate::render::dim_color(error));
+
+    let gutter = crate::render::buffer::GUTTER;
+    let source: String = (gutter..gutter + 10)
+        .map(|x| buffer[(x, 0)].symbol())
         .collect();
-    assert!(!underlined.is_empty(), "the range must underline its cells");
-    let identifier = row
-        .iter()
-        .position(|cell| cell.symbol() == "x")
-        .expect("the identifier cell");
-    assert!(
-        underlined.contains(&identifier),
-        "the diagnostic covers the identifier cell"
-    );
-    assert!(
-        !underlined.contains(&(identifier - 1)),
-        "the underline starts at the diagnostic's column, not before"
-    );
+    assert_eq!(source, "let x = 1;");
+    for x in gutter..gutter + 10 {
+        let cell = &buffer[(x, 0)];
+        assert!(
+            !cell.modifier.contains(ratatui::style::Modifier::UNDERLINED),
+            "diagnostic underlined source cell {x}"
+        );
+        assert_eq!(
+            cell.underline_color,
+            ratatui::style::Color::Reset,
+            "diagnostic colored source cell {x}'s underline"
+        );
+    }
 }
 
 #[test]

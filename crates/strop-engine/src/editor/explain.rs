@@ -179,16 +179,29 @@ impl Editor {
             // 0051 R10: real values from the one typed access path —
             // a knob that resolves to nothing is a test failure, never
             // a "?" in front of the user.
-            let Some(value) = self.config.knob_value(knob.key) else {
+            let session_theme = if knob.key == "theme" {
+                let selected = strop_core::theme::current_id();
+                (selected != self.config.theme).then_some(selected)
+            } else {
+                None
+            };
+            let Some(value) = session_theme
+                .map(|theme| theme.name().to_string())
+                .or_else(|| self.config.knob_value(knob.key))
+            else {
                 continue;
             };
             // 0056 AR14: the winning layer with its origin, per knob.
-            let layer = match self.config.knob_layer(knob.key) {
-                crate::config::ConfigLayer::Default => "default".to_string(),
-                crate::config::ConfigLayer::User => match self.config.user_layer_path() {
-                    Some(path) => format!("user {}", path.display()),
-                    None => "user config.toml".into(),
-                },
+            let layer = if session_theme.is_some() {
+                "session".to_string()
+            } else {
+                match self.config.knob_layer(knob.key) {
+                    crate::config::ConfigLayer::Default => "default".to_string(),
+                    crate::config::ConfigLayer::User => match self.config.user_layer_path() {
+                        Some(path) => format!("user {}", path.display()),
+                        None => "user config.toml".into(),
+                    },
+                }
             };
             let _ = writeln!(
                 text,
@@ -614,5 +627,50 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("no trace active"), "{text}");
+    }
+
+    #[test]
+    fn explain_reports_selected_session_theme() {
+        const CHILD: &str = "STROP_EXPLAIN_THEME_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            // The palette selector is process-global; keep this mutation out
+            // of the parallel unit-test process.
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "editor::explain::tests::explain_reports_selected_session_theme",
+                    "--test-threads=1",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated theme explanation failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            return;
+        }
+
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.config.theme = strop_core::theme::ThemeId::Dark;
+        e.feed_text(":theme nord\r");
+        e.feed_text(":explain\r");
+        let text = e.buf().text().to_string();
+        let theme_row = text
+            .lines()
+            .find(|line| line.trim_start().starts_with("theme = "))
+            .unwrap_or_else(|| panic!("missing theme row:\n{text}"));
+        assert!(
+            theme_row.trim_start().starts_with("theme = nord"),
+            ":explain must report the selected session palette:\n{text}"
+        );
+        assert!(
+            theme_row.contains("[session]"),
+            "a session override must not claim config-file provenance:\n{text}"
+        );
     }
 }

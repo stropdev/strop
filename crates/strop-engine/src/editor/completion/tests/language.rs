@@ -151,6 +151,51 @@ fn the_commit_character_decision_binds_the_selected_items_characters() {
     drop(events);
 }
 
+#[test]
+fn selected_commit_character_applies_through_the_mailbox_before_inserting_once() {
+    let (_directory, mut editor, source, events) = editing();
+    let tape = editor.tape.clone();
+    let _ = prepare(
+        &mut editor,
+        serde_json::json!({
+            "label": "result",
+            "insertText": "result",
+            "commitCharacters": ["("],
+        }),
+    );
+    // Keep the selected language item, but use the real native worker and
+    // prepared-plan mailbox rather than the direct-apply fixture's tape.
+    editor.tape = tape;
+    let (query, selection) = {
+        let session = editor.completion.session.as_mut().unwrap();
+        session.preparation = None;
+        session.acceptance = session::Acceptance::Idle;
+        let session::Selection::Chosen { generation, .. } = &session.selection else {
+            panic!("deliberately selected completion")
+        };
+        (session.query.request, *generation)
+    };
+    editor.completion_worker().unwrap();
+    let mailbox = editor.completion.worker.mailbox().unwrap();
+    mailbox.query(Some(query));
+    mailbox.select(Some(selection));
+
+    let revision = editor.doc(source).buf.revision();
+    editor.feed(Key::Char('('));
+    until(&mut editor, &events, |editor| !editor.completion.pending());
+
+    assert_eq!(
+        editor.doc(source).buf.text().to_string(),
+        "// import slot\nresult(\n"
+    );
+    assert_eq!(
+        editor.doc(source).buf.revision().get(),
+        revision.get() + 2,
+        "acceptance and the commit character each advance the source once"
+    );
+    assert_eq!(editor.head(), editor.buf().len_bytes() - 1);
+}
+
 /// A word candidate carries no commit characters — the decision is
 /// language-item-only.
 #[test]

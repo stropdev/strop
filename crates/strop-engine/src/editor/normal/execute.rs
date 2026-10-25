@@ -386,6 +386,7 @@ impl Editor {
         self.set_head(cursor + text.len() - c.len_utf8()); // last replaced char
         self.flash(Range::charwise(self.head(), self.head()));
         self.last_cmd_keys = format!("r{c}");
+        self.last_change = None;
         self.last_insert = None;
     }
 
@@ -416,6 +417,7 @@ impl Editor {
         self.clamp_cursor();
         self.flash(Range::charwise(eol, (eol + 1).min(self.buf().len_bytes())));
         self.last_cmd_keys = "J".into();
+        self.last_change = None;
         self.last_insert = None;
     }
 
@@ -449,6 +451,7 @@ impl Editor {
         self.set_head(self.buf().ceil_boundary(self.head() + 1));
         self.clamp_cursor();
         self.last_cmd_keys = "~".into();
+        self.last_change = None;
         self.last_insert = None;
     }
 
@@ -481,21 +484,37 @@ impl Editor {
         self.clamp_cursor();
     }
 
-    /// `x`: delete the whole char under the cursor — a bare +1 splits
-    /// `x`: delete the whole char under the cursor — a bare +1 splits
-    /// multibyte chars and panics ropey's byte_slice.
-    pub(crate) fn delete_char(&mut self) {
-        let end = self
-            .buf()
-            .ceil_boundary(self.head() + 1)
-            .min(self.buf().line_end(self.buf().line_of(self.head())));
-        if end > self.head() {
+    /// `x` deletes the character under the cursor; `X` deletes the
+    /// preceding character without crossing the line start.
+    pub(crate) fn delete_char(&mut self, backward: bool) {
+        let line = self.buf().line_of(self.head());
+        let line_start = self.buf().line_start(line);
+        let (start, end) = if backward {
+            let end = self.head();
+            (
+                self.buf()
+                    .clamp_boundary(end.saturating_sub(1))
+                    .max(line_start),
+                end,
+            )
+        } else {
+            let end = self
+                .buf()
+                .ceil_boundary(self.head() + 1)
+                .min(self.buf().line_end(line));
+            (self.head(), end)
+        };
+        if end > start {
             self.tx_begin();
-            let range = Range::charwise(self.head(), end);
+            let range = Range::charwise(start, end);
             let text = self.buf_mut().delete(range);
+            if backward {
+                self.set_head(start);
+            }
             self.set_register(None, Register::characterwise(text));
             self.flash(range);
-            self.last_cmd_keys = "x".into();
+            self.last_cmd_keys = if backward { "X" } else { "x" }.into();
+            self.last_change = None;
             self.last_insert = None;
         }
     }
@@ -504,7 +523,8 @@ impl Editor {
     /// (vim `2p` lands it count times — a block repeats horizontally).
     pub(crate) fn paste_named(&mut self, name: Option<char>, count: usize, before: bool) {
         self.paste(name, count, before);
-        self.last_cmd_keys = if before { "P".into() } else { "p".into() };
+        self.last_cmd_keys = if before { "P" } else { "p" }.into();
+        self.last_change = None;
         self.last_insert = None;
     }
     /// `a`: append after the char under the cursor (multibyte-honest).
@@ -571,5 +591,23 @@ impl Editor {
     /// `J` — see join_lines.
     pub(crate) fn join_lines_pub(&mut self) {
         self.join_lines();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::editor::Editor;
+    use strop_core::Buffer;
+
+    #[test]
+    fn dot_repeats_x_instead_of_an_earlier_linewise_delete() {
+        let mut editor = Editor::new(Buffer::from_text("one\ntwo\nthree\nfour\n"));
+        editor.feed_text("ddx");
+        assert_eq!(editor.buf().text().to_string(), "wo\nthree\nfour\n");
+
+        editor.feed_text(".");
+        assert_eq!(editor.buf().text().to_string(), "o\nthree\nfour\n");
+        assert_eq!(editor.head(), 0);
+        assert_eq!(editor.register(None).text, "w");
     }
 }

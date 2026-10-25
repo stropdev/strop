@@ -149,6 +149,9 @@ impl Editor {
                             session.acceptance = Acceptance::Idle;
                         }
                     }
+                    if accepting && !resolved && self.completion.commit_character.is_some() {
+                        self.completion_close(CancelReason::Dismissed);
+                    }
                     if accepting && resolved {
                         self.completion_accept_selected();
                     } else if resolved {

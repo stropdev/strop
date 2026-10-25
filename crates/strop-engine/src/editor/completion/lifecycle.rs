@@ -3,6 +3,7 @@ use super::session::{InsertPrefix, RequestIntent, WorkerLifecycle};
 use super::worker::{WorkRefusal, Worker};
 use crate::editor::Editor;
 use std::sync::Arc;
+use strop_core::frontend_input::Key;
 use strop_core::worker::{CancelReason, Failure, FailureKind};
 
 impl Editor {
@@ -67,6 +68,7 @@ impl Editor {
     }
 
     pub(in crate::editor) fn completion_close(&mut self, reason: CancelReason) {
+        let commit_character = self.completion.commit_character.take();
         // Speculative edits never outlive their session (0059 §6.1).
         self.completion_revert_preview();
         if let Some(mailbox) = self.completion.worker.mailbox() {
@@ -85,6 +87,9 @@ impl Editor {
         self.completion.prefix = InsertPrefix::None;
         self.completion.prefix_growth = None;
         drop(session);
+        if let Some(character) = commit_character {
+            self.dispatch_owned(Key::Char(character));
+        }
         self.completion.released();
     }
 

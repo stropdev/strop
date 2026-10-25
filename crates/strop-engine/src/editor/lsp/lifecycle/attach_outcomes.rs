@@ -92,7 +92,7 @@ impl Editor {
                             std::thread::spawn(move || {
                                 while let Ok(event) = rx.recv() {
                                     if tx
-                                        .send(crate::editor::events::AppEvent::Lsp(event))
+                                        .send_blocking(crate::editor::events::AppEvent::Lsp(event))
                                         .is_err()
                                     {
                                         break;
@@ -262,4 +262,118 @@ fn trace_attach(record: &attach::AttachRecord) {
         }
         value
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::events::{AppEvent, MAX_SEMANTIC_EVENTS};
+    use std::time::Duration;
+    use strop_core::{worker::WorkerId, Buffer};
+    use strop_lsp::{registry::ServerSpec, Client, LspEvent, Workspace};
+
+    #[test]
+    fn late_ready_and_failed_events_survive_a_full_semantic_lane() {
+        let mut editor = Editor::new(Buffer::from_text("x\n"));
+        let root = editor.cwd.clone();
+        let spec = ServerSpec {
+            name: "rust-analyzer",
+            command: "strop-test-no-such-lsp-server",
+            args: &[],
+            install_hint: None,
+            init_options: None,
+            project_executable: false,
+        };
+        let (client_tx, _client_rx) = channel();
+        let client = Client::spawn(
+            &spec,
+            Workspace::Local { root: root.clone() },
+            client_tx,
+            Some(editor.filesystem.worker().clone()),
+        )
+        .expect("the late-attaching client fixture starts");
+        let server = client.id();
+        let (server_tx, server_rx) = channel();
+        editor.lsp_state.attach.transport.lock().unwrap().insert(
+            server,
+            attach::LiveTransport {
+                client,
+                rx: server_rx,
+            },
+        );
+        let ticket = WorkerId::new(1);
+        editor.lsp_state.attach.pending.insert(
+            attach::AttachKey {
+                target: strop_workspace::Filesystem::Local,
+                language: "rust".into(),
+                path: root.join("main.rs"),
+            },
+            ticket,
+        );
+        let (tx, rx) = crate::editor::events::channel();
+        editor.app_tx = Some(tx.clone());
+        editor.handle_lsp_attach(AttachRecord {
+            ticket,
+            server: Some(server),
+            language: "rust".into(),
+            name: "rust-analyzer".into(),
+            root,
+            target: strop_workspace::Filesystem::Local,
+            outcome: attach::AttachDecision::Attached,
+            layers: Vec::new(),
+        });
+        assert_eq!(editor.lsp_servers.len(), 1);
+
+        for _ in 0..MAX_SEMANTIC_EVENTS {
+            tx.send(AppEvent::QuitIntent).unwrap();
+        }
+        assert!(tx.send(AppEvent::QuitIntent).is_err());
+        server_tx
+            .send(LspEvent::Ready {
+                server,
+                name: "rust-analyzer".into(),
+            })
+            .unwrap();
+        server_tx
+            .send(LspEvent::Failed {
+                server,
+                name: "rust-analyzer".into(),
+                hint: "install rust-analyzer".into(),
+            })
+            .unwrap();
+        drop(server_tx);
+        // Let the late forwarder attempt while the lane is still full. An
+        // honest producer parks; draining below releases it without sleeps.
+        std::thread::yield_now();
+
+        let mut terminal = Vec::new();
+        for index in 0..MAX_SEMANTIC_EVENTS + 2 {
+            let event = rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("late LSP terminal events must not be stranded");
+            if index < MAX_SEMANTIC_EVENTS {
+                assert!(matches!(event, AppEvent::QuitIntent));
+            } else {
+                terminal.push(event);
+            }
+        }
+        let mut terminal = terminal.into_iter();
+        let ready = terminal.next().unwrap();
+        let failed = terminal.next().unwrap();
+        assert!(matches!(
+            &ready,
+            AppEvent::Lsp(LspEvent::Ready { server: id, name })
+                if *id == server && name == "rust-analyzer"
+        ));
+        assert!(matches!(
+            &failed,
+            AppEvent::Lsp(LspEvent::Failed { server: id, hint, .. })
+                if *id == server && hint == "install rust-analyzer"
+        ));
+
+        editor.handle_app_event(ready);
+        assert!(editor.lsp_servers[0].ready);
+        editor.handle_app_event(failed);
+        assert!(editor.lsp_servers.is_empty());
+    }
 }

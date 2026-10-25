@@ -695,6 +695,23 @@ mod tests {
     }
 
     #[test]
+    fn boolean_content_qualifier_negation_is_rejected() {
+        for input in ["-text:secret AND other", "-regex:secret AND other"] {
+            let query = SearchQuery::parse(input);
+            assert_eq!(query.state, QueryState::Invalid, "{input}");
+            let qualifier_end = input.find(" AND ").unwrap();
+            assert!(
+                query.diagnostics.iter().any(|diagnostic| {
+                    (diagnostic.range == (0..qualifier_end))
+                        && diagnostic.message.ends_with(": cannot be negated")
+                }),
+                "{input}: {:?}",
+                query.diagnostics
+            );
+        }
+    }
+
+    #[test]
     fn dangling_operators_and_unbalanced_groups_diagnose_located() {
         for (input, message) in [
             ("foo AND", "AND without a right operand"),

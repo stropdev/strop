@@ -20,6 +20,66 @@ fn visual_line_change_keeps_the_following_line_and_one_undo_group() {
 }
 
 #[test]
+fn charwise_visual_change_and_escape_are_one_undo_unit() {
+    let mut editor = editor_with("one two\n");
+    editor.feed_text("vecX<esc>");
+    assert_eq!(text(&editor), "X two\n");
+
+    editor.feed_text("u");
+    assert_eq!(text(&editor), "one two\n");
+}
+
+#[test]
+fn visual_block_indent_and_dedent_shift_only_selected_lines() {
+    for (initial, keys, expected) in [
+        (
+            "alpha\nbeta\ngamma\n",
+            "l<c-v>j>",
+            "    alpha\n    beta\ngamma\n",
+        ),
+        (
+            "    alpha\n    beta\n    gamma\n",
+            "l<c-v>j<",
+            "alpha\nbeta\n    gamma\n",
+        ),
+    ] {
+        let mut editor = editor_with(initial);
+        editor.feed_text(keys);
+        assert_eq!(text(&editor), expected, "after {keys}");
+    }
+}
+
+#[test]
+fn dot_repeat_replays_whole_visual_change() {
+    let mut editor = editor_with("one two\none two\n");
+    editor.feed_text("vecX<esc>");
+    assert_eq!(text(&editor), "X two\none two\n");
+
+    editor.feed_text("j0.");
+    assert_eq!(text(&editor), "X two\nX two\n");
+}
+
+#[test]
+fn dot_repeat_replays_whole_visual_line_change() {
+    let mut editor = editor_with("one\ntwo\nthree\none\ntwo\nthree\n");
+    editor.feed_text("VjcX<esc>");
+    assert_eq!(text(&editor), "X\nthree\none\ntwo\nthree\n");
+
+    editor.feed_text("2j.");
+    assert_eq!(text(&editor), "X\nthree\nX\nthree\n");
+}
+
+#[test]
+fn dot_repeat_replays_multiline_charwise_visual_change() {
+    let mut editor = editor_with("abc def\nghi jkl\nabc def\nghi jkl\n");
+    editor.feed_text("wvjlcX<esc>");
+    assert_eq!(text(&editor), "abc Xl\nabc def\nghi jkl\n");
+
+    editor.feed_text("j.");
+    assert_eq!(text(&editor), "abc Xl\nabc Xl\n");
+}
+
+#[test]
 fn named_registers_yank_and_paste() {
     let mut e = editor_with("alpha\nbeta\ngamma\n");
 
@@ -28,8 +88,8 @@ fn named_registers_yank_and_paste() {
     e.feed_text("j");
     e.feed_text("\"ap"); // paste a below beta
     assert_eq!(text(&e), "alpha\nbeta\nalpha\ngamma\n");
-    // unnamed register untouched
-    assert!(e.register(None).text.is_empty());
+    // Ordinary named yanks also fill the unnamed register.
+    assert_eq!(e.register(None).text, "alpha\n");
 }
 
 #[test]

@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from bench_ui_input_frame import Peer, key
-from bench_worker import cpu_model, native_profile, percentiles, worker_processes
+from bench_worker import cpu_model, native_profile, percentiles, ui_protocol, worker_processes
 
 SOURCE = "pub fn answer() -> u32 { 42 }\n\npub fn run() -> u32 { answer() }\n"
 CALL_START = SOURCE.index("pub fn run")
@@ -121,11 +121,12 @@ def benchmark(binary: Path, warmup: int, iterations: int, profile: str) -> dict:
                                      stderr=errors, env=env)
             try:
                 peer = Peer(child)
-                peer.send({"type": "hello", "protocol": 1,
+                protocol = ui_protocol(identity[1])
+                peer.send({"type": "hello", "protocol": protocol,
                            "client": {"name": "lsp-ui-benchmark", "version": identity[1]},
                            "capabilities": {"clipboard_write": False}})
                 welcome, _, _ = peer.receive()
-                if welcome["type"] != "welcome" or welcome["protocol"] != 1:
+                if welcome["type"] != "welcome" or welcome["protocol"] != protocol:
                     raise RuntimeError(f"editor did not admit its client: {welcome}")
                 peer.incarnation = welcome["backend"]["incarnation"]
                 first, _, _ = peer.receive()

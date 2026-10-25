@@ -200,8 +200,8 @@ pub(crate) fn client_capabilities() -> async_lsp::lsp_types::CompletionClientCap
         context_support: Some(true),
         insert_text_mode: Some(InsertTextMode::AS_IS),
         completion_item: Some(lt::CompletionItemCapability {
-            snippet_support: Some(false),
-            commit_characters_support: Some(false),
+            snippet_support: Some(true),
+            commit_characters_support: Some(true),
             documentation_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
             deprecated_support: Some(false),
             preselect_support: Some(false),

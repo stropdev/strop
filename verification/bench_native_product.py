@@ -27,7 +27,7 @@ METHODS = (
     "verification/bench_worker.py",
     "verification/bench_worker_roundtrip.py",
     "verification/bench_ui_input_frame.py",
-    "crates/strop/tests/terminal_editor.rs",
+    "crates/strop/tests/terminal_editor/main.rs",
 )
 TUI_MARKER = re.compile(r"STROP_TUI_BENCH=(\{[^\n]+\})")
 LOAD_MARKER = re.compile(r"STROP_TERMINAL_LOAD_BENCH=(\{[^\n]+\})")

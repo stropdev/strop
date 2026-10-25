@@ -17,7 +17,7 @@ pub fn build(editor: &Editor, generation: u64) -> ViewSnapshot {
         .panes
         .iter()
         .map(|pane| {
-            let (bounds, lines) = match editor.document(pane.doc) {
+            let (bounds, window_top, lines) = match editor.document(pane.doc) {
                 Some(document) => {
                     let top = pane
                         .view_top
@@ -28,10 +28,10 @@ pub fn build(editor: &Editor, generation: u64) -> ViewSnapshot {
                     let lines = (top..end)
                         .map(|line| document.buf.line_text(line))
                         .collect();
-                    (bounds(pane.bounds), lines)
+                    (bounds(pane.bounds), top, lines)
                 }
                 // A vanished source is explicit, never an empty success.
-                None => (ViewBounds::Error, Vec::new()),
+                None => (ViewBounds::Error, pane.view_top, Vec::new()),
             };
             PaneSnapshot {
                 document: pane.doc,
@@ -44,7 +44,7 @@ pub fn build(editor: &Editor, generation: u64) -> ViewSnapshot {
                 overlays: pane.overlays,
                 rect: rect(pane.rect),
                 budget: rect(pane.budget),
-                window_top: pane.view_top,
+                window_top,
                 lines,
             }
         })

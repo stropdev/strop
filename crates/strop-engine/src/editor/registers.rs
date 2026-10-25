@@ -93,12 +93,19 @@ impl Editor {
     }
 
     pub(crate) fn set_register(&mut self, name: Option<char>, register: Register) {
+        let name = name.unwrap_or('"');
         // the `+` register is the system clipboard: yank/delete into it
         // stages an OSC52 payload for the TUI to emit
-        if name == Some('+') {
+        if name == '+' {
             self.osc52 = Some(register.text.clone());
         }
-        self.registers.insert(name.unwrap_or('"'), register);
+        // Vim's ordinary named writes also fill the unnamed register;
+        // the black hole is the exception. Keep the named value intact
+        // so explicit puts still read exactly the selected register.
+        if name != '"' && name != '_' {
+            self.registers.insert('"', register.clone());
+        }
+        self.registers.insert(name, register);
     }
 
     /// `p`/`P` (vim `2p`): the register lands per its shape —

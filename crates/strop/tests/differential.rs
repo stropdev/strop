@@ -108,9 +108,19 @@ const CASES: &[Case] = &[
         keys: "yyp",
     },
     Case {
+        name: "yank and put use the unnamed register",
+        text: "a\nb\nc\n",
+        keys: "yyjp",
+    },
+    Case {
         name: "count dd",
         text: "a\nb\nc\nd\n",
         keys: "2dd",
+    },
+    Case {
+        name: "delete and put use the unnamed register",
+        text: "a\nb\nc\n",
+        keys: "ddp",
     },
     Case {
         name: "d$",
@@ -186,6 +196,16 @@ const CASES: &[Case] = &[
         name: "x and dot",
         text: "abc\n",
         keys: "x.",
+    },
+    Case {
+        name: "x writes the unnamed register",
+        text: "abc\n",
+        keys: "x",
+    },
+    Case {
+        name: "X writes the unnamed register",
+        text: "abc\n",
+        keys: "$X",
     },
     Case {
         name: "r replace",
@@ -329,8 +349,7 @@ struct State {
     text: String,
     line: usize,
     col: usize,
-    // the unnamed register is compared by hand in dedicated cases (the
-    // linewise-bit representation differs between vim and strop)
+    register: String,
 }
 
 fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
@@ -342,7 +361,7 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
         "call feedkeys(join(readfile('{}', 'b'), ''), 'xt')",
         keysf.display()
     );
-    let dump = "call writefile(getline(1,'$') + ['POS:'.line('.').':'.col('.')], '/dev/stdout')";
+    let dump = "call writefile(getline(1,'$') + ['POS:'.line('.').':'.col('.'), 'REG:'.json_encode(getreg('\"'))], '/dev/stdout')";
     let out = Command::new("nvim")
         .args(["--headless", "-u", "NONE", "-i", "NONE", "-n"])
         .args(["+set noswapfile", "+set shiftwidth=4 expandtab"])
@@ -360,14 +379,17 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
             String::from_utf8_lossy(&out.stderr)
         );
     }
-    // dump layout: text lines…, then "POS:L:C"
+    // dump layout: text lines…, then "POS:L:C" and a JSON-encoded register.
     let mut lines: Vec<&str> = stdout.lines().collect();
+    let register = lines.pop().unwrap().strip_prefix("REG:").unwrap();
+    let register: String = serde_json::from_str(register).unwrap();
     let pos = lines.pop().unwrap_or("POS:1:1").trim_start_matches("POS:");
     let (line, col) = pos.split_once(':').unwrap();
     State {
         text: lines.join("\n"),
         line: line.parse().unwrap(),
         col: col.parse().unwrap(),
+        register,
     }
 }
 
@@ -397,12 +419,12 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
             )
         });
     let v: serde_json::Value = serde_json::from_str(json.trim_start_matches("─── state ")).unwrap();
-    // text isn't in state json — read it through the buffer: use the
-    // register trick? No: write the buffer via :w into the file first.
+    // Text isn't in state JSON; :w wrote the buffer into the fixture.
     State {
         text: read_buffer(dir),
         line: v["line"].as_u64().unwrap() as usize,
         col: v["col"].as_u64().unwrap() as usize,
+        register: v["register"].as_str().unwrap().to_owned(),
     }
 }
 
@@ -444,11 +466,23 @@ fn differential_vs_nvim() {
         let keys_with_save = case.keys.to_string();
         let nv = nvim_state(case.text, case.keys, &nvim_dir);
         let st = strop_state(case.text, &keys_with_save, &strop_dir);
-        let same = nv.text == st.text && nv.line == st.line && nv.col == st.col;
+        let same = nv.text == st.text
+            && nv.line == st.line
+            && nv.col == st.col
+            && nv.register == st.register;
         if known.is_none() && !same {
             failures.push(format!(
-                "=== {} diverges\n  keys: {:?}\n  nvim:  text={:?} cursor={}:{}\n  strop: text={:?} cursor={}:{}",
-                case.name, case.keys, nv.text, nv.line, nv.col, st.text, st.line, st.col
+                "=== {} diverges\n  keys: {:?}\n  nvim:  text={:?} cursor={}:{} register={:?}\n  strop: text={:?} cursor={}:{} register={:?}",
+                case.name,
+                case.keys,
+                nv.text,
+                nv.line,
+                nv.col,
+                nv.register,
+                st.text,
+                st.line,
+                st.col,
+                st.register
             ));
         }
         if let Some(reason) = known {

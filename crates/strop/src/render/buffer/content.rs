@@ -98,15 +98,6 @@ pub(super) fn content_spans(
             }
         }
         if is_source {
-            if let Some((_, _, sev)) = style
-                .diags
-                .iter()
-                .find(|(a, b, _)| *a < i + grapheme.len() && i < *b)
-            {
-                cell = cell
-                    .add_modifier(Modifier::UNDERLINED)
-                    .underline_color(severity_color(*sev));
-            }
             let selected = if let Some(block) = style.block {
                 (block.first_line..=block.last_line).contains(&row)
                     && glyph.cell <= block.right_cell
