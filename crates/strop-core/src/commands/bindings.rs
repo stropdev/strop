@@ -694,7 +694,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "} ] )",
-        desc: "closer on indent-only line dedents",
+        desc: "closer on indent-only line aligns to its opener",
         sections: &["insert"],
         live: true,
         id: "insert-closers",

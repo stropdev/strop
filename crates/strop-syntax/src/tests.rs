@@ -1,6 +1,8 @@
 use super::*;
 use strop_core::{Buffer, Range};
 
+mod documentation;
+
 fn clean_spans(path: &std::path::Path, rope: &Rope) -> Vec<Span> {
     let mut hl = Highlighter::for_path(path, rope).expect("language");
     hl.highlight(rope, BufferRevision::new(0), 0, rope.len_bytes())

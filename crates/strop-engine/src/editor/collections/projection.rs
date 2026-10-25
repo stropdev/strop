@@ -186,6 +186,7 @@ impl Editor {
         {
             let doc = self.docs.get_mut(id).unwrap();
             self.analysis.edits(id, doc.buf.changes());
+            self.resolution.edits(id, doc.buf.changes());
             if let Err(error) = self.completion.edits(
                 &self.tape,
                 id,

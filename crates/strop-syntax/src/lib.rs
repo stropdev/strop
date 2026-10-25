@@ -12,6 +12,8 @@ use streaming_iterator::StreamingIterator;
 mod guides;
 pub mod languages;
 pub use guides::{GuideFrame, IndentGuides};
+mod indentation;
+pub use indentation::{DelimiterKind, IndentContext, OpeningDelimiter};
 mod injections;
 mod sovel;
 mod spans;
