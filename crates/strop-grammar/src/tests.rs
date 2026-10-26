@@ -358,6 +358,9 @@ mod query_corpus {
                 end.parse::<isize>().unwrap(),
             );
             let buf = Buffer::from_text(&text);
+            let pat = pat
+                .strip_prefix("\\v")
+                .map_or_else(|| format!("\\C{pat}"), |rest| format!("\\v\\C{rest}"));
             match CompiledQuery::compile(&pat, false) {
                 // patterns vim runs but this dialect refuses are bugs
                 // here — the corpus contains only supported syntax
@@ -402,6 +405,37 @@ mod query_dialect {
         CompiledQuery::compile(pat, false).expect_err("must refuse")
     }
 
+    #[test]
+    fn buffer_search_is_insensitive_unless_the_query_forces_case() {
+        let buffer = Buffer::from_text("Needle\nneedle\nCAFÉ\ncafé\n");
+        for pattern in ["needle", "case:ignoreNeedle", "case:insensitiveNeedle"] {
+            let query = CompiledQuery::compile(pattern, false).unwrap();
+            assert_eq!(search_all(&buffer, &query).unwrap().len(), 2, "{pattern}");
+        }
+        let exact = CompiledQuery::compile("case:sensitiveNeedle", false).unwrap();
+        assert_eq!(search_all(&buffer, &exact).unwrap().len(), 1);
+        let folded = CompiledQuery::compile("case:sensitiveneedle\\c", false).unwrap();
+        assert_eq!(search_all(&buffer, &folded).unwrap().len(), 2);
+        let anchored = Buffer::from_text("Needle\nneedle\n");
+        let query = CompiledQuery::compile("^needle$", false).unwrap();
+        assert_eq!(search_all(&anchored, &query).unwrap().len(), 2);
+
+        for pattern in ["case:sensitiveneedle", "needle\\C"] {
+            let query = CompiledQuery::compile(pattern, false).unwrap();
+            let hits = search_all(&buffer, &query).unwrap();
+            assert_eq!(
+                (hits[0].start.get(), hits[0].end.get()),
+                (7, 13),
+                "{pattern}"
+            );
+        }
+        let unicode = CompiledQuery::compile("café", false).unwrap();
+        assert_eq!(search_all(&buffer, &unicode).unwrap().len(), 2);
+        let literal = Buffer::from_text("case:sensitiveX\ncase:sensitivex\n");
+        let query = CompiledQuery::compile("case:sensitivex", false).unwrap();
+        assert_eq!(search_all(&literal, &query).unwrap().len(), 1);
+        assert_eq!(query.source(), "case:sensitivex");
+    }
     #[test]
     fn unsupported_constructs_are_typed_errors() {
         for (pat, construct) in [

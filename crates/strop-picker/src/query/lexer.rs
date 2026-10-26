@@ -64,8 +64,8 @@ impl Operator {
 /// 0063 §2 — they narrow workspace symbols and repositories once project
 /// discovery lands, and never silently disappear).
 pub const QUALIFIERS: &[&str] = &[
-    "language", "path", "glob", "hidden", "ignored", "case", "text", "regex", "kind", "type",
-    "repo",
+    "language", "path", "fpath", "glob", "hidden", "ignored", "case", "text", "regex", "kind",
+    "type", "repo",
 ];
 
 /// Lex the whole input. Never fails: an unclosed quote is a token, not

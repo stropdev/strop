@@ -80,7 +80,7 @@ pub enum AdmittedAction {
     Paste(String),
     /// Terminal resized.
     Resize { columns: u16, rows: u16 },
-    /// ctrl-c: the quit intent; the editor's policy decides.
+    /// GUI close request; terminal Ctrl-C is an ordinary editor key.
     QuitIntent,
     /// Focus change.
     Focus(bool),
@@ -236,7 +236,7 @@ pub enum EffectOutcome {
 pub enum ShutdownReason {
     /// The client sent `shutdown`.
     Requested,
-    /// The editor quit through its own grammar (`:q`, quit intent).
+    /// The editor quit through its own grammar (`:q`) or a GUI close request.
     Quit,
     /// The client link closed or died.
     Disconnect,

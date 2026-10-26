@@ -18,10 +18,10 @@ use super::parser::{CaseMode, QueryState, SearchQuery};
 
 /// Syntax version 1: the pre-Boolean flat literal semantics (0051 §3).
 pub const SYNTAX_VERSION_FLAT: u32 = 1;
-/// Syntax version 2: the current grammar — the 0063 §3 Boolean AST with
-/// `kind:`/`repo:` narrowing. Bump this when a grammar change could
-/// reclassify a stored token, and add a migration beside [`migrate_v1`].
-pub const SYNTAX_VERSION_CURRENT: u32 = 2;
+/// Syntax version 3 adds `fpath:` scope. Version 2 remains readable so
+/// an older literal `fpath:` token cannot silently become a filter.
+pub const SYNTAX_VERSION_CURRENT: u32 = 3;
+const SYNTAX_VERSION_BOOLEAN: u32 = 2;
 
 /// A persisted query string plus the syntax version it was written in.
 /// Deserialization rejects unknown versions; a version 1 source migrates
@@ -74,7 +74,7 @@ impl StoredQuery {
     /// funnels through.
     pub fn checked(syntax_version: u32, source: String) -> Result<Self, StoredQueryError> {
         match syntax_version {
-            SYNTAX_VERSION_FLAT | SYNTAX_VERSION_CURRENT => Ok(Self {
+            SYNTAX_VERSION_FLAT | SYNTAX_VERSION_BOOLEAN | SYNTAX_VERSION_CURRENT => Ok(Self {
                 syntax_version,
                 source,
             }),
@@ -87,7 +87,8 @@ impl StoredQuery {
     pub fn current_source(&self) -> Result<Cow<'_, str>, StoredQueryError> {
         match self.syntax_version {
             SYNTAX_VERSION_CURRENT => Ok(Cow::Borrowed(&self.source)),
-            SYNTAX_VERSION_FLAT => Ok(Cow::Owned(migrate_v1(&self.source))),
+            SYNTAX_VERSION_FLAT => Ok(Cow::Owned(migrate_v2(&migrate_v1(&self.source)))),
+            SYNTAX_VERSION_BOOLEAN => Ok(Cow::Owned(migrate_v2(&migrate_v1(&self.source)))),
             found => Err(StoredQueryError::UnsupportedVersion { found }),
         }
     }
@@ -111,6 +112,27 @@ impl StoredQuery {
 /// survive. Already-quoted forms pass through untouched. Token
 /// boundaries come from the one shared lexer — there is no second
 /// grammar. Pure: same input, same output.
+/// Preserve a version 2 `fpath:` token as literal text in version 3.
+/// Every other token already has the same grammar, so no rewrite or
+/// additional Boolean parser is needed.
+pub fn migrate_v2(source: &str) -> String {
+    let tokens = lexer::lex(source);
+    let mut migrated = String::with_capacity(source.len());
+    let mut cursor = 0;
+    for token in &tokens {
+        migrated.push_str(&source[cursor..token.range.start]);
+        let slice = &source[token.range.clone()];
+        if matches!(&token.kind, TokenKind::Qualifier { key, .. } if key == "fpath") {
+            quote_literal(&mut migrated, slice);
+        } else {
+            migrated.push_str(slice);
+        }
+        cursor = token.range.end;
+    }
+    migrated.push_str(&source[cursor..]);
+    migrated
+}
+
 pub fn migrate_v1(source: &str) -> String {
     let tokens = lexer::lex(source);
     let mut migrated = String::with_capacity(source.len());
@@ -243,8 +265,8 @@ mod tests {
             ("\"AND\" but", "\"AND\" but", "AND but"),
             // Lowercase operator words are literal in both versions.
             ("foo and bar", "foo and bar", "foo and bar"),
+            // v1 operators and v2 fpath migrate through distinct steps.
             // Newly recognized qualifiers stay the literal text typed in
-            // v1 (an unquoted `kind:` was a located error, never scope).
             (
                 "kind:function handle",
                 "\"kind:function\" handle",
@@ -255,6 +277,20 @@ mod tests {
             // swallowing the closing quote.
             ("kind:a\\", "\"kind:a\\\\\"", "kind:a\\"),
         ];
+        let old = StoredQuery {
+            syntax_version: SYNTAX_VERSION_BOOLEAN,
+            source: "fpath:src retry".into(),
+        };
+        let parsed = old.parse().unwrap();
+        assert!(parsed.fuzzy_paths.is_empty());
+        assert_eq!(
+            parsed.content,
+            Some(ContentExpr::Literal("fpath:src retry".into()))
+        );
+        assert_eq!(
+            StoredQuery::from_query(&parsed).source,
+            "\"fpath:src\" retry"
+        );
         for &(v1, migrated, phrase) in cases {
             assert_eq!(migrate_v1(v1), migrated, "{v1}");
             let query = parse_ready(migrated);

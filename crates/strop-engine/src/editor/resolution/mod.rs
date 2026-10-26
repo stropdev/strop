@@ -1,5 +1,5 @@
 //! Bounded input work: large grammar reads run on one CPU owner. Input after an
-//! accepted command stays ordered; Ctrl-C revokes it. Preview and execution use
+//! accepted command stays ordered; cancellation revokes it. Preview and execution use
 //! the same revision/cursor/command-stamped pure resolver result.
 mod indentation;
 mod worker;

@@ -40,10 +40,41 @@
         "crates/strop-syntax/src/lib.rs",
         "crates/strop-syntax/src/languages.rs",
         "crates/strop-syntax/src/injections.rs",
+        "crates/strop-syntax/src/comments.rs",
         "crates/strop-syntax/src/injections/documentation.rs",
         "crates/strop/src/render/picker/preview.rs"
       ],
       "claims": [
+        {
+          "id": "VISUAL-COMMENT-TOGGLE",
+          "statement": "Visual, Visual Line and Visual Block Ctrl-C toggle complete selected lines with language-owned tokens, preserving indentation, CRLF and mixed-selection semantics. One undo restores the original; unknown or block-only languages refuse without editing.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-syntax/src/comments.rs",
+              "gate": "test",
+              "tests": [
+                "uncomment_removes_token_and_optional_space_independently"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/tests/visual_object_tests.rs",
+              "gate": "test",
+              "tests": [
+                "ctrl_c_toggles_whole_selected_lines_and_undo_restores_once",
+                "visual_ctrl_c_expands_partial_lines_and_refuses_unknown_languages",
+                "visual_comments_preserve_crlf_and_only_uncomment_complete_runs"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0074 adds language-owned comment planning and visual-range correspondence; no comment or presentation theorem is claimed."
+          }
+        },
         {
           "id": "DOC-LANGUAGE-PRESENTATION",
           "statement": "Registered documentation hosts inject fenced languages without restyling host delimiters or ordinary comments. Structural Python docstrings, Rustdoc language precedence, independent groups, nested viewport ranges and incremental fence-language edits preserve byte offsets, including Unicode and CRLF. Embedded documentation syntax reaches the real rendered cell grid.",
@@ -209,10 +240,11 @@
           "crates/strop-engine/src/editor/terminal/presentation.rs": "116bc2b594c5aba9357940c86cdb75430398e5f932d65cf0af5d885dfce0252c",
           "crates/strop-engine/src/editor/theme.rs": "1f350702bde50142b6000b1395aa38c0d4268bb3d2f963bdd150ba7a8e04a5c5",
           "crates/strop-engine/src/editor/trace/seed.rs": "d5df3e07410eccaa6a5d808cebf5fce268e84087b1e83f7821f8254e014f156f",
+          "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
           "crates/strop-syntax/src/injections.rs": "b121dff8a50567bf6e0c3473ccac7a5c1e9d8ed6f9f4a94c631f5e7acc2d58e2",
           "crates/strop-syntax/src/injections/documentation.rs": "0761521b7961a6a3cf065d5309bb91b10a451f6294fab2975a95e05ddf3af089",
           "crates/strop-syntax/src/languages.rs": "c199ae96e8c27b4a8b94dac8cfd02cbd7395c7e321483f2c49634a4e5bc68649",
-          "crates/strop-syntax/src/lib.rs": "e8998f0a5136053cb7a18dc979c25b30d584fc7796c6cc034f89cc9f65512912",
+          "crates/strop-syntax/src/lib.rs": "eaf95f76e87d0c81137374e23cd05f6c9b2962f1312e2d4847f2b4af620822c9",
           "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
           "crates/strop-terminal/src/model/mod.rs": "4af1b183054749001a27b22aad26b440e613855fa4c601d9f3feae8b6b58de92",
           "crates/strop-terminal/src/service/mod.rs": "8d0e1f0a0af68407d792872a065e7d7aad02524cd85cdabc8b766c52bdc99539",
@@ -226,7 +258,7 @@
           "crates/strop/src/render/statusline.rs": "209e4bcb149c4a22ee0530f03749a1629b8d15495fee38bc4203fea25da3a139",
           "crates/strop/src/ui_stdio/mod.rs": "77aa880284354afa41ce58a22ead9824e22e808e52a4f3789d1ed4e8abd7757c"
         },
-        "evidence": "b12981e7f8cc27d7311ab5175dce762c4c6991046c01662796a182f301b6b32d"
+        "evidence": "b6b8b276d43c6dd27b72b3ad862d22ba35a9fe2ccd38a6e2b177fea8deb7783a"
       }
     },
     {
@@ -255,9 +287,35 @@
         "crates/strop-engine/src/editor/resolution/worker.rs",
         "crates/strop-engine/src/editor/transact.rs",
         "crates/strop-syntax/src/indentation.rs",
+        "crates/strop-grammar/src/query/parse.rs",
+        "crates/strop-grammar/src/query/parse/atoms.rs",
+        "crates/strop-engine/src/editor/visual.rs",
+        "crates/strop-syntax/src/comments.rs",
         "crates/strop-engine/src/editor/transact/capability.rs"
       ],
       "claims": [
+        {
+          "id": "MUT-VISUAL-COMMENT-TRANSACTION",
+          "statement": "Visual comment toggles publish one checked non-overlapping batch in one undo group, preserve the selected lines and caret column, and refuse unknown languages before mutation.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/tests/visual_object_tests.rs",
+              "gate": "test",
+              "tests": [
+                "ctrl_c_toggles_whole_selected_lines_and_undo_restores_once",
+                "visual_ctrl_c_expands_partial_lines_and_refuses_unknown_languages",
+                "visual_comments_preserve_crlf_and_only_uncomment_complete_runs"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0074 exercises the real visual transaction and one-step undo; the mutation kernel does not prove language-specific comment decisions."
+          }
+        },
         {
           "id": "MUT-STRUCTURAL-INDENTATION",
           "statement": "Structural Enter, open-line and typed closers use source-aware per-caret indentation while preserving literal/comment whitespace, Unicode, tabs and CRLF. Semantic dot, counted insertion, macros, backspace and literal paste retain user intent and undo grouping. Deferred decisions preserve typeahead order and reject stale revisions, changed settings and newly readonly buffers without moving the caret.",
@@ -478,18 +536,22 @@
           "crates/strop-core/src/history.rs": "818cbe77ad7ec8e2765a0ba955f4a53fb893f58fee9c2593801b8d813777a353",
           "crates/strop-core/src/history/validate.rs": "a50952412b43d1fa9edf7fabe656a9a14118f232a61aa1b83815690639ec1c2a",
           "crates/strop-core/src/mutguard.rs": "81cd772ea21b5ca5e7e9e7755d0216b5313f900f0f85aa5279426bafcbea589c",
-          "crates/strop-engine/src/editor/insert.rs": "9363a6bd1e475a2338c6a6a7201a998294953a6aa8d742b5f8b02ec35e7fb460",
+          "crates/strop-engine/src/editor/insert.rs": "f9e5e682e26de7a841f1b5e68969b9107b8101dfec16305d86dca3eed52ed968",
           "crates/strop-engine/src/editor/insert/replay.rs": "562d44b4542a7abcd6d5672bff6c7b71c832510c3d5a479bfdc831d08901ec47",
           "crates/strop-engine/src/editor/resolution/indentation.rs": "84dd7de96f5ce1cfe924e6786d9d0f3a607b618cdbeb171c7cae4a03d075176f",
-          "crates/strop-engine/src/editor/resolution/mod.rs": "b46aa7516603acdccd5d33707b91be84b752395084418cd3599adbbf5a90b30d",
+          "crates/strop-engine/src/editor/resolution/mod.rs": "9759aea9bc78977cf9f96cbeed56d04e04554444bf04a9198c0b57de49d17643",
           "crates/strop-engine/src/editor/resolution/worker.rs": "a631f8175306c0da5f3a3af7447918c3983e3e6d0926ef805dbb4bd8429a57e4",
           "crates/strop-engine/src/editor/structural_indent.rs": "21c4b123d65979e80e55829c3f3ae830a9b2fd2f10879c4f1a709762d25aff89",
           "crates/strop-engine/src/editor/structural_indent/source.rs": "0c1933164a162ee12e2d2afc40443e3305f522b9996491582f2a197ff1537618",
           "crates/strop-engine/src/editor/transact.rs": "8a34847feac5a8509fb79129430f702783d036c5270461dd8ac0526a05c6b438",
           "crates/strop-engine/src/editor/transact/capability.rs": "a3aba86cdd865382b14a55f9e2ad6d675fd7f2c20a5a529fecea581efeec3772",
+          "crates/strop-engine/src/editor/visual.rs": "c87ef69bb596c001a9961e9392c5523ba4816ad649f21271a37a72f78ffb6af4",
+          "crates/strop-grammar/src/query/parse.rs": "55ea7bf10ef9af7e2addb84e73eec9a948075af2bcbcaf72398a40b504684ea5",
+          "crates/strop-grammar/src/query/parse/atoms.rs": "2e32f011a930d692c6c001b2327e93a4b2e212b580af564397e6bf49c249bca6",
+          "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
           "crates/strop-syntax/src/indentation.rs": "2e3ebd83b3ab28d26661e69a15398c814e256a633cc9019185f978780b9592c3"
         },
-        "evidence": "c15f3d5d5e1051cc83b4e4ae5421268080666c74cda20adb92dfeecf1f429335"
+        "evidence": "2419253475462013f5f76692c15149bf76e87c0b2d98536c350367f67c61506b"
       }
     },
     {
@@ -606,7 +668,7 @@
         "sources": {
           "crates/strop-core/src/buffer.rs": "c5b0e49e08d9b79201f5cf3adb1d8a165ffda90cb72ca2b6c38daac5c8afa05c",
           "crates/strop-core/src/viewguard.rs": "b63dab8d76faf464ad78c2663fe3a317d60a24cf9c7a42e8217eb3887fdbb746",
-          "crates/strop-engine/src/editor/document/mod.rs": "aa8edd7d8ae23b4d74d15a806dc17b9ab07855955f79ea533e5bd632e7df2238",
+          "crates/strop-engine/src/editor/document/mod.rs": "e0878378ce110a4af69ee706db45279ede705614b31416757740cf4646a470ab",
           "crates/strop-engine/src/editor/prepare.rs": "c4619ecfe5038d5e79733d10b6e63410e85fb7b6e1cd244e55316d393ac4f730",
           "crates/strop-engine/src/editor/prepare/geometry.rs": "f50dd9e147dbc419422e786f6a655fbe8d4f4618703e50ce98dc6b534880db9a"
         },
@@ -1095,7 +1157,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/events.rs": "19b6883982bb9add4aa14a3a6e660278bc54950cca46cdf3d5e097b012b514a7",
+          "crates/strop-engine/src/editor/events.rs": "af7a575787bd84ded905b7442dd245961baf81d0ffaf2d0f8eaab25570167c7a",
           "crates/strop-engine/src/editor/events/channel.rs": "be75e74dd7c188ccee3e1867e76e9a60342defa8d44b0b38a3be69b9524d5cc5",
           "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
@@ -2526,7 +2588,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "3c741d5ea92c133754622b60ad66510f601301aca68ec1b30caa6d783b633ae8",
+          "crates/strop-fs/Cargo.toml": "cd3d5b823048cbb1b105589c08ee0bd4005c89e87a33c3c7cbe97e200ab4d2d7",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -3055,9 +3117,72 @@
       "files": [
         "crates/strop-core/src/searchguard.rs",
         "crates/strop-engine/src/editor/normal/search.rs",
+        "crates/strop-grammar/src/query/parse.rs",
+        "crates/strop-grammar/src/query/parse/atoms.rs",
+        "crates/strop-picker/src/query/lexer.rs",
+        "crates/strop-picker/src/query/parser.rs",
+        "crates/strop-picker/src/query/plan.rs",
+        "crates/strop-picker/src/query/store.rs",
+        "crates/strop-picker/src/query/properties.rs",
+        "crates/strop-picker/src/source/selection.rs",
         "crates/strop-engine/src/editor/picker/drain.rs"
       ],
       "claims": [
+        {
+          "id": "SRCH-CASE-AND-FPATH",
+          "statement": "Buffer search folds case by default while case:sensitive or \\C forces exact matching; case directives remain zero-width before anchors and persist through repeat and highlights. fpath: scopes the full workspace-relative path with smart-case fuzzy matching, supports exclusions and Boolean Search, preserves literal path: behavior and migrates older stored queries without reinterpretation.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-grammar/src/tests.rs",
+              "gate": "test",
+              "tests": [
+                "buffer_search_is_insensitive_unless_the_query_forces_case",
+                "dialect_matches_vim_on_the_corpus"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/tests/search_tests.rs",
+              "gate": "test",
+              "tests": [
+                "default_case_folding_and_qualifiers_share_preview_execution_and_repeat"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/query/plan/tests.rs",
+              "gate": "test",
+              "tests": [
+                "fuzzy_path_scope_matches_parent_components_without_reinterpreting_path",
+                "fuzzy_path_is_the_same_predicate_in_boolean_content_search"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/selection.rs",
+              "gate": "test",
+              "tests": [
+                "fuzzy_path_scope_filters_real_relative_paths"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/query/store.rs",
+              "gate": "test",
+              "tests": [
+                "migrated_output_parse_format_parse",
+                "stored_query_parses_with_its_recorded_versions_semantics"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0074 adds case-folding and fpath correspondence across the shared compiler, real picker, Boolean admission and stored-query migration; lifecycle theorems are unchanged."
+          }
+        },
         {
           "id": "SRCH-INDUCTIVE-SAFETY",
           "statement": "Init⇒Inv, Inv∧[Next]⇒Inv′ over all 12 actions plus stuttering, and Inv⇒ each named safety property, for arbitrary finite GENS/REV_MAX/WARM_MAX; the mutant is rejected on its own steps only.",
@@ -3145,9 +3270,17 @@
         "sources": {
           "crates/strop-core/src/searchguard.rs": "3ce08ff2edafdd5fe24d058d5647f64696986272a0de1c9eff20539aacf7e7bc",
           "crates/strop-engine/src/editor/normal/search.rs": "b34a841566e54e2e83241f2df095a8788e2173192058b5abde4751e28144ba43",
-          "crates/strop-engine/src/editor/picker/drain.rs": "a32550297969731b2d6411ce51365be62b947d2c653657fa816a02f885d3f11f"
+          "crates/strop-engine/src/editor/picker/drain.rs": "a32550297969731b2d6411ce51365be62b947d2c653657fa816a02f885d3f11f",
+          "crates/strop-grammar/src/query/parse.rs": "55ea7bf10ef9af7e2addb84e73eec9a948075af2bcbcaf72398a40b504684ea5",
+          "crates/strop-grammar/src/query/parse/atoms.rs": "2e32f011a930d692c6c001b2327e93a4b2e212b580af564397e6bf49c249bca6",
+          "crates/strop-picker/src/query/lexer.rs": "66c975fc51a2881f18dd64b9c1796132923f87ab2d22ec6f5cdf20d043efdcea",
+          "crates/strop-picker/src/query/parser.rs": "1354efb42b645cd889b76e085436cb4f4fc9032c3973fecf5bd16febb2274cac",
+          "crates/strop-picker/src/query/plan.rs": "35664747cf5c189b4e23ec1f6c5c81cfa40b20047f6a3c6b2a340e5092c4e78d",
+          "crates/strop-picker/src/query/properties.rs": "95fa17d92f7522d80256dfd2f56a2f83f6634ec1781dd2963b6274d5ecfffa1f",
+          "crates/strop-picker/src/query/store.rs": "80f5ec95470bf2ea2fd07e5448335c2bd3545daf46f316f7e25968af6945a09d",
+          "crates/strop-picker/src/source/selection.rs": "cb73bf25a40c389634fd9df8e3a3ff1c1815b369a5a0d8be2fca9ad8290fc3b7"
         },
-        "evidence": "bb29589a5665034af037178896af3b5c433b63b50627e05373dbb662b16634f1"
+        "evidence": "94d79e891118f8c84e8c9b252d005d11e6d248fd16e66c68092fee93b59061fd"
       }
     },
     {
@@ -3169,9 +3302,42 @@
         "crates/strop/src/replay.rs",
         "crates/strop/src/ui_stdio/serve.rs",
         "crates/strop-ui-protocol/src/message.rs",
-        "crates/strop-ui-protocol/src/driver.rs"
+        "crates/strop-ui-protocol/src/driver.rs",
+        "crates/strop-engine/src/editor/field.rs",
+        "crates/strop-engine/src/editor/pending.rs",
+        "crates/strop-engine/src/editor/picker/keys.rs",
+        "crates/strop-engine/src/editor/insert.rs"
       ],
       "claims": [
+        {
+          "id": "UI-FIELD-REGISTER-INPUT",
+          "statement": "Picker and search-prompt fields insert unnamed and named registers through Ctrl-R {register}; field Normal p/P pastes without stealing Search's replacement toggle. Multiline registers refuse without truncation, ordinary modal typing remains intact, and Ctrl-C never quits the editor.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/picker/field_register_tests.rs",
+              "gate": "test",
+              "tests": [
+                "yanked_register_inserts_into_picker_and_prompt_fields",
+                "multiline_register_refuses_without_truncating_picker_input"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/tests/keybinds_tests.rs",
+              "gate": "test",
+              "tests": [
+                "ctrl_c_is_not_a_quit_shortcut"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0074 adds field register reads and removes the Ctrl-C quit policy; existing modal prompt and replacement-toggle contracts remain covered."
+          }
+        },
         {
           "id": "UI-FRESHNESS",
           "statement": "No misapplied or wrong-document delivery: the bounded model passes both freshness invariants, and the mutant without delivery freshness violates exactly NoMisapply and NoWrongDocument — no structural accounting invariant. Worker notify records use a coalesced wake hint; a trace-owned write cannot loop back as an editor input event. The pipe backend publishes an acknowledged action's semantic effects before the acknowledgement itself, including state-only actions whose view generation does not move. Clipboard effect requests are suppressed unless the negotiated capability grants them, and action acknowledgements are honest: Applied, Partial (consuming exactly the acknowledged prefix) and Refused are reported as typed outcomes, never flattened.",
@@ -3321,17 +3487,21 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-core/src/frontend_input.rs": "e6dae048bf2d6060559a8272cf572a8b3b2042e84941cff9c4f5753ad6945975",
-          "crates/strop-engine/src/editor/events.rs": "19b6883982bb9add4aa14a3a6e660278bc54950cca46cdf3d5e097b012b514a7",
-          "crates/strop-engine/src/editor/input/frontend.rs": "ac11b531235e72336a9cfd53e58de56da62ab2d00fe1338a028a18c03528190c",
+          "crates/strop-core/src/frontend_input.rs": "3e3a7995ea1cd3e9f96eb7aec7e38f9ed6fb735f66c1e1e16775f965c0bcce35",
+          "crates/strop-engine/src/editor/events.rs": "af7a575787bd84ded905b7442dd245961baf81d0ffaf2d0f8eaab25570167c7a",
+          "crates/strop-engine/src/editor/field.rs": "b4c5550c16970bff0b4839c18739c64a6969a6531686697322bcebe0ac22e3cf",
+          "crates/strop-engine/src/editor/input/frontend.rs": "886d216f2bb630adf702badd7ea9b56bcd23ed0b9a9b08aad18fc5468271f689",
+          "crates/strop-engine/src/editor/insert.rs": "f9e5e682e26de7a841f1b5e68969b9107b8101dfec16305d86dca3eed52ed968",
+          "crates/strop-engine/src/editor/pending.rs": "1bbddb45a8a11c13b9666b8178dd2750192dfda4cf846b29d8c9528f8f07c641",
+          "crates/strop-engine/src/editor/picker/keys.rs": "5a01c4ddb6201cd9b16ded5a87b167a36b55a3a761aee501a86dc3897fbd812d",
           "crates/strop-ui-protocol/src/driver.rs": "a101f334fbe9b4210251e26ab6fdc639cc4e62c16010786c1126dafbe5bbd1f8",
-          "crates/strop-ui-protocol/src/message.rs": "aee54ce26571083e64c503e863bb43842bb33c56d64733d046798ce5ed41fe11",
-          "crates/strop/src/headless/directives.rs": "818a64a5998954089141b9829753b959d1b0cbd3ac4f647ed05259387f7720b5",
+          "crates/strop-ui-protocol/src/message.rs": "0384cda6519a0f007ab1c2609f0ed1fc5e38adde336afe5669b119e0a8c59800",
+          "crates/strop/src/headless/directives.rs": "978e40fd22a1836c4a280d914b93a31de3664e89d24fdb88b8499aa6a541e40c",
           "crates/strop/src/headless/driver.rs": "556e4bb1c4b88cbb016f973b68a69f5a9a5c5174856ad08a616a4a4c7d3bcbc5",
           "crates/strop/src/replay.rs": "530665a536c98229a3505a23adc7376f5b6f26f4d065087c699f3deaab0a8840",
           "crates/strop/src/ui_stdio/serve.rs": "2e02823666231555c6cd5ebde08c81426cc9ee86ec5972df605fe1c433f7f9a4"
         },
-        "evidence": "5338faa0782e5db026135d06a104e8b4870894ca9937a7aaabc22fdcdeb57a7d"
+        "evidence": "191143ae1b8ec6ae7fa0b288d333aaa765507acb8b04c9f88b0dd2c07751eb20"
       }
     },
     {
@@ -4039,7 +4209,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "c43f52a39c9e252520b02bc600fb093e60ae46503c2229bb4566aa4b446c94ff",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "3c741d5ea92c133754622b60ad66510f601301aca68ec1b30caa6d783b633ae8",
+          "crates/strop-fs/Cargo.toml": "cd3d5b823048cbb1b105589c08ee0bd4005c89e87a33c3c7cbe97e200ab4d2d7",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -4047,7 +4217,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "083d00d4e3ccfd6444ed443643da890df8eee2b23d81f5dcd47b8edd2e1964c8",
+          "crates/strop-worker/Cargo.toml": "eb383b65458e0c43610cc090e8f08e3af64599a43b2df859e8955944b460e5f7",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -4744,11 +4914,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "083d00d4e3ccfd6444ed443643da890df8eee2b23d81f5dcd47b8edd2e1964c8",
+          "crates/strop-worker/Cargo.toml": "eb383b65458e0c43610cc090e8f08e3af64599a43b2df859e8955944b460e5f7",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "3bb081707c5d3c8253ff274c10c4e049f7a207ac851ae4d723b85a6e338a4ab6"
+          "crates/strop/Cargo.toml": "f5c37b338e36e3e340d7d30cd22e19170a76da87502483030d8798e30ab5fcdc"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }
@@ -5199,6 +5369,26 @@
       ],
       "claims": [
         {
+          "id": "CMP-LITERAL-REGISTER-REPLAY",
+          "statement": "Insert Ctrl-R {register} inserts register text literally at every caret and replays through dot; Ctrl-C closes the insert session rather than quitting the editor.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/tests/visual_object_tests.rs",
+              "gate": "test",
+              "tests": [
+                "insert_register_is_literal_and_replayed_by_dot"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0074 uses the existing literal insertion replay path; no completion ownership or TLAPS theorem is extended to register semantics."
+          }
+        },
+        {
           "id": "CMP-SEMANTIC-INSERT-REPLAY",
           "statement": "Completion acceptance preserves paired Enter as semantic dot-repeat intent at the destination indentation; snippet placeholder replacement and Tab navigation replay as insertion actions.",
           "status": "correspondence-tested",
@@ -5612,13 +5802,13 @@
           "crates/strop-engine/src/editor/completion/worker/mod.rs": "edb377ec3a5022b0897d11851d13717ace9350dbd303e5592563eb43a84a6bd1",
           "crates/strop-engine/src/editor/completion/worker/work.rs": "0de0702c6e0112ea1659e3926733e32548005d3ca29ab3a78140724860d98566",
           "crates/strop-engine/src/editor/insert/replay.rs": "562d44b4542a7abcd6d5672bff6c7b71c832510c3d5a479bfdc831d08901ec47",
-          "crates/strop-engine/src/editor/resolution/mod.rs": "b46aa7516603acdccd5d33707b91be84b752395084418cd3599adbbf5a90b30d",
+          "crates/strop-engine/src/editor/resolution/mod.rs": "9759aea9bc78977cf9f96cbeed56d04e04554444bf04a9198c0b57de49d17643",
           "crates/strop-engine/src/editor/snippet.rs": "466467432857ed3ef4c9323e958f7e1aa0518f6df49631d50fc25e462d2d8213",
           "crates/strop-engine/src/editor/trace/seed.rs": "d5df3e07410eccaa6a5d808cebf5fce268e84087b1e83f7821f8254e014f156f",
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "b3d2778a79c7ae5a7ff148793a12f9c9b0da58401e788dba9f0897fada68cf28"
         },
-        "evidence": "b12dbd8111ac4f0bcb13a763617cb2ef43243dee5523359ac03501f0f4ed0334"
+        "evidence": "e270d319b9833ec470a534e346179b91ed84bf29cf83d1dfb4faaccb4f84ccdf"
       }
     },
     {

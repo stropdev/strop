@@ -200,6 +200,30 @@ mod tests {
     }
 
     #[test]
+    fn fuzzy_path_scope_filters_real_relative_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for path in [
+            "src/modules/jweb/Parser.java",
+            "src/modules/other/Parser.java",
+            "modules/legacy/jweb/parser.java",
+        ] {
+            let path = dir.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "class Parser {}\n").unwrap();
+        }
+        let got = collect(
+            dir.path(),
+            "fpath:modules/jweb/ parser",
+            SelectionPolicy {
+                hidden: true,
+                respect_ignore: true,
+            },
+        );
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(got.iter().all(|path| path.contains("jweb")));
+    }
+
+    #[test]
     fn language_filter_only_lists_that_family() {
         let dir = fixture();
         let got = collect(

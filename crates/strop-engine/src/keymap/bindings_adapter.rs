@@ -584,6 +584,14 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Operator,
     },
     Binding {
+        keys: "ctrl-c",
+        desc: "toggle comments on selected lines",
+        sections: &["visual"],
+        live: true,
+        id: "visual-comment",
+        handler: Handler::Contextual,
+    },
+    Binding {
         keys: "S<c>",
         desc: "wrap selection in pair",
         sections: &["visual"],

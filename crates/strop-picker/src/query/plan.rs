@@ -18,6 +18,9 @@ pub struct FileSelectionPlan {
     /// Literal path substrings (positive = OR within the family).
     pub paths: Vec<String>,
     pub exclude_paths: Vec<String>,
+    /// Explicit fuzzy path scope (positive = OR within the family).
+    pub fuzzy_paths: Vec<String>,
+    pub exclude_fuzzy_paths: Vec<String>,
     /// Precompiled at plan time — `allows` runs per candidate.
     include_set: globset::GlobSet,
     exclude_set: globset::GlobSet,
@@ -75,6 +78,8 @@ impl FileSelectionPlan {
                 .collect(),
             paths: query.paths.clone(),
             exclude_paths: query.exclude_paths.clone(),
+            fuzzy_paths: query.fuzzy_paths.clone(),
+            exclude_fuzzy_paths: query.exclude_fuzzy_paths.clone(),
             include_set: includes.build().map_err(set_error)?,
             exclude_set: excludes.build().map_err(set_error)?,
             hidden: query.hidden,
@@ -104,6 +109,21 @@ impl FileSelectionPlan {
         if !self.paths.is_empty() && !self.paths.iter().any(|needle| rel_path.contains(needle)) {
             return false;
         }
+        if self
+            .exclude_fuzzy_paths
+            .iter()
+            .any(|needle| crate::fuzzy_score(needle, rel_path).is_some())
+        {
+            return false;
+        }
+        if !self.fuzzy_paths.is_empty()
+            && !self
+                .fuzzy_paths
+                .iter()
+                .any(|needle| crate::fuzzy_score(needle, rel_path).is_some())
+        {
+            return false;
+        }
         if !self.include_set.is_empty() && !self.include_set.is_match(rel_path) {
             return false;
         }
@@ -121,6 +141,8 @@ impl FileSelectionPlan {
     pub fn is_unfiltered(&self) -> bool {
         self.extensions.is_empty()
             && self.paths.is_empty()
+            && self.fuzzy_paths.is_empty()
+            && self.exclude_fuzzy_paths.is_empty()
             && self.include_set.is_empty()
             && self.exclude_paths.is_empty()
             && self.exclude_set.is_empty()
@@ -188,6 +210,7 @@ enum MetadataKey {
     Language,
     Path,
     Glob,
+    FuzzyPath,
     Repo,
     Kind,
 }
@@ -245,6 +268,7 @@ impl BooleanPlan {
                 let key = match atom.key.as_str() {
                     "language" => MetadataKey::Language,
                     "path" => MetadataKey::Path,
+                    "fpath" => MetadataKey::FuzzyPath,
                     "glob" => MetadataKey::Glob,
                     "repo" => MetadataKey::Repo,
                     // Decided by the syntax-fallback symbol index when
@@ -377,6 +401,7 @@ impl CompiledExpr {
                                 .is_some_and(|known| known == extensions_for_language_name(name))
                         }),
                     MetadataKey::Path => path.contains(value.as_str()),
+                    MetadataKey::FuzzyPath => crate::fuzzy_score(value, path).is_some(),
                     MetadataKey::Glob => glob_literal_match(value, path),
                     MetadataKey::Repo => {
                         let Some(catalog) = evidence.catalog else {

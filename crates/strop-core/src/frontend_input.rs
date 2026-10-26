@@ -19,6 +19,8 @@ pub enum Key {
     Tab,
     Backtab,
     /// Replace picker: exclude the row's whole file (vscode's toggle).
+    /// Visual line-comment toggle; never an application quit command.
+    CtrlC,
     CtrlD,
     CtrlR,
     /// vim's jump-back (ctrl-i forward is Tab in a terminal).

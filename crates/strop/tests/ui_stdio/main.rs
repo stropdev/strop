@@ -275,8 +275,7 @@ fn clipboard_write_capability_suppresses_effect_requests() {
     assert!(raw.wait().success());
 }
 
-/// The quit intent (ctrl-c's admitted form) is the editor's own
-/// decision: a clean scratch session quits through it.
+/// GUI close requests are separate from the terminal's Ctrl-C editor key.
 #[test]
 fn quit_intent_exits_orderly() {
     let fixture = fixture();

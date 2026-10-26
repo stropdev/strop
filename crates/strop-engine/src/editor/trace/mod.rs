@@ -95,6 +95,7 @@ pub fn replay_token(key: Key) -> String {
         Key::Right => "<right>".into(),
         Key::Tab => "<tab>".into(),
         Key::Backtab => "<s-tab>".into(),
+        Key::CtrlC => "<c-c>".into(),
         Key::CtrlD => "<c-d>".into(),
         Key::CtrlR => "<c-r>".into(),
         Key::CtrlO => "<c-o>".into(),

@@ -26,6 +26,7 @@ impl Editor {
                 self.mode = Mode::Normal;
                 self.walker.clear();
             }
+            Key::CtrlC if self.walker.is_ground() => self.toggle_visual_comments(),
             Key::Up if self.walker.is_ground() => self.run_motion("k"),
             Key::Down if self.walker.is_ground() => self.run_motion("j"),
             Key::Left if self.walker.is_ground() => self.run_motion("h"),
@@ -297,6 +298,51 @@ impl Editor {
     /// One typed visual action: motions extend, objects select, the
     /// table's leader rows (Space y, Space g h) act on the selection,
     /// `S<c>` wraps it.
+    fn toggle_visual_comments(&mut self) {
+        if self.buf().readonly {
+            self.message = "readonly buffer".into();
+            self.mode = Mode::Normal;
+            return;
+        }
+        let column = self.buf().col_of(self.head());
+        let anchor_line = self.buf().line_of(self.anchor());
+        let head_line = self.buf().line_of(self.head());
+        let first = anchor_line.min(head_line);
+        let last = anchor_line.max(head_line);
+        let start = self.buf().line_start(first);
+        let end = if last + 1 >= self.buf().len_lines() {
+            self.buf().len_bytes()
+        } else {
+            self.buf().line_start(last + 1)
+        };
+        let lines = Range::linewise(start, end);
+        let path = self.buf().path.clone();
+        let edits = match strop_syntax::comments::toggle(path.as_deref(), self.buf(), lines) {
+            Ok(edits) => edits,
+            Err(error) => {
+                self.message = error;
+                return;
+            }
+        };
+        self.tx_begin();
+        if let Err(error) = self.apply(
+            self.current(),
+            self.buf().revision(),
+            super::transact::ChangeSet {
+                edits,
+                undo_open: true,
+            },
+        ) {
+            self.message = error.to_string();
+            return;
+        }
+        self.tx_commit();
+        self.mode = Mode::Normal;
+        self.set_head(start + column);
+        self.flash(Range::charwise(start, start));
+        self.last_insert = None;
+    }
+
     fn dispatch_visual_action(&mut self, action: Action) {
         match action {
             Action::Pending => {}

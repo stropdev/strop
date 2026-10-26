@@ -150,6 +150,8 @@ pub(crate) enum PendingEffect {
     /// Tab on the ex line: cycle completion.
     CompleteEx,
     /// Ctrl-L: terminal desync recovery.
+    /// The editor resolves this in the field's owning register file.
+    ReadRegister(Option<char>),
     Repaint,
     /// The event was refused (a pasted newline, a key the field's
     /// grammar does not admit) — the message is the feedback.
@@ -236,16 +238,33 @@ impl PendingInput {
             }
             PendingEvent::Key(Key::Backspace) if prompt.line.normal => {
                 // vim: BS in normal mode is h — a pure grammar motion
-                let _ = self.machine.feed(&mut prompt.line, Key::Char('h'));
+                let _ = self.machine.feed(&mut prompt.line, Key::Char('h'), |_| {
+                    super::field::FieldReply::Consumed
+                });
             }
             PendingEvent::Key(Key::Backspace) => {
                 prompt.line.backspace();
             }
+            PendingEvent::Key(key @ (Key::Char(_) | Key::CtrlR))
+                if key == Key::CtrlR || self.machine.register =>
+            {
+                let mut register = None;
+                let reply = self.machine.feed(&mut prompt.line, key, |name| {
+                    register = Some(name);
+                    super::field::FieldReply::Consumed
+                });
+                if let Some(name) = register {
+                    return PendingEffect::ReadRegister(name);
+                }
+                if let super::field::FieldReply::Refused(message) = reply {
+                    return PendingEffect::Rejected(message);
+                }
+            }
             PendingEvent::Key(Key::Char(c)) if prompt.line.normal => {
-                // the real vim grammar (0003 §2): the field machine
-                // resolves every sequence against the line's buffer
                 if let super::field::FieldReply::Refused(message) =
-                    self.machine.feed(&mut prompt.line, Key::Char(c))
+                    self.machine.feed(&mut prompt.line, Key::Char(c), |_| {
+                        super::field::FieldReply::Consumed
+                    })
                 {
                     return PendingEffect::Rejected(message);
                 }

@@ -37,13 +37,7 @@ fn editor_events(mut key: KeyEvent) -> [Option<AppEvent>; 2] {
     }
     let alt = key.modifiers.alt;
     key.modifiers.alt = false;
-    let base = if (key.modifiers.control && key.code == KeyCode::Char('c'))
-        || key.code == KeyCode::Char('\x03')
-    {
-        Some(AppEvent::QuitIntent)
-    } else {
-        editor_key(key).map(AppEvent::EditorKey)
-    };
+    let base = editor_key(key).map(AppEvent::EditorKey);
     if alt {
         [Some(AppEvent::EditorKey(Key::Esc)), base]
     } else {
@@ -54,6 +48,8 @@ fn editor_events(mut key: KeyEvent) -> [Option<AppEvent>; 2] {
 fn editor_key(key: KeyEvent) -> Option<Key> {
     let control = key.modifiers.control;
     Some(match key.code {
+        KeyCode::Char('c') if control => Key::CtrlC,
+        KeyCode::Char('\x03') => Key::CtrlC,
         KeyCode::Escape => Key::Esc,
         KeyCode::Enter => Key::Enter,
         KeyCode::Char('d') if control => Key::CtrlD,

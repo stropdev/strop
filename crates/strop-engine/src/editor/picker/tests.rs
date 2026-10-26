@@ -760,5 +760,7 @@ mod worker_lifecycle_tests {
     }
 }
 
+#[path = "field_register_tests.rs"]
+mod field_register_tests;
 #[path = "source_sink_tests.rs"]
 mod source_sink_tests;
