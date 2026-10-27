@@ -14,6 +14,23 @@ fn selection_pairs(e: &Editor) -> Vec<(usize, usize)> {
 }
 
 #[test]
+fn default_case_folding_and_qualifiers_share_preview_execution_and_repeat() {
+    let mut e = Editor::new(Buffer::from_text("Needle\nneedle\nNEEDLE\n"));
+    e.feed_text("/needle<cr>");
+    assert_eq!(e.head(), 7);
+    e.feed_text("n");
+    assert_eq!(e.head(), 14);
+    e.feed_text("/case:sensitiveneedle<cr>");
+    assert_eq!(e.head(), 7);
+    e.feed_text("n");
+    assert_eq!(e.head(), 7);
+    e.feed_text("/case:sensitiveNeedle<cr>");
+    assert_eq!(e.head(), 0);
+    e.feed_text("n");
+    assert_eq!(e.head(), 0);
+}
+
+#[test]
 fn typing_backspace_and_interior_caret_edits_reresolve() {
     let mut e = Editor::new(Buffer::from_text("aa foo\nbb foobar\n"));
     e.feed_text("/fo");

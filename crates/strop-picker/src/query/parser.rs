@@ -83,6 +83,9 @@ pub struct SearchQuery {
     pub source: String,
     pub languages: Vec<&'static str>,
     pub paths: Vec<String>,
+    /// Fuzzy subsequence scope over the full workspace-relative path.
+    pub fuzzy_paths: Vec<String>,
+    pub exclude_fuzzy_paths: Vec<String>,
     pub globs: Vec<String>,
     pub exclude_languages: Vec<&'static str>,
     pub exclude_paths: Vec<String>,
@@ -109,6 +112,8 @@ impl SearchQuery {
         self.languages == other.languages
             && self.exclude_languages == other.exclude_languages
             && self.paths == other.paths
+            && self.fuzzy_paths == other.fuzzy_paths
+            && self.exclude_fuzzy_paths == other.exclude_fuzzy_paths
             && self.exclude_paths == other.exclude_paths
             && self.globs == other.globs
             && self.exclude_globs == other.exclude_globs
@@ -256,7 +261,7 @@ impl SearchQuery {
         negated: bool,
         range: &std::ops::Range<usize>,
     ) {
-        if negated && !matches!(key, "language" | "path" | "glob") {
+        if negated && !matches!(key, "language" | "path" | "fpath" | "glob") {
             self.fail(
                 range,
                 format!("{key}: cannot be negated"),
@@ -298,6 +303,13 @@ impl SearchQuery {
                     self.exclude_paths.push(value.to_string());
                 } else {
                     self.paths.push(value.to_string());
+                }
+            }
+            "fpath" => {
+                if negated {
+                    self.exclude_fuzzy_paths.push(value.to_string());
+                } else {
+                    self.fuzzy_paths.push(value.to_string());
                 }
             }
             "glob" => {

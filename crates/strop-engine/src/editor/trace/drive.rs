@@ -18,7 +18,7 @@ pub struct StartupOpen {
 }
 
 /// Every external step a replay reproduces. `Event` carries the shared
-/// typed `AppEvent` (terminal input, paste, resize, quit intent, and every
+/// typed `AppEvent` (terminal input, paste, resize, GUI close, and every
 /// completed worker/service result), so the live handler and the replayed
 /// handler are one function.
 #[derive(Serialize, Deserialize)]

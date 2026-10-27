@@ -46,7 +46,6 @@ pub enum AppEvent {
     },
     /// Bracketed paste: one text payload, never a key stream.
     Paste(String),
-    /// ctrl-c: the quit intent (0015's policy lives in the editor).
     QuitIntent,
     Lsp(strop_lsp::LspEvent),
     LspAttach(super::lsp::attach::AttachRecord),
@@ -213,18 +212,7 @@ impl Editor {
             }
             AppEvent::Notify => self.handle_notify(),
             AppEvent::Completion => self.handle_completion(),
-            AppEvent::QuitIntent => {
-                strop_trace::record_with(
-                    strop_trace::EventKind::Input,
-                    || serde_json::json!({"action":"quit_intent","source":"external"}),
-                );
-                self.resolution.cancel();
-                self.resolution.queue.clear();
-                self.completion_close(strop_core::worker::CancelReason::Dismissed);
-                if self.ctrl_c_quit() {
-                    self.should_quit = true;
-                }
-            }
+            AppEvent::QuitIntent => self.should_quit = true,
             AppEvent::Lsp(event) => {
                 let readiness = matches!(
                     &event,

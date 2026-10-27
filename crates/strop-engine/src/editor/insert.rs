@@ -51,7 +51,20 @@ impl Editor {
         }
     }
 
+    pub(crate) fn insert_register(&mut self, name: Option<char>) {
+        let text = self.register(name).text.clone();
+        self.insert_literal(&text, replay::InsertTargets::All);
+    }
+
     pub(crate) fn feed_insert(&mut self, key: Key) {
+        if self.insert_register {
+            self.insert_register = false;
+            return match key {
+                Key::Char('"') => self.insert_register(None),
+                Key::Char(name) => self.insert_register(Some(name)),
+                _ => self.message = "register insertion needs a register name".into(),
+            };
+        }
         // 0069 D05: a live snippet tabstop session owns Tab/Esc/etc.
         // first; printable keys fall through with the placeholder
         // replaced (see snippet.rs).
@@ -121,6 +134,7 @@ impl Editor {
         // gi remembers the insert caret; Esc leaves the final position behind.
         self.last_insert_pos = Some(self.head());
         match key {
+            Key::CtrlC => self.feed_insert(Key::Esc),
             Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO | Key::CtrlL | Key::CtrlSpace => {
                 if key == Key::CtrlL {
                     self.needs_repaint = true; // desync recovery
@@ -242,8 +256,8 @@ impl Editor {
                         .clamp_boundary(self.buf().line_start(target) + col),
                 );
             }
-            Key::CtrlR
-            | Key::CtrlU
+            Key::CtrlR => self.insert_register = true,
+            Key::CtrlU
             | Key::CtrlF
             | Key::CtrlB
             | Key::CtrlCaret

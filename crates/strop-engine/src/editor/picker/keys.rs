@@ -92,9 +92,11 @@ impl Editor {
                 if glue.picker.input_normal() {
                     // vim: BS in normal mode is h — a pure motion, so
                     // it never notifies the ranking seams
-                    let _ = glue
-                        .field_keys
-                        .feed(glue.picker.active_field(), Key::Char('h'));
+                    let _ =
+                        glue.field_keys
+                            .feed(glue.picker.active_field(), Key::Char('h'), |_| {
+                                super::super::field::FieldReply::Consumed
+                            });
                 } else if replace && glue.picker.field == strop_picker::Field::Replace {
                     glue.picker.pop_replace_char();
                     self.search_intent_changed();
@@ -105,8 +107,8 @@ impl Editor {
             }
             Key::CtrlL => self.needs_repaint = true,
             Key::CtrlR if search => self.toggle_search_replacement(),
-            Key::CtrlR | Key::CtrlW => {}
-            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret => {}
+            Key::CtrlW => {}
+            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret | Key::CtrlC => {}
             Key::CtrlY | Key::CtrlE => {}
             Key::Up | Key::CtrlP => glue.picker.move_by(-1),
             Key::Down | Key::CtrlN => glue.picker.move_by(1),
@@ -116,14 +118,21 @@ impl Editor {
             Key::Right => glue.picker.caret_right(),
             // bare j/k walk the result list (a picker, not a buffer);
             // mid-composition they are grammar (dj, 3j as motions)
+            Key::Char('p' | 'P') if glue.picker.input_normal() && glue.field_keys.is_ground() => {
+                if key == Key::Char('P') {
+                    glue.picker.active_field().move_left();
+                }
+                let text = self.register(None).text.clone();
+                self.paste_picker(&text);
+            }
             Key::Char('j') if glue.picker.input_normal() && glue.field_keys.is_ground() => {
                 glue.picker.move_by(1)
             }
             Key::Char('k') if glue.picker.input_normal() && glue.field_keys.is_ground() => {
                 glue.picker.move_by(-1)
             }
-            Key::Char(c) => {
-                if glue.picker.input_normal() {
+            Key::Char(_) | Key::CtrlR => {
+                if glue.picker.input_normal() || (key == Key::CtrlR || glue.field_keys.register) {
                     // the field speaks the real vim grammar (0003 §2);
                     // a completed edit notifies exactly once — the
                     // revision diff replaces the old x/X whitelist, so
@@ -131,10 +140,12 @@ impl Editor {
                     let replace_field =
                         replace && glue.picker.field == strop_picker::Field::Replace;
                     let before = glue.picker.active_field().revision();
-                    match glue
+                    let reply = glue
                         .field_keys
-                        .feed(glue.picker.active_field(), Key::Char(c))
-                    {
+                        .feed(glue.picker.active_field(), key, |name| {
+                            super::super::field::FieldReply::ReadRegister(name)
+                        });
+                    match reply {
                         super::super::field::FieldReply::Consumed => {
                             if glue.picker.active_field().revision() != before {
                                 if replace_field {
@@ -144,14 +155,20 @@ impl Editor {
                                 }
                             }
                         }
+                        super::super::field::FieldReply::ReadRegister(name) => {
+                            let text = self.register(name).text.clone();
+                            self.paste_picker(&text);
+                        }
                         super::super::field::FieldReply::Refused(message) => self.message = message,
                     }
-                } else if replace && glue.picker.field == strop_picker::Field::Replace {
-                    glue.picker.push_replace_char(c);
-                    self.search_intent_changed();
-                } else {
-                    glue.picker.push_char(c);
-                    self.picker_input_changed();
+                } else if let Key::Char(c) = key {
+                    if replace && glue.picker.field == strop_picker::Field::Replace {
+                        glue.picker.push_replace_char(c);
+                        self.search_intent_changed();
+                    } else {
+                        glue.picker.push_char(c);
+                        self.picker_input_changed();
+                    }
                 }
             }
         }

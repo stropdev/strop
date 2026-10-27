@@ -69,17 +69,14 @@ fn pathless_save_is_an_error_not_a_lie() {
 }
 
 #[test]
-fn ctrl_c_warns_once_then_forces() {
-    // 0015: dirty work gets one warning; the second press exits
+fn ctrl_c_is_not_a_quit_shortcut() {
     let mut e = Editor::new(Buffer::from_text("dirty\n"));
     e.feed_text("ix");
-    e.feed(strop_core::frontend_input::Key::Esc);
-    assert!(!e.ctrl_c_quit());
-    assert!(e.message.contains("ctrl-c again"));
-    assert!(e.ctrl_c_quit());
-    // clean editor: quits immediately
-    let mut e = Editor::new(Buffer::from_text("clean\n"));
-    assert!(e.ctrl_c_quit());
+    e.feed(strop_core::frontend_input::Key::CtrlC);
+    assert!(!e.should_quit());
+    assert_eq!(e.mode, Mode::Normal);
+    e.feed(strop_core::frontend_input::Key::CtrlC);
+    assert!(!e.should_quit());
 }
 
 #[test]

@@ -89,7 +89,7 @@ const DIRECTIVES: &[DirectiveSpec] = &[
         kind: DirectiveKind::QuitIntent,
         name: "quit-intent",
         arguments: "",
-        help: "send the same quit request as Ctrl-C",
+        help: "send the GUI close request (not a Ctrl-C editor shortcut)",
     },
 ];
 

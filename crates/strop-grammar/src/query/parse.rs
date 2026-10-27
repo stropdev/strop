@@ -174,7 +174,7 @@ pub(super) fn compile(pattern: &str, whole_word: bool) -> Result<Program, QueryE
         at: 0,
         mode: Magic::Magic,
         ngroups: 0,
-        fold: None,
+        fold: Some(true),
         depth: 0,
         branch_start: true,
     };
@@ -185,12 +185,26 @@ pub(super) fn compile(pattern: &str, whole_word: bool) -> Result<Program, QueryE
     } else if p.pat.starts_with(b"\\m") {
         p.at = 2;
     }
+    // A case qualifier is a leading, zero-width directive. The prompt
+    // retains its original text; only the shared compiler interprets it.
+    for (prefix, fold) in [
+        ("case:insensitive", true),
+        ("case:sensitive", false),
+        ("case:ignore", true),
+    ] {
+        if pattern[p.at..].starts_with(prefix) {
+            p.fold = Some(fold);
+            p.at += prefix.len();
+            p.branch_start = true;
+            break;
+        }
+    }
     let node = p.parse_alt()?;
     if p.at < p.pat.len() {
         // the only token that stops a parse early is an unmatched `)`
         return Err(QueryError::UnbalancedGroup { at: p.at });
     }
-    let fold = p.fold.unwrap_or(false);
+    let fold = p.fold.unwrap_or(true);
     let mut e = Emitter {
         insts: Vec::new(),
         n_slots: 2 + 2 * p.ngroups,
@@ -289,9 +303,10 @@ impl<'a> Parser<'a> {
             }
             let atom = self.parse_atom()?;
             let atom = self.parse_quantifier(atom)?;
-            // `^` re-anchors after a consumed line break (vim's rule)
-            // and at real branch starts; `$` mirrors it via lookahead
-            self.branch_start = Self::is_break_atom(&atom);
+            self.branch_start = match &atom {
+                Node::Seq(items) if items.is_empty() => self.branch_start,
+                _ => Self::is_break_atom(&atom),
+            };
             // merge adjacent literal runs (one Consume per run)
             if let Node::Literal(bytes) = &atom {
                 if let Some(Node::Literal(prev)) = items.last_mut() {

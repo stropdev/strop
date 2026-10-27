@@ -559,6 +559,7 @@ fn key_token(key: Key) -> String {
         Key::Char(' ') => "space".into(), // the table's leader token
         Key::Char(c) => c.to_string(),
         Key::CtrlSpace => "ctrl-space".into(),
+        Key::CtrlC => "ctrl-c".into(),
         Key::CtrlN => "ctrl-n".into(),
         Key::CtrlP => "ctrl-p".into(),
         Key::CtrlY => "ctrl-y".into(),
@@ -600,6 +601,7 @@ mod tests {
                 for t in seq {
                     match *t {
                         "space" => out.push(Key::Char(' ')),
+                        "ctrl-c" => out.push(Key::CtrlC),
                         "ctrl-w" => out.push(Key::CtrlW),
                         "ctrl-o" => out.push(Key::CtrlO),
                         "ctrl-r" => out.push(Key::CtrlR),

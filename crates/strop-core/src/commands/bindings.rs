@@ -588,6 +588,14 @@ pub const BINDINGS: &[Binding] = &[
         kind: CommandKind::Operator,
     },
     Binding {
+        keys: "ctrl-c",
+        desc: "toggle comments on selected lines",
+        sections: &["visual"],
+        live: true,
+        id: "visual-comment",
+        kind: CommandKind::Leaf,
+    },
+    Binding {
         keys: "S<c>",
         desc: "wrap selection in pair",
         sections: &["visual"],

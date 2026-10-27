@@ -55,6 +55,7 @@ const ALPHABET: &[&str] = &[
     "language:",
     "glob:",
     "path:",
+    "fpath:",
     "text:",
     "case:",
     "hidden:",
@@ -215,6 +216,7 @@ fn reference(
                     _ => false,
                 }),
                 "path" => Some(path.contains(atom.value.as_str())),
+                "fpath" => Some(crate::fuzzy_score(&atom.value, path).is_some()),
                 "glob" => Some(reference_glob(&atom.value, path)),
                 "kind" => {
                     if KIND_VALUES.contains(&atom.value.as_str()) {
@@ -292,6 +294,7 @@ fn random_expr(rand: &mut Lcg, depth: usize) -> BooleanExpr {
                 ("language", "python"),
                 ("path", "src"),
                 ("path", "zz"),
+                ("fpath", "src"),
                 ("glob", "a/*"),
                 ("glob", "*.rs"),
                 ("glob", "**/x.rs"),

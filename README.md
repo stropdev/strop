@@ -178,6 +178,21 @@ language:rust regex:"\brequest_(id|name)\b"
 hidden:exclude ignored:include text:"-test.rs"
 ```
 
+`path:` is a case-sensitive literal substring of the workspace-relative path (no leading `/`).
+full workspace-relative path, including parent directories, with smart case;
+use `fpath:modules/jweb/ parser` to scope the directory while ranking `parser`.
+`-fpath:` excludes matching paths. Bare file text remains fuzzy over that path.
+
+Buffer `/` and `?` search is case-insensitive by default. Start the query with
+`case:sensitive` for exact case; `case:ignore` / `case:insensitive` explicitly
+select insensitive matching. Vim's `\C` and `\c` remain supported, including in
+`n`/`N` and highlights. In picker and search-prompt fields, `Ctrl-R {register}`
+inserts a yank; field Normal `p`/`P` also pastes. Search's `Ctrl-R` replacement
+toggle is unchanged. Multiline registers are refused in one-line fields.
+
+Visual `Ctrl-C` toggles line comments over the selected lines, with one undo
+step. Insert `Ctrl-C` returns to Normal. Ctrl-C never quits the editor; use `:q`.
+
 Filter-only file finding lists eligible files. Content search needs an expression.
 Unignored dotfiles are included by default; ignore rules still apply, and `.git`
 metadata is excluded. `:search-options` shows the separate visibility controls.

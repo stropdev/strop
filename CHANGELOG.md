@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.46.1 — 2026-10-27
+
+### Added
+
+- **Register-aware input fields** (0074): `Ctrl-R {register}` inserts a yank into picker and search-prompt fields; field Normal `p`/`P` also pastes. Named registers and Unicode work, while multiline payloads refuse without truncation. Insert-mode register text participates in ordinary undo and dot replay.
+- **Fuzzy path scope**: `fpath:` matches the complete workspace-relative path, including parent directories, with smart case. `-fpath:` excludes, and Boolean Search uses the same predicate. Existing literal `path:` behavior and older stored queries retain their meaning.
+- **Visual line comments**: Visual, Visual Line and Visual Block `Ctrl-C` toggle comments over whole selected lines using language-owned `//`, `#` or `--` tokens. Indentation and CRLF are preserved and one undo restores the selection.
+
+### Changed
+
+- **Buffer search is case-insensitive by default**, including `*`/`#`. Leading `case:sensitive` forces exact case; `case:ignore` / `case:insensitive` and Vim `\c` select folding, while `\C` forces exact matching. The compiled query drives preview, repeat and highlights together.
+- **Ctrl-C no longer quits the editor**. Insert Ctrl-C returns to Normal; Visual Ctrl-C toggles comments. Use `:q` to quit. GUI close requests and Ctrl-C sent to an embedded terminal child remain distinct.
+
 ## 0.46.0 — 2026-10-25
 
 ### Added

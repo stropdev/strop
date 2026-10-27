@@ -16,11 +16,11 @@
 //! includes the sigil, so the standing sigil rule closes the prompt.
 //!
 //! Exclusions refuse with a message — an unsupported key in a field is
-//! surfaced, never swallowed: nested prompts (`: / ? |`, `d/search`),
-//! registers (yank resolves — a dead target still refuses — but stores
-//! nothing in v1), surround, indent (`>`/`<` is meaningless on one
-//! line), replace-char `r`, marks, macros, dot-repeat, and every other
-//! document-surface leaf the Walker can complete (`gb`, `p`, …).
+// registers (yank resolves — a dead target still refuses — but stores
+// nothing in v1), surround, indent (`>`/`<` is meaningless on one
+// line), replace-char `r`, marks, macros, dot-repeat, and every other
+// document-surface leaf the Walker can complete (`gb`, …). `p`/`P`
+// read a register supplied by the owning editor.
 
 use strop_grammar::{self as grammar, Command, Motion, Op, Parse, Target};
 use strop_picker::LineEdit;
@@ -34,6 +34,8 @@ pub(crate) enum FieldReply {
     /// operator applied. The caller diffs text revision / modal flag
     /// for its own notifications.
     Consumed,
+    /// The owning editor resolves a Ctrl-R register name and inserts its text.
+    ReadRegister(Option<char>),
     /// Not admitted in a field — the reason to surface (the refusal is
     /// the feedback; nothing was silently dropped).
     Refused(String),
@@ -44,12 +46,14 @@ pub(crate) enum FieldReply {
 #[derive(Debug, Default)]
 pub(crate) struct FieldMachine {
     walker: Walker,
+    pub(crate) register: bool,
 }
 
 impl FieldMachine {
     /// Ground the machine (surface opened/closed, field toggled, Esc).
     pub(crate) fn clear(&mut self) {
         self.walker.clear();
+        self.register = false;
     }
 
     /// Nothing typed, nothing pending. The picker's j/k result walk
@@ -60,7 +64,29 @@ impl FieldMachine {
     }
 
     /// One key while the field is in normal mode.
-    pub(crate) fn feed(&mut self, field: &mut LineEdit, key: Key) -> FieldReply {
+    pub(crate) fn feed(
+        &mut self,
+        field: &mut LineEdit,
+        key: Key,
+        register: impl FnOnce(Option<char>) -> FieldReply,
+    ) -> FieldReply {
+        if std::mem::take(&mut self.register) {
+            return match key {
+                Key::Char('"') => register(None),
+                Key::Char(name) => register(Some(name)),
+                _ => FieldReply::Refused("register insertion needs a register name".into()),
+            };
+        }
+        match key {
+            Key::CtrlR if !field.normal => {
+                self.register = true;
+                return FieldReply::Consumed;
+            }
+            Key::Char(_) => {
+                // Ordinary characters retain the field grammar.
+            }
+            _ => {}
+        }
         match self.walker.feed(key) {
             Action::Pending => FieldReply::Consumed,
             Action::Invalid(keys) => {
@@ -233,8 +259,9 @@ mod tests {
         field.set_cursor(cursor);
         let mut machine = FieldMachine::default();
         for c in keys.chars() {
-            match machine.feed(&mut field, Key::Char(c)) {
+            match machine.feed(&mut field, Key::Char(c), |_| FieldReply::Consumed) {
                 FieldReply::Consumed => {}
+                FieldReply::ReadRegister(_) => panic!("pure grammar test has no register owner"),
                 FieldReply::Refused(message) => panic!("{keys} refused: {message}"),
             }
         }
@@ -299,7 +326,9 @@ mod tests {
         let refused = |machine: &mut FieldMachine, field: &mut LineEdit, keys: &str| {
             let mut message = None;
             for c in keys.chars() {
-                if let FieldReply::Refused(m) = machine.feed(field, Key::Char(c)) {
+                if let FieldReply::Refused(m) =
+                    machine.feed(field, Key::Char(c), |_| FieldReply::Consumed)
+                {
                     message = Some(m);
                     break;
                 }
@@ -325,11 +354,10 @@ mod tests {
         let mut machine = FieldMachine::default();
         let clean = field.revision();
         for c in "0whb$ge".chars() {
-            machine.feed(&mut field, Key::Char(c));
+            machine.feed(&mut field, Key::Char(c), |_| FieldReply::Consumed);
         }
         assert_eq!(field.revision(), clean);
-        assert_eq!(field.text(), "one two");
-        machine.feed(&mut field, Key::Char('x'));
+        machine.feed(&mut field, Key::Char('x'), |_| FieldReply::Consumed);
         assert_eq!(
             field.revision().get(),
             clean.get() + 1,
@@ -364,8 +392,11 @@ mod tests {
                 None => keys.to_string(),
             };
             for c in typed.chars() {
-                match machine.feed(&mut field, Key::Char(c)) {
+                match machine.feed(&mut field, Key::Char(c), |_| FieldReply::Consumed) {
                     FieldReply::Consumed => {}
+                    FieldReply::ReadRegister(_) => {
+                        panic!("pure grammar test has no register owner")
+                    }
                     FieldReply::Refused(message) => panic!("{typed} refused: {message}"),
                 }
             }

@@ -113,6 +113,10 @@ impl Editor {
             return;
         }
         match self.pending.reduce(event) {
+            PendingEffect::ReadRegister(name) => {
+                let text = self.register(name).text.clone();
+                self.feed_pending_event(PendingEvent::Paste(text));
+            }
             PendingEffect::None | PendingEffect::ModeChanged => {}
             PendingEffect::Edited => self.incsearch_jump(),
             PendingEffect::CompleteEx => self.ex_tab_complete(),

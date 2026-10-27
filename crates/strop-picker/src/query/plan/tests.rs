@@ -24,6 +24,49 @@ fn path_substring_and_negation() {
 }
 
 #[test]
+fn fuzzy_path_scope_matches_parent_components_without_reinterpreting_path() {
+    let (query, fuzzy) = plan("fpath:modules/jweb/ parser");
+    assert_eq!(query.fuzzy_paths, ["modules/jweb/"]);
+    assert!(fuzzy.allows("src/modules/jweb/Parser.java"));
+    assert!(fuzzy.allows("modules/legacy/jweb/parser.java"));
+    assert!(!fuzzy.allows("src/modules/other/parser.java"));
+    assert!(!fuzzy.is_unfiltered());
+    let (query, literal) = plan("path:modules/jweb/ parser");
+    assert!(query.fuzzy_paths.is_empty());
+    assert!(literal.allows("src/modules/jweb/Parser.java"));
+    assert!(!literal.allows("src/modules/other/Parser.java"));
+    let (_, excluded) = plan("-fpath:modules/jweb/ parser");
+    assert!(!excluded.allows("src/modules/jweb/Parser.java"));
+    assert!(excluded.allows("src/modules/other/parser.java"));
+}
+
+#[test]
+fn fuzzy_path_is_the_same_predicate_in_boolean_content_search() {
+    let plan = content_plan("fpath:modules/jweb/ AND parser");
+    assert!(admits_line(
+        &plan,
+        "src/modules/jweb/Parser.java",
+        "class Parser {}"
+    ));
+    assert!(!admits_line(
+        &plan,
+        "src/modules/other/Parser.java",
+        "class Parser {}"
+    ));
+    let excluded = content_plan("NOT fpath:modules/jweb/ AND parser");
+    assert!(admits_line(
+        &excluded,
+        "src/modules/other/Parser.java",
+        "class Parser {}"
+    ));
+    assert!(!admits_line(
+        &excluded,
+        "src/modules/jweb/Parser.java",
+        "class Parser {}"
+    ));
+}
+
+#[test]
 fn globs_and_exclusions_win() {
     let (_, plan) = plan("glob:\"**/*.rs\" -glob:\"**/*-test.rs\" x");
     assert!(plan.allows("src/a.rs"));

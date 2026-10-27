@@ -9,6 +9,7 @@
 //! detection never touches the filesystem.
 
 use streaming_iterator::StreamingIterator;
+pub mod comments;
 mod guides;
 pub mod languages;
 pub use guides::{GuideFrame, IndentGuides};

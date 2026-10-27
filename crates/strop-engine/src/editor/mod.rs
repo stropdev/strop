@@ -207,8 +207,6 @@ pub struct Editor {
     pub(crate) fade_track: Option<(usize, strop_core::id::DocumentId, usize)>,
     pub(crate) message: String,
     pub(crate) should_quit: bool,
-    /// ctrl-c is armed after the first warn (0015 quit policy).
-    pub(crate) ctrl_c_armed: bool,
     /// Last visual range for `gv` (recorded per visual-mode key).
     pub(crate) last_visual: Option<(usize, usize)>,
     /// Where the last insert session was for `gi`.
@@ -340,6 +338,9 @@ pub struct Editor {
     /// Direct non-grammar commands (x, p, J…) replay their key string.
     pub(crate) last_cmd_keys: String,
     pub(crate) last_insert: Option<String>,
+    /// Insert Ctrl-R waits for one register name; the resulting text is
+    /// replayed verbatim, not as document keys.
+    pub(crate) insert_register: bool,
     pub(crate) recording_insert: Option<String>,
     pub(crate) insert_replay: Option<Vec<insert::replay::InsertStep>>,
     pub(crate) last_insert_replay: Vec<insert::replay::InsertStep>,
@@ -453,7 +454,6 @@ impl Editor {
             fade_track: None,
             message: String::new(),
             should_quit: false,
-            ctrl_c_armed: false,
             last_visual: None,
             last_insert_pos: None,
             change_idx: None,
@@ -469,6 +469,7 @@ impl Editor {
             last_cmd_keys: String::new(),
             last_insert: None,
             recording_insert: None,
+            insert_register: false,
             insert_replay: None,
             last_insert_replay: Vec::new(),
             insert_count: 1,

@@ -115,7 +115,7 @@ impl Editor {
     }
 
     /// Whether the editor is quitting (readonly; AR02): quit itself is
-    /// an admitted action (`close_buffer`, `ctrl_c_quit`,
+    /// an admitted action (`close_buffer`, GUI close request or
     /// [`Editor::request_quit`]).
     pub fn should_quit(&self) -> bool {
         self.should_quit
