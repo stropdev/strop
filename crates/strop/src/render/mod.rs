@@ -281,7 +281,7 @@ fn fade_mix(from: Color, to: Color, pct: u8) -> Color {
     Color::Rgb(mix(fr, tr), mix(fg, tg), mix(fb, tb))
 }
 
-/// First-launch card: brand + the three keys that matter. Only on an
+/// First-launch card: brand + the keys that matter. Only on an
 /// empty scratch buffer — once you're editing, it never intrudes.
 fn render_welcome(editor: &Editor, frame: &mut Frame) {
     if !matches!(editor.cur().source, crate::editor::DocumentSource::Scratch)
@@ -293,7 +293,7 @@ fn render_welcome(editor: &Editor, frame: &mut Frame) {
     }
     use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
     let area = frame.area();
-    let (w, h) = (58u16, 9u16);
+    let (w, h) = (58u16, 10u16);
     if area.width < w + 4 || area.height < h + 4 {
         return;
     }
@@ -349,6 +349,16 @@ fn render_welcome(editor: &Editor, frame: &mut Frame) {
             Span::styled(" save", Style::default().fg(muted())),
         ]),
         Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                " space o ",
+                Style::default()
+                    .fg(accent())
+                    .bg(select_bg())
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" remote & containers", Style::default().fg(muted())),
+        ]),
         Line::from(Span::styled(
             "  git signs paint the gutter · ci[ previews the cut",
             Style::default().fg(muted()),

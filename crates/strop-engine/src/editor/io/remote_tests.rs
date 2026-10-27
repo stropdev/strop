@@ -6,6 +6,18 @@ use crate::editor::test_support::remote::{deliver, io_editor as editor, open, ti
 use strop_workspace::RemoteFile;
 
 #[test]
+fn remote_readonly_open_names_the_next_commands_once() {
+    let mut editor = editor("origin\n");
+    open(&mut editor, "remote\n");
+    assert_eq!(
+        editor.message,
+        "remote is read-only — :remote edit to edit; :remote worker for search/Git/LSP"
+    );
+    editor.feed_text("j");
+    assert!(editor.message.is_empty());
+}
+
+#[test]
 fn escaped_and_superseded_opens_cannot_replace_the_current_buffer() {
     let mut editor = editor("origin\n");
     editor.feed_text(":e ssh://fixture/first.log<cr>");

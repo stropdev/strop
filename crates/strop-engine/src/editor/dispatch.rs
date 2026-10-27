@@ -133,7 +133,7 @@ impl Editor {
         // grammar — `ma` sets a mark, it never opens the PTY (0065 W2).
         if self.mode == Mode::Normal
             && self.walker.idle()
-            && matches!(key, Key::Char('i' | 'a'))
+            && matches!(key, Key::Char('i' | 'I' | 'a' | 'A'))
             && self.enter_terminal_input()
         {
             return;

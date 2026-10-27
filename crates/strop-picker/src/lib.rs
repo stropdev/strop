@@ -51,6 +51,8 @@ pub enum Payload {
     RemoteDirectory(strop_workspace::RemoteFile),
     /// Switch the same modal picker to its new-address field.
     RemoteConnect,
+    /// Discover running containers through the existing container job.
+    ContainerDiscover,
     /// A language-server code action: the editor's pending action list
     /// index. The action payload itself never crosses the picker.
     CodeAction(usize),

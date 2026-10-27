@@ -18,11 +18,14 @@ pub struct RemoteChoices {
 
 impl Editor {
     pub(crate) fn open_remote_picker(&mut self) {
-        let mut picker = Picker::new(Kind::RemoteHosts, vec![new_host_item()], true);
-        // The worker's catalog always appends "Add a host…" last; keep it
-        // visible under filtering — it's the only way to enter a new
-        // destination (0.21.0 field report).
-        picker.pinned_tail = 1;
+        let mut picker = Picker::new(
+            Kind::RemoteHosts,
+            vec![new_host_item(), containers_item()],
+            true,
+        );
+        // Keep "Add a host…" and "Containers…" visible under filtering;
+        // they are the pinned actions for destinations not already listed.
+        picker.pinned_tail = 2;
         self.set_picker(PickerGlue::diagnostics(picker));
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return;
@@ -118,7 +121,14 @@ impl Editor {
                         }
                     }
                 }
+                if items.is_empty() {
+                    notes.push(
+                        "no SSH destinations; choose Add a host… and enter host, user@host:port, or ssh://user@host:port/path"
+                            .into(),
+                    );
+                }
                 items.push(new_host_item());
+                items.push(containers_item());
                 Outcome::Success(RemoteChoices {
                     items: items.into(),
                     notes,
@@ -220,6 +230,13 @@ fn new_host_item() -> Item {
         badge: None,
         text: "Add a host…".into(),
         payload: Payload::RemoteConnect,
+    }
+}
+fn containers_item() -> Item {
+    Item {
+        badge: None,
+        text: "Containers…".into(),
+        payload: Payload::ContainerDiscover,
     }
 }
 fn destination_item(directory: RemoteFile, origin: &str) -> Item {

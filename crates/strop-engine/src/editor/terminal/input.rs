@@ -43,6 +43,7 @@ fn window_command(key: KeyEvent) -> Option<WindowCommand> {
         KeyCode::Char('j') | KeyCode::Down => Some(WindowCommand::Move('j')),
         KeyCode::Char('w') => Some(WindowCommand::Move('w')),
         KeyCode::Char('N') => Some(WindowCommand::Inspect),
+        KeyCode::Char('n') if key.modifiers.shift => Some(WindowCommand::Inspect),
         KeyCode::Char('.') => Some(WindowCommand::Literal),
         _ => None,
     }
@@ -139,7 +140,7 @@ impl Editor {
         self.send_terminal_focus(session, false);
         self.view_mut().terminal_input = false;
         self.mode = Mode::Normal;
-        self.message = "terminal snapshot — i returns to live input".into();
+        self.message = "terminal snapshot — i/I/a/A enter input".into();
     }
 
     fn send_terminal_input(&mut self, session: SessionId, input: Input) {
@@ -212,7 +213,7 @@ impl Editor {
         if self.terminals.focused {
             self.send_terminal_focus(session, true);
         }
-        self.message = "terminal input — Ctrl-\\ Ctrl-N enters editor Normal mode".into();
+        self.message = "terminal input — Ctrl-\\ Ctrl-N Normal · Ctrl-W panes".into();
         true
     }
     pub(crate) fn terminal_paste_decision(&mut self, accept: bool) {

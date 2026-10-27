@@ -92,7 +92,17 @@ fn editor_key(key: KeyEvent) -> Option<Key> {
         KeyCode::Char('v') if control => Key::CtrlV,
         KeyCode::Char('\x16') => Key::CtrlV,
         KeyCode::Char('w') if control => Key::CtrlW,
-        KeyCode::Char(ch) => Key::Char(ch),
+        // Enhanced keyboards may report lowercase + SHIFT without an
+        // alternate shifted scalar; legacy frontends already report `G`.
+        KeyCode::Char(ch) => Key::Char(if key.modifiers.shift && !control {
+            let mut uppercase = ch.to_uppercase();
+            match (uppercase.next(), uppercase.next()) {
+                (Some(shifted), None) => shifted,
+                _ => ch,
+            }
+        } else {
+            ch
+        }),
         _ => return None,
     })
 }
@@ -105,6 +115,11 @@ mod tests {
         let mut event = KeyEvent::press(code);
         event.modifiers.alt = alt;
         event.modifiers.control = control;
+        editor.handle_app_event(AppEvent::Input(Input::Key(event)));
+    }
+    fn send_shifted(editor: &mut Editor, ch: char) {
+        let mut event = KeyEvent::press(KeyCode::Char(ch));
+        event.modifiers.shift = true;
         editor.handle_app_event(AppEvent::Input(Input::Key(event)));
     }
     #[test]
@@ -139,19 +154,27 @@ mod tests {
         assert_eq!(editor.buf().text().to_string(), "abc");
     }
     #[test]
-    fn legacy_nul_reaches_query_suggestions() {
+    fn shifted_letters_reach_prompts_pickers_and_normal_motions() {
+        let mut prompt = Editor::new(strop_core::Buffer::from_text("Needle\nneedle\n"));
+        prompt.feed_text("/");
+        send_shifted(&mut prompt, 'n');
+        prompt.feed_text("eedle\r");
+        assert_eq!(
+            prompt.last_search().map(|search| search.query.source()),
+            Some("Needle")
+        );
+
         let directory = tempfile::tempdir().unwrap();
-        let mut editor = Editor::new_in(
+        let mut picker = Editor::new_in(
             strop_core::Buffer::from_text(""),
             directory.path().to_owned(),
         );
-        editor.open_picker(strop_picker::Kind::Files);
-        editor.feed_text("lang");
-        send(&mut editor, KeyCode::Null, false, false);
-        editor.feed(Key::Enter);
-        assert_eq!(
-            editor.picker.as_ref().unwrap().picker.input.text(),
-            "language:"
-        );
+        picker.open_picker(strop_picker::Kind::Files);
+        send_shifted(&mut picker, 'g');
+        assert_eq!(picker.picker.as_ref().unwrap().picker.input.text(), "G");
+
+        let mut normal = Editor::new(strop_core::Buffer::from_text("one\ntwo\nthree\n"));
+        send_shifted(&mut normal, 'g');
+        assert_eq!(normal.buf().line_of(normal.head()), 2);
     }
 }

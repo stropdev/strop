@@ -338,6 +338,7 @@ impl PreviewProbe<'_> {
         match &item.payload {
             Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
+            | Payload::ContainerDiscover
             | Payload::Jump { .. }
             | Payload::SearchOption(_)
             | Payload::CodeAction(_)
@@ -370,6 +371,7 @@ impl Editor {
         let (full, focus_line) = match &item.payload {
             Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
+            | Payload::ContainerDiscover
             | Payload::Jump { .. }
             | Payload::SearchOption(_)
             | Payload::CodeAction(_)

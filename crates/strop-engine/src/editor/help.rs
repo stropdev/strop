@@ -47,7 +47,7 @@ impl Editor {
         }
         text.push_str(concat!(
             "\n[remote]\n",
-            "  Space o / :remote       Choose an SSH destination or add a host; Enter connects\n",
+            "  Space o / :remote       Choose SSH or a running container; Add a host… enters an address\n",
             "  - / Backspace           Visit parent directory and retain the selected child\n",
             "  :remote root / home     Browse remote root or negotiated home directory\n",
             "  :remote worker [URI]    Explicit worker consent for Git/LSP/search; no edit permit\n",
@@ -126,6 +126,7 @@ impl Editor {
             "\n[documentation]\n",
             "  Enter on hover          Open full searchable documentation; Ctrl-O returns\n",
             "  :containers               Attach to a running container (read-only browse)\n",
+            "  :container-worker         Enable verified services for the attached container\n",
         ));
         text.push_str("\nSupported language filters:\n  ");
         for (index, language) in strop_core::languages::language_names().enumerate() {

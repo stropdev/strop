@@ -24,7 +24,7 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
-        keys: "i a",
+        keys: "i I a A",
         desc: "terminal Normal inspection → live child input (never relaunches an exited session)",
         sections: &["terminal"],
         live: true,

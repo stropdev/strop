@@ -24,6 +24,19 @@ impl Editor {
         let session = self.terminal_document(document)?.session;
         self.terminals.entries.get(&session)?.title.as_deref()
     }
+    /// The active terminal chord's complete escape grammar, while it pends.
+    pub fn terminal_prefix_hint(&self) -> Option<&'static str> {
+        let session = self.terminal_document(self.current())?.session;
+        let prefix = self
+            .terminals
+            .prefix
+            .as_ref()
+            .filter(|prefix| prefix.session == session)?;
+        Some(match prefix.kind {
+            PrefixKind::Escape => "ctrl-\\ ctrl-n normal · any other key sends to child",
+            PrefixKind::Window => "ctrl-w h/j/k/l/w panes · N normal · . literal",
+        })
+    }
     pub fn terminal_has_new_output(&self, document: DocumentId) -> bool {
         let Some(source) = self.terminal_document(document) else {
             return false;

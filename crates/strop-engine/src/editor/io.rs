@@ -607,6 +607,25 @@ impl Editor {
                         };
                         self.message.clear();
                         self.finish_open(id, key.intent);
+                        if self.current() == id {
+                            if matches!(&key.path, FileTarget::Container { .. }) {
+                                self.message =
+                                    "container is read-only — :container-worker for services"
+                                        .into();
+                            } else if matches!(&key.path, FileTarget::Remote(_))
+                                && self.buf().readonly
+                            {
+                                self.message = if matches!(
+                                    self.buf().readonly_reason,
+                                    Some(strop_core::ReadonlyReason::RemoteAuthority)
+                                ) {
+                                    "remote is read-only — :remote edit to edit; :remote worker for search/Git/LSP"
+                                } else {
+                                    "remote browse is read-only — :remote worker for search/Git/LSP; :remote edit applies to files"
+                                }
+                                .into();
+                            }
+                        }
                         // WK07: an opened remote workspace on an admitted
                         // endpoint gains a notify subscription through its
                         // worker lease; unadmitted hosts never deploy.

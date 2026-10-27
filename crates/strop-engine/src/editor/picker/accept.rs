@@ -14,6 +14,7 @@ impl Editor {
                 super::super::io::OpenIntent::Browse,
             ),
             Payload::RemoteConnect => self.open_remote_address(),
+            Payload::ContainerDiscover => self.request_containers(),
             // R03: the toggle flips the session default and the row
             // re-renders with the new value
             Payload::SearchOption(setting) => {

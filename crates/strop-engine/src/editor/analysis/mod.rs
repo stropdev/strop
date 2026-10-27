@@ -43,6 +43,9 @@ pub struct FrameAnalysis {
 pub struct SearchSummary {
     pub count: usize,
     pub hits: Vec<strop_grammar::SearchMatch>,
+    /// One-based global match numbers, aligned with `hits`.
+    #[serde(default)]
+    pub ordinals: Vec<usize>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum AnalysisEvent {
@@ -396,6 +399,26 @@ impl Editor {
             .as_ref()?
             .search
             .as_ref()
+    }
+
+    /// One-based current match and total, once the asynchronous search
+    /// summary covering the caret has landed. Navigation never scans here.
+    pub fn search_position(&self) -> Option<(usize, usize)> {
+        let query = self.current_search_query().ok().flatten()?;
+        let summary = self.search_summary(&query)?.as_ref().ok()?;
+        let head = self.head();
+        let line_end = self.buf().line_end(self.buf().line_of(head));
+        let before_line_end = head < line_end && self.buf().ceil_boundary(head + 1) == line_end;
+        summary
+            .hits
+            .iter()
+            .zip(&summary.ordinals)
+            .find(|(hit, _)| {
+                (hit.start.get() <= head && head < hit.end.get())
+                    || (hit.is_empty() && hit.start.get() == head)
+                    || (before_line_end && hit.start.get() == line_end)
+            })
+            .map(|(_, ordinal)| (*ordinal, summary.count))
     }
 
     fn request_analysis(&mut self, key: AnalysisKey, rope: ropey::Rope) {

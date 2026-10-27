@@ -81,9 +81,10 @@ struct Modeline {
     line: usize,
     col: usize,
     percent: Option<usize>,
-    indent: String,   // "Spaces:4" — the effective setting (0051 R08)
-    bare: bool,       // degenerate layout: mode accent · position only
-    bare_chip: usize, // cells the chip may occupy in that layout
+    search: Option<(usize, usize)>, // current and total matches
+    indent: String,                 // "Spaces:4" — the effective setting (0051 R08)
+    bare: bool,                     // degenerate layout: mode accent · position only
+    bare_chip: usize,               // cells the chip may occupy in that layout
 }
 
 impl Modeline {
@@ -188,6 +189,7 @@ impl Modeline {
             line,
             col,
             percent: (!terminal).then_some(percent),
+            search: (!terminal).then(|| editor.search_position()).flatten(),
             indent: if terminal {
                 String::new()
             } else {
@@ -322,18 +324,23 @@ impl Modeline {
         self.bare_chip = cells.saturating_sub(pos_budget);
     }
 
-    /// `line:col` and, while there is room, the content percentage —
-    /// units unchanged from the 0.15 modeline (1-based line, 1-based
-    /// byte column).
+    /// `current/total` search position, then `line:col` and, while there
+    /// is room, the content percentage (1-based line and byte column).
     fn position(&self) -> String {
+        let search = self
+            .search
+            .map(|(current, total)| format!("{current}/{total} "))
+            .unwrap_or_default();
         match self.percent {
-            Some(percent) => format!("{}:{} {}%", self.line, self.col, percent),
-            None => format!("{}:{}", self.line, self.col),
+            Some(percent) => format!("{search}{}:{} {}%", self.line, self.col, percent),
+            None => format!("{search}{}:{}", self.line, self.col),
         }
     }
 
     fn position_width(&self) -> usize {
-        digits(self.line)
+        self.search.map_or(0, |(current, total)| {
+            digits(current) + 1 + digits(total) + 1
+        }) + digits(self.line)
             + 1
             + digits(self.col)
             + self.percent.map_or(0, |percent| 2 + digits(percent))
@@ -701,6 +708,9 @@ fn file_display(editor: &Editor) -> (String, String) {
 /// filtered here — whatever wins is what the user sees.
 fn transient(editor: &Editor) -> String {
     if let Some(phase) = editor.terminal_phase(editor.current()) {
+        if let Some(prefix) = editor.terminal_prefix_hint() {
+            return prefix.to_owned();
+        }
         if editor.pending().is_active() {
             return editor.pending().text().to_owned();
         }
@@ -728,18 +738,18 @@ fn transient(editor: &Editor) -> String {
         // 0065 S2: the transient names the escape out of every terminal
         // state — the escape is the discovery surface, not a secret.
         let hint = if editor.terminal_input_active() {
-            "ctrl-\\ ctrl-n normal"
+            "ctrl-\\ ctrl-n normal · ctrl-w panes"
         } else if new_output {
             "new output · :terminal-refresh · i follows"
         } else if phase == "running" || phase == "starting" || phase == "closing" {
-            "snapshot · i returns to input"
+            "snapshot · i/I/a/A input"
         } else {
             ""
         };
         let capture = if editor.terminal_capture_enabled() {
-            "PRIVATE CAPTURE"
+            "input + output RECORDED"
         } else {
-            "private input"
+            "input private"
         };
         return if hint.is_empty() {
             format!("{phase} · {capture}")

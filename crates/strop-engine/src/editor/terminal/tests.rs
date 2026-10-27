@@ -470,6 +470,58 @@ fn terminal_refresh_remaps_anchors_across_scrollback_drops() {
     assert_eq!(editor.buf().line_of(editor.head()), 0);
 }
 
+#[test]
+fn terminal_insert_keys_and_edit_refusals_explain_mode_switching() {
+    let mut editor = Editor::new(Buffer::from_text("origin"));
+    editor.terminal_fixture(&[("safe", Style::default())], Phase::Running);
+    let ctrl = |code| {
+        strop_core::frontend_input::Input::Key(strop_core::frontend_input::KeyEvent {
+            code,
+            modifiers: strop_core::frontend_input::Modifiers {
+                control: true,
+                ..Default::default()
+            },
+            ..strop_core::frontend_input::KeyEvent::press(code)
+        })
+    };
+
+    for key in ['i', 'I', 'a', 'A'] {
+        editor.feed(Key::Char(key));
+        assert!(editor.terminal_input_active(), "{key} enters input");
+        editor.feed_terminal(ctrl(strop_core::frontend_input::KeyCode::Char('\\')));
+        editor.feed_terminal(ctrl(strop_core::frontend_input::KeyCode::Char('n')));
+        assert!(!editor.terminal_input_active());
+    }
+
+    editor.feed_text("vc");
+    assert_eq!(editor.mode, Mode::Normal);
+    assert!(editor.message.contains("i/I/a/A enter input"));
+}
+
+#[test]
+fn terminal_window_prefix_accepts_lowercase_scalar_plus_shift_n() {
+    use strop_core::frontend_input::{Input, KeyCode, KeyEvent, Modifiers};
+
+    let mut editor = Editor::new(Buffer::from_text("origin"));
+    editor.terminal_fixture(&[("safe", Style::default())], Phase::Running);
+    assert!(editor.enter_terminal_input());
+    let event = |code, shift| {
+        Input::Key(KeyEvent {
+            code,
+            modifiers: Modifiers {
+                shift,
+                control: !shift,
+                ..Default::default()
+            },
+            ..KeyEvent::press(code)
+        })
+    };
+    editor.feed_terminal(event(KeyCode::Char('w'), false));
+    editor.feed_terminal(event(KeyCode::Char('n'), true));
+    assert!(!editor.terminal_input_active());
+    assert_eq!(editor.mode, Mode::Normal);
+}
+
 /// 0065 S4: the full motion surface over the projection — j/k, gg/G,
 /// Ctrl-D/U, / and ? with n/N, and visual yank — asserted, not assumed.
 #[test]

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.46.2 — 2026-10-27
+
+### Added
+
+- **Search position on the modeline** (0075): buffer search shows `current/total` beside the cursor position and follows `n`/`N`. Global ordinals come from the existing asynchronous search summary; navigation and painting do not rescan the buffer.
+- **One remote and container door**: `Space o` now offers running containers alongside SSH destinations and Add a host. First read-only remote/container opens name the exact worker or editing command that enables the next step.
+
+### Changed
+
+- **Discoverable terminal modes**: terminal input advertises `Ctrl-\ Ctrl-N` and the `Ctrl-W` pane grammar, including while a chord is pending. Normal inspection accepts `i`, `I`, `a` and `A` for live input; readonly edit refusals explain that transition. Status text now distinguishes private input from recorded input and output.
+
+### Fixed
+
+- **Shifted letters reach the editor**: lowercase scalar + `SHIFT` events are normalized after terminal ownership, so uppercase search/file-find input, Normal commands such as `G`, and terminal `Ctrl-W N` work with enhanced terminal keyboards. Child PTY input remains lossless.
+
 ## 0.46.1 — 2026-10-27
 
 ### Added

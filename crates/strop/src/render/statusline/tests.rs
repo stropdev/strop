@@ -134,6 +134,50 @@ fn percent_counts_content_lines_not_the_phantom_row() {
 }
 
 #[test]
+fn modeline_search_position_follows_repeat_navigation() {
+    let mut editor = editor("zero hit\none hit\ntwo hit\nthree hit\n", None);
+    editor.feed_text("/hit<cr>");
+    editor.analysis_fixture();
+    let first = row(&editor, 60, 4);
+    assert!(first.contains("1/4"), "initial match: {first:?}");
+
+    editor.feed_text("n");
+    let second = row(&editor, 60, 4);
+    assert!(second.contains("2/4"), "next match: {second:?}");
+
+    editor.feed_text("N");
+    let again = row(&editor, 60, 4);
+    assert!(again.contains("1/4"), "reverse match: {again:?}");
+}
+
+#[test]
+fn modeline_search_position_includes_zero_width_line_boundaries() {
+    let mut line_start = editor("alpha\n\nbeta", None);
+    line_start.feed_text("/^<cr>");
+    line_start.analysis_fixture();
+    let first = row(&line_start, 60, 4);
+    assert!(first.contains("2/3"), "line-start match: {first:?}");
+    line_start.feed_text("n");
+    let following = row(&line_start, 60, 4);
+    assert!(
+        following.contains("3/3"),
+        "next line-start match: {following:?}"
+    );
+
+    let mut line_end = editor("alpha\n\nbeta", None);
+    line_end.feed_text("/$<cr>");
+    line_end.analysis_fixture();
+    let end = row(&line_end, 60, 4);
+    assert!(end.contains("1/2"), "line-end match: {end:?}");
+
+    let mut empty = editor("alpha\n\nbeta", None);
+    empty.feed_text("/^$<cr>");
+    empty.analysis_fixture();
+    let row = row(&empty, 60, 4);
+    assert!(row.contains("1/1"), "empty-line match: {row:?}");
+}
+
+#[test]
 fn git_marks_and_flags_render_quietly_beside_the_message() {
     let mut editor = editor("a\n", Some("/w/f.rs"));
     editor.fixture_buf_mut().dirty = true;

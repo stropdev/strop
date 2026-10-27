@@ -727,7 +727,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "space o",
-        desc: "open remote destination",
+        desc: "remote & containers",
         sections: &["leader"],
         live: true,
         id: "remote-open",

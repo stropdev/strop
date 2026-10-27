@@ -33,12 +33,7 @@ fn terminal_escapes_render_live_in_help() {
         .iter()
         .filter(|b| b.sections.contains(&"terminal"))
         .collect();
-    for keys in [
-        "ctrl-\\ ctrl-n",
-        "ctrl-4 ctrl-n",
-        "i a",
-        ":terminal-refresh",
-    ] {
+    for keys in ["ctrl-\\ ctrl-n", "ctrl-4 ctrl-n", ":terminal-refresh"] {
         assert!(
             terminal.iter().any(|b| b.live && b.keys == keys),
             "terminal escape {keys:?} has no live row in the terminal section"

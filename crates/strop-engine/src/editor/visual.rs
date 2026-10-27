@@ -43,7 +43,7 @@ impl Editor {
                     return;
                 };
                 if self.buf().readonly {
-                    self.message = "readonly buffer".into();
+                    self.refuse_readonly();
                     self.mode = Mode::Normal;
                     return;
                 }
@@ -88,7 +88,7 @@ impl Editor {
                     return;
                 }
                 if self.buf().readonly && op != Op::Yank {
-                    self.message = "readonly buffer".into();
+                    self.refuse_readonly();
                     self.mode = Mode::Normal;
                     return;
                 }
@@ -235,7 +235,7 @@ impl Editor {
     /// newline-joined characterwise text (the normal cascade's rule).
     fn visual_operate_cascade(&mut self, op: Op) {
         if self.buf().readonly && op != Op::Yank {
-            self.message = "readonly buffer".into();
+            self.refuse_readonly();
             self.mode = Mode::Normal;
             return;
         }
@@ -300,7 +300,7 @@ impl Editor {
     /// `S<c>` wraps it.
     fn toggle_visual_comments(&mut self) {
         if self.buf().readonly {
-            self.message = "readonly buffer".into();
+            self.refuse_readonly();
             self.mode = Mode::Normal;
             return;
         }
@@ -392,7 +392,7 @@ impl Editor {
             Action::Row { .. } => self.message = "command unavailable in visual mode".into(),
             Action::VisualSurround(c) => {
                 if self.buf().readonly {
-                    self.message = "readonly buffer".into();
+                    self.refuse_readonly();
                     return;
                 }
                 let Some(range) = self.visual_range() else {

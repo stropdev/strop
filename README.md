@@ -42,7 +42,7 @@ v V                           visual           u ctrl-r .           undo, redo, 
 "a … "+                       registers        :w :q :e :help        ex line
 Q                            multicursor      Space c              cursor below
 
-Space  f files · o remote · b buffers · / Search · R Search with replacement · ? help
+Space  f files · o remote/containers · b buffers · / Search · R replace · ? help
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 
@@ -186,7 +186,9 @@ use `fpath:modules/jweb/ parser` to scope the directory while ranking `parser`.
 Buffer `/` and `?` search is case-insensitive by default. Start the query with
 `case:sensitive` for exact case; `case:ignore` / `case:insensitive` explicitly
 select insensitive matching. Vim's `\C` and `\c` remain supported, including in
-`n`/`N` and highlights. In picker and search-prompt fields, `Ctrl-R {register}`
+`n`/`N` and highlights. The modeline shows the current match and total as
+`current/total`, updating as `n`/`N` moves. In picker and search-prompt fields,
+`Ctrl-R {register}`
 inserts a yank; field Normal `p`/`P` also pastes. Search's `Ctrl-R` replacement
 toggle is unchanged. Multiline registers are refused in one-line fields.
 
@@ -322,8 +324,9 @@ The modeline identifies partial byte windows, whose line numbers are window-rela
 
 Inside strop:
 
-Press **Space o** or run **`:remote`** to choose a known/connected destination or
-select **Add a host**. Enter `host`, `user@host:port`, or a complete SSH path.
+Press **Space o** or run **`:remote`** to choose a known/connected destination,
+select **Add a host**, or choose **Containers** to attach to a running container.
+Enter `host`, `user@host:port`, or a complete SSH path.
 Enter is the connection action; opening the chooser does not authenticate.
 New hosts start at `/`; successful directory choices are remembered privately.
 `:remote home` uses negotiated remote-home expansion; `:remote root` returns to `/`.
@@ -451,10 +454,12 @@ local choice, never a fallback against a remote-looking path.
 
 - **Terminal input:** Esc, Ctrl-C, Ctrl-R, Alt and function keys go to the child.
   **Ctrl-\\ Ctrl-N** enters editor Normal mode; legacy terminals may spell the
-  prefix as Ctrl-4. Legacy Esc/Alt ambiguity remains an outer-terminal limitation.
+  prefix as Ctrl-4. **Ctrl-W h/j/k/l/w** changes panes, **Ctrl-W N** enters Normal,
+  and **Ctrl-W .** sends a literal Ctrl-W. The modeline names both escapes and
+  expands the pending chord. Legacy Esc/Alt ambiguity remains an outer-terminal limitation.
 - **Normal inspection:** ordinary motions, search, selection and yank use a pinned,
   read-only logical text snapshot. Output continues without moving that snapshot;
-  **i** / **a** follows live input again. Other inspecting panes keep their snapshot.
+  **i**, **I**, **a** or **A** follows live input again. Other inspecting panes keep their snapshot.
   An exited session stays readable and never restarts implicitly.
 - **Paste:** bracketed paste follows the child's negotiated mode. Otherwise,
   multiline/control input is held for explicit consent: enter Normal mode, then
@@ -477,7 +482,8 @@ Ghostty installation. See the [terminal contract](plans/0055-embedded-terminal-t
 
 ## Container workspaces
 
-Run **`:containers`** to select a running container. Directory browsing,
+Run **`:containers`** or choose **Space o → Containers** to select a running
+container. Directory browsing,
 file reads and tab completion stay read-only and do not install software.
 Run **`:container-worker`** in an attached container buffer to authorize
 a verified native worker in that container's selected Docker engine,

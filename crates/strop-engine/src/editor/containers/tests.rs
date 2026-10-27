@@ -93,6 +93,20 @@ fn file(editor: &mut Editor, path: &str, text: &str) {
 }
 
 #[test]
+fn container_attach_names_the_service_command_once() {
+    let mut editor = editor();
+    editor.attach_container("a".repeat(64));
+    deliver(&mut editor, ContainerResult::Attached(identity('a')));
+    listing(&mut editor, "/", &[]);
+    assert_eq!(
+        editor.message,
+        "container is read-only — :container-worker for services"
+    );
+    editor.feed(Key::Char('j'));
+    assert!(editor.message.is_empty());
+}
+
+#[test]
 fn attached_container_uses_shared_directory_navigation_without_local_paths() {
     let mut editor = editor();
     editor.attach_container("a".repeat(64));

@@ -54,23 +54,40 @@ pub fn summarize(
         }
         if let Some(start) = visible_start {
             windows.push(start..visible_end);
+        } else if end == 0 {
+            // Empty rows have no glyph interval, but ^/$ still land at
+            // their visible caret position and need a global ordinal.
+            windows.push(start..start);
         }
     }
     let query = query.cancellable(cancel.clone());
     let mut summary = SearchSummary {
         count: 0,
         hits: Vec::new(),
+        ordinals: Vec::new(),
     };
     strop_grammar::search_visit(buffer, &query, |hit| {
         summary.count += 1;
-        let at = windows.partition_point(|window| window.end <= hit.start.get());
-        if windows
-            .get(at)
-            .is_some_and(|window| window.start < hit.end.get())
-        {
+        let position = hit.start.get();
+        let at = windows.partition_point(|window| {
+            if hit.is_empty() {
+                window.end < position
+            } else {
+                window.end <= position
+            }
+        });
+        if windows.get(at).is_some_and(|window| {
+            if hit.is_empty() {
+                window.start <= position && position <= window.end
+            } else {
+                window.start < hit.end.get()
+            }
+        }) {
             summary.hits.push(hit);
+            summary.ordinals.push(summary.count);
         }
         std::ops::ControlFlow::Continue(())
     })?;
+    debug_assert_eq!(summary.hits.len(), summary.ordinals.len());
     Ok(summary)
 }

@@ -238,18 +238,33 @@ fn terminal_input_and_inspection_present_distinct_states() {
         "{}",
         editor.message()
     );
+    editor.set_message("");
+    terminal
+        .draw(|frame| crate::render::paint(&mut editor, frame))
+        .unwrap();
+    // The service-less fixture reports its first synthetic resize; clear
+    // that transient after preparation to inspect the steady-state hint.
+    editor.set_message("");
     terminal
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
     assert!(row.contains(" TERMINAL "), "{row}");
+    assert!(row.contains("ctrl-\\ ctrl-n normal"), "{row}");
+    assert!(row.contains("ctrl-w panes"), "{row}");
     let (x, _) = find_cell(&buffer, " TERMINAL ").unwrap();
     assert_eq!(buffer[(x, statusline_y)].bg, super::terminal_chip());
+    // A pending escape names its completion instead of looking stuck.
+    ctrl(&mut editor, '\\');
+    terminal
+        .draw(|frame| crate::render::paint(&mut editor, frame))
+        .unwrap();
+    let row = row_text(terminal.backend().buffer(), statusline_y);
+    assert!(row.contains("any other key sends to child"), "{row}");
     // Ctrl-\ Ctrl-N leaves to inspection: NORMAL chip in the normal
     // accent; with the entry message spent, the steady-state hint names
     // the way back.
-    ctrl(&mut editor, '\\');
     ctrl(&mut editor, 'n');
     assert!(!editor.terminal_input_active());
     assert!(
@@ -264,7 +279,6 @@ fn terminal_input_and_inspection_present_distinct_states() {
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
     assert!(row.contains(" NORMAL "), "{row}");
-    assert!(row.contains("snapshot · i returns to input"), "{row}");
     let (x, _) = find_cell(&buffer, " NORMAL ").unwrap();
     assert_eq!(buffer[(x, statusline_y)].bg, super::accent());
 }

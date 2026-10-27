@@ -67,7 +67,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("filter", "filter remote directory by literal filename"),
     (
         "remote",
-        "choose remote destination; edit/verify/root/home/connect/disconnect/clear/list",
+        "choose remote destination or running container; edit/verify/root/home/connect/disconnect/clear/list",
     ),
     ("trust", "authorize the pending endpoint/project command"),
     (
@@ -173,6 +173,14 @@ impl Editor {
         }
     }
 
+    pub(crate) fn refuse_readonly(&mut self) {
+        self.message = if self.terminal_document(self.current()).is_some() {
+            "terminal snapshot — i/I/a/A enter input".into()
+        } else {
+            "readonly buffer".into()
+        };
+    }
+
     /// A grammar command: motions move, yanks survive readonly, edits
     /// refuse there. The one grammar entrypoint — prompts, aliases and
     /// the Walker all land here.
@@ -180,7 +188,7 @@ impl Editor {
         match command.op {
             None => self.move_cursor(command),
             Some(grammar::Op::Yank) if self.buf().readonly => self.yank_only(command),
-            Some(_) if self.buf().readonly => self.message = "readonly buffer".into(),
+            Some(_) if self.buf().readonly => self.refuse_readonly(),
             Some(_) => self.execute(command),
         }
     }
@@ -256,7 +264,7 @@ impl Editor {
                 _ => false,
             };
             if !allowed {
-                self.message = "readonly buffer".into();
+                self.refuse_readonly();
                 return;
             }
         }
