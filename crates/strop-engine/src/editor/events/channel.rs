@@ -240,6 +240,18 @@ fn lock(shared: &Shared) -> MutexGuard<'_, State> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// A one-shot terminal fact must never be lost or park the editor's own
+/// cancellation path. Worker item batches stay bounded; completion is not a batch.
+fn terminal_fact(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::Picker(crate::editor::picker::PickerEvent {
+            msg: strop_picker::PickerMsg::Finished(_),
+            ..
+        })
+    )
+}
+
 /// Whether a semantic event of `bytes` may be admitted. An empty lane
 /// always admits: a single oversize paste must not strand input behind
 /// its own bound.
@@ -290,7 +302,7 @@ impl EventSender {
             return Err(Box::new(SendError(event)));
         }
         let (class, name, bytes) = classify(&event);
-        if matches!(class, Class::Semantic) && !has_room(&state, bytes) {
+        if matches!(class, Class::Semantic) && !terminal_fact(&event) && !has_room(&state, bytes) {
             state.record_refusal(name, bytes);
             return Err(Box::new(SendError(event)));
         }
@@ -318,7 +330,7 @@ impl EventSender {
             if !state.receiver_live {
                 return Err(Box::new(SendError(event)));
             }
-            if has_room(&state, bytes) {
+            if terminal_fact(&event) || has_room(&state, bytes) {
                 insert(&mut state, event);
                 drop(state);
                 self.shared.available.notify_one();

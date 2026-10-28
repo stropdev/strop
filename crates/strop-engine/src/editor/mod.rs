@@ -262,6 +262,9 @@ pub struct Editor {
     pub(crate) preview_rx: Option<std::sync::mpsc::Receiver<PreviewResult>>,
     pub(crate) preview_loads:
         HashMap<strop_workspace::ResourceLocation, strop_core::worker::Load<PreviewKey>>,
+    pub(crate) preview_watchdog: picker::PreviewWatchdog,
+    /// Insertion order for bounded preview cache eviction.
+    pub(crate) preview_cache_order: std::collections::VecDeque<strop_workspace::ResourceLocation>,
     pub(crate) hunks: git_memory::HunkSet,
     /// HEAD↔index — the staged set (0014 wave 4); rendered in the
     /// gutter's committed-adjacent color.
@@ -507,6 +510,8 @@ impl Editor {
             preview_tx,
             preview_rx: Some(preview_rx),
             preview_loads: HashMap::new(),
+            preview_watchdog: picker::PreviewWatchdog::default(),
+            preview_cache_order: std::collections::VecDeque::new(),
             jumplist_past: Vec::new(),
             jumplist_future: Vec::new(),
             lsp_servers: Vec::new(),

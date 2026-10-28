@@ -1,6 +1,6 @@
 //! One physical source job and one replaceable pending request per editor.
 use super::{
-    flow::{Flow, SourceSink, StreamSender},
+    flow::{BatchProgress, Flow, SourceSink, StreamSender},
     PickerMsg, SelectionPolicy, SourceSnapshot,
 };
 use crate::query::SearchQuery;
@@ -8,10 +8,11 @@ use parking_lot::{Condvar, Mutex};
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Weak,
     },
     thread::JoinHandle,
+    time::{Duration, Instant},
 };
 use strop_core::worker::{
     self, CancelHandle, CancelReason, CancelToken, Failure, FailureKind, Outcome, PreparedWork,
@@ -29,23 +30,40 @@ pub enum SearchWorker {
     Admit(WorkerAdmission),
 }
 
+const STALL_TIMEOUT: Duration = Duration::from_secs(20);
+const STALL_WARNING: &str = "source made no batch progress for 20s; cancelled the stalled request";
+const STALLED_FAILURE: &str = "source worker is unavailable after a filesystem stall";
+
 type Work = Box<dyn FnOnce(CancelToken) -> Outcome<()> + Send>;
 struct Pending {
+    request: u64,
+    progress: Arc<BatchProgress>,
+    tx: StreamSender,
     prepared: PreparedWork<()>,
     cancel: CancelHandle,
     work: Work,
 }
+struct Running {
+    request: u64,
+    progress: Arc<BatchProgress>,
+    tx: StreamSender,
+    cancel: Option<CancelHandle>,
+    stalled: bool,
+}
 #[derive(Default)]
 struct State {
     pending: Option<Pending>,
-    running: Option<CancelHandle>,
+    running: Option<Running>,
 }
 #[derive(Default)]
 struct Shared {
     state: Mutex<State>,
     wake: Condvar,
+    watchdog_wake: Condvar,
+    next_request: AtomicU64,
     busy: AtomicBool,
     closing: AtomicBool,
+    stalled: AtomicBool,
     backlog: Arc<Flow>,
     /// Retained per-scope baselines (0063 residual): hint invalidation
     /// from the editor lands here; the source thread refreshes against
@@ -56,15 +74,109 @@ struct Shared {
 pub struct SourceWorker {
     shared: Arc<Shared>,
     thread: Option<JoinHandle<()>>,
+    _watchdog: Option<JoinHandle<()>>,
 }
+fn complete_request(shared: &Weak<Shared>, request: u64) {
+    let Some(shared) = shared.upgrade() else {
+        return;
+    };
+    let finished = {
+        let mut state = shared.state.lock();
+        let finished = if state
+            .running
+            .as_ref()
+            .is_some_and(|running| running.request == request)
+        {
+            state.running.take()
+        } else {
+            None
+        };
+        if finished.is_some() {
+            shared.stalled.store(false, Ordering::Release);
+            shared
+                .busy
+                .store(state.pending.is_some(), Ordering::Release);
+        }
+        finished
+    };
+    drop(finished);
+    shared.watchdog_wake.notify_all();
+}
+
+fn run_watchdog(shared: Arc<Shared>, timeout: Duration) {
+    let mut observed: Option<(u64, usize, Instant)> = None;
+    let mut state = shared.state.lock();
+    loop {
+        if shared.closing.load(Ordering::Acquire) {
+            return;
+        }
+        let Some(running) = state.running.as_ref() else {
+            observed = None;
+            shared.watchdog_wake.wait(&mut state);
+            continue;
+        };
+        if running.stalled {
+            observed = None;
+            shared.watchdog_wake.wait(&mut state);
+            continue;
+        }
+        let now = Instant::now();
+        let progress = running.progress.get();
+        if running.progress.delivery_waiting() {
+            observed = Some((running.request, progress, now));
+            shared.watchdog_wake.wait_for(&mut state, timeout);
+            continue;
+        }
+        let unchanged = observed
+            .is_some_and(|(request, ticks, _)| request == running.request && ticks == progress);
+        if unchanged
+            && observed.is_some_and(|(_, _, since)| now.saturating_duration_since(since) >= timeout)
+        {
+            if running.progress.get() != progress || running.progress.delivery_waiting() {
+                observed = Some((running.request, running.progress.get(), now));
+                continue;
+            }
+            let running = state.running.as_mut().expect("observed request is running");
+            running.stalled = true;
+            let tx = running.tx.clone();
+            let cancel = running.cancel.take();
+            let pending = state.pending.take();
+            shared.stalled.store(true, Ordering::Release);
+            drop(state);
+            let _ = tx.control(PickerMsg::Warning(STALL_WARNING.into()));
+            if let Some(cancel) = cancel {
+                cancel.cancel(CancelReason::OwnerClosed);
+            }
+            if let Some(pending) = pending {
+                pending.cancel.cancel(CancelReason::OwnerClosed);
+            }
+            state = shared.state.lock();
+            continue;
+        }
+        if !unchanged {
+            observed = Some((running.request, progress, now));
+        }
+        let elapsed = observed.as_ref().map_or(Duration::ZERO, |(_, _, since)| {
+            now.saturating_duration_since(*since)
+        });
+        shared
+            .watchdog_wake
+            .wait_for(&mut state, timeout.saturating_sub(elapsed));
+    }
+}
+
 impl SourceWorker {
     pub fn new() -> Result<Self, Failure> {
+        Self::with_stall_timeout(STALL_TIMEOUT)
+    }
+
+    fn with_stall_timeout(stall_timeout: Duration) -> Result<Self, Failure> {
         let shared = Arc::new(Shared::default());
         let worker = shared.clone();
         let thread = std::thread::Builder::new()
             .name("picker-source".into())
             .spawn(move || loop {
-                let (prepared, work) = {
+                let (request, prepared, work) = {
                     let mut state = worker.state.lock();
                     while state.pending.is_none() && !worker.closing.load(Ordering::Acquire) {
                         worker.wake.wait(&mut state);
@@ -73,6 +185,9 @@ impl SourceWorker {
                         return;
                     }
                     let Some(Pending {
+                        request,
+                        progress,
+                        tx,
                         prepared,
                         cancel,
                         work,
@@ -81,24 +196,37 @@ impl SourceWorker {
                         continue;
                     };
                     debug_assert!(state.running.is_none());
-                    state.running = Some(cancel);
-                    (prepared, work)
+                    state.running = Some(Running {
+                        request,
+                        progress,
+                        tx,
+                        cancel: Some(cancel),
+                        stalled: false,
+                    });
+                    (request, prepared, work)
                 };
+                worker.watchdog_wake.notify_all();
                 prepared.run(work);
-                let finished = {
-                    let mut state = worker.state.lock();
-                    let finished = state.running.take();
-                    worker
-                        .busy
-                        .store(state.pending.is_some(), Ordering::Release);
-                    finished
-                };
-                drop(finished);
+                complete_request(&Arc::downgrade(&worker), request);
             })
             .map_err(|error| Failure::new(FailureKind::ThreadStart, error.to_string()))?;
+        let watchdog_shared = shared.clone();
+        let watchdog = match std::thread::Builder::new()
+            .name("picker-source-watchdog".into())
+            .spawn(move || run_watchdog(watchdog_shared, stall_timeout))
+        {
+            Ok(watchdog) => watchdog,
+            Err(error) => {
+                shared.closing.store(true, Ordering::Release);
+                shared.wake.notify_one();
+                let _ = thread.join();
+                return Err(Failure::new(FailureKind::ThreadStart, error.to_string()));
+            }
+        };
         Ok(Self {
             shared,
             thread: Some(thread),
+            _watchdog: Some(watchdog),
         })
     }
 
@@ -128,7 +256,9 @@ impl SourceWorker {
         sender: impl Into<SourceSink>,
         work: impl FnOnce(StreamSender, CancelToken) -> Outcome<()> + Send + 'static,
     ) -> CancelHandle {
-        let tx = StreamSender::new(sender.into(), self.shared.backlog.clone());
+        let request = self.shared.next_request.fetch_add(1, Ordering::AcqRel);
+        let progress = Arc::new(BatchProgress::default());
+        let tx = StreamSender::new(sender.into(), self.shared.backlog.clone(), progress.clone());
         let terminal = tx.clone();
         let prepared = worker::prepare(move |outcome| {
             let _ = terminal.control(PickerMsg::Finished(outcome));
@@ -136,9 +266,11 @@ impl SourceWorker {
         let handle = prepared.cancel_handle();
         let cancel = prepared.cancel_handle();
         let pending = Pending {
+            request,
+            progress,
+            tx: tx.clone(),
             prepared,
             cancel,
-
             work: Box::new(move |token| work(tx, token)),
         };
         let (retired, running) = {
@@ -146,6 +278,13 @@ impl SourceWorker {
             if self.shared.closing.load(Ordering::Acquire) {
                 drop(state);
                 pending.cancel.cancel(CancelReason::Shutdown);
+                return handle;
+            }
+            if self.shared.stalled.load(Ordering::Acquire) {
+                drop(state);
+                pending
+                    .prepared
+                    .run(|_| Outcome::failed(FailureKind::Unavailable, STALLED_FAILURE));
                 return handle;
             }
             let retired = state.pending.replace(pending);
@@ -157,7 +296,9 @@ impl SourceWorker {
             retired.cancel.cancel(CancelReason::Superseded);
         }
         if let Some(running) = running {
-            running.cancel(CancelReason::Superseded);
+            if let Some(cancel) = running.cancel {
+                cancel.cancel(CancelReason::Superseded);
+            }
         }
         self.shared.wake.notify_one();
         handle
@@ -228,7 +369,9 @@ impl SourceWorker {
     }
 
     pub fn busy(&self) -> bool {
-        if self.shared.closing.load(Ordering::Acquire) {
+        if self.shared.closing.load(Ordering::Acquire)
+            || self.shared.stalled.load(Ordering::Acquire)
+        {
             self.thread
                 .as_ref()
                 .is_some_and(|thread| !thread.is_finished())
@@ -247,9 +390,12 @@ impl SourceWorker {
             pending.cancel.cancel(CancelReason::Shutdown);
         }
         if let Some(running) = running {
-            running.cancel(CancelReason::Shutdown);
+            if let Some(cancel) = running.cancel {
+                cancel.cancel(CancelReason::Shutdown);
+            }
         }
         self.shared.wake.notify_one();
+        self.shared.watchdog_wake.notify_all();
     }
 }
 impl Drop for SourceWorker {
@@ -306,6 +452,65 @@ mod tests {
         assert!(matches!(terminal(&third_rx), Outcome::Success(())));
         worker.close();
         worker.thread.take().unwrap().join().unwrap();
+    }
+
+    #[test]
+    fn a_stalled_source_recovers_after_physical_work_returns() {
+        let mut worker = SourceWorker::with_stall_timeout(Duration::from_millis(20)).unwrap();
+        let (first_tx, first_rx) = channel();
+        let (started, entered) = channel();
+        let (release, released) = channel();
+        let _first = worker.submit(first_tx, move |_, _| {
+            started.send(()).unwrap();
+            released.recv().unwrap();
+            Outcome::Success(())
+        });
+        entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        match first_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
+            PickerMsg::Warning(message) => assert!(message.contains("no batch progress")),
+            event => panic!("a stall must be visible: {event:?}"),
+        }
+        assert!(matches!(
+            terminal(&first_rx),
+            Outcome::Cancelled(CancelReason::OwnerClosed)
+        ));
+        assert!(matches!(first_rx.try_recv(), Err(TryRecvError::Empty)));
+        assert!(worker.busy(), "the stalled physical owner is still running");
+
+        let (later_tx, later_rx) = channel();
+        let _later = worker.submit(later_tx, |_, _| panic!("stalled worker ran later work"));
+        assert!(matches!(
+            terminal(&later_rx),
+            Outcome::Failed { failure, .. }
+                if failure.kind == FailureKind::Unavailable
+        ));
+
+        release.send(()).unwrap();
+        let mut state = worker.shared.state.lock();
+        while worker.shared.stalled.load(Ordering::Acquire) {
+            worker.shared.watchdog_wake.wait(&mut state);
+        }
+        assert!(state.running.is_none());
+        drop(state);
+        assert!(!worker.busy());
+
+        let (recovered_tx, recovered_rx) = channel();
+        let (recovered, recovered_entered) = channel();
+        let _recovered = worker.submit(recovered_tx, move |_, _| {
+            recovered.send(()).unwrap();
+            Outcome::Success(())
+        });
+        recovered_entered
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        assert!(matches!(terminal(&recovered_rx), Outcome::Success(())));
+        worker.close();
+        worker.thread.take().unwrap().join().unwrap();
+        worker._watchdog.take().unwrap().join().unwrap();
+        assert!(matches!(
+            first_rx.try_recv(),
+            Err(TryRecvError::Disconnected)
+        ));
     }
 
     #[test]

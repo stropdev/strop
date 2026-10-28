@@ -2,11 +2,20 @@
 //! channel identity from a private installation receipt (never path
 //! substrings), latest-release resolution through the generated release
 //! catalog, mandatory sha256 verification, staged write + atomic rename
-//! over self. Network goes through curl (install.sh already assumes it;
-//! no HTTP stack in the binary). Progress stages ride indicatif.
+//! over self. Downloads use rustls, checksums use sha2, and extraction is
+//! constrained to the release archive's single-binary layout. Progress
+//! stages ride indicatif.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::time::Duration;
+
+use sha2::{Digest, Sha256};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const MAX_CATALOG_BYTES: u64 = 1024 * 1024;
+const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Private installation receipt written next to the binary by install.sh
 /// and refreshed by every successful self-update. Channel identity comes
@@ -201,29 +210,119 @@ fn target_triple(os: &str, arch: &str) -> Result<&'static str, String> {
     })
 }
 
-fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
-    let out = Command::new("curl")
-        .args(["-fsSL"])
-        .args(args)
-        .output()
-        .map_err(|e| format!("curl: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("curl failed for {}", args.last().unwrap_or(&"")));
-    }
-    Ok(out.stdout)
+fn http_response(url: &str) -> Result<ureq::Response, String> {
+    ureq::AgentBuilder::new()
+        .timeout_connect(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .get(url)
+        .call()
+        .map_err(|error| format!("download failed: {url}: {error}"))
 }
 
-fn curl_to(url: &str, dest: &Path) -> Result<(), String> {
-    let out = Command::new("curl")
-        .args(["-fsSL", "-o"])
-        .arg(dest)
-        .arg(url)
-        .output()
-        .map_err(|e| format!("curl: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("download failed: {url}"));
+fn http_get(url: &str, limit: u64) -> Result<Vec<u8>, String> {
+    let mut body = Vec::new();
+    http_response(url)?
+        .into_reader()
+        .take(limit + 1)
+        .read_to_end(&mut body)
+        .map_err(|error| format!("read download: {url}: {error}"))?;
+    if body.len() as u64 > limit {
+        return Err(format!("download exceeds {limit} bytes: {url}"));
+    }
+    Ok(body)
+}
+
+fn download_to(url: &str, dest: &Path, limit: u64) -> Result<(), String> {
+    let mut output = std::fs::File::create(dest)
+        .map_err(|error| format!("create download {}: {error}", dest.display()))?;
+    let copied = std::io::copy(
+        &mut http_response(url)?.into_reader().take(limit + 1),
+        &mut output,
+    )
+    .map_err(|error| format!("download failed: {url}: {error}"))?;
+    if copied > limit {
+        return Err(format!("download exceeds {limit} bytes: {url}"));
+    }
+    output
+        .sync_all()
+        .map_err(|error| format!("sync download {}: {error}", dest.display()))
+}
+
+fn verify_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    let mut input =
+        std::fs::File::open(path).map_err(|error| format!("open downloaded archive: {error}"))?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = input
+            .read(&mut buffer)
+            .map_err(|error| format!("read downloaded archive: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    if format!("{digest:x}", digest = digest.finalize()) != expected {
+        return Err("checksum mismatch — aborting".into());
     }
     Ok(())
+}
+
+fn extract_archive(
+    archive_path: &Path,
+    destination: &Path,
+    version: &str,
+    triple: &str,
+) -> Result<PathBuf, String> {
+    let package = format!("strop-{version}-{triple}");
+    let package_path = Path::new(&package);
+    let binary_path = package_path.join("strop");
+    let archive_file = std::fs::File::open(archive_path)
+        .map_err(|error| format!("open downloaded archive: {error}"))?;
+    let decoder = flate2::read::GzDecoder::new(archive_file);
+    let mut archive = tar::Archive::new(decoder);
+    let entries = archive
+        .entries()
+        .map_err(|error| format!("read release archive: {error}"))?;
+    let mut found_binary = false;
+
+    for entry in entries {
+        let mut entry = entry.map_err(|error| format!("read release archive: {error}"))?;
+        let path = entry
+            .path()
+            .map_err(|error| format!("release archive path: {error}"))?
+            .into_owned();
+        if path == package_path {
+            if !entry.header().entry_type().is_dir() {
+                return Err("release archive package entry is not a directory".into());
+            }
+        } else if path == binary_path {
+            if !entry.header().entry_type().is_file() || found_binary {
+                return Err("release archive has an invalid or duplicate binary entry".into());
+            }
+            found_binary = true;
+        } else {
+            return Err(format!(
+                "release archive has unexpected path: {}",
+                path.display()
+            ));
+        }
+        if !entry
+            .unpack_in(destination)
+            .map_err(|error| format!("extract {}: {error}", path.display()))?
+        {
+            return Err(format!("refusing archive path: {}", path.display()));
+        }
+    }
+
+    if !found_binary {
+        return Err(format!(
+            "release archive is missing {}",
+            binary_path.display()
+        ));
+    }
+    Ok(destination.join(binary_path))
 }
 
 fn stage(label: &str) -> indicatif::ProgressBar {
@@ -287,7 +386,7 @@ pub fn update(check_only: bool) -> Result<(), String> {
 
     let triple = target_triple(std::env::consts::OS, std::env::consts::ARCH)?;
     let pb = stage("resolving release catalog…");
-    let body = curl(&[CATALOG_URL])?;
+    let body = http_get(CATALOG_URL, MAX_CATALOG_BYTES)?;
     let catalog = Catalog::parse(&body)?;
     done(&pb, &format!("latest is {}", catalog.tag));
 
@@ -315,43 +414,15 @@ pub fn update(check_only: bool) -> Result<(), String> {
     let tmp = staging.path();
 
     let pb = stage(&format!("downloading {archive}…"));
-    curl_to(&artifact.url, &tmp.join(&archive))?;
+    let archive_path = tmp.join(&archive);
+    download_to(&artifact.url, &archive_path, MAX_ARCHIVE_BYTES)?;
     let pb2 = stage("verifying checksum…");
-    // The catalog digest is the verified truth — check the downloaded
-    // bytes against it in the classic sidecar form.
-    let sha_path = tmp.join(format!("{archive}.sha256"));
-    std::fs::write(&sha_path, format!("{}  {}\n", artifact.sha256, archive))
-        .map_err(|e| e.to_string())?;
-    let ok = Command::new("sha256sum")
-        .args(["-c", &format!("{archive}.sha256")])
-        .current_dir(tmp)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-        || Command::new("shasum")
-            .args(["-a", "256", "-c", &format!("{archive}.sha256")])
-            .current_dir(tmp)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-    if !ok {
-        return Err("checksum mismatch — aborting".into());
-    }
+    verify_sha256(&archive_path, &artifact.sha256)?;
     done(&pb, &format!("downloaded {archive}"));
     done(&pb2, "checksum verified");
 
     let pb = stage("extracting…");
-    let out = Command::new("tar")
-        .args(["-xzf", &archive])
-        .current_dir(tmp)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!("tar: {}", String::from_utf8_lossy(&out.stderr)));
-    }
-    let new_bin: PathBuf = tmp
-        .join(format!("strop-{}-{triple}", catalog.version))
-        .join("strop");
+    let new_bin = extract_archive(&archive_path, tmp, &catalog.version, triple)?;
     done(&pb, "extracted");
 
     let pb = stage("installing over current binary…");
@@ -526,4 +597,96 @@ fn catalog_resolves_artifacts_by_target() {
 fn malformed_catalog_is_rejected() {
     assert!(Catalog::parse(b"{}").is_err());
     assert!(Catalog::parse(b"not json").is_err());
+}
+
+#[cfg(test)]
+#[test]
+fn digest_mismatch_is_rejected() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive = dir.path().join("release.tar.gz");
+    std::fs::write(&archive, b"release bytes").expect("fixture archive");
+    let expected = format!("{:x}", Sha256::digest(b"different bytes"));
+    assert_eq!(
+        verify_sha256(&archive, &expected).unwrap_err().as_str(),
+        "checksum mismatch — aborting"
+    );
+    let expected = format!("{:x}", Sha256::digest(b"release bytes"));
+    verify_sha256(&archive, &expected).expect("matching digest");
+}
+
+#[cfg(test)]
+fn write_test_archive(path: &Path, entry_path: &str, entry_type: tar::EntryType, contents: &[u8]) {
+    let file = std::fs::File::create(path).expect("archive file");
+    let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_gnu();
+    header.set_entry_type(entry_type);
+    header.set_mode(0o755);
+    header.set_size(contents.len() as u64);
+    header.set_cksum();
+    builder
+        .append_data(&mut header, entry_path, contents)
+        .expect("archive entry");
+    let encoder = builder.into_inner().expect("finish tar");
+    encoder.finish().expect("finish gzip");
+}
+
+#[cfg(test)]
+#[test]
+fn archive_layout_and_entry_types_are_enforced() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive = dir.path().join("release.tar.gz");
+    write_test_archive(
+        &archive,
+        "strop-9.9.9-other-target/strop",
+        tar::EntryType::Regular,
+        b"binary",
+    );
+    let error = extract_archive(&archive, dir.path(), "9.9.9", "test-target")
+        .expect_err("wrong package layout");
+    assert!(error.contains("unexpected path"), "{error}");
+
+    write_test_archive(
+        &archive,
+        "strop-9.9.9-test-target/strop",
+        tar::EntryType::Symlink,
+        b"",
+    );
+    let error =
+        extract_archive(&archive, dir.path(), "9.9.9", "test-target").expect_err("symlink binary");
+    assert!(error.contains("invalid or duplicate binary"), "{error}");
+}
+
+#[cfg(test)]
+#[test]
+fn archive_extracts_binary_and_executable_permissions_in_process() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let archive = dir.path().join("release.tar.gz");
+    let destination = dir.path().join("extracted");
+    std::fs::create_dir(&destination).expect("destination");
+    write_test_archive(
+        &archive,
+        "strop-9.9.9-test-target/strop",
+        tar::EntryType::Regular,
+        b"new strop binary",
+    );
+    let binary =
+        extract_archive(&archive, &destination, "9.9.9", "test-target").expect("release extracts");
+    assert_eq!(binary, destination.join("strop-9.9.9-test-target/strop"));
+    assert_eq!(
+        std::fs::read(&binary).expect("extracted binary"),
+        b"new strop binary"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&binary)
+                .expect("binary metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
+        );
+    }
 }

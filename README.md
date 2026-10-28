@@ -25,7 +25,9 @@ cargo install strop-editor --locked              # crates.io
 mise use cargo:strop-editor                      # mise
 ```
 
-Already installed? `strop update` self-updates tarball installs.
+Already installed? `strop update` self-updates tarball installs. Downloads,
+SHA-256 verification and archive extraction run entirely in Rust; curl and tar
+are not required.
 
 Supported targets: Linux x86_64/aarch64 and macOS Apple Silicon (arm64).
 Intel macOS is no longer supported starting with 0.36.0; installers,
@@ -203,7 +205,12 @@ metadata is excluded. `:search-options` shows the separate visibility controls.
 quoting, supported languages, errors and examples. Old `-t`/`-g` UI flags are
 ordinary text now. Replacement text is literal, including `$1` and backslashes.
 
-`Space /` opens or resumes one large Search workspace. `Space R` resumes the same
+`Space /` opens or resumes one large Search workspace. Local enumeration and
+content matching run entirely in Rust using the `ignore`/`grep` crate family;
+`rg` is not required. Buffer and picker previews use live buffers where open and
+bounded reads otherwise; jumplist previews show the destination line too.
+Leading buffer-search case directives use the same qualifier highlighting as
+picker qualifiers. `Space R` resumes the same
 investigation with With visible. Inside Search, `Ctrl-R` toggles With without
 restarting the search or losing either field's text, caret, mode, selection or
 workset. Enter in **Find opens the selected source**, even with With visible;

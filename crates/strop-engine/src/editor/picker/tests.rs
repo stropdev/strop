@@ -228,6 +228,62 @@ mod picker_tests {
     }
 
     #[test]
+    fn jumps_preview_tracks_selection_and_rejects_a_closed_document() {
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
+        let document = e.current();
+        let label = e.doc(document).label(&e.cwd);
+        let last_line = e.doc(document).buf.line_of(e.doc(document).buf.len_bytes()) + 1;
+        let beyond_eof = e.doc(document).buf.len_bytes() + 100;
+        e.open_picker(Kind::Jumps);
+        e.picker_items_fixture(vec![
+            Item {
+                badge: None,
+                text: "first".into(),
+                payload: Payload::Jump {
+                    document,
+                    offset: 0,
+                },
+            },
+            Item {
+                badge: None,
+                text: "clamped".into(),
+                payload: Payload::Jump {
+                    document,
+                    offset: beyond_eof,
+                },
+            },
+        ]);
+        e.wait_picker();
+        // Opening Jumps records the current position before the two fixture rows.
+        e.feed(strop_core::frontend_input::Key::Down);
+
+        for (title, focus) in [
+            (format!("{label}:1"), 1),
+            (format!("{label}:{last_line}"), last_line),
+        ] {
+            let preview = e.picker_preview().unwrap();
+            assert_eq!(preview.0, title);
+            assert_eq!(preview.1, Some(focus));
+            assert!(matches!(
+                preview.2,
+                PreviewSource::Buffer(source) if source == document
+            ));
+            let cached = e.picker_preview_cached().unwrap();
+            assert_eq!(cached.0, preview.0);
+            assert_eq!(cached.1, preview.1);
+            assert!(matches!(
+                cached.2,
+                PreviewSource::Buffer(source) if source == document
+            ));
+            e.feed(strop_core::frontend_input::Key::Down);
+        }
+
+        e.docs.remove(document);
+        assert!(e.picker_preview().is_none());
+        assert!(e.picker_preview_cached().is_none());
+    }
+
+    #[test]
     fn remote_hosts_enter_carries_unmatched_text_into_the_address_box() {
         // 0.21.0 field report: a typed hostname that matched no listed
         // destination made Enter a no-op. Now the pinned "Add a host…"
@@ -603,6 +659,42 @@ mod worker_lifecycle_tests {
     }
 
     #[test]
+    fn preview_cache_evicts_insertion_order_but_keeps_the_selection() {
+        let mut e = editor();
+        e.open_picker(Kind::Search);
+        e.picker
+            .as_mut()
+            .unwrap()
+            .picker
+            .append(vec![item("selected.txt")]);
+        rank_fixture(&mut e);
+        for index in 0..32 {
+            let name = if index == 0 {
+                "selected.txt".to_string()
+            } else {
+                format!("cached-{index}.txt")
+            };
+            let (ticket, path) = register_preview(&mut e, &name);
+            e.handle_preview(Completion {
+                ticket,
+                outcome: Outcome::Success(String::from("body").into()),
+            });
+            assert!(e.previews.contains_key(&path));
+        }
+        let selected = strop_workspace::ResourceLocation::local(e.cwd.join("selected.txt"));
+        let oldest = strop_workspace::ResourceLocation::local(e.cwd.join("cached-1.txt"));
+        let (ticket, _) = register_preview(&mut e, "new.txt");
+        e.handle_preview(Completion {
+            ticket,
+            outcome: Outcome::Success(String::from("new").into()),
+        });
+        assert_eq!(e.previews.len(), 32);
+        assert!(e.previews.contains_key(&selected));
+        assert!(!e.previews.contains_key(&oldest));
+        e.close_picker();
+    }
+
+    #[test]
     fn preview_failure_is_visible_and_retryable_after_reopen() {
         let mut e = editor();
         e.open_picker(Kind::Search);
@@ -678,6 +770,31 @@ mod worker_lifecycle_tests {
     }
 
     #[test]
+    fn close_with_a_full_semantic_lane_still_publishes_terminal() {
+        let (tx, rx) = crate::editor::events::channel();
+        let mut e = editor();
+        e.app_tx = Some(tx.clone());
+        e.open_picker(Kind::Files);
+        for _ in 0..crate::editor::events::MAX_SEMANTIC_EVENTS {
+            tx.send(crate::editor::events::AppEvent::EditorKey(
+                strop_core::frontend_input::Key::Char('x'),
+            ))
+            .unwrap();
+        }
+        e.close_picker();
+        let terminal = std::iter::from_fn(|| rx.try_recv().ok()).any(|event| {
+            matches!(
+                event,
+                crate::editor::events::AppEvent::Picker(PickerEvent {
+                    msg: PickerMsg::Finished(_),
+                    ..
+                })
+            )
+        });
+        assert!(terminal, "the cancelled request publishes Finished");
+    }
+
+    #[test]
     fn preview_empty_success_is_ready_and_cancel_does_not_resubmit() {
         let mut e = editor();
         e.open_picker(Kind::Search);
@@ -727,36 +844,44 @@ mod worker_lifecycle_tests {
 
     #[test]
     fn read_preview_types_every_miss() {
+        let (token, _cancel) = strop_core::worker::CancelToken::standalone();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("ok.txt"), "body\n").unwrap();
-        match read_preview(&dir.path().join("ok.txt")) {
+        match read_preview(&dir.path().join("ok.txt"), &token) {
             Outcome::Success(text) => assert_eq!(text.rope, "body\n"),
             outcome => panic!("readable file must succeed: {outcome:?}"),
         }
         // empty file: a real success, not a failure
         std::fs::write(dir.path().join("empty.txt"), "").unwrap();
-        let empty = read_preview(&dir.path().join("empty.txt"));
+        let empty = read_preview(&dir.path().join("empty.txt"), &token);
         assert!(matches!(&empty, Outcome::Success(t) if t.rope.len_bytes() == 0));
         // over the 512 KiB cap
         std::fs::write(dir.path().join("big.txt"), vec![b'x'; 512 * 1024 + 1]).unwrap();
-        let big = read_preview(&dir.path().join("big.txt"));
+        let big = read_preview(&dir.path().join("big.txt"), &token);
         assert!(
             matches!(&big, Outcome::Failed { failure, .. } if failure.kind == FailureKind::Unavailable)
         );
         // a directory is not a preview target
-        let dir_result = read_preview(dir.path());
+        let dir_result = read_preview(dir.path(), &token);
         assert!(
             matches!(&dir_result, Outcome::Failed { failure, .. } if failure.kind == FailureKind::Unavailable)
         );
         // missing path
-        let missing = read_preview(&dir.path().join("missing.txt"));
+        let missing = read_preview(&dir.path().join("missing.txt"), &token);
         assert!(
             matches!(&missing, Outcome::Failed { failure, .. } if failure.kind == FailureKind::Io)
         );
         // invalid UTF-8
         std::fs::write(dir.path().join("bin.bin"), [0xff, 0xfe, 0xfd]).unwrap();
-        let bin = read_preview(&dir.path().join("bin.bin"));
+        let bin = read_preview(&dir.path().join("bin.bin"), &token);
         assert!(matches!(&bin, Outcome::Failed { failure, .. } if failure.kind == FailureKind::Io));
+
+        let (cancelled, cancel) = strop_core::worker::CancelToken::standalone();
+        cancel.cancel(CancelReason::Superseded);
+        assert!(matches!(
+            read_preview(&dir.path().join("ok.txt"), &cancelled),
+            Outcome::Cancelled(CancelReason::Superseded)
+        ));
     }
 }
 

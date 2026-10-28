@@ -191,8 +191,17 @@ impl Editor {
         match result.outcome {
             Outcome::Success(prepared) => {
                 const CACHED_PREVIEWS: usize = 32;
+                let selected = self.selected_preview_path();
+                self.preview_cache_order
+                    .retain(|cached| self.previews.contains_key(cached));
                 if self.previews.len() >= CACHED_PREVIEWS && !self.previews.contains_key(&path) {
-                    if let Some(old) = self.previews.keys().next().cloned() {
+                    let evict = self
+                        .preview_cache_order
+                        .iter()
+                        .find(|cached| Some(*cached) != selected.as_ref() && *cached != &path)
+                        .cloned();
+                    if let Some(old) = evict {
+                        self.preview_cache_order.retain(|cached| cached != &old);
                         self.previews.remove(&old);
                         self.preview_loads.remove(&old);
                         self.analysis
@@ -203,6 +212,8 @@ impl Editor {
                     .forget(super::super::analysis::AnalysisTarget::Preview(
                         path.clone(),
                     ));
+                self.preview_cache_order.retain(|cached| cached != &path);
+                self.preview_cache_order.push_back(path.clone());
                 self.previews.insert(
                     path.clone(),
                     PreviewEntry {

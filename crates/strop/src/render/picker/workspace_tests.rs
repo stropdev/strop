@@ -291,6 +291,38 @@ fn floating_card_picker_uses_the_same_scrollbar_vocabulary() {
 }
 
 #[test]
+fn jump_preview_marks_the_live_buffer_destination_line() {
+    let text = format!("{}fn dispatch() {{}}\n", "filler\n".repeat(41));
+    let mut editor = Editor::new(Buffer::from_text(&text));
+    let document = editor.current();
+    let offset = editor.buf().line_start(41);
+    editor.open_picker(strop_picker::Kind::Jumps);
+    editor.picker_items_fixture(vec![strop_picker::Item {
+        badge: None,
+        text: "jump to dispatch".into(),
+        payload: strop_picker::Payload::Jump { document, offset },
+    }]);
+    editor.wait_picker();
+    editor.feed_text("<esc>j");
+
+    let grid = draw(&mut editor, 100, 30);
+    let rendered: Vec<String> = (0..30)
+        .map(|y| (55..100).map(|x| grid[(x, y)].symbol()).collect())
+        .collect();
+    assert!(
+        rendered
+            .iter()
+            .any(|line| line.contains("▶ 42 │ fn dispatch")),
+        "jump marker on the live destination line: {rendered:?}"
+    );
+    assert_eq!(
+        rendered.iter().filter(|line| line.contains('▶')).count(),
+        1,
+        "exactly one jump destination marker"
+    );
+}
+
+#[test]
 fn unopened_file_preview_loads_and_highlights_through_preparation() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("buried.rs");

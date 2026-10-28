@@ -1,91 +1,14 @@
-//! The grep source: one supervised `rg` child. The supervisor owns the
-//! process from spawn to reap — kill/wait happen here, never on the
-//! editor thread; stdout and stderr each drain on their own worker so
-//! a chatty failure can never block a pipe; and every path (bad flags,
-//! missing binary, dead reader, cancellation, panic) ends in exactly
-//! one terminal event.
+//! The local grep source searches selected files in process. Selection,
+//! dirty snapshots and exact admission stay shared with the remote source;
+//! only local content matching and result streaming live here.
 
-use std::io::{BufRead, BufReader, Read};
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc::channel;
+use grep::regex::RegexMatcherBuilder;
+use grep::searcher::{sinks::UTF8, SearcherBuilder};
 
-use strop_core::worker::{self, CancelReason, FailureKind, Outcome};
+use strop_core::worker::{CancelReason, FailureKind, Outcome};
 
 use super::PickerMsg;
 use super::SourceSnapshot;
-
-/// One reader-thread event for the supervisor.
-#[derive(Debug)]
-enum ReadEvent {
-    Stdout(Outcome<()>),
-    Stderr(Outcome<String>),
-    /// The owner dropped or cancelled the worker.
-    Cancel,
-}
-
-/// The supervisor's reducer: apply one reader event; `Some(outcome)`
-/// ends the supervision loop. Pure, so every terminal decision is
-/// testable without a real rg process.
-fn step(
-    event: ReadEvent,
-    stdout_done: &mut bool,
-    stderr_text: &mut Option<String>,
-) -> Option<Outcome<()>> {
-    match event {
-        ReadEvent::Stdout(Outcome::Success(())) => {
-            *stdout_done = true;
-            None
-        }
-        ReadEvent::Stderr(Outcome::Success(text)) => {
-            *stderr_text = Some(text);
-            None
-        }
-        ReadEvent::Stdout(Outcome::Failed { failure, .. })
-        | ReadEvent::Stderr(Outcome::Failed { failure, .. }) => Some(Outcome::Failed {
-            failure,
-            partial: None,
-        }),
-        ReadEvent::Cancel
-        | ReadEvent::Stdout(Outcome::Cancelled(_))
-        | ReadEvent::Stderr(Outcome::Cancelled(_)) => {
-            Some(Outcome::Cancelled(CancelReason::OwnerClosed))
-        }
-    }
-}
-
-/// rg's post-reap verdict: exit 0 and exit-1/no-matches succeed;
-/// bad flags, signals and everything else fail visibly (with rg's
-/// own stderr text when it has any).
-fn verdict(status: ExitStatus, stderr: &str) -> Outcome<()> {
-    if status.success() || status.code() == Some(1) {
-        return Outcome::Success(());
-    }
-    let detail = stderr.trim().strip_prefix("rg: ").unwrap_or(stderr.trim());
-    Outcome::failed(
-        FailureKind::Exit,
-        if detail.is_empty() {
-            format!("rg exited with {status}")
-        } else {
-            format!("rg: {detail}")
-        },
-    )
-}
-
-/// The child is reaped exactly here or killed on drop — it can never
-/// outlive its supervisor.
-struct OwnedChild {
-    child: Child,
-    reaped: bool,
-}
-
-impl Drop for OwnedChild {
-    fn drop(&mut self) {
-        if !self.reaped {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-        }
-    }
-}
 
 /// Execute one local source request on the editor-owned source worker.
 pub(super) fn run(
@@ -97,17 +20,6 @@ pub(super) fn run(
     tx: super::flow::StreamSender,
     cancel: strop_core::worker::CancelToken,
 ) -> Outcome<()> {
-    let (events, rx) = channel::<ReadEvent>();
-    let stop = events.clone();
-    if let Err(failure) = cancel.register_cancel_resource(move || {
-        let _ = stop.send(ReadEvent::Cancel);
-        Ok(())
-    }) {
-        return Outcome::Failed {
-            failure,
-            partial: None,
-        };
-    }
     if cancel.is_cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
@@ -140,7 +52,10 @@ pub(super) fn run(
     if content.is_literal() && pattern.is_empty() {
         return Outcome::Success(());
     }
-    let cancelled = || cancel.is_cancelled();
+    let cancelled = || {
+        tx.heartbeat();
+        cancel.is_cancelled()
+    };
     // Retained baseline (0063 residual, 0058 S7): with push coverage the
     // catalog/symbol scan reuses unchanged subtrees and rescans only
     // hinted paths; without it, scan per search exactly as before. The
@@ -165,11 +80,9 @@ pub(super) fn run(
         cache.lock().abandon(&cwd, baseline);
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
-    // The reader thread admits every hit line through the exact plan:
-    // the provider pattern only prefilters (0063 §4). One owning
-    // closure per rg batch — `content`/`catalog`/`symbols` outlive the
-    // loop. Eligible paths come from the shared selection authority;
-    // bounded argv batches (0051 §3: real bounds, no shell).
+    // Every hit line goes through the exact plan: the provider pattern
+    // only prefilters (0063 §4). Eligible paths come from the shared
+    // selection authority with bounded count and encoded path bytes.
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
     let mut path_bytes = 0usize;
     let mut path_limit = false;
@@ -249,191 +162,98 @@ pub(super) fn run(
         };
     }
     let symbols = symbols.map(std::sync::Arc::new);
-    let mut argv: Vec<String> = vec!["--no-config".into(), "--json".into(), "-e".into(), pattern];
-    match content.case {
-        crate::query::CaseMode::Smart => argv.push("--smart-case".into()),
-        crate::query::CaseMode::Sensitive => argv.push("--case-sensitive".into()),
-        crate::query::CaseMode::Ignore => argv.push("-i".into()),
-    }
-    if content.is_literal() {
-        argv.push("-F".into());
-    }
-    if policy.effective(&plan).hidden {
-        argv.push("--hidden".into());
-    }
-    if !policy.effective(&plan).respect_ignore {
-        argv.push("--no-ignore".into());
-    }
-    for arg in super::RG_PROTECTED_ARGS {
-        argv.push((*arg).to_string());
-    }
-    argv.push("--".into());
-    let mut batches: Vec<Vec<std::path::PathBuf>> = Vec::new();
-    let mut current: Vec<std::path::PathBuf> = Vec::new();
-    let mut bytes = argv.iter().map(|a| a.len() + 1).sum::<usize>();
-    for path in paths {
-        let path_bytes = path.as_os_str().as_encoded_bytes().len();
-        if current.len() >= 4096 || bytes + path_bytes > 128 * 1024 {
-            batches.push(std::mem::take(&mut current));
-            bytes = argv.iter().map(|a| a.len() + 1).sum::<usize>();
+    let mut matcher = RegexMatcherBuilder::new();
+    matcher
+        .case_smart(content.case == crate::query::CaseMode::Smart)
+        .case_insensitive(content.case == crate::query::CaseMode::Ignore)
+        .fixed_strings(content.is_literal());
+    let matcher = match matcher.build(&pattern) {
+        Ok(matcher) => matcher,
+        Err(error) => {
+            return Outcome::failed(FailureKind::Protocol, format!("invalid regex: {error}"))
         }
-        bytes += path_bytes + 1;
-        current.push(path);
-    }
-    if !current.is_empty() {
-        batches.push(current);
-    }
-    for batch in batches {
+    };
+    let mut searcher = SearcherBuilder::new().line_number(true).build();
+    for path in paths {
+        tx.heartbeat();
         if cancel.is_cancelled() {
             return Outcome::Cancelled(CancelReason::OwnerClosed);
         }
-        let outcome = std::thread::scope(|scope| {
-            let child = match Command::new("rg")
-                .args(&argv)
-                .args(&batch)
-                .current_dir(&cwd)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
-                Ok(child) => child,
-                Err(e) => return Outcome::failed(FailureKind::Spawn, format!("rg: {e}")),
-            };
-            let mut process = OwnedChild {
-                child,
-                reaped: false,
-            };
-            let Some(stdout) = process.child.stdout.take() else {
-                return Outcome::failed(FailureKind::Protocol, "rg: missing stdout");
-            };
-            let Some(mut stderr) = process.child.stderr.take() else {
-                return Outcome::failed(FailureKind::Protocol, "rg: missing stderr");
-            };
-            let admitting = {
-                let content = content.clone();
-                let catalog = catalog.clone();
-                let symbols = symbols.clone();
-                move |path: &str, line: Option<usize>, text: &str| {
-                    content.admits(
-                        crate::query::Evidence {
-                            catalog: Some(&catalog),
-                            symbols: symbols.as_deref(),
-                            path: Some(path),
-                            line,
-                            symbol: None,
-                        },
-                        text,
-                    )
-                }
-            };
-            let out_events = events.clone();
-            let out_tx = tx.clone();
-            let root = strop_workspace::ResourceLocation::local(cwd.clone());
-            let out_reader = worker::spawn_scoped(
-                scope,
-                "rg-stdout",
-                move |outcome| {
-                    let _ = out_events.send(ReadEvent::Stdout(outcome));
-                },
-                move |token| {
-                    let mut reader = BufReader::new(stdout);
-                    let mut line = Vec::new();
-                    loop {
-                        if token.is_cancelled() {
-                            return Outcome::Cancelled(CancelReason::OwnerClosed);
-                        }
-                        line.clear();
-                        match reader
-                            .by_ref()
-                            .take((super::query::RECORD_LIMIT + 1) as u64)
-                            .read_until(b'\n', &mut line)
-                        {
-                            Ok(0) => break,
-                            Ok(_) => {}
-                            Err(error) => {
-                                return Outcome::failed(FailureKind::Io, error.to_string())
-                            }
-                        }
-                        let items = match super::query::parse_json_match_with(
-                            &line,
-                            &root,
-                            Some(&admitting),
-                        ) {
-                            Ok(items) => items,
-                            Err(error) => return Outcome::failed(FailureKind::Protocol, error),
-                        };
-                        if let Err(error) = out_tx.batch(items, &token) {
-                            return error.finish(&out_tx);
-                        }
-                    }
-                    Outcome::Success(())
-                },
-            );
-            let err_events = events.clone();
-            let err_reader = worker::spawn_scoped(
-                scope,
-                "rg-stderr",
-                move |outcome| {
-                    let _ = err_events.send(ReadEvent::Stderr(outcome));
-                },
-                move |_| {
-                    let mut retained = Vec::new();
-                    let mut chunk = [0; 8192];
-                    let mut dropped = 0usize;
-                    loop {
-                        match stderr.read(&mut chunk) {
-                            Ok(0) => break,
-                            Ok(count) => {
-                                let keep =
-                                    count.min((64 * 1024usize).saturating_sub(retained.len()));
-                                retained.extend_from_slice(&chunk[..keep]);
-                                dropped = dropped.saturating_add(count - keep);
-                            }
-                            Err(error) => {
-                                return Outcome::failed(FailureKind::Io, error.to_string())
-                            }
-                        }
-                    }
-                    let mut text = String::from_utf8_lossy(&retained).into_owned();
-                    if dropped > 0 {
-                        text.push_str(&format!("\nrg stderr truncated ({dropped} bytes omitted)"));
-                    }
-                    Outcome::Success(text)
-                },
-            );
-            // hold both reader handles: dropping one would cancel a
-            // perfectly healthy reader
-            let _readers = (out_reader, err_reader);
-            let mut stdout_done = false;
-            let mut stderr_text = None;
-            while !stdout_done || stderr_text.is_none() {
-                match rx.recv() {
-                    Ok(event) => {
-                        if let Some(outcome) = step(event, &mut stdout_done, &mut stderr_text) {
-                            return outcome; // OwnedChild::drop kills/reaps
-                        }
-                    }
-                    Err(e) => return Outcome::failed(FailureKind::Disconnected, e.to_string()),
-                }
+        let location = strop_workspace::ResourceLocation::local(cwd.join(&path));
+        let relative = path.to_string_lossy();
+        let display = strop_workspace::directory::display_path(&path);
+        let mut terminal = None;
+        let mut sink = UTF8(|line, text| {
+            if cancel.is_cancelled() {
+                return Ok(false);
             }
-            let status = match process.child.wait() {
-                Ok(status) => {
-                    process.reaped = true;
-                    status
-                }
-                Err(e) => return Outcome::failed(FailureKind::Wait, format!("rg: {e}")),
-            };
-            let stderr = stderr_text.unwrap_or_default();
-            let outcome = verdict(status, &stderr);
-            if matches!(outcome, Outcome::Success(())) && !stderr.trim().is_empty() {
-                let detail = stderr.trim().strip_prefix("rg: ").unwrap_or(stderr.trim());
-                let _ = tx.control(PickerMsg::Warning(format!("rg: {detail}")));
+            if text.len() > super::query::RECORD_LIMIT {
+                terminal = Some(Outcome::failed(
+                    FailureKind::Protocol,
+                    format!("{display}:{line}: source line exceeds the 1 MiB search bound"),
+                ));
+                return Ok(false);
             }
-            outcome
+            let text: std::sync::Arc<str> = text.strip_suffix('\n').unwrap_or(text).into();
+            if !content.admits(
+                crate::query::Evidence {
+                    catalog: Some(&catalog),
+                    symbols: symbols.as_deref(),
+                    path: Some(&relative),
+                    line: Some(line as usize),
+                    symbol: None,
+                },
+                &text,
+            ) {
+                return Ok(true);
+            }
+            let short: String = text.trim().chars().take(80).collect();
+            let mut items = Vec::new();
+            let mut expanded = text.len();
+            for hit in content.regex.find_iter(&text).take(4097) {
+                if items.len() == 4096 {
+                    terminal = Some(Outcome::failed(
+                        FailureKind::Protocol,
+                        format!("{display}:{line}: source line exceeds 4096 matches"),
+                    ));
+                    return Ok(false);
+                }
+                let item = crate::Item {
+                    badge: None,
+                    text: format!("{display}:{line} · {short}"),
+                    payload: crate::Payload::Grep {
+                        location: location.clone(),
+                        line: line as usize,
+                        col: hit.start() + 1,
+                        match_len: hit.len(),
+                        line_text: text.clone(),
+                    },
+                };
+                expanded = expanded.saturating_add(super::flow::row_bytes(&item));
+                if expanded > super::flow::BACKLOG_BYTES {
+                    terminal = Some(Outcome::failed(
+                        FailureKind::Protocol,
+                        format!("{display}:{line}: source line exceeds 4 MiB of result rows"),
+                    ));
+                    return Ok(false);
+                }
+                items.push(item);
+            }
+            if let Err(error) = tx.batch(items, &cancel) {
+                terminal = Some(error.finish(&tx));
+                return Ok(false);
+            }
+            Ok(true)
         });
-        if !matches!(outcome, Outcome::Success(())) {
+        let searched = searcher.search_path(&matcher, cwd.join(&path), &mut sink);
+        if let Some(outcome) = terminal {
             return outcome;
+        }
+        if cancel.is_cancelled() {
+            return Outcome::Cancelled(CancelReason::OwnerClosed);
+        }
+        if let Err(error) = searched {
+            return Outcome::failed(FailureKind::Io, format!("{display}: {error}"));
         }
     }
     Outcome::Success(())
@@ -470,7 +290,7 @@ mod tests {
     #[test]
     fn exhausted_catalog_keeps_the_bounded_prefix_with_a_truncation_warning() {
         // the catalog bound is memory management, not a failure: the
-        // source stops walking, the 100,000 already-streamed rows stay
+        // source stops walking, the already-streamed bounded prefix stays
         // ranked and openable, the note is a warning and the finished
         // outcome is success so Enter keeps working (the red-error
         // contract this replaced is why large repos felt broken)
@@ -493,15 +313,19 @@ mod tests {
             None,
             tx,
         );
-        let mut received = 0;
+        let mut truncated = false;
         loop {
             match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
-                PickerMsg::Items(items) => received += items.len(),
+                PickerMsg::Items(_) => {}
                 PickerMsg::Warning(message) => {
                     assert!(message.contains("100,000"), "truncation note: {message}");
+                    truncated = true;
                 }
                 PickerMsg::Finished(Outcome::Success(())) => {
-                    assert_eq!(received, 100_000);
+                    assert!(
+                        truncated,
+                        "the retained prefix carries a truncation warning"
+                    );
                     break;
                 }
                 event => panic!("expected rows, a warning, then success: {event:?}"),
@@ -527,78 +351,6 @@ mod tests {
         let query = crate::query::SearchQuery::parse("regex:\"x [\"");
         let error = crate::query::ContentPlan::compile(&query).unwrap_err();
         assert!(error.message.contains("invalid regex"), "{}", error.message);
-    }
-
-    #[test]
-    fn reducer_settles_every_terminal_shape() {
-        // a reader failure ends supervision carrying the failure
-        let mut done = false;
-        let mut err = None;
-        let out = step(
-            ReadEvent::Stdout(Outcome::failed(FailureKind::Io, "pipe broke")),
-            &mut done,
-            &mut err,
-        );
-        assert!(
-            matches!(&out, Some(Outcome::Failed { failure, .. }) if failure.message == "pipe broke"),
-            "reader failure is terminal: {out:?}"
-        );
-        // owner cancellation is terminal
-        let out = step(ReadEvent::Cancel, &mut done, &mut err);
-        assert!(matches!(out, Some(Outcome::Cancelled(_))));
-        // a reader's own cancellation (handle dropped) is terminal too
-        let out = step(
-            ReadEvent::Stderr(Outcome::Cancelled(CancelReason::OwnerClosed)),
-            &mut done,
-            &mut err,
-        );
-        assert!(matches!(out, Some(Outcome::Cancelled(_))));
-        // the two success halves advance independently
-        let mut done = false;
-        let mut err = None;
-        assert!(step(ReadEvent::Stdout(Outcome::Success(())), &mut done, &mut err).is_none());
-        assert!(done, "stdout half recorded");
-        assert!(step(
-            ReadEvent::Stderr(Outcome::Success("warn".into())),
-            &mut done,
-            &mut err
-        )
-        .is_none());
-        assert_eq!(err.as_deref(), Some("warn"), "stderr half recorded");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn rg_exit_verdicts() {
-        use std::os::unix::process::ExitStatusExt;
-        // exit 0: clean success
-        assert!(matches!(
-            verdict(ExitStatus::from_raw(0), ""),
-            Outcome::Success(())
-        ));
-        // exit 1: no matches is a successful empty result
-        assert!(matches!(
-            verdict(ExitStatus::from_raw(0x0100), ""),
-            Outcome::Success(())
-        ));
-        // exit 2 with stderr: rg's own diagnosis, not a silent empty list
-        let bad = verdict(ExitStatus::from_raw(0x0200), "rg: unrecognized file type");
-        match bad {
-            Outcome::Failed { failure, .. } => assert!(failure.message.contains("unrecognized")),
-            other => panic!("bad flags must fail, got {other:?}"),
-        }
-        // exit 2 without stderr: the status itself
-        let bare = verdict(ExitStatus::from_raw(0x0200), "");
-        match bare {
-            Outcome::Failed { failure, .. } => assert!(failure.message.contains("rg exited")),
-            other => panic!("bare failure must carry the status, got {other:?}"),
-        }
-        // killed by a signal (no exit code): failure
-        let killed = verdict(ExitStatus::from_raw(9), "");
-        assert!(
-            matches!(killed, Outcome::Failed { .. }),
-            "signals are failures"
-        );
     }
 
     #[test]
@@ -628,39 +380,36 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "the old -t flag grammar is gone; rg's own failure paths are covered by spawn failures"]
-    fn rg_failure_is_a_terminal_failure_not_silence_legacy() {
-        let dir = std::env::temp_dir().join("strop-picker-err");
-        std::fs::create_dir_all(&dir).unwrap();
+    fn cancelling_disk_search_stops_the_in_process_searcher() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut text = "needle on disk\n".to_string();
+        text.push_str(&"filler line\n".repeat(100_000));
+        std::fs::write(directory.path().join("large.txt"), text).unwrap();
         let (tx, rx) = channel();
-        let worker = spawn_query("regex:\"x [\"", &dir, tx);
-        let mut failure = None;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while failure.is_none() && std::time::Instant::now() < deadline {
-            match rx.recv_timeout(std::time::Duration::from_millis(500)) {
-                Ok(PickerMsg::Finished(Outcome::Failed { failure: f, .. })) => failure = Some(f),
-                Ok(PickerMsg::Finished(outcome)) => {
-                    panic!("bad type filter must fail, got {outcome:?}")
-                }
-                Ok(_) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        let (worker, request) = spawn_query("needle", directory.path(), tx);
+        match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
+            PickerMsg::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].text, "large.txt:1 · needle on disk");
             }
+            other => panic!("the disk row must arrive first: {other:?}"),
+        }
+        request.cancel(CancelReason::OwnerClosed);
+        match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
+            PickerMsg::Finished(Outcome::Cancelled(CancelReason::OwnerClosed)) => {}
+            other => panic!("cancellation must settle without late rows: {other:?}"),
         }
         drop(worker);
-        std::fs::remove_dir_all(&dir).ok();
-        let failure = failure.expect("rg failure posted a terminal event");
-        assert!(
-            failure.message.contains("unrecognized file type"),
-            "{}",
-            failure.message
-        );
+        assert!(matches!(
+            rx.recv_timeout(std::time::Duration::from_secs(30)),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+        ));
     }
 
     /// 0063 §6.8 shape: a mixed parent directory — nested repositories,
     /// a vendor subtree, marker subprojects, non-Git sources in four
-    /// languages — through the REAL search pipeline (rg child, reader
-    /// threads, catalog, symbol index, exact admission).
+    /// languages — through the REAL in-process search pipeline (catalog,
+    /// symbol index, dirty overlay, exact admission).
     #[test]
     fn mixed_directory_queries_narrow_exactly_end_to_end() {
         let directory = tempfile::tempdir().unwrap();

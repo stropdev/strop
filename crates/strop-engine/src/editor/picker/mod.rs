@@ -19,6 +19,7 @@ mod keys;
 mod lifecycle_traces;
 mod open;
 mod preview;
+pub(crate) use preview::PreviewWatchdog;
 mod query;
 #[cfg(test)]
 mod query_tests;
@@ -226,12 +227,16 @@ impl Editor {
         ticket: Ticket<PickerKey>,
     ) -> strop_picker::SourceSink {
         strop_picker::SourceSink::new(move |msg| {
-            app_tx
-                .send_blocking(super::events::AppEvent::Picker(PickerEvent {
-                    ticket: ticket.clone(),
-                    msg,
-                }))
-                .is_ok()
+            let blocking = matches!(msg, PickerMsg::Items(_));
+            let event = super::events::AppEvent::Picker(PickerEvent {
+                ticket: ticket.clone(),
+                msg,
+            });
+            if blocking {
+                app_tx.send_blocking(event).is_ok()
+            } else {
+                app_tx.send(event).is_ok()
+            }
         })
     }
 

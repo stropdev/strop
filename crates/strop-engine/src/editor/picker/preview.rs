@@ -6,12 +6,19 @@
 
 use std::io::Read;
 use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
-use strop_core::worker::{self, CancelReason, Failure, FailureKind, Load, Outcome, Ticket};
+use strop_core::worker::{self, CancelReason, FailureKind, Load, Outcome, Ticket};
 use strop_picker::Payload;
 
 use super::super::Editor;
 use super::{PreviewKey, PreviewResult, PreviewSource};
+
+mod watchdog;
+pub(crate) use watchdog::{physical_complete, publish, PreviewWatchdog, PREVIEW_STALLED};
 
 /// Live delivery already owns a rope. Replay reconstructs the same pure snapshot
 /// from the recorded text; no parser or filesystem access crosses this boundary.
@@ -48,6 +55,13 @@ pub(super) struct WitnessCheck {
 }
 
 impl Editor {
+    pub(super) fn selected_preview_path(&self) -> Option<strop_workspace::ResourceLocation> {
+        let item = self.picker.as_ref()?.picker.current()?;
+        PreviewProbe { editor: self }
+            .item_source(item)
+            .map(|(path, _)| path)
+    }
+
     /// Readonly paint query: identical resolution, but an uncached preview
     /// reports loading instead of registering/launching the bounded read.
     /// Preparation calls [`Self::picker_preview`] first.
@@ -262,6 +276,12 @@ impl PreviewProbe<'_> {
             let name = self.editor.docs.get(*document)?.label(&self.editor.cwd);
             return Some((name, None, PreviewSource::Buffer(*document)));
         }
+        if let Payload::Jump { document, offset } = &item.payload {
+            let doc = self.editor.docs.get(*document)?;
+            let line = doc.buf.line_of((*offset).min(doc.buf.len_bytes()));
+            let title = format!("{}:{}", doc.label(&self.editor.cwd), line + 1);
+            return Some((title, Some(line + 1), PreviewSource::Buffer(*document)));
+        }
         let (full, focus_line) = self.item_source(item)?;
         let title = self.title(&full, focus_line);
         let target = match crate::files::FileTarget::from_location(&full) {
@@ -367,22 +387,35 @@ impl PreviewProbe<'_> {
 }
 impl Editor {
     pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
+        let picker = self.picker.as_ref()?.id;
         let item = self.picker.as_ref()?.picker.current()?;
         let (full, focus_line) = match &item.payload {
             Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
             | Payload::ContainerDiscover
-            | Payload::Jump { .. }
             | Payload::SearchOption(_)
             | Payload::CodeAction(_)
             | Payload::Container(_)
             | Payload::FilesystemAction(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
-            | Payload::ThemeChoice(_) => return None,
+            | Payload::ThemeChoice(_) => {
+                self.cancel_other_previews(picker, None);
+                return None;
+            }
             Payload::Buffer(document) => {
-                let name = self.docs.get(*document)?.label(&self.cwd);
-                return Some((name, None, PreviewSource::Buffer(*document)));
+                let document = *document;
+                self.cancel_other_previews(picker, None);
+                let name = self.docs.get(document)?.label(&self.cwd);
+                return Some((name, None, PreviewSource::Buffer(document)));
+            }
+            Payload::Jump { document, offset } => {
+                let (document, offset) = (*document, *offset);
+                self.cancel_other_previews(picker, None);
+                let doc = self.docs.get(document)?;
+                let line = doc.buf.line_of(offset.min(doc.buf.len_bytes()));
+                let title = format!("{}:{}", doc.label(&self.cwd), line + 1);
+                return Some((title, Some(line + 1), PreviewSource::Buffer(document)));
             }
             Payload::File(path) => (
                 strop_workspace::ResourceLocation::local(self.picker_path(path)),
@@ -423,6 +456,7 @@ impl Editor {
         } else {
             title
         };
+        self.cancel_other_previews(picker, Some(&full));
         let target = match crate::files::FileTarget::from_location(&full) {
             Ok(target) => target,
             Err(error) => {
@@ -455,13 +489,51 @@ impl Editor {
         Some((title, focus_line, PreviewSource::Cached(full)))
     }
 
+    fn cancel_other_previews(
+        &mut self,
+        picker: super::PickerId,
+        current: Option<&strop_workspace::ResourceLocation>,
+    ) {
+        let stale: Vec<_> = self
+            .preview_loads
+            .iter()
+            .filter_map(|(path, load)| match load {
+                Load::Running(ticket) if ticket.key.picker == picker && current != Some(path) => {
+                    Some((path.clone(), ticket.request))
+                }
+                _ => None,
+            })
+            .collect();
+        for (path, request) in stale {
+            self.preview_loads.remove(&path);
+            if let Some(handle) = self.worker_handles.remove(&request) {
+                handle.cancel(CancelReason::Superseded);
+            }
+        }
+    }
+
     /// True when the preview is cached. Otherwise registers an owned
     /// request for this picker instance (cancelling any stale one) and
     /// launches the bounded read; the next tick picks the result up.
     fn preview_ready(&mut self, path: &strop_workspace::ResourceLocation) -> bool {
+        self.preview_ready_with(path, read_resource_preview)
+    }
+
+    fn preview_ready_with(
+        &mut self,
+        path: &strop_workspace::ResourceLocation,
+        read: impl FnOnce(
+                &strop_workspace::ResourceLocation,
+                &strop_remote::RemoteClient,
+                &worker::CancelToken,
+            ) -> Outcome<PreparedPreview>
+            + Send
+            + 'static,
+    ) -> bool {
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return false;
         };
+        self.cancel_other_previews(picker, Some(path));
         let key = PreviewKey {
             picker,
             path: path.clone(),
@@ -522,16 +594,61 @@ impl Editor {
                 return false;
             }
         }
+        let tx = self.preview_tx.clone();
+        let terminal = Arc::new(AtomicBool::new(false));
+        if self.preview_watchdog.is_stalled() {
+            publish(
+                &terminal,
+                &tx,
+                ticket,
+                Outcome::failed(FailureKind::Unavailable, PREVIEW_STALLED),
+            );
+            return false;
+        }
+        if let Err(failure) =
+            self.preview_watchdog
+                .watch(ticket.clone(), tx.clone(), terminal.clone())
+        {
+            publish(
+                &terminal,
+                &tx,
+                ticket,
+                Outcome::Failed {
+                    failure,
+                    partial: None,
+                },
+            );
+            return false;
+        }
+        if terminal.load(Ordering::Acquire) {
+            return false;
+        }
+
         let launch_path = path.clone();
         let client = self.remote_client();
-        let tx = self.preview_tx.clone();
-        let handle = worker::spawn(
-            "strop-preview",
-            move |outcome| {
-                let _ = tx.send(PreviewResult { ticket, outcome });
-            },
-            move |token| read_resource_preview(&launch_path, &client, &token),
-        );
+        let emit_terminal = terminal.clone();
+        let emit_tx = tx.clone();
+        let emit_ticket = ticket.clone();
+        let prepared = worker::prepare(move |outcome| {
+            publish(&emit_terminal, &emit_tx, emit_ticket, outcome);
+        });
+        let handle = prepared.cancel_handle();
+        let watchdog = self.preview_watchdog.shared.clone();
+        let spawn = std::thread::Builder::new()
+            .name("strop-preview".into())
+            .spawn(move || {
+                prepared.run(move |token| read(&launch_path, &client, &token));
+                physical_complete(&watchdog, request.get());
+            });
+        if let Err(error) = spawn {
+            physical_complete(&self.preview_watchdog.shared, request.get());
+            publish(
+                &terminal,
+                &tx,
+                ticket,
+                Outcome::failed(FailureKind::ThreadStart, error.to_string()),
+            );
+        }
         self.worker_handles.insert(request, handle);
         false
     }
@@ -543,7 +660,7 @@ fn read_resource_preview(
     token: &worker::CancelToken,
 ) -> Outcome<PreparedPreview> {
     match crate::files::FileTarget::from_location(location) {
-        Ok(crate::files::FileTarget::Local(path)) => read_preview(&path),
+        Ok(crate::files::FileTarget::Local(path)) => read_preview(&path, token),
         Ok(crate::files::FileTarget::Remote(remote)) => {
             let length = match strop_remote::ReadLimit::new(512 * 1024) {
                 Ok(length) => length,
@@ -575,36 +692,53 @@ fn read_resource_preview(
 /// The bounded preview read: at most 512 KiB, real files only, valid
 /// UTF-8 — every miss is a typed failure, never an empty success. The
 /// read stays capped even if the file grows after metadata.
-pub(crate) fn read_preview(path: &Path) -> Outcome<PreparedPreview> {
+pub(crate) fn read_preview(path: &Path, token: &worker::CancelToken) -> Outcome<PreparedPreview> {
     const LIMIT: u64 = 512 * 1024;
-    let read = || -> Result<String, Failure> {
-        let meta =
-            std::fs::metadata(path).map_err(|e| Failure::new(FailureKind::Io, e.to_string()))?;
-        if !meta.is_file() {
-            return Err(Failure::new(
-                FailureKind::Unavailable,
-                "preview target is not a file",
-            ));
-        }
-        if meta.len() > LIMIT {
-            return Err(Failure::new(FailureKind::Unavailable, "preview too large"));
-        }
-        let file =
-            std::fs::File::open(path).map_err(|e| Failure::new(FailureKind::Io, e.to_string()))?;
-        let mut bytes = Vec::new();
-        file.take(LIMIT + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| Failure::new(FailureKind::Io, e.to_string()))?;
-        if bytes.len() as u64 > LIMIT {
-            return Err(Failure::new(FailureKind::Unavailable, "preview too large"));
-        }
-        String::from_utf8(bytes).map_err(|e| Failure::new(FailureKind::Io, e.to_string()))
+    if token.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::Superseded);
+    }
+    let meta = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
     };
-    match read() {
+    if !meta.is_file() {
+        return Outcome::failed(FailureKind::Unavailable, "preview target is not a file");
+    }
+    if meta.len() > LIMIT {
+        return Outcome::failed(FailureKind::Unavailable, "preview too large");
+    }
+    if token.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::Superseded);
+    }
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+    };
+    if token.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::Superseded);
+    }
+    let mut file = file.take(LIMIT + 1);
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    let mut chunk = [0; 16 * 1024];
+    loop {
+        if token.is_cancelled() {
+            return Outcome::Cancelled(CancelReason::Superseded);
+        }
+        let read = match file.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+        };
+        bytes.extend_from_slice(&chunk[..read]);
+        if bytes.len() as u64 > LIMIT {
+            return Outcome::failed(FailureKind::Unavailable, "preview too large");
+        }
+    }
+    if token.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::Superseded);
+    }
+    match String::from_utf8(bytes) {
         Ok(text) => Outcome::Success(text.into()),
-        Err(failure) => Outcome::Failed {
-            failure,
-            partial: None,
-        },
+        Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
     }
 }

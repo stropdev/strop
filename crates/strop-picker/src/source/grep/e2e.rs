@@ -1,7 +1,7 @@
 //! 0063 §6.8 end-to-end: the full mixed-directory shape — a nested
 //! repository holding a linked worktree, a Python marker project,
 //! non-Git C++/Lua/Rust sources, Unicode names and a dirty-source
-//! target — through the REAL pipeline (rg child, reader threads,
+//! target — through the REAL in-process pipeline (grep searcher,
 //! project catalog, symbol index, dirty overlay, exact admission).
 //! Beside `grep::tests::mixed_directory_queries_narrow_exactly_end_to_end`,
 //! which owns the base repo:/kind:/NOT narrowing corpus; nothing here
@@ -245,7 +245,7 @@ fn cancelling_a_running_search_settles_exactly_once_with_no_late_rows() {
         vec![busy_snapshot(root, "needle in the buffer")],
         tx,
     );
-    // The dirty-buffer row arrives before rg even spawns: the search
+    // The dirty-buffer row arrives before disk searching starts: the search
     // is provably running.
     let first = rx.recv_timeout(TIMEOUT).unwrap();
     let PickerMsg::Items(batch) = first else {
@@ -347,7 +347,7 @@ fn a_superseded_generation_never_publishes() {
 }
 
 /// §6.8 Unicode locations: non-ASCII file names and symbols keep exact
-/// 1-based line numbers and rg's byte columns through the real pipeline.
+/// 1-based line numbers and byte columns through the real pipeline.
 #[test]
 fn unicode_names_and_symbols_keep_exact_locations_end_to_end() {
     let directory = mixed_fixture();

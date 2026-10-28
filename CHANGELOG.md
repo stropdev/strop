@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.46.4 — 2026-10-28
+
+### Added
+
+- **Jumplist previews** (0077): jump rows now show the live destination buffer and focus line through the same preview path as files and symbols.
+- **Buffer-search case highlighting**: leading `case:sensitive`, `case:ignore`, `case:insensitive`, `\c` and `\C` use the same qualifier styling as picker qualifiers; mid-pattern `case:` stays literal.
+- **In-process self-updates**: HTTP download, SHA-256 verification and tar.gz extraction now run entirely in Rust with rustls, SHA-2 and archive crates. `curl`, checksum utilities and `tar` are no longer required.
+
+### Changed
+
+- **Local Search no longer needs `rg`**: content matching uses Helix's in-process `grep` crate family over the existing selected files and live buffer snapshots. Remote SSH search still uses remote `rg` where the files live.
+
+### Fixed
+
+- **Picker cancellation cannot deadlock the editor**: terminal `Finished` events are admitted even when the semantic event lane is full, while item batches retain their backpressure policy. Closing Files during heavy streaming no longer freezes input and repaint.
+- **Filesystem stalls settle honestly**: Files and preview watchdogs stop stalled requests with visible failures and refuse replacement work only until the blocked physical owner returns. Scan heartbeats keep healthy matchless searches alive, event-lane backpressure no longer looks like consumer closure, and preview selection cancels superseded reads.
+- **Preview consistency**: jumplist destinations render correctly, selection changes cancel old reads, and preview cache eviction no longer arbitrarily discards the visible entry.
+
 ## 0.46.3 — 2026-10-28
 
 ### Added

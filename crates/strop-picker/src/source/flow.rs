@@ -3,7 +3,7 @@
 use super::PickerMsg;
 use crate::{Item, Payload};
 use parking_lot::{Condvar, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
@@ -146,18 +146,51 @@ impl From<mpsc::Sender<PickerMsg>> for SourceSink {
     }
 }
 
+#[derive(Default)]
+pub(super) struct BatchProgress {
+    ticks: AtomicUsize,
+    delivery_waiting: AtomicBool,
+}
+impl BatchProgress {
+    pub(super) fn get(&self) -> usize {
+        self.ticks.load(Ordering::Acquire)
+    }
+    fn advance(&self) {
+        self.ticks.fetch_add(1, Ordering::AcqRel);
+    }
+    pub(super) fn delivery_waiting(&self) -> bool {
+        self.delivery_waiting.load(Ordering::Acquire)
+    }
+    fn wait_for_delivery(&self) -> DeliveryWait<'_> {
+        self.delivery_waiting.store(true, Ordering::Release);
+        DeliveryWait { progress: self }
+    }
+}
+struct DeliveryWait<'a> {
+    progress: &'a BatchProgress,
+}
+impl Drop for DeliveryWait<'_> {
+    fn drop(&mut self) {
+        self.progress
+            .delivery_waiting
+            .store(false, Ordering::Release);
+    }
+}
+
 #[derive(Clone)]
 pub struct StreamSender {
     sender: SourceSink,
     flow: Arc<Flow>,
     budget: Arc<Budget>,
+    progress: Arc<BatchProgress>,
 }
 impl StreamSender {
-    pub(super) fn new(sender: SourceSink, flow: Arc<Flow>) -> Self {
+    pub(super) fn new(sender: SourceSink, flow: Arc<Flow>, progress: Arc<BatchProgress>) -> Self {
         Self {
             sender,
             flow,
             budget: Arc::default(),
+            progress,
         }
     }
 }
@@ -208,6 +241,7 @@ impl StreamSender {
             ));
         }
 
+        let _delivery_wait = self.progress.wait_for_delivery();
         loop {
             if cancel.is_cancelled() {
                 return Err(BatchError::Cancelled);
@@ -224,14 +258,14 @@ impl StreamSender {
                         flow: self.flow.clone(),
                         bytes,
                     });
-                    return self
-                        .sender
-                        .send(PickerMsg::Items(ItemBatch {
-                            items,
-                            permit: Some(permit),
-                        }))
-                        .then_some(())
-                        .ok_or(BatchError::Closed);
+                    let delivered = self.sender.send(PickerMsg::Items(ItemBatch {
+                        items,
+                        permit: Some(permit),
+                    }));
+                    if delivered {
+                        self.progress.advance();
+                    }
+                    return delivered.then_some(()).ok_or(BatchError::Closed);
                 }
                 continue;
             }
@@ -242,6 +276,11 @@ impl StreamSender {
                 self.flow.available.wait_for(&mut guard, CANCEL_POLL);
             }
         }
+    }
+    /// Filesystem walks and matchless file scans are live even when they
+    /// produce no batches. Delivery backpressure is tracked separately.
+    pub(super) fn heartbeat(&self) {
+        self.progress.advance();
     }
     /// Control/terminal publication never waits for data credit, including when
     /// invoked by the cancellation handle on the editor thread.
@@ -279,7 +318,11 @@ mod tests {
             }
             true
         });
-        let sender = StreamSender::new(sink, Arc::new(Flow::default()));
+        let sender = StreamSender::new(
+            sink,
+            Arc::new(Flow::default()),
+            Arc::new(BatchProgress::default()),
+        );
         let (cancel, _handle) = CancelToken::standalone();
         let mut bound = None;
         for index in 0..400usize {
@@ -308,11 +351,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn heartbeats_and_delivery_backpressure_are_distinct_liveness_signals() {
+        let progress = Arc::new(BatchProgress::default());
+        let sender = StreamSender::new(
+            SourceSink::new(|_| true),
+            Arc::new(Flow::default()),
+            progress.clone(),
+        );
+        sender.heartbeat();
+        assert_eq!(progress.get(), 1);
+        assert!(!progress.delivery_waiting());
+        let waiting = progress.wait_for_delivery();
+        assert!(progress.delivery_waiting());
+        drop(waiting);
+        assert!(!progress.delivery_waiting());
+    }
+
     /// Real delivery failures keep their failure outcome — only the
     /// catalog bound downgrades to a warning.
     #[test]
     fn a_closed_consumer_still_fails_the_source() {
-        let sender = StreamSender::new(SourceSink::new(|_| false), Arc::new(Flow::default()));
+        let sender = StreamSender::new(
+            SourceSink::new(|_| false),
+            Arc::new(Flow::default()),
+            Arc::new(BatchProgress::default()),
+        );
         let (cancel, _handle) = CancelToken::standalone();
         let error = sender
             .batch(vec![item("f1".into())], &cancel)

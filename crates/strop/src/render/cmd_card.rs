@@ -74,13 +74,18 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         .cursor()
         .saturating_sub(kind.len_utf8())
         .min(body.len());
+    let highlights = if matches!(kind, '/' | '?') {
+        strop_picker::query::highlight::buffer_search(body)
+    } else {
+        Vec::new()
+    };
     let field = super::field::project(
         &kind.to_string(),
         body,
         caret_byte,
         true,
         text_area.width,
-        &[],
+        &highlights,
     );
     let caret = field.cursor;
     let mut spans = field.line.spans;
@@ -160,6 +165,82 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     if let Some(column) = caret {
         if column < text_area.width && text_area.height != 0 {
             crate::render::frame_capture::place_cursor(frame, (text_area.x + column, text_area.y));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strop_core::Buffer;
+
+    fn draw_search(prompt: &str) -> ratatui::buffer::Buffer {
+        let mut editor = Editor::new(Buffer::from_text("Needle\nneedle\n"));
+        editor.feed_text(prompt);
+        let backend = ratatui::backend::TestBackend::new(80, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_cmd_card(&editor, frame))
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn search_start(buffer: &ratatui::buffer::Buffer, text: &str) -> u16 {
+        let start = (0..buffer.area.width)
+            .find(|x| buffer[(*x, 2)].symbol() == text.chars().next().unwrap().to_string())
+            .unwrap();
+        let rendered: String = (start..start + text.len() as u16)
+            .map(|x| buffer[(x, 2)].symbol())
+            .collect();
+        assert_eq!(rendered, text);
+        start
+    }
+
+    #[test]
+    fn buffer_case_and_picker_language_share_field_styles() {
+        let picker = strop_picker::query::SearchQuery::parse("language:cpp");
+        let picker = super::super::field::project(
+            "/",
+            "language:cpp",
+            "language:cpp".len(),
+            true,
+            40,
+            &picker.highlights,
+        );
+        let picker_style = |content: &str| {
+            picker
+                .line
+                .spans
+                .iter()
+                .find(|span| span.content == content)
+                .unwrap()
+                .style
+        };
+
+        for sigil in ['/', '?'] {
+            let grid = draw_search(&format!("{sigil}case:sensitiveNeedle"));
+            let start = search_start(&grid, "case:sensitive");
+            for x in start..start + 4 {
+                assert_eq!(grid[(x, 2)].fg, picker_style("l").fg.unwrap());
+                assert_eq!(grid[(x, 2)].fg, accent());
+                assert!(grid[(x, 2)].modifier.contains(Modifier::BOLD));
+            }
+            assert_eq!(grid[(start + 4, 2)].fg, picker_style(":").fg.unwrap());
+            assert_eq!(grid[(start + 4, 2)].fg, muted());
+            for x in start + 5..start + 14 {
+                assert_eq!(grid[(x, 2)].fg, picker_style("c").fg.unwrap());
+                assert_eq!(grid[(x, 2)].fg, text());
+            }
+        }
+    }
+
+    #[test]
+    fn mid_pattern_case_directive_renders_as_literal_text() {
+        let grid = draw_search("/needlecase:sensitive");
+        let start = search_start(&grid, "needlecase:sensitive");
+        for x in start..start + "needlecase:sensitive".len() as u16 {
+            assert_eq!(grid[(x, 2)].fg, text());
+            assert!(!grid[(x, 2)].modifier.contains(Modifier::BOLD));
         }
     }
 }

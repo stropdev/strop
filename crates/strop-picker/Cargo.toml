@@ -7,14 +7,15 @@ license.workspace = true
 
 [dependencies]
 ignore = "0.4"
+grep = "0.3"
 nucleo-matcher = "0.3"
 imbl = { version = "7", features = ["serde"] }
 parking_lot = "0.12"
-strop-core = { path = "../strop-core", version = "0.46.3" }
-strop-workspace = { path = "../strop-workspace", version = "0.46.3" }
-strop-remote = { path = "../strop-remote", version = "0.46.3" }
-strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.46.3" }
-strop-syntax = { path = "../strop-syntax", version = "0.46.3" }
+strop-core = { path = "../strop-core", version = "0.46.4" }
+strop-workspace = { path = "../strop-workspace", version = "0.46.4" }
+strop-remote = { path = "../strop-remote", version = "0.46.4" }
+strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.46.4" }
+strop-syntax = { path = "../strop-syntax", version = "0.46.4" }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 globset = "0.4"
@@ -25,7 +26,7 @@ thiserror = "2"
 
 [dev-dependencies]
 nucleo-matcher = "0.3"
-strop-remote = { path = "../strop-remote", version = "0.46.3", features = ["test-support"] }
-strop-worker = { path = "../strop-worker", version = "0.46.3" }
-strop-worker-client = { path = "../strop-worker-client", version = "0.46.3" }
+strop-remote = { path = "../strop-remote", version = "0.46.4", features = ["test-support"] }
+strop-worker = { path = "../strop-worker", version = "0.46.4" }
+strop-worker-client = { path = "../strop-worker-client", version = "0.46.4" }
 tempfile = "3"
