@@ -270,7 +270,7 @@ impl Editor {
             self.walker.clear();
             return;
         }
-        if self.walker.at_prefix(&["ctrl-w"]) && key == Key::Char('q') {
+        if self.walker.at_prefix(&["space", "w"]) && key == Key::Char('q') {
             self.walker.clear();
             self.close_surface();
             return;

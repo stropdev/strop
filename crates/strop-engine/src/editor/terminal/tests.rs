@@ -208,49 +208,29 @@ fn terminal_snapshot_cannot_be_made_writable_saved_or_implicitly_relaunched() {
 }
 
 #[test]
-fn terminal_window_prefix_moves_panes_without_reaching_the_child() {
+fn terminal_f2_inspects_and_ctrl_w_goes_to_the_child() {
     use strop_core::frontend_input::{Input, KeyCode, KeyEvent};
 
-    let directory = tempfile::tempdir().unwrap();
-    let mut editor = Editor::new_in(Buffer::from_text("left"), directory.path().to_owned());
-    let id = retained_terminal(&mut editor);
+    let mut editor = Editor::new(Buffer::from_text("origin"));
+    editor.terminal_fixture(&[("safe", Style::default())], Phase::Running);
     assert!(editor.enter_terminal_input());
-    editor.split_pub('v');
-    assert_eq!(editor.panes.len(), 2);
-    let terminal_pane = editor.active_pane;
+    let mut ctrl_w = KeyEvent::press(KeyCode::Char('w'));
+    ctrl_w.modifiers.control = true;
+    editor.feed_terminal(Input::Key(ctrl_w));
+    assert!(editor.terminal_input_active());
+    assert_eq!(editor.message, "terminal service unavailable");
 
-    let ctrl = |code: KeyCode| {
-        Input::Key(KeyEvent {
-            code,
-            modifiers: strop_core::frontend_input::Modifiers {
-                control: true,
-                ..Default::default()
-            },
-            ..KeyEvent::press(code)
-        })
-    };
-    // Ctrl-W opens the prefix; the follow-up moves focus off the terminal
-    // pane without a single byte reaching the (service-less) child — the
-    // message stays clear, proving no failed send was attempted.
-    editor.feed_terminal(ctrl(KeyCode::Char('w')));
-    editor.message.clear();
-    editor.feed_terminal(Input::Key(KeyEvent::press(KeyCode::Char('l'))));
-    assert_ne!(editor.active_pane, terminal_pane);
-    assert!(editor.message.is_empty(), "{}", editor.message);
+    let mut ctrl_f2 = KeyEvent::press(KeyCode::Function(2));
+    ctrl_f2.modifiers.control = true;
+    editor.feed_terminal(Input::Key(ctrl_f2));
+    assert!(editor.terminal_input_active());
+    assert_eq!(editor.message, "terminal service unavailable");
+
+    editor.feed_terminal(Input::Key(KeyEvent::press(KeyCode::Function(2))));
+    assert!(!editor.terminal_input_active());
+    assert_eq!(editor.mode, crate::editor::Mode::Normal);
+    assert!(editor.message.contains("snapshot"), "{}", editor.message);
     assert!(editor.terminals.prefix.is_none());
-
-    // the same prefix grammar escapes into pinned-snapshot inspection
-    let mut other = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
-    retained_terminal(&mut other);
-    other.feed_terminal(ctrl(KeyCode::Char('w')));
-    other.feed_terminal(Input::Key(KeyEvent::press(KeyCode::Char('N'))));
-    assert_eq!(other.mode, crate::editor::Mode::Normal);
-    assert!(other.message.contains("snapshot"), "{}", other.message);
-    // the exited session was never relaunched by any of it
-    assert!(matches!(
-        editor.terminal_phase(id),
-        Some(Phase::Exited { code: Some(0), .. })
-    ));
 }
 
 /// 0065 S2 (invariant): focus loss cancels a pending escape prefix — a
@@ -498,30 +478,6 @@ fn terminal_insert_keys_and_edit_refusals_explain_mode_switching() {
     assert!(editor.message.contains("i/I/a/A enter input"));
 }
 
-#[test]
-fn terminal_window_prefix_accepts_lowercase_scalar_plus_shift_n() {
-    use strop_core::frontend_input::{Input, KeyCode, KeyEvent, Modifiers};
-
-    let mut editor = Editor::new(Buffer::from_text("origin"));
-    editor.terminal_fixture(&[("safe", Style::default())], Phase::Running);
-    assert!(editor.enter_terminal_input());
-    let event = |code, shift| {
-        Input::Key(KeyEvent {
-            code,
-            modifiers: Modifiers {
-                shift,
-                control: !shift,
-                ..Default::default()
-            },
-            ..KeyEvent::press(code)
-        })
-    };
-    editor.feed_terminal(event(KeyCode::Char('w'), false));
-    editor.feed_terminal(event(KeyCode::Char('n'), true));
-    assert!(!editor.terminal_input_active());
-    assert_eq!(editor.mode, Mode::Normal);
-}
-
 /// 0065 S4: the full motion surface over the projection — j/k, gg/G,
 /// Ctrl-D/U, / and ? with n/N, and visual yank — asserted, not assumed.
 #[test]
@@ -536,22 +492,12 @@ fn terminal_projection_supports_the_full_motion_surface() {
     rows[20] = ("needle two".into(), Style::default());
     let refs: Vec<(&str, Style)> = rows.iter().map(|(t, s)| (t.as_str(), *s)).collect();
     editor.terminal_fixture(&refs, Phase::Running);
-    // Ctrl-W N (vim's t_CTRL-W inspection) — the journey used Ctrl-\ Ctrl-N.
+    // F2 enters the same pinned inspection without an OS-sensitive chord.
     editor.enter_terminal_input();
     editor.feed_terminal(strop_core::frontend_input::Input::Key(
-        strop_core::frontend_input::KeyEvent {
-            code: strop_core::frontend_input::KeyCode::Char('w'),
-            modifiers: strop_core::frontend_input::Modifiers {
-                control: true,
-                ..Default::default()
-            },
-            ..strop_core::frontend_input::KeyEvent::press(
-                strop_core::frontend_input::KeyCode::Char('w'),
-            )
-        },
-    ));
-    editor.feed_terminal(strop_core::frontend_input::Input::Key(
-        strop_core::frontend_input::KeyEvent::press(strop_core::frontend_input::KeyCode::Char('N')),
+        strop_core::frontend_input::KeyEvent::press(strop_core::frontend_input::KeyCode::Function(
+            2,
+        )),
     ));
     assert!(!editor.terminal_input_active());
     assert!(editor.message.contains("snapshot"));

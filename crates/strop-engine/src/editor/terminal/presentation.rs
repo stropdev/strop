@@ -27,15 +27,12 @@ impl Editor {
     /// The active terminal chord's complete escape grammar, while it pends.
     pub fn terminal_prefix_hint(&self) -> Option<&'static str> {
         let session = self.terminal_document(self.current())?.session;
-        let prefix = self
+        let _prefix = self
             .terminals
             .prefix
             .as_ref()
             .filter(|prefix| prefix.session == session)?;
-        Some(match prefix.kind {
-            PrefixKind::Escape => "ctrl-\\ ctrl-n normal · any other key sends to child",
-            PrefixKind::Window => "ctrl-w h/j/k/l/w panes · N normal · . literal",
-        })
+        Some("ctrl-\\ ctrl-n normal · F2 direct · any other key sends to child")
     }
     pub fn terminal_has_new_output(&self, document: DocumentId) -> bool {
         let Some(source) = self.terminal_document(document) else {

@@ -738,7 +738,7 @@ fn transient(editor: &Editor) -> String {
         // 0065 S2: the transient names the escape out of every terminal
         // state — the escape is the discovery surface, not a secret.
         let hint = if editor.terminal_input_active() {
-            "ctrl-\\ ctrl-n normal · ctrl-w panes"
+            "F2 normal · ctrl-\\ ctrl-n alternative"
         } else if new_output {
             "new output · :terminal-refresh · i follows"
         } else if phase == "running" || phase == "starting" || phase == "closing" {

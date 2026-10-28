@@ -16,6 +16,7 @@ use super::{accent, base, muted, select_bg, text};
 /// Pending prefixes that show a card: (pending keys, card title).
 const PREFIXES: &[(&str, &str)] = &[
     (" ", " space "),
+    (" w", " space w "),
     (" g", " space g "),
     ("g", " g "),
     ("]", " ] "),

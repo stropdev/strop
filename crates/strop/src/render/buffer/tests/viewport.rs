@@ -115,6 +115,17 @@ fn long_line_tabs_unicode_and_native_caret_share_origin() {
 }
 
 #[test]
+fn split_titles_show_the_space_w_jump_numbers() {
+    let mut e = Editor::new(Buffer::from_text("alpha\n"));
+    e.split(true, None);
+    let mut terminal = viewport_terminal(50, 6);
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    let titles = row_symbols(terminal.backend().buffer(), 0, 0, 50).join("");
+    assert!(titles.contains("1  [No Name]"), "{titles:?}");
+    assert!(titles.contains("2 ▌[No Name]"), "{titles:?}");
+}
+
+#[test]
 fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     let mut e = Editor::new(Buffer::from_text("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\n"));
     e.set_head(3);

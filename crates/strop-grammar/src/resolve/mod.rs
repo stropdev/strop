@@ -385,19 +385,40 @@ fn resolve_controlled(
                     "line start".to_string(),
                 )
             }
-            Motion::FirstNonBlank => {
-                // ^ — past the line's leading blanks (stays on the line)
-                let line = buf.line_of(cursor);
+            Motion::FirstNonBlank | Motion::Underscore => {
+                // ^ stays on the current line; _ moves count - 1 lines down.
+                let line = if *m == Motion::Underscore {
+                    buf.line_of(cursor)
+                        .saturating_add(count.saturating_sub(1))
+                        .min(buf.last_content_line())
+                } else {
+                    buf.line_of(cursor)
+                };
                 let (lo, hi) = (buf.line_start(line), buf.line_end(line));
                 let mut s = lo;
                 while s < hi && buf.byte(s).is_ascii_whitespace() {
                     s += 1;
                 }
-                (
-                    Range::charwise(s.min(cursor), s.max(cursor)),
-                    false,
-                    "first non-blank".to_string(),
-                )
+                if *m == Motion::Underscore && cmd.op.is_some() {
+                    let first = buf.line_of(cursor);
+                    let start = buf.line_start(first);
+                    let end = if line + 1 >= buf.len_lines() {
+                        buf.len_bytes()
+                    } else {
+                        buf.line_start(line + 1)
+                    };
+                    (
+                        Range::linewise(start, end),
+                        true,
+                        format!("{} lines", line - first + 1),
+                    )
+                } else {
+                    (
+                        Range::charwise(s.min(cursor), s.max(cursor)),
+                        false,
+                        "first non-blank".to_string(),
+                    )
+                }
             }
             Motion::LineEnd => {
                 let e = buf.line_end(buf.line_of(cursor));
@@ -541,8 +562,8 @@ pub fn cursor_after(buf: &Buffer, _cursor: usize, cmd: &Command, r: &Resolved) -
     match &cmd.target {
         Target::Motion(Motion::Down | Motion::Up) => r.range.start.get(),
         Target::Motion(Motion::WordBackward | Motion::LineStart) => r.range.start.get(),
-        Target::Motion(Motion::FirstNonBlank | Motion::Column) => {
-            // ^ lands on the non-blank — whichever side of the cursor
+        Target::Motion(Motion::FirstNonBlank | Motion::Underscore | Motion::Column) => {
+            // ^/_ land on the non-blank — whichever side of the cursor
             // that is (the range is (min, max) of cursor and target)
             if _cursor <= r.range.start.get() {
                 r.range.end.get()

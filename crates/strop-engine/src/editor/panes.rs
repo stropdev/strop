@@ -169,7 +169,7 @@ impl Editor {
         }
     }
 
-    /// `C-w` navigation: h/l/j/k direction, w cycle.
+    /// `Space w` navigation: h/l/j/k direction, w cycle, 1-9 direct focus.
     pub(crate) fn pane_move(&mut self, key: char) {
         let n = self.panes.len();
         if n < 2 {
@@ -177,6 +177,14 @@ impl Editor {
             return;
         }
         let next = match (self.layout, key) {
+            (_, '1'..='9') => {
+                let index = key as usize - '1' as usize;
+                if index >= n {
+                    self.message = format!("no pane {key}");
+                    return;
+                }
+                index
+            }
             (LayoutDir::Row, 'h') => self.active_pane.checked_sub(1).unwrap_or(n - 1),
             (LayoutDir::Row, 'l') => (self.active_pane + 1) % n,
             (LayoutDir::Column, 'k') => self.active_pane.checked_sub(1).unwrap_or(n - 1),
@@ -206,7 +214,7 @@ impl Editor {
 }
 
 impl Editor {
-    /// Table shims (0008 stage 2): ctrl-w children dispatch by key.
+    /// Table shims (0008 stage 2): Space w children dispatch by key.
     pub(crate) fn pane_move_pub(&mut self, key: char) {
         self.pane_move(key);
     }
@@ -236,9 +244,8 @@ mod tests {
         assert_eq!(e.active_pane, 1);
         // the new pane shows the same buffer from its own view
         e.feed_text("gg");
-        // C-w back to the first pane — it kept its cursor
-        e.feed(strop_core::frontend_input::Key::CtrlW);
-        e.feed(strop_core::frontend_input::Key::Char('h'));
+        // Space w 1 returns to the first pane — it kept its cursor
+        e.feed_text(" w1");
         assert_eq!(e.active_pane, 0);
         assert_eq!(e.buf().line_of(e.head()), 1, "pane 1 kept its own cursor");
         // :q closes the pane, buffer stays
@@ -258,9 +265,32 @@ mod tests {
         e.feed_text(&format!(":vs {}<cr>", b.display()));
         e.wait_io().unwrap();
         assert_eq!(e.panes.len(), 2);
-        assert_eq!(e.buf().path.as_deref(), Some(b.as_path()));
-        e.feed(strop_core::frontend_input::Key::CtrlW);
-        e.feed(strop_core::frontend_input::Key::Char('h'));
+        e.feed_text(" w1");
         assert_eq!(e.buf().path.as_deref(), Some(a.as_path()));
+    }
+
+    #[test]
+    fn space_w_splits_focuses_numbers_and_retires_ctrl_w() {
+        let mut e = Editor::new(Buffer::from_text("alpha\nbeta\n"));
+        e.feed_text(" wv");
+        assert_eq!(e.panes.len(), 2);
+        assert_eq!(e.layout(), LayoutDir::Row);
+        e.feed_text(" w-");
+        assert_eq!(e.panes.len(), 3);
+        assert_eq!(e.layout(), LayoutDir::Column);
+        e.feed_text(" w1");
+        assert_eq!(e.active_pane(), 0);
+        e.feed_text(" w3");
+        assert_eq!(e.active_pane(), 2);
+
+        e.feed(strop_core::frontend_input::Key::CtrlW);
+        e.feed_text("1");
+        assert_eq!(e.active_pane(), 2, "Ctrl-W no longer owns panes");
+
+        e.feed_text(" w9");
+        assert_eq!(e.active_pane(), 2);
+        assert_eq!(e.message(), "no pane 9");
+        e.feed_text(" wq");
+        assert_eq!(e.panes.len(), 2);
     }
 }

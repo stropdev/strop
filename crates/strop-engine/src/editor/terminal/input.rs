@@ -13,41 +13,6 @@ fn control(key: KeyEvent, letter: char, raw: char) -> bool {
             && key.modifiers.control)
             || key.code == KeyCode::Char(raw))
 }
-enum WindowCommand {
-    Inspect,
-    Literal,
-    Move(char),
-}
-
-/// Vim's terminal `t_CTRL-W` grammar, adapted to strop's panes: plain
-/// hjkl/w (and arrows) move or cycle panes, `N` (or the Ctrl-N escape)
-/// enters the pinned-snapshot inspection, `.` forwards the literal 0x17.
-/// Everything else — including modified combos — falls through so the
-/// child still receives what a bare keystroke would have sent.
-fn window_command(key: KeyEvent) -> Option<WindowCommand> {
-    if key.modifiers.control
-        || key.modifiers.alt
-        || key.modifiers.super_key
-        || key.modifiers.hyper
-        || key.modifiers.meta
-    {
-        if key.modifiers.control && matches!(key.code, KeyCode::Char('n' | 'N')) {
-            return Some(WindowCommand::Inspect);
-        }
-        return None;
-    }
-    match key.code {
-        KeyCode::Char('h') | KeyCode::Left => Some(WindowCommand::Move('h')),
-        KeyCode::Char('l') | KeyCode::Right => Some(WindowCommand::Move('l')),
-        KeyCode::Char('k') | KeyCode::Up => Some(WindowCommand::Move('k')),
-        KeyCode::Char('j') | KeyCode::Down => Some(WindowCommand::Move('j')),
-        KeyCode::Char('w') => Some(WindowCommand::Move('w')),
-        KeyCode::Char('N') => Some(WindowCommand::Inspect),
-        KeyCode::Char('n') if key.modifiers.shift => Some(WindowCommand::Inspect),
-        KeyCode::Char('.') => Some(WindowCommand::Literal),
-        _ => None,
-    }
-}
 impl Editor {
     pub(crate) fn terminal_owns_input(&self) -> bool {
         self.terminal_input_active() && self.input_owner() == InputOwner::Terminal
@@ -68,62 +33,32 @@ impl Editor {
             self.terminals.prefix = None;
         }
         if let Input::Key(key) = &input {
+            if key.kind == KeyKind::Press
+                && key.code == KeyCode::Function(2)
+                && key.modifiers == Default::default()
+            {
+                self.terminals.prefix = None;
+                self.enter_terminal_normal(session);
+                return;
+            }
             if let Some(prefix) = &mut self.terminals.prefix {
                 if key.kind == KeyKind::Release && key.code == prefix.press.code {
                     prefix.release = Some(*key);
                     return;
                 }
-                if key.kind != KeyKind::Release {
-                    let (kind, press) = (prefix.kind, prefix.press);
-                    match kind {
-                        PrefixKind::Escape => {
-                            if control(*key, 'n', '\x0e') {
-                                self.terminals.prefix = None;
-                                self.enter_terminal_normal(session);
-                                return;
-                            }
-                        }
-                        PrefixKind::Window => {
-                            if let Some(command) = window_command(*key) {
-                                self.terminals.prefix = None;
-                                match command {
-                                    WindowCommand::Inspect => {
-                                        self.enter_terminal_normal(session);
-                                    }
-                                    WindowCommand::Literal => {
-                                        self.send_terminal_input(session, Input::Key(press));
-                                    }
-                                    WindowCommand::Move(direction) => {
-                                        self.pane_move(direction);
-                                    }
-                                }
-                                return;
-                            }
-                        }
-                    }
-                }
-            } else if key.kind == KeyKind::Press {
-                if control(*key, '\\', '\x1c') {
-                    self.terminals.prefix = Some(Prefix {
-                        session,
-                        kind: PrefixKind::Escape,
-                        focus: self.focus_epoch,
-                        press: *key,
-                        release: None,
-                    });
+                if key.kind != KeyKind::Release && control(*key, 'n', '\x0e') {
+                    self.terminals.prefix = None;
+                    self.enter_terminal_normal(session);
                     return;
                 }
-                if control(*key, 'w', '\x17') {
-                    self.terminals.prefix = Some(Prefix {
-                        session,
-                        kind: PrefixKind::Window,
-                        focus: self.focus_epoch,
-                        press: *key,
-                        release: None,
-                    });
-                    self.message = "ctrl-w: h j k l w panes · N inspect · . literal".into();
-                    return;
-                }
+            } else if key.kind == KeyKind::Press && control(*key, '\\', '\x1c') {
+                self.terminals.prefix = Some(Prefix {
+                    session,
+                    focus: self.focus_epoch,
+                    press: *key,
+                    release: None,
+                });
+                return;
             }
         }
         if let Some(prefix) = self.terminals.prefix.take() {
@@ -213,7 +148,7 @@ impl Editor {
         if self.terminals.focused {
             self.send_terminal_focus(session, true);
         }
-        self.message = "terminal input — Ctrl-\\ Ctrl-N Normal · Ctrl-W panes".into();
+        self.message = "terminal input — F2 Normal · Ctrl-\\ Ctrl-N alternative".into();
         true
     }
     pub(crate) fn terminal_paste_decision(&mut self, accept: bool) {

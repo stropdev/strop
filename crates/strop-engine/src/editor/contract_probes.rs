@@ -56,7 +56,7 @@ fn review_split_from_empty_scratch_retains_live_panes() {
     let mut e = Editor::new(Buffer::from_text(""));
     e.feed_text(&format!(":vs {}<cr>", path.display()));
     e.wait_io().unwrap();
-    e.feed_text("<c-w>h");
+    e.feed_text(" w1");
     assert_eq!(e.panes.len(), 2);
     assert!(e.panes.iter().all(|p| e.docs.get(p.doc).is_some()));
 }

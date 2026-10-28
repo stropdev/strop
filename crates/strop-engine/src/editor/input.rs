@@ -404,7 +404,10 @@ impl Walker {
 
         // --- ground state: counts before anything (contextual zero)
         if let Key::Char(c) = key {
-            if c.is_ascii_digit() && (c != '0' || self.state.count1.is_some()) {
+            if self.path.is_empty()
+                && c.is_ascii_digit()
+                && (c != '0' || self.state.count1.is_some())
+            {
                 self.state.count1 = Some(Self::push_digit(self.state.count1, c));
                 return Action::Pending;
             }

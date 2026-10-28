@@ -16,8 +16,8 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
-        keys: "ctrl-w h/j/k/l/w · ctrl-w N · ctrl-w .",
-        desc: "from terminal input: move/cycle panes, enter inspection, or send the literal byte (vim t_CTRL-W)",
+        keys: "f2",
+        desc: "terminal input → editor Normal inspection (single-key, Windows-safe)",
         sections: &["terminal"],
         live: true,
         id: "terminal-window",
@@ -512,7 +512,7 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Leaf(crate::editor::Editor::join_or_repeat),
     },
     Binding {
-        keys: "^",
+        keys: "^ _",
         desc: "first non-blank",
         sections: &["normal"],
         live: true,
@@ -1072,8 +1072,8 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::TextLine,
     },
     Binding {
-        keys: "ctrl-w h / l / j / k / w",
-        desc: "pane move / cycle",
+        keys: "space w h / l / j / k / w / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9",
+        desc: "pane move / cycle / focus 1-9",
         sections: &["ex+panes"],
         live: true,
         id: "pane-nav",
@@ -1088,8 +1088,8 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| crate::editor::Editor::jump_back(e)),
     },
     Binding {
-        keys: "ctrl-w v / s",
-        desc: "pane split (vs / sp)",
+        keys: "space w v / -",
+        desc: "pane split (vertical / horizontal)",
         sections: &["ex+panes"],
         live: true,
         id: "pane-split",
@@ -1104,7 +1104,7 @@ pub const BINDINGS: &[Binding] = &[
         handler: Handler::TextLine,
     },
     Binding {
-        keys: "ctrl-w q",
+        keys: "space w q",
         desc: "close pane (last → buffer)",
         sections: &["ex+panes"],
         live: true,

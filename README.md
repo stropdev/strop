@@ -35,7 +35,7 @@ an ARM binary.
 ## The grammar in one card
 
 ```
-h j k l w b e 0 $ gg G %      motions          i a A o O            insert
+h j k l w b e 0 ^ _ $ gg G %  motions          i a A o O            insert
 d y c > < + motion/object     operators        dd yy cc D C Y s x   shortcuts
 iw i" i' i( i[ i{             text objects     f t / ? n N          find & search
 v V                           visual           u ctrl-r .           undo, redo, repeat
@@ -43,6 +43,7 @@ v V                           visual           u ctrl-r .           undo, redo, 
 Q                            multicursor      Space c              cursor below
 
 Space  f files · o remote/containers · b buffers · / Search · R replace · ? help
+Space w  - horizontal · v vertical · 1-9 focus · h/j/k/l/w move · q close
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 
@@ -452,11 +453,12 @@ the editor's cwd. SSH/container contexts refuse interactive execution; the
 separately labelled **Open local terminal** / `:terminal-local` is a deliberate
 local choice, never a fallback against a remote-looking path.
 
-- **Terminal input:** Esc, Ctrl-C, Ctrl-R, Alt and function keys go to the child.
-  **Ctrl-\\ Ctrl-N** enters editor Normal mode; legacy terminals may spell the
-  prefix as Ctrl-4. **Ctrl-W h/j/k/l/w** changes panes, **Ctrl-W N** enters Normal,
-  and **Ctrl-W .** sends a literal Ctrl-W. The modeline names both escapes and
-  expands the pending chord. Legacy Esc/Alt ambiguity remains an outer-terminal limitation.
+- **Terminal input:** Esc, Ctrl-C, Ctrl-R, Ctrl-W, Alt and function keys go to the child.
+  **F2** enters editor Normal mode directly, without an OS-sensitive chord;
+  **Ctrl-\\ Ctrl-N** remains an alternative (legacy terminals may spell the prefix
+  as Ctrl-4). The modeline names both paths and expands a pending chord. Legacy
+  Esc/Alt ambiguity remains an outer-terminal limitation. After entering Normal,
+  **Space w** owns pane commands.
 - **Normal inspection:** ordinary motions, search, selection and yank use a pinned,
   read-only logical text snapshot. Output continues without moving that snapshot;
   **i**, **I**, **a** or **A** follows live input again. Other inspecting panes keep their snapshot.

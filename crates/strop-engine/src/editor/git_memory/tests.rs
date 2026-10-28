@@ -579,8 +579,7 @@ fn q_in_split_closes_pane_then_buffer() {
     let (_d, mut e) = fixture();
     e.open_log(false);
     pump(&mut e);
-    e.feed(Key::CtrlW);
-    e.feed_text("v"); // split: both panes show the log
+    e.feed_text(" wv"); // split: both panes show the log
     assert_eq!(e.panes.len(), 2);
     e.feed_text("q");
     assert_eq!(e.panes.len(), 1, "q closes the pane in a split");

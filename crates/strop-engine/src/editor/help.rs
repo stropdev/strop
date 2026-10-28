@@ -204,12 +204,7 @@ mod tests {
         );
         // 0065 S2: the terminal section names every dispatchable escape —
         // the exit from terminal input is discoverable from `?` alone.
-        for escape in [
-            "ctrl-\\ ctrl-n",
-            "ctrl-w N",
-            "ctrl-w .",
-            ":terminal-refresh",
-        ] {
+        for escape in ["ctrl-\\ ctrl-n", "ctrl-4 ctrl-n", ":terminal-refresh"] {
             assert!(text.contains(escape), "help lost the {escape} escape");
         }
         // it's a real buffer: / searches it

@@ -514,8 +514,8 @@ fn edits_map_marks_jumps_and_other_panes() {
     // the anchors moves ALL of them
     let mut e = Editor::new(Buffer::from_text("aaa\nbbb TARGET\nccc\n"));
     e.feed_text("jma"); // mark a on the TARGET line
-    e.feed_text("<c-w>v"); // second pane, same doc (cursor on TARGET)
-    e.feed_text("<c-w>h"); // back to pane 1
+    e.feed_text(" wv"); // second pane, same doc (cursor on TARGET)
+    e.feed_text(" w1"); // back to pane 1
     e.feed_text("ggOheader");
     e.feed(strop_core::frontend_input::Key::Esc);
     // the mark moved from line 1 to line 2

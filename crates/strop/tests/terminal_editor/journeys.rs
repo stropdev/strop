@@ -6,6 +6,18 @@ use std::process::Command;
 use std::time::Duration;
 
 #[test]
+fn real_f2_enters_terminal_inspection() {
+    let directory = tempfile::tempdir().unwrap();
+    let trace = directory.path().join("terminal.jsonl");
+    let mut tui = Tui::start(directory.path(), &trace);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b":terminal env PS1='STROP-PTY> ' /bin/sh -i\r");
+    tui.until(|screen| screen.contains("TERMINAL") && screen.contains("STROP-PTY>"));
+    tui.send(b"\x1bOQ");
+    tui.until(|screen| screen.contains("NORMAL") && screen.contains("snapshot"));
+}
+
+#[test]
 fn real_terminal_input_consent_quit_and_execution_free_replay() {
     let directory = tempfile::tempdir().unwrap();
     let trace = directory.path().join("terminal.jsonl");
@@ -86,20 +98,18 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         );
     }
     tui.until(|screen| line(screen, "BYTE-DONE"));
-    // The prefix grammar's pass-through contract (0055 §12, literal
-    // escape-prefix recovery): `Ctrl-W .` delivers the literal 0x17, and a
-    // nonmatching `Ctrl-\` or `Ctrl-W` follow-up forwards the prefix byte
-    // plus the key, in order — nothing the user typed may disappear.
-    tui.send(b"stty raw -echo; printf 'PREFIX-READY\\n'; dd bs=1 count=5 2>/dev/null | od -An -tx1; stty sane; printf '\\r\\nPREFIX-DONE\\n'\r");
+    // Ctrl-W is ordinary child input. A nonmatching Ctrl-\ follow-up
+    // forwards the escape-prefix byte plus the key, in order.
+    tui.send(b"stty raw -echo; printf 'PREFIX-READY\\n'; dd bs=1 count=3 2>/dev/null | od -An -tx1; stty sane; printf '\\r\\nPREFIX-DONE\\n'\r");
     tui.until(|screen| line(screen, "PREFIX-READY"));
-    tui.send(b"\x17.\x1cz\x17z");
+    tui.send(b"\x17\x1cz");
     tui.until(|screen| {
         screen.lines().any(|row| {
             strip_track(row)
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" ")
-                == "17 1c 7a 17 7a"
+                == "17 1c 7a"
         })
     });
     tui.until(|screen| line(screen, "PREFIX-DONE"));
@@ -131,6 +141,11 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         })
     });
     tui.until(|screen| line(screen, "MODE-DONE"));
+    // F2 enters inspection directly at a calm prompt.
+    tui.send(b"\x1bOQ");
+    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
+    tui.send(b"i");
+    tui.until(|screen| screen.contains("TERMINAL"));
     // Sustained output (0055 §12): while a sixteen-KiB `yes` stream floods
     // the PTY, the editor still admits input and renders — the mode escape
     // lands mid-flood — and the bounded history drops the flood's head:
@@ -212,12 +227,12 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     assert!(!split
         .lines()
         .any(|row| cells(row, 0, 58).trim() == "ASYNC-INSPECTION-OUTPUT"));
-    // From terminal input, the t_CTRL-W grammar moves panes without the
-    // child seeing a byte: focus lands on the left editor pane (NORMAL),
-    // then returns to the terminal pane (TERMINAL) still owning input.
-    tui.send(b"\x17l");
+    // F2 followed by Space w moves panes without the child seeing a byte:
+    // focus lands on the left editor pane (NORMAL), then returns to the
+    // terminal pane and resumes live input with i.
+    tui.send(b"\x1bOQ w l");
     tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
-    tui.send(b"\x17h");
+    tui.send(b" w hi");
     tui.until(|screen| screen.contains("TERMINAL"));
     tui.send(b"printf 'SIZE:'; stty size\r");
     tui.until(|screen| {

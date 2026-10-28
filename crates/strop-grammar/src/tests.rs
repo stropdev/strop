@@ -209,6 +209,57 @@ pub mod contract {
     }
 }
 
+mod underscore_tests {
+    use crate::*;
+    use strop_core::Buffer;
+
+    fn cursor_after_keys(buf: &Buffer, cursor: usize, keys: &str) -> usize {
+        let command = super::contract::cmd(keys);
+        let resolved = resolve(buf, cursor, &command).unwrap().unwrap();
+        cursor_after(buf, cursor, &command, &resolved)
+    }
+
+    #[test]
+    fn underscore_finds_nonblank_after_counted_line_movement() {
+        let text = "  first\n    second\n  third\n";
+        let buf = Buffer::from_text(text);
+
+        assert_eq!(cursor_after_keys(&buf, 5, "_"), text.find("first").unwrap());
+        assert_eq!(
+            cursor_after_keys(&buf, 0, "2_"),
+            text.find("second").unwrap()
+        );
+        assert_eq!(cursor_after_keys(&buf, 0, "^"), text.find("first").unwrap());
+        assert_eq!(cursor_after_keys(&buf, 5, "0"), 0);
+    }
+
+    #[test]
+    fn underscore_handles_empty_lines_and_clamps_to_last_content() {
+        let text = "start\n\n  last\n";
+        let buf = Buffer::from_text(text);
+        let empty = text.find("\n\n").unwrap() + 1;
+
+        assert_eq!(cursor_after_keys(&buf, 0, "2_"), empty);
+        assert_eq!(cursor_after_keys(&buf, empty, "_"), empty);
+        assert_eq!(
+            cursor_after_keys(&buf, 0, "99_"),
+            text.find("last").unwrap()
+        );
+    }
+    #[test]
+    fn underscore_operators_are_linewise() {
+        let buf = Buffer::from_text("  first\n    second\n  third\n");
+        let one = resolve(&buf, 4, &super::contract::cmd("d_"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(buf.slice_string(one.range), "  first\n");
+        let two = resolve(&buf, 4, &super::contract::cmd("d2_"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(buf.slice_string(two.range), "  first\n    second\n");
+    }
+}
+
 mod zero_tests {
     use crate::*;
     use strop_core::Buffer;

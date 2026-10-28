@@ -61,7 +61,7 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ p P` — paste after / before
 - `✓ r<c>` — replace char
 - `✓ J .` — join lines · repeat change
-- `✓ ^` — first non-blank
+- `✓ ^ _` — first non-blank
 - `✓ ~` — toggle case
 - `✓ S` — change line
 - `✓ u ctrl-r` — undo / redo (one unit per command)
@@ -75,6 +75,7 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ gb` — select next occurrence of word/selection
 - `✓ gB` — select all occurrences in buffer
 - `✓ d y c x > <` — operate on selection
+- `✓ ctrl-c` — toggle comments on selected lines
 - `✓ S<c>` — wrap selection in pair
 - `✓ i<a> a<a>` — objects select (vi[ works)
 - `✓ space y` — yank selection → clipboard
@@ -87,11 +88,11 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ up down` — choose completion when open; otherwise move the caret
 - `✓ ctrl-y` — accept choice
 - `✓ ctrl-e` — dismiss
-- `✓ tab` — indent; accept completion only after deliberate selection
+- `✓ tab s-tab` — indent/dedent; with the menu open, cycle candidates with a live preview
 - `✓ esc` — dismiss completion and enter Normal mode in one event (one undo unit)
 - `✓ backspace` — delete back
 - `✓ enter` — new line (auto-indent); accept completion only after deliberate selection
-- `✓ } ] )` — closer on indent-only line dedents
+- `✓ } ] )` — closer on indent-only line aligns to its opener
 
 ## leader
 
@@ -138,12 +139,21 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ :e` — edit file
 - `✓ :help` — help buffer (this text — / searches it)
+- `✓ :theme` — choose a built-in interface palette
+- `✓ :jumps :symbols` — jumplist / document symbols picker
+- `✓ :noh` — clear the persistent search highlight
+- `✓ :format :rename` — format buffer / rename symbol: :rename NEW
+- `✓ :recover` — draft recovery: list, restore N, discard N, consent remote|off
+- `✓ :qa :qall` — quit all (fails on unsaved; bang discards)
+- `✓ :collection` — source, expand or contract the excerpt at the caret
+- `✓ :container-worker` — authorize a verified worker for the attached container; may write its private cache
+- `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :vs :sp` — split vertical / horizontal
-- `✓ ctrl-w h / l / j / k / w` — pane move / cycle
+- `✓ space w h / l / j / k / w / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` — pane move / cycle / focus 1-9
 - `✓ ctrl-o / ctrl-i (tab)` — jump back / forward (jumplist)
-- `✓ ctrl-w v / s` — pane split (vs / sp)
+- `✓ space w v / -` — pane split (vertical / horizontal)
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
-- `✓ ctrl-w q` — close pane (last → buffer)
+- `✓ space w q` — close pane (last → buffer)
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
 - `✓ ctrl-x` — Search: exclude/include match
 - `✓ ctrl-space` — query field: qualifier, language and value suggestions
@@ -160,8 +170,8 @@ Generated from the command table (`strop --dump-compat`).
 
 - `✓ :terminal :terminal-local :terminal-stop` — launch a local PTY, explicitly choose local context, or stop and retain output
 - `✓ ctrl-\ ctrl-n` — terminal input → editor Normal inspection; Esc stays with the child
-- `✓ ctrl-w h/j/k/l/w · ctrl-w N · ctrl-w .` — from terminal input: move/cycle panes, enter inspection, or send the literal byte (vim t_CTRL-W)
-- `✓ i a` — terminal Normal inspection → live child input (never relaunches an exited session)
+- `✓ f2` — terminal input → editor Normal inspection (single-key, Windows-safe)
+- `✓ i I a A` — terminal Normal inspection → live child input (never relaunches an exited session)
 - `✓ :terminal-paste :terminal-paste-cancel` — confirm or discard the scoped held multiline/control paste
 - `✓ :terminal-refresh` — reinstall the latest output into the pinned inspection snapshot (never auto-refreshes a selection)
 - `✓ ctrl-4 ctrl-n` — legacy Ctrl-\ Ctrl-N spelling from the outer terminal decoder

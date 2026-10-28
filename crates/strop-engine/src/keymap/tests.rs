@@ -39,18 +39,6 @@ fn terminal_escapes_render_live_in_help() {
             "terminal escape {keys:?} has no live row in the terminal section"
         );
     }
-    let window = terminal
-        .iter()
-        .find(|b| b.id == "terminal-window")
-        .expect("terminal-window row");
-    assert!(window.live);
-    for token in ["ctrl-w h/j/k/l/w", "ctrl-w N", "ctrl-w ."] {
-        assert!(
-            window.keys.contains(token),
-            "terminal-window row lost {token:?}: {}",
-            window.keys
-        );
-    }
 }
 
 /// The notation expands: leaders glue, alternatives fan out, a
@@ -85,7 +73,7 @@ fn keys_notation_expands() {
 /// verbs); soon rows come through as soon.
 #[test]
 fn which_key_children() {
-    for p in [" ", " g", "g", "[", "]", "m", "'", "`"] {
+    for p in [" ", " w", " g", "g", "[", "]", "m", "'", "`"] {
         assert!(
             !children_of(p, Mode::Normal).is_empty(),
             "no hints for pending {p:?}"
@@ -217,14 +205,23 @@ const DISPATCHED: &[&str] = &[
     ":vsplit",
     ":sp",
     ":split",
-    "ctrl-w h",
-    "ctrl-w l",
-    "ctrl-w j",
-    "ctrl-w k",
-    "ctrl-w w",
-    "ctrl-w v",
-    "ctrl-w s",
-    "ctrl-w q",
+    "space w h",
+    "space w l",
+    "space w j",
+    "space w k",
+    "space w w",
+    "space w 1",
+    "space w 2",
+    "space w 3",
+    "space w 4",
+    "space w 5",
+    "space w 6",
+    "space w 7",
+    "space w 8",
+    "space w 9",
+    "space w v",
+    "space w -",
+    "space w q",
     // picker (0007 replace incl. ctrl-x), insert closers, surfaces
     "up",
     "down",

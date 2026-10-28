@@ -232,7 +232,8 @@ fn terminal_input_and_inspection_present_distinct_states() {
     let statusline_y = 11;
     editor.feed_text("i");
     assert!(editor.terminal_input_active());
-    // The entry message names the escape (0065 S2's message surface).
+    // The entry message names the direct inspection key and fallback.
+    assert!(editor.message().contains("F2"), "{}", editor.message());
     assert!(
         editor.message().contains("Ctrl-\\ Ctrl-N"),
         "{}",
@@ -251,8 +252,8 @@ fn terminal_input_and_inspection_present_distinct_states() {
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
     assert!(row.contains(" TERMINAL "), "{row}");
-    assert!(row.contains("ctrl-\\ ctrl-n normal"), "{row}");
-    assert!(row.contains("ctrl-w panes"), "{row}");
+    assert!(row.contains("F2 normal"), "{row}");
+    assert!(row.contains("ctrl-\\ ctrl-n alternative"), "{row}");
     let (x, _) = find_cell(&buffer, " TERMINAL ").unwrap();
     assert_eq!(buffer[(x, statusline_y)].bg, super::terminal_chip());
     // A pending escape names its completion instead of looking stuck.
@@ -262,10 +263,12 @@ fn terminal_input_and_inspection_present_distinct_states() {
         .unwrap();
     let row = row_text(terminal.backend().buffer(), statusline_y);
     assert!(row.contains("any other key sends to child"), "{row}");
-    // Ctrl-\ Ctrl-N leaves to inspection: NORMAL chip in the normal
-    // accent; with the entry message spent, the steady-state hint names
-    // the way back.
-    ctrl(&mut editor, 'n');
+    // F2 leaves directly to inspection, even while another prefix pends.
+    editor.handle_app_event(crate::editor::events::AppEvent::Input(
+        strop_core::frontend_input::Input::Key(strop_core::frontend_input::KeyEvent::press(
+            strop_core::frontend_input::KeyCode::Function(2),
+        )),
+    ));
     assert!(!editor.terminal_input_active());
     assert!(
         editor.message().contains("snapshot"),

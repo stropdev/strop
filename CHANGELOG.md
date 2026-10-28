@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.46.3 — 2026-10-28
+
+### Added
+
+- **Numbered pane navigation** (0076): `Space w -` splits horizontally, `Space w v` vertically, and `Space w 1` through `Space w 9` focus a pane directly. Multi-pane titles show the same numbers. Directional movement and `Space w q` remain in the new menu, replacing the old Normal `Ctrl-W` bindings.
+- **Windows-safe terminal inspection**: `F2` enters pinned Normal/Visual inspection directly. `Ctrl-\ Ctrl-N` remains an alternative; terminal `Ctrl-W` is ordinary child input rather than a second pane grammar.
+
+### Fixed
+
+- **Vim underscore motion**: `_` moves to the current line's first nonblank; a count moves down `count - 1` lines first, with empty-line and EOF boundaries handled. Operator forms are linewise (`d_` = `dd`, `d2_` = `2dd`).
+
 ## 0.46.2 — 2026-10-27
 
 ### Added

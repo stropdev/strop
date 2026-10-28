@@ -62,6 +62,8 @@ pub enum Motion {
     WordEnd,
     /// `^` — first non-blank char of the line.
     FirstNonBlank,
+    /// `_` — first non-blank char after moving count - 1 lines down.
+    Underscore,
     LineStart,
     LineEnd,
     /// `|` — screen column (count, default 1). Restored to vim semantics

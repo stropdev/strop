@@ -104,9 +104,10 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
                 if document.buf.dirty { " *" } else { "" },
                 if document.buf.readonly { " [RO]" } else { "" }
             );
-            let budget = w.saturating_sub(super::clip::width(&flags) + 2);
+            let budget = w.saturating_sub(super::clip::width(&flags) + 4);
             let title = format!(
-                "{} {}{}",
+                "{} {}{} {}",
+                i + 1,
                 if active { "▌" } else { " " },
                 super::clip::clip_end(&name, budget),
                 flags

@@ -237,7 +237,7 @@
           "crates/strop-core/src/theme/nord.rs": "2c1ab4a609639b785dc44415e841e9adea35c7a206aa1f92e7b677650caa6c81",
           "crates/strop-engine/src/config.rs": "2b4226e870a8b33f6661434919e455b03eddb783fae062019bbedf9966bb5604",
           "crates/strop-engine/src/editor/terminal/lifecycle.rs": "6dfc0aea30192d4c1850516a91c15ed5eebac2c051fd3ef442e24ffa54d6afcf",
-          "crates/strop-engine/src/editor/terminal/presentation.rs": "513c99ea88b7ccb3c107117b0c55bbe38f049a5743627a891209e18c2866f889",
+          "crates/strop-engine/src/editor/terminal/presentation.rs": "dd2f52fb001241e934a0a86ce46bd23b90344b9e5f18aad5c5e002c10d303d43",
           "crates/strop-engine/src/editor/theme.rs": "1f350702bde50142b6000b1395aa38c0d4268bb3d2f963bdd150ba7a8e04a5c5",
           "crates/strop-engine/src/editor/trace/seed.rs": "d5df3e07410eccaa6a5d808cebf5fce268e84087b1e83f7821f8254e014f156f",
           "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
@@ -255,7 +255,7 @@
           "crates/strop/src/render/diff.rs": "4336dc0dca6881efb8c3e2811eb29ea266d12fe88aef6a289db0b2a565bd245b",
           "crates/strop/src/render/mod.rs": "f3e506d1ef0bc95f73128ab3c162c8eba664f0a230facee82117e82e38abc1ef",
           "crates/strop/src/render/picker/preview.rs": "5f3220bbabcc840d4d15b2a592e41340ef6e6e95d3da12d6c5aeda209902d938",
-          "crates/strop/src/render/statusline.rs": "b3643186ff0176da8729a4c652cffc0c97c5a5cda63da6a1834988678952f5a0",
+          "crates/strop/src/render/statusline.rs": "70ca120355b27471d2890ca26a8e6d4d7e538a1a30679af3fe3221e4992048a6",
           "crates/strop/src/ui_stdio/mod.rs": "77aa880284354afa41ce58a22ead9824e22e808e52a4f3789d1ed4e8abd7757c"
         },
         "evidence": "b6b8b276d43c6dd27b72b3ad862d22ba35a9fe2ccd38a6e2b177fea8deb7783a"
@@ -2588,7 +2588,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "bee81e4964fb526b764d80a1e0ad644b7f4f9ce9089f3a9be2e0914dbbf677f0",
+          "crates/strop-fs/Cargo.toml": "74a8859cac02670195e132908d895aea60f89d85ff47aa026281cd16fcabb4ab",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -3050,7 +3050,7 @@
         },
         {
           "id": "TERM-OWNERSHIP",
-          "statement": "Editor-owned chords never leak to the child: window-prefix moves panes without reaching the child, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end. TUI finish keeps its absolute jobs deadline while rechecking a source thread that can settle silently after its final app event.",
+          "statement": "Editor-owned inspection keys never leak to the child: F2 enters pinned inspection directly, Ctrl-W remains ordinary child input, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end. TUI finish keeps its absolute jobs deadline while rechecking a source thread that can settle silently after its final app event.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -3058,11 +3058,10 @@
               "path": "crates/strop-engine/src/editor/terminal/tests.rs",
               "gate": "test",
               "tests": [
-                "terminal_window_prefix_moves_panes_without_reaching_the_child",
+                "terminal_f2_inspects_and_ctrl_w_goes_to_the_child",
                 "focus_loss_cancels_a_pending_terminal_escape_prefix",
                 "modal_terminal_baseline_journey",
-                "terminal_insert_keys_and_edit_refusals_explain_mode_switching",
-                "terminal_window_prefix_accepts_lowercase_scalar_plus_shift_n"
+                "terminal_insert_keys_and_edit_refusals_explain_mode_switching"
               ]
             },
             {
@@ -3070,7 +3069,8 @@
               "path": "crates/strop/tests/terminal_editor/journeys.rs",
               "gate": "test",
               "tests": [
-                "real_terminal_input_consent_quit_and_execution_free_replay"
+                "real_terminal_input_consent_quit_and_execution_free_replay",
+                "real_f2_enters_terminal_inspection"
               ]
             }
           ],
@@ -3087,8 +3087,8 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/terminal/input.rs": "7eb59ff34630e311e2bdb20f4cf60b97c7d3db3a3795f4c7dcbdd0e1e3faef2f",
-          "crates/strop-engine/src/editor/terminal/mod.rs": "c961787c86bb922fed9f17f33840694ae0b301c9abe6d9a17efd32f1a1ec60a6",
+          "crates/strop-engine/src/editor/terminal/input.rs": "945b4396a40ea667a46a2dd70483f92678f386c01ae77f9b0dc701a24161bb1c",
+          "crates/strop-engine/src/editor/terminal/mod.rs": "7d977a4c8b8da0055d505a94b5dadfc2f681064ab7089eb8ee3f9b47351d67a1",
           "crates/strop-terminal/native/bridge.c": "093dd7baf411b8e647a52404144ed7e5088424ed370ccdfb6ee974da7fd250af",
           "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
           "crates/strop-terminal/src/launch.rs": "c0b3c6b9e1ad4a98ae6598786ebacd29698a5d14376a8aa92214a9f5bc3d8dc4",
@@ -3103,7 +3103,7 @@
           "crates/strop-worker-client/src/session.rs": "7714845c6890277892056fa0bee8e0211e7515b87d0202d7c2d7b2bfb0e863a5",
           "crates/strop/src/terminal.rs": "323d4bc78a53c17c4a0db334d56618a5dc9e586b7dce9f6f2b40ddb61710c81e"
         },
-        "evidence": "599b6ef369a81a373768e53c7093f2c0b9a6d95b45d8e0c8c8701b47207994c9"
+        "evidence": "caec8422a094db89ff9293ee775b27745dbde3cfd8be595cbed09426df8ddbd6"
       }
     },
     {
@@ -3307,7 +3307,7 @@
           "crates/strop-picker/src/query/properties.rs": "95fa17d92f7522d80256dfd2f56a2f83f6634ec1781dd2963b6274d5ecfffa1f",
           "crates/strop-picker/src/query/store.rs": "80f5ec95470bf2ea2fd07e5448335c2bd3545daf46f316f7e25968af6945a09d",
           "crates/strop-picker/src/source/selection.rs": "cb73bf25a40c389634fd9df8e3a3ff1c1815b369a5a0d8be2fca9ad8290fc3b7",
-          "crates/strop/src/render/statusline.rs": "b3643186ff0176da8729a4c652cffc0c97c5a5cda63da6a1834988678952f5a0"
+          "crates/strop/src/render/statusline.rs": "70ca120355b27471d2890ca26a8e6d4d7e538a1a30679af3fe3221e4992048a6"
         },
         "evidence": "65aeb6dafe90fab7303eef60ba2b50e2c251cd494d9d557d52f652815a45ecb4"
       }
@@ -3335,9 +3335,67 @@
         "crates/strop-engine/src/editor/field.rs",
         "crates/strop-engine/src/editor/pending.rs",
         "crates/strop-engine/src/editor/picker/keys.rs",
-        "crates/strop-engine/src/editor/insert.rs"
+        "crates/strop-engine/src/editor/insert.rs",
+        "crates/strop-core/src/commands/bindings.rs",
+        "crates/strop-engine/src/keymap/bindings_adapter.rs",
+        "crates/strop-engine/src/editor/input.rs",
+        "crates/strop-engine/src/editor/panes.rs",
+        "crates/strop-grammar/src/types.rs",
+        "crates/strop-grammar/src/parse.rs",
+        "crates/strop-grammar/src/resolve/mod.rs",
+        "crates/strop/src/render/buffer.rs"
       ],
       "claims": [
+        {
+          "id": "UI-NUMBERED-PANE-NAVIGATION",
+          "statement": "Space w owns horizontal/vertical splits, directional and numbered pane focus and close. Multi-pane titles show one-based jump numbers, digits after the prefix are commands rather than repeat counts, and old Ctrl-W pane bindings are retired.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/panes.rs",
+              "gate": "test",
+              "tests": [
+                "space_w_splits_focuses_numbers_and_retires_ctrl_w"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/buffer/tests/viewport.rs",
+              "gate": "test",
+              "tests": [
+                "split_titles_show_the_space_w_jump_numbers"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0076 replaces the old Ctrl-W pane grammar with a discoverable Space w menu and direct numbered focus."
+          }
+        },
+        {
+          "id": "UI-UNDERSCORE-MOTION",
+          "statement": "Underscore resolves to first nonblank on the current line, with count N moving down N-1 lines first and empty/EOF boundaries remaining valid. Operator forms are linewise: d_ equals dd and d2_ equals 2dd.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-grammar/src/tests.rs",
+              "gate": "test",
+              "tests": [
+                "underscore_finds_nonblank_after_counted_line_movement",
+                "underscore_handles_empty_lines_and_clamps_to_last_content",
+                "underscore_operators_are_linewise"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0076 adds the missing Vim underscore motion through the shared parser and resolver."
+          }
+        },
         {
           "id": "UI-SHIFTED-KEY-NORMALIZATION",
           "statement": "After terminal ownership is decided, lowercase scalar plus SHIFT events produce the same editor character as legacy uppercase events for prompts, picker fields and Normal motions; control chords and PTY input retain their existing behavior.",
@@ -3536,21 +3594,29 @@
       ],
       "pins": {
         "sources": {
+          "crates/strop-core/src/commands/bindings.rs": "abbb714da195cc386d80518974fd305de29982e6dac2770d1f624e6c6f5c3047",
           "crates/strop-core/src/frontend_input.rs": "3e3a7995ea1cd3e9f96eb7aec7e38f9ed6fb735f66c1e1e16775f965c0bcce35",
           "crates/strop-engine/src/editor/events.rs": "af7a575787bd84ded905b7442dd245961baf81d0ffaf2d0f8eaab25570167c7a",
           "crates/strop-engine/src/editor/field.rs": "b4c5550c16970bff0b4839c18739c64a6969a6531686697322bcebe0ac22e3cf",
+          "crates/strop-engine/src/editor/input.rs": "8761dc0c04b3ce0778f2684f126eced52a6fc82822d9babdcef6be00389bd50d",
           "crates/strop-engine/src/editor/input/frontend.rs": "1030c5283ad86e5560f84a75061a4a076e1ec84050c9ab257f7c06f8e8db42fc",
           "crates/strop-engine/src/editor/insert.rs": "f9e5e682e26de7a841f1b5e68969b9107b8101dfec16305d86dca3eed52ed968",
+          "crates/strop-engine/src/editor/panes.rs": "d3bab86a54e28868cca62cd0047e16411921ba1e156110c4a6b1104256485748",
           "crates/strop-engine/src/editor/pending.rs": "1bbddb45a8a11c13b9666b8178dd2750192dfda4cf846b29d8c9528f8f07c641",
           "crates/strop-engine/src/editor/picker/keys.rs": "5a01c4ddb6201cd9b16ded5a87b167a36b55a3a761aee501a86dc3897fbd812d",
+          "crates/strop-engine/src/keymap/bindings_adapter.rs": "d47dd35b9dce8a9baececee85e43fdb64a2fc2808eba2e82c07eed03c2c23231",
+          "crates/strop-grammar/src/parse.rs": "d05b1771978b3f350adc9866b4ad20bc46318ab0c02b18c73170318b4b38bdda",
+          "crates/strop-grammar/src/resolve/mod.rs": "28b3922b1524ffb875b0e499f638ae12709817f67f60a7528bc9ad131af86d78",
+          "crates/strop-grammar/src/types.rs": "8ddd13087ae5a70cebbb5119d6cc2213c237e0e50a6a366cd8adc26e0ecc5290",
           "crates/strop-ui-protocol/src/driver.rs": "a101f334fbe9b4210251e26ab6fdc639cc4e62c16010786c1126dafbe5bbd1f8",
           "crates/strop-ui-protocol/src/message.rs": "0384cda6519a0f007ab1c2609f0ed1fc5e38adde336afe5669b119e0a8c59800",
           "crates/strop/src/headless/directives.rs": "978e40fd22a1836c4a280d914b93a31de3664e89d24fdb88b8499aa6a541e40c",
           "crates/strop/src/headless/driver.rs": "556e4bb1c4b88cbb016f973b68a69f5a9a5c5174856ad08a616a4a4c7d3bcbc5",
+          "crates/strop/src/render/buffer.rs": "f5f5acd1053451d483288a74196711a7bae36469f239ee6a451b8d74ae01e089",
           "crates/strop/src/replay.rs": "530665a536c98229a3505a23adc7376f5b6f26f4d065087c699f3deaab0a8840",
           "crates/strop/src/ui_stdio/serve.rs": "2e02823666231555c6cd5ebde08c81426cc9ee86ec5972df605fe1c433f7f9a4"
         },
-        "evidence": "30929db22f30d2e831df8dc91bc91a6a5a803fa54fae349ea0869f6abb7a7f05"
+        "evidence": "ec64e3cfecb28b3c89d452330429ec596a259daace69a71c254a47316ea01ac5"
       }
     },
     {
@@ -4258,7 +4324,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "c43f52a39c9e252520b02bc600fb093e60ae46503c2229bb4566aa4b446c94ff",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "bee81e4964fb526b764d80a1e0ad644b7f4f9ce9089f3a9be2e0914dbbf677f0",
+          "crates/strop-fs/Cargo.toml": "74a8859cac02670195e132908d895aea60f89d85ff47aa026281cd16fcabb4ab",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -4266,7 +4332,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "baedb2e71410ca862d342a5d89154e58eeb276356e9a619240cbcfea17e9a446",
+          "crates/strop-worker/Cargo.toml": "e2c66efbf09745c91a7e0dc269926ee3342468e0efb7ec5d16463dbfc39fc75a",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -4963,11 +5029,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "baedb2e71410ca862d342a5d89154e58eeb276356e9a619240cbcfea17e9a446",
+          "crates/strop-worker/Cargo.toml": "e2c66efbf09745c91a7e0dc269926ee3342468e0efb7ec5d16463dbfc39fc75a",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "b1fa1784fa0f778301deb454dbcb98a6d58853ae78b9193834ed0c457c87b1c5"
+          "crates/strop/Cargo.toml": "f0455f21d8a3b7df6d8d4e3c1289cdbd77422cbbee751d261702fdce50a5eb9c"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }
@@ -5147,7 +5213,7 @@
           "crates/strop-worker/src/serve/schedule.rs": "20b7d148a9015c1f98eaf1dfc48c40e6c44939ce2ea585dd5744154a89ff961e",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "7963c2c257efc76ba935088a7d52a4b0b4bd1629825323bd86436c91f40120a0"
+        "evidence": "ff46c9e5086604a88fa50810e7b3ecf4db5f9a0567160454bd55a3fb6300b3a6"
       }
     },
     {
@@ -5857,7 +5923,7 @@
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "b3d2778a79c7ae5a7ff148793a12f9c9b0da58401e788dba9f0897fada68cf28"
         },
-        "evidence": "03d03adcc0f40745e14e4076d6ecd81dda6a0ffef55fb0d6da56c3ab1baeb8a8"
+        "evidence": "2daa5b2264590ac320d309d66614b5fe10fa09ca07aa754ce94ccf465df68497"
       }
     },
     {

@@ -300,6 +300,7 @@ pub fn parse(keys: &str) -> Parse {
         b"%" => Motion::MatchPair,
         b"0" => Motion::LineStart,
         b"^" => Motion::FirstNonBlank,
+        b"_" => Motion::Underscore,
         b"$" => Motion::LineEnd,
         b"|" => Motion::Column,
         b"gg" => Motion::FirstLine,
