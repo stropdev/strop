@@ -346,6 +346,7 @@ impl SourceWorker {
                 super::grep::run(query, policy, root.path, snapshots, cache, tx, token)
             }
             Filesystem::Remote(_) => {
+                let _remote_work = tx.remote_work();
                 let admitted = match lease {
                     Some(SearchWorker::Admitted(worker)) => Some(worker),
                     Some(SearchWorker::Admit(admit)) => match admit(&token) {
@@ -359,7 +360,7 @@ impl SourceWorker {
                     },
                     None => None,
                 };
-                super::remote::run_search(query, policy, root, snapshots, admitted, tx, token)
+                super::remote::run_search(query, policy, root, snapshots, admitted, &tx, token)
             }
             Filesystem::Container(_) => Outcome::failed(
                 FailureKind::Unavailable,
@@ -511,6 +512,30 @@ mod tests {
             first_rx.try_recv(),
             Err(TryRecvError::Disconnected)
         ));
+    }
+
+    #[test]
+    fn remote_work_uses_transport_timeouts_not_the_filesystem_watchdog() {
+        let mut worker = SourceWorker::with_stall_timeout(Duration::from_millis(20)).unwrap();
+        let (source_tx, source_rx) = channel();
+        let (started, entered) = channel();
+        let (release, released) = channel();
+        let _request = worker.submit(source_tx, move |tx, _| {
+            let _remote_work = tx.remote_work();
+            started.send(()).unwrap();
+            released.recv().unwrap();
+            Outcome::Success(())
+        });
+        entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            source_rx.recv_timeout(Duration::from_millis(100)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        release.send(()).unwrap();
+        assert!(matches!(terminal(&source_rx), Outcome::Success(())));
+        worker.close();
+        worker.thread.take().unwrap().join().unwrap();
+        worker._watchdog.take().unwrap().join().unwrap();
     }
 
     #[test]

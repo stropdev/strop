@@ -15,7 +15,7 @@
 ### Fixed
 
 - **Picker cancellation cannot deadlock the editor**: terminal `Finished` events are admitted even when the semantic event lane is full, while item batches retain their backpressure policy. Closing Files during heavy streaming no longer freezes input and repaint.
-- **Filesystem stalls settle honestly**: Files and preview watchdogs stop stalled requests with visible failures and refuse replacement work only until the blocked physical owner returns. Scan heartbeats keep healthy matchless searches alive, event-lane backpressure no longer looks like consumer closure, and preview selection cancels superseded reads.
+- **Filesystem stalls settle honestly**: Files and preview watchdogs stop stalled requests with visible failures and refuse replacement work only until the blocked physical owner returns. Scan heartbeats keep healthy matchless searches alive, remote admission/execution retains worker/network timeout ownership, event-lane backpressure no longer looks like consumer closure, and preview selection cancels superseded reads.
 - **Preview consistency**: jumplist destinations render correctly, selection changes cancel old reads, and preview cache eviction no longer arbitrarily discards the visible entry.
 
 ## 0.46.3 — 2026-10-28

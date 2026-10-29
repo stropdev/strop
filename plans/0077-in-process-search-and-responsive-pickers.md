@@ -25,7 +25,9 @@ permit disposal preserve generation and credit invariants.
 Files and previews make scan and batch progress observable. A shared watchdog cancels a
 request that produces no progress for a conservative interval; scan probes and each
 searched file heartbeat, while delivery backpressure is not treated as a filesystem
-stall. The failed request settles once and refuses replacement work only while its
+stall. Remote admission and execution retain their worker/network timeout ownership
+instead of being misclassified as local filesystem stalls. The failed request settles
+once and refuses replacement work only while its
 blocked physical owner remains outstanding. Physical completion restores availability
 without creating more blocked threads. Preview selection cancels superseded reads and
 local reads observe cancellation. Cache eviction preserves the selected entry where

@@ -282,6 +282,11 @@ impl StreamSender {
     pub(super) fn heartbeat(&self) {
         self.progress.advance();
     }
+    /// Remote admission and execution have worker/network timeout ownership.
+    /// Their silence is not evidence of a local filesystem stall.
+    pub(super) fn remote_work(&self) -> impl Drop + use<'_> {
+        self.progress.wait_for_delivery()
+    }
     /// Control/terminal publication never waits for data credit, including when
     /// invoked by the cancellation handle on the editor thread.
     pub fn control(&self, message: PickerMsg) -> bool {

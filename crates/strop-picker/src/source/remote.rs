@@ -17,7 +17,7 @@ pub(super) fn run_search(
     root: ResourceLocation,
     snapshots: Vec<SourceSnapshot>,
     lease: Option<RemoteWorker>,
-    tx: StreamSender,
+    tx: &StreamSender,
     token: CancelToken,
 ) -> Outcome<()> {
     let Some(worker) = lease else {
@@ -35,7 +35,7 @@ pub(super) fn run_search(
             format!("SSH search scope {endpoint} does not match the admitted worker"),
         );
     }
-    let result = search(&query, policy, &root, snapshots, &worker, &tx, &token);
+    let result = search(&query, policy, &root, snapshots, &worker, tx, &token);
     if token.is_cancelled() {
         return Outcome::Cancelled(CancelReason::Superseded);
     }
