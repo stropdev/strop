@@ -137,7 +137,7 @@
         },
         {
           "id": "THEME-SELECTION-REPLAY",
-          "statement": "Real editor frames follow config then CLI then session choice. Selector cancellation does not apply a candidate, invalid names do not mutate documents, and full replay restores the effective startup palette without reading user configuration. The effective session theme is explained truthfully, and config loading is strict: read errors other than a missing file are reported, invalid UTF-8 and unknown keys are rejected by name, and declared key/theme columns match real names.",
+          "statement": "Real editor frames follow config then CLI then session choice. Selector cancellation does not apply a candidate, invalid names do not mutate documents, and full replay restores the effective startup palette without reading user configuration. The effective session theme is explained truthfully, and config loading is strict: read errors other than a missing file are reported, invalid UTF-8 and unknown keys are rejected by name, and declared key/theme columns match real names. The CLI subcommand restructure (edit/remote/headless/...) parses the same --theme, config and session precedence.",
           "status": "native-tested",
           "evidence": [
             {
@@ -176,6 +176,16 @@
               "gate": "test",
               "tests": [
                 "all_themes_reach_source_picker_diff_help_and_statusline"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/cli.rs",
+              "gate": "test",
+              "tests": [
+                "subcommands_map_to_their_commands",
+                "legacy_flags_still_parse",
+                "remote_subcommand_and_flag_require_an_ssh_url"
               ]
             }
           ],
@@ -243,22 +253,22 @@
           "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
           "crates/strop-syntax/src/injections.rs": "b121dff8a50567bf6e0c3473ccac7a5c1e9d8ed6f9f4a94c631f5e7acc2d58e2",
           "crates/strop-syntax/src/injections/documentation.rs": "0761521b7961a6a3cf065d5309bb91b10a451f6294fab2975a95e05ddf3af089",
-          "crates/strop-syntax/src/languages.rs": "c199ae96e8c27b4a8b94dac8cfd02cbd7395c7e321483f2c49634a4e5bc68649",
-          "crates/strop-syntax/src/lib.rs": "eaf95f76e87d0c81137374e23cd05f6c9b2962f1312e2d4847f2b4af620822c9",
+          "crates/strop-syntax/src/languages.rs": "17bd91ea8b006ce193bf9b4a7017209336aee4c6a1c763f2daf822a64048722c",
+          "crates/strop-syntax/src/lib.rs": "cb60e3a32f99e68a4e021cb14066987e03aca25688d45646fe05fa27f97704af",
           "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
           "crates/strop-terminal/src/model/mod.rs": "4af1b183054749001a27b22aad26b440e613855fa4c601d9f3feae8b6b58de92",
           "crates/strop-terminal/src/service/mod.rs": "8d0e1f0a0af68407d792872a065e7d7aad02524cd85cdabc8b766c52bdc99539",
           "crates/strop-terminal/src/service/worker.rs": "6dcea006d7a40674c82a830f17c6a1de3a3e3f18c87dade762cf112ea1d0c619",
           "crates/strop-terminal/src/vt/mod.rs": "3d036a34bee5686fc0e44b9aafc34ba5741e54e78a8236669ad8ebb9e382e6c9",
-          "crates/strop/src/cli.rs": "8043022a223dae185cc18606ec11a98b4b46860f73f6d16fcaf3500231fa1ccc",
-          "crates/strop/src/main.rs": "f4b3e5acc5562ba589108c26d7c8c4cfc5c7dd774c10ccc5a9c61759cb92bce9",
+          "crates/strop/src/cli.rs": "819691a722ada5d9a633950853d3a70accc46f741463cb26467aec602fba6da3",
+          "crates/strop/src/main.rs": "fbde48e1a1c8ad9efd62c0dc0420b71b9e04299de2d201a9f0a95204b3f6e14b",
           "crates/strop/src/render/diff.rs": "4336dc0dca6881efb8c3e2811eb29ea266d12fe88aef6a289db0b2a565bd245b",
           "crates/strop/src/render/mod.rs": "f3e506d1ef0bc95f73128ab3c162c8eba664f0a230facee82117e82e38abc1ef",
           "crates/strop/src/render/picker/preview.rs": "5f3220bbabcc840d4d15b2a592e41340ef6e6e95d3da12d6c5aeda209902d938",
           "crates/strop/src/render/statusline.rs": "70ca120355b27471d2890ca26a8e6d4d7e538a1a30679af3fe3221e4992048a6",
           "crates/strop/src/ui_stdio/mod.rs": "77aa880284354afa41ce58a22ead9824e22e808e52a4f3789d1ed4e8abd7757c"
         },
-        "evidence": "b6b8b276d43c6dd27b72b3ad862d22ba35a9fe2ccd38a6e2b177fea8deb7783a"
+        "evidence": "2e815e8ffbc5765e304ceb373f8d48d01fec1d530d4d7b14530ce1790fd5944b"
       }
     },
     {
@@ -318,7 +328,7 @@
         },
         {
           "id": "MUT-STRUCTURAL-INDENTATION",
-          "statement": "Structural Enter, open-line and typed closers use source-aware per-caret indentation while preserving literal/comment whitespace, Unicode, tabs and CRLF. Semantic dot, counted insertion, macros, backspace and literal paste retain user intent and undo grouping. Deferred decisions preserve typeahead order and reject stale revisions, changed settings and newly readonly buffers without moving the caret.",
+          "statement": "Structural Enter, open-line and typed closers use source-aware per-caret indentation while preserving literal/comment whitespace, Unicode, tabs and CRLF. Semantic dot, counted insertion, macros, backspace and literal paste retain user intent and undo grouping. Deferred decisions preserve typeahead order and reject stale revisions, changed settings and newly readonly buffers without moving the caret. A trailing colon deepens the next line per the language registry's colon policy: statement colons at bracket depth zero in Python; label colons anywhere in code (access specifiers, case/default arms, named labels) for C, C++, Java, C#, Go, JavaScript/TypeScript and PHP; Rust, JSON and CSS stay flat.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -354,7 +364,9 @@
                 "unicode_backspace_stays_truthful_when_dot_replays_structural_enter",
                 "enter_splits_brackets_and_parentheses_with_intervening_whitespace",
                 "large_source_enter_then_typed_closer_uses_incrementally_updated_syntax",
-                "paired_enter_and_bracketed_literal_paste_repeat_without_reindenting_payload"
+                "paired_enter_and_bracketed_literal_paste_repeat_without_reindenting_payload",
+                "label_colons_deepen_their_body_across_label_languages",
+                "json_and_css_trailing_colons_stay_flat"
               ]
             }
           ],
@@ -541,8 +553,8 @@
           "crates/strop-engine/src/editor/resolution/indentation.rs": "84dd7de96f5ce1cfe924e6786d9d0f3a607b618cdbeb171c7cae4a03d075176f",
           "crates/strop-engine/src/editor/resolution/mod.rs": "9759aea9bc78977cf9f96cbeed56d04e04554444bf04a9198c0b57de49d17643",
           "crates/strop-engine/src/editor/resolution/worker.rs": "a631f8175306c0da5f3a3af7447918c3983e3e6d0926ef805dbb4bd8429a57e4",
-          "crates/strop-engine/src/editor/structural_indent.rs": "21c4b123d65979e80e55829c3f3ae830a9b2fd2f10879c4f1a709762d25aff89",
-          "crates/strop-engine/src/editor/structural_indent/source.rs": "0c1933164a162ee12e2d2afc40443e3305f522b9996491582f2a197ff1537618",
+          "crates/strop-engine/src/editor/structural_indent.rs": "5895efb474528992a65ee5b3db0e29a4130b151e68faaa9dc59b2faa1afb8d48",
+          "crates/strop-engine/src/editor/structural_indent/source.rs": "51839b61d2d87728598417c65dec63a068272632dde39934f9277058c88b7865",
           "crates/strop-engine/src/editor/transact.rs": "8a34847feac5a8509fb79129430f702783d036c5270461dd8ac0526a05c6b438",
           "crates/strop-engine/src/editor/transact/capability.rs": "a3aba86cdd865382b14a55f9e2ad6d675fd7f2c20a5a529fecea581efeec3772",
           "crates/strop-engine/src/editor/visual.rs": "59c8f32974ed5669c32ee1b47855205bb9f23d154f67a4dea9d9b4e023474db9",
@@ -551,7 +563,7 @@
           "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
           "crates/strop-syntax/src/indentation.rs": "2e3ebd83b3ab28d26661e69a15398c814e256a633cc9019185f978780b9592c3"
         },
-        "evidence": "2419253475462013f5f76692c15149bf76e87c0b2d98536c350367f67c61506b"
+        "evidence": "e360166c578cdf5d3f334fa633eb709c60b60937db68f3c7f0bc9c306b5c930e"
       }
     },
     {
@@ -1362,7 +1374,7 @@
           "crates/strop-engine/src/editor/io/native.rs": "7ffd02585a6a35f136a7ab1b4a507f739e8d39c342be28238e3fcc046021e716",
           "crates/strop-engine/src/editor/lsp/attach.rs": "761800acd8af8197d487cc581f937db5240758615c97d282e6b1b1e1788c5811",
           "crates/strop-engine/src/editor/lsp/lifecycle/mod.rs": "e48cb13c9cdc9c6b13d8b6f87f7f2627efe8098b57587339edf00de82552ec50",
-          "crates/strop-engine/src/editor/lsp/routing.rs": "6b57d8375a9e26225a4911e0d4af0dca1afc511677161d3cc6c6666bda17d302",
+          "crates/strop-engine/src/editor/lsp/routing.rs": "c9629a8d48f4d0827e12501e9c92da7ce5ea11b09651c0e95968730ee5937382",
           "crates/strop-engine/src/editor/lsp/state.rs": "6d04db2bd8db243dcdad8d01205cc9433c02f55aac63fe733681164f66d7b716",
           "crates/strop-lsp/src/client/api.rs": "25cdc288aa379812d4f518369f0a0bbcaf7fdf88ccc1637f1147fc356e0218db",
           "crates/strop-lsp/src/client/queue.rs": "d5c1a708b3436f5a836e9ff4e0ace5a896cb1e3d3547ff5af08ae1c8967b0b9d",
@@ -2596,7 +2608,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "079a82de839404ff03790015adb636a307ca558aaab23258c6cec806d84a3b90",
+          "crates/strop-fs/Cargo.toml": "18cefe026df9a67e14ed439a499909633461d6fd0a7a7f26186f8ae06205ca29",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -3311,6 +3323,43 @@
             "classification": "unchanged",
             "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
+        },
+        {
+          "id": "SRCH-RETAINED-ADMISSION",
+          "statement": "Whole-query admission compiles the Boolean AST, or the flat selection qualifiers (language:/path:/fpath:/glob: and their negatives) as an implicit conjunction, into one three-valued plan shared by retained-list surfaces - document symbols and the jumplist menu. Undecidable evidence admits; qualifier- and operator-free queries compile to nothing and the local ranker narrows; invalid or incomplete queries compile to an error and keep the rows.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/query/plan/tests.rs",
+              "gate": "test",
+              "tests": [
+                "retained_admission_compiles_flat_qualifiers_like_file_find",
+                "retained_admission_takes_the_ast_and_skips_free_text"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/picker/tests.rs",
+              "gate": "test",
+              "tests": [
+                "jumps_picker_speaks_the_query_language"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/lsp/tests/navigation.rs",
+              "gate": "test",
+              "tests": [
+                "document_symbols_flat_qualifiers_narrow_like_file_find"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0.47.0 extends the 0063 query language to retained surfaces through BooleanPlan::compile_retained; no new theorem is claimed."
+          }
         }
       ],
       "gates": [
@@ -3329,13 +3378,13 @@
           "crates/strop-grammar/src/query/parse/atoms.rs": "2e32f011a930d692c6c001b2327e93a4b2e212b580af564397e6bf49c249bca6",
           "crates/strop-picker/src/query/lexer.rs": "66c975fc51a2881f18dd64b9c1796132923f87ab2d22ec6f5cdf20d043efdcea",
           "crates/strop-picker/src/query/parser.rs": "1354efb42b645cd889b76e085436cb4f4fc9032c3973fecf5bd16febb2274cac",
-          "crates/strop-picker/src/query/plan.rs": "35664747cf5c189b4e23ec1f6c5c81cfa40b20047f6a3c6b2a340e5092c4e78d",
+          "crates/strop-picker/src/query/plan.rs": "942fecf428eb14758b9e97a6b1a3eaa31ed32403e949843284c84d97600d39bd",
           "crates/strop-picker/src/query/properties.rs": "95fa17d92f7522d80256dfd2f56a2f83f6634ec1781dd2963b6274d5ecfffa1f",
           "crates/strop-picker/src/query/store.rs": "80f5ec95470bf2ea2fd07e5448335c2bd3545daf46f316f7e25968af6945a09d",
           "crates/strop-picker/src/source/selection.rs": "cb73bf25a40c389634fd9df8e3a3ff1c1815b369a5a0d8be2fca9ad8290fc3b7",
           "crates/strop/src/render/statusline.rs": "70ca120355b27471d2890ca26a8e6d4d7e538a1a30679af3fe3221e4992048a6"
         },
-        "evidence": "a79f9aba921b4ebd205e45d331a87f109555fdef9cd7027b27e92af028f15179"
+        "evidence": "1eb7b15d9a925b0785e0337f77356d2db67ad490b0585f4a11c54535a13a5e06"
       }
     },
     {
@@ -4350,7 +4399,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "c43f52a39c9e252520b02bc600fb093e60ae46503c2229bb4566aa4b446c94ff",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "079a82de839404ff03790015adb636a307ca558aaab23258c6cec806d84a3b90",
+          "crates/strop-fs/Cargo.toml": "18cefe026df9a67e14ed439a499909633461d6fd0a7a7f26186f8ae06205ca29",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -4358,7 +4407,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "5420886ffa2fbcc80108ab4c8e35f7316b9543f84aea2d6b4a1a0f2caaa643ad",
+          "crates/strop-worker/Cargo.toml": "d4840bc6ca75518185ab1bc2d872ee6c966a13f985ac1c7c788eccf0e71fe556",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -5055,11 +5104,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "5420886ffa2fbcc80108ab4c8e35f7316b9543f84aea2d6b4a1a0f2caaa643ad",
+          "crates/strop-worker/Cargo.toml": "d4840bc6ca75518185ab1bc2d872ee6c966a13f985ac1c7c788eccf0e71fe556",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "a347b9be6e0df8dc4b26949139edf615f7b949fce2361a9a62b67a3cd04bdd30"
+          "crates/strop/Cargo.toml": "80a63fdd2f9d77043e9ab57b51cd43e1ab7e80d3d1707a8b5c09b68a4531878c"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }

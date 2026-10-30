@@ -325,6 +325,43 @@ fn document_symbols_boolean_content_and_kind_narrow() {
 }
 
 #[test]
+fn document_symbols_flat_qualifiers_narrow_like_file_find() {
+    // 0063 §3 consistency: a lone flat qualifier — no operators, no
+    // content — narrows the retained tree through whole-query
+    // admission, exactly the narrowing file find gives.
+    let mut e = editor("struct Foo;\n");
+    let at = |path: &str, name: &str, kind: &str, line: usize| strop_lsp::protocol::ProtoSymbol {
+        name: name.into(),
+        container: String::new(),
+        kind: kind.into(),
+        location: strop_lsp::ServerLocation {
+            doc: strop_workspace::ResourceLocation::local(PathBuf::from(path)),
+            position: ServerPosition {
+                line: LineIndex::new(line),
+                column: ServerColumn::new(0),
+            },
+        },
+    };
+    symbols_picker(
+        &mut e,
+        vec![
+            at("/workspace/origin.rs", "rust_struct", "Struct", 0),
+            at("/workspace/origin.py", "py_class", "Class", 0),
+        ],
+    );
+    e.paste_bracketed("language:rust");
+    e.wait_picker();
+    let picker = &e.picker.as_ref().unwrap().picker;
+    assert!(picker.error.is_none(), "{:?}", picker.error);
+    let texts = picker_texts(&e);
+    assert_eq!(
+        texts,
+        vec!["rust_struct  · :1"],
+        "the python symbol is filtered out: {texts:?}"
+    );
+}
+
+#[test]
 fn document_symbols_operator_free_keeps_static_list_fuzzy_narrowing() {
     // 0063 §3 literal compatibility: no AST, no rebuild — the static
     // list stays whole and the local fuzzy ranking narrows, exactly as

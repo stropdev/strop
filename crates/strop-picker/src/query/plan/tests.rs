@@ -41,6 +41,57 @@ fn fuzzy_path_scope_matches_parent_components_without_reinterpreting_path() {
 }
 
 #[test]
+fn retained_admission_compiles_flat_qualifiers_like_file_find() {
+    // Whole-query admission for retained lists (0063 §4): the flat
+    // qualifiers narrow exactly as they do for file selection, composed
+    // as an implicit conjunction with OR inside a family.
+    let query = SearchQuery::parse("language:rust path:tests");
+    let plan = BooleanPlan::compile_retained(&query).unwrap().unwrap();
+    fn evidence(path: &str) -> Evidence<'_> {
+        Evidence {
+            path: Some(path),
+            line: Some(3),
+            ..Default::default()
+        }
+    }
+    assert!(plan.admits(&evidence("tests/a.rs"), "fn one() {}"));
+    assert!(
+        !plan.admits(&evidence("src/a.rs"), "fn one() {}"),
+        "path family"
+    );
+    assert!(
+        !plan.admits(&evidence("tests/a.py"), "x = 1"),
+        "language family"
+    );
+    // Undecidable evidence admits — never a silent drop.
+    assert!(plan.admits(&Evidence::default(), "anything"));
+}
+
+#[test]
+fn retained_admission_takes_the_ast_and_skips_free_text() {
+    let query = SearchQuery::parse("kind:function parse AND NOT wrap");
+    assert!(BooleanPlan::compile_retained(&query).unwrap().is_some());
+    // A qualifier- and operator-free query narrows nothing: the local
+    // ranker owns free text (0063 §3 literal compatibility).
+    let query = SearchQuery::parse("parse config");
+    assert!(BooleanPlan::compile_retained(&query).unwrap().is_none());
+    // Negative families flip.
+    let query = SearchQuery::parse("-language:rust");
+    let plan = BooleanPlan::compile_retained(&query).unwrap().unwrap();
+    fn evidence(path: &str) -> Evidence<'_> {
+        Evidence {
+            path: Some(path),
+            ..Default::default()
+        }
+    }
+    assert!(!plan.admits(&evidence("a.rs"), "x"));
+    assert!(plan.admits(&evidence("a.py"), "x"));
+    // An invalid query never compiles.
+    let query = SearchQuery::parse("language:");
+    assert!(BooleanPlan::compile_retained(&query).is_err());
+}
+
+#[test]
 fn fuzzy_path_is_the_same_predicate_in_boolean_content_search() {
     let plan = content_plan("fpath:modules/jweb/ AND parser");
     assert!(admits_line(

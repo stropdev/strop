@@ -539,17 +539,14 @@ impl BooleanPlan {
                     })
                 })
                 .collect::<Vec<_>>();
-            let joined = if atoms.len() == 1 {
-                atoms.into_iter().next().expect("one atom")
+            // Negation rides the atom's own flag, exactly like the
+            // parser's lowering (`-language:`): the flag flips the
+            // decision, no BooleanExpr::Not on top.
+            if atoms.len() == 1 {
+                families.push(atoms.into_iter().next().expect("one atom"));
             } else {
-                BooleanExpr::Or(atoms)
-            };
-            let expr = if negated {
-                BooleanExpr::Not(Box::new(joined))
-            } else {
-                joined
-            };
-            families.push(expr);
+                families.push(BooleanExpr::Or(atoms));
+            }
         };
         let owned: Vec<String> = query
             .languages
