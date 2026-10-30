@@ -2898,8 +2898,8 @@
         "sources": {
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
           ".github/scripts/release-catalog.py": "c96e67b8021d13b68e3bf7eef6527b200f37ca0d6fe50600d00dccdc959ac0ca",
-          ".github/workflows/ci.yml": "a9d0c88391ec5baf787ac19316ef919739dcaf24b3bc023b13027e205b21781c",
-          ".github/workflows/release.yml": "a22cbd1b0f5979022b470a3d28cf5a2a375aca5c14c6a86c2015381c46b6a755",
+          ".github/workflows/ci.yml": "8c6e1e3c82afdda35f6a5521acf37e56eafa5deabc2ae01f24938ded41e0893a",
+          ".github/workflows/release.yml": "a7d243a2f21e6f130b88a4245e9bfd495d45db962180b83cc00268d100c11661",
           "crates/strop-terminal/build.rs": "bfc6eef7b66b0228fa5eed7770c0873c7a4da2490270f1b4bac45ea75b4b679e",
           "crates/strop-terminal/vendor/UPSTREAM": "129d66c3a2b8f0d0244bd5b33cff25e094a2a81825c139954093eaaca9965464",
           "crates/strop-terminal/vendor/arocc-f97cdfc3.tar.gz": "42c8cab9135b12518e6af7dc5e461f055c78b863adca8ed7774f2fb7fe9a7784",
@@ -2908,7 +2908,7 @@
           "crates/strop/src/update.rs": "61d13fc9dbd790e64aa6d9b98b2a70ef368fdf5a71ed50a44ee9f7b51ad53ac0",
           "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
         },
-        "evidence": "0fd85fd2ad1dccdb502c5b2c819106eff9d6a87a500c1155a00c8db075008177"
+        "evidence": "d6b844624175c83885ba027efc17f256a86085d91f0dac7952e655dd4896868a"
       }
     },
     {
