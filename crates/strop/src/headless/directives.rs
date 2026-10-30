@@ -1,4 +1,4 @@
-//! The supported script vocabulary drives parsing, help and unknown-command errors.
+//! The supported script vocabulary drives parsing and unknown-command errors.
 use std::io;
 use std::time::Duration;
 
@@ -21,7 +21,6 @@ struct DirectiveSpec {
     kind: DirectiveKind,
     name: &'static str,
     arguments: &'static str,
-    help: &'static str,
 }
 
 const DIRECTIVES: &[DirectiveSpec] = &[
@@ -29,67 +28,56 @@ const DIRECTIVES: &[DirectiveSpec] = &[
         kind: DirectiveKind::Buffer,
         name: "buffer",
         arguments: "JSON_STRING",
-        help: "initial buffer text; must be the first directive",
     },
     DirectiveSpec {
         kind: DirectiveKind::Keys,
         name: "keys",
         arguments: "KEYS",
-        help: "literal keys and chords: <esc> <cr> <c-r> <a-x> <f5>",
     },
     DirectiveSpec {
         kind: DirectiveKind::Key,
         name: "key",
         arguments: "JSON_KEY",
-        help: "one semantic editor key, e.g. \"Esc\" or {\"Char\":\"x\"}",
     },
     DirectiveSpec {
         kind: DirectiveKind::Input,
         name: "input",
         arguments: "JSON_INPUT",
-        help: "one physical key/text/paste event; preserves modifiers and release/repeat",
     },
     DirectiveSpec {
         kind: DirectiveKind::Paste,
         name: "paste",
         arguments: "JSON_STRING",
-        help: "one bracketed-paste event, e.g. \"first\\nsecond\"",
     },
     DirectiveSpec {
         kind: DirectiveKind::Resize,
         name: "resize",
         arguments: "COLS ROWS",
-        help: "resize the terminal cell grid",
     },
     DirectiveSpec {
         kind: DirectiveKind::Frame,
         name: "frame",
         arguments: "",
-        help: "print the current rendered cell grid",
     },
     DirectiveSpec {
         kind: DirectiveKind::State,
         name: "state",
         arguments: "",
-        help: "print editor state as JSON",
     },
     DirectiveSpec {
         kind: DirectiveKind::Settle,
         name: "settle",
         arguments: "[MS]",
-        help: "return when finite work drains; timeout fails (default 30000 ms)",
     },
     DirectiveSpec {
         kind: DirectiveKind::Wait,
         name: "wait",
         arguments: "MS",
-        help: "deliberately wait this long while processing events",
     },
     DirectiveSpec {
         kind: DirectiveKind::QuitIntent,
         name: "quit-intent",
         arguments: "",
-        help: "send the GUI close request (not a Ctrl-C editor shortcut)",
     },
 ];
 
@@ -103,7 +91,7 @@ pub(super) fn parse(line: &str) -> io::Result<(DirectiveKind, &str)> {
             .join(", ");
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("unknown script directive {name:?}; expected {names}; see strop --help"),
+            format!("unknown script directive {name:?}; expected {names}; see docs/terminal-and-scripting.md"),
         ));
     };
     if spec.arguments.is_empty() && !arguments.trim().is_empty() {
@@ -132,18 +120,6 @@ pub(super) fn duration(arguments: &str, default: Option<Duration>) -> io::Result
         .parse::<u64>()
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
     Ok(Duration::from_millis(millis))
-}
-
-pub(crate) fn print_help() {
-    println!("\nHEADLESS SCRIPT (one directive per line; empty lines and # comments ignored):");
-    for spec in DIRECTIVES {
-        println!(
-            "  {:<23} {}",
-            format!("{} {}", spec.name, spec.arguments),
-            spec.help
-        );
-    }
-    println!("  JSON strings use double quotes and JSON escapes; keys text is not quoted.\n  Open: keys :e path<cr>    Insert: keys ihello<esc>\n  :trust uses the same explicit project consent and state root as the TUI.");
 }
 
 #[cfg(test)]

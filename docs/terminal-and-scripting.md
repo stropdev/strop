@@ -47,13 +47,26 @@ prebuilt users need neither Zig nor a Ghostty installation. See the
 
 `strop headless SCRIPT [+LINE] [FILE[:LINE]]` uses the same editor and
 service handlers (`--script SCRIPT` and `--headless SCRIPT` are
-equivalents; see [cli.md](cli.md)). `strop --help` lists every directive:
-`buffer`, `keys`, `key`, `input`, `paste`, `resize`, `frame`, `state`,
-`settle`, `wait` and `quit-intent`. JSON strings use double quotes and JSON
-escapes. `keys` accepts tokens such as `<esc>`, `<cr>`, `<c-r>`, `<a-x>`
-and `<f5>`; `input` carries a complete physical key/text/paste event,
-including modifiers and repeat/release information. `key` remains an
-already-normalized semantic editor command, not terminal input.
+equivalents; see [cli.md](cli.md)). A script is one directive per line;
+empty lines and `#` comments are ignored:
+
+| Directive | Arguments | Meaning |
+| --- | --- | --- |
+| `buffer` | `JSON_STRING` | initial buffer text; must be the first directive |
+| `keys` | `KEYS` | literal keys and chords: `<esc>` `<cr>` `<c-r>` `<a-x>` `<f5>` |
+| `key` | `JSON_KEY` | one semantic editor key, e.g. `"Esc"` or `{"Char":"x"}` |
+| `input` | `JSON_INPUT` | one physical key/text/paste event; preserves modifiers and release/repeat |
+| `paste` | `JSON_STRING` | one bracketed-paste event, e.g. `"first\nsecond"` |
+| `resize` | `COLS ROWS` | resize the terminal cell grid |
+| `frame` | | print the current rendered cell grid |
+| `state` | | print editor state as JSON |
+| `settle` | `[MS]` | return when finite work drains; timeout fails (default 30000 ms) |
+| `wait` | `MS` | deliberately wait this long while processing events |
+| `quit-intent` | | send the GUI close request (not a Ctrl-C editor shortcut) |
+
+JSON strings use double quotes and JSON escapes; `keys` text is not
+quoted. `key` is an already-normalized semantic editor command, not
+terminal input.
 
 ```text
 keys :e source.rs<cr>

@@ -370,7 +370,7 @@ fn print_help() {
             ("+LINE", "initial line for FILE (or use FILE:LINE)"),
             (
                 "    --theme NAME",
-                "session-start palette (see THEMES below)",
+                "session-start palette; :theme lists and switches live",
             ),
             ("    --remote URL", "shorthand for `strop remote URL`"),
             ("    --follow", "follow a growing remote file"),
@@ -396,29 +396,12 @@ fn print_help() {
             ("-V, --version", "print version"),
         ],
     );
-    section(&mut out, &paint("1", "Remote:"));
-    usage(&mut out, &["ssh://[user@]host[:port]/absolute/path[:LINE]"]);
+    out.push('\n');
     out.push_str(&paint(
         "2",
-        "  :remote edit enables saving · :remote verify reconciles saves\n  :browse · :filter · :tail · :range · :follow · :remote connect/list\n",
-    ));
-    section(&mut out, &paint("1", "Keys:"));
-    out.push_str(&paint(
-        "2",
-        "  h j k l w b e 0 $ gg G % · d y c + motion · i a A o O · v V · u ctrl-r\n  / ? search · ctrl-l repaint · :w :q :e · Space ? lists every binding\n",
-    ));
-    section(&mut out, &paint("1", "Config:"));
-    out.push_str(&format!("  {}\n", config_path_display()));
-    out.push_str(&paint(
-        "2",
-        "Themes: :theme live · strop licenses lists attributions\nhttps://strop.dev · https://github.com/stropdev/strop\n",
+        "  Remote URL: ssh://[user@]host[:port]/absolute/path[:LINE]\n  Keys: Space ? in the editor · Themes: :theme · Config: strop config\n  Docs: https://strop.dev · https://github.com/stropdev/strop\n",
     ));
     print!("{out}");
-    println!("\n{}", paint("1", "THEMES (select live with :theme):"));
-    for id in strop_core::theme::ThemeId::ALL {
-        println!("  {:<20} {} — {}", id.name(), id.label(), id.description());
-    }
-    headless::directives::print_help();
 }
 
 fn config_path_display() -> String {
