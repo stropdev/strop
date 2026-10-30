@@ -66,6 +66,37 @@ agent or human working in this repo.
 - After landing a feature that pushed a file past the ceiling, the
   follow-up split is part of the same change — not someday.
 
+## Release gates
+
+"Cut a release" means **publicly available**, not "tag pushed" or "workflow
+started". The release task stays open — never reported or marked done — until
+every gate below is verified against the live public surfaces, not the
+workflow's own claims about itself. Partial progress ("tag pushed", "run in
+progress") is exactly that: partial.
+
+1. **Workflow green**: the `release` run for the exact tag
+   (`gh run list --repo stropdev/strop --workflow release`) completed with
+   success — compose gates, three-platform builds, freeze `--check`, and the
+   publish job all inside it. A failed run means the release does not exist
+   yet: fix on a new commit and re-push the tag (the v0.47.0 recovery), then
+   watch again. Do not hand-publish crates.io or the tap to "finish" a
+   release; if the workflow genuinely cannot publish, the release is blocked —
+   say so instead of marking it done.
+2. **crates.io**: `strop-editor` shows the new version as `newest_version`
+   (`https://crates.io/api/v1/crates/strop-editor`).
+3. **GitHub release**: `gh release view v<x.y.z>` — exists, all three
+   platform tarballs plus `catalog.json` attached.
+4. **Homebrew tap**: `stropdev/homebrew-tap` carries the `strop <version>`
+   commit bumping `Formula/strop.rb` and `Casks/strop.rb`.
+5. **Website**: strop.dev serves the new version (version chip, changelog,
+   installer). The site steps in the workflow are `continue-on-error`, so a
+   green run proves nothing about the site — fetch it and look. If stale,
+   re-dispatch the `rebuild` event on `stropdev/stropdev.github.io` and vendor
+   `CHANGELOG.md`/`install.sh` per the workflow's own steps.
+
+The release is done when all five checks pass against the live surfaces, and
+not one moment before.
+
 ## Rust specifics
 
 - `cargo fmt --check` + `cargo clippy --locked --workspace --all-targets -- -D warnings`
@@ -85,9 +116,10 @@ agent or human working in this repo.
   `cargo` is acceptable for rapid iteration mid-change, but "done" means the compose
   gate passed; never commit build artifacts.
 - Release: tags `v*`; the workflow (0002 §5) owns crates.io, tarballs, homebrew tap,
-  site redeploy. Never hand-publish. A version bump is three moves, all in the
-  tagged commit: workspace `Cargo.toml` + the member crates' inter-dep pins +
+  site redeploy. Never hand-publish. A version bump is three moves, all in
+  the tagged commit: workspace `Cargo.toml` + the member crates' inter-dep pins +
   `cargo check` to sync `Cargo.lock` (the release gate runs `--locked` — a stale
-  lock fails the tag's builds).
+  lock fails the tag's builds). A release is done only when the **Release gates**
+  section above passes against the live public surfaces.
 - The demo must never lie (0004 §4): tapes drive the real binary; a demo-only code path
   is a bug.
