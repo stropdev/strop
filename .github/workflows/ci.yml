@@ -130,7 +130,7 @@ jobs:
   # Host-native Apple Silicon Store, framed worker and PTY ownership;
   # cross-compilation alone is not execution evidence.
   native-macos:
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
         with:

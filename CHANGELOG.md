@@ -6,6 +6,10 @@
 
 - **`--help` is a CLI reference, not documentation**: usage, commands, options and a three-line pointer footer (remote URL grammar, `Space ?`, `:theme`, `strop config`, strop.dev) — 39 lines where 0.47.0 printed ~85. The theme catalogue, keybinding sampler, headless-script directive dump and config path left `--help` for their own surfaces: `:theme` and `strop licenses` for palettes, `Space ?` for every binding, `docs/terminal-and-scripting.md` for the full directive table (the unknown-directive error now points there). This is the helix/neovim convention — `--help` covers what the shell can do; the editor documents itself in the editor.
 
+### Fixed
+
+- **CI off the retiring `macos-14` image** (retires 2026-11-02; dispatches were already being cancelled): the release lane's `aarch64-apple-darwin` build and ci's `native-macos` job now run on `macos-26`. No product code changed.
+
 ## 0.47.0 — 2026-10-30
 
 ### Added
