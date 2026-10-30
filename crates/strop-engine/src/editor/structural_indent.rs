@@ -18,7 +18,9 @@ pub(crate) enum Trigger {
 pub(crate) struct Request {
     pub trigger: Trigger,
     pub syntax_path: Option<std::path::PathBuf>,
-    pub python: bool,
+    /// Trailing-colon policy from the language registry (0072): one
+    /// punctuation rule for Python blocks and C-family labels.
+    pub colons: strop_syntax::ColonPolicy,
     pub unit: String,
     pub newline: String,
 }
@@ -193,9 +195,20 @@ pub(crate) fn plan(
                 }
                 let last = trimmed.checked_sub(1).filter(|&byte| byte >= line_start);
                 let open = opener.filter(|open| Some(open.position.get()) == last);
-                let colon = request.python
-                    && opener.is_none()
-                    && last.is_some_and(|at| buffer.byte_at(at) == Some(b':'));
+                let colon = match request.colons {
+                    strop_syntax::ColonPolicy::None => false,
+                    // Python: a block colon only at bracket depth
+                    // zero — inside brackets it is a slice or
+                    // annotation, not a block.
+                    strop_syntax::ColonPolicy::Statement => {
+                        opener.is_none() && last.is_some_and(|at| buffer.byte_at(at) == Some(b':'))
+                    }
+                    // The label colon opens its body from anywhere in
+                    // code: `private:`, `case x:`, `default:`, `name:`.
+                    strop_syntax::ColonPolicy::Label => {
+                        last.is_some_and(|at| buffer.byte_at(at) == Some(b':'))
+                    }
+                };
                 let deepen = code && (open.is_some() || colon);
                 text.push_str(&request.newline);
                 text.push_str(&base);

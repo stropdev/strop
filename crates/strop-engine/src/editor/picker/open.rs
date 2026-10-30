@@ -145,20 +145,77 @@ impl Editor {
     /// The jumplist as a menu (0047 §2): past newest-first, the current
     /// position marked, then the future; dead documents are filtered.
     pub(crate) fn open_jumps_picker(&mut self) {
-        let mut items = Vec::new();
-        for entry in self.jumplist_past.iter().rev() {
-            items.extend(jump_row(self, entry, "  "));
-        }
-        items.extend(jump_row(self, &self.jump_record(), "> "));
-        for entry in self.jumplist_future.iter().rev() {
-            items.extend(jump_row(self, entry, "  "));
-        }
+        let items = jump_items(self, None);
         self.set_picker(PickerGlue::diagnostics(Picker::new(
             Kind::Jumps,
             items,
             false,
         )));
     }
+
+    /// Re-derive the jumps rows from the retained jumplist (0063 §3
+    /// shape): the query language's Boolean AST filters the same
+    /// records locally — exactly like document symbols re-filtering
+    /// their retained reply. Operator-free queries never reach here;
+    /// the static list stays and the local ranker narrows.
+    pub(crate) fn rebuild_jump_rows(&mut self) {
+        let query = self
+            .picker
+            .as_ref()
+            .filter(|glue| glue.picker.kind == Kind::Jumps)
+            .and_then(|glue| glue.query.clone())
+            .filter(|query| query.state == strop_picker::query::QueryState::Ready);
+        let admission = query.as_ref().and_then(|query| {
+            strop_picker::query::BooleanPlan::compile_retained(query)
+                .ok()
+                .flatten()
+        });
+        let items = jump_items(self, admission.as_ref());
+        let Some(glue) = self
+            .picker
+            .as_mut()
+            .filter(|glue| glue.picker.kind == Kind::Jumps)
+        else {
+            return;
+        };
+        glue.picker.clear_items();
+        glue.rank_pending = None;
+        glue.ranked_query = None;
+        glue.picker.append(items);
+    }
+}
+
+/// Every jumplist row (0047 §2): past newest-first, the current
+/// position marked, then the future. The jumplist lives on the editor,
+/// so admission re-derives rows from the same records — no retained
+/// copy to drift.
+fn jump_items(editor: &Editor, admission: Option<&strop_picker::query::BooleanPlan>) -> Vec<Item> {
+    let mut items = Vec::new();
+    for entry in editor.jumplist_past.iter().rev() {
+        items.extend(jump_row(editor, entry, "  ", admission));
+    }
+    items.extend(jump_row(editor, &editor.jump_record(), "> ", admission));
+    for entry in editor.jumplist_future.iter().rev() {
+        items.extend(jump_row(editor, entry, "  ", admission));
+    }
+    items
+}
+
+/// The workspace-relative (or native remote/container) path a jump
+/// row's query evidence reports. Nameless scratch and output buffers
+/// report none — path-family atoms stay Unknown and admit (0063 §4).
+fn jump_evidence_path(document: &super::super::Document, cwd: &std::path::Path) -> Option<String> {
+    if let Some(remote) = document.remote_metadata() {
+        return Some(remote.file.to_string());
+    }
+    if let super::super::document::DocumentSource::Container { path, .. } = &document.source {
+        return Some(path.display().to_string());
+    }
+    document
+        .buf
+        .path
+        .as_ref()
+        .map(|path| path.strip_prefix(cwd).unwrap_or(path).display().to_string())
 }
 
 /// One jumplist row; dead documents drop out (0047 §2). The payload
@@ -186,11 +243,28 @@ fn jump_row(
     editor: &Editor,
     record: &super::super::jumps::JumpRecord,
     marker: &str,
+    admission: Option<&strop_picker::query::BooleanPlan>,
 ) -> Option<Item> {
     let doc = editor.docs.get(record.document)?;
     let name = doc.label(&editor.cwd);
-    let line = doc.buf.line_of(record.offset.min(doc.buf.len_bytes()));
-    let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
+    let offset = record.offset.min(doc.buf.len_bytes());
+    let line = doc.buf.line_of(offset);
+    let line_text: String = doc.buf.line_text(line);
+    let text: String = line_text.trim().chars().take(48).collect();
+    if let Some(plan) = admission {
+        // Grep-shaped evidence (0063 §4): the complete logical line
+        // carries content atoms; path/line decide metadata atoms.
+        let evidence_path = jump_evidence_path(doc, &editor.cwd);
+        let evidence = strop_picker::query::Evidence {
+            path: evidence_path.as_deref(),
+            line: Some(line + 1),
+            ..Default::default()
+        };
+        let stripped = line_text.strip_suffix('\n').unwrap_or(&line_text);
+        if !plan.admits(&evidence, stripped) {
+            return None;
+        }
+    }
     Some(Item {
         badge: None,
         text: format!("{marker}{name}:{}  {text}", line + 1),

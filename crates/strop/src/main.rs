@@ -11,7 +11,7 @@ mod update;
 use strop_engine::{config, editor, files, keymap, session};
 
 use std::error::Error;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::process::ExitCode;
 use strop_core::Buffer;
 use strop_trace::{record_with, EventKind, TraceOptions};
@@ -285,34 +285,136 @@ fn apply_initial_line(editor: &mut editor::Editor, line: Option<strop_core::id::
 }
 
 fn print_help() {
-    println!(
-        "strop {} — see the cut before you make it\n\n\
-USAGE:\n  strop [+LINE] [FILE[:LINE]|DIR] terminal editor (-R: readonly)\n\
-  strop --theme NAME [FILE]      session-start palette override\n\
-  strop --headless SCRIPT [+LINE] [FILE[:LINE]]  scripted driver\n\
-  strop --script SCRIPT [+LINE] [FILE[:LINE]]    same scripted driver\n\
-  strop --replay-script TRACE     extract a headless reproduction script\n\
-  strop --ui-stdio                UI protocol backend on stdin/stdout (0056 AR09)\n\
-  strop update [--check]          self-update\n\
-  strop config | --version | --dump-compat | --licenses\n\n\
-  strop -- FILE:3                open a literal colon-suffixed filename\n\n\
-  strop [+LINE] ssh://[user@]host[:port]/absolute/path[:LINE]  remote file or directory\n\
-REMOTE: :remote edit enables saving; :remote verify reconciles an unconfirmed\n\
-  save; :browse :filter :tail :range :follow :remote connect/list — :help lists all\n\
-TRACING:\n  --log / --log=ALL              all diagnostic categories to strop-log.jsonl\n\
-  --log=PATH / --log-file PATH    create a new private JSONL file\n\
-  STROP_LOG=PATH                 environment alternative (flag wins)\n\
-  --log-content                 include file/paste text, LSP payloads and rendered cells\n\
-  --log-terminal-content        explicitly include private terminal commands, keys and output\n\
-  Keys, commands, paths and messages can be sensitive even without content.\n\
-  Inspect logs before sharing. Existing files are never overwritten.\n\n\
-KEYS: h j k l w b e 0 $ gg G %; d y c + motion; i a A o O; v V; u ctrl-r\n\
-  / ? search · ctrl-l repaint · :w :q :e · Space ? lists every binding\n\
-CONFIG: {}\nhttps://strop.dev · https://github.com/stropdev/strop",
-        env!("CARGO_PKG_VERSION"),
-        config_path_display()
+    let color = std::io::stdout().is_terminal()
+        && std::env::var_os("NO_COLOR").is_none()
+        && std::env::var("TERM").as_deref() != Ok("dumb");
+    let paint = |code: &str, text: &str| {
+        if color {
+            format!("\x1b[{code}m{text}\x1b[0m")
+        } else {
+            text.to_string()
+        }
+    };
+    fn section(out: &mut String, title: &str) {
+        if !out.ends_with("\n\n") {
+            out.push('\n');
+        }
+        out.push_str(title);
+        out.push('\n');
+    }
+    fn usage(out: &mut String, lines: &[&str]) {
+        for line in lines {
+            out.push_str("  ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    fn rows(out: &mut String, entries: &[(&str, &str)]) {
+        let width = entries
+            .iter()
+            .map(|(name, _)| name.len())
+            .max()
+            .unwrap_or(0);
+        for (name, about) in entries {
+            out.push_str(&format!("  {name:<width$}  {about}\n", width = width));
+        }
+    }
+    let mut out = String::new();
+
+    out.push_str(&paint(
+        "1",
+        &format!(
+            "strop {} — see the cut before you make it",
+            env!("CARGO_PKG_VERSION")
+        ),
+    ));
+    out.push_str("\n\nThe modal terminal editor: vim's grammar, a live preview for every\n");
+    out.push_str("cut, and one query language across every picker.\n");
+    section(&mut out, &paint("1", "Usage:"));
+    usage(
+        &mut out,
+        &["strop [OPTIONS] [FILE[:LINE] | DIR | ssh://URL]"],
     );
-    println!("\nTHEMES (select live with :theme):");
+    section(&mut out, &paint("1", "Commands:"));
+    rows(
+        &mut out,
+        &[
+            (
+                "edit",
+                "open a file, directory, or an empty buffer (the default)",
+            ),
+            ("remote", "open an ssh:// file or directory for editing"),
+            ("headless", "run the scripted driver over a file"),
+            (
+                "replay",
+                "replay a session trace (--script extracts a driver script)",
+            ),
+            (
+                "export",
+                "export a trace's metadata (privacy-safe, not replayable)",
+            ),
+            ("ui-stdio", "UI protocol backend on stdin/stdout"),
+            ("config", "show the config file and its current values"),
+            ("update", "self-update (--check only checks)"),
+            ("bench", "run the performance-gate scenarios"),
+            ("licenses", "built-in theme attributions"),
+            ("compat", "dump the vim-compatibility table"),
+            ("help", "print this help"),
+        ],
+    );
+    section(&mut out, &paint("1", "Options:"));
+    rows(
+        &mut out,
+        &[
+            ("-R, --readonly", "open read-only"),
+            ("+LINE", "initial line for FILE (or use FILE:LINE)"),
+            (
+                "    --theme NAME",
+                "session-start palette (see THEMES below)",
+            ),
+            ("    --remote URL", "shorthand for `strop remote URL`"),
+            ("    --follow", "follow a growing remote file"),
+            ("    --tail BYTES", "remote view: the last BYTES"),
+            ("    --range A:B", "remote view: one byte range"),
+            (
+                "    --script PATH",
+                "headless driver script (same as `headless`)",
+            ),
+            (
+                "    --log[=PATH]",
+                "record a session trace (STROP_LOG works too)",
+            ),
+            (
+                "    --log-content",
+                "include file text in the trace (sensitive)",
+            ),
+            (
+                "    --log-terminal-content",
+                "also terminal keys and output",
+            ),
+            ("-h, --help", "print help"),
+            ("-V, --version", "print version"),
+        ],
+    );
+    section(&mut out, &paint("1", "Remote:"));
+    usage(&mut out, &["ssh://[user@]host[:port]/absolute/path[:LINE]"]);
+    out.push_str(&paint(
+        "2",
+        "  :remote edit enables saving · :remote verify reconciles saves\n  :browse · :filter · :tail · :range · :follow · :remote connect/list\n",
+    ));
+    section(&mut out, &paint("1", "Keys:"));
+    out.push_str(&paint(
+        "2",
+        "  h j k l w b e 0 $ gg G % · d y c + motion · i a A o O · v V · u ctrl-r\n  / ? search · ctrl-l repaint · :w :q :e · Space ? lists every binding\n",
+    ));
+    section(&mut out, &paint("1", "Config:"));
+    out.push_str(&format!("  {}\n", config_path_display()));
+    out.push_str(&paint(
+        "2",
+        "Themes: :theme live · strop licenses lists attributions\nhttps://strop.dev · https://github.com/stropdev/strop\n",
+    ));
+    print!("{out}");
+    println!("\n{}", paint("1", "THEMES (select live with :theme):"));
     for id in strop_core::theme::ThemeId::ALL {
         println!("  {:<20} {} — {}", id.name(), id.label(), id.description());
     }

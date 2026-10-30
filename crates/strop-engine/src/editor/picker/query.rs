@@ -332,17 +332,36 @@ impl Editor {
                 return;
             };
             // `documentSymbol` carries no query (0063 §3): the retained
-            // tree is re-filtered locally only when the Boolean AST
-            // moved. Operator-free typing keeps the static list and
-            // narrows through local fuzzy ranking, exactly as before
-            // the grammar existed (0063 §3 literal compatibility).
+            // tree is re-filtered locally when the admission surface
+            // moved — the Boolean AST or a flat qualifier, the same
+            // narrowing file find gives. Operator-free content typing
+            // keeps the static list and narrows through local fuzzy
+            // ranking, exactly as before the grammar existed (0063 §3
+            // literal compatibility).
             let rebuild = match &previous {
-                Some(previous) => previous.boolean != parsed.boolean,
-                None => parsed.boolean.is_some(),
+                Some(previous) => {
+                    previous.boolean != parsed.boolean || !previous.same_scope(&parsed)
+                }
+                None => parsed.boolean.is_some() || !parsed.same_scope(&Default::default()),
             };
             if rebuild {
                 self.rebuild_document_symbols();
             }
+            self.request_picker_ranking();
+            return;
+        }
+        if kind == Kind::Jumps {
+            let Some(_parsed) = self.picker_query_eval(kind) else {
+                // Rows stay; the diagnostic is on the card (the shared
+                // parse path), exactly like document symbols (0063 §4).
+                return;
+            };
+            // The jumplist is retained on the editor: every Ready
+            // query re-derives its rows locally through the shared
+            // admission compiler (0063 §3) — the list is bounded, so
+            // this stays cheap per keystroke. Operator-free content
+            // never enters admission; the local ranker narrows it.
+            self.rebuild_jump_rows();
             self.request_picker_ranking();
             return;
         }
@@ -553,7 +572,11 @@ impl Editor {
         };
         let query_role = glue.picker.kind == Kind::Files
             || (glue.picker.kind == Kind::Search
-                && glue.picker.field == strop_picker::Field::Search);
+                && glue.picker.field == strop_picker::Field::Search)
+            || matches!(
+                glue.picker.kind,
+                Kind::Symbols | Kind::WorkspaceSymbols | Kind::Jumps
+            );
         if !query_role || glue.picker.input_normal() {
             return;
         }

@@ -228,6 +228,115 @@ mod picker_tests {
     }
 
     #[test]
+    fn jumps_picker_speaks_the_query_language() {
+        // Consistency (0051 §3 / 0063 §3): the jumplist menu accepts
+        // the same qualifiers as file find and search — flat
+        // (`language:`, `path:`) and Boolean — narrowing the retained
+        // rows locally through the shared admission compiler.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("lib.rs"), "fn one() {}\nfn two() {}\n").unwrap();
+        std::fs::create_dir(dir.path().join("tests")).unwrap();
+        std::fs::write(dir.path().join("tests/widget.rs"), "fn helper() {}\n").unwrap();
+        let mut e = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
+        e.open_fixture(&dir.path().join("lib.rs")).unwrap();
+        e.feed_text("G");
+        e.open_fixture(&dir.path().join("app.py")).unwrap();
+        e.feed_text("G");
+        e.open_fixture(&dir.path().join("tests/widget.rs")).unwrap();
+        e.feed_text("G");
+        e.open_picker(Kind::Jumps);
+        e.wait_picker();
+        fn texts(e: &Editor) -> Vec<&str> {
+            e.picker
+                .as_ref()
+                .unwrap()
+                .picker
+                .items
+                .iter()
+                .map(|item| item.text.as_str())
+                .collect()
+        }
+        let whole = texts(&e);
+        assert!(
+            whole.iter().any(|row| row.contains("lib.rs"))
+                && whole.iter().any(|row| row.contains("app.py"))
+                && whole.iter().any(|row| row.contains("tests/widget.rs")),
+            "the full history lists every document: {whole:?}"
+        );
+
+        // A flat qualifier narrows exactly like file find: rust rows
+        // stay, the python row drops, undecidable evidence admits.
+        e.paste_bracketed("language:rust");
+        e.wait_picker();
+        let narrowed = texts(&e);
+        assert!(
+            narrowed.iter().any(|row| row.contains("lib.rs"))
+                && narrowed.iter().any(|row| row.contains("tests/widget.rs")),
+            "rust jumps stay: {narrowed:?}"
+        );
+        assert!(
+            narrowed.iter().all(|row| !row.contains("app.py")),
+            "the python jump is filtered out: {narrowed:?}"
+        );
+
+        // Qualifiers compose; path: narrows further.
+        e.paste_bracketed(" path:tests");
+        e.wait_picker();
+        let narrowed = texts(&e);
+        assert!(
+            narrowed
+                .iter()
+                .all(|row| !row.contains("lib.rs") && !row.contains("app.py")),
+            "only the tests/ jump remains: {narrowed:?}"
+        );
+
+        // The Boolean grammar narrows through line evidence too.
+        e.picker.as_mut().unwrap().picker.input.set_text("");
+        e.paste_bracketed("language:rust AND helper");
+        e.wait_picker();
+        let narrowed = texts(&e);
+        assert!(
+            narrowed.iter().all(|row| row.contains("tests/widget.rs")),
+            "content atoms match the jumped line's text: {narrowed:?}"
+        );
+
+        // Operator-free content never enters admission: the catalog
+        // stays whole and the local ranker narrows (0063 §3).
+        e.picker.as_mut().unwrap().picker.input.set_text("");
+        e.paste_bracketed("helper");
+        e.wait_picker();
+        let whole_again = texts(&e);
+        assert!(
+            whole_again.iter().any(|row| row.contains("app.py")),
+            "plain text keeps the catalog whole: {whole_again:?}"
+        );
+
+        // An incomplete query keeps the rows and explains itself.
+        e.picker.as_mut().unwrap().picker.input.set_text("");
+        e.paste_bracketed("language:");
+        e.wait_picker();
+        let glue = e.picker.as_ref().unwrap();
+        assert!(
+            glue.picker
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("expects a value")),
+            "the diagnostic is on the card: {:?}",
+            glue.picker.error
+        );
+        assert!(
+            e.picker
+                .as_ref()
+                .unwrap()
+                .picker
+                .items
+                .iter()
+                .any(|item| item.text.contains("tests/widget.rs")),
+            "rows stay while the query is incomplete"
+        );
+    }
+
+    #[test]
     fn jumps_preview_tracks_selection_and_rejects_a_closed_document() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
         let document = e.current();

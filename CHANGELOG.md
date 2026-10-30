@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.47.0 — 2026-10-30
+
+### Added
+
+- **The jump list speaks the query language** (0063 consistency): `Space j` accepts the same qualifiers as file find and search — `language:cpp`, `path:tests`, `glob:`, `fpath:` and Boolean `AND`/`OR`/`NOT` — re-filtering the retained jumplist rows locally through the shared admission compiler. Content atoms match the destination line's text; undecidable evidence (a path-less scratch buffer) admits. Diagnostics, qualifier highlighting and `Ctrl-Space` suggestions render exactly like the other query fields.
+- **Label-colon auto-indent** (0072 amendment): Enter after a trailing `:` deepens the next line where the language gives the colon that meaning — C++/C access specifiers (`private:`), `case`/`default:` arms and named labels across C, C++, Java, C#, Go, JavaScript/TypeScript and PHP. Python keeps its depth-zero statement colon; Rust, JSON and CSS stay flat. One registry-decided punctuation rule, no per-language editor code.
+- **A real CLI** (uv-style): proper subcommands — `strop edit`, `remote`, `headless`, `replay`, `export`, `ui-stdio`, `config`, `update`, `bench`, `licenses`, `compat`, `help` — with `strop remote ssh://user@host:port/path` (and the `--remote URL` shorthand) for remote editing. Restructured, styled `--help` with Commands/Options sections; every legacy flag still parses.
+- **Document symbols narrow by qualifiers**: `language:`/`path:` alone (not just Boolean queries) now filter the document-symbols picker like file find, through the same whole-query admission.
+
+### Changed
+
+- **Query qualifier highlighting on every surface**: files, search, symbols, workspace symbols and the jump list all render qualifier spans; the visibility summary line stays on the streaming surfaces where it applies.
+- **Docs restructured**: README is the hub; the detail moved into `docs/cli.md`, `docs/search.md`, `docs/editor.md`, `docs/remote.md`, `docs/filesystem.md` and `docs/terminal-and-scripting.md`, rewritten and cross-linked.
+
+
 ## 0.46.4 — 2026-10-28
 
 ### Added

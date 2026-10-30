@@ -14,7 +14,9 @@ pub mod suggest;
 
 pub use highlight::{HighlightSpan, Role};
 pub use parser::{CaseMode, ContentExpr, QueryDiagnostic, QueryState, SearchQuery};
-pub use plan::{ContentPlan, Evidence, FileSelectionPlan, ReplacementTarget, SymbolEvidence};
+pub use plan::{
+    BooleanPlan, ContentPlan, Evidence, FileSelectionPlan, ReplacementTarget, SymbolEvidence,
+};
 pub use store::{
     canonical_source, migrate_v1, StoredQuery, StoredQueryError, SYNTAX_VERSION_CURRENT,
 };

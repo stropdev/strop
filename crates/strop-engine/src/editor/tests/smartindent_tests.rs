@@ -156,6 +156,64 @@ fn python_colon_deepens_but_rust_colon_does_not() {
 }
 
 #[test]
+fn label_colons_deepen_their_body_across_label_languages() {
+    // 0072 follow-up: one punctuation rule from the registry — the
+    // trailing label colon (`private:`, `case x:`, `name:`) opens a
+    // one-unit deeper body even inside enclosing brackets, unlike
+    // Python's depth-zero statement colon.
+    for (path, text) in [
+        ("a.cpp", "class F {\npublic:"),
+        ("a.cpp", "class F {\n    private:"),
+        ("a.c", "int main(void) {\nloop:"),
+        ("a.java", "switch (x) {\ncase 1:"),
+        ("a.cs", "switch (x) {\ndefault:"),
+        ("a.go", "switch x {\ncase true:"),
+        ("a.ts", "loop:"),
+    ] {
+        let mut editor = code_editor(text, path);
+        editor.set_head(editor.buf().len_bytes());
+        editor.feed_text("A<cr>");
+        settle_indentation(&mut editor);
+        let base = text
+            .rsplit('\n')
+            .next()
+            .unwrap()
+            .chars()
+            .take_while(|ch| ch.is_whitespace())
+            .collect::<String>();
+        assert_eq!(
+            editor.buf().text().to_string(),
+            format!("{text}\n{base}    "),
+            "{path}: the label body opens one unit deeper"
+        );
+    }
+}
+
+#[test]
+fn json_and_css_trailing_colons_stay_flat() {
+    // Colon-free languages (registry None) never read a trailing ':'
+    // as an opener: an incomplete JSON key keeps its level.
+    for (path, text) in [("a.json", "    \"key\":"), ("a.css", "  color:")] {
+        let mut editor = code_editor(text, path);
+        editor.set_head(editor.buf().len_bytes());
+        editor.feed_text("A<cr>");
+        settle_indentation(&mut editor);
+        let base = text
+            .rsplit('\n')
+            .next()
+            .unwrap()
+            .chars()
+            .take_while(|ch| ch.is_whitespace())
+            .collect::<String>();
+        assert_eq!(
+            editor.buf().text().to_string(),
+            format!("{text}\n{base}"),
+            "{path}: trailing punctuation is not an opener here"
+        );
+    }
+}
+
+#[test]
 fn enter_does_not_deepen_literals_comments_or_malformed_literal_eof() {
     for (path, text) in [
         ("code.rs", "    // {"),

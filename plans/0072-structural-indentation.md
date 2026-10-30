@@ -8,6 +8,16 @@ Plain text retains whitespace only. Unnamed scratch buffers retain the existing 
 
 Structural delimiter support is explicit for Rust, Python, JavaScript, TypeScript, Go, C, C++, JSON, Java, C#, and CSS. Python alone adds colon continuation when not already inside a delimiter. Other named languages (including Markdown), unknown filenames, and prose files inherit whitespace. This is delimiter indentation, not a language formatter: it does not implement keyword-based `end`/`else` alignment, HTML tag indentation, or injected-language indentation inside comments/fences. Malformed literal regions and mismatched delimiters conservatively retain whitespace. Scratch prose containing balanced braces intentionally shares scratch's generic code behavior; assigning a prose filename selects whitespace-only behavior.
 
+Amendment (0.47.0): the trailing colon became one registry-decided rule
+instead of a Python special case. `strop_syntax::languages::ColonPolicy`
+marks each language `None`, `Statement` (Python's depth-zero block colon,
+unchanged) or `Label` (C, C++, Java, C#, Go, JavaScript, TypeScript, TSX,
+PHP: a trailing `:` opens a one-unit deeper body from anywhere in code —
+`private:`/`public:` access specifiers, `case`/`default:` arms, named
+labels). Rust, JSON, CSS and prose stay `None`. The editor's `Request`
+carries the policy instead of a `python: bool`; the punctuation rule lives
+in the one shared `plan()`, never per-language editor code.
+
 
 ## Reference behavior
 

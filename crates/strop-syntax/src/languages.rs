@@ -34,6 +34,42 @@ pub enum LanguageId {
     Sovel,
 }
 
+/// How a trailing `:` on a code line opens the next line's indent
+/// (0072): one punctuation rule, decided by registry data — never
+/// per-language code in the editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum ColonPolicy {
+    /// A trailing `:` never deepens: Rust, JSON, CSS and prose.
+    #[default]
+    None,
+    /// A trailing `:` deepens only at bracket depth zero — Python's
+    /// block colon (`if ready:`), where a colon inside brackets is a
+    /// slice or annotation, not a block.
+    Statement,
+    /// A trailing `:` deepens anywhere in code — the C-family/Go/PHP
+    /// label colon: access specifiers (`private:`), `case`/`default:`
+    /// arms and named labels all open a one-unit deeper body.
+    Label,
+}
+
+impl LanguageId {
+    pub fn colon_policy(self) -> ColonPolicy {
+        match self {
+            LanguageId::Python => ColonPolicy::Statement,
+            LanguageId::C
+            | LanguageId::Cpp
+            | LanguageId::Java
+            | LanguageId::CSharp
+            | LanguageId::Go
+            | LanguageId::JavaScript
+            | LanguageId::TypeScript
+            | LanguageId::Tsx
+            | LanguageId::Php => ColonPolicy::Label,
+            _ => ColonPolicy::None,
+        }
+    }
+}
+
 pub struct LanguageSpec {
     pub id: LanguageId,
     pub name: &'static str,

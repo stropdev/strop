@@ -11,10 +11,12 @@
 
 ![strop demo](demos/demo.gif)
 
-**strop** is a modal text editor in Rust with Vim-style commands, project search,
-git surfaces and operator previews. Composition windows such as `d/pattern`
-preview their affected ranges; completed object chords such as `ci[` execute
-at the completing key rather than pausing for an inspection step.
+**strop** is a modal text editor in Rust with Vim-style commands, project
+search, git surfaces and operator previews. Composition windows such as
+`d/pattern` preview their affected ranges; completed object chords such as
+`ci[` execute at the completing key rather than pausing for an inspection
+step. Operator previews and execution consume the same resolver — the
+preview cannot lie.
 
 ## Install
 
@@ -26,13 +28,13 @@ mise use cargo:strop-editor                      # mise
 ```
 
 Already installed? `strop update` self-updates tarball installs. Downloads,
-SHA-256 verification and archive extraction run entirely in Rust; curl and tar
-are not required.
+SHA-256 verification and archive extraction run entirely in Rust; curl and
+tar are not required.
 
 Supported targets: Linux x86_64/aarch64 and macOS Apple Silicon (arm64).
 Intel macOS is no longer supported starting with 0.36.0; installers,
-self-update and remote worker admission refuse it rather than selecting
-an ARM binary.
+self-update and remote worker admission refuse it rather than selecting an
+ARM binary.
 
 ## The grammar in one card
 
@@ -49,534 +51,58 @@ Space w  - horizontal · v vertical · 1-9 focus · h/j/k/l/w move · q close
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 
-Operator previews and execution consume the same resolver. Surround
-(`ys`/`cs`/`ds`), multicursor cascades (`Q`/`Space c`), project-wide search &
-replace with live row previews, per-project sessions, and undo
-history that crosses restarts (with a `Space u` tree browser), tree-sitter highlighting
-for 23 languages (including CMake, Markdown, TOML, YAML, HTML and CSS), git gutter +
-blame + commit dive chains, SHA-resolved permalinks over OSC52, and helix-flavored
-`.strop/languages.toml` LSP config.
-
-In-buffer `/` and `?` support a bounded Vim-magic regex dialect (and `\v` very magic), including
-collections, groups, alternation, repetition and backreferences. Unsupported
-constructs report an error instead of being treated as literals. Search previews
-and Enter use the same counted resolver. Horizontal views, block selection and
-carets share display-cell geometry; new edits preserve the buffer's line endings.
-
-Markdown fences select any bundled language—not just Rust. The same Tree-sitter
-injection pipeline highlights fenced examples inside Rust documentation comments,
-JavaScript/TypeScript/TSX, C/C++ and Java documentation blocks, declaration-attached
-Go block comments, and Python's initial module/class/function docstrings.
-Comment delimiters remain comments; independent documentation groups cannot leak
-unclosed fences into each other. Only rustdoc defaults unlabelled fences to Rust;
-unknown explicit languages remain plain code. Ordinary comments and arbitrary
-strings are not reinterpreted as documentation.
-
-HTML embeds JavaScript and CSS. Grammars and licensed queries ship in the binary.
-Syntax, structural indentation guides and search counts are revision-owned worker
-results. Long-line byte/cell checkpoints keep horizontal navigation and typing
-from repeatedly walking the line prefix.
-
-File/native work runs on owned jobs rather than blocking keystrokes. Sessions
-use private atomic files and lossless native paths, including undo history.
-
-The modeline keeps filenames, live status and position legible at narrow widths.
-Git history uses quieter metadata, clear file hierarchy and native-path-safe
-navigation; see the [modeline and Git polish](plans/0032-modeline-and-git-polish.md).
-
-## Indentation
-
-Enter between `{}`, `[]` or `()` opens an indented inner line and leaves the
-closing delimiter aligned. Typing a closer on an indentation-only line aligns it
-with its matching opener, even when the current indentation is wrong.
-Each cursor uses its own source context, indentation unit and line endings.
-Undo, counted insertion and dot repeat preserve the operation rather than copying
-generated indentation from a different location.
-
-Structural delimiter indentation supports Rust, Python, JavaScript, TypeScript,
-Go, C, C++, JSON, Java, C# and CSS; Python also indents after a code colon.
-Strings and comments are excluded. Named prose/unsupported files inherit whitespace;
-unnamed scratch buffers retain generic brace behavior. This is not a formatter,
-HTML tag indentation, or keyword-based `end`/`else` alignment.
-Large-file analysis runs on the existing revision-checked worker, never the render path.
-
-## Themes
-
-`:theme` opens the searchable palette selector; Enter applies a choice and
-Escape leaves the current theme unchanged (once enters the picker's Normal
-mode; twice closes it). Use `:theme catppuccin-mocha`
-to switch directly.
-
-| Name | Character |
-| --- | --- |
-| `dark` | Strop's original dark palette and amber accent; the default |
-| `light` | Strop's warm paper-and-ink counterpart |
-| `catppuccin-mocha` | Warm pastel dark, with violet and blue syntax |
-| `catppuccin-latte` | Light Catppuccin, adapted for readable editor contrasts |
-| `nord` | Restrained cool blue-grey, with brighter comments for legibility |
-| `strop-ink` | Original low-chroma graphite, ivory and restrained brass |
-
-Choose at launch with `strop --theme nord file.rs`, or persist the choice in
-`$XDG_CONFIG_HOME/strop/config.toml` (normally `~/.config/strop/config.toml`):
-
-```toml
-theme = "catppuccin-mocha"
-```
-
-Precedence is the built-in default, then the user config, then `--theme`.
-`:theme` changes the running session only; it does not rewrite the config.
-Syntax, pickers/previews, diffs, diagnostics, help and statusline share the
-palette. Existing terminal sessions update their default colors without
-overwriting child-selected truecolor or OSC palette customizations.
-
-Adaptations follow the [Catppuccin style guide](https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md)
-and [Nord color roles](https://www.nordtheme.com/docs/colors-and-palettes);
-they are not promises of exact upstream editor-port fidelity.
-`strop --licenses` prints the bundled theme licenses. All palettes are
-compiled into the binary: no downloads, plugins or setup are required.
-
-## Code completion
-
-Insert mode offers language-server candidates and incremental words from the
-current editable source. Word suggestions remain usable without a language
-server, and collections use their owning source rather than unrelated excerpt
-text. The menu shows kind, source and detail; selected language items can show
-documentation without changing the buffer.
-
-- `Ctrl-Space`: request both providers; `Ctrl-X Ctrl-O`: language completion.
-- `Ctrl-N` / `Ctrl-P`: choose a candidate; `Ctrl-Y`: accept it.
-- Enter and Tab accept only after deliberate selection; otherwise they keep
-  their ordinary Insert behavior.
-- `Ctrl-E`: dismiss without editing. Escape dismisses and leaves Insert mode.
-
-Primary edits and represented imports are validated together and share the
-Insert undo group. Stale, overlapping or invalid edits are refused as a whole;
-unsupported snippets and commands are not approximated by a label insertion.
-Read-only and partial sources do not gain write authority through completion.
-
-Automatic popup starts at a two-character keyword prefix or an advertised
-language-server trigger. Global/project configuration uses:
-
-```toml
-[completion]
-enabled = true
-auto_popup = true
-```
-
-Set `auto_popup = false` for manual-only completion; an opened manual session
-still follows typing. `enabled = false` also disables manual invocation and
-retires completion-only work. Query-field suggestions are a separate feature.
-
-## Workspace search and source editing
-
-`Space f`, `Space /`, and the Find field of `Space R` share one query language.
-File finding is local; Search also supports explicitly scoped SSH directories.
-Bare file queries are fuzzy; content queries are literal unless you choose `regex:`:
-
-```text
-language:rust
-language:cpp path:src/ request_id
-glob:"src/my files/**/*.rs" -path:generated/ text:"request-id"
-language:rust regex:"\brequest_(id|name)\b"
-hidden:exclude ignored:include text:"-test.rs"
-```
-
-`path:` is a case-sensitive literal substring of the workspace-relative path (no leading `/`).
-full workspace-relative path, including parent directories, with smart case;
-use `fpath:modules/jweb/ parser` to scope the directory while ranking `parser`.
-`-fpath:` excludes matching paths. Bare file text remains fuzzy over that path.
-
-Buffer `/` and `?` search is case-insensitive by default. Start the query with
-`case:sensitive` for exact case; `case:ignore` / `case:insensitive` explicitly
-select insensitive matching. Vim's `\C` and `\c` remain supported, including in
-`n`/`N` and highlights. The modeline shows the current match and total as
-`current/total`, updating as `n`/`N` moves. In picker and search-prompt fields,
-`Ctrl-R {register}`
-inserts a yank; field Normal `p`/`P` also pastes. Search's `Ctrl-R` replacement
-toggle is unchanged. Multiline registers are refused in one-line fields.
-
-Visual `Ctrl-C` toggles line comments over the selected lines, with one undo
-step. Insert `Ctrl-C` returns to Normal. Ctrl-C never quits the editor; use `:q`.
-
-Filter-only file finding lists eligible files. Content search needs an expression.
-Unignored dotfiles are included by default; ignore rules still apply, and `.git`
-metadata is excluded. `:search-options` shows the separate visibility controls.
-`Ctrl-Space` offers parser-driven query suggestions; `:help query` explains
-quoting, supported languages, errors and examples. Old `-t`/`-g` UI flags are
-ordinary text now. Replacement text is literal, including `$1` and backslashes.
-
-`Space /` opens or resumes one large Search workspace. Local enumeration and
-content matching run entirely in Rust using the `ignore`/`grep` crate family;
-`rg` is not required. Buffer and picker previews use live buffers where open and
-bounded reads otherwise; jumplist previews show the destination line too.
-Leading buffer-search case directives use the same qualifier highlighting as
-picker qualifiers. `Space R` resumes the same
-investigation with With visible. Inside Search, `Ctrl-R` toggles With without
-restarting the search or losing either field's text, caret, mode, selection or
-workset. Enter in **Find opens the selected source**, even with With visible;
-Enter in **With prepares Review**. Tab switches fields when With is visible.
-
-`Ctrl-X` toggles one match; `Ctrl-D` masks/restores its file without erasing the
-individual decisions. Excluded hits remain visible in both presentations.
-`Ctrl-O` collects exactly the included matches. An all-excluded, incomplete or
-failed dataset cannot silently become a whole-project operation.
-
-Opening a source hides Search; `Space /` returns to the retained investigation.
-Re-entry refreshes through owned work in its captured namespace/root, even if focus
-or cwd changed. Only unchanged source witnesses regain exclusions and selection;
-lost decisions are reported. In a Directory buffer, **`:fs search`** or
-**Space a → Search here** captures that directory without changing cwd.
-SSH search requires an explicitly admitted matching native worker and `rg` on the
-host; unavailable execution is reported rather than searching local files or
-downloading the tree. Python is not required.
-SSH results retain their host identity through preview, opening and Collect.
-**With/Review are unavailable in SSH scopes**; individual remote write permits do
-not authorize project replacement. Container Search here remains unsupported.
-
-Review preparation is cancellable background work. `:apply-change` edits buffers;
-`:save-change` separately saves the changed files and opens a per-file receipt.
-Open and previously unopened files obey the same policy. Dirty open source text
-wins over disk, stale witnesses refuse, and Cancel restores the query and draft.
-
-`Ctrl-O` from source results opens an editable collection with surrounding context,
-source syntax, match evidence and source line numbers. `+`/`-` adjusts context;
-`g<Space>` opens the source. Edits update source buffers and their other views
-while typing. Undo/redo retains source groups; `:w` saves sources and `:wq`
-closes the view only after its admitted saves confirm.
-
-`:tab-size` opens source-specific width/style controls; `:tab-size 3`,
-`:tab-size auto`, and `:indent-style tabs|spaces|auto` are direct forms.
-Changing indentation settings never rewrites existing bytes. The modeline names
-the effective input owner and source setting. Matching delimiters use the same
-cancellable source resolver as `%`, without moving the view.
-
-## Filesystem workspace
-
-Open a directory with `strop DIRECTORY`, `:browse`, or `:e DIRECTORY`.
-`Space e` reveals the current source in its parent. Browsing keeps the process
-cwd unchanged; Enter opens a structured entry and `-`/Backspace goes to its
-parent. Directory-local `Space a` opens filesystem actions.
-
-Filesystem mutations use **Review → Apply → Receipt**, locally and on SSH
-hosts where the native worker is admitted (restricted/SFTP-only hosts
-remain read-only):
-
-```vim
-:fs create nested/new.txt
-:fs mkdir new-directory
-:fs rename new-name.txt
-:fs move destination-directory
-:fs copy stored stored-copy.txt
-:fs copy buffer edited-copy.txt
-:fs trash
-:fs remove
-:apply-change
-:cancel-change
-:fs operations
-:fs verify OPERATION STEP
-:fs undo OPERATION STEP
-```
-
-Relative filesystem destinations use the current Directory, or the current
-source's parent; source-less buffers use the workspace root. Explicit resource
-URIs select another namespace. Creation never truncates an occupied name;
-rename/move is no-clobber. Review lists missing-parent creation explicitly.
-Stored-copy and buffer-copy select different versions without saving the source.
-Trash uses native recovery facilities where supported; remote Trash is
-unavailable, not an alias for permanent removal. Recursive removal of non-empty
-directories and unsafe alias/root operations are refused.
-
-`:fs edit` enters a name-only **filename draft**. Ordinary motions, edits,
-whole-line yank/paste, undo/redo and macros change the draft, not disk.
-`:w` prepares review; `:apply-change` performs filesystem changes;
-`:cancel-change` returns to the intact draft. Browsing or refreshing the directory
-retains edited names and source provenance. Use `:fs discard` to discard explicitly.
-Copies need a distinct name; ambiguous joins and conflicting targets refuse
-instead of guessing which file a row represents.
-
-Confirmed relocation keeps source text, history and document identity.
-Remote relocation revokes old write authority; use `:remote edit` again before
-saving the renamed buffer. Pending saves and unconfirmed operations block
-conflicting work. Receipts survive leaving the view; verification never blindly
-retries a mutation. Containers remain read-only through these actions.
-
-Local saves/save-as and local filesystem mutations use a conservative per-editor
-write barrier, including parent aliases. Let an admitted save finish before
-applying a local filesystem review, and resolve unconfirmed receipts before saving.
-Move verification and recovery require the recorded post-publication version:
-finding the same inode at a pathname is not sufficient ownership evidence.
-Receipts are in-memory, not crash recovery. Graceful global exit refuses unresolved
-outcomes; explicit `:qa!` reports them and exits unsuccessfully rather than claiming
-they were resolved or persisted.
-
-Removing an otherwise empty directory may retire its validated, quiescent protocol
-locks. Active locks, unknown entries and other directory contents cause refusal;
-partial housekeeping is reported even when cancellation prevents removal.
-
-## SSH workspaces
-
-```sh
-strop +120 ssh://user@devbox/var/log/app.log
-strop --tail 65536 ssh://devbox/var/log/app.log
-strop --range 1048576:65536 ssh://devbox/var/log/app.log
-strop --follow ssh://devbox/var/log/app.log
-strop ssh://devbox/~/project/src/lib.rs
-strop ssh://devbox/etc/
-```
-
-Remote files open read-only by default: motions, `/`/`?`, visual selection, yank and
-splits work unchanged. Escape cancels an open or stops following; `:e!` refreshes
-the snapshot. Follow sticks to EOF only while you stay there. Shrink, replacement
-and changed overlap produce a visible reset; size/mtime alone are not file identity.
-The modeline identifies partial byte windows, whose line numbers are window-relative.
-
-Inside strop:
-
-Press **Space o** or run **`:remote`** to choose a known/connected destination,
-select **Add a host**, or choose **Containers** to attach to a running container.
-Enter `host`, `user@host:port`, or a complete SSH path.
-Enter is the connection action; opening the chooser does not authenticate.
-New hosts start at `/`; successful directory choices are remembered privately.
-`:remote home` uses negotiated remote-home expansion; `:remote root` returns to `/`.
-
-```vim
-:tail 65536 ssh://devbox/var/log/app.log
-:range 1048576 65536 ssh://devbox/var/log/app.log
-:follow
-:unfollow
-:browse ssh://devbox/var/log/
-:filter app
-:remote connect ssh://devbox
-:remote list
-:remote disconnect ssh://devbox
-:remote clear
-```
-
-Directory listings are searchable real buffers with kind, POSIX permissions,
-server-reported byte size and native filename columns. Missing attributes show
-`?`, distinct from mode `000` and size zero. Directory sizes are not recursive
-totals. Links and special entries have distinct type markers. Enter opens an entry;
-`-`, Backspace or `../` returns to the parent and restores the selected child.
-`:filter` narrows names, and an empty filter restores the full listing.
-
-Search here uses the same query fields, inclusion decisions and source previews
-as local Search. Starting a remote search explicitly admits a verified worker
-on that endpoint; restricted/SFTP-only hosts refuse search without a fallback.
-Native filename bytes remain separate from display text; a dirty local
-buffer at an identical path is never substituted for remote content.
-Source enumeration is limited to 100,000 selected paths or 16 MiB of names.
-rg records are limited to 1 MiB and 4,096 submatches; decoded batches are limited
-to 4 MiB. A source request publishes at most 100,000 result rows or 64 MiB of
-owned row data. Limits and malformed output produce a visible failure, not a
-silently complete partial result.
-
-SSH and container listings include hidden entries and do not evaluate ignore files;
-the modeline names this fixed policy. Local `:search-options` defaults do not filter
-another filesystem namespace.
-Plain Ex open operands keep their local meaning outside Directory buffers;
-inside Directory they use that directory's captured namespace. Explicit `file://`
-and `ssh://` locations select the namespace regardless of the current view.
-Tab completes SSH hosts and paths without starting authentication: remote candidates
-need a live authorized connection or cached data. Connections are shared by endpoint
-and held by documents or explicit `:remote connect` pins; clear/disconnect retires
-them without touching external SSH masters.
-
-Full-file snapshots support remote LSP diagnostics, hover, definition/references and
-source/header navigation, plus Git context, staged/unstaged diffs, log, blame and
-commit/file navigation once the endpoint has an admitted worker. Run
-**`:remote worker [URI]`** to authorize a verified worker without granting a
-file write permit, or **`:remote edit`** on a complete snapshot to admit the
-worker and separately verify edit authority. Services run **on the remote
-host**, never against a local lookalike path. Project-command trust is scoped
-to the endpoint and remote root (`:trust`). Partial windows and following
-refuse full-document language services; Git mutations, remote save-as and
-arbitrary shell/filter commands remain unsupported.
-
-OpenSSH supplies aliases, keys, agent and ProxyJump configuration. Host keys must
-already be trusted; authentication is noninteractive. Percent-encode reserved path
-bytes (`%20`, `%23`, `%25`); native Unix filenames stay intact. Reads are bounded to
-256 MiB of UTF-8 text; range/tail edges exclude incomplete UTF-8 characters. Home
-expansion requires the server's `expand-path@openssh.com` extension.
-
-### Explicit remote editing
-
-On a complete, non-following file snapshot, run **`:remote edit`**. The editor
-verifies the displayed content against the server and grants this document write
-authority. Edit normally, then use **`:w`** or **`:wq`**. Saves run off the input
-thread; a receipt for an older revision never clears newer unsaved edits.
-
-The write path checks content and metadata, stages inside a private 0700 transaction
-directory, preserves mode/ownership/mtime/extended attributes, atomically replaces
-the file, and syncs the file and changed directories. Unsupported preservation
-refuses the save. It requires an owned regular single-link file and exact stored
-path spelling. Symlinked ancestor directories are resolved and revalidated;
-a symlink as the final component is refused. Edited snapshots remain bounded to 256 MiB.
-Protocol lock/staging paths are reserved; private lock files remain to keep a stable
-lock identity. Do not delete active locks.
-
-**Concurrency is cooperative, not universal compare-and-swap.** Strop's remote-save
-participants share a lock. Completed changes by other programs are detected before
-commit, but a nonparticipating writer can race the final check/rename window.
-`:w!` never bypasses that conflict check or grants authority to a read-only snapshot.
-Escape in normal mode requests cancellation. If a save may have crossed rename,
-local edits stay dirty and the outcome is explicitly unconfirmed. **`:remote verify`**
-uses the frozen prepared attempt and any available receipt to reobserve and
-sync matching saved content, including after a worker restart in the same
-Linux boot/mount namespace and principal. It never blindly overwrites or
-retries. Missing evidence or a changed namespace remains unconfirmed.
-Conflicts preserve local edits. Successful `:e!` refresh revokes the permit;
-pending/unconfirmed saves must settle or be verified first.
-A failed refresh does not discard edits or permissions.
-Forced close may leave an unconfirmed remote outcome and a private orphan stage.
-
-See the [remote-save contract and safety limits](plans/0040-remote-editing-and-saving.md).
-Remote contents and write permits are never restored from persisted sessions.
-
-SFTP browsing and ranged reads need no remote worker or Python. Protected
-editing, Git, LSP and search run through a verified native worker in the
-selected namespace; worker admission may write a private executable cache
-on that host. A restricted/SFTP-only account remains read-only, with typed
-refusals instead of Python, shell, SFTP-write or local-path fallbacks. The
-worker artifact must match the target and protocol; a foreign-target
-artifact can be supplied with `STROP_WORKER_BINARY`. Git/LSP also need
-their respective programs in the remote workspace. Owned process groups
-are cleaned up when the worker observes lease loss; network partitions
-delay detection, descendants creating new sessions can escape the group,
-and a killed worker cannot guarantee cleanup. Remote content is not
-persisted or automatically restored.
-
-`strop-remote` owns SFTP and the SSH worker transport; the editor owns
-views, write permits and replay. See the [workspace contract](plans/0036-remote-workspace-execution.md),
-[protocol evidence](plans/0034-ssh-log-buffers.md),
-[prioritized remote roadmap](plans/0035-remote-workflow-roadmap.md), and
-[Dev Containers design](plans/0037-devcontainers-and-workspace-contexts.md).
-
-## Local terminals
-
-`:terminal` opens the shell selected by `SHELL` (or `/bin/sh`) in a real local PTY.
-`:terminal COMMAND` runs an explicit command. Directory **Terminal here**
-(`Space a` / `:fs terminal`) uses the selected local directory without changing
-the editor's cwd. SSH/container contexts refuse interactive execution; the
-separately labelled **Open local terminal** / `:terminal-local` is a deliberate
-local choice, never a fallback against a remote-looking path.
-
-- **Terminal input:** Esc, Ctrl-C, Ctrl-R, Ctrl-W, Alt and function keys go to the child.
-  **F2** enters editor Normal mode directly, without an OS-sensitive chord;
-  **Ctrl-\\ Ctrl-N** remains an alternative (legacy terminals may spell the prefix
-  as Ctrl-4). The modeline names both paths and expands a pending chord. Legacy
-  Esc/Alt ambiguity remains an outer-terminal limitation. After entering Normal,
-  **Space w** owns pane commands.
-- **Normal inspection:** ordinary motions, search, selection and yank use a pinned,
-  read-only logical text snapshot. Output continues without moving that snapshot;
-  **i**, **I**, **a** or **A** follows live input again. Other inspecting panes keep their snapshot.
-  An exited session stays readable and never restarts implicitly.
-- **Paste:** bracketed paste follows the child's negotiated mode. Otherwise,
-  multiline/control input is held for explicit consent: enter Normal mode, then
-  `:terminal-paste` to confirm or `:terminal-paste-cancel` to discard. Native paste
-  encoding normalizes terminal control bytes; no extra Enter is appended.
-- **Lifetime:** `:terminal-stop` stops the owned session and retains output.
-  Closing a split does not kill its process; hidden sessions remain in `Space b`.
-  `:qa` refuses live sessions; `:qa!` stops and drains them. Deliberately detached
-  processes outside the owned terminal session can outlive it.
-- **Isolation:** child screen/clipboard/window commands cannot control the outer
-  terminal. Clipboard reads/writes are denied; explicit user selection/yank is
-  separate authority. `:w!` and `:set noro` cannot turn a terminal into a writable
-  file binding—yank into an ordinary buffer to export text.
-
-Terminal buffers use bounded history, input and immutable snapshots. One focused
-input view controls PTY geometry; mirrors never independently resize it. Linux
-supervision requires pidfds. Source builds require **Zig 0.16.0** explicitly
-installed for the pinned static emulator; prebuilt users need neither Zig nor a
-Ghostty installation. See the [terminal contract](plans/0055-embedded-terminal-tui-and-gui.md).
-
-## Container workspaces
-
-Run **`:containers`** or choose **Space o → Containers** to select a running
-container. Directory browsing,
-file reads and tab completion stay read-only and do not install software.
-Run **`:container-worker`** in an attached container buffer to authorize
-a verified native worker in that container's selected Docker engine,
-canonical id, StartedAt, user and working directory. The default path
-uploads the matching static artifact into that user's private executable
-cache. For shell-less images, set `STROP_CONTAINER_WORKER_PATH` to an
-already installed matching binary; the worker is verified in place,
-without upload. Missing tools, wrong targets and recycled containers
-refuse typed rather than executing Git/LSP on the host or through an
-implicit `docker exec sh` fallback. Container files remain read-only.
-
-In a container without an init/reaper at PID 1, repeated Docker exec
-bootstrap processes can remain as zombies after they exit. Strop closes
-its worker lease, but cannot reap process-table entries adopted by an
-unrelated PID 1. For sustained worker sessions without that zombie
-accumulation, start the container with an init that reaps children.
-
-## Headless scripts
-
-`strop --headless SCRIPT [+LINE] [FILE[:LINE]]` uses the same editor and service
-handlers. `--script SCRIPT` is equivalent. `strop --help` lists every directive:
-`buffer`, `keys`, `key`, `input`, `paste`, `resize`, `frame`, `state`, `settle`, `wait`
-and `quit-intent`. JSON strings use double quotes and JSON escapes. `keys` accepts
-tokens such as `<esc>`, `<cr>`, `<c-r>`, `<a-x>` and `<f5>`; `input` carries a complete
-physical key/text/paste event, including modifiers and repeat/release information.
-`key` remains an already-normalized semantic editor command, not terminal input.
-
-```text
-keys :e source.rs<cr>
-settle 5000
-keys /needle<cr>
-frame
-state
-```
-
-`settle [MS]` returns when finite owned work drains (default 30,000 ms) and exits
-nonzero on timeout. `wait MS` remains a deliberate delay. Pure grammar work keeps
-key, paste, repeat and macro ordering; filesystem/service jobs require an explicit
-settle before a script relies on their result.
-An interactive shell is not an eternally pending job: terminal settle covers
-admission/transport/frame barriers, not arbitrary command execution. Script
-completion explicitly closes and drains its owned terminal sessions.
-
-Headless `:trust` uses the same explicit per-project/endpoint consent and
-`XDG_STATE_HOME` (or `$HOME/.local/state`) store as the TUI. It does not restore or
-automatically persist editor sessions. Project configuration never grants itself
-permission to execute commands.
+`Space ?` lists every binding in the editor; `:help` explains each surface.
+
+## The tour
+
+- **The CLI** — `strop file.rs`, `strop remote ssh://user@host:2222/path`,
+  `strop replay trace.jsonl`: one binary, subcommands for the occasional
+  jobs, `strop help` for the whole map → **[docs/cli.md](docs/cli.md)**
+- **Search and the query language** — one qualifier grammar
+  (`language:cpp path:tests`, Boolean `AND`/`OR`/`NOT`) shared by file
+  find, search/replace, symbols and the jump list →
+  **[docs/search.md](docs/search.md)**
+- **Editor surfaces** — themes, completion, structural + label-colon
+  indentation, syntax, sessions → **[docs/editor.md](docs/editor.md)**
+- **SSH, remote editing, containers** — read-only snapshots, explicit
+  `:remote edit` write authority, remote LSP/Git/search, dev containers →
+  **[docs/remote.md](docs/remote.md)**
+- **Filesystem workspace** — directory browsing and Review → Apply →
+  Receipt mutations, locally and over SSH →
+  **[docs/filesystem.md](docs/filesystem.md)**
+- **Terminals, headless scripts, traces** — real PTYs in splits, the
+  scripted driver, and how to capture a reproducible bug →
+  **[docs/terminal-and-scripting.md](docs/terminal-and-scripting.md)**
+
+Also in `docs/`: [vim-compat.md](docs/vim-compat.md) (the differential
+contract against nvim), [worker-protocol.md](docs/worker-protocol.md), and
+[nucleo-decision.md](docs/nucleo-decision.md).
+
+## The house rules
+
+- **Async invariant**: input→render never crosses an `await`. Data sources
+  (rg, git, LSP) are jobs posting onto the event loop — no exceptions.
+- **Everything is a real buffer**: terminals, directory listings, search
+  collections — every widget still knows how to be a text editor.
+- **Zero-config single static binary**: no required setup, no downloads at
+  runtime; grammars, queries and palettes are compiled in. rustls only —
+  a dependency dragging in openssl is a bug.
+- **Fidelity**: the vim grammar is the product; deviations are bugs, found
+  by the differential harness against nvim, not by vibes.
+
+Design contracts live in [plans/](plans/) — numbered, load-bearing, and
+the authority for every behavior above.
 
 ## Reporting a bug
 
 ```sh
 strop --log-file issue.jsonl path/to/file.rs
-# Include sensitive documents, service results and rendered editor cells:
-strop --log-file issue-full.jsonl --log-content path/to/file.rs
-# Explicitly opt into private terminal commands, keys, paste and output:
-strop --log-file terminal-full.jsonl --log-terminal-content
-strop --headless steps.keys path/to/file.rs --log-file headless.jsonl
-strop --replay issue-full.jsonl
-strop --export-metadata issue-full.jsonl > issue-metadata.jsonl
-# Optional input-only extraction; inspect before executing:
-strop --replay-script issue-full.jsonl > replay.keys
+strop replay issue-full.jsonl        # full forensic replay
 ```
 
-Attach the JSONL file with the observed and expected behavior. Logs contain keys,
-commands, paths and diagnostic messages; full-content logs also contain documents,
-pastes, service results and rendered cells. **Inspect before sharing.** Existing
-files are never overwritten. Use the recording version of strop for full replay:
-it requires a complete capture and does not repeat native side effects.
-The input-only script is different: it can
-run commands again and does not reproduce external service results.
-Terminal content is excluded even by ordinary `--log-content`. Entering a private
-terminal boundary records an opaque marker and leaves the remaining capture
-metadata-only; replay refuses the omitted history. `--log-terminal-content` is the
-separate explicit consent, visibly marked **REC**. Terminal captures use full
-`--replay`, not input-only extraction, which cannot reproduce PTY state.
-
-Captures are bounded to 64 MiB, 100,000 events and 256 KiB per record. Hitting a
-limit is explicit and an incomplete trace is refused for full replay. Metadata
-export retains only event categories and sequence numbers, not arbitrary payloads;
-the export is deliberately not replayable.
-
-See [tracing design](plans/0029-session-tracing.md), the
-[prioritized review/roadmap](plans/0028-roadmap-and-review.md), and the
-[P1/P2 execution contract](plans/0031-p1-p2-execution.md).
+Details, content-privacy knobs and the input-only script extraction:
+[docs/terminal-and-scripting.md](docs/terminal-and-scripting.md).
+**Inspect logs before sharing** — they contain keys, commands and paths.
 
 ## Code signing policy
 
@@ -584,10 +110,10 @@ Public Windows executables and installers are approved manually and signed
 through SignPath Foundation. The policy, privacy statement, build/provenance
 controls and named approver live in [SECURITY.md](SECURITY.md).
 
-
 ## Links
 
 - [strop.dev](https://strop.dev) — demo, palettes, install
 - [plans/](plans/) — the numbered design contracts everything answers to
+- [docs/](docs/) — the user-facing reference
 
 MIT license · © 2026 [Tarek Nawara](https://github.com/tknawara)

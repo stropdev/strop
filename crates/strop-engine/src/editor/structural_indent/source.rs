@@ -131,7 +131,9 @@ fn request(document: &Document, trigger: Trigger) -> Request {
     Request {
         trigger,
         syntax_path,
-        python: detected.is_some_and(|spec| spec.id == LanguageId::Python),
+        colons: detected.map_or(strop_syntax::ColonPolicy::None, |spec| {
+            spec.id.colon_policy()
+        }),
         unit: document.indent.unit(),
         newline: newline.into(),
     }

@@ -6,7 +6,9 @@
 use strop_core::languages;
 use strop_syntax::symbols::SymbolKind;
 
-use super::parser::{BooleanExpr, CaseMode, ContentExpr, QueryDiagnostic, QueryState, SearchQuery};
+use super::parser::{
+    BooleanExpr, CaseMode, ContentExpr, MetadataAtom, QueryDiagnostic, QueryState, SearchQuery,
+};
 
 /// One compiled file-selection policy: which paths are eligible.
 /// Predicates are structured data — the adapters never re-parse text.
@@ -493,6 +495,91 @@ impl BooleanPlan {
             1 => ReplacementTarget::Single(atoms[0].clone()),
             count => ReplacementTarget::Ambiguous(count),
         }
+    }
+}
+
+impl BooleanPlan {
+    /// Whole-query admission for retained-list surfaces (0063 §4):
+    /// the Boolean AST when the query carries operators, else the flat
+    /// selection qualifiers (`language:`/`path:`/`fpath:`/`glob:` and
+    /// their negatives) as an implicit conjunction — the narrowing file
+    /// find already gives. Free text never enters admission here (the
+    /// local ranker narrows it, 0063 §3 literal compatibility);
+    /// `Ok(None)` when the query narrows nothing.
+    pub fn compile_retained(query: &SearchQuery) -> Result<Option<Self>, QueryDiagnostic> {
+        let case = query.case.unwrap_or(CaseMode::Smart);
+        if query.state != super::QueryState::Ready {
+            return Err(query
+                .diagnostics
+                .first()
+                .cloned()
+                .unwrap_or_else(|| QueryDiagnostic {
+                    range: 0..query.source.len(),
+                    message: "incomplete query".into(),
+                    suggestion: None,
+                }));
+        }
+        if let Some(boolean) = &query.boolean {
+            return Ok(Some(Self {
+                root: Self::compile(boolean, case, 0..query.source.len())?,
+            }));
+        }
+        let mut families: Vec<BooleanExpr> = Vec::new();
+        let mut family = |values: &[String], negated: bool, key: &'static str| {
+            if values.is_empty() {
+                return;
+            }
+            let atoms = values
+                .iter()
+                .map(|value| {
+                    BooleanExpr::Metadata(MetadataAtom {
+                        key: key.into(),
+                        value: value.clone(),
+                        negated,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let joined = if atoms.len() == 1 {
+                atoms.into_iter().next().expect("one atom")
+            } else {
+                BooleanExpr::Or(atoms)
+            };
+            let expr = if negated {
+                BooleanExpr::Not(Box::new(joined))
+            } else {
+                joined
+            };
+            families.push(expr);
+        };
+        let owned: Vec<String> = query
+            .languages
+            .iter()
+            .map(|lang| lang.to_string())
+            .collect();
+        family(&owned, false, "language");
+        let owned: Vec<String> = query
+            .exclude_languages
+            .iter()
+            .map(|lang| lang.to_string())
+            .collect();
+        family(&owned, true, "language");
+        family(&query.paths, false, "path");
+        family(&query.exclude_paths, true, "path");
+        family(&query.fuzzy_paths, false, "fpath");
+        family(&query.exclude_fuzzy_paths, true, "fpath");
+        family(&query.globs, false, "glob");
+        family(&query.exclude_globs, true, "glob");
+        if families.is_empty() {
+            return Ok(None);
+        }
+        let conjunction = if families.len() == 1 {
+            families.into_iter().next().expect("one family")
+        } else {
+            BooleanExpr::And(families)
+        };
+        Ok(Some(Self {
+            root: Self::compile(&conjunction, case, 0..query.source.len())?,
+        }))
     }
 }
 

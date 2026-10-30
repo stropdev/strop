@@ -504,21 +504,19 @@ impl Editor {
 
     /// Re-derive the document-symbols rows from the retained reply
     /// (0063 §3): `textDocument/documentSymbol` has no query parameter,
-    /// so a moved Boolean AST re-filters the full tree locally — the
-    /// same admission the workspace-symbols merge applies to server
-    /// candidates. Operator-free queries never reach here: the static
-    /// list stays and the local ranker narrows.
+    /// so a moved admission surface — the Boolean AST or a flat
+    /// qualifier — re-filters the full tree locally, the same
+    /// narrowing file find gives. Operator-free content never enters
+    /// admission; the local ranker narrows it.
     pub(crate) fn rebuild_document_symbols(&mut self) {
         let admission = self
             .picker
             .as_ref()
             .filter(|glue| glue.picker.kind == strop_picker::Kind::Symbols)
             .and_then(|glue| glue.query.as_deref())
-            .filter(|query| {
-                query.state == strop_picker::query::QueryState::Ready && query.boolean.is_some()
-            })
+            .filter(|query| query.state == strop_picker::query::QueryState::Ready)
             .and_then(|query| {
-                strop_picker::query::ContentPlan::compile(query)
+                strop_picker::query::BooleanPlan::compile_retained(query)
                     .ok()
                     .flatten()
             });
@@ -548,7 +546,7 @@ impl Editor {
 /// merge; operator-free queries pass no plan and admit everything.
 fn document_symbol_items(
     symbols: &[strop_lsp::ProtoSymbol],
-    admission: Option<&strop_picker::query::ContentPlan>,
+    admission: Option<&strop_picker::query::BooleanPlan>,
     cwd: &std::path::Path,
 ) -> Vec<strop_picker::Item> {
     use strop_picker::{Item, Payload};
@@ -574,7 +572,7 @@ fn document_symbol_items(
                     }),
                     ..Default::default()
                 };
-                if !plan.admits(evidence, &symbol.name) {
+                if !plan.admits(&evidence, &symbol.name) {
                     return None;
                 }
             }

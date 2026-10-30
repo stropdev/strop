@@ -241,7 +241,18 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     };
     let rows = [field_area, content_area];
     let glyph = if normal_mode { "▮" } else { "❯" };
-    let query_roles = matches!(kind, strop_picker::Kind::Files | strop_picker::Kind::Search);
+    // Every surface that speaks the query language (0051 §3) renders
+    // its qualifier highlighting; the summary line describes source
+    // visibility policy, which only the streaming surfaces have.
+    let query_roles = matches!(
+        kind,
+        strop_picker::Kind::Files
+            | strop_picker::Kind::Search
+            | strop_picker::Kind::Symbols
+            | strop_picker::Kind::WorkspaceSymbols
+            | strop_picker::Kind::Jumps
+    );
+    let summary_roles = matches!(kind, strop_picker::Kind::Files | strop_picker::Kind::Search);
     let highlights = editor
         .picker()
         .map(|glue| glue.query_highlights.as_slice())
@@ -282,12 +293,12 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
     if rule_y < rows[1].y {
         let rule = editor
             .picker()
-            .filter(|_| query_roles)
+            .filter(|_| summary_roles)
             .map(|glue| glue.query_summary.clone())
             .filter(|summary| !summary.is_empty())
             .unwrap_or_else(|| "─".repeat(rows[0].width as usize));
         frame.render_widget(
-            Paragraph::new(rule).style(Style::default().fg(if query_roles {
+            Paragraph::new(rule).style(Style::default().fg(if summary_roles {
                 muted()
             } else {
                 pair_bg()

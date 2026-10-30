@@ -13,6 +13,7 @@ pub mod comments;
 mod guides;
 pub mod languages;
 pub use guides::{GuideFrame, IndentGuides};
+pub use languages::ColonPolicy;
 mod indentation;
 pub use indentation::{DelimiterKind, IndentContext, OpeningDelimiter};
 mod injections;

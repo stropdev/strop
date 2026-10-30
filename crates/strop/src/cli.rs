@@ -227,16 +227,115 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     command = Some(Command::Bench { scenario });
                     continue;
                 }
-                "config" if operand.is_none() => {
+                "config"
+                    if command.is_none() && !headless && replay.is_none() && operand.is_none() =>
+                {
                     command = Some(Command::Config);
                     continue;
                 }
-                "update" if operand.is_none() => {
+                "update"
+                    if command.is_none() && !headless && replay.is_none() && operand.is_none() =>
+                {
                     let check_only = args.peek().is_some_and(|arg| arg == "--check");
                     if check_only {
                         args.next();
                     }
                     command = Some(Command::Update { check_only });
+                    continue;
+                }
+                // ---- subcommands (flags above remain the synonyms) ----
+                "edit" if command.is_none() && !headless && operand.is_none() => {
+                    continue;
+                }
+                "remote" | "--remote"
+                    if command.is_none() && !headless && replay.is_none() && operand.is_none() =>
+                {
+                    let url = args.next().ok_or(
+                        "remote expects an ssh:// URL: ssh://[user@]host[:port]/absolute/path[:LINE]",
+                    )?;
+                    let file =
+                        FileLocation::parse(url, positional).map_err(|error| error.to_string())?;
+                    match file.path {
+                        crate::files::FileTarget::Remote(_) => {
+                            operand = Some(file);
+                        }
+                        _ => {
+                            return Err(
+                                "remote expects an ssh:// URL: ssh://[user@]host[:port]/absolute/path[:LINE]".into(),
+                            )
+                        }
+                    }
+                    continue;
+                }
+                "headless" if command.is_none() && !headless && replay.is_none() => {
+                    headless = true;
+                    if args
+                        .peek()
+                        .is_some_and(|value| !value.to_string_lossy().starts_with('-'))
+                    {
+                        script = args.next().map(PathBuf::from);
+                    }
+                    continue;
+                }
+                "replay" if command.is_none() && !headless && replay.is_none() => {
+                    // `strop replay [--script] TRACE`: the default is the
+                    // full forensic replay; --script extracts the headless
+                    // reproduction script instead.
+                    let mut extract_script = false;
+                    let mut trace = None;
+                    for argument in args.by_ref() {
+                        let text = argument.to_string_lossy();
+                        if text == "--script" && trace.is_none() {
+                            extract_script = true;
+                            continue;
+                        }
+                        if text.starts_with('-') {
+                            return Err(format!("unknown replay option: {text}"));
+                        }
+                        if trace.replace(argument.into()).is_some() {
+                            return Err("replay takes exactly one trace file".into());
+                        }
+                    }
+                    let trace = trace.ok_or("replay requires a trace file")?;
+                    if extract_script {
+                        replay = Some(trace);
+                    } else {
+                        command = Some(Command::ReplayFull { trace });
+                    }
+                    continue;
+                }
+                "export" if command.is_none() && !headless && replay.is_none() => {
+                    let trace = args.next().ok_or("export requires a trace file")?.into();
+                    command = Some(Command::ExportMetadata { trace });
+                    continue;
+                }
+                "ui-stdio" if command.is_none() && !headless && replay.is_none() => {
+                    command = Some(Command::UiStdio);
+                    continue;
+                }
+                "licenses" if command.is_none() && !headless && replay.is_none() => {
+                    command = Some(Command::ThemeLicenses);
+                    continue;
+                }
+                "compat" if command.is_none() && !headless && replay.is_none() => {
+                    command = Some(Command::Compat);
+                    continue;
+                }
+                "help" if command.is_none() && !headless && replay.is_none() => {
+                    command = Some(Command::Help);
+                    continue;
+                }
+                "bench" if command.is_none() && !headless && replay.is_none() => {
+                    let scenario = args
+                        .peek()
+                        .is_some_and(|value| !value.to_string_lossy().starts_with('-'))
+                        .then(|| {
+                            args.next()
+                                .map(|value| value.to_string_lossy().into_owned())
+                        })
+                        .flatten()
+                        .unwrap_or_else(|| "all".into());
+                    command = Some(Command::Bench { scenario });
                     continue;
                 }
                 _ => {}
@@ -325,4 +424,143 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         terminal_capture,
         theme,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Options, String> {
+        super::parse(args.iter().map(OsString::from).collect())
+    }
+
+    #[test]
+    fn subcommands_map_to_their_commands() {
+        assert!(matches!(parse(&["help"]).unwrap().command, Command::Help));
+        assert!(matches!(
+            parse(&["licenses"]).unwrap().command,
+            Command::ThemeLicenses
+        ));
+        assert!(matches!(
+            parse(&["compat"]).unwrap().command,
+            Command::Compat
+        ));
+        assert!(matches!(
+            parse(&["config"]).unwrap().command,
+            Command::Config
+        ));
+        assert!(matches!(
+            parse(&["update", "--check"]).unwrap().command,
+            Command::Update { check_only: true }
+        ));
+        assert!(matches!(
+            parse(&["bench"]).unwrap().command,
+            Command::Bench { scenario } if scenario == "all"
+        ));
+        assert!(matches!(
+            parse(&["bench", "startup"]).unwrap().command,
+            Command::Bench { scenario } if scenario == "startup"
+        ));
+        assert!(matches!(
+            parse(&["ui-stdio"]).unwrap().command,
+            Command::UiStdio
+        ));
+        assert!(matches!(
+            parse(&["export", "t.jsonl"]).unwrap().command,
+            Command::ExportMetadata { trace } if trace.as_os_str() == "t.jsonl"
+        ));
+        assert!(matches!(
+            parse(&["replay", "t.jsonl"]).unwrap().command,
+            Command::ReplayFull { trace } if trace.as_os_str() == "t.jsonl"
+        ));
+        assert!(matches!(
+            parse(&["replay", "--script", "t.jsonl"]).unwrap().command,
+            Command::Replay { trace } if trace.as_os_str() == "t.jsonl"
+        ));
+        let headless = parse(&["headless", "drive.txt", "a.rs"]).unwrap();
+        assert!(matches!(
+            headless.command,
+            Command::Headless {
+                ref path,
+                ..
+            } if path.is_some()
+        ));
+    }
+
+    #[test]
+    fn remote_subcommand_and_flag_require_an_ssh_url() {
+        for form in [
+            vec!["remote", "ssh://tnawara@123.space:4343/etc/conf"],
+            vec!["--remote", "ssh://tnawara@123.space:4343/etc/conf:99"],
+            vec!["edit", "ssh://tnawara@123.space:4343/etc/conf"],
+        ] {
+            let options = parse(&form).unwrap();
+            assert!(
+                matches!(
+                    options.command,
+                    Command::Edit {
+                        ref path,
+                        ..
+                    } if matches!(
+                        path.as_ref().map(|location| &location.path),
+                        Some(crate::files::FileTarget::Remote(_))
+                    )
+                ),
+                "{form:?}"
+            );
+        }
+        for form in [
+            vec!["remote"],
+            vec!["remote", "/tmp/x"],
+            vec!["--remote", "x.txt"],
+        ] {
+            assert!(
+                parse(&form)
+                    .unwrap_err()
+                    .contains("remote expects an ssh:// URL"),
+                "{form:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_flags_still_parse() {
+        assert!(matches!(
+            parse(&["--headless", "s.txt", "a.rs"]).unwrap().command,
+            Command::Headless { .. }
+        ));
+        assert!(matches!(
+            parse(&["--replay", "t.jsonl"]).unwrap().command,
+            Command::ReplayFull { .. }
+        ));
+        assert!(matches!(
+            parse(&["--replay-script", "t.jsonl"]).unwrap().command,
+            Command::Replay { .. }
+        ));
+        assert!(matches!(
+            parse(&["--ui-stdio"]).unwrap().command,
+            Command::UiStdio
+        ));
+        assert!(matches!(
+            parse(&["--licenses"]).unwrap().command,
+            Command::ThemeLicenses
+        ));
+        // The default edit form with no subcommand is untouched.
+        assert!(matches!(
+            parse(&["-R", "a.rs:12"]).unwrap().command,
+            Command::Edit { readonly: true, .. }
+        ));
+    }
+
+    #[test]
+    fn a_word_after_a_command_is_still_an_operand_slot() {
+        // The first word chose the command; the trailing word takes the
+        // one operand slot (the flag commands ignore it, like their
+        // --licenses ancestors).
+        assert!(matches!(
+            parse(&["config", "x.txt"]).unwrap().command,
+            Command::Config
+        ));
+        assert!(parse(&["config", "x.txt", "y.txt"]).is_err());
+    }
 }
