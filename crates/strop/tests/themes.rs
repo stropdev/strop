@@ -161,6 +161,53 @@ fn live_selector_accept_cancel_and_invalid_choice_preserve_session_ownership() {
 }
 
 #[test]
+fn paper_variants_switch_through_picker_and_replay() {
+    let dir = tempfile::tempdir().unwrap();
+    configure(dir.path(), "nord");
+    let script = format!(
+        "{SOURCE}keys :theme<cr>\nsettle 5000\nkeys off-white\nsettle 5000\nkeys <cr>\nframe\n\
+         keys :theme<cr>\nsettle 5000\nkeys paper-dark\nsettle 5000\nkeys <cr>\nframe\n\
+         keys :theme dark<cr>\nframe\n\
+         keys :theme<cr>\nsettle 5000\nkeys paper-dark\nsettle 5000\nkeys <cr>\nframe\nstate\n"
+    );
+    let (_, frames) = capture(dir.path(), &script, Some("dark"));
+    let expected = [
+        ThemeId::Dark,
+        ThemeId::Paper,
+        ThemeId::PaperDark,
+        ThemeId::Dark,
+        ThemeId::PaperDark,
+    ];
+    let mut observed: Vec<_> = frames
+        .iter()
+        .filter_map(|frame| {
+            expected
+                .iter()
+                .copied()
+                .find(|id| cell(frame, 40, 5)[3] == color(id.palette().base))
+        })
+        .collect();
+    observed.dedup();
+    assert_eq!(observed, expected);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("config/strop/config.toml")).unwrap(),
+        "theme = \"nord\"\n"
+    );
+
+    let replay = successful(
+        command(dir.path())
+            .env("PATH", dir.path().join("no-native-executables"))
+            .env("XDG_CONFIG_HOME", dir.path().join("no-config"))
+            .args(["--replay", "trace.jsonl"])
+            .output()
+            .unwrap(),
+    );
+    let state: Value = serde_json::from_str(&replay).unwrap();
+    assert_eq!(state["mode"], "NORMAL");
+    assert_eq!(state["message"], "theme: paper-dark palette");
+}
+
+#[test]
 fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("source.txt"), "keep\n").unwrap();

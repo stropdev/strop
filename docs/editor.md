@@ -46,14 +46,21 @@ mode; twice closes it). `:theme catppuccin-mocha` switches directly.
 | `catppuccin-latte` | Light Catppuccin, adapted for readable editor contrasts |
 | `nord` | Restrained cool blue-grey, with brighter comments for legibility |
 | `strop-ink` | Original low-chroma graphite, ivory and restrained brass |
+| `paper` | Warm off-white paper, deep green ink and forest-green accents |
+| `paper-dark` | Warm green-black paper, soft ivory ink and muted sage accents |
 
-Choose at launch with `strop --theme nord file.rs`, or persist the choice
-in `$XDG_CONFIG_HOME/strop/config.toml` (normally
+Choose at launch with `strop --theme paper file.rs` or
+`strop --theme paper-dark file.rs`, or persist either choice in
+`$XDG_CONFIG_HOME/strop/config.toml` (normally
 `~/.config/strop/config.toml`):
 
 ```toml
-theme = "catppuccin-mocha"
+theme = "paper"
+# Or: theme = "paper-dark"
 ```
+
+The same canonical names work for a session-only switch: `:theme paper` or
+`:theme paper-dark`.
 
 Precedence is the built-in default, then the user config, then `--theme`.
 `:theme` changes the running session only; it does not rewrite the config.

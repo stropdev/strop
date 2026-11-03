@@ -31,15 +31,13 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
         editor.launch_terminal(command, false);
         let second = editor.current();
         // Queue while the services can still be starting; both must receive it.
-        editor
-            .set_terminal_themes(ThemeId::CatppuccinMocha)
-            .unwrap();
-        let mocha = Palette::for_theme(ThemeId::CatppuccinMocha);
+        editor.set_terminal_themes(ThemeId::Paper).unwrap();
+        let paper = Palette::for_theme(ThemeId::Paper);
         wait_for(&mut editor, |editor| {
             [first, second].iter().all(|document| {
                 editor.terminal_frame(*document, true).is_some_and(|frame| {
                     frame.projection.to_string().starts_with("ITD")
-                        && frame.palette.colors[3] == mocha.colors[3]
+                        && frame.palette.colors[3] == paper.colors[3]
                         && frame.palette.background
                             == Rgb {
                                 red: 0x34,
@@ -58,13 +56,13 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
             .iter()
             .map(|document| editor.terminal_frame(*document, true).unwrap().clone())
             .collect();
-        editor.set_terminal_themes(ThemeId::Nord).unwrap();
-        let nord = Palette::for_theme(ThemeId::Nord);
+        editor.set_terminal_themes(ThemeId::PaperDark).unwrap();
+        let paper_dark = Palette::for_theme(ThemeId::PaperDark);
         wait_for(&mut editor, |editor| {
             [first, second].iter().all(|document| {
                 editor
                     .terminal_frame(*document, true)
-                    .is_some_and(|frame| frame.palette.colors[3] == nord.colors[3])
+                    .is_some_and(|frame| frame.palette.colors[3] == paper_dark.colors[3])
             })
         });
         for (document, old) in [first, second].iter().zip(before) {
@@ -90,7 +88,7 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
                 blue: 3
             })
         );
-        assert_eq!(palette.colors[3], nord.colors[3]);
+        assert_eq!(palette.colors[3], paper_dark.colors[3]);
         assert_eq!(
             palette.colors[1],
             Rgb {
@@ -118,16 +116,26 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
         assert_eq!(editor.terminal_capture_enabled(), capture);
         assert_eq!(editor.private_terminal_view(), !capture);
 
+        editor.set_terminal_themes(ThemeId::Dark).unwrap();
+        let dark = Palette::for_theme(ThemeId::Dark);
+        wait_for(&mut editor, |editor| {
+            [first, second].iter().all(|document| {
+                editor
+                    .terminal_frame(*document, true)
+                    .is_some_and(|frame| frame.palette.colors[3] == dark.colors[3])
+            })
+        });
+
         // Only the explicit child command produces subsequent output. Resets
-        // resolve to Nord in both live and pinned views, with text still pinned.
+        // resolve to Dark in both live and pinned views, with text still pinned.
         editor.feed_terminal(Input::Text("reset\n".into()));
         wait_for(&mut editor, |editor| {
             editor
                 .terminal_frame(first, true)
-                .is_some_and(|frame| *frame.palette == nord)
+                .is_some_and(|frame| *frame.palette == dark)
         });
         assert_eq!(editor.terminal_style_at(first, 1).unwrap().0, style);
-        assert_eq!(*editor.terminal_style_at(first, 1).unwrap().1, nord);
+        assert_eq!(*editor.terminal_style_at(first, 1).unwrap().1, dark);
         assert!(Arc::ptr_eq(
             &shown,
             editor.terminal_frame(first, false).unwrap()

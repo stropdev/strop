@@ -158,3 +158,8 @@ claim. Exercise config and CLI selection, selector acceptance/cancellation,
 invalid names, and terminal switching without losing child overrides.
 Use actual rendered cell evidence, the full compose gate and the source-bound
 release assurance/measurement pipeline before tagging.
+
+Follow-on: [0078](0078-paper-theme-handoff.md) adds the original Paper and
+Paper Dark pair through this same registry and selection path. The six-theme
+captures and acceptance evidence above remain the historical record for the
+initial curated-theme implementation.

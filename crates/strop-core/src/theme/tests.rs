@@ -135,6 +135,8 @@ fn canonical_names_match_the_serialized_consumer_contract() {
         "catppuccin-latte",
         "nord",
         "strop-ink",
+        "paper",
+        "paper-dark",
     ];
     assert_eq!(ThemeId::ALL.len(), expected.len());
     for (id, name) in ThemeId::ALL.into_iter().zip(expected) {
@@ -152,7 +154,14 @@ fn canonical_names_match_the_serialized_consumer_contract() {
             selection
         );
     }
-    for invalid in ["", "solarized", "mocha", "catppuccin_mocha", "stropink"] {
+    for invalid in [
+        "",
+        "solarized",
+        "mocha",
+        "catppuccin_mocha",
+        "stropink",
+        "paper-light",
+    ] {
         assert_eq!(ThemeId::from_name(invalid), None);
         let document = format!(r#"{{"theme":"{invalid}"}}"#);
         assert!(serde_json::from_str::<Selection>(&document).is_err());

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.47.3 — 2026-11-03
+
+### Added
+
+- **Paper and Paper Dark themes**: two compiled-in palettes based on the warm paper, deep green ink and forest accents of tknawara.dev, with an original green-black, ivory and sage companion. Both work through config, `--theme`, `:theme NAME` and the session picker, propagate to existing terminals without taking ownership of child RGB/OSC overrides, and survive replay. Both meet the existing text/syntax contrast and overlay-strength contracts on every editor surface.
+
 ## 0.47.2 — 2026-11-03
 
 ### Fixed

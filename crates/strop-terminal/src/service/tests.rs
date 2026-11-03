@@ -29,11 +29,16 @@ fn theme_requests_coalesce_and_wake_even_when_child_input_is_full() {
         .map(|_| service.budget.reserve(0).unwrap())
         .collect();
     assert!(matches!(service.focus(true), Err(Error::InputFull)));
-    for theme in ThemeId::ALL {
+    for theme in [
+        ThemeId::PaperDark,
+        ThemeId::Light,
+        ThemeId::Paper,
+        ThemeId::Nord,
+    ] {
         service.set_theme(theme).unwrap();
     }
     let selected = service.budget.theme.load(Ordering::Acquire);
-    assert_eq!(ThemeId::ALL[usize::from(selected - 1)], ThemeId::StropInk);
+    assert_eq!(ThemeId::ALL[usize::from(selected - 1)], ThemeId::Nord);
     assert_eq!(service.budget.count.load(Ordering::Acquire), MAX_COMMANDS);
     assert_eq!(service.budget.bytes.load(Ordering::Acquire), 0);
     assert!(matches!(

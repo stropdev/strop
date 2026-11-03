@@ -8,6 +8,7 @@ mod builtin;
 mod catppuccin;
 mod ink;
 mod nord;
+mod paper;
 #[cfg(test)]
 mod tests;
 
@@ -15,6 +16,7 @@ pub use builtin::{DARK, LIGHT};
 pub use catppuccin::{CATPPUCCIN_LATTE, CATPPUCCIN_MOCHA};
 pub use ink::STROP_INK;
 pub use nord::NORD;
+pub use paper::{PAPER, PAPER_DARK};
 
 /// Full upstream notices, embedded in the executable without runtime assets.
 pub const THEME_NOTICES: &str = concat!(
@@ -148,16 +150,20 @@ pub enum ThemeId {
     CatppuccinLatte,
     Nord,
     StropInk,
+    Paper,
+    PaperDark,
 }
 
 impl ThemeId {
-    pub const ALL: [ThemeId; 6] = [
+    pub const ALL: [ThemeId; 8] = [
         Self::Dark,
         Self::Light,
         Self::CatppuccinMocha,
         Self::CatppuccinLatte,
         Self::Nord,
         Self::StropInk,
+        Self::Paper,
+        Self::PaperDark,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -168,6 +174,8 @@ impl ThemeId {
             Self::CatppuccinLatte => "catppuccin-latte",
             Self::Nord => "nord",
             Self::StropInk => "strop-ink",
+            Self::Paper => "paper",
+            Self::PaperDark => "paper-dark",
         }
     }
 
@@ -179,6 +187,8 @@ impl ThemeId {
             Self::CatppuccinLatte => "Catppuccin Latte",
             Self::Nord => "Nord",
             Self::StropInk => "Strop Ink",
+            Self::Paper => "Paper",
+            Self::PaperDark => "Paper Dark",
         }
     }
 
@@ -190,6 +200,8 @@ impl ThemeId {
             Self::CatppuccinLatte => "Pastel light with contrast-tuned semantic ink",
             Self::Nord => "Restrained cool dark with frost-blue accents",
             Self::StropInk => "Original graphite and ivory with brass and slate",
+            Self::Paper => "Warm off-white paper with deep green ink and forest accents",
+            Self::PaperDark => "Warm green-black paper with soft ivory and sage accents",
         }
     }
 
@@ -208,6 +220,8 @@ impl ThemeId {
             Self::CatppuccinLatte => &CATPPUCCIN_LATTE,
             Self::Nord => &NORD,
             Self::StropInk => &STROP_INK,
+            Self::Paper => &PAPER,
+            Self::PaperDark => &PAPER_DARK,
         }
     }
 }
@@ -226,6 +240,8 @@ pub fn current_id() -> ThemeId {
         3 => ThemeId::CatppuccinLatte,
         4 => ThemeId::Nord,
         5 => ThemeId::StropInk,
+        6 => ThemeId::Paper,
+        7 => ThemeId::PaperDark,
         _ => ThemeId::Dark,
     }
 }
