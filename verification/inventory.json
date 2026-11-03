@@ -2899,7 +2899,7 @@
         "sources": {
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
           ".github/scripts/release-catalog.py": "8daba85b8dc61abc3c808c6d4ad6b16a9ae0091925b063e8dc3c4e131d1366a1",
-          ".github/scripts/release-local.sh": "f1d69251aaa54c864562077f13506d951ee2f809a2cb834d84255b6c9185e160",
+          ".github/scripts/release-local.sh": "bfcfa12ba340794e2db18dc502d588b01ffc80ec0553586e2747e0fdcdb07fd8",
           ".github/workflows/ci.yml": "3665d3801b1f8ddf9d212a9aca2990a6cffcad1c0fe414f7c7604ea52211a327",
           ".github/workflows/release.yml": "96241a72aaaa6a7af30dc2c650b54620036098aa12f361494f85ef429942c392",
           "crates/strop-terminal/build.rs": "bfc6eef7b66b0228fa5eed7770c0873c7a4da2490270f1b4bac45ea75b4b679e",
@@ -2910,7 +2910,7 @@
           "crates/strop/src/update.rs": "fecd745bd76bd8ec1dc5e29c7c5d8a7ca420c684dcaf72e0de4031206059d1cb",
           "install.sh": "024fd422250e043ff9c455c8821921fce1413595787174c285c58a6b68db0ed1"
         },
-        "evidence": "8f3da7424b7d4d610adae9f56475c7c9c3289124a7069bb8a40f53a516d01d8a"
+        "evidence": "5e06cbe9274fd19ce52e552f8dce1d5cff8dfa86aa9f467d0ae127a06f8f6dcc"
       }
     },
     {

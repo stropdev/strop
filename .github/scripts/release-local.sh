@@ -98,7 +98,10 @@ draft)
         && [ -f "$FROZEN" ] && [ -f "$DIST/catalog.json" ] && [ -f "$DIST/release-notes.md" ]
     python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
     local_commit=$(git rev-parse HEAD)
-    remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+    remote_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
+    if [ -z "$remote_commit" ]; then
+        remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+    fi
     if [ -z "$remote_commit" ] || [ "$local_commit" != "$remote_commit" ]; then
         echo "remote tag $TAG does not point at qualified HEAD $local_commit" >&2
         exit 1
@@ -113,7 +116,10 @@ publish)
     clean_source
     python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
     local_commit=$(git rev-parse HEAD)
-    remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+    remote_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
+    if [ -z "$remote_commit" ]; then
+        remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+    fi
     if [ -z "$remote_commit" ] || [ "$local_commit" != "$remote_commit" ]; then
         echo "remote tag $TAG does not point at qualified HEAD $local_commit" >&2
         exit 1
