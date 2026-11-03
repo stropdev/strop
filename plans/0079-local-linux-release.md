@@ -32,8 +32,9 @@ routine local gate is:
    Compose into `dist/v<x.y.z>/`, then runs checksum, static-link, version,
    headless-parse, worker-stdio and completion qualification against the
    extracted shipping binary.
-6. `python3 verification/freeze.py && python3 verification/freeze.py --check` on
-   the exact commit.
+6. The package-generated freeze `--check` validates the exact commit against the
+   completion report produced from that same shipping binary (not the previous
+   release's committed report).
 
 The model/proof/native assurance lanes remain CI and explicitly requested deep
 checks; they are not hidden or reported as run by the routine local release.

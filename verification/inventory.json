@@ -2899,7 +2899,7 @@
         "sources": {
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
           ".github/scripts/release-catalog.py": "8daba85b8dc61abc3c808c6d4ad6b16a9ae0091925b063e8dc3c4e131d1366a1",
-          ".github/scripts/release-local.sh": "a2a131a1b8127af2b9deb32cf3bbc43c5abefedaeb252829713cd79a339f380d",
+          ".github/scripts/release-local.sh": "f1d69251aaa54c864562077f13506d951ee2f809a2cb834d84255b6c9185e160",
           ".github/workflows/ci.yml": "3665d3801b1f8ddf9d212a9aca2990a6cffcad1c0fe414f7c7604ea52211a327",
           ".github/workflows/release.yml": "96241a72aaaa6a7af30dc2c650b54620036098aa12f361494f85ef429942c392",
           "crates/strop-terminal/build.rs": "bfc6eef7b66b0228fa5eed7770c0873c7a4da2490270f1b4bac45ea75b4b679e",
@@ -2910,7 +2910,7 @@
           "crates/strop/src/update.rs": "fecd745bd76bd8ec1dc5e29c7c5d8a7ca420c684dcaf72e0de4031206059d1cb",
           "install.sh": "024fd422250e043ff9c455c8821921fce1413595787174c285c58a6b68db0ed1"
         },
-        "evidence": "89db91e6cda1951bc20d7e0e29dfe23cff62c13a150955b80240237ec79bde87"
+        "evidence": "8f3da7424b7d4d610adae9f56475c7c9c3289124a7069bb8a40f53a516d01d8a"
       }
     },
     {
@@ -4443,7 +4443,7 @@
           "verification/bench_worker.py": "5298cf87e04ac5cc9a0507ab42ebbd13b6efc31ded24e91a197f795f5693ff03",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "c5024fbd96972648b3bfb024d86efea31d6d58fd2553c3166b83f861b1437871"
+        "evidence": "4239214c300c64eb335ce3e7dd78b29e3edf9b68f78bbcba065062a9e9639c33"
       }
     },
     {
@@ -6020,7 +6020,7 @@
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "b3d2778a79c7ae5a7ff148793a12f9c9b0da58401e788dba9f0897fada68cf28"
         },
-        "evidence": "61f94a664f0759299cf1790708cb0316392bfac0bd08185494237f77676d2943"
+        "evidence": "256b60a7f4c39681c51fb3e455e420186530fbf63c359a8d40f2007c2f7e171a"
       }
     },
     {

@@ -151,8 +151,9 @@ def validate_report(report: dict, root: Path = ROOT) -> None:
         raise SystemExit("completion capture privacy or native-free replay was not established")
 
 
-def validate(root: Path = ROOT) -> dict:
-    report = json.loads((root / REPORT).read_text())
+def validate(root: Path = ROOT, report_path: str | Path | None = None) -> dict:
+    report_path = Path(report_path or REPORT)
+    report = json.loads((root / report_path).read_text())
     validate_report(report, root)
     before = json.loads((root / BEFORE).read_text())
     after = report["typing"]
@@ -165,7 +166,7 @@ def validate(root: Path = ROOT) -> dict:
             or before["warmup_requests"] != 8 or before["measured_requests"] != 64):
         raise SystemExit("typing comparison does not bind the immutable same-machine/profile baseline")
     checked_samples(before["raw_ms"], before["input_to_view_ms"], 64, "before typing")
-    return {"report_sha256": digest(root / REPORT), "baseline_sha256": BEFORE_SHA256,
+    return {"report_sha256": digest(root / report_path), "baseline_sha256": BEFORE_SHA256,
             "artifact_sha256": report["binary_sha256"], "source": report["source"],
             "methods": report["methods"], "validator_sha256": digest(Path(__file__)),
             "typing_before_ms": before["input_to_view_ms"], "typing_after_ms": after["input_to_view_ms"]}

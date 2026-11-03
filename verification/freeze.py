@@ -7,8 +7,8 @@ transaction and pinned toolchains. Historical measurements never qualify a
 changed live source. Native/Compose lane execution remains a release gate.
 
 Usage:
-  python3 verification/freeze.py [--allow-dirty] [--out PATH]
-  python3 verification/freeze.py --check
+  python3 verification/freeze.py [--allow-dirty] [--completion-report PATH] [--out PATH]
+  python3 verification/freeze.py --check [--completion-report PATH] [--out PATH]
 """
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ def worker_baseline_hashes() -> dict:
             "release_commit": archive["release_commit"], "measurements": actual}
 
 
-def freeze(allow_dirty: bool) -> dict:
+def freeze(allow_dirty: bool, report_path: str | Path | None = None) -> dict:
     commit = git("rev-parse", "HEAD")
     dirty = sorted(line[3:] for line in git("status", "--porcelain").splitlines() if line.strip())
     if dirty and not allow_dirty:
@@ -132,7 +132,7 @@ def freeze(allow_dirty: bool) -> dict:
         "commit_date": git("show", "-s", "--format=%cI", "HEAD"), "dirty": dirty,
         "cargo_lock_sha256": sha256_file("Cargo.lock"),
         "inventory_sha256": sha256_file("verification/inventory.json"),
-        "sources": source_files(ROOT), "completion_evidence": completion_evidence(ROOT),
+        "sources": source_files(ROOT), "completion_evidence": completion_evidence(ROOT, report_path),
         "baseline": {"pre_worker": baseline_hashes(), "worker": worker_baseline_hashes()},
         "install_transaction": {path: sha256_file(path) for path in (
             "install.sh", "crates/strop/src/update.rs", ".github/scripts/release-catalog.py")},
@@ -146,7 +146,7 @@ def freeze(allow_dirty: bool) -> dict:
     }
 
 
-def check(path: Path) -> int:
+def check(path: Path, report_path: str | Path | None = None) -> int:
     try:
         recorded = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
@@ -155,7 +155,7 @@ def check(path: Path) -> int:
     if recorded.get("schema") != SCHEMA or recorded.get("release") != "0059":
         print("FAIL: not a completion candidate; 0057/0058 candidates are historical archives")
         return 1
-    current = freeze(allow_dirty=True)
+    current = freeze(allow_dirty=True, report_path=report_path)
     problems = []
     if recorded.get("dirty") or current["dirty"]:
         problems.append("candidate or current worktree is dirty; not release-qualified")
@@ -175,6 +175,7 @@ def check(path: Path) -> int:
 def main(argv) -> int:
     allow_dirty = False
     out = DEFAULT_OUT
+    report_path = None
     mode = "freeze"
     index = 1
     while index < len(argv):
@@ -183,6 +184,12 @@ def main(argv) -> int:
             allow_dirty = True
         elif arg == "--check":
             mode = "check"
+        elif arg == "--completion-report":
+            index += 1
+            if index >= len(argv):
+                print("usage: --completion-report PATH", file=sys.stderr)
+                return 2
+            report_path = Path(argv[index])
         elif arg == "--out":
             index += 1
             if index >= len(argv):
@@ -194,8 +201,8 @@ def main(argv) -> int:
             return 2
         index += 1
     if mode == "check":
-        return check(out)
-    candidate = freeze(allow_dirty)
+        return check(out, report_path)
+    candidate = freeze(allow_dirty, report_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n")
     print(f"froze candidate {candidate['commit'][:12]} -> {out}")

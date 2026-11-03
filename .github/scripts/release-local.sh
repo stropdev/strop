@@ -59,13 +59,13 @@ qualify)
     ;;
 package)
     clean_source
-    if [ -e "$ARCHIVE" ]; then
-        echo "refusing to rebuild over existing artifact: $ARCHIVE" >&2
-        exit 1
-    fi
     mkdir -p "$DIST"
-    STROP_DIST="$DIST" docker compose run --build --rm \
-        -e "VERSION=$VERSION" -e "TARGET=$TARGET" release
+    if [ -e "$ARCHIVE" ]; then
+        echo "reusing existing artifact without rebuilding: $ARCHIVE"
+    else
+        STROP_DIST="$DIST" docker compose run --build --rm \
+            -e "VERSION=$VERSION" -e "TARGET=$TARGET" release
+    fi
     (cd "$DIST" && sha256sum -c "$(basename "$ARCHIVE").sha256")
 
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/strop-release-$VERSION.XXXXXX")
@@ -86,8 +86,8 @@ package)
     python3 -B verification/qualify_completion.py \
         --binary "$BINARY" --profile release-musl-stripped \
         --build "docker compose release; $TARGET" --out "$CANDIDATE"
-    python3 verification/freeze.py --out "$FROZEN"
-    python3 verification/freeze.py --check --out "$FROZEN"
+    python3 verification/freeze.py --completion-report "$CANDIDATE" --out "$FROZEN"
+    python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
     catalog
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"
     echo "qualified local release directory: $DIST"
@@ -96,7 +96,7 @@ draft)
     clean_source
     [ -f "$ARCHIVE" ] && [ -f "$ARCHIVE.sha256" ] && [ -f "$CANDIDATE" ] \
         && [ -f "$FROZEN" ] && [ -f "$DIST/catalog.json" ] && [ -f "$DIST/release-notes.md" ]
-    python3 verification/freeze.py --check --out "$FROZEN"
+    python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
     local_commit=$(git rev-parse HEAD)
     remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
     if [ -z "$remote_commit" ] || [ "$local_commit" != "$remote_commit" ]; then
@@ -111,7 +111,7 @@ draft)
     ;;
 publish)
     clean_source
-    python3 verification/freeze.py --check --out "$FROZEN"
+    python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
     local_commit=$(git rev-parse HEAD)
     remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
     if [ -z "$remote_commit" ] || [ "$local_commit" != "$remote_commit" ]; then
