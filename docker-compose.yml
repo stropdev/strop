@@ -123,4 +123,4 @@ services:
         && sha256sum "$$PKG.tar.gz" > "$$PKG.tar.gz.sha256" \
         && echo "released: /dist/$$PKG.tar.gz"
     volumes:
-      - ./dist:/dist
+      - ${STROP_DIST:-./dist}:/dist

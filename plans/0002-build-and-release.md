@@ -4,10 +4,10 @@
 > three tarballs, crates.io + homebrew + site dispatch.
 > The new wrinkle is native C/C++ code: tree-sitter grammars and libgit2.
 
-Status: historical build/release design. Current workflow sources own implemented
-details; [0062](0062-distribution-and-wsl-onboarding.md) extends the distribution
-contract for the native Windows GUI and selected-WSL backend without weakening
-the TUI/static gates. Historical illustrative snippets are not replacement gates.
+Status: historical build/release design. [0079](0079-local-linux-release.md)
+supersedes the hosted publication model and multi-platform release matrix with
+local Linux/WSL x86_64 qualification and manual GitHub releases. The static-musl
+build requirements below remain load-bearing; hosted workflow snippets are history.
 
 [0056](0056-architecture-prerequisites.md) AR11–AR15 close the current shared TUI
 installation/ownership, release-catalog, build/evidence foundations first. 0062

@@ -6,6 +6,24 @@ use std::process::Command;
 use std::time::Duration;
 
 #[test]
+fn kitty_shifted_punctuation_opens_ex_commands() {
+    let directory = tempfile::tempdir().unwrap();
+    let trace = directory.path().join("terminal.jsonl");
+    let mut tui = Tui::start(directory.path(), &trace);
+    tui.until(|screen| screen.contains("NORMAL"));
+    assert!(
+        tui.output
+            .windows(b"\x1b[>15u".len())
+            .any(|bytes| bytes == b"\x1b[>15u"),
+        "terminal must request shifted alternate keys"
+    );
+    tui.send(b"\x1b[59:58;2u");
+    tui.until(|screen| screen.contains(": INPUT"));
+    tui.send(b"q\r");
+    assert!(tui.wait_exit().success());
+}
+
+#[test]
 fn real_f2_enters_terminal_inspection() {
     let directory = tempfile::tempdir().unwrap();
     let trace = directory.path().join("terminal.jsonl");

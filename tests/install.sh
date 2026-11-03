@@ -34,8 +34,6 @@ fi
 # Host target triple, same mapping as install.sh.
 case "$(uname -s)/$(uname -m)" in
     Linux/x86_64|Linux/amd64) TARGET="x86_64-unknown-linux-musl" ;;
-    Linux/aarch64|Linux/arm64) TARGET="aarch64-unknown-linux-musl" ;;
-    Darwin/arm64) TARGET="aarch64-apple-darwin" ;;
     *) echo "skip: no prebuilt target for $(uname -s)/$(uname -m)"; exit 0 ;;
 esac
 
@@ -158,26 +156,8 @@ fi
 ok "digest mismatch refuses to install"
 
 # --- 6. catalog without an artifact for this target refuses ---------------
-if [ "$TARGET" = "aarch64-apple-darwin" ]; then
-    FOREIGN_TARGET="x86_64-unknown-linux-musl"
-else
-    FOREIGN_TARGET="aarch64-apple-darwin"
-fi
-mkdir -p "$WORK/foreign-dist"
-pkg="$WORK/pkg-foreign"
-mkdir -p "$pkg/strop-$NEW_VERSION-$FOREIGN_TARGET"
-printf 'fake foreign binary\n' > "$pkg/strop-$NEW_VERSION-$FOREIGN_TARGET/strop"
-tar -czf "$WORK/foreign-dist/strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz" -C "$pkg" \
-    "strop-$NEW_VERSION-$FOREIGN_TARGET"
-digest=$(sha "$WORK/foreign-dist/strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz")
-printf '%s  %s\n' "$digest" "strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz" \
-    > "$WORK/foreign-dist/strop-$NEW_VERSION-$FOREIGN_TARGET.tar.gz.sha256"
-python3 "$ROOT/.github/scripts/release-catalog.py" catalog \
-    --tag "v$NEW_VERSION" --dist "$WORK/foreign-dist" \
-    --base-url "file://$LATEST" \
-    --published-at "2026-01-01T00:00:00Z" \
-    --worker-protocol 1 --worker-min-editor "$NEW_VERSION" \
-    --out "$WORK/foreign-catalog.json" >/dev/null
+FOREIGN_TARGET="aarch64-unknown-linux-musl"
+sed "s/$TARGET/$FOREIGN_TARGET/g" "$LATEST/catalog.json" > "$WORK/foreign-catalog.json"
 if run_install "$WORK/bin6" "$WORK/out6.log" \
     STROP_CATALOG_URL="file://$WORK/foreign-catalog.json"; then
     fail "foreign-target catalog unexpectedly installed"
@@ -190,7 +170,7 @@ mkdir -p "$WORK/shim-intel"
 cat > "$WORK/shim-intel/uname" <<'UNAME'
 #!/bin/sh
 case "$1" in
-    -s) printf 'Darwin\n' ;;
+    -s) printf '%s\n' "${STROP_TEST_SYSTEM:-Darwin}" ;;
     -m) printf '%s\n' "$STROP_TEST_MACHINE" ;;
     *) exit 1 ;;
 esac
@@ -220,5 +200,18 @@ for machine in x86_64 amd64; do
     [ ! -e "$WORK/zig-$machine" ] || fail "Intel macOS created a compiler directory"
 done
 ok "Intel macOS refuses before fetching or writing"
+
+for fixture in Darwin:arm64 Linux:aarch64 Linux:arm64; do
+    system=${fixture%%:*}
+    machine=${fixture#*:}
+    if run_install "$WORK/unsupported-$system-$machine" "$WORK/unsupported-$system-$machine.log" \
+        PATH="$WORK/shim-intel:$PATH" STROP_TEST_SYSTEM="$system" STROP_TEST_MACHINE="$machine" \
+        STROP_TEST_FETCHED="$WORK/fetched-$system-$machine"; then
+        fail "$system/$machine unexpectedly installed"
+    fi
+    [ ! -e "$WORK/fetched-$system-$machine" ] || fail "$system/$machine attempted a download"
+    [ ! -e "$WORK/unsupported-$system-$machine" ] || fail "$system/$machine created an install directory"
+done
+ok "all non-Linux-x86_64 targets refuse before fetching or writing"
 
 echo "install.sh fixtures: all passed"

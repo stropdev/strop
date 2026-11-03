@@ -55,13 +55,17 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
         EnableBracketedPaste,
         EnableFocusChange
     )?;
-    // Preserve disambiguated keys and release/repeat facts. The engine decides
-    // which events belong to editor grammar and which belong to a child terminal.
+    // Preserve disambiguated keys, release/repeat facts and the terminal's
+    // layout-correct shifted scalar. Without alternate keys, kitty sends
+    // Shift+semicolon as `59;2u`, which cannot represent the resulting `:`.
+    // The engine decides which events belong to editor grammar and which
+    // belong to a child terminal.
     let _ = crossterm::execute!(
         output,
         PushKeyboardEnhancementFlags(
             KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
                 | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
                 | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
         )
     );

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.47.2 — 2026-11-03
+
+### Fixed
+
+- **Shifted punctuation works under the kitty keyboard protocol**: strop now requests alternate key values (`CSI >15u`), so Windows Terminal reports Shift+`;` with its layout-correct `:` scalar. Ex commands including `:q` and `:w` work again without a US-keyboard-specific mapping; legacy terminals and embedded-terminal key ownership are unchanged. A real-PTY regression drives the negotiated bytes through opening the ex prompt and quitting.
+
+### Changed
+
+- **Releases are local, Linux/WSL-only and GitHub-only**: the supported prebuilt target is now `x86_64-unknown-linux-musl`. The exact locally qualified tarball, checksum and catalog are published manually to GitHub; hosted release builds, macOS/Linux-aarch64 artifacts, crates.io and Homebrew updates are retired. Existing historical packages remain available. `install.sh`, `strop update` and strop.dev continue to resolve current releases through `catalog.json`.
+
 ## 0.47.1 — 2026-10-30
 
 ### Changed

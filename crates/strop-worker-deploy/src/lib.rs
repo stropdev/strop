@@ -41,9 +41,9 @@ pub use deploy::{
 };
 pub use manifest::{Compatibility, Fallback, ReleaseCatalog, WorkerManifest};
 
-/// Oldest editor release that can drive a worker at all (0058 WK05). The
-/// release workflow extracts this constant into the catalog's worker
-/// manifest (`.github/workflows/release.yml` greps this exact line); an
+/// Oldest editor release that can drive a worker at all (0058 WK05). The local
+/// release entrypoint extracts this constant into the catalog's worker
+/// manifest (`.github/scripts/release-local.sh` reads this exact line); an
 /// older editor falls back to its non-worker capabilities instead of
 /// attempting a deploy.
 pub const MIN_EDITOR_VERSION: &str = "0.35.0";

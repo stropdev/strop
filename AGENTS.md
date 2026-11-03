@@ -68,34 +68,32 @@ agent or human working in this repo.
 
 ## Release gates
 
-"Cut a release" means **publicly available**, not "tag pushed" or "workflow
-started". The release task stays open — never reported or marked done — until
-every gate below is verified against the live public surfaces, not the
-workflow's own claims about itself. Partial progress ("tag pushed", "run in
-progress") is exactly that: partial.
+"Cut a release" means **publicly available**, not "tag pushed" or "draft
+created". The release task stays open until every gate below is verified
+against the exact local artifact and live public surfaces. Partial progress is
+exactly that: partial. The authoritative procedure is `plans/0079` and
+`.github/scripts/release-local.sh`.
 
-1. **Workflow green**: the `release` run for the exact tag
-   (`gh run list --repo stropdev/strop --workflow release`) completed with
-   success — compose gates, three-platform builds, freeze `--check`, and the
-   publish job all inside it. A failed run means the release does not exist
-   yet: fix on a new commit and re-push the tag (the v0.47.0 recovery), then
-   watch again. Do not hand-publish crates.io or the tap to "finish" a
-   release; if the workflow genuinely cannot publish, the release is blocked —
-   say so instead of marking it done.
-2. **crates.io**: `strop-editor` shows the new version as `newest_version`
-   (`https://crates.io/api/v1/crates/strop-editor`).
-3. **GitHub release**: `gh release view v<x.y.z>` — exists, all three
-   platform tarballs plus `catalog.json` attached.
-4. **Homebrew tap**: `stropdev/homebrew-tap` carries the `strop <version>`
-   commit bumping `Formula/strop.rb` and `Casks/strop.rb`.
-5. **Website**: strop.dev serves the new version (version chip, changelog,
-   installer). The site steps in the workflow are `continue-on-error`, so a
-   green run proves nothing about the site — fetch it and look. If stale,
-   re-dispatch the `rebuild` event on `stropdev/stropdev.github.io` and vendor
-   `CHANGELOG.md`/`install.sh` per the workflow's own steps.
+1. **Local qualification**: a clean committed Linux/WSL checkout passes the
+   Compose `test` gate, release fixtures, changed-feature smoke, static artifact
+   checks and freeze `--check`. The supported release artifact is
+   `x86_64-unknown-linux-musl`; macOS, Linux aarch64 and native Windows releases
+   are out of scope. Deep model/proof lanes run in CI or on explicit request;
+   never claim an unrun lane passed.
+2. **GitHub release**: `gh release view v<x.y.z>` — exists publicly and latest,
+   with the Linux tarball, checksum, completion evidence and `catalog.json`
+   built locally from the tagged source. The dispatch-only `release` workflow
+   is policy guidance, not publication evidence.
+3. **Public installation**: the live catalog matches the local facts and
+   `install.sh` installs the public tarball into a fresh directory; the installed
+   `strop --version` reports the new version. crates.io and Homebrew are
+   historical channels and are not updated by new releases.
+4. **Website**: strop.dev serves the new version (version chip, changelog,
+   installer). If stale, vendor `CHANGELOG.md`/`install.sh` into
+   `stropdev/stropdev.github.io`, push, re-dispatch `rebuild`, then fetch the
+   rendered site again.
 
-The release is done when all five checks pass against the live surfaces, and
-not one moment before.
+The release is done when all four checks pass, and not one moment before.
 
 ## Rust specifics
 
@@ -115,8 +113,9 @@ not one moment before.
   never clobbered with build assets (no host `target/`, no stray tool installs). Host
   `cargo` is acceptable for rapid iteration mid-change, but "done" means the compose
   gate passed; never commit build artifacts.
-- Release: tags `v*`; the workflow (0002 §5) owns crates.io, tarballs, homebrew tap,
-  site redeploy. Never hand-publish. A version bump is three moves, all in
+- Release: tags `v*`; local BuildKit qualification and manual GitHub publication
+  follow `plans/0079` and `.github/scripts/release-local.sh`. Never rebuild while
+  publishing a qualified artifact. A version bump is three moves, all in
   the tagged commit: workspace `Cargo.toml` + the member crates' inter-dep pins +
   `cargo check` to sync `Cargo.lock` (the release gate runs `--locked` — a stale
   lock fails the tag's builds). A release is done only when the **Release gates**

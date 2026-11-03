@@ -23,9 +23,9 @@ const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 /// unknown, never a guess (pre-receipt installs land there).
 pub const RECEIPT_NAME: &str = ".strop-install.json";
 
-/// The catalog is generated from build outputs by the release workflow
-/// and attached to every GitHub release, so this URL always serves the
-/// catalog of the latest release.
+/// The catalog is generated from build outputs by the local release entrypoint
+/// and attached to every GitHub release, so this URL always serves the catalog
+/// of the latest release.
 const CATALOG_URL: &str = "https://github.com/stropdev/strop/releases/latest/download/catalog.json";
 
 /// How this binary was installed — decides the upgrade path.
@@ -204,8 +204,6 @@ pub fn is_newer(latest: &str) -> bool {
 fn target_triple(os: &str, arch: &str) -> Result<&'static str, String> {
     Ok(match (os, arch) {
         ("linux", "x86_64") => "x86_64-unknown-linux-musl",
-        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos", "aarch64") => "aarch64-apple-darwin",
         (os, arch) => return Err(format!("no prebuilt binary for {os}/{arch}")),
     })
 }
@@ -487,16 +485,18 @@ fn version_ordering() {
 
 #[cfg(test)]
 #[test]
-fn update_targets_retain_linux_and_apple_silicon_but_refuse_intel_macos() {
-    for (os, arch, expected) in [
-        ("linux", "x86_64", "x86_64-unknown-linux-musl"),
-        ("linux", "aarch64", "aarch64-unknown-linux-musl"),
-        ("macos", "aarch64", "aarch64-apple-darwin"),
+fn update_targets_are_linux_x86_64_only() {
+    assert_eq!(
+        target_triple("linux", "x86_64").unwrap(),
+        "x86_64-unknown-linux-musl"
+    );
+    for (os, arch) in [
+        ("linux", "aarch64"),
+        ("macos", "aarch64"),
+        ("macos", "x86_64"),
+        ("macos", "amd64"),
     ] {
-        assert_eq!(target_triple(os, arch).unwrap(), expected);
-    }
-    for arch in ["x86_64", "amd64"] {
-        assert!(target_triple("macos", arch).is_err());
+        assert!(target_triple(os, arch).is_err(), "{os}/{arch}");
     }
 }
 

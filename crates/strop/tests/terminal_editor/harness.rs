@@ -13,6 +13,7 @@ pub(crate) struct Tui {
     pub(crate) child: Child,
     pub(crate) master: File,
     pub(crate) screen: vt100::Parser,
+    pub(crate) output: Vec<u8>,
     pub(crate) trace: std::path::PathBuf,
 }
 impl Tui {
@@ -106,6 +107,7 @@ impl Tui {
             child: command.spawn().unwrap(),
             master,
             screen: vt100::Parser::new(30, 120, 0),
+            output: Vec::new(),
             trace: trace.to_path_buf(),
         }
     }
@@ -204,7 +206,13 @@ impl Tui {
             let mut bytes = [0; 8192];
             match self.master.read(&mut bytes) {
                 Ok(0) => return None,
-                Ok(count) => self.screen.process(&bytes[..count]),
+                Ok(count) => {
+                    if self.output.len() < 64 * 1024 {
+                        let keep = count.min(64 * 1024 - self.output.len());
+                        self.output.extend_from_slice(&bytes[..keep]);
+                    }
+                    self.screen.process(&bytes[..count]);
+                }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     if !self.poll_soft(libc::POLLIN, deadline) {
                         return None;
@@ -281,7 +289,13 @@ impl Tui {
             let mut bytes = [0; 8192];
             match self.master.read(&mut bytes) {
                 Ok(0) => panic!("terminal read closed: {screen}"),
-                Ok(count) => self.screen.process(&bytes[..count]),
+                Ok(count) => {
+                    if self.output.len() < 64 * 1024 {
+                        let keep = count.min(64 * 1024 - self.output.len());
+                        self.output.extend_from_slice(&bytes[..keep]);
+                    }
+                    self.screen.process(&bytes[..count]);
+                }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     self.poll(libc::POLLIN, deadline)
                 }

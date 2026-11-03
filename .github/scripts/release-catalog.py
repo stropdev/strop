@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and verify the strop release catalog, and keep the promotion ledger.
+"""Generate the local release catalog and verify its public counterpart.
 
 The catalog is the single source of truth for current version / artifact /
 digest facts (0056 AR12): install.sh, `strop update` and the website all
@@ -17,18 +17,12 @@ plus per-artifact byte sizes, so an editor makes its deploy-vs-fallback
 decision from catalog facts alone and verifies uploaded bytes against
 recorded digest+size. The worker is the same static binary (`strop
 --worker-stdio`), so the manifest's target list is exactly the artifact
-target list; the release workflow extracts protocol/min-editor from the
+target list; the local release entrypoint extracts protocol/min-editor from the
 pinned source constants (never hand-edited here).
 
-The promotion ledger records what was promoted when — crates.io, homebrew
-tap, GitHub release, site redeploy, public download facts — so a partially
-promoted release is observable and resumable instead of hiding behind a
-misleading fully-promoted status.
-
 Subcommands:
-  catalog   build dist/catalog.json from the verified build outputs
+  catalog   build a versioned release catalog from the verified build outputs
   verify    compare the locally built catalog against the publicly served one
-  ledger    record one promotion step (idempotent per step name)
 """
 import argparse
 import hashlib
@@ -42,11 +36,7 @@ SCHEMA = 1
 PRODUCT = "strop"
 DEFAULT_REPO = "stropdev/strop"
 ARTIFACT_RE = re.compile(r"^strop-(?P<version>[^-]+)-(?P<target>.+)\.tar\.gz$")
-ARTIFACT_TARGETS = frozenset((
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
-    "aarch64-apple-darwin",
-))
+ARTIFACT_TARGETS = frozenset({"x86_64-unknown-linux-musl"})
 
 
 def utcnow() -> str:
@@ -143,22 +133,6 @@ def facts(catalog: dict) -> dict:
     }
 
 
-def record_step(path: Path, tag: str, step: str, status: str, detail: str | None,
-                at: str | None) -> dict:
-    if path.is_file():
-        ledger = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        ledger = {"schema": SCHEMA, "tag": tag, "steps": []}
-    entry = {"step": step, "status": status, "at": at or utcnow()}
-    if detail:
-        entry["detail"] = detail
-    steps = [existing for existing in ledger["steps"] if existing["step"] != step]
-    steps.append(entry)
-    ledger["steps"] = steps
-    path.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
-    return ledger
-
-
 def cmd_catalog(args: argparse.Namespace) -> None:
     catalog = build_catalog(args.tag, args.dist, args.base_url,
                             args.published_at or utcnow(),
@@ -179,11 +153,6 @@ def cmd_verify(args: argparse.Namespace) -> None:
     print(f"public catalog matches build outputs for {local['tag']}")
 
 
-def cmd_ledger(args: argparse.Namespace) -> None:
-    ledger = record_step(args.file, args.tag, args.step, args.status, args.detail, args.at)
-    print(f"ledger: {args.step}={args.status} ({len(ledger['steps'])} steps recorded)")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -200,26 +169,17 @@ def main() -> None:
     catalog.add_argument("--worker-protocol", type=int, required=True,
                          help="wire protocol version the embedded worker speaks "
                          "(extracted from strop-worker-protocol source by the "
-                         "release workflow)")
+                         "local release entrypoint)")
     catalog.add_argument("--worker-min-editor", required=True,
                          help="oldest editor version that can drive a worker "
                          "(extracted from strop-worker-deploy source by the "
-                         "release workflow)")
+                         "local release entrypoint)")
     catalog.set_defaults(run=cmd_catalog)
 
     verify = commands.add_parser("verify", help="compare local and publicly served catalogs")
     verify.add_argument("--local", type=Path, required=True)
     verify.add_argument("--public", type=Path, required=True)
     verify.set_defaults(run=cmd_verify)
-
-    ledger = commands.add_parser("ledger", help="record one promotion step")
-    ledger.add_argument("--file", type=Path, required=True)
-    ledger.add_argument("--tag", required=True)
-    ledger.add_argument("--step", required=True)
-    ledger.add_argument("--status", required=True)
-    ledger.add_argument("--detail")
-    ledger.add_argument("--at", help="ISO timestamp; default: now (UTC)")
-    ledger.set_defaults(run=cmd_ledger)
 
     args = parser.parse_args()
     try:

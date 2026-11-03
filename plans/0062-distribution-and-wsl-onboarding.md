@@ -6,9 +6,12 @@ preference: make installation and updates easy and truthful instead of accumulat
 package formats.
 
 This extends [0002](0002-build-and-release.md) and serves the native Windows GUI +
-WSL execution design in [0061](0061-gui-windows-and-wsl.md). TUI/static/crates.io
-contracts remain intact. GUI packaging does not authorize a native Windows
-filesystem, Windows LSP/DAP or ConPTY implementation.
+WSL execution design in [0061](0061-gui-windows-and-wsl.md). Its native Windows GUI
+packaging remains future design; [0079](0079-local-linux-release.md) supersedes the
+former TUI multi-platform matrix, hosted publication machinery and
+crates.io/Homebrew/mise channel requirements with local Linux/WSL GitHub releases.
+GUI packaging does not authorize a native Windows filesystem, Windows LSP/DAP or
+ConPTY implementation.
 
 **Prerequisite ownership:** [0056](0056-architecture-prerequisites.md) AR11–AR12
 close existing TUI install/update identity, transaction and release-catalog/site

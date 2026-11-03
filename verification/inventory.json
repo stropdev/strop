@@ -1726,7 +1726,7 @@
         },
         {
           "id": "SSH-WORKER-DEPLOY",
-          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated peers; each fixture stops and reaps both children. The catalog names the authenticated endpoint target, whose supplied release bytes the live probe attests. Linux Native Notify requires a relayed hint; a worker advertising Unsupported must answer the exact typed Notify refusal (as arm64 macOS did on PR run 36262445129). This does not claim macOS native push coverage or complete platform qualification. User-approved 0.36 scope retains Linux x86_64/aarch64 and Apple Silicon workers; Intel Darwin x86_64/amd64 discovery returns UnsupportedTarget before deployment, with read-only SFTP remaining available.",
+          "statement": "WK07: the deploy write session (DeploySftp) crosses the same SFTP v3 codec and bounds — exact pflags/modes/offsets on the wire, posix-rename only when advertised, typed status failures, poisoned close, bounded read-back; the SFTP provider classifies status codes into explicit outcomes. Real-OpenSSH deploy/probe/actual-worker handshake/read/write parity, live cache lease publication and fresh reconnect registration, consent gating, SFTP-only refusal and interrupted-deploy cleanliness run against per-test owned TCP loopback sshd daemons, never pipe-fabricated peers; each fixture stops and reaps both children. The catalog names the authenticated endpoint target, whose supplied release bytes the live probe attests. Linux Native Notify requires a relayed hint; a worker advertising Unsupported must answer the exact typed Notify refusal (as arm64 macOS did on PR run 36262445129). This does not claim macOS native push coverage or complete platform qualification. User-approved 0079 scope retains only Linux/WSL x86_64 workers; Linux aarch64 and every Darwin target return UnsupportedTarget before deployment, with read-only SFTP remaining available.",
           "status": "native-tested",
           "evidence": [
             {
@@ -1801,7 +1801,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-remote/src/bootstrap.rs": "d29a96a66b8ef3082e7ac3cbb567466032f6e966a6f1988f6fcd3198b1d1fad2",
+          "crates/strop-remote/src/bootstrap.rs": "3bfc4492ec1c3f88c798d1ae01b2a3ffec349a0cd4adec5b8a933834ef9ce36a",
           "crates/strop-remote/src/client.rs": "4d521295b01cb19066aafae73068af990d8e32cc7b08db4999a77a527a8505e1",
           "crates/strop-remote/src/hosts/mod.rs": "25bc681a4f64a6ebc48df059d14fbc53e4ece3a3f88edbd22bf93cc7435e3012",
           "crates/strop-remote/src/pool.rs": "a978895c007bd1817a2eb46d5c10fd9449332404f87bcce07435508ba06cc49e",
@@ -1813,7 +1813,7 @@
           "crates/strop-remote/src/transport/stderr.rs": "ed097ca84958d363a7d87f682c6dc166b455efc550f1e191d227c691018df3c1",
           "crates/strop-remote/src/transport/wire.rs": "3fd192fbaca09ebca5c4f5f2ecd6f99ba8c7642713451bcbae67abef3b1dc54c"
         },
-        "evidence": "1e017c72a1f3148c686da3457259e35ca90bc677309642324c36cdf150066d8a"
+        "evidence": "3d0013d8fb33078b4fa6567dd1fc6a393e74feda06663341f0d1e3b84f93df6c"
       }
     },
     {
@@ -2608,7 +2608,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "cdc5074448d0f99821049a9c6b3c9fe54741d73a417f935c834f8c5022bffc6d",
+          "crates/strop-fs/Cargo.toml": "9606934f775e8b35cde3bbbbad0cf1dcf1f4f22f81d2e22a593c2fa4421eb344",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -2722,6 +2722,7 @@
       ],
       "files": [
         ".github/scripts/release-catalog.py",
+        ".github/scripts/release-local.sh",
         "crates/strop/src/update.rs",
         "install.sh",
         ".github/workflows/ci.yml",
@@ -2736,7 +2737,7 @@
       "claims": [
         {
           "id": "INS-IDENTITY",
-          "statement": "Channel identity comes from the receipt, never path substrings; version ordering is total; a missing receipt is unknown; the catalog resolves artifacts by target and malformed catalogs are rejected; the target triple set covers the release matrix. Intel macOS has no prebuilt/update target; Linux x86_64/aarch64 and Apple Silicon resolve exact retained artifacts, never an architecture fallback.",
+          "statement": "Channel identity comes from the receipt, never path substrings; version ordering is total; a missing receipt is unknown; the catalog resolves artifacts by target and malformed catalogs are rejected. The current target set is exactly Linux/WSL x86_64 musl; Linux aarch64 and macOS are refused rather than selecting a historical or architecture-mismatched artifact.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2745,7 +2746,7 @@
               "gate": "test",
               "tests": [
                 "version_ordering",
-                "update_targets_retain_linux_and_apple_silicon_but_refuse_intel_macos",
+                "update_targets_are_linux_x86_64_only",
                 "receipt_roundtrip",
                 "missing_receipt_is_unknown",
                 "channel_identity_comes_from_the_receipt",
@@ -2762,7 +2763,7 @@
         },
         {
           "id": "INS-TRANSACTION",
-          "statement": "Shell-level hermetic fixtures plus native updater tests: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture including the WK05 worker-manifest wire shape (protocol, min_editor, targets, byte sizes), invalid worker-facts rejection and worker-divergence detection in public verification. Native tar.gz extraction enforces the release layout, regular-file entries, traversal refusal and executable permissions without external checksum or tar programs. Intel macOS x86_64/amd64 installer and Zig bootstrap invocations fail before any download or destination creation; unsupported Intel artifacts cannot generate a current catalog.",
+          "statement": "Shell-level hermetic fixtures plus native updater tests: interrupted installs preserve the old binary with no partial state, digest mismatch refuses, missing-target refuses, receipts are written with previous_version carried forward, and the catalog generator is pinned against its fixture including the WK05 worker-manifest wire shape (protocol, min_editor, targets, byte sizes), invalid worker-facts rejection and worker-divergence detection in public verification. Native tar.gz extraction enforces the release layout, regular-file entries, traversal refusal and executable permissions without external checksum or tar programs. Intel macOS installer and Zig bootstrap invocations fail before any download or destination creation; every non-Linux-x86_64 installer target refuses before fetching, and retired Linux-aarch64/macOS artifacts cannot generate a current catalog.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2794,12 +2795,12 @@
         },
         {
           "id": "REL-CATALOG",
-          "statement": "The release workflow generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties plus a headless parse and worker-mode (`strop --worker-stdio`) smoke per artifact, attests build provenance for every tarball, and records the WK05 worker compatibility manifest extracted from the pinned source constants so editors make deploy-vs-fallback decisions from catalog facts alone. The user-approved matrix is exactly three artifacts: x86_64/aarch64 Linux musl and aarch64 Apple Silicon macOS. The generator rejects unsupported targets, and Homebrew cask/formula macOS support requires ARM.",
+          "statement": "The local release entrypoint generates the catalog from the exact tagged dist digests, verifies static/no-NEEDED properties plus version, headless-parse and worker-mode (`strop --worker-stdio`) smokes against the extracted shipping artifact, and records the WK05 worker compatibility manifest extracted from pinned source constants. The owner-approved 0079 matrix is exactly one artifact: x86_64 Linux/WSL musl. The generator rejects every other target. Publication attaches the same local tarball, checksum, evidence and catalog to a manual GitHub release; no hosted attestation or registry publication is claimed.",
           "status": "native-tested",
           "evidence": [
             {
               "kind": "script",
-              "path": ".github/workflows/release.yml",
+              "path": ".github/scripts/release-local.sh",
               "gate": "release"
             }
           ],
@@ -2811,7 +2812,7 @@
         },
         {
           "id": "REL-ASSURANCE-GATES",
-          "statement": "PR and tag require locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native/Loom/calibrated mutants, selected-context container journeys, both GNU Linux architectures and native Apple Silicon Store/worker/PTY/TUI/product/LSP/transfer execution. Linux runners also execute a same-source static musl worker over authenticated SSH. The user explicitly removed Intel macOS from supported build, install/update, remote worker, catalog, Homebrew and native CI/release scope; no retained gate is waived.",
+          "statement": "PR CI requires locked workspace/SSH, Python-free real OpenSSH deployment, TLC, Verus, TLAPS, core native/Loom/calibrated mutants, selected-context container journeys and native GNU Linux x86_64 Store/worker/PTY/TUI/product/LSP/transfer execution. Local 0079 releases require the same locked Compose test gate plus release fixtures, changed-feature smoke, static artifact checks and exact-source freeze; deep model/proof lanes remain CI or explicitly requested checks rather than invented local evidence. Only Linux/WSL x86_64 receives new release artifacts; macOS, Linux aarch64 and native Windows verification are outside the release scope.",
           "status": "specified",
           "evidence": [
             {
@@ -2821,7 +2822,7 @@
             },
             {
               "kind": "script",
-              "path": ".github/workflows/release.yml",
+              "path": ".github/scripts/release-local.sh",
               "gate": "release"
             }
           ],
@@ -2850,7 +2851,7 @@
         },
         {
           "id": "WPLAT-NATIVE",
-          "statement": "Historical 0058 release evidence, not a current-source 0059 timing claim: User-approved supported native profiles are GNU Linux x86_64/aarch64 and Apple Silicon; both Linux musl workers also execute over real authenticated SSH. All three retained native jobs passed in run 36301459526 from runtime source bf978405a38bcac1895f88d3c93600caa45550be. Each produced 64 matched Hello/Health/semantic-UI/physical-TUI/loaded-terminal, real rust-analyzer and 17.28 MiB transfer observations; every candidate retained one worker after open and zero after all 64 editor exits. Full raw reports bind each native executable digest, benchmark source, workspace/lock, pinned compiler selector, native workflow and 67 worker source hashes. Current installers, updater, bootstrap, source-build guards, Homebrew and catalog refuse retired Intel macOS rather than downloading ARM. No Intel qualification is required.",
+          "statement": "Historical 0058 release evidence, not a current-source timing or platform claim: the former GNU Linux x86_64/aarch64 and Apple Silicon profiles passed run 36301459526 from runtime source bf978405a38bcac1895f88d3c93600caa45550be, including matched worker, UI, LSP and transfer observations bound to exact executable and source digests. Under 0079 those reports remain immutable history; current CI and releases exercise only Linux/WSL x86_64. Current installer, updater, remote bootstrap and catalog reject Linux aarch64 and macOS rather than implying retained native qualification.",
           "status": "native-tested",
           "evidence": [
             {
@@ -2897,18 +2898,19 @@
       "pins": {
         "sources": {
           ".github/scripts/install-zig.sh": "38d0e4cbe8be11ed9cca122772395c92b68d60fed1def3ec7781f32cbb0ec08d",
-          ".github/scripts/release-catalog.py": "c96e67b8021d13b68e3bf7eef6527b200f37ca0d6fe50600d00dccdc959ac0ca",
-          ".github/workflows/ci.yml": "8c6e1e3c82afdda35f6a5521acf37e56eafa5deabc2ae01f24938ded41e0893a",
-          ".github/workflows/release.yml": "a7d243a2f21e6f130b88a4245e9bfd495d45db962180b83cc00268d100c11661",
+          ".github/scripts/release-catalog.py": "8daba85b8dc61abc3c808c6d4ad6b16a9ae0091925b063e8dc3c4e131d1366a1",
+          ".github/scripts/release-local.sh": "a2a131a1b8127af2b9deb32cf3bbc43c5abefedaeb252829713cd79a339f380d",
+          ".github/workflows/ci.yml": "3665d3801b1f8ddf9d212a9aca2990a6cffcad1c0fe414f7c7604ea52211a327",
+          ".github/workflows/release.yml": "96241a72aaaa6a7af30dc2c650b54620036098aa12f361494f85ef429942c392",
           "crates/strop-terminal/build.rs": "bfc6eef7b66b0228fa5eed7770c0873c7a4da2490270f1b4bac45ea75b4b679e",
           "crates/strop-terminal/vendor/UPSTREAM": "129d66c3a2b8f0d0244bd5b33cff25e094a2a81825c139954093eaaca9965464",
           "crates/strop-terminal/vendor/arocc-f97cdfc3.tar.gz": "42c8cab9135b12518e6af7dc5e461f055c78b863adca8ed7774f2fb7fe9a7784",
           "crates/strop-terminal/vendor/translate-c-4e879eb8.tar.gz": "8fb0f5c6a3e8b3bf0e35225d3abc1230bcf6f1fdf162467f1f747ec2fa5eda07",
           "crates/strop-terminal/vendor/uucode-2826a37a.tar.gz": "7e76fc7fab1e7ac728c52b35bbb3e5b8c639841abfc7fe1a4bcb13050594bc9e",
-          "crates/strop/src/update.rs": "61d13fc9dbd790e64aa6d9b98b2a70ef368fdf5a71ed50a44ee9f7b51ad53ac0",
-          "install.sh": "0fb271accb2d592443ab3b95dc936baacfdc3dce70b36647e18eefd78d236143"
+          "crates/strop/src/update.rs": "fecd745bd76bd8ec1dc5e29c7c5d8a7ca420c684dcaf72e0de4031206059d1cb",
+          "install.sh": "024fd422250e043ff9c455c8821921fce1413595787174c285c58a6b68db0ed1"
         },
-        "evidence": "d6b844624175c83885ba027efc17f256a86085d91f0dac7952e655dd4896868a"
+        "evidence": "89db91e6cda1951bc20d7e0e29dfe23cff62c13a150955b80240237ec79bde87"
       }
     },
     {
@@ -3079,6 +3081,26 @@
           }
         },
         {
+          "id": "TERM-KITTY-ALTERNATE",
+          "statement": "The host terminal requests kitty alternate keys so shifted punctuation carries the terminal layout's shifted scalar. A real PTY observes CSI >15u, decodes Shift+semicolon as colon, opens the ex prompt and quits through it; no US-keyboard punctuation table or child-input normalization is involved.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor/journeys.rs",
+              "gate": "test",
+              "tests": [
+                "kitty_shifted_punctuation_opens_ex_commands"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0.47.2 adds REPORT_ALTERNATE_KEYS after the exact CSI 59;2u failure reproduction; the test failed before negotiation changed and passes afterward."
+          }
+        },
+        {
           "id": "TERM-OWNERSHIP",
           "statement": "Editor-owned inspection keys never leak to the child: F2 enters pinned inspection directly, Ctrl-W remains ordinary child input, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end. TUI finish keeps its absolute jobs deadline while rechecking a source thread that can settle silently after its final app event.",
           "status": "correspondence-tested",
@@ -3131,9 +3153,9 @@
           "crates/strop-terminal/src/vt/input.rs": "15bdef918d1fd1ac162d9be4b1b527f9bc33d45be241a88a54c99f35f7612bb2",
           "crates/strop-terminal/src/vt/mod.rs": "3d036a34bee5686fc0e44b9aafc34ba5741e54e78a8236669ad8ebb9e382e6c9",
           "crates/strop-worker-client/src/session.rs": "7714845c6890277892056fa0bee8e0211e7515b87d0202d7c2d7b2bfb0e863a5",
-          "crates/strop/src/terminal.rs": "323d4bc78a53c17c4a0db334d56618a5dc9e586b7dce9f6f2b40ddb61710c81e"
+          "crates/strop/src/terminal.rs": "e7b564f6c0938c703114aaaea4d2128796efe45cfe68ac105b1237e55faf4ca5"
         },
-        "evidence": "caec8422a094db89ff9293ee775b27745dbde3cfd8be595cbed09426df8ddbd6"
+        "evidence": "cd41ff7fabdf3939cacece3d0d7565eaf9eea8ef664f96dcd4b73bfe089f240f"
       }
     },
     {
@@ -4399,7 +4421,7 @@
           "crates/strop-engine/src/editor/filesystem/mod.rs": "c43f52a39c9e252520b02bc600fb093e60ae46503c2229bb4566aa4b446c94ff",
           "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "cdc5074448d0f99821049a9c6b3c9fe54741d73a417f935c834f8c5022bffc6d",
+          "crates/strop-fs/Cargo.toml": "9606934f775e8b35cde3bbbbad0cf1dcf1f4f22f81d2e22a593c2fa4421eb344",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -4407,7 +4429,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "70bacd5e0d58cb55cde7f51056c94414570914cdfad7b2593443c040490b28f7",
+          "crates/strop-worker/Cargo.toml": "4aac602503b234433f982ab57fd46a017d637714a32b96a55dbee5143673a672",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -5101,14 +5123,14 @@
           "crates/strop-worker-deploy/src/cache.rs": "31101fb57d92311542fdc42a65d25738991e99422634324f2d8ff9f5754123ec",
           "crates/strop-worker-deploy/src/container.rs": "088c1427a0d633791f7c823e1b8b70c7659bbea9e942153e982f0d0f9637990f",
           "crates/strop-worker-deploy/src/deploy.rs": "9bf618fcdc92aaf5fed2ab27ca9ffa0370284ba9d2514f8bc7b6d1d381007a21",
-          "crates/strop-worker-deploy/src/lib.rs": "e32fa379c48a66bc7ac03e791ce5bd738d983808aed0340915075fce13619261",
+          "crates/strop-worker-deploy/src/lib.rs": "13870aae70d96f26582dd7d8ce963e91b48f99049afc0b3926733932e6750966",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "70bacd5e0d58cb55cde7f51056c94414570914cdfad7b2593443c040490b28f7",
+          "crates/strop-worker/Cargo.toml": "4aac602503b234433f982ab57fd46a017d637714a32b96a55dbee5143673a672",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "79c88c744ce2363b043f33cc77361369f605aa06f9ab6cf108c153f362114b47"
+          "crates/strop/Cargo.toml": "06af22c519cf92d3b1b2ac75dc13eabcd0c925408520763fe0a1f88fbe7497ee"
         },
         "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
       }

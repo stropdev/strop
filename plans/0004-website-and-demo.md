@@ -24,8 +24,9 @@ strop.dev (Porkbun DNS → GitHub Pages, CNAME file in repo)
 ```
 
 Same shape as rootle/gripsack: app repo owns tapes and rendering; site repo owns
-presentation; `repository_dispatch: rebuild` + `SITE_REPO_TOKEN` is the coupling;
-release.yml pings the site so the version chip stays current.
+presentation; `repository_dispatch: rebuild` is the coupling. The local release
+procedure vendors the changelog/installer and pings the site so its version chip
+stays current (0079).
 
 ## 2. Site repo — the stages
 

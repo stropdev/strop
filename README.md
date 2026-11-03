@@ -4,8 +4,7 @@
   <p>Neovim's hands · Helix's spine · rootle's eyes · GitLens' memory</p>
   <p>
     <a href="https://strop.dev">strop.dev</a> ·
-    <a href="https://github.com/stropdev/strop/releases">what's new</a> ·
-    <a href="https://crates.io/crates/strop-editor">crates.io</a>
+    <a href="https://github.com/stropdev/strop/releases">what's new</a>
   </p>
 </div>
 
@@ -21,20 +20,17 @@ preview cannot lie.
 ## Install
 
 ```sh
-curl -fsSL https://strop.dev/install.sh | sh     # prebuilt static binary (linux/macOS)
-brew install stropdev/tap/strop                  # homebrew (formula; macOS cask is prebuilt)
-cargo install strop-editor --locked              # crates.io
-mise use cargo:strop-editor                      # mise
+curl -fsSL https://strop.dev/install.sh | sh     # prebuilt static Linux/WSL binary
 ```
 
 Already installed? `strop update` self-updates tarball installs. Downloads,
 SHA-256 verification and archive extraction run entirely in Rust; curl and
 tar are not required.
 
-Supported targets: Linux x86_64/aarch64 and macOS Apple Silicon (arm64).
-Intel macOS is no longer supported starting with 0.36.0; installers,
-self-update and remote worker admission refuse it rather than selecting an
-ARM binary.
+Supported target: Linux/WSL x86_64 (`x86_64-unknown-linux-musl`). Release
+0.47.2 narrows current prebuilt distribution to this target; historical
+crates.io, Homebrew, Linux aarch64 and macOS releases remain available but
+receive no new versions. Windows Terminal users run strop inside WSL.
 
 ## The grammar in one card
 

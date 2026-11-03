@@ -7,8 +7,8 @@
 #   - a tampered checksum sidecar fails generation
 #   - invalid worker facts (protocol < 1, min_editor postdating the release)
 #     fail generation, and worker divergence fails public verification
+#   - non-Linux-x86_64 artifact targets are rejected
 #   - verify accepts matching local/public catalogs and rejects divergence
-#   - the promotion ledger is idempotent per step (resumable re-records)
 # Run: sh tests/release-catalog.sh
 set -eu
 
@@ -23,7 +23,7 @@ command -v python3 >/dev/null 2>&1 || { echo "skip: python3 required"; exit 0; }
 
 SCRIPT="$ROOT/.github/scripts/release-catalog.py"
 VERSION="9.9.9"
-TARGETS="x86_64-unknown-linux-musl aarch64-apple-darwin"
+TARGETS="x86_64-unknown-linux-musl"
 
 mkdir -p "$WORK/dist"
 for target in $TARGETS; do
@@ -106,22 +106,25 @@ cp "$WORK/sidecar-good" "$SIDECAR"
 ok "tampered sidecar rejected"
 
 # --- retired artifact targets must never enter the current catalog --------
-mkdir -p "$WORK/retired-dist"
-retired="strop-$VERSION-x86_64-apple-darwin.tar.gz"
-printf 'retired Intel macOS artifact\n' > "$WORK/retired-dist/$retired"
-python3 - "$WORK/retired-dist/$retired" <<'SIDECAR'
+for target in x86_64-apple-darwin aarch64-apple-darwin aarch64-unknown-linux-musl; do
+    mkdir -p "$WORK/retired-dist"
+    retired="strop-$VERSION-$target.tar.gz"
+    printf 'retired artifact\n' > "$WORK/retired-dist/$retired"
+    python3 - "$WORK/retired-dist/$retired" <<'SIDECAR'
 import hashlib, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 digest = hashlib.sha256(path.read_bytes()).hexdigest()
 path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n")
 SIDECAR
-if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/retired-dist" \
-    --worker-protocol 1 --worker-min-editor "9.0.0" \
-    --out "$WORK/retired.json" >/dev/null 2>&1; then
-    fail "Intel macOS was advertised in the current release catalog"
-fi
-[ ! -e "$WORK/retired.json" ] || fail "retired target published a catalog"
-ok "retired Intel macOS artifact refused"
+    if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/retired-dist" \
+        --worker-protocol 1 --worker-min-editor "9.0.0" \
+        --out "$WORK/retired.json" >/dev/null 2>&1; then
+        fail "$target was advertised in the current release catalog"
+    fi
+    [ ! -e "$WORK/retired.json" ] || fail "retired target published a catalog"
+    rm -rf "$WORK/retired-dist"
+done
+ok "retired artifact targets refused"
 
 # --- verify: match passes, divergence fails ---------------------------------
 gen "$WORK/local.json"
@@ -141,22 +144,5 @@ if python3 "$SCRIPT" verify --local "$WORK/local.json" \
     fail "verify accepted a diverged worker manifest"
 fi
 ok "public catalog verification"
-
-# --- ledger: idempotent per step, resumable ---------------------------------
-LEDGER="$WORK/promotion.json"
-python3 "$SCRIPT" ledger --file "$LEDGER" --tag "v$VERSION" \
-    --step crates.io --status ok --at "2026-01-01T00:00:00Z" >/dev/null
-python3 "$SCRIPT" ledger --file "$LEDGER" --tag "v$VERSION" \
-    --step github-release --status ok --at "2026-01-01T00:01:00Z" >/dev/null
-python3 "$SCRIPT" ledger --file "$LEDGER" --tag "v$VERSION" \
-    --step crates.io --status failed --detail "crates.io 500" \
-    --at "2026-01-01T00:02:00Z" >/dev/null
-[ "$(grep -c '"step": "crates.io"' "$LEDGER")" -eq 1 ] \
-    || fail "re-recorded step duplicated in the ledger"
-grep -q '"status": "failed"' "$LEDGER" || fail "re-recorded status not updated"
-grep -q '"detail": "crates.io 500"' "$LEDGER" || fail "ledger detail missing"
-grep -q '"at": "2026-01-01T00:02:00Z"' "$LEDGER" || fail "ledger timestamp not updated"
-[ "$(grep -c '"step":' "$LEDGER")" -eq 2 ] || fail "unexpected ledger step count"
-ok "promotion ledger is idempotent and resumable"
 
 echo "release-catalog fixtures: all passed"

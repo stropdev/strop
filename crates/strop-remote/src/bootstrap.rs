@@ -115,8 +115,6 @@ pub fn quote(word: &str) -> String {
 pub fn target_for(system: &str, machine: &str) -> Option<&'static str> {
     match (system, machine) {
         ("Linux", "x86_64" | "amd64") => Some("x86_64-unknown-linux-musl"),
-        ("Linux", "aarch64" | "arm64") => Some("aarch64-unknown-linux-musl"),
-        ("Darwin", "arm64" | "aarch64") => Some("aarch64-apple-darwin"),
         _ => None,
     }
 }
@@ -287,11 +285,8 @@ mod tests {
             target_for("Linux", "x86_64"),
             Some("x86_64-unknown-linux-musl")
         );
-        assert_eq!(
-            target_for("Linux", "aarch64"),
-            Some("aarch64-unknown-linux-musl")
-        );
-        assert_eq!(target_for("Darwin", "arm64"), Some("aarch64-apple-darwin"));
+        assert_eq!(target_for("Linux", "aarch64"), None);
+        assert_eq!(target_for("Darwin", "arm64"), None);
         assert_eq!(target_for("FreeBSD", "x86_64"), None);
         assert_eq!(target_for("Linux", "riscv64"), None);
     }
