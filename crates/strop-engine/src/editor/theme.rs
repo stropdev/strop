@@ -30,17 +30,14 @@ impl Editor {
     }
 
     fn open_theme_picker(&mut self) {
-        let current = theme::current_id();
         let items: Vec<Item> = ThemeId::ALL
             .into_iter()
             .map(|id| Item {
                 badge: None,
-                text: format!(
-                    "{} — {}{}",
-                    id.name(),
-                    id.description(),
-                    if id == current { " — current" } else { "" }
-                ),
+                // Ranking searches only the required human and canonical
+                // identities; the selected detail owns the full description.
+                // Its match columns stay valid because the label is the prefix.
+                text: format!("{} — {}", id.label(), id.name()),
                 payload: Payload::ThemeChoice(id),
             })
             .collect();

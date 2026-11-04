@@ -1,5 +1,35 @@
 use super::*;
 
+fn attach_at(
+    e: &mut Editor,
+    ticket: u64,
+    server: u64,
+    language: &str,
+    name: &str,
+    root: &std::path::Path,
+    layers: Vec<strop_lsp::languages::LayerDiagnostic>,
+) {
+    let key = super::super::attach::AttachKey {
+        target: strop_workspace::Filesystem::Local,
+        language: language.into(),
+        path: root.join("main.rs"),
+    };
+    e.lsp_state
+        .attach
+        .pending
+        .insert(key, WorkerId::new(ticket));
+    e.handle_lsp_attach(AttachRecord {
+        ticket: WorkerId::new(ticket),
+        server: Some(ServerId::new(server)),
+        language: language.into(),
+        name: name.into(),
+        root: root.to_path_buf(),
+        target: strop_workspace::Filesystem::Local,
+        outcome: AttachDecision::Attached,
+        layers,
+    });
+}
+
 #[test]
 fn stale_attach_completion_is_refused() {
     let mut e = editor("a\n");
@@ -47,9 +77,13 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
         },
         layers: Vec::new(),
     });
-    assert!(e.message.contains("not found on PATH"));
-    assert!(e.message.contains("rust-analyzer"));
-    assert!(e.message.contains("rustup component add rust-analyzer"));
+    assert!(e.message.contains("refused"));
+    assert!(e.message.contains(":explain"));
+    let refusal = &e.lsp_state.attach.refused[&attach_key(&e, "rust")];
+    let details = crate::editor::explain::explain_decision(refusal);
+    assert!(details.contains("not found on PATH"));
+    assert!(details.contains("rust-analyzer"));
+    assert!(details.contains("rustup component add rust-analyzer"));
     let second = WorkerId::new(2);
     e.lsp_state
         .attach
@@ -233,7 +267,8 @@ fn multiple_layer_diagnostics_report_with_a_count() {
     assert_eq!(e.lsp_state.attach.layer_diagnostics.len(), 2);
 }
 
-/// 0033 §3: a spawn failure carries its typed reason to the modeline.
+/// 0033 §3: a spawn refusal compacts the modeline and retains its typed
+/// reason in the explain buffer.
 #[test]
 fn spawn_failure_refusal_carries_its_reason() {
     let mut e = editor("a\n");
@@ -255,18 +290,36 @@ fn spawn_failure_refusal_carries_its_reason() {
         },
         layers: Vec::new(),
     });
-    assert!(e.message.contains("could not start"), "{}", e.message);
-    assert!(e.message.contains("runtime"), "{}", e.message);
+    assert!(e.message.contains("refused"), "{}", e.message);
+    assert!(e.message.contains(":explain"), "{}", e.message);
+    assert!(!e.message.contains("runtime"), "{}", e.message);
+    let refusal = &e.lsp_state.attach.refused[&attach_key(&e, "rust")];
+    assert!(
+        crate::editor::explain::explain_decision(refusal).contains("runtime"),
+        "the complete reason remains inspectable"
+    );
     assert!(e
         .lsp_state
         .attach
         .refused
         .contains_key(&attach_key(&e, "rust")));
+    e.message = "unrelated later message".into();
+    e.open_explain();
+    let explained = e.buf().text().to_string();
+    assert!(
+        explained.contains("cannot build the LSP runtime: boom"),
+        "{explained}"
+    );
+    assert!(
+        explained.contains("resource /workspace/origin.rs"),
+        "{explained}"
+    );
+    assert!(explained.contains("on local"), "{explained}");
 }
 
-/// 0033 §3: a terminal Failed event reaches the modeline with the
-/// executable-bearing hint and tears the server down; a failure for an
-/// already-removed server cannot resurrect a message.
+/// 0033 §3: a terminal Failed event retains the executable-bearing hint for
+/// :explain and tears the server down; a failure for an already-removed
+/// server cannot resurrect a message or replace the retained reason.
 #[test]
 fn failed_server_event_names_the_command_and_removes_the_server() {
     let mut e = editor("a\n");
@@ -274,6 +327,10 @@ fn failed_server_event_names_the_command_and_removes_the_server() {
     let server = ServerId::new(6);
     e.lsp_servers.push(LspServer {
         id: server,
+        name: "pyright".into(),
+        language: "python".into(),
+        root: PathBuf::from("/workspace"),
+        target: strop_workspace::Filesystem::Local,
         client: None,
         rx: std::sync::mpsc::channel().1,
         ready: true,
@@ -285,9 +342,15 @@ fn failed_server_event_names_the_command_and_removes_the_server() {
                (os error 2) — npm i -g pyright"
             .into(),
     });
-    assert!(e.message.contains("pyright-langserver"), "{}", e.message);
-    assert!(e.message.contains("npm i -g pyright"), "{}", e.message);
+    assert!(e.message.contains("failed"), "{}", e.message);
+    assert!(e.message.contains(":explain"), "{}", e.message);
+    assert!(!e.message.contains("npm i -g pyright"), "{}", e.message);
     assert!(e.lsp_servers.is_empty());
+    assert_eq!(e.lsp_state.failures.len(), 1);
+    assert!(e.lsp_state.failures[0]
+        .reason
+        .contains("pyright-langserver"));
+    assert!(e.lsp_state.failures[0].reason.contains("npm i -g pyright"));
     // a duplicate failure for the removed server is refused, not shown
     e.message = "later state".into();
     e.handle_lsp_event(LspEvent::Failed {
@@ -296,4 +359,165 @@ fn failed_server_event_names_the_command_and_removes_the_server() {
         hint: "stale".into(),
     });
     assert_eq!(e.message, "later state");
+    assert_eq!(e.lsp_state.failures.len(), 1);
+    e.open_explain();
+    let explained = e.buf().text().to_string();
+    assert!(explained.contains("pyright-langserver"), "{explained}");
+    assert!(explained.contains("npm i -g pyright"), "{explained}");
+    assert!(explained.contains("server 6"), "{explained}");
+    assert!(explained.contains("workspace /workspace"), "{explained}");
+    assert!(explained.contains("on local"), "{explained}");
+}
+
+#[test]
+fn recovery_clears_only_its_owned_failure_scope() {
+    let mut e = editor("a\n");
+    let one = PathBuf::from("/workspace/one");
+    let two = PathBuf::from("/workspace/two");
+    let diagnostic = strop_lsp::languages::LayerDiagnostic {
+        path: PathBuf::from("/xdg/languages.toml"),
+        message: "bad layer — ignored".into(),
+        remote: None,
+    };
+    attach_at(&mut e, 30, 30, "rust", "rust-one", &one, vec![diagnostic]);
+    attach_at(&mut e, 31, 31, "rust", "rust-two", &two, Vec::new());
+    assert!(e
+        .lsp_statuses()
+        .all(|status| status.phase == LspPhase::Starting));
+
+    for (server, name) in [
+        (ServerId::new(30), "rust-one"),
+        (ServerId::new(31), "rust-two"),
+    ] {
+        e.handle_lsp_event(LspEvent::Ready {
+            server,
+            name: name.into(),
+        });
+    }
+    assert!(e
+        .lsp_statuses()
+        .all(|status| status.phase == LspPhase::Ready));
+    for (server, name, reason) in [
+        (ServerId::new(30), "rust-one", "first complete failure"),
+        (ServerId::new(31), "rust-two", "second complete failure"),
+    ] {
+        e.handle_lsp_event(LspEvent::Failed {
+            server,
+            name: name.into(),
+            hint: reason.into(),
+        });
+    }
+    assert_eq!(e.lsp_state.failures.len(), 2);
+    e.message = "unrelated later input".into();
+    assert!(e
+        .lsp_state
+        .failures
+        .iter()
+        .any(|failure| failure.reason == "first complete failure"));
+
+    // A new attachment for one root supersedes only that root's failure.
+    attach_at(&mut e, 32, 32, "rust", "rust-one-new", &one, Vec::new());
+    assert_eq!(e.lsp_state.failures.len(), 1);
+    assert_eq!(e.lsp_state.failures[0].root, two);
+    assert_eq!(e.lsp_state.attach.layer_diagnostics.len(), 1);
+    e.handle_lsp_event(LspEvent::Ready {
+        server: ServerId::new(32),
+        name: "rust-one-new".into(),
+    });
+    assert!(e.lsp_statuses().any(|status| {
+        status.phase == LspPhase::Ready
+            && status.resource == one.as_path()
+            && status.name == "rust-one-new"
+    }));
+    assert!(e.lsp_statuses().any(|status| {
+        status.phase == LspPhase::Failed
+            && status.resource == two.as_path()
+            && status.name == "rust-two"
+    }));
+
+    // An owned Ready for the other scope clears its older server failure,
+    // independently of the attach-time cleanup exercised above.
+    e.lsp_servers.push(LspServer {
+        id: ServerId::new(33),
+        name: "rust-two-new".into(),
+        language: "rust".into(),
+        root: two.clone(),
+        target: strop_workspace::Filesystem::Local,
+        client: None,
+        rx: std::sync::mpsc::channel().1,
+        ready: false,
+    });
+    e.handle_lsp_event(LspEvent::Ready {
+        server: ServerId::new(33),
+        name: "rust-two-new".into(),
+    });
+    assert!(e.lsp_state.failures.is_empty());
+    assert!(e
+        .lsp_statuses()
+        .all(|status| status.phase == LspPhase::Ready));
+
+    let before = e.lsp_state.failures.len();
+    e.handle_lsp_event(LspEvent::Ready {
+        server: ServerId::new(999),
+        name: "ghost".into(),
+    });
+    e.handle_lsp_event(LspEvent::Failed {
+        server: ServerId::new(999),
+        name: "ghost".into(),
+        hint: "stale".into(),
+    });
+    assert_eq!(e.lsp_state.failures.len(), before);
+    assert_eq!(e.lsp_state.attach.layer_diagnostics.len(), 1);
+}
+
+#[test]
+fn successful_retry_replaces_its_refusal_with_starting_then_ready() {
+    let mut e = editor("a\n");
+    e.buf_mut().path = Some(PathBuf::from("/workspace/origin.rs"));
+    let key = attach_key(&e, "rust");
+    e.lsp_state
+        .attach
+        .pending
+        .insert(key.clone(), WorkerId::new(50));
+    e.handle_lsp_attach(AttachRecord {
+        ticket: WorkerId::new(50),
+        server: None,
+        language: "rust".into(),
+        name: "rust-analyzer".into(),
+        root: PathBuf::from("/workspace"),
+        target: strop_workspace::Filesystem::Local,
+        outcome: AttachDecision::RemoteIo {
+            reason: "connection lost".into(),
+        },
+        layers: Vec::new(),
+    });
+    assert!(e
+        .lsp_statuses()
+        .any(|status| status.phase == LspPhase::Refused));
+
+    e.lsp_state
+        .attach
+        .pending
+        .insert(key.clone(), WorkerId::new(51));
+    e.handle_lsp_attach(AttachRecord {
+        ticket: WorkerId::new(51),
+        server: Some(ServerId::new(51)),
+        language: "rust".into(),
+        name: "rust-analyzer".into(),
+        root: PathBuf::from("/workspace"),
+        target: strop_workspace::Filesystem::Local,
+        outcome: AttachDecision::Attached,
+        layers: Vec::new(),
+    });
+    assert!(!e.lsp_state.attach.refused.contains_key(&key));
+    assert!(e
+        .lsp_statuses()
+        .all(|status| status.phase == LspPhase::Starting));
+    e.handle_lsp_event(LspEvent::Ready {
+        server: ServerId::new(51),
+        name: "rust-analyzer".into(),
+    });
+    assert!(e
+        .lsp_statuses()
+        .all(|status| status.phase == LspPhase::Ready));
 }

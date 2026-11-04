@@ -90,8 +90,8 @@ pub use registers::{ClipboardKey, ClipboardResult, Register};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 
 pub use containers::{ContainerKey, ContainerResult};
-pub use lsp::attach::AttachRecord;
-pub use lsp::LspServer;
+pub use lsp::attach::{AttachDecision, AttachRecord};
+pub use lsp::{LspPhase, LspServer, LspStatus};
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
 pub use remote::{RemoteEvent, RemoteView};

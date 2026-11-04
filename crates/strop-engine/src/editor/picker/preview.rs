@@ -273,8 +273,9 @@ impl PreviewProbe<'_> {
     fn resolve(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
         let item = self.editor.picker.as_ref()?.picker.current()?;
         if let Payload::Buffer(document) = &item.payload {
-            let name = self.editor.docs.get(*document)?.label(&self.editor.cwd);
-            return Some((name, None, PreviewSource::Buffer(*document)));
+            let doc = self.editor.docs.get(*document)?;
+            let title = buffer_preview_title(doc, &self.editor.cwd);
+            return Some((title, None, PreviewSource::Buffer(*document)));
         }
         if let Payload::Jump { document, offset } = &item.payload {
             let doc = self.editor.docs.get(*document)?;
@@ -385,6 +386,32 @@ impl PreviewProbe<'_> {
         }
     }
 }
+fn preview_title(path: &std::path::Path, focus_line: Option<usize>) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    let parent = path
+        .parent()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    match focus_line {
+        Some(line) => format!("{name}:{line}  {parent}"),
+        None => format!("{name}  {parent}"),
+    }
+    .trim_end()
+    .to_string()
+}
+
+fn buffer_preview_title(doc: &crate::editor::Document, cwd: &Path) -> String {
+    doc.buf
+        .path
+        .as_deref()
+        .filter(|_| matches!(&doc.source, crate::editor::DocumentSource::File))
+        .map(|path| preview_title(path, None))
+        .unwrap_or_else(|| doc.label(cwd))
+}
+
 impl Editor {
     pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
         let picker = self.picker.as_ref()?.id;
@@ -406,8 +433,9 @@ impl Editor {
             Payload::Buffer(document) => {
                 let document = *document;
                 self.cancel_other_previews(picker, None);
-                let name = self.docs.get(document)?.label(&self.cwd);
-                return Some((name, None, PreviewSource::Buffer(document)));
+                let doc = self.docs.get(document)?;
+                let title = buffer_preview_title(doc, &self.cwd);
+                return Some((title, None, PreviewSource::Buffer(document)));
             }
             Payload::Jump { document, offset } => {
                 let (document, offset) = (*document, *offset);
@@ -435,22 +463,7 @@ impl Editor {
         let path = &full.path;
         // 0050: the header identifies filename + line first; the parent
         // directory follows only while it fits the card.
-        let title = {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string());
-            let parent = path
-                .parent()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
-            match focus_line {
-                Some(line) => format!("{name}:{line}  {parent}"),
-                None => format!("{name}  {parent}"),
-            }
-            .trim_end()
-            .to_string()
-        };
+        let title = preview_title(path, focus_line);
         let title = if full.local_path().is_none() {
             format!("{} · {title}", full.filesystem.label())
         } else {

@@ -5,6 +5,8 @@
 //! this boundary; frontends convert [`CellRect`] at their edge.
 
 use strop_core::id::DocumentId;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::{Editor, Surface};
 
@@ -107,6 +109,35 @@ impl From<ViewGeometry> for CellRect {
     }
 }
 
+/// Picker geometry committed by view preparation. Paint, reveal clamping and
+/// preview analysis all consume this snapshot rather than solving their own
+/// columns from live result state.
+#[derive(Debug, Clone, Copy)]
+pub struct PreparedPicker {
+    /// `None` when the fields own the whole card.
+    pub results: Option<CellRect>,
+    pub preview: Option<CellRect>,
+    measurement: PickerMeasurement,
+}
+
+/// The bounded catalog observation behind one allocation. Selection changes
+/// and resizes reuse it; only admitted result-set changes remeasure labels.
+#[derive(Debug, Clone, Copy)]
+struct PickerMeasurement {
+    picker: crate::editor::picker::PickerId,
+    kind: strop_picker::Kind,
+    revision: u64,
+    cells: u16,
+}
+
+impl PickerMeasurement {
+    fn matches(self, glue: &crate::editor::picker::PickerGlue) -> bool {
+        self.picker == glue.id
+            && self.kind == glue.picker.kind
+            && self.revision == glue.picker.items.revision()
+    }
+}
+
 // --- picker card geometry (moved from the renderer; plain cell
 // arithmetic pinned against the toolkit solver by the strop-editor
 // picker geometry tests) ---
@@ -189,14 +220,92 @@ fn percentage_pair(width: u16, first_pct: u16) -> (u16, u16) {
     (first, width.saturating_sub(first))
 }
 
-/// The results list and preview panes for the open kind: the same
-/// input/content split and narrow-terminal stacking the paint performs.
+/// The results list and preview panes without admitted result metadata.
+/// Transient pickers retain their fixed split; workspace preparation uses
+/// `prepare_picker` to supply its bounded catalog measurement.
 /// `None` when the card is too short to show results at all — the active
 /// field owns the card and the results viewport must not move.
 pub fn picker_split(
     area: CellRect,
     kind: strop_picker::Kind,
     replace_visible: bool,
+) -> Option<(CellRect, Option<CellRect>)> {
+    picker_split_inner(area, kind, replace_visible, None)
+}
+
+/// Labels are already-admitted picker metadata. Both bounds keep layout work
+/// independent of project size and pathological individual records.
+const PICKER_MEASURE_ITEMS: usize = 256;
+const PICKER_MEASURE_GRAPHEMES: usize = 512;
+const PICKER_MIN_LIST_WIDTH: u16 = 28;
+const PICKER_MIN_PREVIEW_WIDTH: u16 = 24;
+const PICKER_WIDTH_QUANTUM: u16 = 4;
+
+fn automatic_preview_kind(kind: strop_picker::Kind) -> bool {
+    matches!(
+        kind,
+        strop_picker::Kind::Files
+            | strop_picker::Kind::Search
+            | strop_picker::Kind::Symbols
+            | strop_picker::Kind::WorkspaceSymbols
+    )
+}
+
+fn printable_width(text: &str) -> usize {
+    text.graphemes(true)
+        .take(PICKER_MEASURE_GRAPHEMES)
+        .map(|grapheme| UnicodeWidthStr::width(strop_core::layout::printable_grapheme(grapheme)))
+        .sum()
+}
+
+fn measure_picker(picker: &strop_picker::Picker) -> u16 {
+    // Marker + scrollbar + one breathing cell. Symbols additionally reserve
+    // the existing nine-cell kind chip; pinned status rows use that same row
+    // composer, so they need no special layout path.
+    let decoration = if matches!(
+        picker.kind,
+        strop_picker::Kind::Symbols | strop_picker::Kind::WorkspaceSymbols
+    ) {
+        12
+    } else {
+        3
+    };
+    picker
+        .items
+        .iter()
+        .take(PICKER_MEASURE_ITEMS)
+        .map(|item| {
+            printable_width(&item.text)
+                .saturating_add(decoration)
+                .min(usize::from(u16::MAX)) as u16
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+fn workspace_column_pair(width: u16, kind: strop_picker::Kind, measured: u16) -> (u16, u16) {
+    let list_pct = if kind == strop_picker::Kind::Search {
+        60
+    } else {
+        55
+    };
+    // Never take width away from the historical long-path budget. The
+    // content-aware part only returns unused list cells to the preview.
+    let (default_list, _) = percentage_pair(width, list_pct);
+    let max_list = default_list.min(width.saturating_sub(PICKER_MIN_PREVIEW_WIDTH));
+    let min_list = PICKER_MIN_LIST_WIDTH.min(max_list);
+    let desired = measured.clamp(min_list, max_list);
+    let rounded = desired.saturating_add(PICKER_WIDTH_QUANTUM - 1) / PICKER_WIDTH_QUANTUM
+        * PICKER_WIDTH_QUANTUM;
+    let list = rounded.clamp(min_list, max_list);
+    (list, width.saturating_sub(list))
+}
+
+fn picker_split_inner(
+    area: CellRect,
+    kind: strop_picker::Kind,
+    replace_visible: bool,
+    measured: Option<u16>,
 ) -> Option<(CellRect, Option<CellRect>)> {
     let card = picker_card(area, kind);
     let inner = picker_inner(card);
@@ -232,14 +341,22 @@ pub fn picker_split(
     if card.width < 64 {
         return Some((content, None));
     }
-    // The file preview carries the evidence: it gets the wider share of
-    // the full-screen workspace (grep 60/40, files/symbols 55/45).
-    let list_pct = if kind == strop_picker::Kind::Search {
-        60
-    } else {
-        55
+    if measured.is_some() && content.width < PICKER_MIN_LIST_WIDTH + PICKER_MIN_PREVIEW_WIDTH {
+        // A source pane narrower than a useful code window is deliberately
+        // omitted rather than painted as a few broken columns.
+        return Some((content, None));
+    }
+    let (list_w, preview_w) = match measured {
+        Some(measured) => workspace_column_pair(content.width, kind, measured),
+        None => {
+            let list_pct = if kind == strop_picker::Kind::Search {
+                60
+            } else {
+                55
+            };
+            percentage_pair(content.width, list_pct)
+        }
     };
-    let (list_w, preview_w) = percentage_pair(content.width, list_pct);
     let list = CellRect {
         width: list_w,
         ..content
@@ -252,13 +369,42 @@ pub fn picker_split(
     Some((list, Some(preview)))
 }
 
-/// The results list area for the open kind.
-pub fn picker_results(
-    area: CellRect,
-    kind: strop_picker::Kind,
-    replace_visible: bool,
-) -> Option<CellRect> {
-    picker_split(area, kind, replace_visible).map(|(results, _)| results)
+impl Editor {
+    /// Commit the picker's layout at the admitted view boundary. The bounded
+    /// measurement is cached across selection-only updates and every resize;
+    /// streaming appends and replacement/pinned-result changes rekey it.
+    pub(super) fn prepare_picker(&self, geometry: ViewGeometry) -> Option<PreparedPicker> {
+        let glue = self.picker.as_ref()?;
+        let picker = &glue.picker;
+        let measurement = self
+            .prepared
+            .picker
+            .as_ref()
+            .map(|prepared| prepared.measurement)
+            .filter(|measurement| measurement.matches(glue))
+            .unwrap_or_else(|| PickerMeasurement {
+                picker: glue.id,
+                kind: picker.kind,
+                revision: picker.items.revision(),
+                cells: if automatic_preview_kind(picker.kind) {
+                    measure_picker(picker)
+                } else {
+                    0
+                },
+            });
+        let measured = automatic_preview_kind(picker.kind).then_some(measurement.cells);
+        let split = picker_split_inner(
+            CellRect::from(geometry),
+            picker.kind,
+            picker.replacement_visible,
+            measured,
+        );
+        Some(PreparedPicker {
+            results: split.map(|(results, _)| results),
+            preview: split.and_then(|(_, preview)| preview),
+            measurement,
+        })
+    }
 }
 
 /// Rows per logical result row for the open kind.

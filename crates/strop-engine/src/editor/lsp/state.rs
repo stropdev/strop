@@ -77,6 +77,8 @@ pub(crate) struct LspState {
     pub hover: Option<RequestStamp>,
     pub navigation: Option<RequestStamp>,
     pub attach: AttachState,
+    /// Terminal server failures, one current reason per resource scope.
+    pub failures: Vec<super::status::LspFailure>,
 }
 
 impl Default for LspState {
@@ -88,6 +90,7 @@ impl Default for LspState {
             hover: None,
             navigation: None,
             attach: AttachState::new(),
+            failures: Vec::new(),
         }
     }
 }

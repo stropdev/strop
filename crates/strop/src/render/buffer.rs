@@ -87,29 +87,37 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
         let h = usize::from(rect.height);
         if n > 1 && h > 0 && w > 0 {
             let document = editor.doc(window.doc);
-            let name = document
-                .remote_metadata()
-                .map(|remote| remote.file.to_string())
-                .or_else(|| {
-                    document
-                        .buf
-                        .path
-                        .as_ref()
-                        .map(|path| path.display().to_string())
-                })
-                .or_else(|| document.buf.name.clone())
-                .unwrap_or_else(|| "[No Name]".into());
+            // Document::label is the shared, document-aware identity projection:
+            // local paths are workspace-relative, outside paths stay absolute,
+            // and remote/container resources retain their authority. Never use
+            // the active-document modeline projection for an inactive pane.
+            let name = document.label(editor.cwd());
             let flags = format!(
                 "{}{}",
                 if document.buf.dirty { " *" } else { "" },
                 if document.buf.readonly { " [RO]" } else { "" }
             );
             let budget = w.saturating_sub(super::clip::width(&flags) + 4);
+            let outside_workspace =
+                document.buf.path.as_deref().is_some_and(|path| {
+                    path.is_absolute() && path.strip_prefix(editor.cwd()).is_err()
+                });
+            let retain_authority = outside_workspace
+                || document.remote_metadata().is_some()
+                || matches!(
+                    &document.source,
+                    strop_engine::editor::DocumentSource::Container { .. }
+                );
+            let name = if retain_authority {
+                super::clip::clip_end(&name, budget)
+            } else {
+                super::clip::path_suffix(&name, budget)
+            };
             let title = format!(
                 "{} {}{} {}",
                 i + 1,
                 if active { "▌" } else { " " },
-                super::clip::clip_end(&name, budget),
+                name,
                 flags
             );
             let spans = fixed_spans(
@@ -170,8 +178,11 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
                 let bottom = area.y + area.height.saturating_sub(1);
                 for dy in area.y..bottom {
                     let cell = &mut frame.buffer_mut()[(dx, dy)];
-                    cell.set_symbol("│");
-                    cell.set_fg(crate::render::seed(strop_core::theme::current().border));
+                    // The preceding pane's reserved scrollbar already paints
+                    // the boundary in the adjacent column. Keep this separator
+                    // cell owned by the layout, but leave it blank so the two
+                    // owners do not appear as a double rule.
+                    cell.set_symbol(" ");
                     cell.set_bg(base());
                 }
             } else {

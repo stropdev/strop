@@ -92,6 +92,7 @@ impl Editor {
                 return;
             }
         };
+        self.lsp_state.attach.refused.remove(&key);
         self.lsp_state.attach.pending.insert(key, ticket);
         let args = attach::AttachArgs {
             ticket,

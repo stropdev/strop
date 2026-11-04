@@ -151,6 +151,16 @@ fn compose_row(
             vec![symbol_row(item, match_cols, width, active)]
         }
         strop_picker::Kind::Files => vec![file_row(&item.text, match_cols, width, active)],
+        strop_picker::Kind::Theme => match &item.payload {
+            strop_picker::Payload::ThemeChoice(id) => vec![theme_row(
+                *id,
+                strop_core::theme::current_id(),
+                match_cols,
+                width,
+                active,
+            )],
+            _ => vec![generic_row(item, match_cols, width, active)],
+        },
         _ => vec![generic_row(item, match_cols, width, active)],
     }
 }
@@ -466,6 +476,54 @@ fn elide_middle(path: &str, room: usize) -> String {
 /// Match columns for the window's own char coordinates.
 fn match_cols_in_window((start, end): (usize, usize), _window: &str) -> Vec<u32> {
     (start as u32..end as u32).collect()
+}
+
+// ---- themes ---------------------------------------------------------------
+
+/// Selection and application are separate: the band marks the cursor and the
+/// check marks the live palette. Hidden canonical/description matches have
+/// columns beyond the label and therefore cannot paint unrelated label glyphs.
+fn theme_row(
+    id: strop_core::theme::ThemeId,
+    applied: strop_core::theme::ThemeId,
+    match_cols: &[u32],
+    width: u16,
+    active: bool,
+) -> Line<'static> {
+    let current = id == applied;
+    let mut spans = vec![marker(active)];
+    spans.push(plain(
+        if current { "✓ " } else { "  " },
+        Style::default().fg(if current { accent() } else { muted() }),
+    ));
+    spans.extend(emphasis(
+        id.label(),
+        match_cols,
+        Style::default().fg(if active { text() } else { secondary() }),
+        active,
+    ));
+
+    // A complete strip is right-aligned only after the whole label fits.
+    // Narrow rows retain the selection, application check and name instead.
+    let used = 3 + clip::width(id.label());
+    let width = width as usize;
+    if width >= 24 && width >= used + 5 {
+        spans.push(plain(" ".repeat(width - used - 5), Style::default()));
+        spans.push(plain(" ", Style::default()));
+        let palette = id.palette();
+        for role in [
+            palette.accent,
+            palette.class_function,
+            palette.class_string,
+            palette.diag_error,
+        ] {
+            spans.push(Span::styled(
+                "■",
+                Style::default().fg(crate::render::seed(role)),
+            ));
+        }
+    }
+    finish(spans, width as u16, active)
 }
 
 // ---- generic rows (buffers, jumps, remote, diagnostics, locations) --------

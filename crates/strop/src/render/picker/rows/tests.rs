@@ -153,6 +153,110 @@ fn replace_rows_empty_replacement_renders_the_deletion() {
 }
 
 #[test]
+fn theme_rows_use_registry_labels_swatches_and_persistent_applied_checks() {
+    for id in strop_core::theme::ThemeId::ALL {
+        let line = theme_row(id, id, &[], 48, false);
+        let text = line_text(&line);
+        assert!(text.contains(id.label()), "{} label: {text:?}", id.name());
+        assert!(text.contains('✓'), "{} applied: {text:?}", id.name());
+        assert!(!text.contains(id.description()), "{} row", id.name());
+        let palette = id.palette();
+        let expected = [
+            palette.accent,
+            palette.class_function,
+            palette.class_string,
+            palette.diag_error,
+        ];
+        assert!(line.spans.len() >= 4);
+        for (span, role) in line.spans[line.spans.len() - 4..].iter().zip(expected) {
+            assert_eq!(span.content, "■");
+            assert_eq!(span.style.fg, Some(crate::render::seed(role)));
+        }
+    }
+}
+
+#[test]
+fn theme_selection_band_is_independent_of_applied_check() {
+    let selected = theme_row(
+        strop_core::theme::ThemeId::CatppuccinMocha,
+        strop_core::theme::ThemeId::Dark,
+        &[],
+        48,
+        true,
+    );
+    assert!(!line_text(&selected).contains('✓'));
+    assert!(selected
+        .spans
+        .iter()
+        .all(|span| span.style.bg == Some(select_bg())));
+
+    let applied = theme_row(
+        strop_core::theme::ThemeId::Dark,
+        strop_core::theme::ThemeId::Dark,
+        &[],
+        48,
+        false,
+    );
+    assert!(line_text(&applied).contains('✓'));
+    assert!(applied
+        .spans
+        .iter()
+        .all(|span| span.style.bg != Some(select_bg())));
+}
+
+#[test]
+fn hidden_theme_matches_never_leak_onto_human_labels() {
+    let id = strop_core::theme::ThemeId::CatppuccinMocha;
+    let canonical_start = id.label().chars().count() + " — ".chars().count();
+    let canonical = (canonical_start..canonical_start + id.name().chars().count())
+        .map(|column| column as u32)
+        .collect::<Vec<_>>();
+    let line = theme_row(id, strop_core::theme::ThemeId::Dark, &canonical, 48, false);
+    let highlighted = line
+        .spans
+        .iter()
+        .filter(|span| {
+            span.style.fg == Some(accent()) && span.content.chars().any(char::is_alphanumeric)
+        })
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    assert!(
+        highlighted.is_empty(),
+        "hidden match painted {highlighted:?}"
+    );
+
+    let visible = theme_row(
+        id,
+        strop_core::theme::ThemeId::Dark,
+        &[0, 1, 2, 3],
+        48,
+        false,
+    );
+    let highlighted = visible
+        .spans
+        .iter()
+        .filter(|span| {
+            span.style.fg == Some(accent()) && span.content.chars().any(char::is_alphanumeric)
+        })
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    assert_eq!(highlighted, "Catp");
+}
+
+#[test]
+fn tiny_theme_rows_drop_swatches_before_identity() {
+    let id = strop_core::theme::ThemeId::CatppuccinMocha;
+    let narrow = theme_row(id, id, &[], 17, true);
+    let text = line_text(&narrow);
+    assert!(text.contains('✓'), "applied check: {text:?}");
+    assert!(text.contains("Catppuccin"), "label prefix: {text:?}");
+    assert!(!text.contains('■'), "decoration must yield: {text:?}");
+    for width in 0..24 {
+        assert!(theme_row(id, id, &[], width, true).width() <= width as usize);
+    }
+}
+
+#[test]
 fn source_rows_are_total_and_cell_bounded_at_degenerate_widths() {
     let item = grep_item("src/界界/é.rs", 123, 5, 0, "界 é");
     for width in 0..30 {

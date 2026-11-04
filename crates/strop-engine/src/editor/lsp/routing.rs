@@ -8,8 +8,9 @@ impl Editor {
         trace::services::lsp(&event);
         match event {
             LspEvent::Ready { server, name } => {
-                if let Some(owner) = self.lsp_servers.iter_mut().find(|owner| owner.id == server) {
-                    owner.ready = true;
+                if let Some(index) = self.lsp_servers.iter().position(|owner| owner.id == server) {
+                    self.clear_lsp_failure(server);
+                    self.lsp_servers[index].ready = true;
                     // Success must not erase a configuration warning
                     // (0033 §2): readiness is reported alongside it.
                     self.message = match self.layer_warning() {
@@ -19,12 +20,14 @@ impl Editor {
                     // A server that warmed up while the workspace
                     // symbols picker is open joins it now (0063 §2).
                     self.query_workspace_symbols();
+                } else {
+                    trace::services::rejected("lsp", "readiness for an unowned server");
                 }
             }
             LspEvent::Failed { server, name, hint } => {
-                if self.lsp_servers.iter().any(|s| s.id == server) {
+                if self.record_lsp_failure(server, &name, &hint) {
                     self.lsp_failed(server);
-                    self.message = format!("lsp: {name} failed — {hint}");
+                    self.message = format!("lsp: {name} failed — :explain for details");
                 } else {
                     trace::services::rejected("lsp", "failure for an unowned server");
                 }

@@ -85,6 +85,14 @@ impl Editor {
         }
     }
 
+    /// Clear live source/status rows before installing an isolated fixture.
+    pub fn picker_reset_fixture(&mut self) {
+        if let Some(glue) = self.picker.as_mut() {
+            glue.picker.clear_items();
+            glue.picker.set_pinned(Vec::new());
+        }
+    }
+
     /// Publish fixture candidates through the real owned ranking actor.
     pub fn picker_items_fixture(&mut self, items: Vec<strop_picker::Item>) {
         if let Some(glue) = self.picker.as_mut() {

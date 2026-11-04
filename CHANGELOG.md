@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.47.4 — 2026-11-04
+
+### Changed
+
+- **Theme picker hierarchy**: compact human labels, palette-derived swatches and a persistent applied check replace repeated clipped descriptions. The selected theme's canonical name and full description have a bounded detail area; tiny terminals drop decoration before identity or input. Canonical-name search, session-only acceptance, cancellation and replay are unchanged.
+- **More useful source previews**: Files, Search and Symbols reclaim unused result-list width from short admitted labels through one engine-owned, bounded and stable geometry decision. Long paths retain their budget, and narrow-screen stacked/no-preview fallbacks remain intact.
+- **Consistent, quieter panes**: local titles use workspace-relative paths with duplicate/outside/remote authority preserved. The existing scrollbar supplies the single vertical boundary instead of an apparent double rule; pane numbers, focus, dirty/read-only state and cell ownership are unchanged.
+- **Compact, inspectable LSP state**: owner-scoped starting, ready, refused and failed badges no longer let long server prose monopolize the modeline. `:explain` retains the complete scoped failure after unrelated messages and recovery clears only the recovered scope; save errors, terminal hints and privacy signals keep their precedence.
+
 ## 0.47.3 — 2026-11-03
 
 ### Added

@@ -29,10 +29,12 @@ use super::panes::LayoutDir;
 use super::{Editor, Mode, Surface};
 
 pub mod geometry;
+#[cfg(test)]
+mod picker_tests;
 pub use geometry::{
     gutter_width, pane_cells, picker_card, picker_field_split, picker_inner, picker_input_height,
-    picker_results, picker_rows_per_result, picker_split, preview_source_lines, preview_window,
-    text_budget, CellRect, ViewGeometry, BLAME_GUTTER_WIDTH, STANDARD_GUTTER,
+    picker_rows_per_result, picker_split, preview_source_lines, preview_window, text_budget,
+    CellRect, PreparedPicker, ViewGeometry, BLAME_GUTTER_WIDTH, STANDARD_GUTTER,
 };
 
 /// The identity of one accepted preparation: the generation bumps on
@@ -106,6 +108,7 @@ pub struct PreparedView {
     pub geometry: ViewGeometry,
     pub active_pane: usize,
     pub panes: Vec<PreparedPane>,
+    pub picker: Option<PreparedPicker>,
 }
 
 impl PreparedView {
@@ -118,6 +121,7 @@ impl PreparedView {
             },
             active_pane: 0,
             panes: Vec::new(),
+            picker: None,
         }
     }
 
@@ -209,11 +213,13 @@ impl Editor {
             for pane in &panes {
                 self.admit_visible_work(pane);
             }
+            let picker = self.prepare_picker(geometry);
             self.prepared = PreparedView {
                 generation: self.view_generation,
                 geometry,
                 active_pane: self.active_pane,
                 panes,
+                picker,
             };
             if settled {
                 self.frame_stamp = Some(stamp);
@@ -233,7 +239,7 @@ impl Editor {
         // The picker's reveal clamp and preview admission are externally
         // keyed (selection/rows, preview load keys) and internally
         // idempotent: they run on every preparation, as before.
-        self.reveal_picker(geometry);
+        self.reveal_picker();
         self.view_epoch()
     }
 
@@ -344,14 +350,17 @@ impl Editor {
     /// Preparation-time scroll clamping for the open picker: the same
     /// results area paint uses, so the viewport matches what is about to
     /// be drawn.
-    fn reveal_picker(&mut self, geometry: ViewGeometry) {
+    fn reveal_picker(&mut self) {
         let (kind, replace_visible) = match self.picker.as_ref() {
             Some(glue) if !matches!(glue.picker.kind, strop_picker::Kind::RemoteAddress) => {
                 (glue.picker.kind, glue.picker.replacement_visible)
             }
             _ => return,
         };
-        let Some(results) = picker_results(CellRect::from(geometry), kind, replace_visible) else {
+        let Some(prepared) = self.prepared.picker else {
+            return;
+        };
+        let Some(results) = prepared.results else {
             return;
         };
         let visible_rows =
@@ -359,7 +368,7 @@ impl Editor {
         if let Some(glue) = self.picker.as_mut() {
             glue.picker.reveal_selected(visible_rows);
         }
-        self.admit_preview(geometry, kind, replace_visible);
+        self.admit_preview(prepared.preview);
     }
 
     /// AR01 admission for the picker preview: the mutable resolver
@@ -367,18 +376,11 @@ impl Editor {
     /// analysis is admitted with exactly the bounds paint will query.
     /// Paint reads only the cached twins, so without this the preview
     /// stays on `loading…` forever.
-    fn admit_preview(
-        &mut self,
-        geometry: ViewGeometry,
-        kind: strop_picker::Kind,
-        replace_visible: bool,
-    ) {
-        let Some((_, focus_line, source)) = self.picker_preview() else {
+    fn admit_preview(&mut self, preview_area: Option<CellRect>) {
+        let Some(preview_area) = preview_area else {
             return;
         };
-        let Some(preview_area) =
-            picker_split(CellRect::from(geometry), kind, replace_visible).and_then(|(_, p)| p)
-        else {
+        let Some((_, focus_line, source)) = self.picker_preview() else {
             return;
         };
         let visible = preview_area.height.saturating_sub(1) as usize;
@@ -528,9 +530,14 @@ impl Editor {
             .as_ref()
             .map(|glue| {
                 (
+                    glue.id,
+                    glue.picker.kind.title(),
+                    glue.picker.replacement_visible,
                     glue.picker.selected,
                     glue.picker.items.len(),
+                    glue.picker.items.revision(),
                     glue.picker.rows.len(),
+                    glue.picker.pinned_tail,
                 )
             })
             .hash(&mut stamp);

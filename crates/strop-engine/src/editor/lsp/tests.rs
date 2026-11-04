@@ -273,6 +273,10 @@ fn server_message_reaches_the_modeline_from_its_owner() {
     let server = ServerId::new(6);
     e.lsp_servers.push(LspServer {
         id: server,
+        name: "pyright".into(),
+        language: "python".into(),
+        root: PathBuf::from("/workspace"),
+        target: strop_workspace::Filesystem::Local,
         client: None,
         rx: std::sync::mpsc::channel().1,
         ready: true,

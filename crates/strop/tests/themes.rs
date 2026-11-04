@@ -165,7 +165,7 @@ fn paper_variants_switch_through_picker_and_replay() {
     let dir = tempfile::tempdir().unwrap();
     configure(dir.path(), "nord");
     let script = format!(
-        "{SOURCE}keys :theme<cr>\nsettle 5000\nkeys off-white\nsettle 5000\nkeys <cr>\nframe\n\
+        "{SOURCE}keys :theme<cr>\nsettle 5000\nkeys paper\nsettle 5000\nkeys <cr>\nframe\n\
          keys :theme<cr>\nsettle 5000\nkeys paper-dark\nsettle 5000\nkeys <cr>\nframe\n\
          keys :theme dark<cr>\nframe\n\
          keys :theme<cr>\nsettle 5000\nkeys paper-dark\nsettle 5000\nkeys <cr>\nframe\nstate\n"
@@ -205,6 +205,27 @@ fn paper_variants_switch_through_picker_and_replay() {
     let state: Value = serde_json::from_str(&replay).unwrap();
     assert_eq!(state["mode"], "NORMAL");
     assert_eq!(state["message"], "theme: paper-dark palette");
+}
+
+#[test]
+fn human_labels_and_canonical_names_choose_the_typed_registry_entry() {
+    for (query, expected) in [
+        ("Catppuccin Mocha", ThemeId::CatppuccinMocha),
+        ("catppuccin-latte", ThemeId::CatppuccinLatte),
+        ("paper", ThemeId::Paper),
+        ("paper-dark", ThemeId::PaperDark),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        configure(dir.path(), "nord");
+        let script =
+            format!("{SOURCE}keys :theme<cr>\nsettle 5000\nkeys {query}<cr>\nsettle 5000\nframe\n");
+        let (_, frames) = capture(dir.path(), &script, Some("dark"));
+        assert_eq!(
+            cell(frames.last().unwrap(), 40, 5)[3],
+            color(expected.palette().base),
+            "query {query:?}"
+        );
+    }
 }
 
 #[test]

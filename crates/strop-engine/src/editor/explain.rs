@@ -11,8 +11,8 @@ use super::Editor;
 
 impl Editor {
     /// Open the explain buffer: workspace bindings, the current document's
-    /// routing, language-server readiness and refusals with their reasons,
-    /// and effective configuration.
+    /// routing, language-server readiness, retained failures and refusals
+    /// with their reasons, and effective configuration.
     pub(crate) fn open_explain(&mut self) {
         let mut text = String::from("strop explain — why things are the way they are\n");
 
@@ -144,15 +144,24 @@ impl Editor {
         if self.lsp_servers.is_empty()
             && self.lsp_state.attach.pending.is_empty()
             && self.lsp_state.attach.refused.is_empty()
+            && self.lsp_state.failures.is_empty()
         {
             text.push_str("  none attached or attempted\n");
         }
         for server in &self.lsp_servers {
             let _ = writeln!(
                 text,
-                "  server {}  {}",
+                "  server {}  {}  {}",
                 server.id.get(),
+                server.name,
                 if server.ready { "ready" } else { "starting" }
+            );
+            let _ = writeln!(
+                text,
+                "    {}  workspace {}  on {}",
+                server.language,
+                server.root.display(),
+                server.target.label()
             );
         }
         for (key, ticket) in &self.lsp_state.attach.pending {
@@ -167,10 +176,27 @@ impl Editor {
         for (key, decision) in &self.lsp_state.attach.refused {
             let _ = writeln!(
                 text,
-                "  {} on {}  refused: {}",
+                "  {} on {}  resource {}  refused: {}",
                 key.language,
                 key.target.label(),
+                key.path.display(),
                 explain_decision(decision)
+            );
+        }
+        for failure in &self.lsp_state.failures {
+            let _ = writeln!(
+                text,
+                "  server {}  {}  failed: {}",
+                failure.server.get(),
+                failure.name,
+                failure.reason
+            );
+            let _ = writeln!(
+                text,
+                "    {}  workspace {}  on {}",
+                failure.language,
+                failure.root.display(),
+                failure.target.label()
             );
         }
 
@@ -411,9 +437,11 @@ pub(crate) fn explain_decision(decision: &AttachDecision) -> String {
         }
         AttachDecision::TrustError { error } => format!("trust check failed: {error}"),
         AttachDecision::NotExecutable {
-            command, reason, ..
+            command,
+            reason,
+            hint,
         } => {
-            format!("`{command}` not executable: {reason}")
+            format!("`{command}` not executable: {reason} — {hint}")
         }
         AttachDecision::SpawnFailed { reason } => format!("spawn failed: {reason}"),
         AttachDecision::RemoteIo { reason } => format!("remote discovery failed: {reason}"),

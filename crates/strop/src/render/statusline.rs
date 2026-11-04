@@ -6,10 +6,11 @@
 //! and without font-dependent glyphs. Every width here is a display
 //! cell (`text`), never a character: under pressure the row yields the
 //! directory first, then the Git context, then the optional signals,
-//! and only then clips the filename and the transient status — the
-//! mode accent and the position are never pushed off the row. Every
-//! gathered string passes the shared clipping helpers, so a control
-//! byte can never reach the terminal as protocol.
+//! and only then clips the filename and the transient status. Owned LSP
+//! failures retain a compact non-color badge through every degradation,
+//! including the mode-and-position-only fallback. Every gathered string
+//! passes the shared clipping helpers, so a control byte can never reach
+//! the terminal as protocol.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -21,10 +22,12 @@ use strop_lsp::Severity;
 use crate::editor::Editor;
 
 use super::clip::{clip_end, clip_start, width};
-use super::{base, cmd_card_active, mode_color, muted, secondary, severity_color, text};
+use super::{base, mode_color, muted, secondary, severity_color, text};
 
+mod services;
 #[cfg(test)]
 mod tests;
+mod transient;
 
 /// A separator costs three cells (" │ ", padding included).
 const SEP: &str = " │ ";
@@ -75,6 +78,7 @@ struct Modeline {
     readonly: bool,              // " [RO]"
     multicursor: Option<String>, // "3×", without its leading pad
     status: String,              // the transient right-side text
+    services: services::Services,
     errors: usize,
     warnings: usize,
     show_diag: bool,
@@ -182,7 +186,8 @@ impl Modeline {
             dirty: buf.dirty || editor.collection_unsaved(editor.current()),
             readonly: buf.readonly && !terminal_input,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
-            status: printable(transient(editor)),
+            status: printable(transient::transient(editor)),
+            services: services::Services::gather(editor),
             errors,
             warnings,
             show_diag: errors > 0 || warnings > 0,
@@ -231,7 +236,15 @@ impl Modeline {
         if self.used() <= cells {
             return;
         }
+        self.services.drop_ready();
+        if self.used() <= cells {
+            return;
+        }
         self.percent = None;
+        if self.used() <= cells {
+            return;
+        }
+        self.services.drop_starting();
         if self.used() <= cells {
             return;
         }
@@ -257,12 +270,25 @@ impl Modeline {
     fn elastic(&mut self, cells: usize) {
         let chip_w = 1 + width(&self.chip);
         let pos_w = self.position_width();
+        let services_w = if self.services.is_empty() {
+            0
+        } else {
+            SEP_W + self.services.width()
+        };
         if !self.status.is_empty() {
-            let Some(room) = cells.checked_sub(chip_w + SEP_W + GAP + SEP_W + pos_w) else {
+            let Some(room) = cells.checked_sub(chip_w + SEP_W + GAP + SEP_W + pos_w + services_w)
+            else {
+                if self.services.compact() {
+                    return self.elastic(cells);
+                }
                 self.status.clear(); // its separator is the next cell to free
                 return self.elastic(cells);
             };
-            let file_budget = self.file_w().min(room).min((room * 2 / 3).max(MIN_GROUP));
+            let file_budget = self
+                .file_w()
+                .min(room)
+                .min((room * 2 / 3).max(MIN_GROUP))
+                .min(room);
             self.fit_file(file_budget);
             let status_budget = room - file_budget;
             if status_budget >= MIN_STATUS {
@@ -272,7 +298,10 @@ impl Modeline {
             }
             return;
         }
-        let Some(room) = cells.checked_sub(chip_w + SEP_W + GAP + pos_w) else {
+        let Some(room) = cells.checked_sub(chip_w + SEP_W + GAP + pos_w + services_w) else {
+            if self.services.compact() {
+                return self.elastic(cells);
+            }
             return self.ultra(cells);
         };
         self.fit_file(room);
@@ -302,7 +331,8 @@ impl Modeline {
         self.namespace.clear();
         // Even at degenerate widths, put safety before decorative mode text.
         let safety = format!(
-            "{}{}{}",
+            "{}{}{}{}",
+            self.services.problem_mark(),
             if self.dirty { "*" } else { "" },
             if self.readonly { "RO" } else { "" },
             self.multicursor.as_deref().unwrap_or("")
@@ -366,6 +396,9 @@ impl Modeline {
         let mut right = self.position_width();
         if !self.status.is_empty() {
             right += width(&self.status) + SEP_W;
+        }
+        if !self.services.is_empty() {
+            right += self.services.width() + SEP_W;
         }
         if self.show_diag {
             right += SEP_W
@@ -496,6 +529,12 @@ impl Modeline {
                 self.status.as_str(),
                 Style::default().fg(secondary()),
             ));
+        }
+        if !self.services.is_empty() {
+            if !right.is_empty() {
+                right.push(Span::styled(SEP, quiet));
+            }
+            self.services.extend_spans(&mut right);
         }
         if self.show_diag {
             if !right.is_empty() {
@@ -699,80 +738,4 @@ fn file_display(editor: &Editor) -> (String, String) {
         directory.push(std::path::MAIN_SEPARATOR);
     }
     (directory, name.to_string_lossy().into_owned())
-}
-
-/// The transient right-side text. Precedence is unchanged from the
-/// 0.15 modeline: a live preview (or its query error) beats the free
-/// pending line, which beats the walker's structural state, which
-/// beats save/load activity, which beats the last message. Nothing is
-/// filtered here — whatever wins is what the user sees.
-fn transient(editor: &Editor) -> String {
-    if let Some(phase) = editor.terminal_phase(editor.current()) {
-        if let Some(prefix) = editor.terminal_prefix_hint() {
-            return prefix.to_owned();
-        }
-        if editor.pending().is_active() {
-            return editor.pending().text().to_owned();
-        }
-        let new_output = !editor.terminal_input_active()
-            && editor.terminal_has_new_output(editor.current())
-            && phase.live();
-        if !editor.message().is_empty() {
-            return format!(
-                "{}{}",
-                if new_output {
-                    "new output · :terminal-refresh · "
-                } else {
-                    ""
-                },
-                editor.message()
-            );
-        }
-        let phase = match phase {
-            strop_terminal::model::Phase::Starting => "starting",
-            strop_terminal::model::Phase::Running => "running",
-            strop_terminal::model::Phase::Closing => "closing",
-            strop_terminal::model::Phase::Exited { .. } => "exited",
-            strop_terminal::model::Phase::Failed(_) => "failed",
-        };
-        // 0065 S2: the transient names the escape out of every terminal
-        // state — the escape is the discovery surface, not a secret.
-        let hint = if editor.terminal_input_active() {
-            "F2 normal · ctrl-\\ ctrl-n alternative"
-        } else if new_output {
-            "new output · :terminal-refresh · i follows"
-        } else if phase == "running" || phase == "starting" || phase == "closing" {
-            "snapshot · i/I/a/A input"
-        } else {
-            ""
-        };
-        let capture = if editor.terminal_capture_enabled() {
-            "input + output RECORDED"
-        } else {
-            "input private"
-        };
-        return if hint.is_empty() {
-            format!("{phase} · {capture}")
-        } else {
-            format!("{phase} · {hint} · {capture}")
-        };
-    }
-    let preview = match editor.preview() {
-        Ok(Some((_, spec))) => Some(spec),
-        Ok(None) => None,
-        Err(error) => Some(error),
-    };
-    preview
-        .or_else(|| {
-            (editor.pending().is_active() && !cmd_card_active(editor))
-                .then(|| editor.pending().text().trim_end_matches('\r').to_owned())
-        })
-        .or_else(|| {
-            (!editor.walker().prefix_display().is_empty() || !editor.walker().state.empty())
-                .then(|| editor.walker().display())
-        })
-        .or_else(|| editor.io_status().map(str::to_owned))
-        .or_else(|| (!editor.message().is_empty()).then(|| editor.message().to_owned()))
-        .or_else(|| editor.directory_visibility_summary().map(str::to_owned))
-        .unwrap_or_default()
 }

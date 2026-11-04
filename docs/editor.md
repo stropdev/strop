@@ -36,7 +36,10 @@ runs on the existing revision-checked worker, never the render path.
 
 `:theme` opens the searchable palette selector; Enter applies a choice and
 Escape leaves the current theme unchanged (once enters the picker's Normal
-mode; twice closes it). `:theme catppuccin-mocha` switches directly.
+mode; twice closes it). `:theme catppuccin-mocha` switches directly. Rows show
+human labels, palette swatches and a check on the applied theme; the selected
+row's canonical name and full description appear in a bounded detail area.
+Small terminals omit decoration before hiding identity or input.
 
 | Name | Character |
 | --- | --- |
@@ -75,6 +78,22 @@ compiled into the binary: no downloads, plugins or setup.
 
 [catppuccin style guide]: https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md
 [nord color roles]: https://www.nordtheme.com/docs/colors-and-palettes
+
+## Panes, previews and language services
+
+Local pane titles use workspace-relative paths; duplicate directories,
+outside-workspace paths and remote/container authority remain identifiable.
+Pane numbers, focus, dirty and read-only markers survive narrow layouts.
+File, search and symbol previews automatically reclaim unused result-list
+width from short admitted labels, within bounded stable layout limits. Long
+paths keep their list budget; narrow terminals retain stacked or omitted
+preview fallbacks.
+
+The modeline presents owned LSP starting, ready, refused and failed states as
+compact badges. Long server prose does not displace mode and position. Use
+`:explain` to inspect the complete server, workspace/endpoint and failure
+reason in a real read-only buffer; recovered servers clear their old failure
+without erasing another workspace's problem or an independent warning.
 
 ## Code completion
 

@@ -68,7 +68,7 @@ impl Editor {
             "  Tab                     Complete an SSH URI without starting authentication\n",
             "  :e!                     Refresh the remote snapshot and revoke write authority\n",
             "  directory columns       kind, POSIX permissions, server bytes, name; ? = unknown\n",
-            "  :explain                 Why: workspaces, LSP readiness/refusals, effective config\n",
+            "  :explain                 Why: workspaces, LSP readiness/failures, effective config\n",
             "\n",
             "\n[query]\n",
             "  Surfaces: Space f / Space / / Space R, symbols (Space S), the Space j jumplist\n",
@@ -208,6 +208,10 @@ mod tests {
         for escape in ["ctrl-\\ ctrl-n", "ctrl-4 ctrl-n", ":terminal-refresh"] {
             assert!(text.contains(escape), "help lost the {escape} escape");
         }
+        assert!(
+            text.contains(":explain") && text.contains("LSP readiness/failures"),
+            "help makes retained LSP failures discoverable"
+        );
         // it's a real buffer: / searches it
         e.feed_text("/undo-tree\r");
         assert!(e.head() > 0, "search moved into the help text");

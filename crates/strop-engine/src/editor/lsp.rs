@@ -18,11 +18,18 @@ mod navigation;
 pub(crate) mod remote;
 mod routing;
 pub(crate) mod state;
+mod status;
 #[cfg(test)]
 mod tests;
 
+pub use status::{LspPhase, LspStatus};
+
 pub struct LspServer {
     pub id: ServerId,
+    pub name: String,
+    pub language: String,
+    pub root: PathBuf,
+    pub target: Filesystem,
     /// None for replayed servers: identity and replies come from the
     /// injected record/event stream — never a fake client.
     pub client: Option<strop_lsp::Client>,

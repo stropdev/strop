@@ -291,6 +291,10 @@ fn shutdown_settles_owned_work_without_waiting_for_service_liveness() {
     // A server stuck in start/handshake is finite owned work...
     e.lsp_servers.push(crate::editor::lsp::LspServer {
         id: strop_lsp::ServerId::new(6),
+        name: "fixture-lsp".into(),
+        language: "rust".into(),
+        root: std::path::PathBuf::from("/workspace"),
+        target: strop_workspace::Filesystem::Local,
         client: None,
         rx: std::sync::mpsc::channel().1,
         ready: false,

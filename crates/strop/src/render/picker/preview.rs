@@ -275,6 +275,8 @@ mod tests {
         let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
         editor.open_fixture(&path).unwrap();
         editor.open_picker(strop_picker::Kind::WorkspaceSymbols);
+        editor.wait_picker();
+        editor.picker_reset_fixture();
         editor.picker_items_fixture(vec![strop_picker::Item {
             badge: Some("fn".into()),
             text: "dispatch  lib.rs · :42".into(),
@@ -292,8 +294,9 @@ mod tests {
             .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
         let grid = terminal.backend().buffer();
+        let preview = editor.prepared_view().picker.unwrap().preview.unwrap();
         let right: Vec<String> = (0..30)
-            .map(|y| (56..100).map(|x| grid[(x, y)].symbol()).collect())
+            .map(|y| (preview.x..100).map(|x| grid[(x, y)].symbol()).collect())
             .collect();
         assert!(
             right.iter().any(|line| line.contains("▶ 42 │")),
@@ -310,6 +313,8 @@ mod tests {
         let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
         editor.open_fixture(&path).unwrap();
         editor.open_picker(strop_picker::Kind::Symbols);
+        editor.wait_picker();
+        editor.picker_reset_fixture();
         editor.picker_items_fixture(vec![strop_picker::Item {
             badge: Some("fn".into()),
             text: "dispatch  mod.rs · :42".into(),
@@ -323,15 +328,16 @@ mod tests {
         }]);
         // The real full-screen picker workspace: the wider preview pane must
         // carry the numbered gutter, the ▶ marker on the symbol's line and
-        // the divider — exactly the rootle-style shape, now at 45% width.
+        // the divider — exactly the rootle-style shape, at its prepared width.
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
         terminal
             .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
         let grid = terminal.backend().buffer();
+        let preview = editor.prepared_view().picker.unwrap().preview.unwrap();
         let right: Vec<String> = (0..30)
-            .map(|y| (56..100).map(|x| grid[(x, y)].symbol()).collect())
+            .map(|y| (preview.x..100).map(|x| grid[(x, y)].symbol()).collect())
             .collect();
         assert!(
             right.iter().any(|line| line.contains("▶ 42 │")),
@@ -347,7 +353,7 @@ mod tests {
             "divider then content: {right:?}"
         );
         let mut marker = None;
-        for x in 56u16..100 {
+        for x in preview.x..100 {
             for y in 0..30u16 {
                 if grid[(x, y)].symbol() == "▶" {
                     marker = Some((x, y));

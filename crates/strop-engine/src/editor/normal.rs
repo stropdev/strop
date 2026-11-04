@@ -72,7 +72,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("trust", "authorize the pending endpoint/project command"),
     (
         "explain",
-        "why: workspaces, LSP readiness, effective config",
+        "why: workspaces, LSP readiness/failures, effective config",
     ),
     ("containers", "attach to a running container (read-only)"),
     (

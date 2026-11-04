@@ -203,6 +203,10 @@ fn closing_the_last_remote_document_retires_its_server() {
         layers: Vec::new(),
     });
     assert_eq!(e.lsp_servers.len(), 1);
+    let status = e.lsp_statuses().next().unwrap();
+    assert_eq!(status.phase, LspPhase::Starting);
+    assert_eq!(status.resource, PathBuf::from("/w/proj"));
+    assert!(status.target.label().contains("builder.example"));
     // Another remote project on the same endpoint must not retain this server.
     e.lsp_close_document(remote);
     e.docs.remove(remote);

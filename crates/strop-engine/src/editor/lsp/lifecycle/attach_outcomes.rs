@@ -52,6 +52,8 @@ impl Editor {
                     self.record_project_status(key.path.clone(), ProjectStatus::healthy());
                 }
                 let Some(server) = server else { return };
+                self.lsp_state.attach.refused.remove(&key);
+                self.clear_lsp_failure_scope(&language, &root, &target);
                 if self.lsp_state.attach.attached.iter().any(|attachment| {
                     attachment.language == language
                         && attachment.root == root
@@ -102,6 +104,10 @@ impl Editor {
                             let (_, empty) = channel();
                             self.lsp_servers.push(LspServer {
                                 id: server,
+                                name: name.clone(),
+                                language: language.clone(),
+                                root: root.clone(),
+                                target: target.clone(),
                                 client: Some(client),
                                 rx: empty,
                                 ready: false,
@@ -109,6 +115,10 @@ impl Editor {
                         } else {
                             self.lsp_servers.push(LspServer {
                                 id: server,
+                                name: name.clone(),
+                                language: language.clone(),
+                                root: root.clone(),
+                                target: target.clone(),
                                 client: Some(client),
                                 rx,
                                 ready: false,
@@ -120,6 +130,10 @@ impl Editor {
                         // through the injected event stream.
                         self.lsp_servers.push(LspServer {
                             id: server,
+                            name: name.clone(),
+                            language: language.clone(),
+                            root: root.clone(),
+                            target: target.clone(),
                             client: None,
                             rx: channel().1,
                             ready: false,
@@ -162,24 +176,14 @@ impl Editor {
                 }
                 self.message = match decision {
                     attach::AttachDecision::NoServer => format!("no language server for {name}"),
-                    attach::AttachDecision::TrustRequired { command } => {
-                        format!("project config wants to run `{command}` — :trust to allow (once)")
+                    attach::AttachDecision::TrustRequired { .. } => {
+                        format!("lsp: {name} refused — :trust to allow; :explain for details")
                     }
-                    attach::AttachDecision::TrustError { error } => {
-                        format!("project trust: {error}")
-                    }
-                    attach::AttachDecision::NotExecutable {
-                        command,
-                        reason,
-                        hint,
-                    } => {
-                        format!("lsp: {command} {reason} — {hint}")
-                    }
-                    attach::AttachDecision::SpawnFailed { reason } => {
-                        format!("lsp: {name} could not start — {reason}")
-                    }
-                    attach::AttachDecision::RemoteIo { reason } => {
-                        format!("lsp: remote discovery failed — {reason}")
+                    attach::AttachDecision::TrustError { .. }
+                    | attach::AttachDecision::NotExecutable { .. }
+                    | attach::AttachDecision::SpawnFailed { .. }
+                    | attach::AttachDecision::RemoteIo { .. } => {
+                        format!("lsp: {name} refused — :explain for details")
                     }
                     attach::AttachDecision::Attached | attach::AttachDecision::Cancelled => {
                         unreachable!("matched above")

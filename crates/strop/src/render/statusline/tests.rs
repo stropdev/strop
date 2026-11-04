@@ -34,6 +34,31 @@ fn editor(text: &str, path: Option<&str>) -> Editor {
     Editor::new_in(buffer, "/w".into())
 }
 
+fn attach(editor: &mut Editor, id: u64, outcome: strop_engine::editor::AttachDecision) {
+    use strop_engine::editor::{AttachDecision, AttachRecord};
+    let server = matches!(&outcome, AttachDecision::Attached).then(|| strop_lsp::ServerId::new(id));
+    editor.fixture_lsp_attach(AttachRecord {
+        ticket: strop_core::worker::WorkerId::new(id),
+        server,
+        language: "rust".into(),
+        name: "rust-analyzer".into(),
+        root: "/w".into(),
+        target: strop_workspace::Filesystem::Local,
+        outcome,
+        layers: Vec::new(),
+    });
+}
+
+fn fail(editor: &mut Editor, id: u64, reason: &str) {
+    editor.handle_app_event(strop_engine::editor::events::AppEvent::Lsp(
+        strop_lsp::LspEvent::Failed {
+            server: strop_lsp::ServerId::new(id),
+            name: "rust-analyzer".into(),
+            hint: reason.into(),
+        },
+    ));
+}
+
 #[test]
 fn a_long_path_cannot_crowd_out_status_or_position() {
     let mut editor = editor(
@@ -53,6 +78,94 @@ fn a_long_path_cannot_crowd_out_status_or_position() {
         "the directory yields before anything essential: {row:?}"
     );
     assert!(width(&row) <= 48, "the row fits its cells: {row:?}");
+}
+
+#[test]
+fn lifecycle_badges_are_scoped_and_visibly_distinct() {
+    let mut e = editor("fn main() {}\n", Some("/w/src/main.rs"));
+    attach(&mut e, 40, strop_engine::editor::AttachDecision::Attached);
+    let starting = row(&e, 100, 4);
+    assert!(
+        starting.contains("lsp rust-analyzer@w starting"),
+        "{starting:?}"
+    );
+
+    e.handle_app_event(strop_engine::editor::events::AppEvent::Lsp(
+        strop_lsp::LspEvent::Ready {
+            server: strop_lsp::ServerId::new(40),
+            name: "rust-analyzer".into(),
+        },
+    ));
+    let ready = row(&e, 100, 4);
+    assert!(ready.contains("lsp rust-analyzer@w ready"), "{ready:?}");
+    assert_ne!(starting, ready);
+
+    fail(
+        &mut e,
+        40,
+        "executable disappeared — reinstall with rustup component add rust-analyzer",
+    );
+    let failed = row(&e, 100, 4);
+    assert!(failed.contains("lsp rust-analyzer@w failed"), "{failed:?}");
+    assert!(!failed.contains("reinstall"), "{failed:?}");
+
+    let mut refused = editor("fn main() {}\n", Some("/w/src/main.rs"));
+    attach(
+        &mut refused,
+        41,
+        strop_engine::editor::AttachDecision::NotExecutable {
+            command: "rust-analyzer".into(),
+            reason: "not found on PATH".into(),
+            hint: "rustup component add rust-analyzer".into(),
+        },
+    );
+    let refused_row = row(&refused, 100, 4);
+    assert!(refused_row.contains("refused"), "{refused_row:?}");
+    assert!(refused_row.contains("lsp rust@"), "{refused_row:?}");
+    assert!(
+        !refused_row.contains("not found on PATH"),
+        "{refused_row:?}"
+    );
+}
+
+#[test]
+fn narrow_failure_badge_survives_without_long_prose() {
+    let mut e = editor("fn main() {}\n", Some("/w/src/main.rs"));
+    attach(&mut e, 42, strop_engine::editor::AttachDecision::Attached);
+    fail(
+        &mut e,
+        42,
+        "a very long actionable reason that must never monopolize the modeline: run rustup component add rust-analyzer",
+    );
+    for columns in [48, 24] {
+        let row = row(&e, columns, 4);
+        assert!(
+            row.contains("LSP!") || row.contains("failed"),
+            "failure survives {columns}: {row:?}"
+        );
+        assert!(row.contains("NORMAL"), "mode survives {columns}: {row:?}");
+        assert!(row.contains("1:1"), "position survives {columns}: {row:?}");
+        assert!(
+            !row.contains("rustup"),
+            "prose stays out {columns}: {row:?}"
+        );
+        assert!(
+            width(&row) <= usize::from(columns),
+            "row fits {columns}: {row:?}"
+        );
+    }
+}
+
+#[test]
+fn save_failure_keeps_transient_precedence_over_service_detail() {
+    let mut e = editor("fn main() {}\n", Some("/w/src/main.rs"));
+    attach(&mut e, 43, strop_engine::editor::AttachDecision::Attached);
+    fail(&mut e, 43, "server hint retained only in explain");
+    e.set_message("write failed: disk full");
+    let row = row(&e, 80, 4);
+    assert!(row.contains("write failed: disk full"), "{row:?}");
+    assert!(row.contains("failed") || row.contains("LSP!"), "{row:?}");
+    assert!(!row.contains("server hint"), "{row:?}");
 }
 
 /// 0051 R08: the modeline carries the effective indent setting.

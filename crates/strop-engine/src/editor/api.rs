@@ -203,6 +203,19 @@ impl Editor {
         self.cursor_fade
     }
 
+    /// Fixture hook (tests only): admit an attach completion through its real
+    /// owner/ticket transition without running discovery or spawning a server.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_lsp_attach(&mut self, record: AttachRecord) {
+        let key = lsp::attach::AttachKey {
+            target: record.target.clone(),
+            language: record.language.clone(),
+            path: record.root.join("fixture-source"),
+        };
+        self.lsp_state.attach.pending.insert(key, record.ticket);
+        self.handle_lsp_attach(record);
+    }
+
     /// Fixture hook (tests only): plant diagnostics without an LSP
     /// server round-trip.
     #[cfg(any(test, feature = "test-support"))]

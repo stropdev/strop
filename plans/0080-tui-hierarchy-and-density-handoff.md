@@ -1,6 +1,6 @@
 # 0080 — TUI hierarchy and density: polish handoff
 
-Status: **handoff only; UI changes not implemented by this document**.
+Status: **implemented and locally qualified** (2026-11-04).
 
 ## 1. Intent and boundary
 
@@ -291,3 +291,31 @@ Delivery is all four completed behaviors plus exercised evidence and explicit
 platform limits. No website changes, native theme redesign, version bump,
 commit/push or release is requested by this handover-writing task. Native
 implementation and any later publication belong to the agent taking it over.
+
+## 8. Implementation evidence
+
+All four workstreams landed through the existing owners. Theme ranking searches
+only human labels and canonical IDs (so `paper` cannot select Light); rows use
+registry swatches and an applied check, with selected canonical/full-detail
+text and tiny decoration fallbacks. Prepared picker geometry measures at most
+256 admitted labels and 512 graphemes per label, caching by catalog revision
+across selection and resizes. Pane titles share `Document::label`, with
+path-aware narrow duplicate disambiguation and one existing vertical boundary.
+Owned LSP lifecycle state retains complete scoped failures for `:explain`;
+compact modeline badges preserve transient precedence and failure cues.
+
+Focused engine LSP/geometry suites, real child theme journeys, picker/preview,
+pane identity, clipping and statusline suites passed. The final
+`docker compose run --build --rm test` gate passed format, Clippy and all
+workspace tests. Release assurance now includes the new geometry, theme-row,
+pane-identity and LSP-presentation claims and evidence.
+
+Actual headless captures covered Paper, Paper Dark, Light and Dark at 100×30,
+80×24, 48×16 and 24×10: Rust and Markdown/fenced syntax, short/long/duplicate
+paths, Files/previews, Theme acceptance/cancel and retained LSP failure detail.
+The isolated short-file capture shows a 28-cell result list beside a 66-cell
+source preview at 100 columns. Real Paper TUI captures at 100×30 and 48×16
+confirmed one vertical pane boundary, short-label preview allocation, theme
+swatches/detail and `LSP!`. Canonical query tests cover every registry entry,
+including `paper` and `paper-dark`, plus session-only replay. GUI surfaces were
+not exercised in this Linux/WSL TUI runtime.

@@ -33,7 +33,11 @@ fn selected_band(grid: &ratatui::buffer::Buffer, width: u16, height: u16) -> (u1
 fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("source.txt");
-    std::fs::write(&path, "preview evidence line\n").unwrap();
+    std::fs::write(
+        &path,
+        "preview evidence with useful source tail: FINAL_EVIDENCE\n",
+    )
+    .unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
     editor.open_fixture(&path).unwrap();
     editor.open_picker(strop_picker::Kind::Files);
@@ -53,14 +57,19 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
         "card keeps the status row free"
     );
     let (band_edge, band_row) = selected_band(&grid, 100, 30);
+    let prepared = editor.prepared_view().picker.expect("prepared files");
+    let list = prepared.results.expect("file results");
+    let preview = prepared.preview.expect("file preview");
     assert!(
-        (50..=58).contains(&band_edge),
-        "list column stays near 55% (edge {band_edge})"
+        preview.width > list.width,
+        "short names return unused list cells to the preview: list={} preview={}",
+        list.width,
+        preview.width
     );
+    assert_eq!(band_edge + 2, preview.x);
     // the preview pane follows the list (scrollbar column, then its border)
-    let border_x = (band_edge + 1..70)
-        .find(|x| grid[(*x, band_row)].symbol() == "│")
-        .unwrap_or_else(|| panic!("no preview border right of list edge {band_edge}"));
+    let border_x = preview.x;
+    assert_eq!(grid[(border_x, band_row)].symbol(), "│");
     let title: String = (border_x + 1..98)
         .map(|x| grid[(x, band_row)].symbol())
         .collect();
@@ -71,7 +80,10 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
     let evidence: String = (border_x + 1..98)
         .map(|x| grid[(x, band_row + 1)].symbol())
         .collect();
-    assert!(evidence.contains("preview evidence"), "{evidence:?}");
+    assert!(
+        evidence.contains("FINAL_EVIDENCE"),
+        "the old 42-cell preview clipped this evidence tail: {evidence:?}"
+    );
 
     // symbols join the same workspace; the transient card stays floating
     editor.open_picker(strop_picker::Kind::Symbols);
@@ -90,14 +102,12 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
     assert_eq!(grid[(1, 0)].symbol(), "╭");
     assert_eq!(grid[(98, 0)].symbol(), "╮");
     let (band_edge, band_row) = selected_band(&grid, 100, 30);
-    assert!(
-        (50..=58).contains(&band_edge),
-        "symbols list edge {band_edge}"
-    );
-    assert!(
-        (band_edge + 1..70).any(|x| grid[(x, band_row)].symbol() == "│"),
-        "symbols preview follows the list"
-    );
+    let prepared = editor.prepared_view().picker.expect("prepared symbols");
+    let list = prepared.results.expect("symbol results");
+    let preview = prepared.preview.expect("symbol preview");
+    assert!(preview.width > list.width, "symbols share the policy");
+    assert_eq!(band_edge + 2, preview.x);
+    assert_eq!(grid[(preview.x, band_row)].symbol(), "│");
 
     let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
     editor.open_picker(strop_picker::Kind::RemoteAddress);
@@ -109,12 +119,61 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
     );
 }
 
+#[test]
+fn long_file_paths_keep_basename_and_preview_identity_visible() {
+    let root = tempfile::tempdir().unwrap();
+    let nested = root
+        .path()
+        .join("very/long/disambiguating/path/with/meaningful/components");
+    std::fs::create_dir_all(&nested).unwrap();
+    let path = nested.join("basename.rs");
+    std::fs::write(&path, "fn selected_resource() {}\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+    let document = editor.open_fixture(&path).unwrap();
+    editor.open_picker(strop_picker::Kind::Files);
+    editor.wait_picker();
+    editor.picker_reset_fixture();
+    editor.picker_items_fixture(vec![strop_picker::Item {
+        badge: None,
+        text: strop_picker::display_path(&path).into_owned(),
+        payload: strop_picker::Payload::Buffer(document),
+    }]);
+
+    let grid = draw(&mut editor, 100, 30);
+    let prepared = editor.prepared_view().picker.unwrap();
+    let list = prepared.results.unwrap();
+    let preview = prepared.preview.unwrap();
+    let historical = strop_engine::editor::prepare::picker_split(
+        crate::render::to_cells(ratatui::layout::Rect::new(0, 0, 100, 30)),
+        strop_picker::Kind::Files,
+        false,
+    )
+    .unwrap()
+    .0;
+    assert_eq!(list.width, historical.width);
+    let (_, row) = selected_band(&grid, 100, 30);
+    let result: String = (list.x..list.x + list.width - 1)
+        .map(|x| grid[(x, row)].symbol())
+        .collect();
+    assert!(result.contains("basename.rs"), "{result:?}");
+    let title: String = (preview.x + 1..preview.x + preview.width)
+        .map(|x| grid[(x, row)].symbol())
+        .collect();
+    assert!(title.contains("basename.rs"), "{title:?}");
+}
+
 /// The results-list track column for the open kind, read from the same
 /// layout the paint uses so both agree on the reserved column.
-fn track_column(kind: strop_picker::Kind, width: u16, height: u16) -> (u16, std::ops::Range<u16>) {
-    let area = crate::render::to_cells(ratatui::layout::Rect::new(0, 0, width, height));
-    let (results, _) =
-        strop_engine::editor::prepare::picker_split(area, kind, false).expect("results area");
+fn track_column(editor: &mut Editor, width: u16, height: u16) -> (u16, std::ops::Range<u16>) {
+    editor.prepare_view(strop_engine::editor::prepare::ViewGeometry {
+        columns: width,
+        rows: height,
+    });
+    let results = editor
+        .prepared_view()
+        .picker
+        .and_then(|picker| picker.results)
+        .expect("results area");
     let results = crate::render::from_cells(results);
     (
         results.x + results.width - 1,
@@ -177,7 +236,7 @@ fn workspace_symbols_scrollbar_paints_track_thumb_and_moves_with_selection() {
     let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
     editor.open_picker(strop_picker::Kind::WorkspaceSymbols);
     editor.picker_items_fixture((0..40).map(|n| symbol_fixture(&path, n)).collect());
-    let (track_x, rows) = track_column(strop_picker::Kind::WorkspaceSymbols, 100, 30);
+    let (track_x, rows) = track_column(&mut editor, 100, 30);
     let row_count = editor.picker().unwrap().picker.rows.len();
     assert!(
         row_count > rows.len(),
@@ -232,7 +291,7 @@ fn short_lists_keep_the_reserved_column_empty_when_text_overflows() {
             })
             .collect(),
     );
-    let (track_x, rows) = track_column(strop_picker::Kind::WorkspaceSymbols, 100, 30);
+    let (track_x, rows) = track_column(&mut editor, 100, 30);
     let grid = draw(&mut editor, 100, 30);
     // Each overflowing row fills its text budget exactly: the row's
     // right-aligned location sits on the last budgeted cell, and the
@@ -268,7 +327,7 @@ fn floating_card_picker_uses_the_same_scrollbar_vocabulary() {
             })
             .collect(),
     );
-    let (track_x, rows) = track_column(strop_picker::Kind::Buffers, 100, 30);
+    let (track_x, rows) = track_column(&mut editor, 100, 30);
     let row_count = editor.picker().unwrap().picker.rows.len();
     assert!(
         row_count > rows.len(),
@@ -377,12 +436,11 @@ fn unopened_file_preview_loads_and_highlights_through_preparation() {
     }
 }
 
-/// AR01/AR03 seam pin: the engine-owned picker cell geometry
-/// (`strop_engine::editor::prepare`) must reproduce the toolkit solver's
-/// splits exactly across the size domain — the historical layout is the
-/// contract, so the cutover cannot move a single cell.
+/// The unmeasured split remains the toolkit-solver baseline for transient
+/// pickers and the long-path cap. Admitted workspace allocation is covered
+/// above and by the engine's preparation tests.
 #[test]
-fn engine_picker_geometry_matches_the_toolkit_solver() {
+fn unmeasured_picker_geometry_matches_the_toolkit_solver() {
     use ratatui::layout::{Constraint, Direction, Layout, Rect};
     use strop_engine::editor::prepare::{
         picker_card, picker_field_split, picker_inner, picker_split,
@@ -447,9 +505,8 @@ fn engine_picker_geometry_matches_the_toolkit_solver() {
     }
 }
 
-/// The pre-cutover toolkit-solver layout, kept here as the reference
-/// oracle for the engine-owned geometry (`engine_picker_geometry_matches
-/// _the_toolkit_solver` pins every cell).
+/// The pre-allocation toolkit-solver layout, kept here as the reference
+/// oracle for the unmeasured engine geometry and historical width caps.
 fn solver_card(area: ratatui::layout::Rect, kind: strop_picker::Kind) -> ratatui::layout::Rect {
     use ratatui::layout::Rect;
     use strop_picker::Kind;

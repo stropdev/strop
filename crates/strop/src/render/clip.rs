@@ -6,7 +6,7 @@ use strop_core::layout::{printable_grapheme, printable_text};
 use unicode_segmentation::UnicodeSegmentation;
 
 fn grapheme_width(grapheme: &str) -> usize {
-    Span::raw(printable_grapheme(grapheme)).width()
+    Span::raw(printable_text(grapheme)).width()
 }
 
 pub(super) fn width(text: &str) -> usize {
@@ -63,6 +63,79 @@ pub(super) fn clip_start(text: &str, cells: usize) -> Cow<'_, str> {
     printable_text(text)
 }
 
+/// Keep the greatest whole-grapheme suffix without spending a cell on an
+/// ellipsis. Workspace-relative pane titles use this when one parent character
+/// is the only duplicate-basename disambiguator available at narrow widths.
+pub(super) fn suffix(text: &str, cells: usize) -> Cow<'_, str> {
+    if cells == 0 {
+        return Cow::Borrowed("");
+    }
+    let mut used = 0;
+    let mut edge = text.len();
+    for (byte, grapheme) in text.grapheme_indices(true).rev() {
+        let cells_for_grapheme = grapheme_width(grapheme);
+        if used + cells_for_grapheme > cells {
+            break;
+        }
+        used += cells_for_grapheme;
+        edge = byte;
+    }
+    let mut output = String::new();
+    append_printable(&mut output, &text[edge..]);
+    Cow::Owned(output)
+}
+
+/// Keep a local path's basename and a short parent-prefix disambiguator.
+/// The parent yields first at narrow widths; no grapheme is split.
+pub(super) fn path_suffix(text: &str, cells: usize) -> Cow<'_, str> {
+    if cells == 0 {
+        return Cow::Borrowed("");
+    }
+    if width(text) <= cells {
+        return printable_text(text);
+    }
+    let Some((dir, name)) = text.rsplit_once('/') else {
+        return suffix(text, cells);
+    };
+    let name_width = width(name);
+    let parent = dir.rsplit('/').next().unwrap_or(dir);
+    if name_width > cells {
+        let mut output = String::new();
+        let mut parent_width = 0;
+        if let Some(grapheme) = parent.graphemes(true).next() {
+            let cells_for_grapheme = grapheme_width(grapheme);
+            if cells_for_grapheme + 1 < cells {
+                parent_width = cells_for_grapheme;
+                output.push_str(printable_grapheme(grapheme));
+            }
+        }
+        if parent_width != 0 {
+            output.push('/');
+            let suffix = suffix(name, cells - parent_width - 1);
+            output.push_str(&suffix);
+            return Cow::Owned(output);
+        }
+        return suffix(name, cells);
+    }
+    let parent_budget = cells - name_width - 1;
+    if parent_budget == 0 {
+        return suffix(name, cells);
+    }
+    let mut output = String::new();
+    let mut used = 0;
+    for grapheme in parent.graphemes(true) {
+        let cells_for_grapheme = grapheme_width(grapheme);
+        if used + cells_for_grapheme > parent_budget {
+            break;
+        }
+        used += cells_for_grapheme;
+        output.push_str(printable_grapheme(grapheme));
+    }
+    output.push('/');
+    append_printable(&mut output, name);
+    Cow::Owned(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,6 +147,11 @@ mod tests {
         assert_eq!(clip_end("界", 1), "…");
         assert_eq!(clip_end("界", 2), "界");
         assert_eq!(clip_start("界", 0), "");
+        assert_eq!(suffix("one/shared.rs", 12), "ne/shared.rs");
+        assert_eq!(suffix("tab\t界e\u{301}.rs", 7), "�界e\u{301}.rs");
+        assert_eq!(path_suffix("one/shared.rs", 11), "o/shared.rs");
+        assert_eq!(path_suffix("two/shared.rs", 11), "t/shared.rs");
+        assert_eq!(path_suffix("deep/tab\t界e\u{301}.rs", 7), "d/e\u{301}.rs");
     }
 
     #[test]

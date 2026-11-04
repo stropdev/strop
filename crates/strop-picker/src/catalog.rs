@@ -8,6 +8,10 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Catalog {
     items: Vector<Arc<Item>>,
+    /// Local presentation revision: detects same-length result replacement
+    /// without rescanning labels on every prepared frame.
+    #[serde(skip)]
+    revision: u64,
 }
 impl Catalog {
     pub fn len(&self) -> usize {
@@ -15,6 +19,9 @@ impl Catalog {
     }
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
     pub fn get(&self, index: usize) -> Option<&Item> {
         self.items.get(index).map(Arc::as_ref)
@@ -24,17 +31,21 @@ impl Catalog {
     }
     pub fn append(&mut self, items: Vec<Item>) {
         self.items.extend(items.into_iter().map(Arc::new));
+        self.revision = self.revision.saturating_add(1);
     }
     /// Drop trailing items (0063 §2): the pinned tail re-seats by
     /// truncating itself off before source rows append behind it.
     pub fn truncate(&mut self, len: usize) {
         self.items.truncate(len);
+        self.revision = self.revision.saturating_add(1);
     }
 
     /// Split at `index`, returning the tail; this catalog keeps the head.
     pub fn split_off(&mut self, index: usize) -> Self {
+        self.revision = self.revision.saturating_add(1);
         Self {
             items: self.items.split_off(index),
+            revision: self.revision,
         }
     }
 }
@@ -42,6 +53,7 @@ impl From<Vec<Item>> for Catalog {
     fn from(items: Vec<Item>) -> Self {
         Self {
             items: items.into_iter().map(Arc::new).collect(),
+            revision: 1,
         }
     }
 }

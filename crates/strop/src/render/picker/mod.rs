@@ -1,14 +1,14 @@
 //! The picker card (0003 §2): find-file/symbols/grep own one stable
 //! near-full-frame workspace over a dimmed backdrop — input top, results
-//! left, the file preview right with the wider share. Transient pickers
-//! keep the smaller centered floating card. House style: `▌` selection
-//! marker, accent+bold matched chars, hints in the bottom border,
+//! left, the file preview right with width reclaimed from short labels.
+//! Transient pickers keep the smaller centered floating card. House style:
+//! `▌` selection marker, accent+bold matched chars, hints in the bottom border,
 //! border-column scrollbar.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::editor::Editor;
@@ -311,16 +311,47 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
         );
     }
 
-    // 0050 §8: the decision list wins the budget; narrow terminals stack
-    // a short preview below the list instead of two unreadable slivers;
-    // very little height lists only.
-    let (results, preview_area) = match strop_engine::editor::prepare::picker_split(
-        super::to_cells(area),
-        kind,
-        replacement_visible,
-    ) {
-        Some((results, preview)) => (super::from_cells(results), preview.map(super::from_cells)),
-        None => (rows[1], None),
+    // 0050 §8: preparation commits one content-aware split for the list,
+    // reveal clamp, preview admission and this paint. Narrow and tiny
+    // fallbacks are already expressed by that snapshot.
+    let prepared = editor
+        .prepared_view()
+        .picker
+        .expect("open picker has prepared geometry");
+    let (results, preview_area) = match (prepared.results, prepared.preview) {
+        (Some(results), preview) => (super::from_cells(results), preview.map(super::from_cells)),
+        (None, _) => (rows[1], None),
+    };
+
+    let selected_theme = if kind == strop_picker::Kind::Theme {
+        let p = &editor.picker().expect("picker open").picker;
+        p.rows.get(selected).and_then(|row| {
+            p.items.get(row.item).and_then(|item| match &item.payload {
+                strop_picker::Payload::ThemeChoice(id) => Some(*id),
+                _ => None,
+            })
+        })
+    } else {
+        None
+    };
+    // The selected identity gets a bounded three-line detail: canonical name,
+    // then the complete description wrapped at the normal compact width. Tiny
+    // cards keep the input and scrolling list instead of sacrificing them.
+    let (results, theme_detail) = match selected_theme {
+        Some(id) if results.height >= 6 && results.width >= 32 => {
+            let results = Rect {
+                height: results.height - 3,
+                ..results
+            };
+            let detail = Rect {
+                y: results.y + results.height,
+                height: 3,
+                width: results.width.saturating_sub(1),
+                ..results
+            };
+            (results, Some((detail, id)))
+        }
+        _ => (results, None),
     };
 
     if kind == strop_picker::Kind::RemoteAddress {
@@ -360,6 +391,28 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
                 cell.set_fg(crate::render::seed(strop_core::theme::current().border));
             }
         }
+    }
+    if let Some((area, id)) = theme_detail {
+        let applied = id == strop_core::theme::current_id();
+        let mut heading = vec![Span::styled(
+            id.name(),
+            Style::default().fg(text()).add_modifier(Modifier::BOLD),
+        )];
+        if applied {
+            heading.push(Span::styled(" · applied", Style::default().fg(accent())));
+        }
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(heading),
+                Line::from(Span::styled(
+                    id.description(),
+                    Style::default().fg(secondary()),
+                )),
+            ])
+            .style(Style::default().bg(base()))
+            .wrap(Wrap { trim: true }),
+            area,
+        );
     }
     if let Some(preview_area) = preview_area {
         preview::render_preview(editor, frame, preview_area);
